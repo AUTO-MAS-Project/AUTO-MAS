@@ -399,6 +399,7 @@ class ScriptIndexItem(BaseModel):
         "MaaConfig",
         "GeneralConfig",
         "OkwwConfig",
+        "OkNteConfig",
         "SrcConfig",
         "MaaEndConfig",
         "M9AConfig",
@@ -414,6 +415,7 @@ class UserIndexItem(BaseModel):
         "MaaUserConfig",
         "GeneralUserConfig",
         "OkwwUserConfig",
+        "OkNteUserConfig",
         "SrcUserConfig",
         "MaaEndUserConfig",
         "M9AUserConfig",
@@ -621,6 +623,44 @@ class OkwwUserConfig(BaseModel):
     Notify: Optional[OkwwUserConfig_Notify] = Field(default=None, description="单独通知")
 
 
+class OkNteUserConfig_Task(BaseModel):
+    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
+    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
+
+
+class OkNteUserConfig_Info(GeneralUserConfig_Info):
+    """OK-NTE 用户信息（复用通用字段）"""
+
+    Id: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="用户配置模式（简洁/详细）"
+    )
+    Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
+
+
+class OkNteUserConfig_Data(GeneralUserConfig_Data):
+    """OK-NTE 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+    LastTaskIndex: Optional[int] = Field(
+        default=None, description="上次运行的 ok-nte 任务序号（-t N）"
+    )
+
+
+class OkNteUserConfig_Notify(GeneralUserConfig_Notify):
+    """OK-NTE 用户通知（复用通用字段）"""
+
+
+class OkNteUserConfig(BaseModel):
+    Info: Optional[OkNteUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[OkNteUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[OkNteUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[OkNteUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -719,6 +759,50 @@ class OkwwConfig(BaseModel):
     Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
+
+
+class OkNteConfig_Info(GeneralConfig_Info):
+    """OK-NTE 脚本基础信息（复用通用字段）"""
+
+
+class OkNteConfig_Script(GeneralConfig_Script):
+    """OK-NTE 脚本配置（复用通用字段）"""
+
+
+class OkNteConfig_Game(BaseModel):
+    """OK-NTE 游戏配置"""
+
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
+    )
+    Type: Optional[Literal["Client", "URL"]] = Field(
+        default=None, description="类型: PC端, URL协议"
+    )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    URL: Optional[str] = Field(default=None, description="自定义协议URL")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
+    IfForceClose: Optional[bool] = Field(
+        default=None, description="是否强制关闭游戏进程"
+    )
+    LaunchBeforeTask: Optional[bool] = Field(
+        default=None, description="任务开始前是否由 MAS 启动游戏"
+    )
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭游戏"
+    )
+
+
+class OkNteConfig_Run(GeneralConfig_Run):
+    """OK-NTE 运行配置（复用通用字段）"""
+
+
+class OkNteConfig(BaseModel):
+    Info: Optional[OkNteConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[OkNteConfig_Script] = Field(default=None, description="脚本配置")
+    Game: Optional[OkNteConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[OkNteConfig_Run] = Field(default=None, description="运行配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -1419,8 +1503,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "Okww", "MaaEnd", "M9A", "HSR"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
+    type: Literal["MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "HSR"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1429,7 +1513,16 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig] = Field(
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkNteConfig,
+        MaaEndConfig,
+        M9AConfig,
+        HSRConfig,
+    ] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -1443,7 +1536,17 @@ class ScriptGetIn(BaseModel):
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
     data: Dict[
-        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig]
+        str,
+        Union[
+            MaaConfig,
+            SrcConfig,
+            GeneralConfig,
+            OkwwConfig,
+            OkNteConfig,
+            MaaEndConfig,
+            M9AConfig,
+            HSRConfig,
+        ],
     ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
@@ -1451,7 +1554,16 @@ class ScriptGetOut(OutBase):
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig] = Field(
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkNteConfig,
+        MaaEndConfig,
+        M9AConfig,
+        HSRConfig,
+    ] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -1506,6 +1618,7 @@ class UserGetOut(OutBase):
             SrcUserConfig,
             GeneralUserConfig,
             OkwwUserConfig,
+            OkNteUserConfig,
             MaaEndUserConfig,
             M9AUserConfig,
             HSRUserConfig,
@@ -1520,6 +1633,7 @@ class UserCreateOut(OutBase):
         SrcUserConfig,
         GeneralUserConfig,
         OkwwUserConfig,
+        OkNteUserConfig,
         MaaEndUserConfig,
         M9AUserConfig,
         HSRUserConfig,
@@ -1535,6 +1649,7 @@ class UserUpdateIn(UserInBase):
         SrcUserConfig,
         GeneralUserConfig,
         OkwwUserConfig,
+        OkNteUserConfig,
         MaaEndUserConfig,
         M9AUserConfig,
         HSRUserConfig,

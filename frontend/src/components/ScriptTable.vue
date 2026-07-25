@@ -20,6 +20,7 @@
                     class="script-logo" />
                   <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
                   <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
+                  <img v-else-if="script.type === 'OkNte'" src="@/assets/ok-nte.ico" alt="ok-nte" class="script-logo" />
                   <img v-else-if="script.type === 'HSR'" src="@/assets/hsr.png" alt="HSR" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
@@ -35,9 +36,11 @@
                           ? 'cyan'
                           : script.type === 'Okww'
                             ? 'blue'
-                            : script.type === 'HSR'
-                              ? 'purple'
-                              : 'green'
+                            : script.type === 'OkNte'
+                              ? 'blue'
+                              : script.type === 'HSR'
+                                ? 'purple'
+                                : 'green'
                     " class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
@@ -217,7 +220,14 @@
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
-                        <div v-if="script.type === 'General' || script.type === 'Okww'" class="user-info-tags">
+                        <div
+                          v-if="
+                            script.type === 'General' ||
+                            script.type === 'Okww' ||
+                            script.type === 'OkNte'
+                          "
+                          class="user-info-tags"
+                        >
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
@@ -564,6 +574,7 @@ const handleToggleUserStatus = (user: User) => {
 
 const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
+  if (type === 'OkNte') return 'ok-nte'
   return type
 }
 

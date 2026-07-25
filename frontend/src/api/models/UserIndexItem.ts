@@ -20,6 +20,7 @@ export namespace UserIndexItem {
         MAA_USER_CONFIG = 'MaaUserConfig',
         GENERAL_USER_CONFIG = 'GeneralUserConfig',
         OKWW_USER_CONFIG = 'OkwwUserConfig',
+        OK_NTE_USER_CONFIG = 'OkNteUserConfig',
         SRC_USER_CONFIG = 'SrcUserConfig',
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
         M9AUSER_CONFIG = 'M9AUserConfig',
