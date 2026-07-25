@@ -70,6 +70,35 @@ versioned upstream event contract and provider capability declaration.
 independent synchronous CLI shell. It is not a fallback production executor for MAS;
 the MAS adapter only reuses its command-building capability.
 
+## Game Launch and Cleanup
+
+Game launch policy belongs to each registered provider. A `GameLaunchDescriptor`
+separates the program MAS starts, the process that proves the game is ready, and the
+processes used for end-of-task cleanup. This avoids treating all games as a single
+executable path.
+
+- `direct`: MAS launches the game executable and tracks that same game process.
+- `launcher`: MAS launches a launcher but tracks the declared game-body process. For
+  OK-NTE this is `NTEGame.exe` or `NTEGlobalGame.exe` followed by `HTGame.exe`.
+- `script-managed`: MAS does not launch the game before the task; ok-script owns that
+  startup, while MAS still retains its configured cleanup targets.
+- `attach`: MAS requires an already-running declared game process and does not launch
+  another instance.
+- `uri`: MAS opens the provider URI and tracks the declared game process.
+
+`Game.Enabled=false` or `Game.LaunchBeforeTask=false` only changes the pre-task launch
+mode to `script-managed`. It does not disable end-of-task cleanup. On manual stop,
+`Game.KillGameOnManualStop` remains the single switch that decides whether MAS closes
+the game. The game-path resolve endpoint keeps its existing `data.path` and
+`data.formPatch` response members and additionally returns role-aware
+`data.resolution`. When more than one launch or ready target is found, it returns HTTP
+409 with the diagnostic candidates instead of selecting a path arbitrarily.
+
+The current lifecycle checks use static fixtures and fake process managers only. They
+do not prove real launcher behavior, installed-game layouts, or game/device E2E. Each
+provider remains responsible for declaring its `runtime_verified` state; OK-NTE remains
+unverified until its real success and failure logs have been validated.
+
 ## Configuration Schema and Validation
 
 Configuration responses expose FieldSchema v1 without breaking the current editor.
