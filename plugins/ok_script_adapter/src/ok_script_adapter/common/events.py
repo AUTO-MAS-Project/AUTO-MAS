@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,24 @@ _SUPPORTED_EVENT_NAMES = frozenset(
         "summary",
     }
 )
+
+
+def append_ok_script_run_event(
+    event_log_path: Path,
+    event: str,
+    **payload: object,
+) -> None:
+    """按协议 v1 追加一项 MAS/CLI 运行事件。"""
+
+    data = {
+        "version": OK_SCRIPT_EVENT_PROTOCOL_VERSION,
+        "event": event,
+        "timestamp": time.time(),
+        **payload,
+    }
+    event_log_path.parent.mkdir(parents=True, exist_ok=True)
+    with event_log_path.open("a", encoding="utf-8") as event_file:
+        event_file.write(json.dumps(data, ensure_ascii=False) + "\n")
 
 
 @dataclass(frozen=True)
