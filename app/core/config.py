@@ -61,6 +61,7 @@ from app.models.config import (
     Webhook,
     TimeSet,
     EmulatorConfig,
+    GameSignAccountGroup,
 )
 from app.models.schema import WebSocketMessage
 from app.utils.constants import (
@@ -136,6 +137,7 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        self._stage_refreshing = False
 
         truststore.inject_into_ssl()
 
@@ -150,6 +152,16 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+
+        # 游戏签到：连接账号组 MultipleConfig
+        await self.ToolsConfig.GameSign_Accounts.connect(
+            self.config_path / "GameSignAccounts.json"
+        )
+
+        # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
+        last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
+        if last_sign_date != datetime.now().strftime("%Y-%m-%d"):
+            await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
         from app.services import System
 
@@ -1308,6 +1320,63 @@ class AppConfig(GlobalConfig):
 
         logger.success("工具设置更新成功")
 
+    # ==================== 游戏签到账号组 CRUD ====================
+
+    async def get_game_sign_accounts(self) -> Dict[str, Any]:
+        """获取所有游戏签到账号组"""
+
+        logger.debug("获取所有游戏签到账号组")
+
+        return await self.ToolsConfig.GameSign_Accounts.toDict()
+
+    async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
+        """添加游戏签到账号组"""
+
+        logger.info("添加游戏签到账号组")
+
+        uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+            GameSignAccountGroup
+        )
+        return uid, config
+
+    async def get_game_sign_account(self, account_id: str) -> Dict[str, Any]:
+        """获取游戏签到账号组详情"""
+
+        logger.debug(f"获取游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict()
+
+    async def update_game_sign_account(
+        self, account_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新游戏签到账号组配置"""
+
+        logger.info(f"更新游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        for group, items in data.items():
+            for name, value in items.items():
+                await account.set(group, name, value)
+
+    async def delete_game_sign_account(self, account_id: str) -> None:
+        """删除游戏签到账号组"""
+
+        logger.info(f"删除游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
+
+    async def reorder_game_sign_accounts(self, order: list[str]) -> None:
+        """调整游戏签到账号组顺序"""
+
+        logger.info("调整游戏签到账号组顺序")
+
+        await self.ToolsConfig.GameSign_Accounts.setOrder(
+            [uuid.UUID(_) for _ in order]
+        )
+
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
@@ -1505,12 +1574,8 @@ class AppConfig(GlobalConfig):
     ):
         """获取关卡信息"""
 
-        if json.loads(self.get("Data", "Stage")) != {}:
-            task = asyncio.create_task(self.get_stage())
-            self.temp_task.append(task)
-            task.add_done_callback(lambda t: self.temp_task.remove(t))
-        else:
-            await self.get_stage()
+        # get_stage 会立即返回缓存，网络刷新在后台进行
+        await self.get_stage()
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
@@ -1577,13 +1642,32 @@ class AppConfig(GlobalConfig):
         return overview
 
     async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
-        """更新活动关卡信息"""
+        """更新活动关卡信息。网络检查在后台执行，立即返回本地缓存。"""
 
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
+
+        if not self._stage_refreshing:
+            self._stage_refreshing = True
+            task = asyncio.create_task(self._refresh_stage())
+            self.temp_task.append(task)
+
+            def _done(t: asyncio.Task) -> None:
+                self._stage_refreshing = False
+                if t in self.temp_task:
+                    self.temp_task.remove(t)
+
+            task.add_done_callback(_done)
+        else:
+            logger.info("活动关卡信息更新任务已在进行中")
+
+        return json.loads(self.get("Data", "Stage"))
+
+    async def _refresh_stage(self) -> None:
+        """从远端刷新活动关卡信息（仅后台调用）。"""
 
         logger.info("开始获取活动关卡信息")
         try:
@@ -1630,8 +1714,6 @@ class AppConfig(GlobalConfig):
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
-
-        return json.loads(self.get("Data", "Stage"))
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
@@ -1698,6 +1780,9 @@ class AppConfig(GlobalConfig):
         """获取模拟器多开实例下拉框信息"""
 
         logger.info("开始获取模拟器下拉框信息")
+
+        if emulator_id == "-":
+            return []
 
         if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Info", "Type") == "general":
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")

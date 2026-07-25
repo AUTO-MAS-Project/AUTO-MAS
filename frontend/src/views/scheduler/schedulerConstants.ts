@@ -36,8 +36,8 @@ export const getQueueStatusColor = (status: string): string => {
 
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
-  { label: "自动代理", value: TaskCreateIn.mode.AUTO_PROXY },
-  { label: "人工排查", value: TaskCreateIn.mode.MANUAL_REVIEW },
+  { label: '自动代理', value: TaskCreateIn.mode.AUTO_PROXY },
+  { label: '人工排查', value: TaskCreateIn.mode.MANUAL_REVIEW },
 ]
 
 // 电源操作映射

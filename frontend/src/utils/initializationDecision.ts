@@ -11,7 +11,7 @@ export interface InitializationDecision {
 const logger = window.electronAPI.getLogger('初始化决策')
 
 export async function getInitializationDecision(): Promise<InitializationDecision> {
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   const currentVersion = import.meta.env.VITE_APP_VERSION
   const forceBackendUpdate = sessionStorage.getItem('forceBackendUpdate') === 'true'
   const disableSkip = sessionStorage.getItem('disableInitializationSkip') === 'true'

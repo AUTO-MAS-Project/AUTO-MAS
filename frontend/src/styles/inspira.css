@@ -1,0 +1,57 @@
+@layer theme, base, components, utilities;
+
+/* Keep Tailwind utilities isolated from Ant Design Vue's global reset. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --background: var(--ant-color-bg-layout, #f5f5f5);
+  --foreground: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+  --card: var(--ant-color-bg-container, #ffffff);
+  --card-foreground: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+  --popover: var(--ant-color-bg-elevated, #ffffff);
+  --popover-foreground: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+  --primary: var(--ant-color-primary, #1677ff);
+  --primary-foreground: #ffffff;
+  --secondary: var(--ant-color-primary-bg, rgba(22, 119, 255, 0.1));
+  --secondary-foreground: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+  --muted: var(--ant-color-bg-layout, #f5f5f5);
+  --muted-foreground: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
+  --accent: var(--ant-color-primary-bg, rgba(22, 119, 255, 0.1));
+  --accent-foreground: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+  --destructive: var(--ant-color-error, #ff4d4f);
+  --destructive-foreground: #ffffff;
+  --border: var(--ant-color-border, #d9d9d9);
+  --input: var(--ant-color-border, #d9d9d9);
+  --ring: var(--ant-color-primary, #1677ff);
+  --radius: 0.625rem;
+}

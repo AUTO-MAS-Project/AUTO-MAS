@@ -59,7 +59,11 @@
       </h2>
       <p class="mask-description">
         当前正在配置
-        {{ currentMaaEndConfigUser ? `用户 ${currentMaaEndConfigUser.Info.Name}` : '脚本级 MaaEnd 配置' }}
+        {{
+          currentMaaEndConfigUser
+            ? `用户 ${currentMaaEndConfigUser.Info.Name}`
+            : '脚本级 MaaEnd 配置'
+        }}
         ，请在 MaaEnd 配置界面完成相关设置。
         <br />
         配置完成后，点击“保存配置”解除页面锁定。
@@ -84,6 +88,18 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
+        <a-tooltip title="收起所有脚本的用户列表">
+          <a-button size="large" :disabled="scripts.length === 0" @click="handleCollapseAll">
+            <template #icon><UpOutlined /></template>
+            一键收起
+          </a-button>
+        </a-tooltip>
+        <a-tooltip title="展开所有脚本的用户列表">
+          <a-button size="large" :disabled="scripts.length === 0" @click="handleExpandAll">
+            <template #icon><DownOutlined /></template>
+            一键展开
+          </a-button>
+        </a-tooltip>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
@@ -109,10 +125,13 @@
   </div>
 
   <ScriptTable
+    ref="scriptTableRef"
     :scripts="scripts"
     :active-connections="activeConnections"
+    :copying-script-id="copyingScriptId"
     :all-plans-data="allPlansData"
     @edit="handleEditScript"
+    @copy="handleCopyScript"
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
@@ -126,6 +145,16 @@
     @save-maa-end-config="handleSaveMaaEndConfig"
     @toggle-user-status="handleToggleUserStatus"
     @pass-check-user="handlePassCheckUser"
+  />
+
+  <ScriptCreateDialog
+    v-model:open="scriptCreateVisible"
+    :templates="templates"
+    :submitting="addLoading || templateLoading"
+    :template-loading="templateLoading"
+    :template-error="templateError"
+    @request-templates="loadTemplates"
+    @submit="handleSubmitScriptCreate"
   />
 
   <!-- 创建方式选择弹窗 -->
@@ -240,10 +269,7 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span
-                  class="script-type"
-                  :class="{ 'script-type-okww': script.type === 'Okww' }"
-                >{{
+                <span class="script-type" :class="{ 'script-type-okww': script.type === 'Okww' }">{{
                   script.type === 'MAA'
                     ? 'MAA脚本'
                     : script.type === 'SRC'
@@ -254,7 +280,7 @@
                           ? 'M9A脚本'
                           : script.type === 'Okww'
                             ? 'ok-ww脚本'
-                          : '通用脚本'
+                            : '通用脚本'
                 }}</span>
                 <span class="script-users">
                   <UserOutlined />
@@ -348,9 +374,7 @@
             </div>
             <div class="type-info">
               <div class="type-title">HSR 脚本</div>
-              <div class="type-description">
-                崩坏：星穹铁道 三月七 / SRA 双脚本适配
-              </div>
+              <div class="type-description">崩坏：星穹铁道 三月七 / SRA 双脚本适配</div>
             </div>
           </div>
         </a-radio-button>
@@ -504,14 +528,21 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
+  DownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
   SettingOutlined,
+  UpOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
+import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { Script, ScriptType, User } from '@/types/script'
+import {
+  getScriptEditSegment,
+  type ScriptCreateRequest,
+} from '@/views/scripts/components/scriptCreateFlow'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -521,13 +552,16 @@ import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
+
+defineOptions({ name: 'ScriptsPage' })
+
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
+const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
 const { getPlans } = usePlanApi()
 
 // 初始化markdown解析器
@@ -538,10 +572,12 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
 const allPlansData = ref<Record<string, Record<string, any>>>({})
+const scriptCreateVisible = ref(false)
 const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
 const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
 const typeSelectVisible = ref(false)
@@ -554,6 +590,7 @@ const selectedGeneralMode = ref('template')
 const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
+const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
 const pendingSearchKeyword = ref('')
 const appliedSearchKeyword = ref('')
@@ -667,16 +704,64 @@ const loadCurrentPlan = async () => {
 }
 
 const handleAddScript = () => {
-  // 如果当前没有脚本，直接进入类型选择
-  if (scripts.value.length === 0) {
-    selectedType.value = 'MAA'
-    typeSelectVisible.value = true
-    return
-  }
+  scriptCreateVisible.value = true
+}
 
-  // 如果有脚本，显示创建方式选择弹窗
-  selectedCreateMode.value = 'new'
-  createModeSelectVisible.value = true
+const handleCollapseAll = () => {
+  scriptTableRef.value?.collapseAllUsers()
+}
+
+const handleExpandAll = () => {
+  scriptTableRef.value?.expandAllUsers()
+}
+
+const navigateToCreatedScript = (
+  scriptId: string,
+  type: ScriptType,
+  data?: Record<string, unknown>
+) => {
+  const route = {
+    path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    ...(data
+      ? {
+          state: {
+            scriptData: {
+              id: scriptId,
+              type,
+              config: JSON.parse(JSON.stringify(data)),
+            },
+          },
+        }
+      : {}),
+  }
+  router.push(route)
+}
+
+const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
+  addLoading.value = true
+  try {
+    const type = request.kind === 'new' ? request.type : 'General'
+    const result = await addScript(type)
+    if (!result) return
+
+    if (request.kind === 'general-template') {
+      const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
+      if (!imported) return
+      message.success(`已根据模板 "${request.template.configName}" 创建脚本`)
+      await loadScripts()
+      scriptCreateVisible.value = false
+      navigateToCreatedScript(result.scriptId, 'General')
+      return
+    }
+
+    scriptCreateVisible.value = false
+    navigateToCreatedScript(result.scriptId, type, result.data)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`创建脚本失败: ${errorMsg}`)
+  } finally {
+    addLoading.value = false
+  }
 }
 
 const handleConfirmCreateMode = () => {
@@ -768,7 +853,7 @@ const handleConfirmAddScript = async () => {
                   ? 'okww'
                   : selectedType.value === 'HSR'
                     ? 'hsr'
-                  : 'general'
+                    : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -904,6 +989,21 @@ const handleDeleteScript = async (script: Script) => {
   const result = await deleteScript(script.id)
   if (result) {
     loadScripts()
+  }
+}
+
+const handleCopyScript = async (script: Script) => {
+  addLoading.value = true
+  copyingScriptId.value = script.id
+  try {
+    const result = await addScript(script.type, script.id)
+    if (result) {
+      await loadScripts()
+      message.success(`已复制脚本「${script.name}」`)
+    }
+  } finally {
+    addLoading.value = false
+    copyingScriptId.value = null
   }
 }
 

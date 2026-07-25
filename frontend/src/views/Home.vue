@@ -1,262 +1,257 @@
 <template>
-  <div class="header">
-    <a-typography-title>{{ greeting }}</a-typography-title>
-    <!-- 右上角公告按钮 -->
-    <div class="header-actions">
-      <a-button
-        type="primary"
-        ghost
-        :loading="noticeLoading"
-        class="notice-button"
-        @click="showNotice"
-      >
-        <template #icon>
-          <BellOutlined />
-        </template>
-        查看公告
-      </a-button>
+  <div class="home-page">
+    <div class="home-header">
+      <div>
+        <a-typography-title :level="2" class="home-title">{{ greeting }}</a-typography-title>
+      </div>
+
+      <div class="header-actions">
+        <a-button
+          :type="layoutEditing ? 'primary' : 'default'"
+          class="layout-edit-button"
+          @click="toggleLayoutEditing"
+        >
+          <template #icon>
+            <CheckOutlined v-if="layoutEditing" />
+            <EditOutlined v-else />
+          </template>
+          {{ layoutEditing ? '完成' : '编辑布局' }}
+        </a-button>
+        <a-button
+          type="primary"
+          ghost
+          :loading="noticeLoading"
+          class="notice-button"
+          @click="showNotice"
+        >
+          <template #icon>
+            <BellOutlined />
+          </template>
+          查看公告
+        </a-button>
+      </div>
     </div>
-  </div>
 
-  <!-- 公告模态框 -->
-  <NoticeModal
-    v-model:visible="noticeVisible"
-    :notice-data="noticeData"
-    @confirmed="onNoticeConfirmed"
-  />
+    <NoticeModal
+      v-model:visible="noticeVisible"
+      :notice-data="noticeData"
+      @confirmed="onNoticeConfirmed"
+    />
 
-  <div class="content">
-    <!-- 当期活动关卡 -->
-    <a-card
-      v-if="activityData?.length"
-      title="当期活动关卡"
-      class="activity-card"
-      :loading="loading"
-    >
-      <div v-if="error" class="error-message">
-        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-      </div>
-
-      <!-- 活动信息展示 -->
-      <div v-if="currentActivity && !loading" class="activity-info">
-        <div class="activity-header">
-          <div class="activity-left">
-            <div class="activity-name">
-              <span class="activity-title">{{ currentActivity.Tip }}</span>
-              <!--              <a-tag color="blue" class="activity-tip">{{ currentActivity.StageName }}</a-tag>-->
-            </div>
-            <div class="activity-end-time">
-              <ClockCircleOutlined class="time-icon" />
-              <span class="time-label">结束时间：</span>
-              <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
-            </div>
-          </div>
-
-          <div class="activity-right">
-            <!-- 活动已结束时显示提示 -->
-            <a-statistic-countdown
-              v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
-              title=""
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="活动已结束"
-              :value-style="{
-                color: '#ff4d4f',
-                fontWeight: 'bold',
-                fontSize: '18px',
-              }"
-              @finish="onCountdownFinish"
-            />
-
-            <!-- 剩余时间小于两天时显示炫彩倒计时 -->
-            <a-statistic-countdown
-              v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-              class="rainbow-text"
-              @finish="onCountdownFinish"
-            />
-
-            <!-- 剩余时间大于等于两天时显示常规倒计时 -->
-            <a-statistic-countdown
-              v-else
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分"
-              :value-style="{
-                color: 'var(--ant-color-text)',
-                fontWeight: '600',
-                fontSize: '20px',
-              }"
-              @finish="onCountdownFinish"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div class="activity-list">
-        <div v-for="item in activityData" :key="item.Value" class="activity-item">
-          <div class="stage-info">
-            <div class="stage-name">{{ item.Display }}</div>
-          </div>
-
-          <div class="drop-info">
-            <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
-              />
-            </div>
-
-            <div class="drop-details">
-              <div class="drop-name">
-                {{ item.DropName }}
+    <div class="home-content">
+      <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
+        <section
+          v-if="isHomeModuleVisible(moduleKey)"
+          class="home-module"
+          :class="{
+            'is-editing': layoutEditing,
+            'is-hidden': layoutEditing && !isHomeModuleShown(moduleKey),
+          }"
+        >
+          <div v-if="layoutEditing" class="module-editor-bar">
+            <div class="module-editor-title">{{ moduleTitleMap[moduleKey] }}</div>
+            <div class="module-editor-options">
+              <div class="module-editor-option">
+                <span>展示</span>
+                <a-switch
+                  size="small"
+                  :checked="isHomeModuleShown(moduleKey)"
+                  @change="setHomeModuleShown(moduleKey, $event)"
+                />
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </a-card>
-
-    <!-- 资源收集关卡 -->
-    <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
-      <div v-if="error" class="error-message">
-        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-      </div>
-
-      <div v-if="resourceData?.length" class="resource-list">
-        <div v-for="item in resourceData" :key="item.Value" class="resource-item">
-          <div class="stage-info">
-            <div class="stage-name">{{ item.Display }}</div>
-          </div>
-
-          <div class="drop-info">
-            <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
-              />
-            </div>
-
-            <div class="drop-details">
-              <div class="drop-name">{{ item.DropName }}</div>
-              <div class="drop-tip">{{ item.Activity.Tip }}</div>
+            <div class="module-editor-actions">
+              <a-tooltip title="上移">
+                <a-button
+                  type="text"
+                  size="small"
+                  :disabled="!canMoveHomeModule(moduleKey, 'up')"
+                  @click="moveHomeModule(moduleKey, 'up')"
+                >
+                  <template #icon>
+                    <ArrowUpOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip title="下移">
+                <a-button
+                  type="text"
+                  size="small"
+                  :disabled="!canMoveHomeModule(moduleKey, 'down')"
+                  @click="moveHomeModule(moduleKey, 'down')"
+                >
+                  <template #icon>
+                    <ArrowDownOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
-    </a-card>
+          <a-card v-if="moduleKey === 'command'" class="command-card">
+            <section class="command-panel" aria-label="调度快速启动">
+              <div class="command-main">
+                <!--                <BlurReveal-->
+                <!--                  v-if="!isBootstrapping"-->
+                <!--                  :text="commandTitle"-->
+                <!--                  class="command-title"-->
+                <!--                  :delay="0.15"-->
+                <!--                  :duration="0.8"-->
+                <!--                />-->
 
-    <!-- 代理状态 -->
-    <a-card title="代理状态" class="proxy-card" :loading="loading">
-      <template #extra>
-        <a-tag :color="getProxyStatusColor()"> {{ Object.keys(proxyData).length }} 个用户</a-tag>
+                <EncryptedText
+                  v-if="!isBootstrapping"
+                  :text="commandTitle"
+                  class="command-title"
+                  encrypted-class="command-title-encrypted"
+                  :reveal-delay-ms="66"
+                  :flip-delay-ms="500"
+                />
+              </div>
+
+              <div class="scheduler-launcher">
+                <div class="launcher-header">
+                  <div>
+                    <div class="launcher-title">快速开始</div>
+                  </div>
+                </div>
+
+                <div class="launcher-controls">
+                  <a-select
+                    v-model:value="selectedHomeTaskId"
+                    class="launcher-select"
+                    :options="schedulerTaskOptions"
+                    :loading="schedulerTasksLoading"
+                    size="large"
+                    placeholder="选择任务"
+                    @dropdown-visible-change="onSchedulerDropdownVisibleChange"
+                  />
+                  <a-button
+                    type="primary"
+                    size="large"
+                    class="launcher-start"
+                    :loading="startingHomeTask"
+                    :disabled="!selectedHomeTaskId"
+                    @click="startHomeTask"
+                  >
+                    <template #icon>
+                      <PlayCircleOutlined />
+                    </template>
+                    开始
+                  </a-button>
+                </div>
+              </div>
+            </section>
+          </a-card>
+
+          <a-card v-else-if="moduleKey === 'quick'" class="shortcut-card" title="常用入口">
+            <section class="quick-actions" aria-label="快捷入口">
+              <button
+                v-for="action in quickActions"
+                :key="action.path"
+                type="button"
+                class="quick-action"
+                @click="navigateTo(action.path)"
+              >
+                <span class="quick-action-icon">
+                  <component :is="action.icon" />
+                </span>
+                <span class="quick-action-text">
+                  <span class="quick-action-title">{{ action.title }}</span>
+                  <span class="quick-action-desc">{{ action.description }}</span>
+                </span>
+              </button>
+            </section>
+          </a-card>
+
+          <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
+            <SatelliteAnimation />
+          </section>
+
+          <section v-else-if="moduleKey === 'proxy'" class="overview-grid" aria-label="代理状态">
+            <a-card class="proxy-card" title="代理状态" :loading="loading">
+              <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
+                <a-row :gutter="[16, 16]">
+                  <a-col
+                    v-for="(proxy, username) in proxyData"
+                    :key="username"
+                    :xs="24"
+                    :lg="12"
+                    :xl="8"
+                  >
+                    <div class="proxy-item">
+                      <div class="proxy-header">
+                        <div class="proxy-username">
+                          <UserOutlined class="user-icon" />
+                          <span class="username">{{ username }}</span>
+                        </div>
+                      </div>
+
+                      <div class="proxy-stats">
+                        <div class="stat-item full-width">
+                          <a-statistic
+                            title="最后代理时间"
+                            :value="formatProxyDisplay(proxy.LastProxyDate)"
+                          />
+                        </div>
+                        <div class="stat-pair">
+                          <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
+                          <a-statistic
+                            title="错误次数"
+                            :value="proxy.ErrorTimes"
+                            :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </a-col>
+                </a-row>
+              </div>
+
+              <div v-else-if="!loading" class="empty-state">
+                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+              </div>
+            </a-card>
+          </section>
+        </section>
       </template>
-
-      <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
-        <a-row :gutter="16">
-          <a-col v-for="(proxy, username) in proxyData" :key="username" :span="8">
-            <div class="proxy-item">
-              <div class="proxy-header">
-                <div class="proxy-username">
-                  <UserOutlined class="user-icon" />
-                  <span class="username">{{ username }}</span>
-                </div>
-                <!--                <div class="proxy-status">-->
-                <!--                  <a-tag :color="proxy.ErrorTimes > 0 ? 'error' : 'success'" size="small">-->
-                <!--                    {{ proxy.ErrorTimes > 0 ? '有错误' : '正常' }}-->
-                <!--                  </a-tag>-->
-                <!--                </div>-->
-              </div>
-
-              <div class="proxy-stats">
-                <!-- 第一行：最后代理时间，独占一行 -->
-                <div class="stat-item full-width">
-                  <a-statistic
-                    title="最后代理时间"
-                    :value="formatProxyDisplay(proxy.LastProxyDate)"
-                  />
-                </div>
-
-                <!-- 第二行：代理次数 和 错误次数 -->
-                <div class="stat-item half-width">
-                  <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
-                </div>
-                <div class="stat-item half-width">
-                  <a-statistic
-                    title="错误次数"
-                    :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
-                  />
-                </div>
-              </div>
-
-              <!--              &lt;!&ndash; 错误信息 &ndash;&gt;-->
-              <!--              <div-->
-              <!--                v-if="proxy.ErrorTimes > 0 && Object.keys(proxy.ErrorInfo).length > 0"-->
-              <!--                class="proxy-errors"-->
-              <!--              >-->
-              <!--                <a-alert message="错误信息" type="error" show-icon size="small" class="error-alert">-->
-              <!--                  <template #description>-->
-              <!--                    <div class="error-list">-->
-              <!--                      <div-->
-              <!--                        v-for="(errorMsg, errorKey) in proxy.ErrorInfo"-->
-              <!--                        :key="errorKey"-->
-              <!--                        class="error-item"-->
-              <!--                      >-->
-              <!--                        <strong>{{ errorKey }}:</strong> {{ errorMsg }}-->
-              <!--                      </div>-->
-              <!--                    </div>-->
-              <!--                  </template>-->
-              <!--                </a-alert>-->
-              <!--              </div>-->
-            </div>
-          </a-col>
-        </a-row>
-      </div>
-
-      <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
-    </a-card>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  BellOutlined,
+  CalendarOutlined,
+  CheckOutlined,
+  ControlOutlined,
+  DatabaseOutlined,
+  EditOutlined,
+  FileTextOutlined,
+  PlayCircleOutlined,
+  UnorderedListOutlined,
+  UserOutlined,
+} from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import BlurReveal from '@/components/inspira/BlurReveal.vue'
+import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import { OpenAPI } from '@/api'
+import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
+import type { ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
+import { navigateTo } from '@/router'
+defineOptions({
+  name: 'HomeView',
+})
+
 const logger = window.electronAPI.getLogger('首页')
-
-interface ActivityInfo {
-  Tip: string
-  StageName: string
-  UtcStartTime: string
-  UtcExpireTime: string
-  TimeZone: number
-}
-
-interface ActivityItem {
-  Display: string
-  Value: string
-  Drop: string
-  DropName: string
-  Activity: ActivityInfo
-}
 
 interface ProxyInfo {
   LastProxyDate: string
@@ -266,43 +261,216 @@ interface ProxyInfo {
 }
 
 interface ApiResponse {
-  Stage: {
-    Activity: ActivityItem[]
-    Resource: ResourceItem[]
-  }
   Proxy: Record<string, ProxyInfo>
 }
 
-interface ResourceItem {
-  Display: string
-  Value: string
-  Drop: string
-  DropName: string
-  Activity: {
-    Tip: string
-    StageName: string
-  }
+type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy'
+type HomeModuleDirection = 'up' | 'down'
+
+interface HomeLayoutConfig {
+  moduleOrder: HomeModuleKey[]
+  hiddenModules: HomeModuleKey[]
+}
+
+const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
+const defaultHomeModuleOrder: HomeModuleKey[] = ['command', 'quick', 'satellite', 'proxy']
+const moduleTitleMap: Record<HomeModuleKey, string> = {
+  command: '快速开始',
+  quick: '常用入口',
+  satellite: '卫星环绕',
+  proxy: '代理状态',
+}
+
+const quickActions = [
+  {
+    title: '脚本管理',
+    description: '配置自动化脚本',
+    path: '/scripts',
+    icon: FileTextOutlined,
+  },
+  {
+    title: '计划管理',
+    description: '编排运行计划',
+    path: '/plans',
+    icon: CalendarOutlined,
+  },
+  {
+    title: '模拟器管理',
+    description: '维护设备环境',
+    path: '/emulators',
+    icon: DatabaseOutlined,
+  },
+  {
+    title: '调度队列',
+    description: '查看排队任务',
+    path: '/queue',
+    icon: UnorderedListOutlined,
+  },
+  {
+    title: '调度中心',
+    description: '控制执行状态',
+    path: '/scheduler',
+    icon: ControlOutlined,
+  },
+]
+
+const mockSchedulerTasks: ComboBoxItem[] = [
+  { label: '队列 - 每日自动化', value: 'mock-daily-queue' },
+  { label: '脚本 - 通用巡检', value: 'mock-general-check' },
+  { label: '队列 - 夜间批处理', value: 'mock-nightly-queue' },
+]
+
+const homeGreetingMessages = [
+  '坐和放宽，脚本正在为你努力运行中。',
+  '启动前请确认脚本路径已正确，否则它将无法找到自己。',
+  '请勿™强制关闭AUTO-MAS，正在处理一些事情。',
+  '好东西就要来了……别来无恙啊！',
+  'AUTO-MAS正在为你的设备匹配专属脚本设置。',
+  '启动AUTO-MAS脚本系统，不要说我们没有警告过你。',
+  '需要重启脚本是正常现象，请不要惊慌。',
+  '你的设备正在准备就绪，准备好迎接脚本运行了吗？',
+  '运行完成后，你的游戏进度可能会发生位移。',
+  '我们的脚本协议更新了，你只能同意不能不同意。',
+  '请耐心等待，进度条只是看起来不动而已。',
+  '感谢你使用AUTO-MAS，你永远可以相信脚本的力量。',
+  '正在应用最适合当前宇宙版本的脚本设置。',
+  '你的请求很重要，AUTO-MAS正在以看似安静的方式处理它。',
+  'AUTO-MAS检测到一切正常，除非稍后它不正常。',
+  '请稍候，系统正在把复杂问题包装成一个按钮。',
+]
+
+const pickHomeGreeting = () => {
+  const index = Math.floor(Math.random() * homeGreetingMessages.length)
+  return homeGreetingMessages[index] ?? homeGreetingMessages[0]
 }
 
 const loading = ref(false)
-const error = ref('')
-const activityData = ref<ActivityItem[]>([])
-const resourceData = ref<ResourceItem[]>([])
+const schedulerTasksLoading = ref(false)
+const startingHomeTask = ref(false)
+const layoutEditing = ref(false)
+const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
+const hiddenHomeModules = ref<HomeModuleKey[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
+const schedulerTaskOptions = ref<ComboBoxItem[]>(mockSchedulerTasks)
+const selectedHomeTaskId = ref<string | null>(mockSchedulerTasks[0]?.value ?? null)
+const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
 
-// 公告系统相关状态
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
 const { isBootstrapping } = useAppInitialization()
-
-// 音频播放器
 const { playSound } = useAudioPlayer()
+const commandTitle = ref(pickHomeGreeting())
 
-// 获取当前活动信息
-const currentActivity = computed(() => {
-  if (!activityData.value.length) return null
-  return activityData.value[0]?.Activity
+const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
+  return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
+}
+
+const normalizeHomeModuleOrder = (order: unknown): HomeModuleKey[] => {
+  const configuredOrder = Array.isArray(order) ? order.filter(isHomeModuleKey) : []
+  const uniqueOrder = configuredOrder.filter((key, index, array) => array.indexOf(key) === index)
+  const missingOrder = defaultHomeModuleOrder.filter(key => !uniqueOrder.includes(key))
+  return [...uniqueOrder, ...missingOrder]
+}
+
+const normalizeHomeHiddenModules = (hiddenModules: unknown): HomeModuleKey[] => {
+  const configuredHiddenModules = Array.isArray(hiddenModules)
+    ? hiddenModules.filter(isHomeModuleKey)
+    : []
+  return configuredHiddenModules.filter((key, index, array) => array.indexOf(key) === index)
+}
+
+const persistHomeLayoutConfig = () => {
+  try {
+    const config: HomeLayoutConfig = {
+      moduleOrder: homeModuleOrder.value,
+      hiddenModules: hiddenHomeModules.value,
+    }
+    localStorage.setItem(HOME_LAYOUT_STORAGE_KEY, JSON.stringify(config))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`保存首页布局配置失败: ${errorMsg}`)
+  }
+}
+
+const loadHomeLayoutConfig = () => {
+  try {
+    const rawConfig = localStorage.getItem(HOME_LAYOUT_STORAGE_KEY)
+    if (rawConfig) {
+      const config = JSON.parse(rawConfig) as Partial<HomeLayoutConfig>
+      homeModuleOrder.value = normalizeHomeModuleOrder(config.moduleOrder)
+      hiddenHomeModules.value = normalizeHomeHiddenModules(config.hiddenModules)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取首页布局配置失败: ${errorMsg}`)
+  }
+}
+
+const toggleLayoutEditing = () => {
+  layoutEditing.value = !layoutEditing.value
+}
+
+const canMoveHomeModule = (key: HomeModuleKey, direction: HomeModuleDirection) => {
+  const currentIndex = homeModuleOrder.value.indexOf(key)
+  if (currentIndex < 0) {
+    return false
+  }
+
+  return direction === 'up' ? currentIndex > 0 : currentIndex < homeModuleOrder.value.length - 1
+}
+
+const moveHomeModule = (key: HomeModuleKey, direction: HomeModuleDirection) => {
+  if (!canMoveHomeModule(key, direction)) {
+    return
+  }
+
+  const currentIndex = homeModuleOrder.value.indexOf(key)
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  const nextOrder = [...homeModuleOrder.value]
+  const currentModule = nextOrder[currentIndex]
+  const targetModule = nextOrder[targetIndex]
+  if (!currentModule || !targetModule) {
+    return
+  }
+
+  nextOrder[currentIndex] = targetModule
+  nextOrder[targetIndex] = currentModule
+  homeModuleOrder.value = nextOrder
+  persistHomeLayoutConfig()
+}
+
+const isHomeModuleShown = (key: HomeModuleKey) => {
+  return !hiddenHomeModules.value.includes(key)
+}
+
+const setHomeModuleShown = (key: HomeModuleKey, checked: boolean | string | number) => {
+  const shouldShow = Boolean(checked)
+  if (shouldShow) {
+    hiddenHomeModules.value = hiddenHomeModules.value.filter(hiddenKey => hiddenKey !== key)
+  } else if (!hiddenHomeModules.value.includes(key)) {
+    hiddenHomeModules.value = [...hiddenHomeModules.value, key]
+  }
+  persistHomeLayoutConfig()
+}
+
+const isHomeModuleVisible = (key: HomeModuleKey) => {
+  return layoutEditing.value || isHomeModuleShown(key)
+}
+
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 11) {
+    return '早上好！欢迎使用 AUTO-MAS'
+  } else if (hour >= 11 && hour < 14) {
+    return '中午好！欢迎使用 AUTO-MAS'
+  } else if (hour >= 14 && hour < 18) {
+    return '下午好！欢迎使用 AUTO-MAS'
+  } else if (hour >= 18 && hour < 23) {
+    return '晚上好！欢迎使用 AUTO-MAS'
+  } else {
+    return '夜深了，欢迎使用 AUTO-MAS'
+  }
 })
 
 const formatProxyDisplay = (dateStr: string) => {
@@ -312,127 +480,106 @@ const formatProxyDisplay = (dateStr: string) => {
   return formatBackendDateTime(dateStr)
 }
 
-// 格式化时间显示 - 直接使用给定时间，不进行时区转换
-const formatTime = (timeString: string) => {
+const fetchSchedulerTaskOptions = async (options?: { quiet?: boolean }) => {
+  schedulerTasksLoading.value = true
+
   try {
-    // 直接使用给定的时间字符串，因为已经是中国时间
-    const date = new Date(timeString)
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+    const response = await Service.getTaskComboxApiInfoComboxTaskPost()
+    if (response.code === 200 && response.data?.length) {
+      schedulerTaskOptions.value = response.data
+      if (
+        !selectedHomeTaskId.value ||
+        !response.data.some(item => item.value === selectedHomeTaskId.value)
+      ) {
+        selectedHomeTaskId.value = response.data[0]?.value ?? null
+      }
+      return
+    }
+
+    schedulerTaskOptions.value = mockSchedulerTasks
+    selectedHomeTaskId.value = mockSchedulerTasks[0]?.value ?? null
+    if (!options?.quiet) {
+      message.warning('任务列表暂不可用，已显示占位任务')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取首页任务列表失败: ${errorMsg}`)
+    schedulerTaskOptions.value = mockSchedulerTasks
+    selectedHomeTaskId.value = mockSchedulerTasks[0]?.value ?? null
+  } finally {
+    schedulerTasksLoading.value = false
+  }
+}
+
+const onSchedulerDropdownVisibleChange = (open: boolean) => {
+  if (open) {
+    fetchSchedulerTaskOptions({ quiet: true })
+  }
+}
+
+const startHomeTask = async () => {
+  if (!selectedHomeTaskId.value) {
+    message.error('请选择任务项')
+    return
+  }
+
+  if (selectedHomeTaskId.value.startsWith('mock-')) {
+    message.info('当前为首页占位任务，接入真实任务列表后可直接启动')
+    return
+  }
+
+  startingHomeTask.value = true
+  try {
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: selectedHomeTaskId.value,
+      mode: selectedHomeMode.value,
     })
-  } catch {
-    return timeString
+
+    if (response.code === 200) {
+      message.success('任务已开始')
+      await playSound('task_started')
+    } else {
+      message.error(response.message || '开始任务失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`首页开始任务失败: ${errorMsg}`)
+    message.error('开始任务失败，请检查调度服务状态')
+  } finally {
+    startingHomeTask.value = false
   }
 }
 
-// 获取倒计时的目标时间戳
-const getCountdownValue = (expireTime: string) => {
-  try {
-    return new Date(expireTime).getTime()
-  } catch {
-    return Date.now()
-  }
-}
-
-// 检查剩余时间状态：normal（>2天）、warning（<=2天>0）、ended（<=0）
-const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
-  try {
-    const expire = new Date(expireTime)
-    const now = new Date()
-    const remaining = expire.getTime() - now.getTime()
-    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
-    if (remaining <= 0) return 'ended'
-    if (remaining <= twoDaysInMs) return 'warning'
-    return 'normal'
-  } catch {
-    return 'ended'
-  }
-}
-
-// 倒计时结束回调
-const onCountdownFinish = () => {
-  message.warning('活动已结束')
-  // 重新获取数据
-  fetchActivityData()
-}
-
-const getMaterialImage = (dropName: string) => {
-  if (!dropName) {
-    return ''
-  }
-  // 直接拼接后端图片接口地址
-  return `${OpenAPI.BASE}/api/res/materials/${dropName}.png`
-}
-
-const handleImageError = (event: Event) => {
-  const img = event.target as HTMLImageElement
-  img.style.display = 'none'
-}
-
-const fetchActivityData = async () => {
+const fetchOverviewData = async () => {
   loading.value = true
-  error.value = ''
 
   try {
     const response = await Service.getOverviewApiInfoGetOverviewPost()
 
     if (response.code === 200) {
       const data = response.data as ApiResponse
-      if (data.Stage) {
-        activityData.value = data.Stage.Activity || []
-        resourceData.value = data.Stage.Resource || []
-      }
       if (data.Proxy) {
         proxyData.value = data.Proxy
       }
     } else {
-      error.value = response.message || '获取数据失败'
+      logger.warn(`获取首页概览失败: ${response.message || '获取数据失败'}`)
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
-    logger.error(`获取数据失败: ${errorMsg}`)
-    error.value = '网络请求失败，请检查连接'
+    logger.error(`获取首页概览失败: ${errorMsg}`)
   } finally {
     loading.value = false
   }
 }
 
-// 获取代理状态颜色
-const getProxyStatusColor = () => {
-  const hasError = Object.values(proxyData.value).some(proxy => proxy.ErrorTimes > 0)
-  return hasError ? 'error' : 'success'
-}
-
-const greeting = computed(() => {
-  const hour = new Date().getHours()
-  if (hour >= 5 && hour < 11) {
-    return '早上好，博士，咕~'
-  } else if (hour >= 11 && hour < 14) {
-    return '中午好，博士，咕~'
-  } else if (hour >= 14 && hour < 18) {
-    return '下午好，博士，咕~'
-  } else if (hour >= 18 && hour < 23) {
-    return '晚上好，博士，咕~'
-  } else {
-    return '夜深了，博士，请注意休息，咕~'
-  }
-})
-
-// 获取公告信息
 const fetchNoticeData = async () => {
   try {
     const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
 
     if (response.code === 200) {
-      // 检查是否需要显示公告
       if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
-        // 播放公告展示音频
         await playSound('announcement_display')
       }
     } else {
@@ -441,26 +588,24 @@ const fetchNoticeData = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取公告失败: ${errorMsg}`)
+  } finally {
+    noticeLoading.value = false
   }
 }
 
-// 公告确认回调
 const onNoticeConfirmed = () => {
   noticeVisible.value = false
 }
 
-// 显示公告的处理函数
 const showNotice = async () => {
   noticeLoading.value = true
   try {
     const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
 
     if (response.code === 200) {
-      // 忽略 if_need_show 字段，只要有公告数据就显示
       if (response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
-        // 手动查看公告时也播放音频
         await playSound('announcement_display')
       } else {
         message.info('暂无公告信息')
@@ -478,11 +623,14 @@ const showNotice = async () => {
 }
 
 const loadHomeData = () => {
-  fetchActivityData()
+  fetchSchedulerTaskOptions({ quiet: true })
+  fetchOverviewData()
   fetchNoticeData()
 }
 
 onMounted(() => {
+  loadHomeLayoutConfig()
+
   if (isBootstrapping.value) {
     loading.value = true
     noticeLoading.value = true
@@ -503,194 +651,309 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.header {
+.home-page {
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.home-header {
   margin-bottom: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header h1 {
-  margin: 0;
-  color: var(--ant-color-text);
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.notice-button {
-  min-width: 120px;
-}
-
-.activity-card,
-.resource-card,
-.proxy-card {
-  margin-bottom: 24px;
-}
-
-.activity-card :deep(.ant-card-head-title),
-.resource-card :deep(.ant-card-head-title),
-.proxy-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.resource-list {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
-}
-
-.resource-item,
-.activity-item {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.resource-item:hover,
-.activity-item:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.drop-tip {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  margin-top: 2px;
-}
-
-.error-message {
-  margin-bottom: 16px;
-}
-
-.activity-info {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.activity-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
 }
 
-.activity-left {
-  flex: 1;
+.home-title {
+  margin: 0 0 4px;
+  color: var(--ant-color-text);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.home-subtitle {
+  color: var(--ant-color-text-secondary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.layout-edit-button {
+  min-width: 104px;
+}
+
+.notice-button {
+  min-width: 120px;
+}
+
+.home-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 24px;
 }
 
-.activity-right {
-  flex-shrink: 0;
-  text-align: right;
+.satellite-animation-section {
+  margin-top: 0px;
+  width: 100%;
 }
 
-.activity-end-time {
+.home-module {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.module-editor-bar {
+  min-height: 40px;
+  padding: 7px 10px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.activity-name {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
 }
 
-.activity-title {
-  font-size: 18px;
+.module-editor-title {
+  min-width: 0;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.time-icon {
-  font-size: 14px;
+.module-editor-options {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.module-editor-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.time-label {
-  color: var(--ant-color-text-secondary);
-  min-width: 80px;
+.module-editor-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.time-value {
-  color: var(--ant-color-text);
-  font-weight: 500;
+.module-editor-options + .module-editor-actions {
+  margin-left: 0;
 }
 
-.activity-list {
+.home-module.is-hidden > :not(.module-editor-bar) {
+  opacity: 0.42;
+  filter: grayscale(0.18);
+}
+
+.command-card,
+.shortcut-card,
+.proxy-card {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.command-card :deep(.ant-card-body) {
+  padding: 24px;
+}
+
+.shortcut-card :deep(.ant-card-body) {
+  padding: 0;
+}
+
+.shortcut-card :deep(.ant-card-head-title),
+.proxy-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.command-panel {
+  min-height: 148px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 24px;
+  color: var(--ant-color-text);
 }
 
-.stage-info {
-  flex: 1;
-  margin-right: 16px;
-  text-align: center;
-  min-width: 50px;
-  max-width: 80px;
+.command-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
-.stage-name {
+.command-kicker {
+  width: fit-content;
+  margin-bottom: 10px;
+  color: var(--ant-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.command-title {
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.command-title :deep(.command-title-encrypted) {
+  color: var(--ant-color-text-secondary);
+}
+
+.command-meta {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.command-meta span {
+  padding-right: 12px;
+  color: var(--ant-color-text-secondary);
+  border-right: 1px solid var(--ant-color-border);
+  font-size: 13px;
+}
+
+.command-meta span:last-child {
+  border-right: none;
+}
+
+.scheduler-launcher {
+  min-width: 0;
+  padding: 0 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 1px solid var(--ant-color-border);
+}
+
+.launcher-header {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.launcher-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.launcher-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.launcher-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 12px;
+}
+
+.launcher-select,
+.launcher-start {
+  width: 100%;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+}
+
+.quick-action {
+  min-height: 108px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  color: var(--ant-color-text);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--ant-color-border-secondary);
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.quick-action:last-child {
+  border-right: none;
+}
+
+.quick-action:hover {
+  color: var(--ant-color-primary);
+  transform: translateY(-1px);
+}
+
+.quick-action:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.quick-action-icon {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  color: var(--ant-color-primary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  font-size: 20px;
+}
+
+.quick-action-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.quick-action-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-  margin-bottom: 4px;
 }
 
-.drop-info {
-  display: flex;
-  align-items: center;
-  flex: 2;
+.quick-action-desc {
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+  white-space: normal;
 }
 
-.drop-image {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  margin-right: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  overflow: hidden;
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: start;
 }
 
-.drop-image img {
+.proxy-card {
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.drop-details {
-  flex: 1;
-  min-width: 70px;
-}
-
-.drop-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-  margin-bottom: 4px;
-  word-break: break-all;
 }
 
 .empty-state {
@@ -698,12 +961,17 @@ onMounted(() => {
   padding: 40px 0;
 }
 
+.empty-image {
+  max-width: 180px;
+  width: 48%;
+  opacity: 0.82;
+}
+
 .proxy-list .proxy-item {
+  min-height: 164px;
   padding: 16px;
-  background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
-  margin-bottom: 16px;
 }
 
 .proxy-header {
@@ -714,6 +982,7 @@ onMounted(() => {
 }
 
 .proxy-username {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -724,8 +993,12 @@ onMounted(() => {
 }
 
 .username {
+  min-width: 0;
   font-weight: 600;
   color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .proxy-stats {
@@ -738,63 +1011,102 @@ onMounted(() => {
   grid-column: 1 / -1;
 }
 
-.stat-item.half-width {
-  display: inline-block;
-}
-
-.proxy-stats .stat-item.half-width:nth-child(2),
-.proxy-stats .stat-item.half-width:nth-child(3) {
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
+.stat-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
-.rainbow-text {
-  font-weight: bold;
-  font-size: 18px;
-  background: linear-gradient(270deg, #ff4d4f, #fffa00, #00ffea, #ff4d4f, #ff4d4f);
-  background-size: 400% 400%;
-  color: transparent;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: rainbow-move 4s linear infinite;
-}
-
-@keyframes rainbow-move {
-  0% {
-    background-position: 0 50%;
-  }
-
-  100% {
-    background-position: 100% 50%;
-  }
-}
-
-/* 响应式设计 */
-@media (max-width: 1500px) {
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
 @media (max-width: 1240px) {
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(3, 1fr);
+  .command-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduler-launcher {
+    max-width: 100%;
+    padding: 18px 0 0;
+    border-left: none;
+    border-top: 1px solid var(--ant-color-border);
+  }
+
+  .quick-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quick-action:nth-child(3n) {
+    border-right: none;
+  }
+
+  .quick-action:nth-child(n + 4) {
+    border-top: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 800px) {
-  .header {
+  .home-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
 
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(2, 1fr);
+  .header-actions {
+    justify-content: flex-start;
+  }
+
+  .command-card :deep(.ant-card-body) {
+    padding: 18px;
+  }
+
+  .command-title {
+    font-size: 24px;
+  }
+
+  .quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-action:nth-child(2n) {
+    border-right: none;
+  }
+
+  .quick-action:nth-child(3n) {
+    border-right: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .quick-action:nth-child(n + 3) {
+    border-top: 1px solid var(--ant-color-border-secondary);
+  }
+}
+
+@media (max-width: 560px) {
+  .launcher-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-action {
+    min-height: 82px;
+    border-right: none;
+    border-top: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .quick-action:nth-child(3n) {
+    border-right: none;
+  }
+
+  .quick-action:first-child {
+    border-top: none;
+  }
+
+  .stat-pair {
+    grid-template-columns: 1fr;
   }
 }
 </style>
