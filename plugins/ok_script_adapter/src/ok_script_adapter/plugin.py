@@ -31,7 +31,11 @@ from .common.config_schema import (
 )
 from .common.provider import ok_script_mas_config_dir, resolve_game_path
 from .common.runtime_lock import get_ok_script_config_lock
-from .providers import detect_ok_script_provider, get_ok_script_provider
+from .providers import (
+    clear_ok_script_provider_cache,
+    detect_ok_script_provider,
+    get_ok_script_provider,
+)
 from .shell.config_parser import ProjectConfigDescription, ProjectConfigParser
 from .shell.descriptor import OkProjectDescriptor, OkProjectInspectError
 from .shell.manifest import inspect_ok_project
@@ -578,6 +582,12 @@ class Plugin(ScriptAdapterPlugin):
             self._batch_update_configs,
             methods=("POST",),
         )
+
+    async def on_stop(self, reason: str) -> None:
+        try:
+            await super().on_stop(reason)
+        finally:
+            clear_ok_script_provider_cache()
 
     async def _list_workspace_targets(
         self,

@@ -24,6 +24,9 @@ from ..common.provider import (
 )
 
 
+OK_SCRIPT_PROVIDER_PROFILE_ABI_VERSION = 1
+
+
 OKNTE_PROVIDER = OkScriptProvider(
     resource_name="ok-nte",
     display_name="异环",
