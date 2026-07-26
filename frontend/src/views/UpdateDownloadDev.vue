@@ -236,6 +236,8 @@ const statusLabels = {
   cancelling: '取消中',
   switchingSource: '切源中',
   completed: '已完成',
+  verifying: '校验中',
+  installing: '安装中',
   failed: '失败',
 }
 
@@ -252,6 +254,8 @@ const titleBarPreview = computed(() => {
   if (status.value === 'failed') return '下载失败，点击查看'
   if (status.value === 'switchingSource') return '正在切换至 CNB 源'
   if (status.value === 'cancelling') return '正在取消下载'
+  if (status.value === 'verifying') return '正在校验更新包完整性'
+  if (status.value === 'installing') return '正在安装更新'
   if (status.value === 'downloading') {
     const sourceText = sourceLabel.value ? `从 ${sourceLabel.value}` : ''
     return `正在${sourceText}下载 ${progressPercent.value.toFixed(1)}%`

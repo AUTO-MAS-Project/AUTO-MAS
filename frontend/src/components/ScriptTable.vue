@@ -1,461 +1,105 @@
 <template>
   <div class="scripts-grid">
-    <!-- 使用vuedraggable包装脚本列表 -->
     <draggable
       v-model="localScripts"
       item-key="id"
       :animation="200"
-      :disabled="searchActive"
+      :disabled="searchActive || isReorderingScripts"
       ghost-class="script-ghost"
       chosen-class="script-chosen"
       drag-class="script-drag"
       handle=".script-drag-handle"
       class="draggable-scripts"
+      @start="onScriptDragStart"
       @end="onScriptDragEnd"
     >
       <template #item="{ element: script }">
-        <div
-          :ref="element => setSearchMatchElement(getScriptSearchMatchKey(script.id), element)"
-          :key="script.id"
-          :class="[
-            'script-wrapper',
-            {
-              'search-match-active':
-                props.activeSearchMatchKey === getScriptSearchMatchKey(script.id),
-            },
-          ]"
-          :aria-current="
-            props.activeSearchMatchKey === getScriptSearchMatchKey(script.id) ? 'true' : undefined
-          "
-        >
-          <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
-            <!-- 脚本头部信息 -->
-            <div class="script-header">
-              <div class="script-info">
-                <span
-                  class="script-drag-handle"
-                  :class="{ 'drag-handle-disabled': searchActive }"
-                  :title="searchActive ? '搜索期间暂停拖拽排序' : '拖拽排序'"
-                  aria-label="拖拽排序"
-                  :aria-disabled="searchActive"
-                >
-                  <span class="script-drag-dots" aria-hidden="true"></span>
-                </span>
-                <div class="script-logo-container">
-                  <img
-                    :src="getScriptIcon(script.type, script.iconUrl)"
-                    :alt="script.type"
-                    class="script-logo"
-                    @error="event => handleScriptIconError(event, script.type)"
-                  />
-                </div>
-                <div class="script-details">
-                  <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag
-                    :color="getScriptTypeTagColor(script.type, script.themeColor)"
-                    class="script-type"
-                  >
-                    {{ getScriptTypeLabel(script) }}
-                  </a-tag>
-                  <a-tag v-if="script.available === false" color="orange" class="script-type">
-                    未启用
-                  </a-tag>
-                </div>
-              </div>
-              <div class="header-actions">
-                <a-button
-                  v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  :disabled="!isScriptOperable(script)"
-                  @click="handleStartSRCConfig(script)"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  配置SRC
-                </a-button>
-                <a-button
-                  v-if="script.type === 'SRC' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: var(--v6-color-success); border-color: var(--v6-color-success)"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  正在配置
-                </a-button>
-                <a-button
-                  v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  :disabled="!isScriptOperable(script)"
-                  @click="handleStartMaaEndConfig(script)"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  配置MaaEnd
-                </a-button>
-                <a-button
-                  v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: var(--v6-color-success); border-color: var(--v6-color-success)"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  正在配置
-                </a-button>
-                <a-button
-                  type="default"
-                  size="middle"
-                  :disabled="!canEditScript(script)"
-                  @click="handleEdit(script)"
-                >
-                  <template #icon>
-                    <EditOutlined />
-                  </template>
-                  编辑脚本
-                </a-button>
-                <a-button
-                  type="default"
-                  size="middle"
-                  class="action-button add-button"
-                  :disabled="!isScriptOperable(script)"
-                  @click="handleAddUser(script)"
-                >
-                  <template #icon>
-                    <UserAddOutlined />
-                  </template>
-                  添加用户
-                </a-button>
-                <a-dropdown :trigger="['click']">
-                  <a-button
-                    size="middle"
-                    class="action-button"
-                    :loading="props.copyingScriptId === script.id"
-                    :disabled="Boolean(props.copyingScriptId) || !isScriptOperable(script)"
-                  >
-                    <template #icon>
-                      <EllipsisOutlined />
-                    </template>
-                    更多
-                  </a-button>
-                  <template #overlay>
-                    <a-menu>
-                      <a-menu-item key="copy" @click="handleCopy(script)">
-                        <CopyOutlined />
-                        复制脚本
-                      </a-menu-item>
-                      <a-menu-divider />
-                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
-                        <DeleteOutlined />
-                        删除脚本
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
-                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
-                  <a-button
-                    size="middle"
-                    class="action-button"
-                    :disabled="searchActive"
-                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
-                    @click="toggleUsersCollapsed(script.id)"
-                  >
-                    <template #icon>
-                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
-                      <UpOutlined v-else />
-                    </template>
-                  </a-button>
-                </a-tooltip>
-              </div>
-            </div>
-
-            <!-- 用户列表 -->
-            <div
-              v-if="
-                (!collapsedScriptIds.has(script.id) || searchActive) &&
-                script.users &&
-                script.users.length > 0
-              "
-              class="users-section"
-            >
-              <!-- 使用vuedraggable包装用户列表 -->
-              <draggable
-                v-model="script.users"
-                item-key="id"
-                :animation="200"
-                :disabled="searchActive"
-                ghost-class="user-ghost"
-                chosen-class="user-chosen"
-                drag-class="user-drag"
-                handle=".user-drag-handle"
-                class="users-list"
-                @end="(evt: any) => onUserDragEnd(evt, script)"
-              >
-                <template #item="{ element: user }">
-                  <div
-                    v-show="shouldShowUserInSearch(script, user)"
-                    :ref="
-                      element =>
-                        setSearchMatchElement(getUserSearchMatchKey(script.id, user.id), element)
-                    "
-                    :key="user.id"
-                    :class="[
-                      'user-item',
-                      {
-                        'search-match-active':
-                          props.activeSearchMatchKey === getUserSearchMatchKey(script.id, user.id),
-                      },
-                    ]"
-                    :aria-current="
-                      props.activeSearchMatchKey === getUserSearchMatchKey(script.id, user.id)
-                        ? 'true'
-                        : undefined
-                    "
-                  >
-                    <span
-                      class="user-drag-handle"
-                      :class="{ 'drag-handle-disabled': searchActive }"
-                      :title="searchActive ? '搜索期间暂停拖拽排序' : '拖拽排序'"
-                      aria-label="拖拽排序"
-                      :aria-disabled="searchActive"
-                    >
-                      <span class="script-drag-dots" aria-hidden="true"></span>
-                    </span>
-                    <div class="user-info">
-                      <div class="user-details-row">
-                        <div class="user-name-section">
-                          <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- 有服务器或资源字段的用户显示来源标签 -->
-                          <a-tag
-                            v-if="shouldShowServerTag(user)"
-                            :color="getUserServerTagColor(user)"
-                            class="server-tag"
-                          >
-                            {{ getUserServerDisplayName(user) }}
-                          </a-tag>
-
-                          <!-- 账号标签 -->
-                          <a-tag
-                            v-if="shouldShowUserIdTag(user)"
-                            :color="getUserIdentityTagColor(user)"
-                            class="clickable-tag"
-                            @click="handleUserIdClick(user)"
-                          >
-                            {{ getUserIdDisplayText(user) }}
-                          </a-tag>
-
-                          <!-- 密码标签 -->
-                          <a-tag
-                            v-if="shouldShowPasswordTag(user)"
-                            :color="getUserIdentityTagColor(user)"
-                            class="clickable-tag"
-                            @click="handlePasswordClick(user)"
-                          >
-                            {{ getPasswordDisplayText(user) }}
-                          </a-tag>
-                        </div>
-
-                        <!-- 用户详细信息 -->
-                        <div v-if="shouldShowStatusTags(user)" class="user-info-tags">
-                          <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in getUserStatusTags(user)"
-                            :key="index"
-                            :title="tag.text"
-                            :class="['info-tag', { 'clickable-tag': isPassCheckTag(tag) }]"
-                            :color="tag.color || 'default'"
-                            @click="isPassCheckTag(tag) ? handlePassCheck(user) : undefined"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="user-controls">
-                      <div class="user-status">
-                        <a-switch
-                          :checked="user.Info.Status"
-                          :checked-children="'启用'"
-                          :un-checked-children="'禁用'"
-                          class="status-switch"
-                          :disabled="!isScriptOperable(script)"
-                          @click="handleToggleUserStatus(user)"
-                        />
-                      </div>
-
-                      <div class="user-actions">
-                        <a-tooltip title="编辑用户配置">
-                          <a-button
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            :disabled="!isScriptOperable(script)"
-                            @click="handleEditUser(user)"
-                          >
-                            <template #icon>
-                              <EditOutlined />
-                            </template>
-                            编辑
-                          </a-button>
-                        </a-tooltip>
-                        <a-popconfirm
-                          title="确定要删除这个用户吗？"
-                          description="删除后将无法恢复"
-                          ok-text="确定"
-                          cancel-text="取消"
-                          @confirm="handleDeleteUser(user)"
-                        >
-                          <a-tooltip title="删除用户">
-                            <a-button type="default" size="middle" danger class="user-action-btn">
-                              <template #icon>
-                                <DeleteOutlined />
-                              </template>
-                              删除
-                            </a-button>
-                          </a-tooltip>
-                        </a-popconfirm>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </draggable>
-            </div>
-
-            <!-- 空状态 -->
-            <div v-else-if="!collapsedScriptIds.has(script.id) || searchActive" class="empty-users">
-              <div class="empty-content">
-                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-              </div>
-            </div>
-          </a-card>
-        </div>
+        <ScriptCard
+          :ref="el => setScriptCardRef(script.id, el)"
+          :script="script"
+          :active-connections="activeConnections"
+          :copying-script-id="copyingScriptId"
+          :search-active="searchActive"
+          :normalized-search-keyword="normalizedSearchKeyword"
+          :active-search-match-key="activeSearchMatchKey ?? ''"
+          :collapsed="collapsedScriptIds.has(script.id)"
+          :register-match-element="setSearchMatchElement"
+          @edit="emit('edit', $event)"
+          @delete="emit('delete', $event)"
+          @copy="emit('copy', $event)"
+          @add-user="emit('addUser', $event)"
+          @edit-user="emit('editUser', $event)"
+          @delete-user="emit('deleteUser', $event)"
+          @start-src-config="emit('startSrcConfig', $event)"
+          @start-maa-end-config="emit('startMaaEndConfig', $event)"
+          @toggle-user-status="emit('toggleUserStatus', $event)"
+          @pass-check-user="emit('passCheckUser', $event)"
+          @toggle-collapsed="toggleUsersCollapsed(script.id)"
+          @user-reorder="onUserReorder"
+        />
       </template>
     </draggable>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { MaaFWScriptConfig, Script, User } from '../types/script'
-import {
-  CopyOutlined,
-  DeleteOutlined,
-  DownOutlined,
-  EditOutlined,
-  EllipsisOutlined,
-  SettingOutlined,
-  UpOutlined,
-  UserAddOutlined,
-} from '@ant-design/icons-vue'
-import draggable from 'vuedraggable'
 import { computed, ref, watch } from 'vue'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import draggable from 'vuedraggable'
+import type { Script, User } from '@/types/script'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import { parseStatusTagList } from '@/composables/useStatusTag'
-import type { StatusTag } from '@/composables/useStatusTag'
-import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
-import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/utils/scriptRegistry'
-import {
-  getScriptSearchMatchKey,
-  getUserSearchMatchKey,
-  matchesScriptOwnSearch,
-  matchesUserSearch,
-  normalizeScriptSearchQuery,
-} from '@/views/scripts/scriptPageSearch'
+import { normalizeScriptSearchQuery } from '@/views/scripts/scriptPageSearch'
+import { isSameOrder, restoreItemOrder } from '@/views/scripts/reorderHelpers'
+import ScriptCard from '@/views/scripts/components/ScriptCard.vue'
 
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
-  currentPlanData?: Record<string, any>
   searchKeyword?: string
   activeSearchMatchKey?: string
 }
 
 interface Emits {
   (e: 'edit', script: Script): void
-
   (e: 'delete', script: Script): void
-
   (e: 'copy', script: Script): void
-
   (e: 'addUser', script: Script): void
-
   (e: 'editUser', user: User): void
-
   (e: 'deleteUser', user: User): void
-
   (e: 'startSrcConfig', script: Script): void
-
-  (e: 'saveSrcConfig', script: Script): void
-
   (e: 'startMaaEndConfig', script: Script): void
-
-  (e: 'saveMaaEndConfig', script: Script): void
-
   (e: 'toggleUserStatus', user: User): void
-
   (e: 'passCheckUser', user: User): void
-
   (e: 'scriptsReordered', scripts: Script[]): void
 }
-
-const ANNIHILATION_MAP: Record<string, string> = {
-  Annihilation: '当期剿灭',
-  'Chernobog@Annihilation': '切尔诺伯格',
-  'LungmenOutskirts@Annihilation': '龙门外环',
-  'LungmenDowntown@Annihilation': '龙门市区',
-  Close: '关闭',
-}
-
-// 常见资源关卡映射
-const STAGE_NAME_MAP: Record<string, string> = {
-  'LS-6': '经验',
-  'CE-6': '龙门币',
-  'AP-5': '红票',
-  'CA-5': '技能',
-  'SK-5': '碳',
-  'PR-A-1': '奶/盾芯片',
-  'PR-A-2': '奶/盾芯片组',
-  'PR-B-1': '术/狙芯片',
-  'PR-B-2': '术/狙芯片组',
-  'PR-C-1': '先/辅芯片',
-  'PR-C-2': '先/辅芯片组',
-  'PR-D-1': '近/特芯片',
-  'PR-D-2': '近/特芯片组',
-}
-
-ANNIHILATION_MAP.Annihilation = '剿灭'
-ANNIHILATION_MAP['Chernobog@Annihilation'] = '切尔诺伯格'
-ANNIHILATION_MAP['LungmenOutskirts@Annihilation'] = '龙门外环'
-ANNIHILATION_MAP['LungmenDowntown@Annihilation'] = '龙门市区'
-ANNIHILATION_MAP.Close = '不使用剿灭'
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-// 本地脚本列表状态
+const registryApi = useScriptRegistryApi()
+
 const localScripts = ref<Script[]>([])
 const normalizedSearchKeyword = computed(() =>
   normalizeScriptSearchQuery(props.searchKeyword ?? '')
 )
 const searchActive = computed(() => normalizedSearchKeyword.value.length > 0)
 
-const shouldShowUserInSearch = (script: Script, user: User): boolean =>
-  !searchActive.value ||
-  matchesScriptOwnSearch(script, normalizedSearchKeyword.value) ||
-  matchesUserSearch(user, normalizedSearchKeyword.value)
+// 拖拽排序状态：保存排序前快照，用于失败回滚；并发/刷新时保护本地状态
+const isDraggingScripts = ref(false)
+const isReorderingScripts = ref(false)
+const scriptOrderBeforeDrag = ref<string[]>([])
+const isReorderingUsers = ref<Record<string, boolean>>({})
+const scriptCardRefs = ref<Map<string, InstanceType<typeof ScriptCard>>>(new Map())
+
+const setScriptCardRef = (scriptId: string, el: unknown) => {
+  if (el) {
+    scriptCardRefs.value.set(scriptId, el as InstanceType<typeof ScriptCard>)
+  } else {
+    scriptCardRefs.value.delete(scriptId)
+  }
+}
 
 // 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
 const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
@@ -505,6 +149,7 @@ const expandAllUsers = () => {
   saveCollapsedScriptIds()
 }
 
+// 搜索匹配元素管理
 const searchMatchElements = new Map<string, HTMLElement>()
 
 const setSearchMatchElement = (key: string, element: unknown) => {
@@ -529,739 +174,84 @@ const scrollToSearchMatch = (key: string) => {
 
 defineExpose({ collapseAllUsers, expandAllUsers, scrollToSearchMatch })
 
-// 账号信息展开状态管理 - 使用用户ID作为key
-const expandedUserIds = ref<Set<string>>(new Set())
-const expandedUserPasswords = ref<Set<string>>(new Set())
-
-// 监听props变化，更新本地状态
+// 监听 props 变化，更新本地状态；拖拽/排序 pending 期间跳过，避免刷新覆盖新状态
 watch(
   () => props.scripts,
   newScripts => {
+    if (isDraggingScripts.value || isReorderingScripts.value) return
     localScripts.value = [...newScripts]
   },
   { immediate: true, deep: true }
 )
 
-const isScriptOperable = (script: Script) => script.available !== false
-
-const canEditScript = (script: Script) => script.providerAvailable ?? isScriptOperable(script)
-
-const handleEdit = (script: Script) => {
-  emit('edit', script)
+const restoreScriptOrder = () => {
+  localScripts.value = restoreItemOrder(scriptOrderBeforeDrag.value, props.scripts)
 }
 
-const handleDelete = (script: Script) => {
-  emit('delete', script)
+const onScriptDragStart = () => {
+  if (searchActive.value || isReorderingScripts.value) return
+  isDraggingScripts.value = true
+  scriptOrderBeforeDrag.value = localScripts.value.map(s => s.id)
 }
-
-const handleCopy = (script: Script) => {
-  emit('copy', script)
-}
-
-const handleDeleteConfirm = (script: Script) => {
-  Modal.confirm({
-    title: '确定要删除这个脚本吗？',
-    content: '删除后将无法恢复，请谨慎操作',
-    okText: '确定',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: () => handleDelete(script),
-  })
-}
-
-const handleAddUser = (script: Script) => {
-  emit('addUser', script)
-}
-
-const handleEditUser = (user: User) => {
-  emit('editUser', user)
-}
-
-const handleDeleteUser = (user: User) => {
-  emit('deleteUser', user)
-}
-
-const handleStartSRCConfig = (script: Script) => {
-  emit('startSrcConfig', script)
-}
-
-const _handleSaveSRCConfig = (script: Script) => {
-  emit('saveSrcConfig', script)
-}
-
-const handleStartMaaEndConfig = (script: Script) => {
-  emit('startMaaEndConfig', script)
-}
-
-const _handleSaveMaaEndConfig = (script: Script) => {
-  emit('saveMaaEndConfig', script)
-}
-
-const handleToggleUserStatus = (user: User) => {
-  emit('toggleUserStatus', user)
-}
-
-const getMaaFWProjectLabel = (script: Script) => {
-  const config = script.config as Partial<MaaFWScriptConfig> | undefined
-  return config?.Info?.ProjectLabel?.trim() || 'MaaFW'
-}
-
-const getScriptTypeLabel = (script: Script) => {
-  if (script.type === 'MaaFW') return getMaaFWProjectLabel(script)
-  return script.displayName || script.type
-}
-
-const handlePassCheck = (user: User) => {
-  Modal.confirm({
-    title: '确认操作',
-    content: `确定要将用户 ${user.Info.Name} 标记为「已通过人工排查」吗？`,
-    okText: '确定',
-    cancelText: '取消',
-    onOk: () => {
-      emit('passCheckUser', user)
-    },
-  })
-}
-
-const getInfoFieldValue = (user: any, field: string): any => {
-  return user?.Info?.[field]
-}
-
-const hasInfoField = (user: any, field: string): boolean => {
-  const info = user?.Info
-  return !!info && Object.prototype.hasOwnProperty.call(info, field)
-}
-
-const hasInfoDisplayValue = (user: any, field: string): boolean => {
-  const value = getInfoFieldValue(user, field)
-  return value !== undefined && value !== null && String(value).length > 0
-}
-
-const getValueByPath = (source: Record<string, any> | null | undefined, path: string): unknown => {
-  if (!source || !path) {
-    return undefined
-  }
-  return path.split('.').reduce<unknown>((current, key) => {
-    if (!current || typeof current !== 'object') {
-      return undefined
-    }
-    return (current as Record<string, unknown>)[key]
-  }, source)
-}
-
-const getSchemaFields = (schema: any): any[] => {
-  if (!schema) {
-    return []
-  }
-  if (Array.isArray(schema.groups)) {
-    return schema.groups.flatMap((group: any) => (Array.isArray(group.fields) ? group.fields : []))
-  }
-  if (typeof schema === 'object') {
-    return Object.entries(schema).map(([key, field]) => ({
-      ...(field && typeof field === 'object' ? field : {}),
-      key,
-    }))
-  }
-  return []
-}
-
-const getUserStatusTags = (user: any): StatusTag[] => {
-  const tagFields = getSchemaFields(user?.schema).filter(field => field?.type === 'tag')
-  const tags = tagFields.flatMap(field =>
-    parseStatusTagList(getValueByPath(user?.config || user, field.key || field.name || ''))
-  )
-  if (tags.length > 0) {
-    return tags
-  }
-  return parseStatusTagList(user?.Info?.Tag)
-}
-
-const isPassCheckTag = (tag: StatusTag): boolean => tag.text === '人工排查未通过'
-
-const shouldShowServerTag = (user: any): boolean => {
-  return hasInfoDisplayValue(user, 'Server') || hasInfoDisplayValue(user, 'Resource')
-}
-
-const shouldShowUserIdTag = (user: any): boolean => {
-  return hasInfoDisplayValue(user, 'Id')
-}
-
-const shouldShowPasswordTag = (user: any): boolean => {
-  return hasInfoField(user, 'Password')
-}
-
-const shouldShowStatusTags = (user: any): boolean => {
-  return getUserStatusTags(user).length > 0
-}
-
-const _truncateText = (text: string, maxLength: number = 10): string => {
-  if (!text || text.length === 0) return '无'
-  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
-}
-
-// 处理账号ID点击
-const handleUserIdClick = async (user: any) => {
-  const userId = user.id
-  const userIdValue = user.Info.Id || ''
-
-  // 切换展开状态
-  if (expandedUserIds.value.has(userId)) {
-    expandedUserIds.value.delete(userId)
-  } else {
-    expandedUserIds.value.add(userId)
-  }
-
-  // 只有在有值的情况下才复制到剪贴板
-  if (userIdValue) {
-    try {
-      await navigator.clipboard.writeText(userIdValue)
-      message.success('账号已复制到剪贴板')
-    } catch {
-      message.error('复制失败')
-    }
-  }
-}
-
-// 处理密码点击
-const handlePasswordClick = async (user: any) => {
-  const userId = user.id
-  const passwordValue = user.Info.Password || ''
-
-  // 切换展开状态
-  if (expandedUserPasswords.value.has(userId)) {
-    expandedUserPasswords.value.delete(userId)
-  } else {
-    expandedUserPasswords.value.add(userId)
-  }
-
-  // 只有在有值的情况下才复制到剪贴板
-  if (passwordValue) {
-    try {
-      await navigator.clipboard.writeText(passwordValue)
-      message.success('密码已复制到剪贴板')
-    } catch {
-      message.error('复制失败')
-    }
-  }
-}
-
-// 获取账号ID显示文本
-const getUserIdDisplayText = (user: any): string => {
-  const userId = user.id
-  const userIdValue = user.Info.Id || ''
-
-  if (expandedUserIds.value.has(userId)) {
-    // 展开状态：显示完整内容或未设置
-    return userIdValue ? `账号: ${userIdValue}` : '账号: 未设置'
-  } else {
-    // 隐藏状态：只显示标题
-    return '账号'
-  }
-}
-
-// 获取密码显示文本
-const getPasswordDisplayText = (user: any): string => {
-  const userId = user.id
-  const passwordValue = user.Info.Password || ''
-
-  if (expandedUserPasswords.value.has(userId)) {
-    // 展开状态：显示完整内容或未设置
-    return passwordValue ? `密码: ${passwordValue}` : '密码: 未设置'
-  } else {
-    // 隐藏状态：只显示标题
-    return '密码'
-  }
-}
-
-const getMaaEndResourceLabel = (user: any): string => {
-  return user.Info?.Resource || '官服'
-}
-
-const getMaaEndResourceTagColor = (user: any): string => {
-  switch (getMaaEndResourceLabel(user)) {
-    case '官服':
-    default:
-      return 'blue'
-  }
-}
-
-const getUserServerTagColor = (user: any): string => {
-  const server = getInfoFieldValue(user, 'Server')
-  if (server !== undefined && server !== null && String(server).length > 0) {
-    return getServerTagColor(String(server))
-  }
-  return getMaaEndResourceTagColor(user)
-}
-
-const getUserServerDisplayName = (user: any): string => {
-  const server = getInfoFieldValue(user, 'Server')
-  if (server !== undefined && server !== null && String(server).length > 0) {
-    return getServerDisplayName(String(server))
-  }
-  return getMaaEndResourceLabel(user)
-}
-
-const getUserIdentityTagColor = (user: any): string => {
-  const server = getInfoFieldValue(user, 'Server')
-  if (server !== undefined && server !== null && String(server).length > 0) {
-    return getServerTagColor(String(server))
-  }
-  return getMaaEndResourceTagColor(user)
-}
-
-// 获取剩余天数的颜色
-const _getRemainingDayColor = (remainedDay: number): string => {
-  if (remainedDay === -1) return 'gold'
-  if (remainedDay === 0) return 'red'
-  if (remainedDay <= 3) return 'orange'
-  if (remainedDay <= 7) return 'yellow'
-  if (remainedDay <= 30) return 'blue'
-  return 'green'
-}
-
-// 将关卡代码转换为中文名称（如果有映射的话）
-const convertStageNameToChinese = (stageName: string): string => {
-  if (!stageName) return stageName
-  return STAGE_NAME_MAP[stageName] || stageName
-}
-
-// 获取关卡标签颜色
-const _getStageTagColor = (stage: string, stageMode?: string): string => {
-  // 如果使用计划表模式（stageMode不是'Fixed'），用绿色
-  if (stageMode && stageMode !== 'Fixed') return 'green'
-  return 'blue' // 自定义关卡用蓝色
-}
-
-// 获取服务器标签颜色
-const getServerTagColor = (server: string): string => {
-  switch (server) {
-    // MAA服务器
-    case 'Official':
-      return 'blue'
-    case 'Bilibili':
-      return 'purple'
-    case 'YoStarEN':
-      return 'green'
-    case 'YoStarJP':
-      return 'red'
-    case 'YoStarKR':
-      return 'orange'
-    case 'txwy':
-      return 'gold'
-    // SRC服务器
-    case 'CN-Official':
-      return 'blue'
-    case 'CN-Bilibili':
-      return 'purple'
-    case 'VN-Official':
-      return 'cyan'
-    case 'OVERSEA-America':
-      return 'green'
-    case 'OVERSEA-Asia':
-      return 'orange'
-    case 'OVERSEA-Europe':
-      return 'geekblue'
-    case 'OVERSEA-TWHKMO':
-      return 'gold'
-    default:
-      return 'gray'
-  }
-}
-
-// 获取服务器显示名称
-const getServerDisplayName = (server: string): string => {
-  switch (server) {
-    // MAA服务器
-    case 'Official':
-      return '官服'
-    case 'Bilibili':
-      return 'B服'
-    case 'YoStarEN':
-      return '国际服'
-    case 'YoStarJP':
-      return '日服'
-    case 'YoStarKR':
-      return '韩服'
-    case 'txwy':
-      return '繁中服'
-    // SRC服务器
-    case 'CN-Official':
-      return '官服'
-    case 'CN-Bilibili':
-      return 'B服'
-    case 'VN-Official':
-      return '越南服'
-    case 'OVERSEA-America':
-      return '美服'
-    case 'OVERSEA-Asia':
-      return '亚服'
-    case 'OVERSEA-Europe':
-      return '欧服'
-    case 'OVERSEA-TWHKMO':
-      return '港澳台服'
-    default:
-      return server || '未知'
-  }
-}
-
-// 获取基建模式显示名称
-const getInfrastModeDisplayName = (mode: string): string => {
-  switch (mode) {
-    case 'Normal':
-      return '常规'
-    case 'Rotation':
-      return '轮休'
-    case 'Custom':
-      return '自定义'
-    default:
-      return mode || '未知'
-  }
-}
-
-// 获取基建显示文本
-const _getInfrastDisplayText = (user: User): string => {
-  const mode = user.Info.InfrastMode
-
-  // 如果是自定义模式，只显示当前排班号
-  if (mode === 'Custom') {
-    // 显示排班索引
-    if (user.Info.InfrastIndex && user.Info.InfrastIndex !== '') {
-      return `排班 ${user.Info.InfrastIndex}`
-    }
-
-    // 没有排班信息时返回'自定义'
-    return '自定义'
-  }
-
-  // 非自定义模式，返回标准显示名称
-  return getInfrastModeDisplayName(mode)
-}
-
-// 检查是否完成了今日日常代理
-const isSklandCompletedToday = (lastSklandDate: string): boolean => {
-  if (!lastSklandDate) return false
-
-  // 森空岛使用东8区时间（UTC+8）
-  const todayUTC8 = getTodayInTimezone(8)
-
-  // 基于Date对象比较
-  return isDateEqual(lastSklandDate, todayUTC8, 8)
-}
-
-// 获取森空岛标签颜色
-const _getSklandTagColor = (ifSkland: boolean, lastSklandDate?: string): string => {
-  if (!ifSkland) return 'red'
-  return isSklandCompletedToday(lastSklandDate || '') ? 'green' : 'orange'
-}
-
-// 获取森空岛显示文本
-const _getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): string => {
-  if (!ifSkland) return '关闭'
-  return isSklandCompletedToday(lastSklandDate || '') ? '已签到' : '未签到'
-}
-
-// 检查是否完成了今日日常代理
-const isRoutineCompletedToday = (lastProxyDate: string): boolean => {
-  if (!lastProxyDate) return false
-
-  // 使用东4区时区获取今日的Date对象
-  const todayEast4 = getTodayInTimezone(4)
-
-  // 基于Date对象比较
-  return isDateEqual(lastProxyDate, todayEast4, 4)
-}
-
-// 获取日常代理标签颜色
-const _getRoutineTagColor = (lastProxyDate?: string): string => {
-  return isRoutineCompletedToday(lastProxyDate || '') ? 'green' : 'orange'
-}
-
-// 获取日常代理显示文本
-const _getRoutineDisplayText = (lastProxyDate?: string, proxyTimes?: number): string => {
-  if (isRoutineCompletedToday(lastProxyDate || '')) {
-    const times = proxyTimes || 0
-    return `已代理${times}次`
-  } else {
-    return '未代理'
-  }
-}
-
-// 获取主关卡显示文本
-const _getMainStageDisplay = (user: any): string => {
-  // 如果使用计划表模式
-  if (user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData) {
-    const planStage = getCurrentPlanStage()
-    if (planStage && planStage !== '-') {
-      return convertStageNameToChinese(planStage)
-    }
-    return '计划表配置'
-  }
-
-  // 固定模式，显示用户自定义关卡
-  if (user.Info.Stage && user.Info.Stage !== '-' && user.Info.Stage !== '') {
-    return convertStageNameToChinese(user.Info.Stage)
-  }
-
-  return ''
-}
-
-// 获取备选关卡列表（过滤掉无效值）
-const _getBackupStages = (user: any): string[] => {
-  const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
-  return stages
-    .filter(
-      stage =>
-        stage &&
-        stage !== '-' &&
-        stage !== '' &&
-        stage !== '当前' &&
-        stage !== '上次' &&
-        stage !== '未选择'
-    )
-    .map(stage => convertStageNameToChinese(stage))
-}
-
-// 获取剩余关卡显示文本
-const _getRemainStageDisplay = (user: any): string => {
-  if (
-    user.Info.Stage_Remain &&
-    user.Info.Stage_Remain !== '-' &&
-    user.Info.Stage_Remain !== '' &&
-    user.Info.Stage_Remain !== '当前' &&
-    user.Info.Stage_Remain !== '上次' &&
-    user.Info.Stage_Remain !== '未选择'
-  ) {
-    return convertStageNameToChinese(user.Info.Stage_Remain)
-  }
-  return ''
-}
-
-// 获取统一的关卡显示标签
-const _getStageDisplayLabel = (originalLabel: string): string => {
-  switch (originalLabel) {
-    case '关卡':
-      return '主关卡'
-    case '关卡1':
-    case '关卡2':
-    case '关卡3':
-      return '备选'
-    case '剩余关卡':
-      return '剩余'
-    default:
-      return originalLabel
-  }
-}
-
-// 获取剩余天数的显示文本
-const _getRemainingDayText = (remainedDay: number): string => {
-  if (remainedDay === -1) return '剩余天数: 长期有效'
-  if (remainedDay === 0) return '剩余天数: 已到期'
-  return `剩余天数: ${remainedDay}天`
-}
-
-// 获取关卡的显示文本
-const _getDisplayStage = (stage: string, stageMode?: string): string => {
-  if (stage === '-') return '未选择'
-
-  // 如果使用计划表模式且有计划表数据，显示计划表中的实际关卡
-  if (stageMode && stageMode !== 'Fixed' && props.currentPlanData) {
-    const planStage = getCurrentPlanStage()
-    if (planStage && planStage !== '-') {
-      return planStage
-    }
-    return '使用计划表配置'
-  }
-
-  return stage
-}
-
-// 获取用户对应的计划表数据
-const getUserPlanData = (user: any): Record<string, any> | null => {
-  if (!user.Info.StageMode || user.Info.StageMode === 'Fixed') {
-    return null
-  }
-
-  // StageMode 存储的就是计划表的ID
-  const planId = user.Info.StageMode
-
-  // 从 allPlansData 中获取对应的计划表数据
-  if (props.allPlansData && props.allPlansData[planId]) {
-    return props.allPlansData[planId]
-  }
-
-  return null
-}
-
-// 从计划表获取当前关卡
-const getCurrentPlanStage = (): string => {
-  if (!props.currentPlanData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
-    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  // 从计划表获取关卡配置
-  const timeConfig = props.currentPlanData[timeKey]
-  if (!timeConfig) return ''
-
-  // 获取主要关卡
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return timeConfig.Stage
-  }
-
-  // 如果主要关卡为空，尝试获取第一个备选关卡
-  const backupStages = [timeConfig.Stage_1, timeConfig.Stage_2, timeConfig.Stage_3]
-  for (const stage of backupStages) {
-    if (stage && stage !== '-') {
-      return stage
-    }
-  }
-
-  return ''
-}
-
-// 从用户的计划表获取主关卡显示文本
-const _getUserPlanMainStageDisplay = (user: any): string => {
-  const planData = getUserPlanData(user)
-  if (!planData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = planData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    const today = getWeekdayInTimezone(4)
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  const timeConfig = planData[timeKey]
-  if (!timeConfig) return ''
-
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return convertStageNameToChinese(timeConfig.Stage)
-  }
-  return ''
-}
-
-// 从用户的计划表获取备选关卡列表
-const _getUserPlanBackupStages = (user: any): string[] => {
-  const planData = getUserPlanData(user)
-  if (!planData) return []
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = planData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    const today = getWeekdayInTimezone(4)
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  const timeConfig = planData[timeKey]
-  if (!timeConfig) return []
-
-  const backupStages: string[] = []
-
-  if (timeConfig.Stage_1 && timeConfig.Stage_1 !== '-') {
-    backupStages.push(convertStageNameToChinese(timeConfig.Stage_1))
-  }
-  if (timeConfig.Stage_2 && timeConfig.Stage_2 !== '-') {
-    backupStages.push(convertStageNameToChinese(timeConfig.Stage_2))
-  }
-  if (timeConfig.Stage_3 && timeConfig.Stage_3 !== '-') {
-    backupStages.push(convertStageNameToChinese(timeConfig.Stage_3))
-  }
-
-  return backupStages
-}
-
-// 从用户的计划表获取剩余关卡显示文本
-const _getUserPlanRemainStageDisplay = (user: any): string => {
-  const planData = getUserPlanData(user)
-  if (!planData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = planData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    const today = getWeekdayInTimezone(4)
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  const timeConfig = planData[timeKey]
-  if (!timeConfig) return ''
-
-  if (timeConfig.Stage_Remain && timeConfig.Stage_Remain !== '-') {
-    return convertStageNameToChinese(timeConfig.Stage_Remain)
-  }
-  return ''
-}
-
-// 从计划表获取当前关卡
-const _getCurrentPlanStageOld = (): string => {
-  if (!props.currentPlanData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
-    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  // 从计划表获取关卡配置
-  const timeConfig = props.currentPlanData[timeKey]
-  if (!timeConfig) return ''
-
-  // 获取主要关卡
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return timeConfig.Stage
-  }
-
-  // 如果主要关卡为空，尝试获取第一个备选关卡
-  const backupStages = [timeConfig.Stage_1, timeConfig.Stage_2, timeConfig.Stage_3]
-  for (const stage of backupStages) {
-    if (stage && stage !== '-') {
-      return stage
-    }
-  }
-
-  return ''
-}
-const registryApi = useScriptRegistryApi()
 
 const onScriptDragEnd = async () => {
+  if (!isDraggingScripts.value || isReorderingScripts.value) return
+  isDraggingScripts.value = false
   const scriptIds = localScripts.value.map(s => s.id)
+  const previousIds = scriptOrderBeforeDrag.value
+  // 无实际顺序变化时不调用 API
+  if (isSameOrder(scriptIds, previousIds)) {
+    localScripts.value = [...props.scripts]
+    scriptOrderBeforeDrag.value = []
+    return
+  }
+
+  isReorderingScripts.value = true
   try {
     await registryApi.reorderScripts(scriptIds)
+    // 请求期间父层可能刷新了对象或新增脚本；按已持久化顺序重排最新真值，
+    // 避免成功后把刷新结果覆盖回拖拽前顺序，也避免丢失新增项。
+    localScripts.value = restoreItemOrder(scriptIds, props.scripts)
     emit('scriptsReordered', localScripts.value)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     message.error(`脚本排序失败: ${errorMsg}`)
+    restoreScriptOrder()
+  } finally {
+    isReorderingScripts.value = false
+    scriptOrderBeforeDrag.value = []
   }
 }
 
-const onUserDragEnd = async (evt: any, script: Script) => {
-  const userIds = script.users.map(u => u.id)
+const restoreUserOrder = (scriptId: string, previousUserIds: string[]) => {
+  const script = localScripts.value.find(s => s.id === scriptId)
+  if (!script) return
+  script.users = restoreItemOrder(previousUserIds, script.users)
+}
+
+const onUserReorder = async (scriptId: string, userIds: string[], previousUserIds: string[]) => {
+  if (isReorderingUsers.value[scriptId]) return
+  const script = localScripts.value.find(s => s.id === scriptId)
+  if (!script) return
+  // 无实际顺序变化时不调用 API
+  if (isSameOrder(userIds, previousUserIds)) {
+    scriptCardRefs.value.get(scriptId)?.finishUserReorder(true)
+    return
+  }
+
+  isReorderingUsers.value = { ...isReorderingUsers.value, [scriptId]: true }
   try {
-    await registryApi.reorderUsers(script.id, userIds)
+    await registryApi.reorderUsers(scriptId, userIds)
+    scriptCardRefs.value.get(scriptId)?.finishUserReorder(true)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     message.error(`用户排序失败: ${errorMsg}`)
+    restoreUserOrder(scriptId, previousUserIds)
+    scriptCardRefs.value.get(scriptId)?.finishUserReorder(false)
+  } finally {
+    const next = { ...isReorderingUsers.value }
+    delete next[scriptId]
+    isReorderingUsers.value = next
   }
 }
 </script>
@@ -1279,11 +269,8 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   gap: var(--v6-space-4);
 }
 
-.script-wrapper {
-  width: 100%;
-  cursor: auto;
-}
-
+/* 脚本级拖拽占位样式；ScriptCard 内部保留自身的拖拽视觉。
+   此处仅保留 ghost/chosen/drag 类名占位，避免 vuedraggable 类名找不到目标。 */
 .script-ghost {
   opacity: 0 !important;
   background: transparent !important;
@@ -1305,475 +292,5 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 .script-drag * {
   cursor: grabbing !important;
-}
-
-.script-drag .script-card {
-  opacity: 1 !important;
-  transition: none !important;
-}
-
-.users-list {
-  width: 100%;
-}
-
-.user-ghost {
-  opacity: 0 !important;
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.user-chosen {
-  cursor: grabbing !important;
-  background: var(--ant-color-primary-bg) !important;
-}
-
-.user-drag {
-  transform: rotate(1deg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  z-index: 999;
-  background: var(--ant-color-bg-container) !important;
-  opacity: 1 !important;
-  cursor: grabbing !important;
-}
-
-.user-drag * {
-  cursor: grabbing !important;
-}
-
-.script-drag .script-drag-handle {
-  cursor: grabbing !important;
-}
-
-.script-drag .script-drag-handle * {
-  cursor: grabbing !important;
-}
-
-.user-drag .user-drag-handle {
-  cursor: grabbing !important;
-}
-
-.user-drag .user-drag-handle * {
-  cursor: grabbing !important;
-}
-
-/* 拖拽时禁用某些交互 */
-.script-ghost .script-card:hover,
-.script-drag .script-card:hover {
-  transform: none !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2) !important;
-}
-
-.user-ghost:hover,
-.user-drag:hover {
-  background: var(--ant-color-primary-bg) !important;
-}
-
-/* 脚本卡片 */
-.script-card {
-  border-radius: var(--v6-radius-card);
-  border: 1px solid var(--v6-color-border-subtle);
-  background: var(--app-background-panel-bg, var(--v6-color-surface));
-  overflow: hidden;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--v6-shadow-card);
-  transition:
-    border-color var(--v6-motion-fast) var(--v6-ease-out),
-    box-shadow var(--v6-motion-fast) var(--v6-ease-out);
-}
-
-.script-card:hover {
-  border-color: color-mix(in srgb, var(--ant-color-primary) 54%, var(--v6-color-border));
-}
-
-.script-wrapper.search-match-active .script-card {
-  border-color: var(--ant-color-primary);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 22%, transparent),
-    var(--v6-shadow-card);
-}
-
-/* 脚本头部 */
-.script-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--v6-space-4) var(--v6-space-4) var(--v6-space-3);
-  border-bottom: 1px solid var(--v6-color-border-subtle);
-}
-
-.script-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.script-drag-handle {
-  width: 16px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: grab;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.script-drag-handle:active {
-  cursor: grabbing;
-}
-
-.drag-handle-disabled,
-.drag-handle-disabled:active {
-  cursor: default;
-  opacity: 0.45;
-}
-
-.script-drag-dots {
-  width: 10px;
-  height: 16px;
-  display: block;
-  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
-  background-size: 5px 5px;
-  background-position: 0 0;
-  opacity: 0.65;
-}
-
-.script-logo-container {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--v6-radius-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--v6-color-window);
-  border: 1px solid var(--v6-color-border);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.script-logo {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-}
-
-.script-details {
-  flex: 1;
-  min-width: 0;
-}
-
-.script-name {
-  margin: 0 0 6px 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  line-height: 1.3;
-  word-break: break-word;
-}
-
-.script-type {
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.action-button {
-  border-radius: var(--v6-radius-control);
-  font-weight: 500;
-}
-
-.add-button {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-}
-
-.add-button:hover {
-  background: var(--ant-color-primary-bg);
-  border-color: var(--ant-color-primary-hover);
-  color: var(--ant-color-primary-hover);
-}
-
-.delete-button:hover {
-  background: linear-gradient(135deg, var(--ant-color-error), var(--ant-color-error-hover));
-}
-
-/* 用户区域 */
-.users-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.user-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: var(--v6-space-4);
-  border-bottom: 1px solid var(--v6-color-border-subtle);
-  min-height: 80px;
-  transition:
-    background var(--v6-motion-fast) var(--v6-ease-out),
-    box-shadow var(--v6-motion-fast) var(--v6-ease-out);
-}
-
-.user-item.search-match-active {
-  background: color-mix(in srgb, var(--ant-color-primary) 10%, transparent);
-  box-shadow: inset 3px 0 0 var(--ant-color-primary);
-}
-
-.user-drag-handle {
-  width: 16px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: grab;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.user-drag-handle:active {
-  cursor: grabbing;
-}
-
-.user-drag-handle:hover .script-drag-dots {
-  opacity: 0.85;
-}
-
-.user-item:last-child {
-  border-bottom: none;
-}
-
-.user-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.user-details-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.user-name-section {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.user-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.user-info-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
-.info-tag {
-  display: inline-block;
-  max-width: 120px;
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 4px;
-  margin: 0;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.server-tag {
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-}
-
-.user-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-shrink: 0;
-  height: 100%;
-  justify-content: center;
-}
-
-.user-status {
-  display: flex;
-  align-items: center;
-}
-
-.status-switch {
-  font-size: 12px;
-}
-
-.status-switch :deep(.ant-switch-inner) {
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.user-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  align-items: center;
-}
-
-.user-action-btn {
-  border-radius: var(--v6-radius-control);
-  font-weight: 500;
-  min-width: 60px;
-  border: 1px solid var(--v6-color-border);
-  background: var(--v6-color-surface);
-}
-
-.user-action-btn.ant-btn-dangerous {
-  border-color: var(--ant-color-error);
-  color: var(--ant-color-error);
-}
-
-/* 空状态 */
-.empty-users {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .script-header {
-    padding: 16px 16px 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .script-name {
-    font-size: 16px;
-  }
-
-  .header-actions {
-    gap: 8px;
-  }
-
-  .action-button {
-    font-size: 12px;
-    height: 28px;
-    padding: 0 8px;
-  }
-
-  .user-item {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .user-controls {
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
-  }
-
-  .user-actions {
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .empty-users {
-    padding: 30px 16px;
-  }
-}
-
-@media (max-width: 576px) {
-  .script-info {
-    gap: 8px;
-  }
-
-  .script-logo-container {
-    width: 40px;
-    height: 40px;
-  }
-
-  .script-logo {
-    width: 28px;
-    height: 28px;
-  }
-
-  .script-name {
-    font-size: 15px;
-  }
-
-  .header-actions {
-    gap: 6px;
-  }
-
-  .action-button {
-    font-size: 11px;
-    height: 26px;
-    padding: 0 6px;
-  }
-
-  .user-item {
-    padding-left: 12px;
-    padding-right: 12px;
-    padding-top: 12px;
-    padding-bottom: 12px;
-  }
-
-  .user-details-row {
-    gap: 6px;
-  }
-
-  .user-name-section {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
-
-  .user-name {
-    font-size: 16px;
-  }
-
-  .user-info-tags {
-    gap: 4px;
-  }
-
-  .info-tag {
-    font-size: 10px;
-    max-width: 100px;
-  }
-
-  .clickable-tag {
-    cursor: pointer;
-    user-select: none;
-    border: 1px solid rgba(0, 0, 0, 0.15);
-  }
 }
 </style>

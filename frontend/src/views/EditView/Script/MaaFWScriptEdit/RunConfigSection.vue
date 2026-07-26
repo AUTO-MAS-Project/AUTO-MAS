@@ -201,3 +201,4 @@ const emit = defineEmits<{
   margin-top: 8px;
 }
 </style>
+<style scoped src="../script-edit-surface.css"></style>

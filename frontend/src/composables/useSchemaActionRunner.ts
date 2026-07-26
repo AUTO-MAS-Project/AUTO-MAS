@@ -3,6 +3,12 @@ import { computed, onUnmounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import type {
   SchemaActionDefinition,
   SchemaActionSessionDefinition,
@@ -26,6 +32,30 @@ type ActiveSession = {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Object.prototype.toString.call(value) === '[object Object]'
 
+const getErrorMessage = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    const payload = error.response?.data
+    if (isPlainObject(payload)) {
+      for (const key of ['detail', 'message', 'error']) {
+        const value = payload[key]
+        if (typeof value === 'string' && value.trim()) return value
+      }
+    }
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+const isAlreadyFinishedSessionError = (error: unknown, errorMessage: string): boolean => {
+  const status = axios.isAxiosError(error) ? error.response?.status : undefined
+  return (
+    status === 404 ||
+    status === 410 ||
+    /未找到对应任务|任务(?:已经)?(?:结束|完成|不存在)|task\s+not\s+found/i.test(errorMessage)
+  )
+}
+
+const taskResultLooksFailed = (result: string): boolean =>
+  /异常|错误|失败|\berror\b|\bfailed\b/i.test(result)
 const getContextValue = (context: ActionContext, path: string): unknown => {
   return path.split('.').reduce<unknown>((current, segment) => {
     if (current && typeof current === 'object' && segment in (current as Record<string, unknown>)) {
@@ -170,9 +200,18 @@ export const useSchemaActionRunner = (options?: {
       },
     }
 
-    const completionType = session.completion_type || 'Signal'
+    const completionType = session.completion_type?.trim() || ''
     const completionField = session.completion_field || 'Accomplish'
     const errorField = session.error_field || 'Error'
+    let sessionFailed = false
+
+    const showSuccess = () => {
+      const successText = resolveTemplateValue(
+        session.success_message || `${action.label || '配置动作'}已完成`,
+        sessionContext
+      )
+      message.success(String(successText))
+    }
 
     const subscriptionId = subscribe(
       { id: websocketId },
@@ -186,31 +225,55 @@ export const useSchemaActionRunner = (options?: {
           return
         }
 
+        if (wsMessage.type === WS_TASK_NOTICE && isPlainObject(wsMessage.data)) {
+          const notice = wsMessage.data as Partial<WSTaskNoticeData>
+          if (notice.level === 'error') {
+            sessionFailed = true
+            const errorMsg = notice.message || '会话执行失败'
+            message.error(errorMsg)
+            logger.error(`Schema 会话任务失败: ${errorMsg}`)
+          } else if (notice.level === 'warning' && notice.message) {
+            message.warning(notice.message)
+          }
+          return
+        }
+
+        if (wsMessage.type === WS_TASK_COMPLETED) {
+          const completed = isPlainObject(wsMessage.data)
+            ? (wsMessage.data as Partial<WSTaskCompletedData>)
+            : {}
+          const result = typeof completed.result === 'string' ? completed.result : ''
+          const failed = sessionFailed || taskResultLooksFailed(result)
+          if (!failed) {
+            showSuccess()
+          } else if (!sessionFailed && result) {
+            message.error(result)
+          }
+          await cleanupSession(Boolean(action.refresh))
+          return
+        }
+
+        // 显式声明旧协议 completion_type 的 schema 仍保持可配置兼容；
+        // 未声明时以 WS v2 的 task.completed 作为唯一正式完成信号。
         if (
           wsMessage.type === 'Info' &&
-          wsMessage.data &&
-          typeof wsMessage.data === 'object' &&
+          isPlainObject(wsMessage.data) &&
           errorField in wsMessage.data
         ) {
-          message.error(
-            String((wsMessage.data as Record<string, unknown>)[errorField] || '会话执行失败')
-          )
+          sessionFailed = true
+          message.error(String(wsMessage.data[errorField] || '会话执行失败'))
           return
         }
 
         if (
+          completionType &&
           wsMessage.type === completionType &&
-          wsMessage.data &&
-          typeof wsMessage.data === 'object' &&
+          isPlainObject(wsMessage.data) &&
           completionField in wsMessage.data
         ) {
-          const result = String((wsMessage.data as Record<string, unknown>)[completionField] || '')
-          if (result && !result.includes('异常') && !result.includes('错误')) {
-            const successText = resolveTemplateValue(
-              session.success_message || `${action.label || '配置动作'}已完成`,
-              sessionContext
-            )
-            message.success(String(successText))
+          const result = String(wsMessage.data[completionField] || '')
+          if (!sessionFailed && !taskResultLooksFailed(result)) {
+            showSuccess()
           }
           await cleanupSession(Boolean(action.refresh))
         }
@@ -325,7 +388,12 @@ export const useSchemaActionRunner = (options?: {
       message.success(String(stopMessage))
       await cleanupSession(Boolean(current.action.refresh))
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorMsg = getErrorMessage(error)
+      if (isAlreadyFinishedSessionError(error, errorMsg)) {
+        logger.warn(`后端任务已结束，清理本地 schema 会话: ${errorMsg}`)
+        await cleanupSession(Boolean(current.action.refresh))
+        return
+      }
       logger.error(`结束 schema 会话失败: ${errorMsg}`)
       message.error(errorMsg)
       sessionStopping.value = false

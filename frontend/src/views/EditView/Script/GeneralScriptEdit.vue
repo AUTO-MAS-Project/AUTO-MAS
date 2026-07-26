@@ -1,47 +1,20 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
+  <ScriptEditPageHeader title="通用脚本配置" type-label="General" @back="handleCancel">
+    <template #actions>
       <a-button size="large" type="primary" class="upload-button" @click="showUploadModal">
         <template #icon>
           <CloudUploadOutlined />
         </template>
         分享当前配置到配置分享站
       </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </ScriptEditPageHeader>
 
   <div class="script-edit-content">
-    <a-card title="通用脚本配置" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag color="green" class="type-tag"> General </a-tag>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>基本信息</h3>
-          </div>
+        <Section title="基本信息" bordered rounded class="form-section">
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
@@ -90,13 +63,10 @@
               </a-form-item>
             </a-col>
           </a-row>
-        </div>
+        </Section>
 
         <!-- 基础配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>脚本配置</h3>
-          </div>
+        <Section title="脚本配置" bordered rounded class="form-section">
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item name="scriptPath" :rules="rules.scriptPath">
@@ -723,7 +693,7 @@
               </a-form-item>
             </a-col>
           </a-row>
-        </div>
+        </Section>
 
         <!-- 自定义协议独有的选项 -->
         <a-row v-if="generalConfig.Game.Type === 'URL'" :gutter="24">
@@ -750,10 +720,7 @@
           </a-col>
         </a-row>
         <!-- 运行配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>运行配置</h3>
-          </div>
+        <Section title="运行配置" bordered rounded class="form-section">
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -821,7 +788,7 @@
               </a-form-item>
             </a-col>
           </a-row>
-        </div>
+        </Section>
       </a-form>
     </a-card>
   </div>
@@ -899,7 +866,6 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '@/api'
 import type { ScriptUploadIn } from '@/api'
 import {
-  ArrowLeftOutlined,
   CloudUploadOutlined,
   DeleteOutlined,
   FileOutlined,
@@ -907,6 +873,8 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
+import Section from '@/components/mac/Section.vue'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
@@ -2014,8 +1982,8 @@ const handleUpload = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
+  margin-bottom: var(--v6-space-8);
+  padding: 0 var(--v6-space-2);
 }
 
 .header-nav {
@@ -2054,37 +2022,11 @@ const handleUpload = async () => {
   flex: 1;
 }
 
-.config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-head-title) {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-  background: var(--ant-color-bg-container);
-}
-
 .type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
+  font-size: var(--v6-font-size-base);
+  font-weight: var(--v6-font-weight-semibold);
+  padding: var(--v6-space-2) var(--v6-space-4);
+  border-radius: var(--v6-radius-md);
   border: none;
 }
 
@@ -2093,135 +2035,103 @@ const handleUpload = async () => {
   max-width: none;
 }
 
-.form-section {
-  margin-bottom: 12px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 /* 表单标签 */
 .form-label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
+  gap: var(--v6-space-2);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
+  font-size: var(--v6-font-size-base);
 }
 
 .help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-base);
   cursor: help;
-  transition: color 0.3s ease;
+  transition: color var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .help-icon:hover {
-  color: var(--ant-color-primary);
+  color: var(--v6-color-info);
 }
 
 .modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
+  border-radius: var(--v6-radius-md);
+  border: 2px solid var(--v6-color-border);
+  background: var(--v6-color-surface);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
+  border-color: color-mix(in srgb, var(--v6-color-info) 80%, #000 20%);
 }
 
 .modern-input:focus,
 .modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
 }
 
 .modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
-  background: var(--ant-color-bg-container) !important;
-  transition: all 0.3s ease;
+  border: 2px solid var(--v6-color-border) !important;
+  border-radius: var(--v6-radius-md) !important;
+  background: var(--v6-color-surface) !important;
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .modern-select:hover :deep(.ant-select-selector) {
-  border-color: var(--ant-color-primary-hover) !important;
+  border-color: color-mix(in srgb, var(--v6-color-info) 80%, #000 20%) !important;
 }
 
 .modern-select.ant-select-focused :deep(.ant-select-selector) {
-  border-color: var(--ant-color-primary) !important;
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1) !important;
+  border-color: var(--v6-color-info) !important;
+  box-shadow: var(--v6-shadow-focus-ring) !important;
 }
 
 .modern-number-input {
-  border-radius: 8px;
+  border-radius: var(--v6-radius-md);
 }
 
 .modern-number-input :deep(.ant-input-number) {
-  border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
+  border: 2px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-md);
+  background: var(--v6-color-surface);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .modern-number-input :deep(.ant-input-number:hover) {
-  border-color: var(--ant-color-primary-hover);
+  border-color: color-mix(in srgb, var(--v6-color-info) 80%, #000 20%);
 }
 
 .modern-number-input :deep(.ant-input-number-focused) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
 }
 
 /* 路径输入组 */
 .path-input-group {
   display: flex;
-  border-radius: 8px;
+  border-radius: var(--v6-radius-md);
   overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
+  border: 2px solid var(--v6-color-border);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
+  border-color: color-mix(in srgb, var(--v6-color-info) 80%, #000 20%);
 }
 
 .path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
 }
 
 .path-input {
   flex: 1;
   border: none !important;
   border-radius: 0 !important;
-  background: var(--ant-color-bg-container) !important;
+  background: var(--v6-color-surface) !important;
 }
 
 .path-input:focus {
@@ -2231,17 +2141,17 @@ const handleUpload = async () => {
 .path-button {
   border: none;
   border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
+  background: var(--v6-color-info-bg);
+  color: var(--v6-color-info);
+  font-weight: var(--v6-font-weight-semibold);
+  padding: 0 var(--v6-space-5);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
+  border-left: 1px solid var(--v6-color-border-subtle);
 }
 
 .path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
+  background: var(--v6-color-info);
+  color: var(--v6-color-text-inverse);
   transform: none;
 }
 
@@ -2255,20 +2165,20 @@ const handleUpload = async () => {
   flex-shrink: 0;
   border: none;
   border-radius: 0;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-error);
-  transition: all 0.3s ease;
+  border-left: 1px solid var(--v6-color-border-subtle);
+  background: var(--v6-color-surface);
+  color: var(--v6-color-error);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .path-clear-icon-btn:hover {
-  background: var(--ant-color-error) !important;
-  color: white !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  background: var(--v6-color-error) !important;
+  color: var(--v6-color-text-inverse) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
 }
 
 .path-clear-icon-btn :deep(.anticon) {
-  font-size: 16px;
+  font-size: var(--v6-font-size-lg);
   color: inherit;
 }
 
@@ -2279,140 +2189,55 @@ const handleUpload = async () => {
 
 /* 表单项间距 */
 .config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
+  margin-bottom: var(--v6-space-6);
 }
 
 .config-form :deep(.ant-form-item-label) {
-  padding-bottom: 8px;
+  padding-bottom: var(--v6-space-2);
 }
 
 .config-form :deep(.ant-form-item-label > label) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
-
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
-
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
-
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
-
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 /* 响应式设计 */
-@media (max-width: 1200px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 24px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
-}
-
 @media (max-width: 768px) {
   .script-edit-header {
     flex-direction: column;
-    gap: 16px;
+    gap: var(--v6-space-4);
     align-items: stretch;
   }
 
-  .config-card :deep(.ant-card-head) {
-    padding: 16px 20px;
-  }
-
-  .config-card :deep(.ant-card-head-title) {
-    font-size: 20px;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
-
-  .section-header h3 {
-    font-size: 18px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
-
   .path-button {
-    padding: 0 16px;
-    font-size: 14px;
+    padding: 0 var(--v6-space-4);
+    font-size: var(--v6-font-size-base);
   }
 
   .cancel-button,
   .save-button {
     height: 44px;
-    font-size: 14px;
-    padding: 0 20px;
+    font-size: var(--v6-font-size-base);
+    padding: 0 var(--v6-space-5);
   }
-}
-
-/* 动画效果 */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.form-section {
-  animation: fadeInUp 0.6s ease-out;
-}
-
-.form-section:nth-child(2) {
-  animation-delay: 0.1s;
-}
-
-.form-section:nth-child(3) {
-  animation-delay: 0.2s;
-}
-
-.form-section:nth-child(4) {
-  animation-delay: 0.3s;
 }
 
 /* Tooltip样式优化 */
 :deep(.ant-tooltip-inner) {
-  background: var(--ant-color-bg-elevated);
-  color: var(--ant-color-text);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-size: 13px;
-  line-height: 1.5;
+  background: var(--v6-color-surface-elevated);
+  color: var(--v6-color-text);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-md);
+  padding: var(--v6-space-3) var(--v6-space-4);
+  font-size: var(--v6-font-size-sm);
+  line-height: var(--v6-line-height-normal);
   max-width: 300px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--v6-shadow-popover);
 }
 
 :deep(.ant-tooltip-arrow::before) {
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border);
+  background: var(--v6-color-surface-elevated);
+  border: 1px solid var(--v6-color-border);
 }
 
 .float-button {
@@ -2421,9 +2246,9 @@ const handleUpload = async () => {
 }
 
 .format-preview {
-  margin-top: 8px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
+  margin-top: var(--v6-space-2);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
 }
 
 .format-preview-value {
@@ -2444,3 +2269,4 @@ const handleUpload = async () => {
   background: var(--ant-color-primary-bg);
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

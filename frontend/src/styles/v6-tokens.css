@@ -1,25 +1,115 @@
 :root {
   color-scheme: light;
 
+  /* ═══════════════════════════════════════════════════════════════
+     1. UI 缩放与布局尺寸
+     ═══════════════════════════════════════════════════════════════ */
   --v6-ui-scale: 1;
+
+  /* 侧栏宽度（折叠/展开） */
+  --v6-sidebar-width: calc(220px * var(--v6-ui-scale));
+  --v6-sidebar-width-collapsed: calc(56px * var(--v6-ui-scale));
+  --v6-sidebar-nav-icon-size: calc(20px * var(--v6-ui-scale));
+
+  /* macOS 设计基线：标题栏与应用工具栏各占 52px。
+     Electron 仍使用自定义 IPC 窗口控制，因此无需退回 Windows 原生 32px 标题栏。 */
+  --v6-titlebar-height: calc(52px * var(--v6-ui-scale));
+  --v6-toolbar-height: calc(52px * var(--v6-ui-scale));
+  --v6-titlebar-button-size: calc(12px * var(--v6-ui-scale));
+
+  /* 内容边距 */
+  --v6-content-padding-inline: clamp(16px, 2vw, 32px);
+  --v6-content-padding-block: clamp(16px, 2vw, 28px);
+
+  /* ═══════════════════════════════════════════════════════════════
+     2. 颜色系统
+     ═══════════════════════════════════════════════════════════════ */
   --v6-color-window: #f5f5f7;
   --v6-color-surface: #ffffff;
   --v6-color-surface-elevated: #ffffff;
+  --v6-color-surface-transparent: rgb(255 255 255 / 72%);
   --v6-color-titlebar: rgb(246 246 248 / 88%);
+  --v6-color-toolbar: rgb(247 247 249 / 82%);
   --v6-color-sidebar: rgb(242 242 247 / 86%);
+
+  /* 边框 */
   --v6-color-border: rgb(0 0 0 / 10%);
   --v6-color-border-subtle: rgb(0 0 0 / 6%);
+  --v6-color-border-strong: rgb(0 0 0 / 16%);
+
+  /* 文字层级（WCAG AA 对比度保证） */
   --v6-color-text: rgb(29 29 31 / 92%);
   --v6-color-text-secondary: rgb(29 29 31 / 66%);
   --v6-color-text-tertiary: rgb(29 29 31 / 46%);
+  --v6-color-text-quaternary: rgb(29 29 31 / 26%);
+  --v6-color-text-inverse: rgb(255 255 255 / 92%);
+  --v6-color-text-link: var(--v6-color-info);
+  --v6-color-text-link-hover: color-mix(in srgb, var(--v6-color-info) 80%, #000 20%);
+  --v6-color-text-disabled: var(--v6-color-text-quaternary);
+
+  /* 状态色 */
   --v6-color-success: #34c759;
+  --v6-color-success-bg: color-mix(in srgb, var(--v6-color-success) 12%, transparent);
+  --v6-color-success-border: color-mix(in srgb, var(--v6-color-success) 30%, transparent);
   --v6-color-warning: #ff9f0a;
+  --v6-color-warning-bg: color-mix(in srgb, var(--v6-color-warning) 12%, transparent);
+  --v6-color-warning-border: color-mix(in srgb, var(--v6-color-warning) 30%, transparent);
   --v6-color-error: #ff3b30;
+  --v6-color-error-bg: color-mix(in srgb, var(--v6-color-error) 12%, transparent);
+  --v6-color-error-border: color-mix(in srgb, var(--v6-color-error) 30%, transparent);
   --v6-color-info: #007aff;
+  --v6-color-info-bg: color-mix(in srgb, var(--v6-color-info) 12%, transparent);
+  --v6-color-info-border: color-mix(in srgb, var(--v6-color-info) 30%, transparent);
+  --v6-color-processing: var(--v6-color-info);
+
+  /* 语义别名：保持 v6 内部仅以 info/window/surface-elevated 为权威源，
+     primary/background/fill-tertiary 暴露给习惯用通用设计 token 名的消费者。
+     - primary：macOS systemBlue 与 Ant Design primary 都对应 info；
+     - background：与 window 同义，用于 ErrorState 等需要“整窗背景”语义的场景；
+     - fill-tertiary：用于错误详情、徽章背景等需要弱填充的容器，等价于 surface-elevated。 */
+  --v6-color-primary: var(--v6-color-info);
+  --v6-color-primary-hover: color-mix(in srgb, var(--v6-color-info) 88%, #000 12%);
+  --v6-color-background: var(--v6-color-window);
+  --v6-color-fill-tertiary: var(--v6-color-surface-elevated);
+
+  /* ═══════════════════════════════════════════════════════════════
+     3. 排版系统
+     ═══════════════════════════════════════════════════════════════ */
   --v6-font-sans:
     'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC',
     'Microsoft YaHei', sans-serif;
   --v6-font-mono: 'Cascadia Mono', 'SF Mono', Consolas, ui-monospace, monospace;
+
+  /* 字号层级 */
+  --v6-font-size-xs: calc(11px * var(--v6-ui-scale));
+  --v6-font-size-sm: calc(12px * var(--v6-ui-scale));
+  --v6-font-size-base: calc(14px * var(--v6-ui-scale));
+  --v6-font-size-md: calc(14px * var(--v6-ui-scale));
+  --v6-font-size-lg: calc(16px * var(--v6-ui-scale));
+  --v6-font-size-xl: calc(18px * var(--v6-ui-scale));
+  --v6-font-size-2xl: calc(20px * var(--v6-ui-scale));
+  --v6-font-size-3xl: calc(24px * var(--v6-ui-scale));
+  --v6-font-size-4xl: calc(28px * var(--v6-ui-scale));
+
+  /* 行高 */
+  --v6-line-height-tight: 1.25;
+  --v6-line-height-snug: 1.375;
+  --v6-line-height-normal: 1.5;
+  --v6-line-height-relaxed: 1.625;
+  --v6-line-height-loose: 1.75;
+
+  /* 字重 */
+  --v6-font-weight-normal: 400;
+  --v6-font-weight-medium: 500;
+  --v6-font-weight-semibold: 600;
+  --v6-font-weight-bold: 700;
+
+  /* ═══════════════════════════════════════════════════════════════
+     4. 间距系统（4px网格）
+     ═══════════════════════════════════════════════════════════════ */
+  --v6-space-0: 0px;
+  --v6-space-px: calc(1px * var(--v6-ui-scale));
+  --v6-space-0-5: calc(2px * var(--v6-ui-scale));
   --v6-space-1: calc(4px * var(--v6-ui-scale));
   --v6-space-2: calc(8px * var(--v6-ui-scale));
   --v6-space-3: calc(12px * var(--v6-ui-scale));
@@ -30,22 +120,38 @@
   --v6-space-8: calc(32px * var(--v6-ui-scale));
   --v6-space-10: calc(40px * var(--v6-ui-scale));
   --v6-space-12: calc(48px * var(--v6-ui-scale));
-  --v6-radius-control: calc(6px * var(--v6-ui-scale));
-  --v6-radius-card: calc(12px * var(--v6-ui-scale));
-  /* Windows 适配：标题栏保持 32px（设计稿 macOS titlebar 为 52px，
-     不适用于 Windows Electron 窗口按钮与拖动区高度，记录为设计决策偏差）。 */
-  --v6-titlebar-height: 32px;
-  --v6-content-padding-inline: clamp(20px, calc(32px * var(--v6-ui-scale)), 44px);
-  --v6-content-padding-block: clamp(20px, calc(32px * var(--v6-ui-scale)), 44px);
-  --v6-shadow-card: 0 1px 3px rgb(0 0 0 / 5%);
-  --v6-shadow-elevated: 0 8px 28px rgb(0 0 0 / 12%);
-  --v6-backdrop-shell: blur(18px) saturate(145%);
-  --v6-motion-fast: 150ms;
-  --v6-motion-base: 250ms;
-  --v6-motion-slow: 350ms;
-  --v6-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --v6-space-16: calc(64px * var(--v6-ui-scale));
+  --v6-space-20: calc(80px * var(--v6-ui-scale));
 
-  /* ── Vibrancy 表面 token（映射设计稿 8 表面，仅语义层；不照搬 macOS 控件） ── */
+  /* ═══════════════════════════════════════════════════════════════
+     5. 圆角系统
+     ═══════════════════════════════════════════════════════════════ */
+  --v6-radius-none: 0px;
+  --v6-radius-xs: calc(2px * var(--v6-ui-scale));
+  --v6-radius-sm: calc(4px * var(--v6-ui-scale));
+  --v6-radius-control: calc(6px * var(--v6-ui-scale));
+  --v6-radius-md: calc(8px * var(--v6-ui-scale));
+  --v6-radius-card: calc(12px * var(--v6-ui-scale));
+  --v6-radius-lg: calc(16px * var(--v6-ui-scale));
+  --v6-radius-xl: calc(20px * var(--v6-ui-scale));
+  --v6-radius-full: 9999px;
+
+  /* ═══════════════════════════════════════════════════════════════
+     6. 阴影系统（克制使用，避免悬浮感）
+     ═══════════════════════════════════════════════════════════════ */
+  --v6-shadow-none: none;
+  --v6-shadow-xs: 0 1px 2px rgb(0 0 0 / 4%);
+  --v6-shadow-sm: 0 1px 2px rgb(0 0 0 / 5%), 0 1px 3px rgb(0 0 0 / 3%);
+  --v6-shadow-card: 0 1px 3px rgb(0 0 0 / 5%);
+  --v6-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 6%), 0 2px 4px -2px rgb(0 0 0 / 4%);
+  --v6-shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 8%), 0 4px 8px -4px rgb(0 0 0 / 4%);
+  --v6-shadow-elevated: 0 8px 28px rgb(0 0 0 / 12%);
+  --v6-shadow-popover: 0 4px 20px rgb(0 0 0 / 12%);
+  --v6-shadow-focus-ring: 0 0 0 3px color-mix(in srgb, var(--v6-color-info) 24%, transparent);
+
+  /* ═══════════════════════════════════════════════════════════════
+     7. Vibrancy 表面系统（macOS风格毛玻璃，仅语义层）
+     ═══════════════════════════════════════════════════════════════ */
   --v6-vibrancy-sidebar: rgb(242 242 247 / 80%);
   --v6-vibrancy-titlebar: rgb(246 246 248 / 72%);
   --v6-vibrancy-toolbar: rgb(247 247 249 / 70%);
@@ -54,44 +160,126 @@
   --v6-vibrancy-hover: rgb(0 0 0 / 6%);
   --v6-vibrancy-selected: rgb(0 122 255 / 18%);
   --v6-vibrancy-active: #007aff;
-  /* 全局 vibrancy 背景滤镜预设（供 sidebar/titlebar/toolbar 等表面使用） */
+
+  /* 全局 vibrancy 背景滤镜预设 */
+  --v6-backdrop-shell: blur(18px) saturate(145%);
   --v6-backdrop-vibrancy: blur(20px) saturate(180%);
+  /* 侧栏毛玻璃比通用 vibrancy 更强（设计 --backdrop-sidebar: blur(24px)） */
+  --v6-backdrop-sidebar: blur(24px) saturate(180%);
   --v6-backdrop-popover: blur(40px) saturate(200%);
+  --v6-backdrop-background: blur(var(--app-background-blur, 0px));
 
-  /* ── 焦点环 token（保证可见焦点，遵守 prefers-reduced-motion / data-perf-mode） ── */
+  /* ═══════════════════════════════════════════════════════════════
+     8. 焦点与可访问性
+     ═══════════════════════════════════════════════════════════════ */
   --v6-focus-ring: 0 0 0 2px var(--v6-color-surface), 0 0 0 4px var(--v6-color-info);
+  --v6-focus-ring-inset: inset 0 0 0 2px var(--v6-color-info);
   --v6-focus-ring-offset: 2px;
+  --v6-focus-ring-width: 2px;
+  --v6-outline-width: calc(2px * var(--v6-ui-scale));
 
-  /* ── 对比度遮罩 token：背景图过亮时叠加，保护前景文字可读性 ── */
+  /* ═══════════════════════════════════════════════════════════════
+     9. Z-Index 层级系统（避免随意写9999）
+     ═══════════════════════════════════════════════════════════════ */
+  --v6-z-background: -10;
+  --v6-z-base: 0;
+  --v6-z-content: 1;
+  --v6-z-sidebar: 10;
+  --v6-z-titlebar: 20;
+  --v6-z-dropdown: 50;
+  --v6-z-sticky: 100;
+  --v6-z-modal-backdrop: 900;
+  --v6-z-modal: 1000;
+  --v6-z-popover: 1050;
+  --v6-z-tooltip: 1100;
+  --v6-z-toast: 1200;
+  --v6-z-global-overlay: 9000;
+
+  /* ═══════════════════════════════════════════════════════════════
+     10. 动效系统
+     ═══════════════════════════════════════════════════════════════ */
+  --v6-motion-instant: 0ms;
+  --v6-motion-fast: 150ms;
+  --v6-motion-base: 250ms;
+  --v6-motion-slow: 350ms;
+  --v6-motion-slower: 500ms;
+  --v6-ease-linear: linear;
+  --v6-ease-in: cubic-bezier(0.32, 0, 0.67, 0);
+  --v6-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --v6-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --v6-ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ═══════════════════════════════════════════════════════════════
+     11. 背景图相关token
+     ═══════════════════════════════════════════════════════════════ */
   --v6-contrast-overlay: rgb(0 0 0 / 0%);
+  --v6-background-blur: 0px;
+  --v6-background-brightness: 100%;
+  --v6-background-opacity: 1;
 
   --v6-default-wallpaper:
     radial-gradient(
       circle at 16% 0%,
-      color-mix(in srgb, var(--ant-color-primary) 7%, transparent),
+      color-mix(in srgb, var(--v6-color-info) 7%, transparent),
       transparent 34%
     ),
     var(--v6-color-window);
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   深色模式
+   ═══════════════════════════════════════════════════════════════ */
 :root.dark {
   color-scheme: dark;
 
   --v6-color-window: #1e1e1e;
   --v6-color-surface: #28282a;
   --v6-color-surface-elevated: #2c2c2e;
+  --v6-color-surface-transparent: rgb(40 40 42 / 72%);
   --v6-color-titlebar: rgb(32 32 34 / 90%);
+  --v6-color-toolbar: rgb(36 36 38 / 82%);
   --v6-color-sidebar: rgb(38 38 40 / 88%);
+
   --v6-color-border: rgb(255 255 255 / 10%);
   --v6-color-border-subtle: rgb(255 255 255 / 6%);
+  --v6-color-border-strong: rgb(255 255 255 / 18%);
+
   --v6-color-text: rgb(245 245 247 / 92%);
   --v6-color-text-secondary: rgb(245 245 247 / 66%);
   --v6-color-text-tertiary: rgb(245 245 247 / 46%);
+  --v6-color-text-quaternary: rgb(245 245 247 / 26%);
+  --v6-color-text-inverse: rgb(29 29 31 / 92%);
+  --v6-color-text-link-hover: color-mix(in srgb, var(--v6-color-info) 80%, #fff 20%);
+  --v6-color-text-disabled: var(--v6-color-text-quaternary);
+
   --v6-color-success: #30d158;
+  --v6-color-success-bg: color-mix(in srgb, var(--v6-color-success) 16%, transparent);
+  --v6-color-success-border: color-mix(in srgb, var(--v6-color-success) 32%, transparent);
+  --v6-color-warning: #ff9f0a;
+  --v6-color-warning-bg: color-mix(in srgb, var(--v6-color-warning) 16%, transparent);
+  --v6-color-warning-border: color-mix(in srgb, var(--v6-color-warning) 32%, transparent);
   --v6-color-error: #ff453a;
+  --v6-color-error-bg: color-mix(in srgb, var(--v6-color-error) 16%, transparent);
+  --v6-color-error-border: color-mix(in srgb, var(--v6-color-error) 32%, transparent);
   --v6-color-info: #0a84ff;
-  --v6-shadow-card: 0 1px 3px rgb(0 0 0 / 18%);
+  --v6-color-info-bg: color-mix(in srgb, var(--v6-color-info) 16%, transparent);
+  --v6-color-info-border: color-mix(in srgb, var(--v6-color-info) 32%, transparent);
+  --v6-color-processing: var(--v6-color-info);
+
+  /* 语义别名（dark）：与 light 保持同名，hover 在暗色下向白色收敛，
+     与 --v6-color-text-link-hover 在 dark 下的策略一致。 */
+  --v6-color-primary: var(--v6-color-info);
+  --v6-color-primary-hover: color-mix(in srgb, var(--v6-color-info) 80%, #fff 20%);
+  --v6-color-background: var(--v6-color-window);
+  --v6-color-fill-tertiary: var(--v6-color-surface-elevated);
+
+  --v6-shadow-xs: 0 1px 2px rgb(0 0 0 / 12%);
+  --v6-shadow-sm: 0 1px 2px rgb(0 0 0 / 16%), 0 1px 3px rgb(0 0 0 / 10%);
+  --v6-shadow-card: 0 1px 3px rgb(0 0 0 / 30%), 0 0 0 0.5px rgb(255 255 255 / 5%);
+  --v6-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 20%), 0 2px 4px -2px rgb(0 0 0 / 14%);
+  --v6-shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 24%), 0 4px 8px -4px rgb(0 0 0 / 14%);
   --v6-shadow-elevated: 0 8px 28px rgb(0 0 0 / 36%);
+  --v6-shadow-popover: 0 4px 20px rgb(0 0 0 / 36%);
 
   /* ── Vibrancy dark 表面 token ── */
   --v6-vibrancy-sidebar: rgb(38 38 40 / 80%);
@@ -103,8 +291,8 @@
   --v6-vibrancy-selected: rgb(10 132 255 / 28%);
   --v6-vibrancy-active: #0a84ff;
 
-  /* dark 模式：背景图过亮时叠加深色遮罩（默认极浅，仅作占位） */
-  --v6-contrast-overlay: rgb(0 0 0 / 4%);
+  /* dark 模式：背景图过亮时叠加深色遮罩 */
+  --v6-contrast-overlay: rgb(0 0 0 / 8%);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -118,12 +306,24 @@
 :root[data-perf-mode='low'] {
   --v6-backdrop-shell: none;
   --v6-backdrop-vibrancy: none;
+  --v6-backdrop-sidebar: none;
   --v6-backdrop-popover: none;
+  --v6-backdrop-background: none;
+  --v6-shadow-xs: none;
+  --v6-shadow-sm: none;
   --v6-shadow-card: none;
+  --v6-shadow-md: none;
+  --v6-shadow-lg: none;
   --v6-shadow-elevated: none;
+  --v6-shadow-popover: none;
+  --v6-shadow-focus-ring: 0 0 0 var(--v6-focus-ring-width) var(--v6-color-info);
+  --v6-motion-instant: 0ms;
   --v6-motion-fast: 0ms;
   --v6-motion-base: 0ms;
   --v6-motion-slow: 0ms;
+  --v6-motion-slower: 0ms;
+  --v6-background-blur: 0px;
+
   /* vibrancy 表面退化为不透明色（保留语义别名，避免空值导致 fallback 失败） */
   --v6-vibrancy-sidebar: var(--v6-color-sidebar);
   --v6-vibrancy-titlebar: var(--v6-color-titlebar);
@@ -141,6 +341,33 @@
   scroll-behavior: auto !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   系统级减少动画偏好
+   ═══════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --v6-motion-instant: 0ms;
+    --v6-motion-fast: 0ms;
+    --v6-motion-base: 0ms;
+    --v6-motion-slow: 0ms;
+    --v6-motion-slower: 0ms;
+    --v6-backdrop-background: none;
+    --v6-background-blur: 0px;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   基础重置与全局元素样式
+   ═══════════════════════════════════════════════════════════════ */
 html,
 body,
 #app {
@@ -151,8 +378,34 @@ body,
   background: var(--v6-color-window);
   color: var(--v6-color-text);
   font-family: var(--v6-font-sans);
+  font-size: var(--v6-font-size-base);
+  line-height: var(--v6-line-height-normal);
+  font-weight: var(--v6-font-weight-normal);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 背景图基础层：由 AppLayout/TitleBar 等消费 --app-background-* 变量 */
+.v6-app-background {
+  position: fixed;
+  inset: 0;
+  z-index: var(--v6-z-background);
+  background-image: var(--app-background-image, var(--v6-default-wallpaper));
+  background-position: var(--app-background-position, center center);
+  background-size: var(--app-background-size, cover);
+  background-repeat: no-repeat;
+  filter: var(--v6-backdrop-background) brightness(var(--app-background-brightness, 100%));
+  opacity: var(--app-background-opacity, 1);
+  pointer-events: none;
+}
+
+.v6-app-background::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--v6-color-window);
+  opacity: var(--app-background-overlay-opacity, 0);
 }
 
 button,
@@ -160,21 +413,118 @@ input,
 textarea,
 select {
   font: inherit;
+  color: inherit;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --v6-motion-fast: 0ms;
-    --v6-motion-base: 0ms;
-    --v6-motion-slow: 0ms;
-  }
+/* 焦点可见性：键盘导航时显示焦点环，鼠标点击时隐藏 */
+:focus:not(:focus-visible) {
+  outline: none;
+}
 
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+:focus-visible {
+  outline: var(--v6-outline-width) solid var(--v6-color-info);
+  outline-offset: var(--v6-focus-ring-offset);
+}
+
+/* 链接样式 */
+a {
+  color: var(--v6-color-text-link);
+  text-decoration: none;
+  transition: color var(--v6-motion-fast) var(--v6-ease-out);
+}
+
+a:hover {
+  color: var(--v6-color-text-link-hover);
+}
+
+/* 代码/等宽文本 */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--v6-font-mono);
+  font-size: 0.9em;
+}
+
+/* 选中样式 */
+::selection {
+  background: color-mix(in srgb, var(--v6-color-info) 25%, transparent);
+  color: var(--v6-color-text);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--v6-color-border);
+  border-radius: var(--v6-radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--v6-color-border-strong);
+}
+
+/* 滚动条在低性能模式下保持功能但简化 */
+:root[data-perf-mode='low'] ::-webkit-scrollbar-thumb {
+  border-radius: var(--v6-radius-sm);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   通用工具类
+   ═══════════════════════════════════════════════════════════════ */
+.v6-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.v6-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v6-line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 任何页面在较窄内容区里都不能让 Ant Design 表单控件撑破栅格。 */
+:where(
+  .ant-form-item,
+  .ant-form-item-control,
+  .ant-form-item-control-input,
+  .ant-form-item-control-input-content,
+  .ant-select,
+  .ant-picker,
+  .ant-input-affix-wrapper
+) {
+  min-width: 0;
+}
+
+:where(.ant-form-item-control-input-content) > * {
+  min-width: 0;
+  max-width: 100%;
+}
+/* 全局内容区：小窗口降低固定留白，保留页面自身的安全呼吸感。 */
+@media (max-width: 720px) {
+  :root {
+    --v6-content-padding-inline: 14px;
+    --v6-content-padding-block: 14px;
   }
 }

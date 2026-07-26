@@ -100,15 +100,6 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <div v-if="projectUpdateLogs.length" class="agent-env-log-box project-update-log-box">
-      <div
-        v-for="(log, index) in projectUpdateLogs"
-        :key="`${index}-${log}`"
-        class="agent-env-log-line"
-      >
-        {{ log }}
-      </div>
-    </div>
     <div v-if="previewData" class="update-info-grid">
       <div class="update-info-item">
         <div class="update-info-label">当前版本</div>
@@ -144,7 +135,6 @@ defineProps<{
   isAutoUpdateDisabled: boolean
   projectUpdateLoading: boolean
   projectUpdateDisabled: boolean
-  projectUpdateLogs: string[]
   updateSourceOptions: Array<{ label: string; value: string }>
   updateChannelOptions: Array<{ label: string; value: string }>
 }>()
@@ -209,23 +199,6 @@ const emit = defineEmits<{
   min-width: 160px;
 }
 
-.project-update-log-box {
-  margin-bottom: 16px;
-}
-
-.agent-env-log-box {
-  max-height: 220px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  overflow: auto;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-  font-family: var(--font-mono, Consolas, 'Courier New', monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 .update-info-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -257,3 +230,4 @@ const emit = defineEmits<{
   }
 }
 </style>
+<style scoped src="../script-edit-surface.css"></style>

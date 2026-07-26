@@ -40,7 +40,7 @@
     />
 
     <div class="user-edit-content">
-      <a-card class="config-card">
+      <a-spin :spinning="loading" class="config-shell">
         <a-form
           ref="formRef"
           :model="formData"
@@ -50,6 +50,7 @@
         >
           <!-- 基本信息组件 -->
           <BasicInfoSection
+            ref="basicInfoRef"
             :form-data="formData"
             :loading="loading"
             :server-options="serverOptions"
@@ -60,6 +61,7 @@
             :is-edit="isEdit"
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @save="handleFieldSave"
+            @sensitive-save="handleSensitiveSave"
           />
 
           <!-- 关卡配置组件 -->
@@ -103,21 +105,29 @@
           <TaskConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 森空岛配置组件 -->
-          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <SkylandConfigSection
+            ref="skylandRef"
+            :form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+            @sensitive-save="handleSensitiveSave"
+          />
 
           <!-- 额外脚本组件 -->
           <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 通知配置组件 -->
           <NotifyConfigSection
+            ref="notifyRef"
             :form-data="formData"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
             @save="handleFieldSave"
+            @sensitive-save="handleSensitiveSave"
           />
         </a-form>
-      </a-card>
+      </a-spin>
     </div>
   </div>
 </template>
@@ -159,11 +169,21 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+const basicInfoRef = ref<InstanceType<typeof BasicInfoSection> | null>(null)
+const skylandRef = ref<InstanceType<typeof SkylandConfigSection> | null>(null)
+const notifyRef = ref<InstanceType<typeof NotifyConfigSection> | null>(null)
 
 // 路由参数
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+
+const updateUserOrThrow = async (userData: Record<string, unknown>) => {
+  const saved = await updateUser(scriptId, userId, userData)
+  if (saved === false) {
+    throw new Error('用户配置更新未成功')
+  }
+}
 
 // 脚本信息
 const scriptName = ref('')
@@ -570,13 +590,41 @@ const handleFieldSave = async (key: string, value: any) => {
       userData = { Info: { Id: value } }
     }
 
-    await updateUser(scriptId, userId, userData)
+    await updateUserOrThrow(userData)
     // 刷新数据
     await loadUserData()
     logger.info(`用户配置已保存: ${key}`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const handleSensitiveSave = async (
+  key: 'Info.Password' | 'Info.SklandToken' | 'Notify.ServerChanKey',
+  intent: 'replace' | 'clear',
+  value?: string
+) => {
+  if (isInitializing.value || isSaving.value || !userId) return
+
+  isSaving.value = true
+  try {
+    const [group, field] = key.split('.')
+    await updateUserOrThrow({
+      [group]: {
+        [field]: intent === 'clear' ? '' : (value ?? ''),
+      },
+    })
+    await loadUserData()
+    basicInfoRef.value?.resetPasswordDraft()
+    skylandRef.value?.resetTokenDraft()
+    notifyRef.value?.resetServerChanKeyDraft()
+    message.success(intent === 'clear' ? '敏感配置已清空' : '敏感配置已更新')
+  } catch {
+    logger.error(`敏感配置保存失败: ${key}`)
+    message.error('敏感配置保存失败，输入内容已保留，请重试')
   } finally {
     isSaving.value = false
   }
@@ -599,7 +647,7 @@ const _saveFullUserData = async () => {
       Data: { ...formData.Data },
     }
 
-    await updateUser(scriptId, userId, userData)
+    await updateUserOrThrow(userData)
     logger.info('用户配置已保存')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -1222,27 +1270,78 @@ onMounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
+  padding: var(--v6-space-8);
   min-height: 100vh;
-  background: var(--ant-color-bg-layout);
+  background: var(--v6-color-window);
 }
 
 .user-edit-content {
-  max-width: 1200px;
+  max-width: 1320px;
   margin: 0 auto;
 }
 
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
+.config-shell {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .config-form {
+  display: block;
   max-width: none;
+}
+
+.config-form :deep(.form-section) {
+  min-width: 0;
+  margin: 0 0 var(--v6-space-4);
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: var(--v6-vibrancy-content);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: blur(24px) saturate(1.18);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  break-inside: avoid;
+}
+
+/* 宽容器：iPad 设置式双栏瀑布流。卡片在两列内各自纵向堆叠、互不等高拉伸；
+   前两张卡（基本信息 / 关卡）保持通栏。窄容器回落为上方的单列堆叠。 */
+@container app-content (min-width: 981px) {
+  .config-form {
+    columns: 2;
+    column-gap: var(--v6-space-4);
+  }
+
+  .config-form :deep(.form-section) {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
+  }
+
+  .config-form :deep(.form-section:nth-child(1)),
+  .config-form :deep(.form-section:nth-child(2)) {
+    display: block;
+    column-span: all;
+  }
+}
+
+.config-form :deep(.section-header) {
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.config-form :deep(.section-header h3) {
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
+}
+
+.config-form :deep(.section-header h3::before) {
+  display: none;
 }
 
 .float-button {
@@ -1253,11 +1352,34 @@ onMounted(() => {
 /* 响应式设计 */
 @media (max-width: 768px) {
   .user-edit-container {
-    padding: 16px;
+    padding: var(--v6-space-4);
   }
 
   .user-edit-content {
     max-width: 100%;
+  }
+
+  .config-form :deep(.form-section) {
+    padding: var(--v6-space-4);
+  }
+
+  .config-form :deep(.form-section .ant-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+}
+
+[data-perf-mode='low'] .config-form :deep(.form-section) {
+  background: var(--v6-color-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .config-shell,
+  .config-form :deep(*) {
+    scroll-behavior: auto;
+    transition: none;
   }
 }
 
@@ -1268,43 +1390,40 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, #000 45%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: var(--v6-z-modal-backdrop);
 }
 
 .mask-content {
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  padding: 24px;
+  background: var(--v6-color-surface-elevated);
+  border-radius: var(--v6-radius-md);
+  padding: var(--v6-space-6);
   max-width: 480px;
   width: 100%;
   text-align: center;
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ant-color-border);
+  box-shadow: var(--v6-shadow-elevated);
+  border: 1px solid var(--v6-color-border);
 }
 
 .mask-icon {
-  margin-bottom: 16px;
+  margin-bottom: var(--v6-space-4);
 }
 
 .mask-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-xl);
+  font-weight: var(--v6-font-weight-semibold);
+  margin: 0 0 var(--v6-space-2);
+  color: var(--v6-color-text);
 }
 
 .mask-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 24px;
-  line-height: 1.5;
+  font-size: var(--v6-font-size-base);
+  color: var(--v6-color-text-secondary);
+  margin: 0 0 var(--v6-space-6);
+  line-height: var(--v6-line-height-normal);
 }
 
 .mask-actions {

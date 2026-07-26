@@ -35,7 +35,7 @@ export const PAGE_COMPONENTS: Record<string, RouteRecordRaw['component']> = {
   Home: () => import('../views/Home.vue'),
   Scripts: () => import('../views/Scripts.vue'),
   Plans: () => import('../views/plan/index.vue'),
-  Emulators: () => import('../views/Emulator.vue'),
+  GameCenter: () => import('../views/game-center/index.vue'),
   Plugin: () => import('../views/Plugin.vue'),
   PluginMarket: () => import('../views/PluginMarket.vue'),
   Queue: () => import('../views/queue/index.vue'),
@@ -53,7 +53,7 @@ const BUILTIN_ROUTE_NAMES: Record<string, string> = {
   home: 'Home',
   scripts: 'Scripts',
   plans: 'Plans',
-  emulators: 'Emulators',
+  'game-center': 'GameCenter',
   plugins: 'Plugin',
   'plugins-market': 'PluginMarket',
   queue: 'Queue',
@@ -105,7 +105,7 @@ export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
   hostPage('home', '/home', '主页', 'home', 'Home', 'main', 10),
   hostPage('scripts', '/scripts', '脚本管理', 'script', 'Scripts', 'main', 20),
   hostPage('plans', '/plans', '计划管理', 'plan', 'Plans', 'main', 30),
-  hostPage('emulators', '/emulators', '模拟器管理', 'emulator', 'Emulators', 'main', 40),
+  hostPage('game-center', '/game-center', '游戏与模拟器', 'emulator', 'GameCenter', 'main', 40),
   hostPage('plugins', '/plugins', '插件管理', 'plugin', 'Plugin', 'main', 50),
   hostPage('plugins-market', '/plugins-market', '插件市场', 'market', 'PluginMarket', 'main', 60),
   hostPage('queue', '/queue', '调度队列', 'queue', 'Queue', 'main', 70),
@@ -135,31 +135,49 @@ export function normalizePageDeclarations(raw: unknown): PageDeclaration[] {
 
   const pages = raw
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
-    .map(item => ({
-      id: String(item.id || '').trim(),
-      path: normalizePath(String(item.path || '')),
-      title: String(item.title || '').trim(),
-      menu_label: String(item.menu_label || item.title || '').trim(),
-      icon: String(item.icon || 'app').trim(),
-      component: String(item.component || 'PluginPage').trim(),
-      renderer: String(item.renderer || 'component').trim(),
-      url: normalizeOptionalText(item.url),
-      frontend_plugin: normalizeOptionalText(item.frontend_plugin),
-      element_tag: normalizeOptionalText(item.element_tag),
-      entry_asset_url: normalizeOptionalText(item.entry_asset_url),
-      style_asset_urls: normalizeStringList(item.style_asset_urls),
-      manifest_version: normalizeOptionalNumber(item.manifest_version),
-      dev_frontend_command: normalizeOptionalText(item.dev_frontend_command),
-      dev_frontend_error: normalizeOptionalText(item.dev_frontend_error),
-      section: String(item.section || 'main').trim(),
-      order: Number.isFinite(Number(item.order)) ? Number(item.order) : 1000,
-      visible: item.visible !== false,
-      dev_only: item.dev_only === true,
-      source: String(item.source || '').trim(),
-    }))
+    .map(item =>
+      canonicalizeLegacyPageDeclaration({
+        id: String(item.id || '').trim(),
+        path: normalizePath(String(item.path || '')),
+        title: String(item.title || '').trim(),
+        menu_label: String(item.menu_label || item.title || '').trim(),
+        icon: String(item.icon || 'app').trim(),
+        component: String(item.component || 'PluginPage').trim(),
+        renderer: String(item.renderer || 'component').trim(),
+        url: normalizeOptionalText(item.url),
+        frontend_plugin: normalizeOptionalText(item.frontend_plugin),
+        element_tag: normalizeOptionalText(item.element_tag),
+        entry_asset_url: normalizeOptionalText(item.entry_asset_url),
+        style_asset_urls: normalizeStringList(item.style_asset_urls),
+        manifest_version: normalizeOptionalNumber(item.manifest_version),
+        dev_frontend_command: normalizeOptionalText(item.dev_frontend_command),
+        dev_frontend_error: normalizeOptionalText(item.dev_frontend_error),
+        section: String(item.section || 'main').trim(),
+        order: Number.isFinite(Number(item.order)) ? Number(item.order) : 1000,
+        visible: item.visible !== false,
+        dev_only: item.dev_only === true,
+        source: String(item.source || '').trim(),
+      })
+    )
     .filter(page => page.id && page.path && page.title && page.menu_label && canRenderPage(page))
 
   return pages.length > 0 ? sortPageDeclarations(pages) : FALLBACK_PAGE_DECLARATIONS
+}
+
+function canonicalizeLegacyPageDeclaration(page: PageDeclaration): PageDeclaration {
+  if (page.id !== 'emulators' && page.path !== '/emulators') {
+    return page
+  }
+  return {
+    ...page,
+    id: 'game-center',
+    path: '/game-center',
+    title: '游戏与模拟器',
+    menu_label: '游戏与模拟器',
+    icon: 'emulator',
+    component: 'GameCenter',
+    renderer: 'component',
+  }
 }
 
 export function sortPageDeclarations(pages: PageDeclaration[]): PageDeclaration[] {

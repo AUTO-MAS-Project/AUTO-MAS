@@ -335,73 +335,73 @@ const applySelection = async () => {
 }
 
 .visual-mode-container {
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 16px;
-  background: var(--ant-color-bg-container);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-card);
+  padding: var(--v6-space-4);
+  background: var(--v6-color-surface);
 }
 
 .log-preview-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  color: var(--ant-color-text);
-  font-weight: 500;
+  margin-bottom: var(--v6-space-3);
+  color: var(--v6-color-text);
+  font-weight: var(--v6-font-weight-medium);
 }
 
 .log-preview-area {
   position: relative;
   height: 300px;
   overflow: auto;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  padding: 8px;
-  background-color: var(--ant-color-bg-layout);
-  font-family: monospace;
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-control);
+  padding: var(--v6-space-2);
+  background-color: var(--v6-color-window);
+  font-family: var(--v6-font-mono);
   user-select: text; /* 启用文本选择 */
   transition:
-    border-color 0.2s ease,
-    background-color 0.2s ease;
+    border-color var(--v6-motion-fast) var(--v6-ease-out),
+    background-color var(--v6-motion-fast) var(--v6-ease-out);
   scrollbar-width: thin;
-  scrollbar-color: var(--ant-color-border) var(--ant-color-bg-layout);
+  scrollbar-color: var(--v6-color-border) var(--v6-color-window);
 }
 
 .log-preview-area::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
+  width: 8px;
+  height: 8px;
+  display: block;
 }
 
 .log-preview-area::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout) !important;
-  border-radius: 8px;
+  background: var(--v6-color-window);
+  border-radius: var(--v6-radius-card);
 }
 
 .log-preview-area::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border) !important;
-  border-radius: 8px;
+  background: var(--v6-color-border);
+  border-radius: var(--v6-radius-card);
 }
 
 .log-preview-area::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary) !important;
+  background: var(--v6-color-border-strong);
 }
 
 .log-line {
   position: relative;
-  padding: 4px 8px;
-  line-height: 1.5;
+  padding: var(--v6-space-1) var(--v6-space-2);
+  line-height: var(--v6-line-height-normal);
   cursor: text; /* 显示文本光标 */
   white-space: nowrap;
 }
 
 .log-line:hover {
-  background-color: var(--ant-color-primary-bg);
+  background-color: var(--v6-color-info-bg);
 }
 
 .line-number {
-  color: var(--ant-color-text-tertiary);
-  margin-right: 8px;
+  color: var(--v6-color-text-tertiary);
+  margin-right: var(--v6-space-2);
   user-select: none;
 }
 
@@ -414,35 +414,35 @@ const applySelection = async () => {
   position: absolute;
   top: 0;
   bottom: 0;
-  background-color: var(--ant-color-primary-bg);
-  border-radius: 2px;
+  background-color: var(--v6-color-info-bg);
+  border-radius: var(--v6-radius-xs);
   pointer-events: none;
   z-index: 0;
 }
 
 .line-content {
   position: relative;
-  color: var(--ant-color-text);
+  color: var(--v6-color-text);
   white-space: nowrap;
   z-index: 1;
 }
 
 .selection-info {
-  margin-top: 12px;
+  margin-top: var(--v6-space-3);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: var(--ant-color-bg-layout);
-  border: 1px solid var(--ant-color-border);
+  padding: var(--v6-space-2) var(--v6-space-3);
+  border-radius: var(--v6-radius-control);
+  background: var(--v6-color-window);
+  border: 1px solid var(--v6-color-border);
 }
 
 .current-selection {
-  color: var(--ant-color-text-secondary);
+  color: var(--v6-color-text-secondary);
 }
 
 .current-selection span {
-  color: var(--ant-color-text);
+  color: var(--v6-color-text);
 }
 </style>

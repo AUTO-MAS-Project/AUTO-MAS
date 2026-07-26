@@ -1,20 +1,38 @@
 <template>
-  <div class="task-tree-container">
+  <div class="task-tree-container" role="tree" aria-label="任务总览树">
     <div v-if="taskData.length === 0" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-image-container">
-          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
-        </div>
-      </div>
+      <EmptyState
+        compact
+        title="暂无任务"
+        description="选择目标并开始调度后，任务状态会显示在这里。"
+      />
     </div>
     <div v-else class="task-tree">
-      <div v-for="script in taskData" :key="`script-${script.script_id}`" class="script-card">
+      <div
+        v-for="script in taskData"
+        :key="`script-${script.script_id}`"
+        class="script-card"
+        role="treeitem"
+        :aria-expanded="expandedScripts.has(script.script_id)"
+      >
         <!-- 脚本级别 -->
-        <div class="script-header" @click="toggleScript(script.script_id)">
+        <div
+          class="script-header"
+          role="button"
+          tabindex="0"
+          :aria-label="`${script.name}，${script.status}，${script.user_list?.length || 0} 个用户`"
+          @click="toggleScript(script.script_id)"
+          @keydown.enter.prevent="toggleScript(script.script_id)"
+          @keydown.space.prevent="toggleScript(script.script_id)"
+        >
           <div class="script-content">
             <div class="script-info">
-              <CaretDownOutlined v-if="expandedScripts.has(script.script_id)" class="expand-icon" />
-              <CaretRightOutlined v-else class="expand-icon" />
+              <CaretDownOutlined
+                v-if="expandedScripts.has(script.script_id)"
+                class="expand-icon"
+                aria-hidden="true"
+              />
+              <CaretRightOutlined v-else class="expand-icon" aria-hidden="true" />
               <span class="script-name">{{ script.name }}</span>
               <span v-if="script.user_list && script.user_list.length > 0" class="user-count">
                 ({{ script.user_list.length }}个用户)
@@ -27,7 +45,7 @@
         </div>
 
         <!-- 用户列表 -->
-        <div v-show="expandedScripts.has(script.script_id)" class="user-list">
+        <div v-show="expandedScripts.has(script.script_id)" class="user-list" role="group">
           <div v-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
               <span class="no-users-text">暂无用户</span>
@@ -38,6 +56,7 @@
             :key="`user-${script.script_id}-${user.user_id}`"
             class="user-item"
             :class="{ 'last-item': index === script.user_list.length - 1 }"
+            role="treeitem"
           >
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
@@ -54,6 +73,7 @@
 
 <script setup lang="ts">
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
+import EmptyState from '@/components/v6/EmptyState.vue'
 import { ref, watch } from 'vue'
 
 const logger = window.electronAPI.getLogger('任务树组件')
@@ -236,6 +256,13 @@ defineExpose({
   );
   /* 保留hover过渡，但减少时间 */
   transition: background 0.1s ease;
+  outline: none;
+}
+
+.script-header:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
+  border-radius: 8px;
 }
 
 .script-header:hover {
@@ -584,5 +611,15 @@ defineExpose({
   font-size: 14px;
   color: var(--ant-color-text-secondary);
   margin: 0;
+}
+
+/* prefers-reduced-motion 支持 */
+@media (prefers-reduced-motion: reduce) {
+  .script-header,
+  .script-card,
+  .user-content,
+  .expand-icon {
+    transition: none !important;
+  }
 }
 </style>

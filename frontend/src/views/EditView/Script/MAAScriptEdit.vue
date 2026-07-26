@@ -1,35 +1,13 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditPageHeader
+    title="MAA 脚本配置"
+    type-label="MAA"
+    type-color="blue"
+    @back="handleCancel"
+  />
 
   <div class="script-edit-content">
-    <a-card title="MAA脚本配置" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag color="blue" class="type-tag"> MAA </a-tag>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
         <div class="form-section">
@@ -329,11 +307,8 @@ import { message } from 'ant-design-vue'
 import type { MAAScriptConfig, ScriptType } from '@/types/script.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '@/api'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const logger = window.electronAPI.getLogger('MAA脚本编辑')
 
@@ -974,3 +949,4 @@ const selectMAAPath = async () => {
   height: 60px;
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

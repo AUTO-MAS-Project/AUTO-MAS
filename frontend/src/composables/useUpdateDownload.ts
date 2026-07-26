@@ -9,20 +9,38 @@ import {
   WS_UPDATE_CANCELLED,
   WS_UPDATE_COMPLETED,
   WS_UPDATE_FAILED,
+  WS_UPDATE_INSTALLING,
   WS_UPDATE_PROGRESS,
+  WS_UPDATE_VERIFYING,
 } from '@/services/websocket/types'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
 const DOWNLOAD_TIMEOUT_MS = 2 * 60 * 60 * 1000
+const INSTALL_PREPARATION_TIMEOUT_MS = 5 * 60 * 1000
 const SUBSCRIPTION_HEALTH_CHECK_MS = 3_000
 
+/**
+ * 更新流程状态机。
+ *
+ * 状态流：
+ *   idle → downloading → completed → verifying → installing → 应用退出
+ *                    ↘             ↘            ↘
+ *                     failed        failed       failed
+ *
+ * - completed：更新包下载完成，等待用户点击安装；不代表已完成内容校验
+ * - verifying：后端正在校验更新包完整性（SHA256 摘要比对）
+ * - installing：后端正在解压并启动安装程序；成功后应用会退出
+ * - failed：任何阶段失败，保留诊断信息供复制
+ */
 export type UpdateDownloadStatus =
   | 'idle'
   | 'downloading'
   | 'cancelling'
   | 'switchingSource'
   | 'completed'
+  | 'verifying'
+  | 'installing'
   | 'failed'
 
 export interface UpdateDownloadProgress {
@@ -50,6 +68,7 @@ const updateData = ref<Record<string, string[]>>({})
 
 let subscriptionIds: string[] = []
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
+let installTimeout: ReturnType<typeof setTimeout> | null = null
 let subscriptionHealthCheck: ReturnType<typeof setInterval> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
 
@@ -110,6 +129,10 @@ const stopRuntimeMonitoring = () => {
     clearTimeout(downloadTimeout)
     downloadTimeout = null
   }
+  if (installTimeout) {
+    clearTimeout(installTimeout)
+    installTimeout = null
+  }
   if (subscriptionHealthCheck) {
     clearInterval(subscriptionHealthCheck)
     subscriptionHealthCheck = null
@@ -121,6 +144,8 @@ const ensureSubscription = () => {
   subscriptionIds = [
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_PROGRESS }, handleMessage),
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_COMPLETED }, handleMessage),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_VERIFYING }, handleMessage),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_INSTALLING }, handleMessage),
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_FAILED }, handleMessage),
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_CANCELLED }, handleMessage),
     // 迁移期兼容旧后端。
@@ -201,7 +226,7 @@ const receiveSignal = (data: UpdateDownloadSignal) => {
   }
 
   if (data.Accomplish) {
-    logger.info('下载完成')
+    logger.info('更新包下载完成，等待用户确认安装')
     stopRuntimeMonitoring()
     status.value = 'completed'
     speed.value = 0
@@ -217,6 +242,37 @@ const receiveSignal = (data: UpdateDownloadSignal) => {
   }
 }
 
+/**
+ * Lane 8：诊断信息，用于失败时复制到剪贴板。
+ *
+ * 包含：版本、下载源、已下载大小、文件总大小、失败原因、时间戳。
+ * 在 failed 状态下用户可点击"复制诊断信息"按钮获取。
+ */
+const diagnosticInfo = computed(() => {
+  const lines = [
+    `=== AUTO-MAS 更新诊断信息 ===`,
+    `时间: ${new Date().toISOString()}`,
+    `目标版本: ${latestVersion.value || '未知'}`,
+    `当前状态: ${status.value}`,
+    `下载源: ${source.value || sourceLabel.value || '未知'}`,
+    `已下载: ${formatBytes(downloadedSize.value)} / ${formatBytes(fileSize.value)}`,
+    `失败原因: ${failureReason.value || '无'}`,
+    `========================`,
+  ]
+  return lines.join('\n')
+})
+
+const copyDiagnostic = async () => {
+  try {
+    await navigator.clipboard.writeText(diagnosticInfo.value)
+    message.success('诊断信息已复制到剪贴板')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`复制诊断信息失败: ${errorMsg}`)
+    message.error('复制失败，请手动选择文本复制')
+  }
+}
+
 function handleMessage(wsMessage: WebSocketBaseMessage) {
   if (wsMessage.id !== 'Update') return
 
@@ -224,6 +280,17 @@ function handleMessage(wsMessage: WebSocketBaseMessage) {
     receiveProgress(wsMessage.data as UpdateDownloadProgress)
   } else if (wsMessage.type === WS_UPDATE_COMPLETED) {
     receiveSignal({ Accomplish: String((wsMessage.data as { file?: unknown }).file ?? '') })
+  } else if (wsMessage.type === WS_UPDATE_VERIFYING) {
+    // Lane 01：后端进入完整性校验阶段
+    status.value = 'verifying'
+    logger.info(
+      `正在校验更新包完整性 (job: ${(wsMessage.data as { job_id?: unknown }).job_id ?? '?'})`
+    )
+  } else if (wsMessage.type === WS_UPDATE_INSTALLING) {
+    // Lane 01：后端校验通过，开始解压安装
+    status.value = 'installing'
+    failureReason.value = ''
+    logger.info(`正在安装更新 (job: ${(wsMessage.data as { job_id?: unknown }).job_id ?? '?'})`)
   } else if (wsMessage.type === WS_UPDATE_FAILED) {
     receiveSignal({ Failed: String((wsMessage.data as { message?: unknown }).message ?? '') })
   } else if (wsMessage.type === WS_UPDATE_CANCELLED) {
@@ -322,19 +389,34 @@ const retry = async () => {
 }
 
 const install = async () => {
+  if (status.value !== 'completed') return
+
   try {
+    // Lane 01：安装请求发送后进入 verifying 状态，等待后端 WS 事件流
+    status.value = 'verifying'
+    failureReason.value = ''
     const response = await Service.installUpdateApiUpdateInstallPost()
     if (response.code === 200) {
-      message.success('安装程序已启动')
-      resetState()
-      modalVisible.value = false
+      // HTTP 200 只表示后端安装任务已成功排队。后端随后校验摘要、
+      // 解压更新包，并通过 WS 推送 verifying → installing → failed 事件。
+      // 安装成功后后端会直接退出应用。
+      installTimeout = setTimeout(() => {
+        if (status.value !== 'verifying' && status.value !== 'installing') return
+        status.value = 'failed'
+        failureReason.value = '安装准备超时，请查看后端日志；安装任务可能仍在运行'
+        stopRuntimeMonitoring()
+      }, INSTALL_PREPARATION_TIMEOUT_MS)
     } else {
       message.error(response.message || '启动安装失败')
+      status.value = 'failed'
+      failureReason.value = response.message || '启动安装失败'
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
     message.error('启动安装失败')
+    status.value = 'failed'
+    failureReason.value = errorMessage
   }
 }
 
@@ -361,6 +443,7 @@ export function useUpdateDownload() {
     failureReason,
     latestVersion,
     updateData,
+    diagnosticInfo,
     formatBytes,
     formatSpeed,
     start,
@@ -372,6 +455,7 @@ export function useUpdateDownload() {
     install,
     installLater,
     reset,
+    copyDiagnostic,
     receiveProgress,
     receiveSignal,
   }

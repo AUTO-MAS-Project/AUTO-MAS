@@ -1,4 +1,4 @@
-import { ref, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
@@ -199,11 +199,6 @@ export function useUpdateChecker() {
     stopPolling() // 先停止现有任务
     await startPolling() // 再根据设置重新启动
   }
-
-  // 组件卸载时清理定时器
-  onUnmounted(() => {
-    stopPolling()
-  })
 
   return {
     updateVisible,

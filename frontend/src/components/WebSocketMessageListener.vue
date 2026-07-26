@@ -30,13 +30,18 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { Modal, Button } from 'ant-design-vue'
+import { Modal, Button, message as antMessage } from 'ant-design-vue'
 import {
   normalizeDialogRequestData,
   useWebSocket,
   type WebSocketBaseMessage,
 } from '@/composables/useWebSocket'
 import { useAppLifecycle } from '@/composables/useAppLifecycle'
+import {
+  WS_ID_ARKNIGHTS_TOOLKIT,
+  WS_TOOLKIT_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 
 const logger = window.electronAPI.getLogger('WebSocket消息')
 
@@ -56,6 +61,7 @@ initializeAppLifecycle()
 
 // 存储订阅ID用于取消订阅
 let legacySubscriptionId: string | undefined
+let toolkitNoticeSubscriptionId: string | undefined
 
 // Modal 队列状态
 const modalQueue = ref<ModalData[]>([])
@@ -171,6 +177,26 @@ const enqueueModal = async (modalData: ModalData) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// 工具箱通知（id=ArknightsPCToolkit, type=toolkit.notice）：
+// 后端 MaaFW 工具异步错误由此推送（如 ArknightsPC 连接明日方舟窗口失败，
+// app/MaaFW/ArknightWin32.py），payload 复用 WSTaskNoticeData { level, message }。
+const handleToolkitNotice = (envelope: WebSocketBaseMessage) => {
+  const data = (isRecord(envelope.data) ? envelope.data : {}) as Partial<WSTaskNoticeData>
+  const text =
+    typeof data.message === 'string' && data.message.trim().length > 0
+      ? data.message
+      : '明日方舟工具箱发生未知错误'
+  logger.info(`收到工具箱通知: level=${data.level ?? 'info'}, message=${text}`)
+
+  if (data.level === 'error') {
+    antMessage.error(text)
+  } else if (data.level === 'warning') {
+    antMessage.warning(text)
+  } else {
+    antMessage.info(text)
+  }
+}
 
 const showQuestion = async (questionData: unknown) => {
   if (!isRecord(questionData)) {
@@ -341,7 +367,15 @@ onMounted(() => {
   // 保留旧 Message 类型订阅（注意大写 M）
   legacySubscriptionId = subscribe({ type: 'Message' }, handleMessage)
 
-  logger.info(`旧版弹窗订阅ID: ${legacySubscriptionId}`)
+  // 工具箱异步错误通知（此前全库无订阅者，后端推送后用户"无反应"）
+  toolkitNoticeSubscriptionId = subscribe(
+    { id: WS_ID_ARKNIGHTS_TOOLKIT, type: WS_TOOLKIT_NOTICE },
+    handleToolkitNotice
+  )
+
+  logger.info(
+    `旧版弹窗订阅ID: ${legacySubscriptionId}, 工具箱通知订阅ID: ${toolkitNoticeSubscriptionId}`
+  )
 
   // 暴露调试接口到 window 对象（仅用于开发调试）
   window.__debugShowQuestion = showQuestion
@@ -350,8 +384,9 @@ onMounted(() => {
 
 // 组件卸载时取消订阅
 onUnmounted(() => {
-  logger.info('组件卸载，停止监听新旧弹窗消息')
+  logger.info('组件卸载，停止监听新旧弹窗消息与工具箱通知')
   if (legacySubscriptionId) unsubscribe(legacySubscriptionId)
+  if (toolkitNoticeSubscriptionId) unsubscribe(toolkitNoticeSubscriptionId)
   // 清理调试接口
   delete window.__debugShowQuestion
 })

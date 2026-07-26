@@ -27,35 +27,125 @@
     <a-row :gutter="24" style="margin-top: 16px">
       <a-col :span="24">
         <span style="font-weight: 500">鹰角网络通行证登录凭证</span>
-        <a-input-password
-          v-model:value="formData.Info.SklandToken"
-          :disabled="loading || !formData.Info.IfSkland"
-          placeholder="请输入鹰角网络通行证登录凭证"
-          size="large"
-          style="margin-top: 8px; width: 100%"
-          allow-clear
-          @blur="emitSave('Info.SklandToken', formData.Info.SklandToken)"
-        />
+        <div class="sensitive-field-row" style="margin-top: 8px">
+          <a-input-password
+            :value="tokenDraft"
+            :placeholder="tokenPlaceholder"
+            :disabled="loading || !formData.Info.IfSkland"
+            size="large"
+            autocomplete="new-password"
+            style="width: 100%"
+            @update:value="(val: string) => handleTokenInput(val)"
+            @blur="handleTokenBlur"
+          />
+          <a-button
+            v-if="!loading && formData.Info.IfSkland && hasStoredToken"
+            size="small"
+            type="link"
+            danger
+            :disabled="tokenExplicitlyCleared"
+            @click="handleClearToken"
+          >
+            {{ tokenExplicitlyCleared ? '已清空' : '清空原值' }}
+          </a-button>
+        </div>
       </a-col>
     </a-row>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  /**
+   * 敏感字段保存意图（与 BasicInfoSection 一致，Lane 06 任务书第 2 条）：
+   * - `keep`：未触碰 → 不发送给后端。
+   * - `replace`：输入新值 → 发送新明文。
+   * - `clear`：显式清空 → 发送空串 `""`。
+   */
+  sensitiveSave: [key: string, intent: 'keep' | 'replace' | 'clear', value?: string]
+  sensitiveDirtyChange: [key: string, dirty: boolean]
 }>()
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+// ============================================================
+// SklandToken 敏感字段：草稿驱动，不在 DOM 显示明文
+// ============================================================
+
+const tokenDraft = ref('')
+const tokenExplicitlyCleared = ref(false)
+
+const hasStoredToken = computed(() => {
+  const stored = props.formData?.Info?.SklandToken
+  return typeof stored === 'string' && stored.length > 0
+})
+
+const tokenPlaceholder = computed(() => {
+  if (tokenExplicitlyCleared.value) {
+    return '已清空。留空保持清空状态，输入新值替换'
+  }
+  if (hasStoredToken.value) {
+    return '已保存。留空保持原值，输入新值替换'
+  }
+  return '请输入鹰角网络通行证登录凭证'
+})
+
+const handleTokenInput = (val: string) => {
+  tokenDraft.value = val
+  if (val !== '' && tokenExplicitlyCleared.value) {
+    tokenExplicitlyCleared.value = false
+  }
+  emit('sensitiveDirtyChange', 'Info.SklandToken', val !== '' || tokenExplicitlyCleared.value)
+}
+
+const handleClearToken = () => {
+  if (!hasStoredToken.value) {
+    return
+  }
+  tokenDraft.value = ''
+  tokenExplicitlyCleared.value = true
+  emit('sensitiveDirtyChange', 'Info.SklandToken', true)
+}
+
+const handleTokenBlur = () => {
+  if (tokenExplicitlyCleared.value) {
+    emit('sensitiveSave', 'Info.SklandToken', 'clear', '')
+    return
+  }
+  if (tokenDraft.value === '') {
+    emit('sensitiveSave', 'Info.SklandToken', 'keep')
+    return
+  }
+  emit('sensitiveSave', 'Info.SklandToken', 'replace', tokenDraft.value)
+}
+
+watch(
+  () => props.formData?.Info?.SklandToken,
+  () => {
+    tokenDraft.value = ''
+    tokenExplicitlyCleared.value = false
+    emit('sensitiveDirtyChange', 'Info.SklandToken', false)
+  }
+)
+
+defineExpose({
+  resetTokenDraft: () => {
+    tokenDraft.value = ''
+    tokenExplicitlyCleared.value = false
+  },
+  isTokenDirty: () => tokenDraft.value !== '' || tokenExplicitlyCleared.value,
+})
 </script>
 
 <style scoped>
@@ -115,5 +205,23 @@ const emitSave = (key: string, value: any) => {
   margin-left: 12px;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
+}
+
+.sensitive-field-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.sensitive-field-row :deep(.ant-input-password) {
+  width: 100%;
+}
+
+.sensitive-field-row :deep(.ant-btn-link) {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

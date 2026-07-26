@@ -96,9 +96,16 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   },
 ]
 
+// 实验性托管资源模式暂不作为用户创建入口暴露。
+// 保留已存在记录的读取/编辑能力，也保留插件与底层实现，后续可重新开放。
+export const HIDDEN_SCRIPT_CREATE_TYPES = new Set(['MaaFWManaged'])
+
 export const createScriptTypeOptions = (descriptors: ScriptTypeDescriptor[]): ScriptTypeOption[] =>
   descriptors
-    .filter(descriptor => descriptor.available !== false)
+    .filter(
+      descriptor =>
+        descriptor.available !== false && !HIDDEN_SCRIPT_CREATE_TYPES.has(descriptor.type_key)
+    )
     .map(descriptor => ({
       value: descriptor.type_key,
       title: descriptor.display_name,
@@ -132,21 +139,6 @@ export const splitScriptTypeOptions = (options: ScriptTypeOption[]) => ({
   specialized: options.filter(option => option.group === 'specialized'),
   general: options.filter(option => option.group === 'general'),
 })
-
-const SCRIPT_EDIT_SEGMENTS: Record<string, string> = {
-  MAA: 'maa',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  M9A: 'maafw',
-  MaaFW: 'maafw',
-  Okww: 'okww',
-  OkScript: 'ok-script',
-  HSR: 'hsr',
-  General: 'general',
-}
-
-export const getScriptEditSegment = (type: ScriptType): string =>
-  SCRIPT_EDIT_SEGMENTS[type] ?? type.trim().toLowerCase()
 
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
   if (state.type !== 'General') {

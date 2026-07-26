@@ -1,56 +1,66 @@
 <template>
-  <div
-    ref="hostWrapperRef"
-    class="plugin-page-host"
-    :style="hostStyle"
-    :data-page-id="page.id"
-    :data-plugin-id="page.frontend_plugin || ''"
-    :data-theme="themeIsDark ? 'dark' : 'light'"
+  <PluginErrorBoundary
+    :extension-id="page.frontend_plugin || page.id"
+    :plugin-name="page.title"
+    @disable="handleDisableExtension"
+    @retry="retryLoad"
   >
-    <iframe
-      v-if="frameSrc && !loadError"
-      :key="loadGeneration"
-      ref="frameRef"
-      class="plugin-page-frame"
-      :src="frameSrc"
-      :title="page.title"
-      :data-load-generation="loadGeneration"
-      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-same-origin"
-      @load="handleFrameLoad"
-      @error="handleFrameError"
-    />
-    <a-result
-      v-else-if="loadError"
-      status="warning"
-      title="插件页面加载失败"
-      :sub-title="loadError"
+    <div
+      ref="hostWrapperRef"
+      class="plugin-page-host"
+      :style="hostStyle"
+      :data-page-id="page.id"
+      :data-plugin-id="page.frontend_plugin || ''"
+      :data-theme="themeIsDark ? 'dark' : 'light'"
     >
-      <template #extra>
-        <a-button type="primary" @click="retryLoad">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          重试
-        </a-button>
-      </template>
-    </a-result>
-    <a-result
-      v-else
-      status="warning"
-      title="插件页面缺少入口"
-      sub-title="该页面声明未提供可加载的 iframe url。"
-    />
-  </div>
+      <iframe
+        v-if="frameSrc && !loadError"
+        :key="loadGeneration"
+        ref="frameRef"
+        class="plugin-page-frame"
+        :src="frameSrc"
+        :title="page.title"
+        :data-load-generation="loadGeneration"
+        :sandbox="IFRAME_SANDBOX"
+        @load="handleFrameLoad"
+        @error="handleFrameError"
+      />
+      <a-result
+        v-else-if="loadError"
+        class="plugin-host-state"
+        status="warning"
+        title="插件页面加载失败"
+        :sub-title="loadError"
+      >
+        <template #extra>
+          <a-button type="primary" @click="retryLoad">
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+            重试
+          </a-button>
+        </template>
+      </a-result>
+      <a-result
+        v-else
+        class="plugin-host-state"
+        status="warning"
+        title="插件页面缺少入口"
+        sub-title="该页面声明未提供可加载的 iframe url。"
+      />
+    </div>
+  </PluginErrorBoundary>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 
-import { OpenAPI } from '@/api'
 import type { PageDeclaration } from '@/router/pageDeclarations'
 import { useAppBackground } from '@/composables/useAppBackground'
 import { useTheme, type ThemeColor } from '@/composables/useTheme'
+import { validatePluginIframeUrl } from '@/plugins/ui/pluginSecurity'
+import PluginErrorBoundary from '@/plugins/ui/PluginErrorBoundary.vue'
 
 const props = defineProps<{
   page: PageDeclaration
@@ -70,10 +80,6 @@ const retryNonce = ref(0)
 let loadTimeoutId: number | null = null
 const LOAD_TIMEOUT_MS = 8000
 
-const backendBase = computed(() => {
-  return (OpenAPI.BASE || 'http://127.0.0.1:36163').replace(/\/+$/, '')
-})
-
 function appendRetryNonce(url: string, nonce: number): string {
   if (nonce === 0) {
     return url
@@ -86,19 +92,27 @@ function appendRetryNonce(url: string, nonce: number): string {
   return `${resourceUrl}${separator}automas_retry=${nonce}${fragment}`
 }
 
-const frameSrc = computed(() => {
+const frameSrc = ref('')
+
+function updateFrameSrc(): void {
   const rawUrl = props.page.url?.trim()
   if (!rawUrl) {
-    return ''
+    frameSrc.value = ''
+    return
   }
-  const baseUrl =
-    /^https?:\/\//i.test(rawUrl) || rawUrl.startsWith('//')
-      ? rawUrl
-      : rawUrl.startsWith('/')
-        ? `${backendBase.value}${rawUrl}`
-        : `${backendBase.value}/${rawUrl.replace(/^\/+/, '')}`
-  return appendRetryNonce(baseUrl, retryNonce.value)
-})
+
+  // 安全校验：插件 iframe URL 必须通过白名单审核
+  const validation = validatePluginIframeUrl(rawUrl)
+  if (!validation.safe) {
+    loadError.value = `插件页面 URL 安全校验失败: ${validation.reason}`
+    logger.warn(`插件 iframe URL 被拒绝: url=${rawUrl}, reason=${validation.reason}`)
+    frameSrc.value = ''
+    return
+  }
+
+  const baseUrl = validation.sanitizedUrl || rawUrl
+  frameSrc.value = appendRetryNonce(baseUrl, retryNonce.value)
+}
 
 const hostStyle = computed(() => ({
   ...backgroundCssVars.value,
@@ -110,8 +124,8 @@ const hostStyle = computed(() => ({
 const postThemeMessage = () => {
   const frame = frameRef.value
   if (!frame?.contentWindow) return
-  // 受 sandbox 限制，postMessage 必须使用 '*' targetOrigin；
-  // 仅传递非敏感主题 token，不包含认证信息。
+  // 插件 iframe 无 allow-same-origin，无法通过 window.parent 访问宿主；
+  // 主题 token 通过 postMessage 传递，仅包含非敏感 UI 信息。
   const payload = {
     type: 'automas-theme-update',
     isDark: themeIsDark.value,
@@ -168,6 +182,15 @@ const handleFrameError = (event: Event) => {
 const retryLoad = () => {
   retryNonce.value += 1
   loadError.value = ''
+  updateFrameSrc()
+}
+
+const handleDisableExtension = (extensionId?: string) => {
+  logger.warn(`插件扩展已在当前页面停用: extensionId=${extensionId || props.page.id}`)
+  loadGeneration.value += 1
+  clearLoadTimeout()
+  frameSrc.value = ''
+  loadError.value = `插件扩展 "${extensionId || props.page.id}" 已在当前页面停用；点击重试或重新进入页面即可恢复。`
 }
 
 const handleThemeMessage = (event: MessageEvent) => {
@@ -191,7 +214,6 @@ watch(
   () => {
     loadGeneration.value += 1
     clearLoadTimeout()
-    loadError.value = ''
     if (frameSrc.value) {
       armLoadTimeout()
     }
@@ -199,7 +221,32 @@ watch(
   { immediate: false }
 )
 
+watch(
+  () => [props.page.id, props.page.url] as const,
+  () => {
+    const previousFrameSrc = frameSrc.value
+    retryNonce.value = 0
+    loadError.value = ''
+    updateFrameSrc()
+
+    // 不同页面可能复用同一个 URL；此时 ref 值不变，仍需强制创建新的 iframe。
+    if (frameSrc.value && frameSrc.value === previousFrameSrc) {
+      loadGeneration.value += 1
+      clearLoadTimeout()
+      armLoadTimeout()
+    }
+  }
+)
+
+// 安全策略：移除 allow-same-origin 防止 iframe sandbox 绕过（CVE-2024 系列）。
+// allow-scripts + allow-same-origin 组合允许 iframe 内容访问同源 storage 和父窗口，
+// 构成 sandbox 绕过。移除 allow-same-origin 后，插件通过 postMessage 与宿主通信，
+// 无法直接访问 localStorage/cookies/parent window。
+// 弹窗必须继续继承 sandbox；禁止 allow-popups-to-escape-sandbox。
+const IFRAME_SANDBOX = 'allow-scripts allow-forms allow-popups allow-modals allow-downloads'
+
 onMounted(() => {
+  updateFrameSrc()
   if (frameSrc.value) {
     armLoadTimeout()
   }
@@ -237,5 +284,29 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: var(--v6-radius-card);
   background: var(--ant-color-bg-container, var(--v6-color-surface));
+}
+
+.plugin-host-state {
+  max-width: 560px;
+  margin: var(--v6-space-8) auto 0;
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-card);
+  background: color-mix(in srgb, var(--v6-color-surface) 78%, transparent);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
+}
+
+.plugin-host-state :deep(.ant-result-icon) {
+  display: none;
+}
+
+.plugin-host-state :deep(.ant-result-title) {
+  font-size: var(--v6-font-size-lg);
+}
+
+.plugin-host-state :deep(.ant-result-subtitle) {
+  font-size: var(--v6-font-size-sm);
 }
 </style>

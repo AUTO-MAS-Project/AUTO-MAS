@@ -5,90 +5,32 @@
     :style="backgroundCssVars"
     :data-background-source="backgroundSource"
   >
-    <div class="app-background-layer" aria-hidden="true">
-      <div class="app-background-default" />
-      <template v-if="backgroundEnabled">
-        <div class="app-background-image" />
-        <div class="app-background-overlay" />
-      </template>
-    </div>
+    <a href="#app-main-content" class="skip-to-content" @click.prevent="focusMainContent">
+      跳转到主内容
+    </a>
+    <AppBackgroundLayer />
 
-    <a-layout-sider
-      :width="siderWidth"
-      :theme="isDark ? 'dark' : 'light'"
-      class="app-sider"
-      :style="{
-        background: 'var(--app-layout-sider-bg, var(--v6-color-sidebar))',
-        borderRight: '1px solid var(--v6-color-border)',
-      }"
-    >
-      <div class="sider-content">
-        <a-menu
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          :items="declaredMainMenuItems"
-          @click="onMenuClick"
-        />
-        <!-- 测试路由分隔区域 -->
-        <a-menu
-          v-if="isDevelopment"
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          class="dev-menu"
-          :items="declaredDevMenuItems"
-          @click="onMenuClick"
-        />
-        <a-menu
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          class="bottom-menu"
-          :items="declaredBottomMenuItems"
-          @click="onMenuClick"
-        />
-      </div>
-    </a-layout-sider>
+    <a-layout class="app-window-body">
+      <AppSider
+        :main-items="mainItems"
+        :bottom-items="bottomItems"
+        :dev-items="devItems"
+        :selected-keys="selectedKeys"
+        :collapsed="collapsed"
+        :is-development="isDevelopment"
+        @menu-click="onMenuClick"
+        @search="handleGlobalSearch"
+        @toggle-collapse="toggleCollapse"
+      />
 
-    <a-layout class="app-main-layout">
-      <a-layout-content class="content-area">
-        <router-view v-slot="{ Component, route: viewRoute }">
-          <keep-alive :include="['Scheduler']">
-            <component :is="Component" :key="viewRoute.path" />
-          </keep-alive>
-        </router-view>
-        <transition name="hmr-fade">
-          <div v-if="hmrOverlayVisible" class="hmr-soft-overlay" aria-live="polite">
-            <div class="hmr-soft-panel">
-              <LoadingOutlined class="hmr-soft-spinner" />
-              <span>{{ hmrOverlayText }}</span>
-            </div>
-          </div>
-        </transition>
-      </a-layout-content>
+      <AppContentArea :hmr-overlay-visible="hmrOverlayVisible" :hmr-overlay-text="hmrOverlayText" />
     </a-layout>
   </a-layout>
 </template>
 
 <script lang="ts" setup>
-import {
-  ApiOutlined,
-  AppstoreOutlined,
-  CalendarOutlined,
-  ControlOutlined,
-  DatabaseOutlined,
-  FileTextOutlined,
-  HistoryOutlined,
-  HomeOutlined,
-  LoadingOutlined,
-  SettingOutlined,
-  ToolOutlined,
-  UnorderedListOutlined,
-} from '@ant-design/icons-vue'
-import { computed, h, onMounted, onUnmounted, ref, watch, type WatchStopHandle } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type WatchStopHandle } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
@@ -103,15 +45,17 @@ import {
   syncDeclaredPageRoutes,
   type PageDeclaration,
 } from '../router/pageDeclarations.ts'
-import type { MenuProps } from 'ant-design-vue'
+import AppBackgroundLayer from './app-shell/AppBackgroundLayer.vue'
+import AppSider from './app-shell/AppSider.vue'
+import AppContentArea from './app-shell/AppContentArea.vue'
 
-const SIDER_WIDTH = 160
-
+const SIDER_COLLAPSED_KEY = 'app-sider-collapsed'
+const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
+const BACKGROUND_SERVICE_NAME = 'frontend_background'
 const logger = window.electronAPI.getLogger('应用布局')
 
 const router = useRouter()
 const route = useRoute()
-const { isDark, uiScale } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 const {
   enabled: backgroundEnabled,
@@ -127,14 +71,15 @@ let stopBootstrapWatch: WatchStopHandle | undefined
 let hmrOverlayTimer: number | undefined
 let backgroundServiceSignature = ''
 let hasBackgroundServiceSnapshot = false
-const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
-const BACKGROUND_SERVICE_NAME = 'frontend_background'
+
 const hmrOverlayVisible = ref(false)
 const declaredPages = ref<PageDeclaration[]>(FALLBACK_PAGE_DECLARATIONS)
-const siderWidth = computed(() => Math.round(SIDER_WIDTH * uiScale.value))
+const collapsed = ref(false)
 const hmrOverlayText = ref('正在重载插件界面')
 
 onMounted(() => {
+  collapsed.value = localStorage.getItem(SIDER_COLLAPSED_KEY) === 'true'
+
   if (window.sessionStorage.getItem(HMR_SOFT_RELOAD_FLAG) === '1') {
     window.sessionStorage.removeItem(HMR_SOFT_RELOAD_FLAG)
     showHmrOverlay('插件界面已刷新', 800)
@@ -172,10 +117,11 @@ onUnmounted(() => {
   }
 })
 
-// 工具：生成菜单项
-const icon = (Comp: any) => () => h(Comp)
+const toggleCollapse = () => {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(SIDER_COLLAPSED_KEY, String(collapsed.value))
+}
 
-// 判断是否为开发环境
 const isDevelopment = computed(() => {
   return (
     process.env.NODE_ENV === 'development' ||
@@ -352,71 +298,69 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
   }
 }
 
-const pageIconMap: Record<string, any> = {
-  home: HomeOutlined,
-  script: FileTextOutlined,
-  plan: CalendarOutlined,
-  emulator: DatabaseOutlined,
-  plugin: ApiOutlined,
-  market: AppstoreOutlined,
-  queue: UnorderedListOutlined,
-  scheduler: ControlOutlined,
-  history: HistoryOutlined,
-  tool: ToolOutlined,
-  settings: SettingOutlined,
-  dev: SettingOutlined,
-  api: ApiOutlined,
-  app: AppstoreOutlined,
-}
-
-const buildMenuItems = (section: string) =>
+const mainItems = computed(() =>
   dedupePageDeclarations(declaredPages.value)
-    .filter(page => page.visible && page.section === section)
+    .filter(page => page.visible && page.section === 'main')
     .filter(page => !page.dev_only || isDevelopment.value)
-    .map(page => ({
-      key: page.path,
-      label: page.menu_label,
-      icon: icon(pageIconMap[page.icon] || AppstoreOutlined),
-    }))
+)
 
-const declaredMainMenuItems = computed(() => buildMenuItems('main'))
-const declaredDevMenuItems = computed(() => buildMenuItems('dev'))
-const declaredBottomMenuItems = computed(() => buildMenuItems('bottom'))
+const devItems = computed(() =>
+  dedupePageDeclarations(declaredPages.value)
+    .filter(page => page.visible && page.section === 'dev')
+    .filter(page => !page.dev_only || isDevelopment.value)
+)
+
+const bottomItems = computed(() =>
+  dedupePageDeclarations(declaredPages.value)
+    .filter(page => page.visible && page.section === 'bottom')
+    .filter(page => !page.dev_only || isDevelopment.value)
+)
 
 const allItems = computed(() => [
-  ...declaredMainMenuItems.value,
-  ...(isDevelopment.value ? declaredDevMenuItems.value : []),
-  ...declaredBottomMenuItems.value,
+  ...mainItems.value,
+  ...(isDevelopment.value ? devItems.value : []),
+  ...bottomItems.value,
 ])
 
-// 选中项：根据当前路径前缀匹配
 const selectedKeys = computed(() => {
   const path = route.path
-  const exactMatched = allItems.value.find(i => path === String(i.key))
+  const exactMatched = allItems.value.find(i => path === i.path)
   if (exactMatched) {
-    return [exactMatched.key]
+    return [exactMatched.path]
   }
 
-  // 退化到前缀匹配时，优先选择“最长前缀”，避免 /plugins 命中 /plugins-market。
   const prefixMatched = allItems.value
-    .filter(i => path.startsWith(String(i.key)))
-    .sort((a, b) => String(b.key).length - String(a.key).length)[0]
+    .filter(i => path.startsWith(i.path))
+    .sort((a, b) => b.path.length - a.path.length)[0]
 
-  const matched = prefixMatched
-  return [matched?.key || '/home']
+  return [prefixMatched?.path || '/home']
 })
 
-const onMenuClick: MenuProps['onClick'] = info => {
-  const target = String(info.key)
-
-  // 检查路由是否被锁定
+const onMenuClick = (path: string) => {
   if (isRouteLocked.value) {
-    // 如果路由被锁定，触发回调而不进行路由跳转
-    triggerBlockCallback(target)
+    triggerBlockCallback(path)
     return
   }
 
-  if (route.path !== target) router.push(target)
+  if (route.path !== path) router.push(path)
+}
+
+const handleGlobalSearch = (keyword: string) => {
+  if (isRouteLocked.value) {
+    triggerBlockCallback('/scripts')
+    return
+  }
+
+  const query = keyword ? { search: keyword } : undefined
+  router.push({ path: '/scripts', query })
+}
+
+const focusMainContent = () => {
+  const main = document.getElementById('app-main-content')
+  if (main) {
+    main.focus()
+    main.scrollIntoView({ block: 'start' })
+  }
 }
 </script>
 
@@ -424,11 +368,48 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .app-layout-shell {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   position: relative;
   background: transparent;
   color: var(--v6-color-text);
   font-family: var(--v6-font-sans);
+}
+
+.app-window-body {
+  position: relative;
+  z-index: var(--v6-z-content);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: var(--v6-space-4);
+  z-index: var(--v6-z-global-overlay);
+  padding: var(--v6-space-2) var(--v6-space-3);
+  border-radius: var(--v6-radius-control);
+  background: var(--v6-color-info);
+  color: var(--v6-color-text-inverse);
+  font-size: var(--v6-font-size-sm);
+  text-decoration: none;
+  transition: top var(--v6-motion-fast) var(--v6-ease-out);
+}
+
+.skip-to-content:focus {
+  top: var(--v6-space-2);
+  outline: none;
+  box-shadow: var(--v6-focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-to-content {
+    transition: none;
+  }
 }
 
 .app-layout-shell.has-background {
@@ -487,199 +468,4 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .app-layout-shell.has-background :deep(.ant-picker-dropdown .ant-picker-panel-container) {
   background: var(--app-background-card-elevated-bg) !important;
 }
-
-.app-background-layer {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-  background: var(--v6-color-window);
-}
-
-.app-background-default {
-  position: absolute;
-  inset: 0;
-  background: var(--v6-default-wallpaper);
-}
-
-.app-background-image {
-  position: absolute;
-  inset: -48px;
-  background-image: var(--app-background-image);
-  background-size: var(--app-background-size);
-  background-position: var(--app-background-position);
-  background-repeat: no-repeat;
-  opacity: var(--app-background-opacity);
-  filter: blur(var(--app-background-blur)) brightness(var(--app-background-brightness));
-  transform: scale(1.03);
-}
-
-.app-background-overlay {
-  position: absolute;
-  inset: 0;
-  background: var(--ant-color-bg-layout);
-  opacity: var(--app-background-overlay-opacity);
-}
-
-.app-sider,
-.app-main-layout {
-  position: relative;
-  z-index: 1;
-}
-
-.app-sider {
-  backdrop-filter: var(--v6-backdrop-shell);
-}
-
-.app-main-layout {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-}
-
-.sider-content {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: var(--v6-space-3) var(--v6-space-1);
-}
-
-.sider-content :deep(.ant-menu) {
-  border-inline-end: none !important;
-  background: transparent !important;
-}
-
-/* 菜单项外框居中（左右留空），内容左对齐 */
-.sider-content :deep(.ant-menu .ant-menu-item) {
-  color: var(--ant-color-text);
-  margin: 2px auto;
-  /* 水平居中 */
-  width: calc(100% - 16px);
-  /* 两侧各留 8px 空隙 */
-  border-radius: var(--v6-radius-control);
-  padding: 5px var(--v6-space-4) !important;
-  /* 左右内边距 */
-  line-height: 36px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  /* 左对齐图标与文字 */
-  gap: 6px;
-  transition:
-    background var(--v6-motion-fast) var(--v6-ease-out),
-    color var(--v6-motion-fast) var(--v6-ease-out);
-  text-align: left;
-}
-
-.sider-content :deep(.ant-menu .ant-menu-item .anticon) {
-  color: var(--ant-color-text-secondary);
-  font-size: 18px;
-  line-height: 1;
-  transition: color 0.16s ease;
-  margin-right: 0;
-}
-
-/* Hover */
-.sider-content :deep(.ant-menu .ant-menu-item:hover) {
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-text);
-}
-
-.sider-content :deep(.ant-menu .ant-menu-item:hover .anticon) {
-  color: var(--ant-color-text);
-}
-
-/* Selected */
-.sider-content :deep(.ant-menu .ant-menu-item-selected) {
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-text) !important;
-  font-weight: 500;
-}
-
-.sider-content :deep(.ant-menu .ant-menu-item-selected .anticon) {
-  color: var(--ant-color-text-secondary);
-}
-
-.sider-content :deep(.ant-menu-light .ant-menu-item::after),
-.sider-content :deep(.ant-menu-dark .ant-menu-item::after) {
-  display: none;
-}
-
-/* 开发菜单区域 - 添加上边距以创建视觉分隔 */
-.dev-menu {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--ant-color-border);
-}
-
-.bottom-menu {
-  margin-top: auto;
-}
-
-.content-area {
-  position: relative;
-  height: 100%;
-  min-height: 0;
-  box-sizing: border-box;
-  overflow: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding: var(--v6-content-padding-block) var(--v6-content-padding-inline)
-    calc(var(--v6-content-padding-block) + var(--v6-space-4));
-  background: transparent;
-}
-
-.content-area::-webkit-scrollbar {
-  display: none;
-}
-
-.hmr-soft-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: color-mix(in srgb, var(--ant-color-bg-layout) 70%, transparent);
-  backdrop-filter: blur(4px);
-  pointer-events: none;
-}
-
-.hmr-soft-panel {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: var(--v6-radius-card);
-  color: var(--v6-color-text);
-  background: var(--v6-color-surface-elevated);
-  box-shadow: var(--v6-shadow-elevated);
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.hmr-soft-spinner {
-  color: var(--ant-color-primary);
-  font-size: 18px;
-}
-
-.hmr-fade-enter-active,
-.hmr-fade-leave-active {
-  transition:
-    opacity 0.18s ease,
-    backdrop-filter 0.18s ease;
-}
-
-.hmr-fade-enter-from,
-.hmr-fade-leave-to {
-  opacity: 0;
-  backdrop-filter: blur(0);
-}
 </style>
-
-<!-- 使用标准 Sider 布局，去除 fixed 与 marginLeft，保持菜单样式与滚动行为 -->

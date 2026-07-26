@@ -20,6 +20,8 @@ export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_PLUGIN_SYSTEM = 'PluginSystem'
 export const WS_ID_PLUGIN_MARKET = 'PluginMarket'
+export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
+export const WS_ID_ARKNIGHTS_TOOLKIT = 'ArknightsPCToolkit'
 
 // ==================== 消息类别 ====================
 
@@ -46,6 +48,8 @@ export const WS_DIALOG_RESPONSE = 'dialog.response'
 // 更新下载（id=Update）
 export const WS_UPDATE_PROGRESS = 'update.progress'
 export const WS_UPDATE_COMPLETED = 'update.completed'
+export const WS_UPDATE_VERIFYING = 'update.verifying'
+export const WS_UPDATE_INSTALLING = 'update.installing'
 export const WS_UPDATE_FAILED = 'update.failed'
 export const WS_UPDATE_CANCELLED = 'update.cancelled'
 
@@ -53,6 +57,18 @@ export const WS_UPDATE_CANCELLED = 'update.cancelled'
 export const WS_PLUGIN_RUNTIME_UPDATED = 'plugin.runtime.updated'
 export const WS_PLUGIN_SNAPSHOT_UPDATED = 'plugin.snapshot.updated'
 export const WS_PLUGIN_HMR = 'plugin.hmr'
+
+// 状态快照（id=Main）；后端在每次主连接建立后主动推送 snapshot.response，
+// 也支持前端主动发送 snapshot.request 拉取（app/core/ws/dispatcher.py）
+export const WS_SNAPSHOT_REQUEST = 'snapshot.request'
+export const WS_SNAPSHOT_RESPONSE = 'snapshot.response'
+
+// 模拟器异步操作结果（id=EmulatorManager）
+export const WS_EMULATOR_NOTICE = 'emulator.notice'
+
+// MaaFW 工具箱异步通知（id=ArknightsPCToolkit）；payload 复用 WSTaskNoticeData，
+// 如 ArknightsPC 工具连接明日方舟窗口失败（app/MaaFW/ArknightWin32.py）
+export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
 // 插件市场（id=PluginMarket）
 export const WS_MARKET_SNAPSHOT_REQUEST = 'market.snapshot.request'
@@ -72,6 +88,28 @@ export const WS_PLUGIN_INSTALLED_SYNC = 'plugin.installed.sync'
 export interface WSTaskNoticeData {
   level: 'info' | 'warning' | 'error'
   message: string
+  /** 异步业务操作追踪 ID（当前由 emulator.notice 使用） */
+  operationId?: string | null
+}
+
+export interface WSCyclePreviewItem {
+  queueItemId: string
+  scriptId: string
+  scriptName: string
+  nextRunAt: string
+  isDue: boolean
+  isRunning: boolean
+}
+
+/** 任务状态更新数据 (type=task.info.updated) */
+export interface WSTaskInfoUpdatedData {
+  task_info: Record<string, unknown>[]
+  cycleQueueId?: string | null
+  cycleNextRunAt?: string | null
+  cycleWaitingReason?: string | null
+  cycleCurrentItemId?: string | null
+  cycleNext?: WSCyclePreviewItem | null
+  cycleNextList?: WSCyclePreviewItem[]
 }
 
 /** 任务完成消息数据 (type=task.completed) */
@@ -114,6 +152,16 @@ export interface WSDialogResponseData {
   choice: boolean
 }
 
+/**
+ * 状态快照数据 (id=Main, type=snapshot.response)。
+ * states 为 type -> id -> data 的可合并状态集合（对应后端
+ * app/core/ws/publisher.py 的 MergeableStateCache.snapshot()）。
+ */
+export interface WSSnapshotResponseData {
+  revision: number
+  states: Record<string, Record<string, Record<string, unknown>>>
+}
+
 /** 更新下载进度数据 (id=Update, type=update.progress) */
 export interface WSUpdateProgressData {
   downloaded_size: number
@@ -124,8 +172,21 @@ export interface WSUpdateProgressData {
 
 // ==================== 连接层类型 ====================
 
-/** 连接状态机 */
-export type WSConnectionState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed'
+/**
+ * 连接状态机。
+ *
+ * - `suspended`：协议级终止性关闭（1009 消息超限 / 4001 连接被替换）后的可恢复挂起态。
+ *   停止**自动**重连以避免连接风暴，但用户显式发起的恢复（手动重连 / 重启后端 /
+ *   启动重试）仍可通过 `connect({ force: true })` 重新建连。
+ * - `closed`：应用退出 `shutdown()` 的不可恢复终态，任何 connect 请求都被拒绝。
+ */
+export type WSConnectionState =
+  | 'idle'
+  | 'connecting'
+  | 'open'
+  | 'reconnecting'
+  | 'suspended'
+  | 'closed'
 
 /** 订阅键：优先按 id + type 精确路由；单字段和空键仅供迁移期兼容。 */
 export interface WSSubscriptionKey {

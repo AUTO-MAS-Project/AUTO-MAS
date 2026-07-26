@@ -46,6 +46,9 @@ const RESTART_DELAY = 2000
 // 一轮重连失败后，后端进程仍存活时的下一轮延迟
 const NEXT_CYCLE_DELAY = 30000
 const DEV_MODE_RETRY_DELAY = 3000
+// 后端进程在运行但连续多轮重连失败（如 pre-accept 1008 被 uvicorn 转为 HTTP 403、
+// 前端表现为 1006）时，达到该轮数后不再静默轮询，转为用户可见的错误提示
+const MAX_REJECTED_CYCLES_WITH_BACKEND_RUNNING = 3
 // 倒计时消息停止更新后自动清除展示状态
 const POWER_COUNTDOWN_STALE_MS = 3000
 
@@ -69,6 +72,8 @@ let resolveShutdownReady: ((ready: boolean) => void) | null = null
 let isRestartingBackend = false
 let backendRestartAttempts = 0
 let restartFailureShown = false
+// 后端进程在运行但重连持续失败的连续轮数（连接成功或进入重启流程时清零）
+let rejectedCyclesWithBackendRunning = 0
 
 const backendStatus: Ref<BackendStatus> = ref('unknown')
 const powerCountdown: Ref<WSPowerCountdownData | null> = ref(null)
@@ -301,7 +306,7 @@ export function closeApp(): Promise<void> {
 
 // ==================== 异常断开与自动恢复 ====================
 
-const showRestartFailureModal = (): void => {
+const showRestartFailureModal = (options?: { title?: string; content?: string }): void => {
   // 达到恢复失败上限：仅提示一次，提供重启应用兜底
   if (restartFailureShown) return
   restartFailureShown = true
@@ -309,8 +314,8 @@ const showRestartFailureModal = (): void => {
   stopReconnect()
 
   Modal.error({
-    title: '后端服务恢复失败',
-    content: '后端服务多次重启后仍无法建立连接，请重启整个应用后再试。',
+    title: options?.title ?? '后端服务恢复失败',
+    content: options?.content ?? '后端服务多次重启后仍无法建立连接，请重启整个应用后再试。',
     okText: '重启应用',
     onOk: () => {
       const { showClosingOverlay } = useAppClosing()
@@ -355,7 +360,7 @@ const restartBackendFlow = async (): Promise<void> => {
       await delay(RESTART_DELAY)
       if (isClosing()) return
       // 连接失败会触发连接层自身的重连循环，无需额外处理
-      await connect()
+      await connect({ force: true })
     } else {
       backendStatus.value = 'error'
       logger.error(`后端重启失败: ${result?.error ?? '未知错误'}`)
@@ -402,12 +407,33 @@ const handleReconnectCycleFailed = async (): Promise<void> => {
   if (isClosing() || restartFailureShown) return
 
   if (running === false) {
+    // 后端进程已死：走重启流程，与"进程活着但连不上"是不同的失败形态，计数清零
+    rejectedCyclesWithBackendRunning = 0
     await restartBackendFlow()
-  } else {
-    // 后端进程存活或状态未知：延迟后继续下一轮重连
-    logger.warn('后端进程仍在运行或状态未知，稍后继续重连')
-    scheduleReconnect(isBackendDevMode() ? DEV_MODE_RETRY_DELAY : NEXT_CYCLE_DELAY)
+    return
   }
+
+  if (running === true) {
+    // 后端进程明确在运行却整轮连不上：可能是鉴权失败（pre-accept 1008 →
+    // uvicorn HTTP 403 → 前端 1006），无限静默退避会让用户毫无感知。
+    // 连续达到上限后复用恢复失败 Modal 告知用户并停止静默轮询。
+    // running === null（状态未知）不计数也不清零：无法断言后端在运行。
+    rejectedCyclesWithBackendRunning++
+    if (rejectedCyclesWithBackendRunning >= MAX_REJECTED_CYCLES_WITH_BACKEND_RUNNING) {
+      logger.error(
+        `后端进程在运行但连续 ${rejectedCyclesWithBackendRunning} 轮无法建立连接，停止静默重连并提示用户`
+      )
+      showRestartFailureModal({
+        title: '无法连接到后端服务',
+        content: '后端在运行但连接被拒，可能是安全令牌问题，建议重启应用。',
+      })
+      return
+    }
+  }
+
+  // 后端进程存活或状态未知：延迟后继续下一轮重连
+  logger.warn('后端进程仍在运行或状态未知，稍后继续重连')
+  scheduleReconnect(isBackendDevMode() ? DEV_MODE_RETRY_DELAY : NEXT_CYCLE_DELAY)
 }
 
 // ==================== 初始化与连接 ====================
@@ -445,7 +471,11 @@ export function initializeAppLifecycle(): void {
 
 /**
  * 建立主 WebSocket 连接，失败时按间隔重试。
- * 用于启动流程；连接失败不抛异常（初始化容错由调用方决定）。
+ * 用于启动流程与用户显式重试入口（启动页重试、后端启动页、devtools）；
+ * 连接失败不抛异常（初始化容错由调用方决定）。
+ *
+ * 这里始终使用 force：本函数不是自动退避路径（那条路径在连接层内部），
+ * 因此必须能把连接层从 1009/4001 造成的 suspended 挂起态里救回来。
  */
 export async function connectWithRetry(
   attempts: number = 3,
@@ -457,7 +487,7 @@ export async function connectWithRetry(
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const attemptStart = performance.now()
     try {
-      const connected = await connect()
+      const connected = await connect({ force: true })
       if (connected) {
         backendStatus.value = 'running'
         recordStartupTiming('connect-first-success', performance.now() - connectStart, {
@@ -481,13 +511,14 @@ export async function connectWithRetry(
   return false
 }
 
-/** 手动重连（devtools/恢复入口） */
+/** 手动重连（devtools/恢复入口）；用户显式发起，可从 suspended 挂起态恢复 */
 export async function manualReconnect(): Promise<boolean> {
   if (isClosing()) return false
   stopReconnect()
   restartFailureShown = false
   backendRestartAttempts = 0
-  const connected = await connect()
+  rejectedCyclesWithBackendRunning = 0
+  const connected = await connect({ force: true })
   if (connected) backendStatus.value = 'running'
   return connected
 }
@@ -496,6 +527,7 @@ export async function manualReconnect(): Promise<boolean> {
 export async function restartBackendManually(): Promise<void> {
   backendRestartAttempts = 0
   restartFailureShown = false
+  rejectedCyclesWithBackendRunning = 0
   await restartBackendFlow()
 }
 
@@ -504,6 +536,7 @@ watch(connectionState(), state => {
   if (state === 'open') {
     backendRestartAttempts = 0
     restartFailureShown = false
+    rejectedCyclesWithBackendRunning = 0
     backendStatus.value = 'running'
     if (!firstOpenRecorded) {
       firstOpenRecorded = true

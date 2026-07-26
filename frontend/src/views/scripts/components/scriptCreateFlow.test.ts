@@ -4,7 +4,6 @@ import {
   buildCreateSteps,
   createScriptTypeOptions,
   filterScriptTypeOptions,
-  getScriptEditSegment,
   SCRIPT_TYPE_OPTIONS,
   splitScriptTypeOptions,
 } from './scriptCreateFlow'
@@ -34,6 +33,33 @@ describe('scriptCreateFlow', () => {
     expect(sections.specialized.map(item => item.value)).not.toContain('MaaFW')
     expect(sections.specialized.map(item => item.value)).not.toContain('Okww')
     expect(sections.general.map(item => item.value)).toEqual(['General', 'MaaFW'])
+  })
+
+  it('does not expose the experimental managed MaaFW create entry', () => {
+    const options = createScriptTypeOptions([
+      {
+        type_key: 'MaaFWManaged',
+        display_name: '托管 MaaFW 项目',
+        editor_kind: 'schema',
+        supported_modes: ['AutoProxy'],
+        script_schema: {},
+        user_schema: {},
+        is_builtin: false,
+        available: true,
+      },
+      {
+        type_key: 'MaaFW',
+        display_name: 'MaaFramework 项目',
+        editor_kind: 'builtin:maafw',
+        supported_modes: ['AutoProxy'],
+        script_schema: {},
+        user_schema: {},
+        is_builtin: true,
+        available: true,
+      },
+    ])
+
+    expect(options.map(option => option.value)).toEqual(['MaaFW'])
   })
 
   it('builds create options from available registry descriptors', () => {
@@ -82,15 +108,6 @@ describe('scriptCreateFlow', () => {
       value: 'MaaFW',
       group: 'general',
     })
-  })
-
-  it('maps every script type to its edit route segment', () => {
-    expect(getScriptEditSegment('MAA')).toBe('maa')
-    expect(getScriptEditSegment('MaaEnd')).toBe('maaend')
-    expect(getScriptEditSegment('Okww')).toBe('okww')
-    expect(getScriptEditSegment('OkScript')).toBe('ok-script')
-    expect(getScriptEditSegment('HSR')).toBe('hsr')
-    expect(getScriptEditSegment('General')).toBe('general')
   })
 
   it('builds submit requests only when required selections exist', () => {

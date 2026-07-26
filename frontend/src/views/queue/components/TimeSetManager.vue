@@ -40,6 +40,7 @@
         drag-class="drag"
         handle=".drag-handle"
         class="draggable-container"
+        @start="onDragStart"
         @end="onDragEnd"
       >
         <template #item="{ element: record, index }">
@@ -52,11 +53,11 @@
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
               <a-select
-                v-model:value="record.enabled"
+                :value="record.enabled"
                 size="small"
                 style="width: 80px"
                 class="status-select"
-                @change="updateTimeSetStatus(record)"
+                @change="updateTimeSetStatus(record, $event)"
               >
                 <a-select-option :value="true">启用</a-select-option>
                 <a-select-option :value="false">禁用</a-select-option>
@@ -64,7 +65,7 @@
             </div>
             <div class="row-cell days-cell">
               <a-select
-                v-model:value="record.days"
+                :value="record.days"
                 mode="multiple"
                 size="small"
                 style="width: 100%"
@@ -73,7 +74,7 @@
                 :max-tag-count="7"
                 :bordered="false"
                 class="days-select"
-                @change="updateTimeSetDays(record)"
+                @change="updateTimeSetDays(record, $event)"
               >
                 <a-select-option value="Monday">周一</a-select-option>
                 <a-select-option value="Tuesday">周二</a-select-option>
@@ -114,11 +115,12 @@
       </draggable>
 
       <!-- 空状态 -->
-      <div v-if="timeSets.length === 0" class="empty-state">
-        <div class="empty-content">
-          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-        </div>
-      </div>
+      <EmptyState
+        v-if="timeSets.length === 0"
+        compact
+        title="暂无定时"
+        description="添加定时规则后，队列会在指定时间自动运行。"
+      />
     </div>
   </a-card>
 </template>
@@ -129,6 +131,7 @@ import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
+import EmptyState from '@/components/v6/EmptyState.vue'
 import dayjs from 'dayjs'
 const logger = window.electronAPI.getLogger('定时项管理')
 
@@ -307,7 +310,9 @@ const updateTimeSetTime = async (timeSet: any) => {
 }
 
 // 更新定时项状态
-const updateTimeSetStatus = async (timeSet: any) => {
+const updateTimeSetStatus = async (timeSet: any, nextEnabled: boolean) => {
+  const previousEnabled = Boolean(timeSet.enabled)
+  timeSet.enabled = nextEnabled
   try {
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId: props.queueId,
@@ -323,23 +328,22 @@ const updateTimeSetStatus = async (timeSet: any) => {
       // 状态更新成功，无需通知
     } else {
       message.error('状态更新失败: ' + (response.message || '未知错误'))
-      // 回滚状态
-      timeSet.enabled = !timeSet.enabled
+      timeSet.enabled = previousEnabled
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新状态失败: ${errorMsg}`)
     message.error(`更新状态失败: ${errorMsg}`)
-    // 回滚状态
-    timeSet.enabled = !timeSet.enabled
+    timeSet.enabled = previousEnabled
   }
 }
 
 // 更新定时项执行周期
-const updateTimeSetDays = async (timeSet: any) => {
+const updateTimeSetDays = async (timeSet: any, nextDays: string[]) => {
+  const originalDays = [...(timeSet.days || [])]
+
   try {
-    // 对选中的日期按星期顺序排序
-    const sortedDays = sortDays(timeSet.days || [])
+    const sortedDays = sortDays(Array.isArray(nextDays) ? nextDays : [])
     timeSet.days = sortedDays
 
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
@@ -355,9 +359,13 @@ const updateTimeSetDays = async (timeSet: any) => {
     if (response.code === 200) {
       // 周期更新成功，无需通知
     } else {
+      // 失败回滚：恢复原始执行周期
+      timeSet.days = originalDays
       message.error('执行周期更新失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
+    // 异常回滚：恢复原始执行周期
+    timeSet.days = originalDays
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新执行周期失败: ${errorMsg}`)
     message.error(`更新执行周期失败: ${errorMsg}`)
@@ -385,19 +393,35 @@ const deleteTimeSet = async (timeSetId: string) => {
   }
 }
 
+// 拖拽开始前的原始顺序快照，用于 API 失败时立即回滚本地顺序
+let dragStartSnapshot: any[] = []
+
+const onDragStart = () => {
+  // 在 vuedraggable 移动元素之前保存原始顺序
+  dragStartSnapshot = [...timeSets.value]
+}
+
 // 拖拽结束处理函数
 const onDragEnd = async (evt: any) => {
   // 如果位置没有变化，直接返回
   if (evt.oldIndex === evt.newIndex) {
+    dragStartSnapshot = []
     return
   }
 
   isDraggingTimeSet.value = true
 
+  // 恢复原始顺序的回滚函数：用拖拽开始前的快照覆盖当前顺序
+  const rollbackLocalOrder = () => {
+    if (dragStartSnapshot.length > 0) {
+      timeSets.value.splice(0, timeSets.value.length, ...dragStartSnapshot)
+    }
+  }
+
   try {
     loading.value = true
 
-    // 构造排序后的ID列表
+    // 构造排序后的ID列表（此时 timeSets 已是拖拽后的新顺序）
     const sortedIds = timeSets.value.map(item => item.id)
 
     // 调用排序API
@@ -410,18 +434,21 @@ const onDragEnd = async (evt: any) => {
       // 刷新数据以确保与服务器同步
       emit('refresh')
     } else {
+      // 失败时立即回滚本地顺序，再刷新确保一致性
+      rollbackLocalOrder()
       message.error('更新定时顺序失败: ' + (response.message || '未知错误'))
-      // 如果失败，刷新数据恢复原状态
       emit('refresh')
     }
   } catch (error: any) {
+    // 异常时立即回滚本地顺序，再刷新确保一致性
+    rollbackLocalOrder()
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拖拽排序失败: ${errorMsg}`)
     message.error(`更新定时顺序失败: ${errorMsg}`)
-    // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {
     loading.value = false
+    dragStartSnapshot = []
     nextTick(() => {
       isDraggingTimeSet.value = false
     })
@@ -430,14 +457,34 @@ const onDragEnd = async (evt: any) => {
 </script>
 
 <style scoped>
+/* 与任务列表统一为连续工作台：外层卡片弱化为透明容器,
+   只保留轻量分节标题,避免 queue-workspace 卡片内再套白色卡片 */
 .time-set-card {
-  margin-bottom: 24px;
-  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  margin: var(--v6-space-4) 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.time-set-card :deep(.ant-card-head) {
+  min-height: 52px;
+  padding: 0;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .time-set-card :deep(.ant-card-head-title) {
-  font-size: 18px;
+  padding: var(--v6-space-3) 0;
+  font-size: 15px;
   font-weight: 600;
+}
+
+.time-set-card :deep(.ant-card-extra) {
+  padding: var(--v6-space-2) 0;
+}
+
+.time-set-card :deep(.ant-card-body) {
+  padding: var(--v6-space-3) 0 0;
 }
 
 /* 操作按钮布局 */
@@ -695,12 +742,14 @@ const onDragEnd = async (evt: any) => {
   background: var(--ant-color-fill-tertiary);
 }
 
-/* 拖拽表格样式 */
+/* 拖拽表格样式:窄容器下允许横向滚动兜底,避免撑破页面 */
 .draggable-table-container {
   width: 100%;
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: var(--v6-color-border) transparent;
 }
 
 .draggable-table-header {
@@ -741,7 +790,7 @@ const onDragEnd = async (evt: any) => {
 
 .days-cell {
   flex: 4;
-  min-width: 240px;
+  min-width: 200px;
 }
 
 .time-cell {
@@ -816,7 +865,7 @@ const onDragEnd = async (evt: any) => {
 
 .row-cell.days-cell {
   flex: 4;
-  min-width: 240px;
+  min-width: 200px;
 }
 
 .row-cell.time-cell {
@@ -888,31 +937,12 @@ const onDragEnd = async (evt: any) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
+  min-height: 132px;
+  padding: var(--v6-space-4);
 }
 
-.empty-content {
-  display: flex;
-  justify-content: center;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
+/* 响应式设计:按队列页容器宽度响应(侧栏挤压时同样生效),不用视口 @media */
+@container queue-page (max-width: 768px) {
   .draggable-row {
     flex-direction: column;
     align-items: stretch;

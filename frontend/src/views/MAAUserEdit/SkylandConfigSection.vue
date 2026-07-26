@@ -26,47 +26,102 @@
     </a-row>
     <a-row :gutter="24" style="margin-top: 16px">
       <a-col :span="24">
-        <span style="font-weight: 500">鹰角网络通行证登录凭证</span>
-        <a-input-password
-          v-model:value="formData.Info.SklandToken"
-          :disabled="loading || !formData.Info.IfSkland"
-          placeholder="请输入鹰角网络通行证登录凭证"
-          size="large"
-          style="margin-top: 8px; width: 100%"
-          allow-clear
-          @blur="emitSave('Info.SklandToken', formData.Info.SklandToken)"
-        />
+        <span class="field-label">鹰角网络通行证登录凭证</span>
+        <div class="sensitive-field">
+          <a-input-password
+            :value="tokenDraft"
+            :disabled="loading || !formData.Info.IfSkland"
+            :placeholder="tokenPlaceholder"
+            size="large"
+            autocomplete="new-password"
+            @update:value="tokenDraft = $event"
+          />
+          <div class="sensitive-actions">
+            <span class="sensitive-hint">已保存凭证不会回显；仅在明确点击时替换或清空</span>
+            <a-space size="small">
+              <a-button
+                v-if="hasStoredToken"
+                size="small"
+                danger
+                :disabled="loading || !formData.Info.IfSkland"
+                @click="clearToken"
+              >
+                清空原值
+              </a-button>
+              <a-button
+                type="primary"
+                size="small"
+                :disabled="loading || !formData.Info.IfSkland || !tokenDraft"
+                @click="saveToken"
+              >
+                保存新值
+              </a-button>
+            </a-space>
+          </div>
+        </div>
       </a-col>
     </a-row>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  sensitiveSave: [key: 'Info.SklandToken', intent: 'replace' | 'clear', value?: string]
 }>()
+
+const tokenDraft = ref('')
+const hasStoredToken = computed(() => Boolean(props.formData?.Info?.SklandToken))
+const tokenPlaceholder = computed(() =>
+  hasStoredToken.value ? '已保存；留空保持原值，输入新值后明确保存' : '请输入登录凭证'
+)
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const saveToken = () => {
+  if (!tokenDraft.value) return
+  emit('sensitiveSave', 'Info.SklandToken', 'replace', tokenDraft.value)
+}
+
+const clearToken = () => {
+  Modal.confirm({
+    title: '清空森空岛登录凭证？',
+    content: '清空后自动签到将无法登录，直到重新填写凭证。',
+    okText: '清空',
+    cancelText: '取消',
+    okType: 'danger',
+    centered: true,
+    onOk: () => emit('sensitiveSave', 'Info.SklandToken', 'clear', ''),
+  })
+}
+
+defineExpose({
+  resetTokenDraft: () => {
+    tokenDraft.value = ''
+  },
+})
 </script>
 
 <style scoped>
 .form-section {
-  margin-bottom: 32px;
+  margin-bottom: var(--v6-space-4);
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -74,46 +129,67 @@ const emitSave = (key: string, value: any) => {
 
 .section-header h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .section-doc-link {
-  color: var(--ant-color-primary) !important;
+  color: var(--v6-color-text-link) !important;
   text-decoration: none;
-  font-size: 14px;
+  font-size: var(--v6-font-size-base);
   font-weight: 500;
   padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--ant-color-primary);
-  transition: all 0.2s ease;
+  border-radius: var(--v6-radius-sm);
+  border: 1px solid var(--v6-color-border);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .section-doc-link:hover {
-  color: var(--ant-color-primary-hover) !important;
-  background-color: var(--ant-color-primary-bg);
-  border-color: var(--ant-color-primary-hover);
+  color: var(--v6-color-text-link-hover) !important;
+  background-color: var(--v6-vibrancy-hover);
+  border-color: var(--v6-color-info);
   text-decoration: none;
 }
 
 .switch-description {
-  margin-left: 12px;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
+  margin-left: var(--v6-space-3);
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-text-secondary);
+}
+
+.field-label {
+  font-weight: var(--v6-font-weight-medium);
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
+  margin-top: var(--v6-space-2);
+}
+
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-3);
+}
+
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
+}
+
+@media (max-width: 768px) {
+  .sensitive-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

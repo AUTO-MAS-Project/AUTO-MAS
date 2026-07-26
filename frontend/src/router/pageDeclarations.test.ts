@@ -29,12 +29,13 @@ describe('pageDeclarations', () => {
       }
     })
 
-    it('内置页面 id 覆盖 home/scripts/plans/emulators/plugins/settings 等', () => {
+    it('内置页面 id 覆盖 home/scripts/plans/game-center/plugins/settings 等', () => {
       const ids = FALLBACK_PAGE_DECLARATIONS.map(p => p.id)
       expect(ids).toContain('home')
       expect(ids).toContain('scripts')
       expect(ids).toContain('plans')
-      expect(ids).toContain('emulators')
+      expect(ids).toContain('game-center')
+      expect(ids).not.toContain('emulators')
       expect(ids).toContain('plugins')
       expect(ids).toContain('plugins-market')
       expect(ids).toContain('queue')
@@ -42,6 +43,25 @@ describe('pageDeclarations', () => {
       expect(ids).toContain('history')
       expect(ids).toContain('tools')
       expect(ids).toContain('settings')
+    })
+
+    it('把旧模拟器页面声明归一化到唯一的游戏与模拟器入口', () => {
+      const [page] = normalizePageDeclarations([
+        {
+          id: 'emulators',
+          path: '/emulators',
+          title: '模拟器管理',
+          component: 'Emulators',
+          renderer: 'component',
+        },
+      ])
+
+      expect(page).toMatchObject({
+        id: 'game-center',
+        path: '/game-center',
+        title: '游戏与模拟器',
+        component: 'GameCenter',
+      })
     })
 
     it('dev_only 页面仅出现在 dev section', () => {

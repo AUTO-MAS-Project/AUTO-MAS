@@ -122,6 +122,40 @@ afterEach(() => {
 })
 
 describe('pluginFrontendLoader', () => {
+  it('在插入 DOM 前拒绝危险入口 URL 和非法 custom element 标签', async () => {
+    await expect(
+      ensurePluginFrontendPage(
+        page({
+          entry_asset_url: 'javascript:alert(1)',
+          style_asset_urls: [],
+        })
+      )
+    ).rejects.toThrow('插件入口 URL 安全校验失败')
+    expect(elements('script')).toHaveLength(0)
+
+    await expect(
+      ensurePluginFrontendPage(
+        page({
+          element_tag: 'div',
+          style_asset_urls: [],
+        })
+      )
+    ).rejects.toThrow('element_tag 格式无效')
+    expect(elements('script')).toHaveLength(0)
+  })
+
+  it('在插入 link 前拒绝危险样式 URL', async () => {
+    await expect(
+      ensurePluginFrontendPage(
+        page({
+          style_asset_urls: ['data:text/css,body{}'],
+        })
+      )
+    ).rejects.toThrow('插件样式 URL 安全校验失败')
+    expect(elements('link')).toHaveLength(0)
+    expect(elements('script')).toHaveLength(0)
+  })
+
   it('样式失败后移除 link，重试成功后在 release 时卸载样式', async () => {
     const declaration = page()
     const firstAttempt = ensurePluginFrontendPage(declaration)

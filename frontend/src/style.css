@@ -1,114 +1,91 @@
+/* ═══════════════════════════════════════════════════════════════
+   Ant Design 变量映射层
+   主 token 定义在 ./styles/v6-tokens.css（由 App.vue 引入）
+   本文件仅负责 Ant Design 兼容变量和遗留样式
+   ═══════════════════════════════════════════════════════════════ */
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
+  font-family: var(--v6-font-sans);
+  line-height: var(--v6-line-height-normal);
+  font-weight: var(--v6-font-weight-normal);
   color-scheme: light dark;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* 默认浅色模式 CSS 变量 */
+  /* Ant Design 兼容变量 - 映射到 v6 tokens */
   --ant-color-primary: #1677ff;
   --ant-color-primary-hover: #4096ff;
   --ant-color-primary-bg: #1677ff1a;
-  --ant-color-text: rgba(0, 0, 0, 0.88);
-  --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
-  --ant-color-text-tertiary: rgba(0, 0, 0, 0.45);
-  --ant-color-bg-container: #ffffff;
-  --ant-color-bg-layout: #f5f5f5;
-  --ant-color-bg-elevated: #ffffff;
-  --ant-color-border: #d9d9d9;
-  --ant-color-border-secondary: #303030;
-  --ant-color-error: #ff4d4f;
-  --ant-color-success: #52c41a;
-  --ant-color-warning: #faad14;
+  --ant-color-text: var(--v6-color-text);
+  --ant-color-text-secondary: var(--v6-color-text-secondary);
+  --ant-color-text-tertiary: var(--v6-color-text-tertiary);
+  --ant-color-bg-container: var(--v6-color-surface);
+  --ant-color-bg-layout: var(--v6-color-window);
+  --ant-color-bg-elevated: var(--v6-color-surface-elevated);
+  --ant-color-border: var(--v6-color-border);
+  --ant-color-border-secondary: var(--v6-color-border-subtle);
+  --ant-color-error: var(--v6-color-error);
+  --ant-color-success: var(--v6-color-success);
+  --ant-color-warning: var(--v6-color-warning);
+  --ant-color-info: var(--v6-color-info);
 }
 
-/* 深色模式默认变量 */
 :root.dark {
-  --ant-color-primary: #1677ff;
-  --ant-color-primary-hover: #4096ff;
-  --ant-color-primary-bg: #1677ff1a;
-  --ant-color-text: rgba(255, 255, 255, 0.88);
-  --ant-color-text-secondary: rgba(255, 255, 255, 0.65);
-  --ant-color-text-tertiary: rgba(255, 255, 255, 0.45);
-  --ant-color-bg-container: #141414;
-  --ant-color-bg-layout: #000000;
-  --ant-color-bg-elevated: #1f1f1f;
-  --ant-color-border: #424242;
-  --ant-color-border-secondary: #303030;
-  --ant-color-error: #ff4d4f;
-  --ant-color-success: #52c41a;
-  --ant-color-warning: #faad14;
+  /* dark 运行时主色为 macOS systemBlue (dark) #0a84ff，静态回退保持一致 */
+  --ant-color-primary: #0a84ff;
+  --ant-color-primary-hover: #409cff;
+  --ant-color-primary-bg: #0a84ff1a;
+  --ant-color-text: var(--v6-color-text);
+  --ant-color-text-secondary: var(--v6-color-text-secondary);
+  --ant-color-text-tertiary: var(--v6-color-text-tertiary);
+  --ant-color-bg-container: var(--v6-color-surface);
+  --ant-color-bg-layout: var(--v6-color-window);
+  --ant-color-bg-elevated: var(--v6-color-surface-elevated);
+  --ant-color-border: var(--v6-color-border);
+  --ant-color-border-secondary: var(--v6-color-border-subtle);
+  --ant-color-error: var(--v6-color-error);
+  --ant-color-success: var(--v6-color-success);
+  --ant-color-warning: var(--v6-color-warning);
+  --ant-color-info: var(--v6-color-info);
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* 确保 body 和 #app 有正确的背景色 */
 body {
   margin: 0;
   padding: 0;
-  background-color: var(--ant-color-bg-layout);
-  color: var(--ant-color-text);
+  background-color: var(--v6-color-window);
+  color: var(--v6-color-text);
   transition:
-    background-color 0.3s ease,
-    color 0.3s ease;
+    background-color var(--v6-motion-base) var(--v6-ease-out),
+    color var(--v6-motion-base) var(--v6-ease-out);
 }
 
 #app {
   width: 100%;
   height: 100vh;
-  background-color: var(--ant-color-bg-layout);
+  background-color: var(--v6-color-window);
 }
 
-/* 链接样式 */
 a {
-  color: var(--ant-color-primary);
+  color: var(--v6-color-text-link);
   text-decoration: none;
-  transition: color 0.3s ease;
+  transition: color var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 a:hover {
-  color: var(--ant-color-primary-hover);
-}
-
-/* 滚动条样式 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary);
-}
-
-/* Electron 基于 Chromium，仅需 WebKit 滚动条隐藏 */
-*::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
+  color: var(--v6-color-text-link-hover);
 }
 
 /* 全局统一 Tag 边框样式 */
 .ant-tag {
-  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid var(--v6-color-border-subtle) !important;
 }
 
-/* 深色模式下调整边框透明度 */
 :root.dark .ant-tag {
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid var(--v6-color-border) !important;
 }

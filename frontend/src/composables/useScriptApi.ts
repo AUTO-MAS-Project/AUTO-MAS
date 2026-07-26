@@ -6,7 +6,6 @@ import {
   type MaaEndConfig,
   type M9AConfig,
   type MaaFWConfig,
-  type OkwwConfig,
   type PluginScriptConfig,
   ScriptIndexItem,
   type SrcConfig,
@@ -15,6 +14,7 @@ import {
   UserIndexItem,
   Service,
 } from '@/api'
+import type { OkwwConfig } from '@/types/legacyOkPlugin'
 import type { OkScriptScriptConfig, ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -45,7 +45,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
 const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.MAA_CONFIG]: 'MAA',
   [ScriptIndexItem.type.SRC_CONFIG]: 'SRC',
-  [ScriptIndexItem.type.OKWW_CONFIG]: 'Okww',
+  OkwwConfig: 'Okww',
   [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
   [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
@@ -1061,7 +1061,7 @@ export function useScriptApi() {
                             : '{ }',
                       },
                     }
-                  } else if (userIndex.type === 'OkwwUserConfig' && userData) {
+                  } else if (String(userIndex.type) === 'OkwwUserConfig' && userData) {
                     const okwwUserData = userData as any
                     return {
                       id: userIndex.uid,

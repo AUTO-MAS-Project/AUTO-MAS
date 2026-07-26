@@ -1,295 +1,304 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts">脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/ok-script`" class="breadcrumb-link">
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            {{ isEdit ? '编辑用户' : '添加用户' }}
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button size="large" class="cancel-button" @click="handleCancel">
+    <PageHeader
+      :title="formData.userName || (isEdit ? '编辑用户' : '添加用户')"
+      :subtitle="`${scriptName} · ok-script 用户配置`"
+      :bordered="false"
+      compact
+      transparent
+    >
+      <a-tag color="blue">ok-script</a-tag>
+      <template #actions>
+        <a-button class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
           返回
         </a-button>
-      </a-space>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="user-edit-content">
-      <a-card class="config-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>基本信息</h3>
-            </div>
+      <a-spin :spinning="pageLoading" tip="加载用户配置中...">
+        <div class="config-surface">
+          <a-alert
+            v-if="saveError"
+            class="save-error"
+            type="error"
+            show-icon
+            :message="saveError"
+          />
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <div class="form-section">
+              <div class="section-header">
+                <h3>基本信息</h3>
+              </div>
 
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      用户名
-                      <a-tooltip title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="formData.userName"
-                    placeholder="请输入用户名"
-                    size="large"
-                    class="modern-input"
-                    @blur="saveField('Info.Name', formData.userName)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      启用状态
-                      <a-tooltip title="是否启用该用户">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
-                    class="modern-select"
-                    @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">是</a-select-option>
-                    <a-select-option :value="false">否</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      剩余天数
-                      <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-form-item>
-              <template #label>
-                <span class="form-label">
-                  备注
-                  <a-tooltip title="为用户添加备注信息">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </span>
-              </template>
-              <a-textarea
-                v-model:value="formData.Info.Notes"
-                placeholder="请输入备注"
-                :rows="4"
-                class="modern-input"
-                @blur="saveField('Info.Notes', formData.Info.Notes)"
-              />
-            </a-form-item>
-          </div>
-        </a-form>
-      </a-card>
-
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>任务配置</h3>
-            </div>
-
-            <a-alert
-              v-if="providerMetadata?.runtimeVerified === false"
-              type="warning"
-              show-icon
-              :message="providerMetadata.runtimeBlockReason || '当前项目暂未完成运行验证'"
-              style="margin-bottom: 16px"
-            />
-            <a-alert
-              v-else-if="!providerMetadata && !pageLoading"
-              type="info"
-              show-icon
-              message="请先在脚本页选择已适配的 ok-script 项目"
-              style="margin-bottom: 16px"
-            />
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      启动任务（-t N）
-                      <a-tooltip title="任务序号与 ok-script 一次性任务列表一致">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Task.TaskIndex"
-                    size="large"
-                    class="modern-select"
-                    :disabled="taskOptions.length === 0"
-                    @change="handleTaskIndexChange"
-                  >
-                    <a-select-option
-                      v-for="item in taskOptions"
-                      :key="item.value"
-                      :value="item.value"
+              <a-row :gutter="24">
+                <a-col :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        用户名
+                        <a-tooltip
+                          title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计"
+                        >
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-input
+                      v-model:value="formData.userName"
+                      placeholder="请输入用户名"
+                      size="large"
+                      class="modern-input"
+                      @blur="saveField('Info.Name', formData.userName)"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="6">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        启用状态
+                        <a-tooltip title="是否启用该用户">
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-select
+                      v-model:value="formData.Info.Status"
+                      size="large"
+                      class="modern-select"
+                      @change="saveField('Info.Status', formData.Info.Status)"
                     >
-                      {{ item.label }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      当前启动参数
-                      <a-tooltip title="参数由任务配置自动生成，固定追加 -e">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    :value="currentStartupArguments"
-                    :placeholder="taskOptions.length ? '' : '选择项目后自动生成'"
-                    size="large"
-                    readonly
-                    class="modern-input"
+                      <a-select-option :value="true">是</a-select-option>
+                      <a-select-option :value="false">否</a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="6">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        剩余天数
+                        <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-input-number
+                      v-model:value="formData.Info.RemainedDay"
+                      :min="-1"
+                      :max="9999"
+                      size="large"
+                      style="width: 100%"
+                      @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    备注
+                    <a-tooltip title="为用户添加备注信息">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-textarea
+                  v-model:value="formData.Info.Notes"
+                  placeholder="请输入备注"
+                  :rows="4"
+                  class="modern-input"
+                  @blur="saveField('Info.Notes', formData.Info.Notes)"
+                />
+              </a-form-item>
+            </div>
+          </a-form>
+
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <div class="form-section">
+              <div class="section-header">
+                <h3>任务配置</h3>
+              </div>
+
+              <a-alert
+                v-if="providerMetadata?.runtimeVerified === false"
+                type="warning"
+                show-icon
+                :message="providerMetadata.runtimeBlockReason || '当前项目暂未完成运行验证'"
+                style="margin-bottom: 16px"
+              />
+              <a-alert
+                v-else-if="!providerMetadata && !pageLoading"
+                type="info"
+                show-icon
+                message="请先在脚本页选择已适配的 ok-script 项目"
+                style="margin-bottom: 16px"
+              />
+
+              <a-row :gutter="24">
+                <a-col :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        启动任务（-t N）
+                        <a-tooltip title="任务序号与 ok-script 一次性任务列表一致">
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-select
+                      v-model:value="formData.Task.TaskIndex"
+                      size="large"
+                      class="modern-select"
+                      :disabled="taskOptions.length === 0"
+                      @change="handleTaskIndexChange"
+                    >
+                      <a-select-option
+                        v-for="item in taskOptions"
+                        :key="item.value"
+                        :value="item.value"
+                      >
+                        {{ item.label }}
+                      </a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        当前启动参数
+                        <a-tooltip title="参数由任务配置自动生成，固定追加 -e">
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-input
+                      :value="currentStartupArguments"
+                      :placeholder="taskOptions.length ? '' : '选择项目后自动生成'"
+                      size="large"
+                      readonly
+                      class="modern-input"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </div>
+          </a-form>
+
+          <section v-if="userId && providerMetadata" class="editor-section">
+            <OkScriptConfigEditor
+              :script-id="scriptId"
+              :user-id="userId"
+              endpoint-prefix="/plugin/ok-script/configs"
+              @saved="handleConfigSaved"
+            />
+          </section>
+
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
+          </a-form>
+
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <div class="form-section">
+              <div class="section-header">
+                <h3>通知配置</h3>
+              </div>
+
+              <a-row :gutter="24" align="middle">
+                <a-col :span="6">
+                  <span style="font-weight: 500">启用通知</span>
+                </a-col>
+                <a-col :span="18">
+                  <a-switch
+                    v-model:checked="formData.Notify.Enabled"
+                    @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
                   />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </div>
-        </a-form>
-      </a-card>
+                </a-col>
+              </a-row>
 
-      <a-card v-if="userId && providerMetadata" class="config-card" style="margin-top: 24px">
-        <OkScriptConfigEditor
-          :script-id="scriptId"
-          :user-id="userId"
-          endpoint-prefix="/plugin/ok-script/configs"
-          @saved="handleConfigSaved"
-        />
-      </a-card>
+              <a-row :gutter="24" style="margin-top: 16px">
+                <a-col :span="6">
+                  <span style="font-weight: 500">通知内容</span>
+                </a-col>
+                <a-col :span="18">
+                  <a-checkbox
+                    v-model:checked="formData.Notify.IfSendStatistic"
+                    :disabled="!formData.Notify.Enabled"
+                    @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
+                  >
+                    统计信息
+                  </a-checkbox>
+                </a-col>
+              </a-row>
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
-        </a-form>
-      </a-card>
+              <a-row :gutter="24" style="margin-top: 16px">
+                <a-col :span="6">
+                  <a-checkbox
+                    v-model:checked="formData.Notify.IfSendMail"
+                    :disabled="!formData.Notify.Enabled"
+                    @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
+                  >
+                    邮件通知
+                  </a-checkbox>
+                </a-col>
+                <a-col :span="18">
+                  <a-input
+                    v-model:value="formData.Notify.ToAddress"
+                    placeholder="请输入收件邮箱"
+                    :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
+                    size="large"
+                    @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
+                  />
+                </a-col>
+              </a-row>
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>通知配置</h3>
+              <a-row :gutter="24" style="margin-top: 16px">
+                <a-col :span="6">
+                  <a-checkbox
+                    v-model:checked="formData.Notify.IfServerChan"
+                    :disabled="!formData.Notify.Enabled"
+                    @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
+                  >
+                    Server酱
+                  </a-checkbox>
+                </a-col>
+                <a-col :span="18">
+                  <a-space-compact block>
+                    <a-input-password
+                      v-model:value="formData.Notify.ServerChanKey"
+                      :placeholder="
+                        serverChanKeyConfigured ? '已配置，留空保持不变' : '请输入 SENDKEY'
+                      "
+                      :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                      size="large"
+                      @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
+                    />
+                    <a-button
+                      v-if="serverChanKeyConfigured && !formData.Notify.ServerChanKey"
+                      danger
+                      size="large"
+                      :disabled="isSaving"
+                      @click="confirmClearServerChanKey"
+                    >
+                      清空原值
+                    </a-button>
+                  </a-space-compact>
+                </a-col>
+              </a-row>
+
+              <div style="margin-top: 16px">
+                <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
+              </div>
             </div>
-
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">启用通知</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">通知内容</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  统计信息
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  邮件通知
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  placeholder="请输入收件邮箱"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  Server酱
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  placeholder="请输入 SENDKEY"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
-        </a-form>
-      </a-card>
+          </a-form>
+        </div>
+      </a-spin>
     </div>
   </div>
 </template>
@@ -297,8 +306,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import PageHeader from '@/components/mac/PageHeader.vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
@@ -324,6 +334,8 @@ const scriptName = ref('ok-script 项目')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const saveError = ref('')
+const serverChanKeyConfigured = ref(false)
 
 interface OkScriptUserInfoForm {
   Name: string
@@ -432,8 +444,10 @@ const createUserImmediately = async () => {
 
 const saveField = async (key: string, value: unknown) => {
   if (isInitializing.value || isSaving.value || !userId.value) return
+  if (key === 'Notify.ServerChanKey' && !String(value || '').trim()) return
 
   isSaving.value = true
+  saveError.value = ''
   try {
     const parts = key.split('.')
     const patch: Record<string, unknown> = {}
@@ -448,29 +462,83 @@ const saveField = async (key: string, value: unknown) => {
       formData.userName = String(value || '')
     }
 
-    await updateUser(scriptId, userId.value, patch)
+    const saved = await updateUser(scriptId, userId.value, patch)
+    if (!saved) {
+      throw new Error('用户配置保存失败，请检查后端连接')
+    }
+    if (key === 'Notify.ServerChanKey') {
+      serverChanKeyConfigured.value = true
+      formData.Notify.ServerChanKey = ''
+    }
   } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    saveError.value = errorMsg
+    logger.error(errorMsg)
+    message.error(errorMsg)
   } finally {
     isSaving.value = false
   }
 }
 
+const clearServerChanKey = async () => {
+  if (isInitializing.value || isSaving.value || !userId.value) return
+
+  isSaving.value = true
+  saveError.value = ''
+  try {
+    const saved = await updateUser(scriptId, userId.value, {
+      Notify: { ServerChanKey: '' },
+    })
+    if (!saved) {
+      throw new Error('ServerChanKey 清空失败，请检查后端连接')
+    }
+    serverChanKeyConfigured.value = false
+    formData.Notify.ServerChanKey = ''
+    message.success('ServerChanKey 已清空')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    saveError.value = errorMsg
+    logger.error('ServerChanKey 清空失败')
+    message.error(errorMsg)
+    throw error
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const confirmClearServerChanKey = () => {
+  Modal.confirm({
+    title: '清空已保存的 ServerChanKey？',
+    content: '清空后无法恢复，如需继续使用必须重新填写。',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: clearServerChanKey,
+  })
+}
+
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  await updateUser(scriptId, userId.value, {
+  const saved = await updateUser(scriptId, userId.value, {
     Task: {
       TaskIndex: formData.Task.TaskIndex,
     },
   })
+  if (!saved) {
+    throw new Error('任务配置保存失败，请检查后端连接')
+  }
 }
 
 const handleTaskIndexChange = async (value: number) => {
   formData.Task.TaskIndex = value
+  saveError.value = ''
   try {
     await saveTaskConfig()
   } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    saveError.value = errorMsg
+    logger.error(errorMsg)
+    message.error(errorMsg)
   }
 }
 
@@ -539,11 +607,13 @@ const loadUser = async () => {
 
     const userData = data as OkScriptUserApiData
     const defaults = getDefaultUserData()
+    serverChanKeyConfigured.value = Boolean(userData.Notify?.ServerChanKey)
+    const notify = { ...defaults.Notify, ...(userData.Notify || {}), ServerChanKey: '' }
 
     Object.assign(formData, {
       Info: { ...defaults.Info, ...(userData.Info || {}) },
       Task: { ...defaults.Task, ...(userData.Task || {}) },
-      Notify: { ...defaults.Notify, ...(userData.Notify || {}) },
+      Notify: notify,
       Data: { ...defaults.Data, ...(userData.Data || {}) },
     })
 
@@ -552,11 +622,14 @@ const loadUser = async () => {
     const normalizedTaskIndex = clampTaskIndex(formData.Task.TaskIndex)
     if (normalizedTaskIndex !== null && normalizedTaskIndex !== formData.Task.TaskIndex) {
       formData.Task.TaskIndex = normalizedTaskIndex
-      await updateUser(scriptId, userId.value, {
+      const saved = await updateUser(scriptId, userId.value, {
         Task: {
           TaskIndex: normalizedTaskIndex,
         },
       })
+      if (!saved) {
+        throw new Error('任务配置自动修正失败')
+      }
     }
 
     await nextTick()
@@ -583,69 +656,63 @@ onMounted(async () => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-}
-
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
+  min-height: 100%;
 }
 
 .cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
+  border-radius: var(--v6-radius-control);
 }
 
 .user-edit-content {
-  max-width: 1200px;
+  width: min(100%, 1280px);
   margin: 0 auto;
+  padding: 0 var(--v6-content-padding-inline) var(--v6-space-8);
 }
 
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
+.config-surface {
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: var(--v6-vibrancy-material);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
 .form-section {
-  margin-bottom: 32px;
+  margin: 0;
+  padding: var(--v6-space-5) 0;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.config-form:first-of-type .form-section {
+  padding-top: 0;
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-2);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
   display: flex;
   align-items: center;
+  color: var(--v6-color-text);
 }
 
 .form-label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
+  gap: var(--v6-space-2);
+  font-weight: var(--v6-font-weight-medium);
 }
 
 .help-icon {
-  color: var(--ant-color-text-tertiary);
+  color: var(--v6-color-text-tertiary);
   cursor: help;
 }
 
@@ -653,19 +720,40 @@ onMounted(async () => {
   width: 100%;
 }
 
+.editor-section {
+  padding: var(--v6-space-5) 0;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.save-error {
+  margin-bottom: var(--v6-space-4);
+  border-radius: var(--v6-radius-control);
+}
+
+.config-form:last-child .form-section {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+:root[data-perf-mode='low'] .config-surface {
+  background: var(--v6-color-surface);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
+  .user-edit-content {
+    padding-inline: var(--v6-space-4);
   }
 
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
+  .config-surface {
+    padding: var(--v6-space-4);
   }
 
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
+  .config-form :deep(.ant-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
   }
 }
 </style>

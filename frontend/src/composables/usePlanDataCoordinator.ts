@@ -99,7 +99,7 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
       type: typeMap[timeKey],
     })
 
-    if (response.code === 200 || response.code === undefined) {
+    if (response.code === 200) {
       // 缓存结果
       stageOptionsCache.value[timeKey] = response.data
       return response.data
@@ -443,6 +443,55 @@ export function usePlanDataCoordinator() {
     }
   }
 
+  /**
+   * Lane 8：读取指定时间维度下某个字段的当前值。
+   *
+   * 用于在 updateConfig 之前保存旧值快照，API 失败时通过 updateConfig 回滚。
+   */
+  const getConfig = (timeKey: TimeKey, field: string): any => {
+    const config = planData.value.timeConfigs[timeKey]
+    if (!config) return undefined
+    if (field === 'MedicineNumb') return config.medicineNumb
+    if (field === 'SeriesNumb') return config.seriesNumb
+    if (field === 'Stage') return config.stages.primary
+    if (field === 'Stage_1') return config.stages.backup1
+    if (field === 'Stage_2') return config.stages.backup2
+    if (field === 'Stage_3') return config.stages.backup3
+    if (field === 'Stage_Remain') return config.stages.remain
+    return undefined
+  }
+
+  /**
+   * Lane 8：快照指定时间维度的关卡配置。
+   *
+   * 用于批量操作（enableAllStages / disableAllStages）前保存旧值，
+   * API 失败时通过 restoreTimeConfig 恢复。
+   */
+  const snapshotTimeConfig = (timeKey: TimeKey) => {
+    const config = planData.value.timeConfigs[timeKey]
+    if (!config) return null
+    return {
+      medicineNumb: config.medicineNumb,
+      seriesNumb: config.seriesNumb,
+      stages: { ...config.stages },
+    }
+  }
+
+  /**
+   * Lane 8：从快照恢复指定时间维度的关卡配置。
+   */
+  const restoreTimeConfig = (
+    timeKey: TimeKey,
+    snapshot: ReturnType<typeof snapshotTimeConfig> | undefined
+  ) => {
+    if (!snapshot) return
+    const config = planData.value.timeConfigs[timeKey]
+    if (!config) return
+    config.medicineNumb = snapshot.medicineNumb
+    config.seriesNumb = snapshot.seriesNumb
+    config.stages = { ...snapshot.stages }
+  }
+
   // 切换关卡状态（简化视图用）
   const toggleStage = (stageName: string, timeKey: TimeKey, enabled: boolean) => {
     const config = planData.value.timeConfigs[timeKey]
@@ -561,6 +610,9 @@ export function usePlanDataCoordinator() {
 
     // 数据操作
     updateConfig,
+    getConfig,
+    snapshotTimeConfig,
+    restoreTimeConfig,
     toggleStage,
     updateCustomStageDefinition,
     updatePlanId,

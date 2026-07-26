@@ -147,7 +147,6 @@ export function useMaaFWScriptConfig(scriptId: string) {
   } | null>(null)
   const previewData = ref<MaaFWInterfacePreviewData | null>(null)
   const agentEnvResult = ref<MaaFWAgentEnvPrepareData | null>(null)
-  const projectUpdateLogs = ref<string[]>([])
   const scriptEditHint = ref<Script['editHint']>(null)
   const scriptIconUrl = ref<string | null>(null)
   const dailyOnceTasks = ref<string[]>([])
@@ -702,7 +701,6 @@ export function useMaaFWScriptConfig(scriptId: string) {
     }
     if (isSaving.value || projectUpdateLoading.value) return
 
-    projectUpdateLogs.value = []
     isSaving.value = true
     try {
       const saved = await updateScriptConfig({
@@ -713,9 +711,17 @@ export function useMaaFWScriptConfig(scriptId: string) {
       isSaving.value = false
     }
 
-    const response = await updateProjectResources(scriptId)
-    projectUpdateLogs.value = response?.data?.logs ?? []
-    if (!response?.data || response.code !== 200) return
+    let response: Awaited<ReturnType<typeof updateProjectResources>>
+    try {
+      response = await updateProjectResources(scriptId)
+    } catch {
+      message.error('MaaFW 项目资源更新失败，请检查网络、更新源和项目配置')
+      return
+    }
+    if (!response?.data || response.code !== 200) {
+      message.error(response?.message || 'MaaFW 项目资源更新失败，请检查项目配置')
+      return
+    }
 
     await refreshPreviewIfPossible()
     if (response.data.updated) {
@@ -901,7 +907,6 @@ export function useMaaFWScriptConfig(scriptId: string) {
     rules,
     previewData,
     agentEnvResult,
-    projectUpdateLogs,
     scriptEditHint,
     scriptIconUrl,
     // loading / save state

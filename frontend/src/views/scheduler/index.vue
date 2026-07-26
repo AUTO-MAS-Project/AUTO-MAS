@@ -1,130 +1,148 @@
 <template>
-  <!-- 主要内容 -->
   <div class="scheduler-main">
-    <!-- 页面头部 -->
-    <div class="scheduler-header">
-      <div class="header-left">
-        <h1 class="page-title">调度中心</h1>
-      </div>
-      <div class="header-actions">
-        <a-space size="middle">
-          <span class="power-label">任务完成后电源操作：</span>
-          <a-select
-            v-model:value="powerAction"
-            style="width: 140px"
-            size="large"
-            @change="onPowerActionChange"
-          >
-            <a-select-option
-              v-for="(text, signal) in POWER_ACTION_TEXT"
-              :key="signal"
-              :value="signal"
-            >
-              {{ text }}
-            </a-select-option>
-          </a-select>
-        </a-space>
-      </div>
-    </div>
-
-    <!-- 调度台标签页 -->
-    <div class="scheduler-tabs">
-      <a-tabs
-        v-model:active-key="activeSchedulerTab"
-        type="editable-card"
-        :hide-add="true"
-        @edit="onSchedulerTabEdit"
+    <main class="scheduler-content">
+      <MacStatePanel
+        v-if="!isSchedulerConnected"
+        :type="connectionPanelType"
+        :title="SCHEDULER_CONNECTION_STATE_LABEL[schedulerConnectionState]"
+        compact
       >
-        <template #tabBarExtraContent>
-          <div class="tab-actions">
-            <a-tooltip title="添加新的调度台" placement="top">
-              <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">
-                <template #icon>
-                  <PlusOutlined />
-                </template>
-              </a-button>
-            </a-tooltip>
-            <a-tooltip title="删除所有空闲的调度台" placement="top">
+        {{ connectionPanelDescription }}
+      </MacStatePanel>
+
+      <!-- 调度台：整页唯一主体。会话 tab 行右侧承载连接状态与全部会话操作 -->
+      <div class="scheduler-console">
+        <a-tabs
+          v-model:active-key="activeSchedulerTab"
+          type="editable-card"
+          :hide-add="true"
+          @edit="onSchedulerTabEdit"
+        >
+          <template #rightExtra>
+            <div class="console-actions">
+              <div class="connection-status" aria-live="polite">
+                <a-tag :color="SCHEDULER_CONNECTION_STATE_COLOR[schedulerConnectionState]">
+                  <template #icon>
+                    <WifiOutlined v-if="schedulerConnectionState === 'connected'" />
+                    <LoadingOutlined
+                      v-else-if="
+                        schedulerConnectionState === 'connecting' ||
+                        schedulerConnectionState === 'reconnecting'
+                      "
+                      spin
+                    />
+                    <DisconnectOutlined v-else />
+                  </template>
+                  {{ SCHEDULER_CONNECTION_STATE_LABEL[schedulerConnectionState] }}
+                </a-tag>
+              </div>
+              <a-tooltip title="新建调度会话" placement="top">
+                <a-button
+                  class="header-add-session"
+                  type="primary"
+                  aria-label="新建调度会话"
+                  @click="addSchedulerTab"
+                >
+                  <template #icon>
+                    <PlusOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
               <a-button
-                class="tab-action-btn tab-remove-btn"
-                size="middle"
-                :disabled="!hasNonRunningTabs"
+                class="current-session-delete"
+                type="text"
+                danger
+                :disabled="!currentTabCanRemove"
+                @click="removeCurrentSchedulerTab"
+              >
+                <template #icon>
+                  <DeleteOutlined />
+                </template>
+                删除当前会话
+              </a-button>
+              <!-- 一键全删：批量移除主调度台以外全部未运行会话，二次确认在逻辑层 -->
+              <a-button
+                class="clear-all-sessions"
+                type="text"
                 danger
                 @click="removeAllNonRunningTabs"
               >
                 <template #icon>
-                  <MinusOutlined />
+                  <ClearOutlined />
                 </template>
+                一键全删
               </a-button>
-            </a-tooltip>
-          </div>
-        </template>
-        <a-tab-pane
-          v-for="tab in schedulerTabs"
-          :key="tab.key"
-          :closable="tab.closable && tab.status !== '运行'"
-          :data-tab-key="tab.key"
-        >
-          <template #tab>
-            <div class="tab-content">
-              <span class="tab-title">{{ tab.title }}</span>
-              <a-tag :color="TAB_STATUS_COLOR[tab.status]" size="small" class="tab-status">
-                {{ tab.status }}
-              </a-tag>
             </div>
           </template>
 
-          <!-- 任务控制与状态内容 -->
-          <div class="task-unified-card" :class="`status-${tab.status}`">
-            <!-- 任务控制栏 -->
-            <SchedulerTaskControl
-              v-model:selected-task-id="tab.selectedTaskId"
-              v-model:selected-mode="tab.selectedMode"
-              v-model:resume-from-script-id="tab.resumeFromScriptId"
-              v-model:running-task-label="tab.runningTaskLabel"
-              v-model:running-mode-label="tab.runningModeLabel"
-              :resume-script-options="tab.resumeScriptOptions || []"
-              :resume-script-loading="tab.resumeScriptLoading"
-              :task-options="taskOptions"
-              :task-options-loading="taskOptionsLoading"
-              :status="tab.status"
-              :disabled="tab.status === '运行'"
-              @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
-              @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
-              @start="onStartTaskClick(tab)"
-              @stop="stopTask(tab)"
-              @refresh-tasks="loadTaskOptions"
-            />
-
-            <!-- 状态展示区域 -->
-            <div class="status-container">
-              <div class="overview-panel-container">
-                <TaskOverviewPanel :ref="el => setOverviewRef(el, tab.key)" />
+          <a-tab-pane
+            v-for="tab in schedulerTabs"
+            :key="tab.key"
+            :closable="tab.closable && tab.status !== '运行' && tab.status !== '停止中'"
+            :data-tab-key="tab.key"
+          >
+            <template #tab>
+              <div class="tab-content">
+                <span class="tab-title">{{ tab.title }}</span>
               </div>
-              <div class="log-panel-container">
-                <SchedulerLogPanel
-                  :log-content="tab.lastLogContent"
-                  :tab-key="tab.key"
-                  :is-log-at-bottom="tab.isLogAtBottom"
-                  :external-log-mode="tab.logMode"
-                  @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)"
-                  @set-ref="setLogRef"
-                />
+            </template>
+
+            <div class="task-unified-card" :class="`status-${tab.status}`">
+              <div v-if="tab.status === '失败'" class="tab-state-panel">
+                <MacStatePanel type="error" title="任务执行失败" compact>
+                  上次操作未完成。当前任务、模式与日志均已保留，可调整配置后重新执行。
+                </MacStatePanel>
+              </div>
+
+              <SchedulerTaskControl
+                v-model:selected-task-id="tab.selectedTaskId"
+                v-model:selected-mode="tab.selectedMode"
+                v-model:resume-from-script-id="tab.resumeFromScriptId"
+                v-model:running-task-label="tab.runningTaskLabel"
+                v-model:running-mode-label="tab.runningModeLabel"
+                :resume-script-options="tab.resumeScriptOptions || []"
+                :resume-script-loading="tab.resumeScriptLoading"
+                :task-options="taskOptions"
+                :task-options-loading="taskOptionsLoading"
+                :status="tab.status"
+                :disabled="tab.status === '运行' || tab.status === '停止中'"
+                @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
+                @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
+                @start="onStartTaskClick(tab)"
+                @stop="stopTask(tab)"
+                @refresh-tasks="loadTaskOptions"
+              />
+
+              <div class="status-container">
+                <div class="overview-panel-container">
+                  <TaskOverviewPanel :ref="el => setOverviewRef(el, tab.key)" />
+                </div>
+                <div class="log-panel-container">
+                  <SchedulerLogPanel
+                    :log-content="tab.lastLogContent"
+                    :tab-key="tab.key"
+                    :is-log-at-bottom="tab.isLogAtBottom"
+                    :external-log-mode="tab.logMode"
+                    @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)"
+                    @set-ref="setLogRef"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </a-tab-pane>
+          </a-tab-pane>
 
-        <!-- 空状态 -->
-        <template #empty>
-          <div class="empty-tab-content">
-            <a-empty description="暂无调度台" />
-          </div>
-        </template>
-      </a-tabs>
-    </div>
+          <template #empty>
+            <div class="empty-tab-content">
+              <a-empty description="暂无调度会话">
+                <template #description>暂无调度会话</template>
+                <a-button type="primary" @click="addSchedulerTab">添加调度会话</a-button>
+              </a-empty>
+            </div>
+          </template>
+        </a-tabs>
+      </div>
+    </main>
 
-    <!-- 消息对话框 -->
     <a-modal
       v-model:open="messageModalVisible"
       :title="currentMessage?.title || '系统消息'"
@@ -141,7 +159,6 @@
       </div>
     </a-modal>
 
-    <!-- 电源操作倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue -->
     <OverlayRainMask
       v-model="aprilFoolsMaskVisible"
       :opacity="0.75"
@@ -159,14 +176,25 @@ export default {
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref } from 'vue'
-import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import { POWER_ACTION_TEXT, TAB_STATUS_COLOR } from './schedulerConstants'
+import {
+  ClearOutlined,
+  DeleteOutlined,
+  PlusOutlined,
+  WifiOutlined,
+  LoadingOutlined,
+  DisconnectOutlined,
+} from '@ant-design/icons-vue'
+import {
+  SCHEDULER_CONNECTION_STATE_LABEL,
+  SCHEDULER_CONNECTION_STATE_COLOR,
+  type SchedulerTab,
+} from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
 import OverlayRainMask from '@/components/OverlayRainMask.vue'
-import type { SchedulerTab } from './schedulerConstants'
+import MacStatePanel from '@/components/mac/StatePanel.vue'
 const logger = window.electronAPI.getLogger('调度中心')
 
 // 使用业务逻辑层
@@ -176,11 +204,9 @@ const {
   activeSchedulerTab,
   taskOptionsLoading,
   taskOptions,
-  powerAction,
   messageModalVisible,
   currentMessage,
   messageResponse,
-
   // Tab 管理
   addSchedulerTab,
   removeSchedulerTab,
@@ -196,9 +222,6 @@ const {
   onLogScroll,
   setLogRef,
 
-  // 电源操作
-  onPowerActionChange,
-
   // 消息操作
   sendMessageResponse,
   cancelMessage,
@@ -210,8 +233,46 @@ const {
 
   // 新增：任务总览面板引用管理
   setOverviewRef,
+
+  // 调度器连接状态
+  schedulerConnectionState,
+  isSchedulerConnected,
 } = useSchedulerLogic()
 
+// ==================== 连接状态面板 ====================
+const connectionPanelType = computed<'info' | 'warning' | 'error' | 'neutral'>(() => {
+  switch (schedulerConnectionState.value) {
+    case 'failed':
+      return 'error'
+    case 'disconnected':
+    case 'offline':
+      return 'warning'
+    case 'connecting':
+    case 'reconnecting':
+      return 'info'
+    default:
+      return 'neutral'
+  }
+})
+
+const connectionPanelDescription = computed(() => {
+  switch (schedulerConnectionState.value) {
+    case 'connecting':
+      return '正在建立实时连接。任务列表仍可查看，运行状态将在连接完成后同步。'
+    case 'reconnecting':
+      return '实时连接正在恢复。当前会话与日志已保留，请等待状态重新同步。'
+    case 'disconnected':
+      return '实时连接已断开。当前展示的是最近一次快照，运行与停止结果可能延迟。'
+    case 'failed':
+      return '无法建立实时连接。请检查后端状态；已选择的任务和现有日志不会被清空。'
+    case 'offline':
+      return '当前处于离线状态。需要恢复后端连接后才能接收新的调度事件。'
+    default:
+      return '尚未建立实时连接。初始化完成后会自动同步调度状态。'
+  }
+})
+
+// ==================== 愚人节彩蛋 ====================
 const aprilFoolsMaskVisible = ref(false)
 const APRIL_FOOLS_STORAGE_PREFIX = 'scheduler-april-fools-triggered-'
 
@@ -260,10 +321,20 @@ const onAprilFoolsStopped = () => {
   logger.info('愚人节彩蛋已触顶停机')
 }
 
-// 计算属性：检查是否有可删除的调度台
-const hasNonRunningTabs = computed(() => {
-  return schedulerTabs.value.some(tab => tab.key !== 'main' && tab.status !== '运行')
+// ==================== Tab 操作 ====================
+const currentSchedulerTab = computed(() =>
+  schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)
+)
+
+const currentTabCanRemove = computed(() => {
+  const tab = currentSchedulerTab.value
+  return Boolean(tab && tab.key !== 'main' && tab.status !== '运行' && tab.status !== '停止中')
 })
+
+const removeCurrentSchedulerTab = () => {
+  if (!currentTabCanRemove.value || !currentSchedulerTab.value) return
+  removeSchedulerTab(currentSchedulerTab.value.key)
+}
 
 // Tab 操作
 const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'remove') => {
@@ -274,7 +345,7 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
   }
 }
 
-// 生命周期
+// ==================== 生命周期 ====================
 onMounted(() => {
   logger.info('调度中心组件首次挂载')
   initialize() // 初始化TaskManager订阅
@@ -306,244 +377,162 @@ onDeactivated(() => {
 </script>
 
 <style scoped>
-/* 页面容器 */
 .scheduler-main {
+  container: scheduler-main / inline-size;
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: transparent;
+  background: var(--v6-color-background);
 }
 
-/* 页面头部样式 */
-.scheduler-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 16px;
-  padding: 0 4px;
-}
-
-.header-left {
-  flex: 1;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.header-actions {
-  flex-shrink: 0;
+.connection-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-shrink: 0;
 }
 
-.power-label {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin-right: 8px;
+.connection-status :deep(.ant-tag) {
+  margin-inline-end: 0;
 }
 
-/* 标签页样式 */
-.scheduler-tabs {
+.scheduler-content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  gap: var(--v6-space-3);
+  min-height: 0;
   overflow: hidden;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 8px;
-  padding: 12px;
+  padding: var(--v6-space-4) var(--v6-content-padding-inline);
 }
 
-.scheduler-tabs :deep(.ant-tabs) {
-  height: 100%;
+/* 调度台：整页唯一主体，会话 tab 行自带全部操作 */
+.scheduler-console {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: transparent;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container: scheduler-workspace / inline-size;
 }
 
-/* 自定义标签页tab内容布局 */
+/* tab 行右侧操作区：连接状态 + 新建 + 删当前 + 一键全删 */
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--v6-space-2);
+}
+
+.current-session-delete,
+.clear-all-sessions {
+  border-radius: var(--v6-radius-control);
+}
+
+.header-add-session {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--v6-radius-control);
+}
+
+.scheduler-console :deep(.ant-tabs) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scheduler-console :deep(.ant-tabs-content-holder),
+.scheduler-console :deep(.ant-tabs-content),
+.scheduler-console :deep(.ant-tabs-tabpane) {
+  height: 100%;
+  min-height: 0;
+}
+
+.scheduler-console :deep(.ant-tabs-nav) {
+  margin-bottom: var(--v6-space-3);
+}
+
 .tab-content {
   display: flex;
   align-items: center;
-  gap: 8px;
-  /* 标题与徽章之间的间距 */
-  position: relative;
+  gap: var(--v6-space-2);
 }
 
 .tab-title {
-  display: inline-block;
   flex-shrink: 0;
 }
 
-.tab-status {
-  margin: 0 !important;
-  /* 清除antd默认margin */
-  flex-shrink: 0;
-}
-
-/* 针对运行状态的tab，隐藏关闭按钮 */
-.scheduler-tabs :deep(.ant-tabs-tab) {
-  transition: all 0.2s ease-in-out;
-}
-
-/* 运行状态的标签隐藏关闭按钮并调整宽度 */
-.scheduler-tabs :deep(.ant-tabs-tab[data-closable='false'] .ant-tabs-tab-remove) {
-  display: none !important;
-}
-
-/* 非运行状态的标签显示关闭按钮 */
-.scheduler-tabs :deep(.ant-tabs-tab[data-closable='true'] .ant-tabs-tab-remove) {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  margin-left: 8px;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-
-.scheduler-tabs :deep(.ant-tabs-tab[data-closable='true'] .ant-tabs-tab-remove:hover) {
-  opacity: 1;
-}
-
-/* 自定义标签页操作按钮 */
-.tab-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  margin-top: -12px;
-  /* 负边距抵消容器padding，使按钮上边距与右边距(12px)相同 */
-}
-
-.tab-action-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  background-color: var(--app-background-card-elevated-bg, var(--ant-color-bg-container));
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.tab-action-btn:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-}
-
-.tab-add-btn {
-  border-color: var(--ant-color-border);
-}
-
-.tab-add-btn:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-}
-
-.tab-remove-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.tab-remove-btn:disabled:hover {
-  border-color: var(--ant-color-border);
-  color: var(--ant-color-text-disabled);
-}
-
-/* 任务卡片统一容器 */
 .task-unified-card {
-  background-color: transparent;
-  box-shadow: none;
-  height: calc(100vh - 237px);
+  height: 100%;
   display: flex;
   flex-direction: column;
+  gap: var(--v6-space-3);
+  min-height: 0;
   overflow: hidden;
 }
 
-/* 根据状态变化的样式 */
-.task-unified-card.status-空闲 {
-  background-color: transparent;
+.tab-state-panel {
+  flex-shrink: 0;
 }
 
-.task-unified-card.status-运行 {
-  background-color: transparent;
-}
-
-.task-unified-card.status-结束 {
-  background-color: transparent;
-}
-
-/* 状态容器 */
 .status-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr);
   flex: 1;
-  overflow: hidden;
-  gap: 16px;
-  padding: 0;
-  margin: 0;
+  min-height: 0;
+  gap: var(--v6-space-3);
 }
 
-/* 任务总览面板容器 */
-.overview-panel-container {
-  flex: 0 0 33.333333%;
-  /* 占据1/3宽度 */
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* 日志面板容器 */
+.overview-panel-container,
 .log-panel-container {
-  flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* 电源操作倒计时弹窗样式已移至 GlobalPowerCountdown.vue */
+/* 作为子面板根元素的宿主容器:面板根自身的窄屏降级规则
+   无法由面板自己声明的容器命中,需由这里的宿主容器驱动 */
+.overview-panel-container {
+  container: scheduler-overview-host / inline-size;
+}
 
-/* 响应式 - 移动端适配 */
-@media (max-width: 768px) {
-  .scheduler-main {
-    padding: 8px;
-  }
+.log-panel-container {
+  container: scheduler-log-host / inline-size;
+}
 
-  .scheduler-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
+.empty-tab-content {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  padding: var(--v6-space-6);
+}
 
-  .header-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
+:root[data-perf-mode='low'] .scheduler-main {
+  container: scheduler-main / inline-size;
+  transition: none;
+}
 
-  .power-label {
-    display: none;
-  }
-
+/* 按调度区实际可用宽度切换，导航栏展开时不会把日志与任务面板硬挤。 */
+@container scheduler-workspace (max-width: 1050px) {
   .status-container {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    overflow-y: auto;
   }
 
   .overview-panel-container,
   .log-panel-container {
-    flex: 1;
-    width: 100%;
+    min-height: 320px;
   }
-
-  /* 移动端倒计时弹窗适配已移至 GlobalPowerCountdown.vue */
+}
+@container scheduler-main (max-width: 720px) {
+  .scheduler-content {
+    padding: var(--v6-space-3);
+  }
 }
 </style>

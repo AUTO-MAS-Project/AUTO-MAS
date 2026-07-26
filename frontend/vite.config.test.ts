@@ -21,4 +21,10 @@ describe('Vite vendor chunk policy', () => {
     expect(resolveVendorChunk('/repo/src/main.ts')).toBeUndefined()
     expect(resolveVendorChunk('/repo/node_modules/dayjs/dayjs.min.js')).toBeUndefined()
   })
+
+  it('pins the shared preload helper to an eagerly loaded chunk', () => {
+    // 该 helper 若落进懒加载 chunk，会把那个 chunk 变成入口的静态依赖。
+    expect(resolveVendorChunk('\0vite/preload-helper.js')).toBe('vendor-ui')
+    expect(resolveVendorChunk('vite/preload-helper')).toBe('vendor-ui')
+  })
 })

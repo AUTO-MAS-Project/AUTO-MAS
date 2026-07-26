@@ -1,5 +1,6 @@
 import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import { useAppStartup } from '@/composables/useAppStartup'
 import { enterApp } from '@/utils/appEntry'
 
 const logger = window.electronAPI.getLogger('跳过初始化启动')
@@ -12,10 +13,16 @@ export function startSkippedInitializationStartup(): Promise<void> {
   }
 
   const { beginBootstrap, finishBootstrap, resetInitializationStatus } = useAppInitialization()
+  const { setStatus } = useAppStartup()
   beginBootstrap()
+  setStatus('backend-starting', {
+    stage: 'runtime',
+    message: '正在校验运行环境...',
+  })
 
   startupPromise = (async () => {
     const api = window.electronAPI
+    let currentStage: 'runtime' | 'backend' | 'connection' = 'runtime'
 
     try {
       if (!import.meta.env.DEV) {
@@ -27,13 +34,32 @@ export function startSkippedInitializationStartup(): Promise<void> {
         }
       }
 
-      const success = await enterApp('跳过初始化直接进入首页', false)
+      currentStage = 'backend'
+      setStatus('backend-starting', {
+        stage: currentStage,
+        message: '后端已启动，正在加载配置与插件...',
+      })
+
+      // Browser-only Vite preview has no Electron-managed backend process. Allow
+      // it to render the real application shell so UI work can be verified
+      // against the design source without weakening packaged startup checks.
+      currentStage = 'connection'
+      const success = await enterApp('跳过初始化直接进入首页', import.meta.env.DEV)
       if (!success) {
         throw new Error('进入应用失败')
+      }
+
+      const visualRoute = new URLSearchParams(window.location.search).get('visual-route')
+      if (import.meta.env.DEV && visualRoute?.startsWith('/')) {
+        window.location.hash = `#${visualRoute}`
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`跳过初始化启动失败: ${errorMsg}`)
+      setStatus('failed', {
+        stage: currentStage,
+        detail: errorMsg,
+      })
       resetInitializationStatus()
       sessionStorage.setItem('disableInitializationSkip', 'true')
       message.error('运行环境检查失败，已切换到初始化页面')

@@ -395,13 +395,14 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
 <style scoped>
 .log-highlight-settings {
-  padding: 8px 0;
+  padding: var(--v6-space-2) 0;
+  container: log-highlight-settings / inline-size;
 }
 
 .config-section {
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-5);
+  padding-bottom: var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .config-section.no-border {
@@ -417,14 +418,14 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--v6-space-3);
 }
 
 .section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 12px;
+  font-size: var(--v6-font-size-base);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
+  margin-bottom: var(--v6-space-3);
 }
 
 .section-header .section-title {
@@ -434,71 +435,72 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 .section-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--v6-space-3);
 }
 
 /* 文本配置样式 */
 .text-config-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v6-space-2);
+  margin-bottom: var(--v6-space-3);
 }
 
 .text-config-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  padding: var(--v6-space-1) var(--v6-space-2);
+  background: var(--v6-color-surface);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-sm);
 }
 
 .text-config-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-xs);
+  font-weight: var(--v6-font-weight-medium);
+  color: var(--v6-color-text);
   flex-shrink: 0;
 }
 
 .text-config-control {
   flex: 1;
-  max-width: 120px;
-  margin-left: 12px;
+  min-width: 96px;
+  max-width: 160px;
+  margin-left: var(--v6-space-3);
 }
 
 .text-style-checkboxes {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-left: 4px;
+  gap: var(--v6-space-2);
+  padding-left: var(--v6-space-1);
 }
 
 .checkbox-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: var(--v6-space-3);
 }
 
 .checkbox-row :deep(.ant-checkbox-wrapper) {
-  font-size: 14px;
+  font-size: var(--v6-font-size-base);
 }
 
 /* 原有颜色配置样式 */
 .config-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--v6-space-1);
 }
 
 .config-label {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-xs);
+  color: var(--v6-color-text-secondary);
 }
 
 .color-group {
-  margin-bottom: 16px;
+  margin-bottom: var(--v6-space-4);
 }
 
 .color-group:last-child {
@@ -506,58 +508,58 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 }
 
 .group-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-  margin-bottom: 8px;
-  padding-left: 4px;
+  font-size: var(--v6-font-size-sm);
+  font-weight: var(--v6-font-weight-medium);
+  color: var(--v6-color-text-secondary);
+  margin-bottom: var(--v6-space-2);
+  padding-left: var(--v6-space-1);
 }
 
 .color-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v6-space-2);
 }
 
 .color-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  padding: var(--v6-space-1) var(--v6-space-2);
+  background: var(--v6-color-surface);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-sm);
 }
 
 .color-info {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--v6-space-1);
 }
 
 .color-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-xs);
+  font-weight: var(--v6-font-weight-medium);
+  color: var(--v6-color-text);
 }
 
 .help-icon {
-  color: var(--ant-color-text-secondary);
+  color: var(--v6-color-text-secondary);
   font-size: 11px;
 }
 
 .color-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--v6-space-1);
 }
 
 .color-picker {
   width: 28px;
   height: 20px;
   padding: 0;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 3px;
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-xs);
   cursor: pointer;
   background: transparent;
 }
@@ -568,33 +570,51 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
 .color-picker::-webkit-color-swatch {
   border: none;
-  border-radius: 2px;
+  border-radius: var(--v6-radius-xs);
 }
 
 .color-value {
-  font-family: monospace;
+  font-family: var(--v6-font-mono);
   font-size: 11px;
-  color: var(--ant-color-text-secondary);
+  color: var(--v6-color-text-secondary);
   min-width: 55px;
 }
 
+@container log-highlight-settings (max-width: 580px) {
+  .text-config-grid,
+  .color-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .checkbox-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .section-header,
+  .text-config-item,
+  .color-item {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+}
+
 .preview-content {
-  padding: 12px;
-  border-radius: 6px;
+  padding: var(--v6-space-3);
+  border-radius: var(--v6-radius-control);
   overflow-x: auto;
-  font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-family: var(--v6-font-mono);
 }
 
 .preview-light {
-  background: #ffffff;
-  color: #333333;
-  border: 1px solid #d9d9d9;
+  background: var(--v6-color-surface);
+  color: var(--v6-color-text);
+  border: 1px solid var(--v6-color-border);
 }
 
 .preview-dark {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border: 1px solid #424242;
+  background: var(--v6-color-window);
+  color: var(--v6-color-text);
+  border: 1px solid var(--v6-color-border-strong);
 }
 
 .preview-line {

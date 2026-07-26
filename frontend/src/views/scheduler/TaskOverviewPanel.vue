@@ -4,6 +4,26 @@
       <h3>任务总览</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
+    <div v-if="cycleQueueId" class="cycle-preview">
+      <div class="cycle-preview-heading">
+        <a-tag color="processing">循环运行</a-tag>
+        <span v-if="cycleCurrentItemId">正在执行 {{ currentCycleName }}</span>
+        <span v-else-if="cycleNextRunAt">下次运行 {{ cycleNextRunAt }}</span>
+        <span v-else>等待可运行项目</span>
+        <span v-if="cycleWaitingReason" class="cycle-waiting">{{ cycleWaitingReason }}</span>
+      </div>
+      <div v-if="cycleNextList.length" class="cycle-preview-list">
+        <span
+          v-for="item in cycleNextList"
+          :key="item.queueItemId"
+          class="cycle-preview-item"
+          :class="{ due: item.isDue, running: item.isRunning }"
+        >
+          {{ item.scriptName }} ·
+          {{ item.isRunning ? '运行中' : item.isDue ? '已到期' : item.nextRunAt }}
+        </span>
+      </div>
+    </div>
     <div class="overview-content">
       <TaskTree ref="taskTreeRef" :task-data="taskData" />
     </div>
@@ -11,8 +31,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
+import type { WSCyclePreviewItem } from '@/services/websocket/types'
 const logger = window.electronAPI.getLogger('任务总览面板')
 
 interface User {
@@ -33,6 +54,11 @@ interface WSMessage {
   id: string
   data: {
     task_info?: any[]
+    cycleQueueId?: string | null
+    cycleNextRunAt?: string | null
+    cycleWaitingReason?: string | null
+    cycleCurrentItemId?: string | null
+    cycleNextList?: WSCyclePreviewItem[]
   }
   fullMessage?: any
 }
@@ -41,6 +67,17 @@ interface WSMessage {
 const taskData = shallowRef<Script[]>([])
 const taskTreeRef = ref()
 const lastTaskSignature = ref('')
+const cycleQueueId = ref<string | null>(null)
+const cycleNextRunAt = ref<string | null>(null)
+const cycleWaitingReason = ref<string | null>(null)
+const cycleCurrentItemId = ref<string | null>(null)
+const cycleNextList = shallowRef<WSCyclePreviewItem[]>([])
+const currentCycleName = computed(
+  () =>
+    cycleNextList.value.find(item => item.queueItemId === cycleCurrentItemId.value)?.scriptName ||
+    cycleCurrentItemId.value ||
+    ''
+)
 
 const getTaskInfoStats = (taskInfo: any[]) => {
   const scriptCount = taskInfo.length
@@ -55,7 +92,7 @@ const getScriptStats = (scripts: Script[]) => {
 }
 
 const buildTaskInfoSignature = (taskInfo: any[]) => {
-  return taskInfo
+  const taskSignature = taskInfo
     .map((task, index) => {
       const users = Array.isArray(task.userList)
         ? task.userList.map((user: any) => `${user.name || ''}:${user.status || ''}`).join(',')
@@ -63,11 +100,20 @@ const buildTaskInfoSignature = (taskInfo: any[]) => {
       return `${task.script_id || index}:${task.name || ''}:${task.status || ''}[${users}]`
     })
     .join('|')
+  return `${taskSignature}#${JSON.stringify(cycleNextList.value)}`
 }
 
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
   if (message.type === 'Update') {
+    if ('cycleQueueId' in message.data) {
+      cycleQueueId.value = message.data.cycleQueueId ?? null
+      cycleNextRunAt.value = message.data.cycleNextRunAt ?? null
+      cycleWaitingReason.value = message.data.cycleWaitingReason ?? null
+      cycleCurrentItemId.value = message.data.cycleCurrentItemId ?? null
+      cycleNextList.value = [...(message.data.cycleNextList ?? [])]
+    }
+
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
       const signature = buildTaskInfoSignature(message.data.task_info)
@@ -105,13 +151,15 @@ defineExpose({
 
 <style scoped>
 .overview-panel {
+  container: scheduler-overview / inline-size;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--v6-color-surface-transparent);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  border: 1px solid var(--v6-color-border-subtle);
+  backdrop-filter: blur(18px) saturate(1.08);
   overflow: hidden;
 }
 
@@ -120,22 +168,62 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: var(--v6-space-3) var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   flex-shrink: 0;
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 .overview-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: var(--v6-space-4);
+}
+
+.cycle-preview {
+  padding: var(--v6-space-2) var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+  background: var(--v6-color-info-bg);
+}
+
+.cycle-preview-heading,
+.cycle-preview-list {
+  display: flex;
+  align-items: center;
+  gap: var(--v6-space-2);
+  flex-wrap: wrap;
+}
+
+.cycle-preview-list {
+  margin-top: var(--v6-space-2);
+}
+
+.cycle-waiting {
+  color: var(--v6-color-text-secondary);
+}
+
+.cycle-preview-item {
+  padding: var(--v6-space-0-5) var(--v6-space-2);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-full);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+}
+
+.cycle-preview-item.due {
+  border-color: var(--v6-color-warning-border);
+  color: var(--v6-color-warning);
+}
+
+.cycle-preview-item.running {
+  border-color: var(--v6-color-info-border);
+  color: var(--v6-color-info);
 }
 
 /* 滚动条样式 - 浅色 */
@@ -148,12 +236,12 @@ defineExpose({
 }
 
 .overview-content::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
+  background: var(--v6-color-border-strong);
+  border-radius: var(--v6-radius-sm);
 }
 
 .overview-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--v6-color-text-tertiary);
 }
 
 .empty-state-mini {
@@ -163,36 +251,17 @@ defineExpose({
   height: 100%;
 }
 
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
+/* .overview-panel 自身规则须由外层 scheduler/index.vue 的 scheduler-overview-host
+   宿主容器驱动(@container 不能命中声明容器的元素自身) */
+@container scheduler-overview-host (max-width: 768px) {
   .overview-panel {
-    background: var(--app-background-card-bg, var(--ant-color-bg-container, #1f1f1f));
-    border: 1px solid var(--ant-color-border, #424242);
+    border-radius: var(--v6-radius-md);
   }
+}
 
+@container scheduler-overview (max-width: 768px) {
   .section-header {
-    border-bottom: 1px solid var(--ant-color-border, #424242);
+    padding: var(--v6-space-3);
   }
-}
-
-@media (max-width: 768px) {
-  .overview-panel {
-    border-radius: 8px;
-  }
-
-  .section-header {
-    padding: 12px;
-  }
-}
-</style>
-
-<style>
-/* 深色模式滚动条 - 需要全局样式 */
-.dark .overview-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .overview-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

@@ -1,6 +1,6 @@
 <template>
-  <div class="statistics-card">
-    <div class="card-content">
+  <div class="statistics-card" :class="{ 'statistics-card--compact': compact }">
+    <div class="card-content" :class="{ 'card-content--compact': compact }">
       <!-- 公招统计 -->
       <div
         v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
@@ -17,7 +17,7 @@
               <div class="stat-value">{{ count }}</div>
             </div>
             <a-divider
-              v-if="index < Object.keys(recruitStatistics).length - 1"
+              v-if="!compact && index < Object.keys(recruitStatistics).length - 1"
               type="vertical"
               class="stat-divider"
             />
@@ -25,9 +25,10 @@
         </div>
       </div>
 
-      <!-- 分割线 -->
+      <!-- 分割线（仅非 compact 模式） -->
       <a-divider
         v-if="
+          !compact &&
           recruitStatistics &&
           Object.keys(recruitStatistics).length > 0 &&
           dropStatistics &&
@@ -71,37 +72,54 @@
       </div>
 
       <!-- 空状态 -->
-      <div
+      <EmptyState
         v-if="
           (!recruitStatistics || Object.keys(recruitStatistics).length === 0) &&
           (!dropStatistics || Object.keys(dropStatistics).length === 0)
         "
         class="empty-stats"
-      >
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
+        :class="{ 'empty-stats--compact': compact }"
+        title="暂无统计"
+        compact
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { GiftOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import EmptyState from '@/components/v6/EmptyState.vue'
 
 interface Props {
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
+  /** 紧凑模式：用于 Inspector 面板等窄容器，纵向堆叠并去除自带卡片样式 */
+  compact?: boolean
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  compact: false,
+})
 </script>
 
 <style scoped>
 .statistics-card {
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--v6-color-surface);
+  border-radius: var(--v6-radius-card);
+  padding: var(--v6-space-3) var(--v6-space-4);
+  margin-bottom: var(--v6-space-4);
+  border: 1px solid var(--v6-color-border-subtle);
+  box-shadow: var(--v6-shadow-card);
+}
+
+/* compact 模式：去除自带卡片样式，由 Inspector section 提供容器 */
+.statistics-card--compact {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 0;
+  border-radius: 0;
 }
 
 .card-content {
@@ -110,16 +128,22 @@ defineProps<Props>()
   align-items: flex-start;
 }
 
+/* compact 模式：纵向堆叠，适配 Inspector 窄容器 */
+.card-content--compact {
+  flex-direction: column;
+  gap: var(--v6-space-3);
+}
+
 .section-divider {
-  height: auto !important;
-  margin: 0 20px !important;
+  height: auto;
+  margin: 0 var(--v6-space-5);
   align-self: stretch;
 }
 
 .stat-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--v6-space-2);
 }
 
 .stat-section:first-child {
@@ -132,21 +156,27 @@ defineProps<Props>()
   min-width: 0;
 }
 
+/* compact 模式：每个 section 占满宽度 */
+.card-content--compact .stat-section {
+  width: 100%;
+  flex-shrink: 0;
+}
+
 .section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--v6-space-2);
 }
 
 .section-icon {
-  font-size: 14px;
-  color: var(--ant-color-primary);
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-info);
 }
 
 .section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-sm);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 .stat-items {
@@ -155,54 +185,72 @@ defineProps<Props>()
   gap: 0;
 }
 
+/* compact 模式：公招条目换行以适配窄容器 */
+.card-content--compact .stat-items {
+  flex-wrap: wrap;
+  gap: var(--v6-space-1);
+}
+
 .stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  gap: var(--v6-space-1);
+  padding: var(--v6-space-1) var(--v6-space-4);
+  background: var(--v6-vibrancy-hover);
+  border-radius: var(--v6-radius-control);
+}
+
+/* compact 模式：缩小公招条目内边距 */
+.card-content--compact .stat-item {
+  padding: var(--v6-space-1) var(--v6-space-2);
+  min-width: 48px;
 }
 
 .stat-item:hover {
-  background: var(--ant-color-fill-tertiary);
+  background: var(--v6-color-info-bg);
 }
 
 .stat-divider {
-  height: 32px !important;
-  margin: 0 12px !important;
+  height: 32px;
+  margin: 0 var(--v6-space-3);
 }
 
 .stat-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-xs);
+  font-weight: var(--v6-font-weight-medium);
+  color: var(--v6-color-text-secondary);
 }
 
 .stat-label.star-1★,
 .stat-label.star-2★,
 .stat-label.star-3★ {
-  color: #8c8c8c;
+  color: var(--v6-color-text-tertiary);
 }
 
 .stat-label.star-4★ {
-  color: #d48806;
+  color: var(--v6-color-warning);
 }
 
 .stat-label.star-5★ {
-  color: #faad14;
+  color: var(--v6-color-warning);
 }
 
 .stat-label.star-6★ {
-  color: #ff4d4f;
-  font-weight: 600;
+  color: var(--v6-color-error);
+  font-weight: var(--v6-font-weight-semibold);
 }
 
 .stat-value {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* compact 模式：缩小数值字号 */
+.card-content--compact .stat-value {
+  font-size: var(--v6-font-size-base);
 }
 
 .drop-container {
@@ -211,10 +259,16 @@ defineProps<Props>()
 
 .drop-stages {
   display: flex;
-  gap: 12px;
+  gap: var(--v6-space-3);
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 0;
+  padding: var(--v6-space-1) 0;
+}
+
+/* compact 模式：缩小 stage 卡片间距 */
+.card-content--compact .drop-stages {
+  gap: var(--v6-space-2);
+  flex-wrap: wrap;
 }
 
 .drop-stages::-webkit-scrollbar {
@@ -222,40 +276,52 @@ defineProps<Props>()
 }
 
 .drop-stages::-webkit-scrollbar-track {
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 3px;
+  background: var(--v6-vibrancy-hover);
+  border-radius: var(--v6-radius-sm);
 }
 
 .drop-stages::-webkit-scrollbar-thumb {
-  background: var(--ant-color-fill-tertiary);
-  border-radius: 3px;
+  background: var(--v6-color-border);
+  border-radius: var(--v6-radius-sm);
 }
 
 .drop-stages::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-fill-secondary);
+  background: var(--v6-color-border-strong);
 }
 
 .stage-card {
   flex-shrink: 0;
   min-width: auto;
-  padding: 8px 16px;
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
-  border: 1px solid var(--ant-color-border);
+  padding: var(--v6-space-2) var(--v6-space-4);
+  background: var(--v6-vibrancy-hover);
+  border-radius: var(--v6-radius-control);
+  border: 1px solid var(--v6-color-border);
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background-color var(--v6-motion-fast) var(--v6-ease-out),
+    border-color var(--v6-motion-fast) var(--v6-ease-out);
+}
+
+/* compact 模式：缩小 stage 卡片内边距 */
+.card-content--compact .stage-card {
+  padding: var(--v6-space-1) var(--v6-space-2);
 }
 
 .stage-card:hover {
-  background: var(--ant-color-fill-tertiary);
-  border-color: var(--ant-color-primary);
+  background: var(--v6-color-info-bg);
+  border-color: var(--v6-color-info);
 }
 
 .stage-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-sm);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
   white-space: nowrap;
+}
+
+/* compact 模式：缩小 stage 名称字号 */
+.card-content--compact .stage-name {
+  font-size: var(--v6-font-size-xs);
 }
 
 .drop-popover-content {
@@ -265,59 +331,53 @@ defineProps<Props>()
 }
 
 .popover-stage-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--ant-color-border);
+  font-size: var(--v6-font-size-sm);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
+  margin-bottom: var(--v6-space-2);
+  padding-bottom: var(--v6-space-1);
+  border-bottom: 1px solid var(--v6-color-border);
 }
 
 .popover-drops {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--v6-space-1);
 }
 
 .popover-drop-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 8px;
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
-  font-size: 12px;
+  padding: var(--v6-space-1) var(--v6-space-2);
+  background: var(--v6-vibrancy-hover);
+  border-radius: var(--v6-radius-sm);
+  font-size: var(--v6-font-size-xs);
 }
 
 .popover-item-name {
-  color: var(--ant-color-text);
-  font-weight: 500;
+  color: var(--v6-color-text);
+  font-weight: var(--v6-font-weight-medium);
 }
 
 .popover-item-count {
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  margin-left: 12px;
+  color: var(--v6-color-info);
+  font-weight: var(--v6-font-weight-semibold);
+  margin-left: var(--v6-space-3);
 }
 
 .empty-stats {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 16px;
+  padding: var(--v6-space-4);
 }
 
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.7;
+.empty-stats--compact {
+  padding: var(--v6-space-2);
 }
 
-.empty-text {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
+@media (prefers-reduced-motion: reduce) {
+  .stage-card {
+    transition: none;
+  }
 }
 </style>

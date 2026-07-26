@@ -4,12 +4,13 @@ import { connectAfterBackendStart, forceConnectWebSocket } from '@/composables/u
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
+import { useAppStartup } from '@/composables/useAppStartup'
 import { bootstrapSchedulerSubscriptions } from '@/views/scheduler/schedulerHandlers'
 
 const logger = window.electronAPI.getLogger('应用入口')
 
-// 标记版本服务是否已启动，避免重复启动
-let versionServicesStarted = false
+// 单飞行标记。必须在第一个 await 之前赋值，否则并发调用都会越过守卫。
+let versionServicesPromise: Promise<void> | null = null
 
 /**
  * 启动所有版本检查服务
@@ -17,30 +18,40 @@ let versionServicesStarted = false
  * 1. 标题栏版本信息检查（10分钟一次）
  * 2. 版本更新检查（4小时一次，带弹窗提醒）
  */
-async function startVersionServices() {
-  if (versionServicesStarted) {
+function startVersionServices(): Promise<void> {
+  if (versionServicesPromise) {
     logger.info('版本检查服务已启动，跳过重复启动')
-    return
+    return versionServicesPromise
   }
+  versionServicesPromise = runVersionServices()
+  return versionServicesPromise
+}
 
-  try {
-    logger.info('开始启动版本检查服务...')
+async function runVersionServices(): Promise<void> {
+  logger.info('开始启动版本检查服务...')
 
-    // 1. 启动标题栏版本信息定时检查（10分钟一次）
-    await startTitlebarVersionCheck()
+  // 两个服务互不依赖，且各自的首次检查都会打网络；并行启动，单个失败不影响另一个。
+  const [titlebarResult, updateCheckerResult] = await Promise.allSettled([
+    startTitlebarVersionCheck(),
+    useUpdateChecker().startPolling(),
+  ])
+
+  const describe = (reason: unknown): string =>
+    reason instanceof Error ? reason.message : String(reason)
+
+  if (titlebarResult.status === 'fulfilled') {
     logger.info('标题栏版本检查服务已启动（每10分钟检查一次）')
-
-    // 2. 启动版本更新检查（4小时一次）
-    const { startPolling } = useUpdateChecker()
-    await startPolling()
-    logger.info('版本更新检查服务已启动（每4小时检查一次）')
-
-    versionServicesStarted = true
-    logger.info('所有版本检查服务启动完成')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`启动版本检查服务失败: ${errorMsg}`)
+  } else {
+    logger.error(`启动标题栏版本检查服务失败: ${describe(titlebarResult.reason)}`)
   }
+
+  if (updateCheckerResult.status === 'fulfilled') {
+    logger.info('版本更新检查服务已启动（每4小时检查一次）')
+  } else {
+    logger.error(`启动版本更新检查服务失败: ${describe(updateCheckerResult.reason)}`)
+  }
+
+  logger.info('所有版本检查服务启动完成')
 }
 
 /**
@@ -54,6 +65,11 @@ export async function enterApp(
   forceEnter: boolean = true
 ): Promise<boolean> {
   logger.info(`${reason}：开始进入应用流程，尝试建立WebSocket连接...`)
+  const { setStatus } = useAppStartup()
+  setStatus('reconnecting', {
+    stage: 'connection',
+    message: '正在建立实时连接...',
+  })
   bootstrapSchedulerSubscriptions()
 
   let wsConnected = false
@@ -77,10 +93,16 @@ export async function enterApp(
       logger.warn(`${reason}：WebSocket连接失败，但强制进入应用`)
     }
 
+    setStatus('connected', {
+      stage: 'ready',
+      message: wsConnected ? '已准备就绪' : '已进入离线模式',
+    })
+
     // 标记应用已初始化完成
     await markAsInitialized()
 
-    // 预加载调度中心
+    // 预加载调度中心。连接建立时后端立即推送的快照可能早于此处的订阅建立而被丢弃，
+    // useSchedulerLogic.initialize() 会在订阅就绪后补发一次 snapshot.request 拉回状态。
     preloadSchedulerView(reason)
 
     // 跳转到主页
@@ -89,11 +111,19 @@ export async function enterApp(
     }
     logger.info(`${reason}：已进入应用`)
 
-    // 启动版本检查服务
-    await startVersionServices()
+    // 版本检查是后台定时服务，其首次检查会打网络；不要 gate 住启动遮罩的消失。
+    void startVersionServices()
+
+    // 插件市场快照预热：后台 fire-and-forget，不阻塞启动、不 gate 遮罩；
+    // 失败静默，用户进入市场页时会正常重试。
+    preloadPluginMarket(reason)
 
     return true
   } else {
+    setStatus('offline', {
+      stage: 'connection',
+      detail: '实时连接建立失败，后端可能尚未就绪。',
+    })
     logger.error(`${reason}：WebSocket连接失败且不允许强制进入`)
     return false
   }
@@ -106,6 +136,11 @@ export async function enterApp(
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
   logger.info(`${reason}：跳过初始化流程开始`)
   logger.info(`${reason}：尝试强制建立WebSocket连接...`)
+  const { setStatus } = useAppStartup()
+  setStatus('reconnecting', {
+    stage: 'connection',
+    message: '正在建立实时连接...',
+  })
   bootstrapSchedulerSubscriptions()
 
   try {
@@ -127,6 +162,11 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   // 无论WebSocket是否成功，都进入应用
   logger.info(`${reason}：跳转到主页...`)
 
+  setStatus('connected', {
+    stage: 'ready',
+    message: '已进入主界面',
+  })
+
   // 标记应用已初始化完成
   await markAsInitialized()
 
@@ -135,11 +175,14 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   }
   logger.info(`${reason}：已跳过初始化`)
 
-  // 启动版本检查服务
-  await startVersionServices()
+  // 同 enterApp：后台定时服务不参与进入应用的关键路径。
+  void startVersionServices()
 
   // 预加载调度中心
   preloadSchedulerView(reason)
+
+  // 同 enterApp：插件市场快照后台预热，失败静默。
+  preloadPluginMarket(reason)
 }
 
 /**
@@ -149,6 +192,23 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
  */
 export async function normalEnterApp(reason: string = '正常进入'): Promise<boolean> {
   return await enterApp(reason, false)
+}
+
+/**
+ * 插件市场快照启动预热（fire-and-forget）。
+ * 动态 import 避免把市场模块拉进启动关键路径；prewarmPluginMarketSnapshot
+ * 内部单飞行且所有失败静默，市场页打开时无缓存会自行请求兜底。
+ */
+function preloadPluginMarket(reason: string): void {
+  void import('../views/plugin-market/marketPrewarm')
+    .then(({ prewarmPluginMarketSnapshot }) => prewarmPluginMarketSnapshot())
+    .then(() => {
+      logger.info(`${reason}：插件市场快照预热流程结束`)
+    })
+    .catch(error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`${reason}：插件市场快照预热失败（静默）: ${errorMsg}`)
+    })
 }
 
 /**

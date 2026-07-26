@@ -2,12 +2,13 @@ import { computed, ref, watch } from 'vue'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import {
+  WS_ID_MAIN,
+  WS_SNAPSHOT_REQUEST,
   WS_TASK_COMPLETED,
   WS_TASK_INFO_UPDATED,
   WS_TASK_LOG_UPDATED,
@@ -16,7 +17,13 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import type { QueueItem } from './schedulerConstants'
-import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
+import {
+  type SchedulerTab,
+  type TaskMessage,
+  type SchedulerTabStatus,
+  type SchedulerConnectionState,
+  isValidSchedulerTabStatus,
+} from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
 // 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据
@@ -183,19 +190,6 @@ const taskOptionsLoading = ref(false)
 const taskOptions = ref<ComboBoxItem[]>([])
 const scriptOptionsMap = ref<Record<string, string>>({})
 
-// 电源操作状态
-const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
-// 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
-// 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
-const powerCountdownVisible = ref(false)
-const powerCountdownData = ref<{
-  title?: string
-  message?: string
-  countdown?: number
-}>({})
-// 前端自己的60秒倒计时 - 已移至全局组件
-let powerCountdownTimer: ReturnType<typeof setInterval> | null = null
-
 // 消息弹窗
 const messageModalVisible = ref(false)
 const currentMessage = ref<TaskMessage | null>(null)
@@ -208,6 +202,25 @@ let _watchInitialized = false
 export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
+
+  // 调度器连接状态（从 WebSocket 状态派生）
+  const schedulerConnectionState = computed<SchedulerConnectionState>(() => {
+    const wsStatus = ws.status.value
+    switch (wsStatus) {
+      case '连接中':
+        return 'connecting'
+      case '已连接':
+        return 'connected'
+      case '已断开':
+        return 'disconnected'
+      case '连接错误':
+        return 'failed'
+      default:
+        return 'idle'
+    }
+  })
+
+  const isSchedulerConnected = computed(() => schedulerConnectionState.value === 'connected')
 
   const taskSubscriptionIds = (tab: SchedulerTab): string[] => {
     const ids = [...(tab.subscriptionIds ?? [])]
@@ -278,11 +291,6 @@ export function useSchedulerLogic() {
     saveTabsToStorage(schedulerTabs.value)
   }
 
-  // 计算属性
-  const canChangePowerAction = computed(() => {
-    return !schedulerTabs.value.some(tab => tab.status === '运行')
-  })
-
   const currentTab = computed(() => {
     return schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)
   })
@@ -312,10 +320,8 @@ export function useSchedulerLogic() {
   }) => {
     tabCounter++
     const status = options?.status || '空闲'
-    // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
-    const validStatus: SchedulerStatus = ['空闲', '运行', '等待', '结束', '异常'].includes(status)
-      ? (status as SchedulerStatus)
-      : '空闲'
+    // 使用 schedulerConstants 的统一校验集合，避免类型与校验集合不一致
+    const validStatus: SchedulerTabStatus = isValidSchedulerTabStatus(status) ? status : '空闲'
 
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
@@ -344,6 +350,8 @@ export function useSchedulerLogic() {
     const tab = schedulerTabs.value.find(t => t.key === key)
     if (!tab) return
 
+    // 运行中的任务不允许直接删除，必须先停止
+    // 停止中/失败/结束/空闲 均可删除
     if (tab.status === '运行') {
       Modal.warning({
         title: '无法删除调度台',
@@ -391,9 +399,10 @@ export function useSchedulerLogic() {
   }
 
   // 批量删除所有未运行状态的调度台子页（主调度台除外）
+  // 停止中的任务也不允许批量删除，避免删除正在停止的 tab 导致订阅泄漏
   const removeAllNonRunningTabs = () => {
     const nonRunningTabs = schedulerTabs.value.filter(
-      tab => tab.key !== 'main' && tab.status !== '运行'
+      tab => tab.key !== 'main' && tab.status !== '运行' && tab.status !== '停止中'
     )
 
     if (nonRunningTabs.length === 0) {
@@ -522,7 +531,7 @@ export function useSchedulerLogic() {
         taskId: tab.selectedTaskId,
         mode: tab.selectedMode,
       }
-      if (tab.resumeFromScriptId) {
+      if (tab.resumeFromScriptId && tab.selectedMode !== TaskCreateIn.mode.CYCLE_RUN) {
         requestBody.resumeFromScriptId = tab.resumeFromScriptId
       }
 
@@ -564,19 +573,40 @@ export function useSchedulerLogic() {
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
+    // 进入停止中状态，防止重复点击 stop，并提供 UI 反馈
+    const previousStatus = tab.status
+    tab.status = '停止中'
+
     try {
-      await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
+      const response = await Service.stopTaskApiDispatchStopPost({
+        taskId: tab.websocketId,
+      })
+
+      // 后端 dispatch.py 在异常时返回 OutBase(code=500)，HTTP 仍为 200
+      // 必须显式检查 response.code，否则 code=500 会被当作成功
+      if (response.code !== 200) {
+        // 停止失败：恢复原状态，标记失败，不播放成功音频
+        tab.status = previousStatus === '运行' ? '失败' : previousStatus
+        const backendMsg = response.message || '未知错误'
+        logger.error(`停止任务失败: 后端返回 code=${response.code}, message=${backendMsg}`)
+        message.error(`停止任务失败: ${backendMsg}`)
+        saveTabsToStorage(schedulerTabs.value)
+        return
+      }
 
       // 播放任务中止音频
       const { playSound } = useAudioPlayer()
       await playSound('maa_task_aborted')
 
-      // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
+      // 保持"停止中"状态，等待后端通过 WebSocket 发送真实结束信号
+      // WS Accomplish 信号到达后 handleSignalMessage 会将状态切为"结束"
       message.info('正在停止任务，请稍候...')
       saveTabsToStorage(schedulerTabs.value)
     } catch (error) {
+      // 网络异常等：恢复原状态，标记失败
+      tab.status = previousStatus === '运行' ? '失败' : previousStatus
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`停止任务失败: ${errorMsg}`)
+      logger.error(`停止任务请求异常: ${errorMsg}`)
       message.error('停止任务失败')
       saveTabsToStorage(schedulerTabs.value)
     }
@@ -648,6 +678,23 @@ export function useSchedulerLogic() {
       return
     }
 
+    // 停止中状态：忽略迟到的 Update/Info/log 消息，防止旧快照覆盖状态
+    // 仅允许 Accomplish/Completed 信号通过，以完成停止→结束的状态转换
+    // 这修复了"停止后旧 WS 消息覆盖状态"的缺陷
+    if (
+      tab.status === '停止中' &&
+      (type === 'Update' ||
+        type === WS_TASK_INFO_UPDATED ||
+        type === WS_TASK_LOG_UPDATED ||
+        type === 'Info' ||
+        type === 'Message')
+    ) {
+      logger.info(
+        `停止中状态忽略迟到消息: type=${type}, tabKey=${tab.key}, websocketId=${tab.websocketId}`
+      )
+      return
+    }
+
     switch (type) {
       case 'Update':
         logger.debug(
@@ -710,10 +757,10 @@ export function useSchedulerLogic() {
     }
   }
 
-  const buildTaskInfoSignature = (taskInfo: any[] | undefined) => {
+  const buildTaskInfoSignature = (taskInfo: any[] | undefined, data?: any) => {
     if (!Array.isArray(taskInfo)) return ''
 
-    return taskInfo
+    const taskSignature = taskInfo
       .map((task, index) => {
         const users = Array.isArray(task.userList)
           ? task.userList.map((user: any) => `${user.name || ''}:${user.status || ''}`).join(',')
@@ -721,6 +768,14 @@ export function useSchedulerLogic() {
         return `${task.script_id || index}:${task.name || ''}:${task.status || ''}[${users}]`
       })
       .join('|')
+    const cycleSignature = JSON.stringify({
+      queueId: data?.cycleQueueId ?? null,
+      currentItemId: data?.cycleCurrentItemId ?? null,
+      waitingReason: data?.cycleWaitingReason ?? null,
+      nextRunAt: data?.cycleNextRunAt ?? null,
+      nextList: data?.cycleNextList ?? [],
+    })
+    return `${taskSignature}#${cycleSignature}`
   }
 
   const applyLogContentUpdate = (tab: SchedulerTab, content: string) => {
@@ -805,7 +860,7 @@ export function useSchedulerLogic() {
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
     // 添加消息去重机制
-    const taskInfoSignature = buildTaskInfoSignature(data.task_info)
+    const taskInfoSignature = buildTaskInfoSignature(data.task_info, data)
     const messageKey = `${tab.key}_${taskInfoSignature}`
     const currentTime = Date.now()
 
@@ -965,6 +1020,11 @@ export function useSchedulerLogic() {
     // 只有收到WebSocket的Accomplish信号才将任务标记为结束状态
     // 这确保了调度台状态与实际任务执行状态严格同步
     if (data && data.Accomplish) {
+      // 已结束/失败的 tab 忽略重复的 Accomplish 信号，避免重复清理和音频播放
+      if (tab.status === '结束' || tab.status === '失败') {
+        logger.info(`忽略重复 Accomplish 信号: tabKey=${tab.key}, 当前状态=${tab.status}`)
+        return
+      }
       logger.info('收到Accomplish信号，设置任务状态为结束')
 
       applyTaskInfoSnapshot(tab, data)
@@ -1075,74 +1135,6 @@ export function useSchedulerLogic() {
     }
   }
 
-  // 电源操作
-  const onPowerActionChange = async (value: PowerIn.signal) => {
-    powerAction.value = value
-    // useLocalStorage 会自动同步到 localStorage，无需手动保存
-
-    // 调用API设置电源操作
-    try {
-      await Service.setPowerApiDispatchSetPowerPost({ signal: value })
-      logger.info(`电源操作设置成功: ${JSON.stringify(value)}`)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`设置电源操作失败: ${errorMsg}`)
-      message.error('设置电源操作失败')
-    }
-  }
-
-  // 更新电源操作显示（不发送API请求）
-  const updatePowerActionDisplay = (powerSign: string) => {
-    // 将后端的PowerSign转换为前端的PowerIn.signal枚举值
-    let newPowerAction: PowerIn.signal = PowerIn.signal.NO_ACTION
-
-    switch (powerSign) {
-      case 'NoAction':
-        newPowerAction = PowerIn.signal.NO_ACTION
-        break
-      case 'Shutdown':
-        newPowerAction = PowerIn.signal.SHUTDOWN
-        break
-      case 'ShutdownForce':
-        newPowerAction = PowerIn.signal.SHUTDOWN_FORCE
-        break
-      case 'Reboot':
-        newPowerAction = PowerIn.signal.REBOOT
-        break
-      case 'Hibernate':
-        newPowerAction = PowerIn.signal.HIBERNATE
-        break
-      case 'Sleep':
-        newPowerAction = PowerIn.signal.SLEEP
-        break
-      case 'KillSelf':
-        newPowerAction = PowerIn.signal.KILL_SELF
-        break
-      case 'Logoff':
-        newPowerAction = PowerIn.signal.LOGOFF
-        break
-      default:
-        logger.warn(`未知的PowerSign值: ${powerSign}`)
-        return
-    }
-
-    // 更新显示状态，useLocalStorage 会自动同步到 localStorage
-    powerAction.value = newPowerAction
-    logger.info(`电源操作显示已更新为: ${JSON.stringify(newPowerAction)}`)
-  }
-
-  // 启动60秒倒计时 - 已移至全局组件，这里保留空函数避免破坏现有代码
-  // 移除自动执行电源操作，由后端完全控制
-  // const executePowerAction = async () => {
-  //   // 不再自己执行电源操作，完全由后端控制
-  // }
-
-  const cancelPowerAction = async () => {
-    logger.info('cancelPowerAction 已移至全局组件，调度中心不再处理')
-    // 电源操作取消功能已移至 GlobalPowerCountdown 组件
-    // 这里保留空函数以避免破坏现有的调用代码
-  }
-
   // 移除自动检查任务完成的逻辑，完全由后端控制
   // const checkAllTasksCompleted = () => {
   //   // 不再自己检查任务完成状态，完全由后端WebSocket消息控制
@@ -1191,43 +1183,6 @@ export function useSchedulerLogic() {
     }
   }
 
-  // 获取电源状态
-  const getPowerState = async () => {
-    try {
-      const response = await Service.getPowerApiDispatchGetPowerPost()
-      if (response.code === 200 && response.signal) {
-        // 将后端返回的 PowerOut.signal 转换为 PowerIn.signal
-        const signalMap: Record<string, PowerIn.signal> = {
-          NoAction: PowerIn.signal.NO_ACTION,
-          Shutdown: PowerIn.signal.SHUTDOWN,
-          ShutdownForce: PowerIn.signal.SHUTDOWN_FORCE,
-          Reboot: PowerIn.signal.REBOOT,
-          Hibernate: PowerIn.signal.HIBERNATE,
-          Sleep: PowerIn.signal.SLEEP,
-          KillSelf: PowerIn.signal.KILL_SELF,
-          Logoff: PowerIn.signal.LOGOFF,
-        }
-        const mappedSignal = signalMap[response.signal]
-        if (mappedSignal) {
-          powerAction.value = mappedSignal
-          logger.info(`已从后端获取电源状态: ${JSON.stringify(mappedSignal)}`)
-        } else {
-          logger.warn(`未知的电源信号: ${response.signal}`)
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`获取电源状态失败: ${errorMsg}`)
-      // 失败时不显示错误消息，使用默认值
-    }
-  }
-
-  // 电源状态变更事件处理函数
-  const handlePowerStateChanged = () => {
-    logger.info('收到电源状态变更事件，重新获取电源状态')
-    getPowerState()
-  }
-
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
   const initialize = () => {
     // 核心初始化只执行一次
@@ -1240,10 +1195,6 @@ export function useSchedulerLogic() {
       ExternalWSHandlers.taskManagerMessage = handleTaskManagerMessage
       ExternalWSHandlers.mainMessage = handleMainMessage
       logger.info('已设置全局WebSocket消息处理函数')
-
-      // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
-      window.addEventListener('power-state-changed', handlePowerStateChanged)
-      logger.info('已注册电源状态变更事件监听器')
 
       // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
       try {
@@ -1285,9 +1236,6 @@ export function useSchedulerLogic() {
     }
 
     // 以下操作每次 initialize 调用都可以执行
-
-    // 获取后端当前的电源状态
-    getPowerState()
 
     // 为已有调度台预加载恢复脚本选项，确保刷新后恢复交互可用
     schedulerTabs.value.forEach(tab => {
@@ -1350,11 +1298,41 @@ export function useSchedulerLogic() {
           )
           // subscribeToTask 会自动跳过已有订阅，保持缓存标记不丢失
           subscribeToTask(tab)
+        } else if (tab.status === '停止中') {
+          // 页面刷新后"停止中"的 tab 无法再收到 WS 完成信号，标记为失败
+          // 避免永久停留在停止中状态
+          logger.warn(
+            `初始化阶段发现停止中的标签，标记为失败: ${JSON.stringify({
+              key: tab.key,
+              websocketId: tab.websocketId,
+            })}`
+          )
+          tab.status = '失败'
+          tab.websocketId = null
+          unsubscribeTab(tab)
         }
       })
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
       logger.warn(`恢复订阅时出现问题: ${errorMsg}`)
+    }
+
+    // 订阅就绪后主动补拉一次状态快照，修复冷启动时序断链：
+    // 连接建立瞬间后端主动推送的 Main/snapshot.response 早于任务订阅建立会被丢弃，
+    // 导致运行中任务状态无法恢复。此处所有订阅（sessionStorage 恢复 + pending 回放）
+    // 均已建立，按需请求快照即可补齐。后端 dispatcher 按 envelope.id 回显
+    // snapshot.response，而连接层只在 id=Main 时展开快照，故必须用 id=Main 请求。
+    // 多次请求幂等无害；未连接时 send 返回 false，重连成功后后端会在 on_connect
+    // 时自动推送快照（届时订阅已在），无需额外补偿。
+    try {
+      if (ws.send(WS_ID_MAIN, WS_SNAPSHOT_REQUEST, {})) {
+        logger.info('已发送状态快照补拉请求（snapshot.request）')
+      } else {
+        logger.info('快照补拉请求未发送（连接未就绪），等待连接建立后由后端主动推送')
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e)
+      logger.warn(`发送快照补拉请求失败: ${errorMsg}`)
     }
   }
 
@@ -1377,10 +1355,6 @@ export function useSchedulerLogic() {
       // 收到倒计时消息，由全局组件处理
       logger.info(`收到倒计时消息，由全局组件处理: ${JSON.stringify(data)}`)
       // 不再在调度中心处理倒计时
-    } else if (type === 'Update' && data && data.PowerSign !== undefined) {
-      // 收到电源操作更新消息，更新显示
-      logger.info(`收到电源操作更新消息: ${JSON.stringify(data.PowerSign)}`)
-      updatePowerActionDisplay(data.PowerSign)
     }
   }
 
@@ -1405,11 +1379,6 @@ export function useSchedulerLogic() {
   const cleanup = () => {
     logger.info('调度中心组件卸载，清理资源')
 
-    // 清理倒计时器 - 已移至全局组件，这里保留以避免错误
-    if (powerCountdownTimer) {
-      clearInterval(powerCountdownTimer)
-      powerCountdownTimer = null
-    }
     if (storageSaveTimer) {
       window.clearTimeout(storageSaveTimer)
       storageSaveTimer = null
@@ -1418,10 +1387,6 @@ export function useSchedulerLogic() {
     pendingLogUpdates.forEach(timer => window.clearTimeout(timer))
     pendingLogUpdates.clear()
     pendingLogContents.clear()
-
-    // 移除电源状态变更事件监听器
-    window.removeEventListener('power-state-changed', handlePowerStateChanged)
-    logger.info('已移除电源状态变更事件监听器')
 
     // 注意：由于keep-alive机制，路由切换时组件不会卸载
     // cleanup只在组件真正销毁时才会调用（如应用关闭）
@@ -1441,7 +1406,6 @@ export function useSchedulerLogic() {
     })
 
     saveTabsToStorageNow(schedulerTabs.value)
-    // useLocalStorage 会自动同步 powerAction，无需手动保存
   }
 
   return {
@@ -1453,15 +1417,11 @@ export function useSchedulerLogic() {
 
     taskOptionsLoading,
     taskOptions,
-    powerAction,
-    powerCountdownVisible,
-    powerCountdownData,
     messageModalVisible,
     currentMessage,
     messageResponse,
 
     // 计算属性
-    canChangePowerAction,
     currentTab,
 
     // Tab 管理
@@ -1479,10 +1439,6 @@ export function useSchedulerLogic() {
     onLogScroll,
     setLogRef,
 
-    // 电源操作
-    onPowerActionChange,
-    cancelPowerAction,
-
     // 消息操作
     sendMessageResponse,
     cancelMessage,
@@ -1490,7 +1446,6 @@ export function useSchedulerLogic() {
     // 初始化与清理
     initialize,
     loadTaskOptions,
-    getPowerState,
     cleanup,
 
     // 任务总览面板引用管理
@@ -1498,5 +1453,9 @@ export function useSchedulerLogic() {
 
     // 调试功能
     debugSubscriptionStatus,
+
+    // 调度器连接状态
+    schedulerConnectionState,
+    isSchedulerConnected,
   }
 }

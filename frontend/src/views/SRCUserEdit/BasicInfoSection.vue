@@ -88,13 +88,38 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            placeholder="请输入密码"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
+          <div class="sensitive-field">
+            <a-input-password
+              :value="passwordDraft"
+              :placeholder="passwordPlaceholder"
+              autocomplete="new-password"
+              :disabled="loading"
+              size="large"
+              @update:value="passwordDraft = $event"
+            />
+            <div class="sensitive-actions">
+              <span class="sensitive-hint">原值不会回显；留空保持原值</span>
+              <a-space size="small">
+                <a-button
+                  v-if="hasStoredPassword"
+                  danger
+                  size="small"
+                  :disabled="loading"
+                  @click="clearPassword"
+                >
+                  清空原值
+                </a-button>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :disabled="loading || !passwordDraft"
+                  @click="savePassword"
+                >
+                  保存新值
+                </a-button>
+              </a-space>
+            </div>
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -191,21 +216,52 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
   serverOptions: any[]
+  hasStoredPassword: boolean
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  sensitiveSave: [key: 'Info.Password', intent: 'replace' | 'clear', value?: string]
 }>()
+
+const passwordDraft = ref('')
+const passwordPlaceholder = computed(() =>
+  props.hasStoredPassword ? '已保存；输入新密码后明确保存' : '请输入密码'
+)
+
+const savePassword = () => {
+  if (!passwordDraft.value) return
+  emit('sensitiveSave', 'Info.Password', 'replace', passwordDraft.value)
+}
+
+const clearPassword = () => {
+  Modal.confirm({
+    title: '清空密码',
+    content: '清空后无法恢复，确定继续吗？',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => emit('sensitiveSave', 'Info.Password', 'clear', ''),
+  })
+}
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+defineExpose({
+  resetPasswordDraft: () => {
+    passwordDraft.value = ''
+  },
+})
 </script>
 
 <style scoped>
@@ -274,5 +330,29 @@ const emitSave = (key: string, value: any) => {
 .modern-input.ant-input-focused {
   border-color: var(--ant-color-primary);
   box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
+}
+
+@media (max-width: 768px) {
+  .sensitive-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>

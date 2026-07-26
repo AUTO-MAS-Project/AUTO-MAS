@@ -4,19 +4,27 @@
       <div class="control-row">
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行'"
+            v-if="!isTaskActive"
             v-model:value="localSelectedTaskId"
+            class="task-target-select"
             placeholder="选择任务项"
-            style="width: 200px"
             :loading="taskOptionsLoading"
-            :options="taskOptions"
+            :options="displayTaskOptions"
             :disabled="disabled"
+            :popup-match-select-width="false"
+            :title="selectedTaskLabel"
             size="large"
             @change="onTaskChange"
             @dropdown-visible-change="onDropdownVisibleChange"
-          />
+          >
+            <template #option="{ label, title }">
+              <span class="task-target-option" :title="String(title || label)">
+                {{ label }}
+              </span>
+            </template>
+          </a-select>
           <a-select
-            v-if="status !== '运行'"
+            v-if="!isTaskActive"
             v-model:value="localSelectedMode"
             placeholder="选择模式"
             style="width: 120px"
@@ -47,7 +55,7 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行' && showResumeScriptSelect"
+            v-if="!isTaskActive && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
             placeholder="从指定脚本继续（默认第一个）"
             style="width: 260px"
@@ -60,19 +68,22 @@
             @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
           <a-button
-            :type="status === '运行' ? 'default' : 'primary'"
+            :type="isTaskActive ? 'default' : 'primary'"
             :danger="status === '运行'"
+            :loading="status === '停止中'"
             :disabled="
-              status === '运行' ? false : !localSelectedTaskId || !localSelectedMode || disabled
+              isTaskActive
+                ? status === '停止中'
+                : !localSelectedTaskId || !localSelectedMode || disabled
             "
             size="large"
             @click="onAction"
           >
             <template #icon>
-              <StopOutlined v-if="status === '运行'" />
+              <StopOutlined v-if="isTaskActive" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? '停止任务' : '开始执行' }}
+            {{ status === '运行' ? '停止任务' : status === '停止中' ? '停止中...' : '开始执行' }}
           </a-button>
         </a-space>
       </div>
@@ -85,7 +96,8 @@ import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+import { type SchedulerTabStatus, getTaskModeOptions } from './schedulerConstants'
+import { buildSchedulerTaskOptions } from './schedulerTaskOptions'
 
 interface Props {
   selectedTaskId: string | null
@@ -95,7 +107,7 @@ interface Props {
   resumeScriptLoading?: boolean
   taskOptions: ComboBoxItem[]
   taskOptionsLoading: boolean
-  status: SchedulerStatus
+  status: SchedulerTabStatus
   disabled?: boolean
   runningTaskLabel?: string
   runningModeLabel?: string
@@ -136,17 +148,23 @@ const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
+// 运行中和停止中都属于"任务活跃"状态，此时隐藏任务/模式选择，显示运行信息
+const isTaskActive = computed(() => props.status === '运行' || props.status === '停止中')
+
+const displayTaskOptions = computed(() => buildSchedulerTaskOptions(props.taskOptions))
+
 // 脚本项按逐记录能力收窄模式；队列项继续使用通用模式。
 const selectedTaskOption = computed(() =>
-  props.taskOptions.find(option => option.value === localSelectedTaskId.value)
+  displayTaskOptions.value.find(option => option.value === localSelectedTaskId.value)
 )
+const selectedTaskLabel = computed(() => selectedTaskOption.value?.label || '')
 const modeOptions = computed(() => getTaskModeOptions(selectedTaskOption.value?.supported_modes))
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
 const showResumeScriptSelect = computed(() => {
   const selectedTaskId = localSelectedTaskId.value
-  if (!selectedTaskId) return false
+  if (!selectedTaskId || localSelectedMode.value === TaskCreateIn.mode.CYCLE_RUN) return false
 
   const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
   return Boolean(taskOption?.label.startsWith('队列 - '))
@@ -226,6 +244,9 @@ const onResumeDropdownVisibleChange = (open: boolean) => {
 const onAction = () => {
   if (props.status === '运行') {
     emit('stop')
+  } else if (props.status === '停止中') {
+    // 停止中不响应点击，按钮已 disabled+loading
+    return
   } else {
     emit('start')
   }
@@ -241,31 +262,66 @@ const onDropdownVisibleChange = (open: boolean) => {
 
 <style scoped>
 .task-control {
-  margin-bottom: 16px;
-  border-radius: 12px;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
+  flex-shrink: 0;
+  container: scheduler-task-control / inline-size;
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .control-card {
-  padding: 16px;
+  padding: 0;
 }
 
 .control-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--v6-space-3);
 }
 
 .control-spacer {
   flex: 1;
 }
 
+.task-target-select {
+  width: clamp(320px, 36vw, 520px);
+  min-width: 320px;
+}
+
+.task-target-option {
+  display: block;
+  max-width: min(720px, calc(100vw - 48px));
+  white-space: nowrap;
+}
+
+@container scheduler-task-control (max-width: 640px) {
+  .control-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .control-row > :deep(.ant-space) {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .control-row > :deep(.ant-space:first-child .ant-space-item:first-child) {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  .control-spacer {
+    display: none;
+  }
+
+  .task-target-select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* 响应式 - 移动端适配 */
-@media (max-width: 768px) {
+@container scheduler-task-control (max-width: 768px) {
   .control-row {
     flex-direction: column;
     align-items: stretch;
@@ -278,32 +334,37 @@ const onDropdownVisibleChange = (open: boolean) => {
   .control-card {
     padding: 12px;
   }
+
+  .task-target-select {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .running-info {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 8px;
+  gap: var(--v6-space-3);
+  padding: 0 var(--v6-space-2);
 }
 
 .info-item {
   display: flex;
   align-items: center;
-  font-size: 16px;
+  font-size: var(--v6-font-size-base);
 }
 
 .info-item .label {
-  color: var(--ant-color-text-secondary);
-  margin-right: 4px;
+  color: var(--v6-color-text-secondary);
+  margin-right: var(--v6-space-1);
 }
 
 .info-item .value {
-  color: var(--ant-color-text);
-  font-weight: 500;
+  color: var(--v6-color-text);
+  font-weight: var(--v6-font-weight-medium);
 }
 
 .divider {
-  color: var(--ant-color-border);
+  color: var(--v6-color-border);
 }
 </style>

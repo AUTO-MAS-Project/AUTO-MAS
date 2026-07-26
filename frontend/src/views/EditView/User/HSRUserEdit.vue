@@ -6,23 +6,31 @@
           <a-breadcrumb-item>
             <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
           </a-breadcrumb-item>
-          <a-breadcrumb-item>{{ scriptName }}</a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <span class="breadcrumb-current">
-              <img src="@/assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-              {{ isEdit ? '编辑 HSR 用户' : '添加 HSR 用户' }}
-            </span>
-          </a-breadcrumb-item>
+          <a-breadcrumb-item>{{ scriptName || 'HSR' }}</a-breadcrumb-item>
         </a-breadcrumb>
+        <h1>
+          <img src="@/assets/hsr.png" alt="" class="page-logo" />
+          {{ isEdit ? '编辑 HSR 用户' : '添加 HSR 用户' }}
+        </h1>
+        <p>SRA / 三月七任务、培养目标、体力关卡和执行进度会在操作后即时保存</p>
       </div>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
+      <a-button class="cancel-button" @click="handleCancel">
         <template #icon><ArrowLeftOutlined /></template>
         返回
       </a-button>
     </div>
 
     <div class="user-edit-content">
-      <a-card class="config-card">
+      <a-alert
+        v-if="saveError"
+        type="error"
+        show-icon
+        closable
+        class="save-error"
+        :message="saveError"
+        @close="saveError = ''"
+      />
+      <a-spin :spinning="isSaving" class="config-shell">
         <a-alert
           v-for="warning in capabilitySnapshot?.warnings || []"
           :key="warning"
@@ -73,13 +81,37 @@
                   <template #label>
                     <span class="form-label">账号</span>
                   </template>
-                  <a-input
-                    v-model:value="formData.SRA.Id"
-                    placeholder="请输入账号"
-                    size="large"
-                    class="modern-input"
-                    @blur="handleFieldSave('SRA.Id', formData.SRA.Id)"
-                  />
+                  <div class="sensitive-field">
+                    <a-input
+                      :value="sraIdDraft"
+                      :placeholder="sraIdPlaceholder"
+                      autocomplete="off"
+                      size="large"
+                      class="modern-input"
+                      @update:value="sraIdDraft = $event"
+                    />
+                    <div class="sensitive-actions">
+                      <span class="sensitive-hint">原值不会回显；留空保持原值</span>
+                      <a-space size="small">
+                        <a-button
+                          v-if="hasStoredSraId"
+                          danger
+                          size="small"
+                          @click="clearSraCredential('SRA.Id')"
+                        >
+                          清空
+                        </a-button>
+                        <a-button
+                          type="primary"
+                          size="small"
+                          :disabled="!sraIdDraft"
+                          @click="saveSraCredential('SRA.Id', sraIdDraft)"
+                        >
+                          保存
+                        </a-button>
+                      </a-space>
+                    </div>
+                  </div>
                 </a-form-item>
               </a-col>
               <a-col v-if="effectiveEngines.has('SRA')" :span="6">
@@ -87,14 +119,37 @@
                   <template #label>
                     <span class="form-label">密码</span>
                   </template>
-                  <!-- 用 input-class 把 modern-input 挂到内部 <input>，避免 a-input-password 外层嵌套 div -->
-                  <a-input-password
-                    v-model:value="formData.SRA.Password"
-                    placeholder="请输入密码"
-                    size="large"
-                    :input-class="'modern-input'"
-                    @blur="handleFieldSave('SRA.Password', formData.SRA.Password)"
-                  />
+                  <div class="sensitive-field">
+                    <a-input-password
+                      :value="sraPasswordDraft"
+                      :placeholder="sraPasswordPlaceholder"
+                      autocomplete="new-password"
+                      size="large"
+                      :input-class="'modern-input'"
+                      @update:value="sraPasswordDraft = $event"
+                    />
+                    <div class="sensitive-actions">
+                      <span class="sensitive-hint">原值不会回显；留空保持原值</span>
+                      <a-space size="small">
+                        <a-button
+                          v-if="hasStoredSraPassword"
+                          danger
+                          size="small"
+                          @click="clearSraCredential('SRA.Password')"
+                        >
+                          清空
+                        </a-button>
+                        <a-button
+                          type="primary"
+                          size="small"
+                          :disabled="!sraPasswordDraft"
+                          @click="saveSraCredential('SRA.Password', sraPasswordDraft)"
+                        >
+                          保存
+                        </a-button>
+                      </a-space>
+                    </div>
+                  </div>
                 </a-form-item>
               </a-col>
             </a-row>
@@ -412,7 +467,7 @@
             </a-row>
           </div>
         </a-form>
-      </a-card>
+      </a-spin>
     </div>
   </div>
 </template>
@@ -420,7 +475,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
@@ -472,6 +527,17 @@ const getUsers = (id: string, uid: string) => registryApi.getUsers(id, uid)
 
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const saveError = ref('')
+const sraIdDraft = ref('')
+const sraPasswordDraft = ref('')
+const hasStoredSraId = ref(false)
+const hasStoredSraPassword = ref(false)
+const sraIdPlaceholder = computed(() =>
+  hasStoredSraId.value ? '已保存；输入新账号后明确保存' : '请输入账号'
+)
+const sraPasswordPlaceholder = computed(() =>
+  hasStoredSraPassword.value ? '已保存；输入新密码后明确保存' : '请输入密码'
+)
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
@@ -557,6 +623,7 @@ const handleWeeklyTaskModeChange = async (mode: WeeklyTaskMode) => {
 
   if (isInitializing.value || isSaving.value || !userId) return
   isSaving.value = true
+  saveError.value = ''
   try {
     const saved = await updateUser(scriptId, userId, userData)
     if (saved) {
@@ -567,6 +634,7 @@ const handleWeeklyTaskModeChange = async (mode: WeeklyTaskMode) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    saveError.value = `周常配置保存失败：${errorMsg}`
   } finally {
     isSaving.value = false
   }
@@ -639,6 +707,7 @@ const handleTaskSwitchToggle = async (
   const userData: Record<string, unknown> = { TaskSwitch: { [moduleKey]: enabled } }
   if (isInitializing.value || isSaving.value || !userId) return
   isSaving.value = true
+  saveError.value = ''
   try {
     const saved = await updateUser(scriptId, userId, userData)
     if (saved) {
@@ -649,6 +718,7 @@ const handleTaskSwitchToggle = async (
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    saveError.value = `任务开关保存失败：${errorMsg}`
   } finally {
     isSaving.value = false
   }
@@ -701,13 +771,20 @@ const saveUserPatch = async (
   successLog: string,
   failureLog: string
 ) => {
-  const saved = await updateUser(scriptId, userId, userData)
-  if (saved) {
-    logger.info(successLog)
-  } else {
-    logger.error(failureLog)
+  saveError.value = ''
+  try {
+    const saved = await updateUser(scriptId, userId, userData)
+    if (saved) {
+      logger.info(successLog)
+      return true
+    }
+    throw new Error('用户配置更新未成功')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`${failureLog}: ${errorMsg}`)
+    saveError.value = `${failureLog}：${errorMsg}`
+    return false
   }
-  return saved
 }
 
 // 历战余响 — 标记已完成
@@ -806,6 +883,7 @@ const handleFieldSave = async (key: string, value: unknown) => {
 
   if (isInitializing.value || isSaving.value || !userId) return
   isSaving.value = true
+  saveError.value = ''
   try {
     const userData: MutableRecord = {}
     let current = userData
@@ -819,13 +897,84 @@ const handleFieldSave = async (key: string, value: unknown) => {
       logger.info(`用户配置已保存: ${key}`)
     } else {
       logger.error(`保存失败: ${key}`)
+      saveError.value = `保存失败：${key}`
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    saveError.value = `保存失败：${errorMsg}`
   } finally {
     isSaving.value = false
   }
+}
+
+type SraSensitiveKey = 'SRA.Id' | 'SRA.Password'
+
+const resetSraDraft = (key: SraSensitiveKey) => {
+  if (key === 'SRA.Id') {
+    sraIdDraft.value = ''
+  } else {
+    sraPasswordDraft.value = ''
+  }
+}
+
+const setStoredSraCredential = (key: SraSensitiveKey, stored: boolean) => {
+  if (key === 'SRA.Id') {
+    hasStoredSraId.value = stored
+  } else {
+    hasStoredSraPassword.value = stored
+  }
+}
+
+const saveSraCredential = async (key: SraSensitiveKey, value: string) => {
+  if (!value || isSaving.value || !userId) return
+  isSaving.value = true
+  saveError.value = ''
+  try {
+    const field = key === 'SRA.Id' ? 'Id' : 'Password'
+    const saved = await updateUser(scriptId, userId, { SRA: { [field]: value } })
+    if (saved === false) throw new Error('用户配置更新未成功')
+    resetSraDraft(key)
+    setStoredSraCredential(key, true)
+    logger.info(`敏感字段已保存: ${key}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    saveError.value = `${key === 'SRA.Id' ? 'SRA 账号' : 'SRA 密码'}保存失败：${errorMsg}`
+    logger.error(`敏感字段保存失败: ${key}: ${errorMsg}`)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const clearSraCredential = (key: SraSensitiveKey) => {
+  const label = key === 'SRA.Id' ? 'SRA 账号' : 'SRA 密码'
+  Modal.confirm({
+    title: `清空${label}`,
+    content: '清空后无法恢复，确定继续吗？',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      if (isSaving.value || !userId) return
+      isSaving.value = true
+      saveError.value = ''
+      try {
+        const field = key === 'SRA.Id' ? 'Id' : 'Password'
+        const saved = await updateUser(scriptId, userId, { SRA: { [field]: '' } })
+        if (saved === false) throw new Error('用户配置更新未成功')
+        resetSraDraft(key)
+        setStoredSraCredential(key, false)
+        logger.info(`敏感字段已清空: ${key}`)
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        saveError.value = `${label}清空失败：${errorMsg}`
+        logger.error(`敏感字段清空失败: ${key}: ${errorMsg}`)
+        throw error
+      } finally {
+        isSaving.value = false
+      }
+    },
+  })
 }
 
 const handleCancel = () => router.push('/scripts')
@@ -909,7 +1058,18 @@ const loadUserData = async () => {
         | undefined
       if (userData) {
         if (userData.Info) formData.Info = { ...formData.Info, ...userData.Info }
-        if (userData.SRA) formData.SRA = { ...formData.SRA, ...userData.SRA }
+        if (userData.SRA) {
+          hasStoredSraId.value = Boolean(userData.SRA.Id)
+          hasStoredSraPassword.value = Boolean(userData.SRA.Password)
+          formData.SRA = {
+            ...formData.SRA,
+            ...userData.SRA,
+            Id: '',
+            Password: '',
+          }
+          sraIdDraft.value = ''
+          sraPasswordDraft.value = ''
+        }
         if (userData.Stage) formData.Stage = { ...formData.Stage, ...userData.Stage }
         if (userData.TaskSwitch)
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
@@ -934,25 +1094,52 @@ const loadUserData = async () => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
+  padding: var(--v6-space-8);
   min-height: 100vh;
-  background: var(--ant-color-bg-layout);
+  background: var(--v6-color-window);
 }
 
 .user-edit-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  padding: 0 8px;
+  align-items: flex-end;
+  gap: var(--v6-space-4);
+  max-width: 1320px;
+  margin: 0 auto var(--v6-space-5);
+  padding: 0 var(--v6-space-1);
 }
 
 .breadcrumb {
+  margin: 0 0 var(--v6-space-2);
+  font-size: var(--v6-font-size-sm);
+}
+
+.header-nav h1 {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--v6-space-2);
+  color: var(--v6-color-text);
+  font-size: var(--v6-font-size-3xl);
+  font-weight: var(--v6-font-weight-semibold);
+  line-height: var(--v6-line-height-tight);
+  letter-spacing: -0.02em;
+}
+
+.page-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.header-nav p {
+  margin: var(--v6-space-1) 0 0;
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-base);
 }
 
 .breadcrumb-link {
-  color: var(--ant-color-text-secondary);
+  color: var(--v6-color-text-secondary);
   text-decoration: none;
 }
 
@@ -960,7 +1147,7 @@ const loadUserData = async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-weight: 600;
+  font-weight: var(--v6-font-weight-semibold);
 }
 
 .breadcrumb-logo {
@@ -970,125 +1157,198 @@ const loadUserData = async () => {
 }
 
 .user-edit-content {
-  max-width: 1400px;
+  max-width: 1320px;
   margin: 0 auto;
 }
 
-.config-card {
-  border-radius: 12px;
-  box-shadow: none;
+.save-error {
+  margin-bottom: var(--v6-space-4);
 }
 
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
+.config-shell {
+  display: block;
 }
 
 .config-form {
+  display: block;
   max-width: none;
 }
 
 .form-section {
-  margin-bottom: 12px;
-  padding: 20px 24px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  min-width: 0;
+  margin: 0 0 var(--v6-space-4);
+  padding: var(--v6-space-5);
+  background: var(--v6-vibrancy-content);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: blur(24px) saturate(1.18);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  break-inside: avoid;
+}
+
+/* 宽容器：iPad 设置式双栏瀑布流。卡片在两列内各自纵向堆叠、互不等高拉伸；
+   基本信息与体力配置（第 1 / 4 张卡）保持通栏。窄容器回落为上方的单列堆叠。 */
+@container app-content (min-width: 981px) {
+  .config-form {
+    columns: 2;
+    column-gap: var(--v6-space-4);
+  }
+
+  .form-section {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
+  }
+
+  .form-section:first-child,
+  .form-section:nth-child(4) {
+    display: block;
+    column-span: all;
+  }
 }
 
 /* 周常区域内的子块（差分宇宙 / 货币战争）：与主行用虚线分隔 */
 .weekly-subblock {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--ant-color-border-secondary);
+  margin-top: var(--v6-space-4);
+  padding-top: var(--v6-space-4);
+  border-top: 1px dashed var(--v6-color-border-subtle);
 }
 
 .strategy-warning {
-  margin-top: 8px;
-  color: var(--ant-color-warning);
-  font-weight: 600;
+  margin-top: var(--v6-space-2);
+  color: var(--v6-color-warning);
+  font-weight: var(--v6-font-weight-semibold);
 }
 
 .section-header {
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--v6-font-size-xl);
+  font-weight: var(--v6-font-weight-bold);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--v6-space-3);
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 22px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
+  display: none;
 }
 
 .form-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--v6-font-weight-semibold);
+  font-size: var(--v6-font-size-base);
 }
 
 .help-icon {
-  color: var(--ant-color-text-tertiary);
+  color: var(--v6-color-text-tertiary);
   font-size: 13px;
 }
 
 .modern-input,
 .modern-input :deep(.ant-input),
 .modern-input :deep(.ant-input-number) {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
+  border-radius: var(--v6-radius-md);
+  border: 2px solid var(--v6-color-border);
+  background: var(--v6-color-surface);
 }
 
 .modern-input:focus,
 .modern-input :deep(.ant-input:focus) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
 }
 
 .readonly-display {
-  color: var(--ant-color-text);
-  background: var(--ant-color-fill-quaternary);
+  color: var(--v6-color-text);
+  background: var(--v6-vibrancy-hover);
 }
 
 .module-checkbox-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: var(--v6-font-size-base);
 }
 
 .cancel-button {
-  height: 40px;
+  border: 1px solid var(--v6-color-border);
+  background: var(--v6-vibrancy-content);
+  color: var(--v6-color-text);
+  backdrop-filter: blur(18px) saturate(1.15);
 }
 
 .progress-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--v6-space-3);
 }
 
 .progress-label {
-  font-weight: 600;
-  color: var(--ant-color-text);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
   min-width: 48px;
 }
 
 .date-hint {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  margin-left: 4px;
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-text-tertiary);
+  margin-left: var(--v6-space-1);
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
+}
+
+@media (max-width: 768px) {
+  .user-edit-container {
+    padding: var(--v6-space-4);
+  }
+
+  .user-edit-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-section {
+    padding: var(--v6-space-4);
+  }
+
+  .form-section :deep(.ant-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .sensitive-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+[data-perf-mode='low'] .form-section {
+  background: var(--v6-color-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 </style>

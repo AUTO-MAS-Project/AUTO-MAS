@@ -286,5 +286,38 @@ if (process.isMainFrame) {
     removeLogStatsUpdateListener: () => {
       ipcRenderer.removeAllListeners('log-stats-update')
     },
+
+    // 启动失败错误传播
+    onStartupError: (
+      callback: (error: {
+        type: string
+        errorCode: number
+        errorDescription: string
+        timestamp: number
+      }) => void
+    ) => {
+      ipcRenderer.on('startup-error', (_, error) => callback(error))
+    },
+    removeStartupErrorListener: () => {
+      ipcRenderer.removeAllListeners('startup-error')
+    },
+
+    // ==================== 插件安全校验 API ====================
+
+    /** 检查 iframe sandbox 属性是否安全 */
+    pluginIsSafeIframeSandbox: (sandboxAttribute: string) =>
+      ipcRenderer.invoke('plugin:isSafeIframeSandbox', sandboxAttribute),
+
+    /** 验证插件页面 URL 是否安全 */
+    pluginIsSafePluginUrl: (candidateUrl: string, pluginFileRoots?: string[]) =>
+      ipcRenderer.invoke('plugin:isSafePluginUrl', candidateUrl, pluginFileRoots),
+
+    /** 检查 HTML 内容是否包含危险脚本注入 */
+    pluginHasDangerousScriptInjection: (htmlContent: string) =>
+      ipcRenderer.invoke('plugin:hasDangerousScriptInjection', htmlContent),
+
+    /** 综合校验插件内容安全性 */
+    pluginValidatePluginContent: (htmlContent: string, pluginUrl: string) =>
+      ipcRenderer.invoke('plugin:validatePluginContent', htmlContent, pluginUrl),
   })
 }

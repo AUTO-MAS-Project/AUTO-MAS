@@ -14,5 +14,9 @@ export type WebSocketMetaOut = {
      * 主 WebSocket 路径
      */
     wsPath?: string;
+    /**
+     * 仅向可信本地 Electron/开发前端返回的短期握手令牌
+     */
+    wsAuthToken?: (string | null);
 };
 

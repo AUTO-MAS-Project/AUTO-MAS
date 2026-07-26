@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
@@ -9,16 +10,32 @@ import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { EmulatorOperateOut } from '../models/EmulatorOperateOut';
 import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameActionIn } from '../models/GameActionIn';
+import type { GameAddIn } from '../models/GameAddIn';
+import type { GameCheckOut } from '../models/GameCheckOut';
+import type { GameCreateOut } from '../models/GameCreateOut';
+import type { GameDeleteIn } from '../models/GameDeleteIn';
+import type { GameGetIn } from '../models/GameGetIn';
+import type { GameGetOut } from '../models/GameGetOut';
+import type { GameOperationOut } from '../models/GameOperationOut';
+import type { GamePresetsOut } from '../models/GamePresetsOut';
+import type { GameProvidersOut } from '../models/GameProvidersOut';
+import type { GameReorderIn } from '../models/GameReorderIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
+import type { GameTaskCancelIn } from '../models/GameTaskCancelIn';
+import type { GameTaskStatusIn } from '../models/GameTaskStatusIn';
+import type { GameTaskStatusOut } from '../models/GameTaskStatusOut';
+import type { GameUpdateIn } from '../models/GameUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -133,6 +150,18 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
     /**
+     * 获取后端就绪状态
+     * 返回核心 API 与后台初始化状态。
+     * @returns BackendHealthOut Successful Response
+     * @throws ApiError
+     */
+    public static getHealthApiCoreHealthGet(): CancelablePromise<BackendHealthOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/core/health',
+        });
+    }
+    /**
      * 获取主 WebSocket 元信息
      * 返回前端建立主 WebSocket 连接需要的元信息。
      * @returns WebSocketMetaOut Successful Response
@@ -146,7 +175,7 @@ export class Service {
     }
     /**
      * 关闭后端程序
-     * 关闭后端程序
+     * 启动幂等关闭流程；完成信号通过主 WebSocket 发送。
      * @returns OutBase Successful Response
      * @throws ApiError
      */
@@ -383,12 +412,12 @@ export class Service {
     /**
      * 操作模拟器
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns EmulatorOperateOut Successful Response
      * @throws ApiError
      */
     public static operationEmulatorApiEmulatorOperatePost(
         requestBody: EmulatorOperateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<EmulatorOperateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/operate',
@@ -1542,6 +1571,237 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询游戏配置
+     * @param requestBody
+     * @returns GameGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getGamesApiGameCenterGetPost(
+        requestBody?: GameGetIn,
+    ): CancelablePromise<GameGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加游戏配置
+     * @param requestBody
+     * @returns GameCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addGameApiGameCenterAddPost(
+        requestBody?: GameAddIn,
+    ): CancelablePromise<GameCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新游戏配置
+     * @param requestBody
+     * @returns GameCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static updateGameApiGameCenterUpdatePost(
+        requestBody: GameUpdateIn,
+    ): CancelablePromise<GameCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除游戏配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteGameApiGameCenterDeletePost(
+        requestBody: GameDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序游戏配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderGamesApiGameCenterOrderPost(
+        requestBody: GameReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 发现游戏 provider
+     * @returns GameProvidersOut Successful Response
+     * @throws ApiError
+     */
+    public static listProvidersApiGameCenterProvidersPost(): CancelablePromise<GameProvidersOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/providers',
+        });
+    }
+    /**
+     * 列出游戏创建预设
+     * @returns GamePresetsOut Successful Response
+     * @throws ApiError
+     */
+    public static listPresetsApiGameCenterPresetsPost(): CancelablePromise<GamePresetsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/presets',
+        });
+    }
+    /**
+     * 检查游戏安装与版本
+     * @param requestBody
+     * @returns GameCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkGameApiGameCenterCheckPost(
+        requestBody: GameActionIn,
+    ): CancelablePromise<GameCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 启动游戏安装或更新任务
+     * @param requestBody
+     * @returns GameTaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static installGameApiGameCenterInstallPost(
+        requestBody: GameActionIn,
+    ): CancelablePromise<GameTaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消游戏安装或更新任务
+     * @param requestBody
+     * @returns GameTaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelGameApiGameCenterCancelPost(
+        requestBody: GameTaskCancelIn,
+    ): CancelablePromise<GameTaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/cancel',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询游戏安装或更新任务
+     * @param requestBody
+     * @returns GameTaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static taskStatusApiGameCenterTaskStatusPost(
+        requestBody: GameTaskStatusIn,
+    ): CancelablePromise<GameTaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/task_status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 启动游戏
+     * @param requestBody
+     * @returns GameOperationOut Successful Response
+     * @throws ApiError
+     */
+    public static launchGameApiGameCenterLaunchPost(
+        requestBody: GameActionIn,
+    ): CancelablePromise<GameOperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/launch',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 关闭游戏
+     * @param requestBody
+     * @returns GameOperationOut Successful Response
+     * @throws ApiError
+     */
+    public static closeGameApiGameCenterClosePost(
+        requestBody: GameActionIn,
+    ): CancelablePromise<GameOperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/close',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

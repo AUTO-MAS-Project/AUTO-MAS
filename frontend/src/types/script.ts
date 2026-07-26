@@ -2,12 +2,12 @@
 import type {
   MaaConfig,
   GeneralConfig,
-  OkwwConfig,
   SrcConfig,
   MaaEndConfig,
   M9AConfig,
   MaaFWConfig as ApiMaaFWConfig,
 } from '@/api'
+import type { OkwwConfig } from './legacyOkPlugin'
 import type {
   AutoEssenceLocation,
   MaaEndTaskSwitch,

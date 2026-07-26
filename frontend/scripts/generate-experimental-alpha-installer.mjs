@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -12,6 +10,7 @@ const {
   experimentalAlphaIdentity,
   assertExperimentalAlphaIdentity,
 } = require('./experimental-alpha-release-identity.cjs')
+const AdmZip = require('adm-zip')
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const frontendDirectory = path.resolve(scriptDirectory, '..')
@@ -165,6 +164,10 @@ const requireStageDirectory = stageDirectory => {
     'resources/app.asar',
     'resources/integration-snapshot/manifest.json',
     'resources/integration-snapshot/source-provenance.json',
+    'resources/integration-snapshot/app/api/game_center.py',
+    'resources/integration-snapshot/app/models/game_center.py',
+    'resources/integration-snapshot/app/services/game_center.py',
+    'resources/integration-snapshot/app/services/game_providers.py',
     'resources/integration-snapshot/plugins/wheels/manifest.json',
     'resources/integration-snapshot/plugins/wheels/runtime-lock.json',
     'resources/integration-snapshot/scripts/verify_offline_first_start.ps1',
@@ -505,6 +508,59 @@ const requireRegularArtifactFile = (artifactDirectory, relativePath) => {
   return candidate
 }
 
+export const verifyPortableArchiveLayout = archivePath => {
+  const archive = new AdmZip(archivePath)
+  const entries = archive.getEntries()
+  if (entries.length === 0) {
+    throw new Error('Alpha portable archive must not be empty')
+  }
+
+  const names = new Set()
+  for (const entry of entries) {
+    const rawName = entry.entryName
+    if (rawName.startsWith('./') || rawName.startsWith('.\\')) {
+      throw new Error(`Alpha portable archive entry must not start with ./ or .\\: ${rawName}`)
+    }
+    if (
+      rawName.startsWith('/') ||
+      rawName.startsWith('\\') ||
+      /^[A-Za-z]:/u.test(rawName) ||
+      rawName.includes('\\')
+    ) {
+      throw new Error(`Alpha portable archive entry must be a POSIX relative path: ${rawName}`)
+    }
+
+    const normalizedName = rawName.endsWith('/') ? rawName.slice(0, -1) : rawName
+    const segments = normalizedName.split('/')
+    if (
+      !normalizedName ||
+      segments.some(segment => !segment || segment === '.' || segment === '..')
+    ) {
+      throw new Error(`Alpha portable archive contains an unsafe entry path: ${rawName}`)
+    }
+    names.add(normalizedName)
+  }
+
+  const executableName = `${experimentalAlphaIdentity.executableName}.exe`
+  const requiredRoots = [
+    [executableName, name => name === executableName],
+    ['environment/', name => name === 'environment' || name.startsWith('environment/')],
+    ['resources/', name => name === 'resources' || name.startsWith('resources/')],
+  ]
+  for (const [label, predicate] of requiredRoots) {
+    if (![...names].some(predicate)) {
+      throw new Error(
+        `Alpha portable archive must expose ${label} directly at the ZIP root (no wrapper directory)`
+      )
+    }
+  }
+
+  return {
+    entryCount: entries.length,
+    topLevelNames: [...new Set([...names].map(name => name.split('/')[0]))].sort(),
+  }
+}
+
 export const verifyArtifactEvidenceBundle = artifactDirectory => {
   const artifact = path.resolve(requireArgument(artifactDirectory, '--artifact'))
   const evidenceDirectory = requireRegularArtifactDirectory(artifact, 'evidence')
@@ -649,6 +705,10 @@ const prepareExperimentalAlphaRelease = ({
       'resources/app.asar',
       'resources/integration-snapshot/manifest.json',
       'resources/integration-snapshot/source-provenance.json',
+      'resources/integration-snapshot/app/api/game_center.py',
+      'resources/integration-snapshot/app/models/game_center.py',
+      'resources/integration-snapshot/app/services/game_center.py',
+      'resources/integration-snapshot/app/services/game_providers.py',
       'resources/integration-snapshot/plugins/wheels/manifest.json',
       'resources/integration-snapshot/plugins/wheels/runtime-lock.json',
       'resources/integration-snapshot/scripts/verify_offline_first_start.ps1',
@@ -721,6 +781,7 @@ export const finalizeExperimentalAlphaInstaller = ({ preparedManifestPath }) => 
   if (artifactEvidence.sha256 !== prepared.evidence?.index_sha256) {
     throw new Error('Alpha artifact evidence index does not match the prepared release manifest')
   }
+  const archiveLayout = verifyPortableArchiveLayout(archivePath)
   const artifacts = [
     ...(installerPath
       ? [
@@ -760,6 +821,7 @@ export const finalizeExperimentalAlphaInstaller = ({ preparedManifestPath }) => 
     ...prepared,
     status: 'packaged',
     artifacts,
+    portable_archive_layout: archiveLayout,
     checksum_coverage: {
       filename: path.basename(sumsPath),
       files: checksumFiles.map(file => file.filename),

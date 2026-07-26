@@ -94,9 +94,13 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 
 <style scoped>
 .plan-config-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+  container: plan-config / inline-size;
+  min-width: 0;
+  background: var(--v6-color-surface-transparent);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
 .mode-label,
@@ -110,7 +114,7 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .plan-title-display {
@@ -120,7 +124,7 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 }
 
 .plan-title-text {
-  font-size: 18px;
+  font-size: var(--v6-font-size-lg);
   font-weight: 600;
   color: var(--ant-color-text);
 }
@@ -133,7 +137,7 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 .plan-title-input {
   flex: 1;
   max-width: 400px;
-  border-radius: 8px;
+  border-radius: var(--v6-radius-control);
   transition: all 0.2s ease;
 }
 
@@ -145,8 +149,9 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 
 /* 深度样式 */
 .plan-config-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+  padding: 0 var(--v6-space-4);
 }
 
 .plan-config-card :deep(.ant-card-head-title) {
@@ -159,13 +164,24 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
   font-weight: 500;
 }
 
-.plan-title-input :deep(.ant-input:focus) {
-  box-shadow: 0 0 0 2px var(--ant-color-primary);
+.plan-title-input :deep(.ant-input:focus-visible) {
+  box-shadow: var(--v6-focus-ring-inset);
 }
 
-@media (max-width: 768px) {
+@container plan-config (max-width: 768px) {
   .plan-title-input {
     max-width: 100%;
+  }
+
+  .plan-config-card :deep(.ant-card-head-wrapper) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--v6-space-2);
+    padding-block: var(--v6-space-3);
+  }
+
+  .plan-config-card :deep(.ant-card-extra .ant-space) {
+    flex-wrap: wrap;
   }
 }
 </style>

@@ -1,35 +1,13 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditPageHeader
+    title="SRC 脚本配置"
+    type-label="SRC"
+    type-color="blue"
+    @back="handleCancel"
+  />
 
   <div class="script-edit-content">
-    <a-card title="SRC脚本配置" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag color="blue" class="type-tag"> SRC </a-tag>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
         <BasicInfoFields
@@ -240,8 +218,9 @@ import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '@/api'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import BasicInfoFields from '@/views/EditView/shared/BasicInfoFields.vue'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const logger = window.electronAPI.getLogger('SRC脚本编辑')
 
@@ -879,3 +858,4 @@ const selectSRCPath = async () => {
   height: 60px;
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

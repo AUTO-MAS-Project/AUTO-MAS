@@ -1,10 +1,12 @@
 import { OpenAPI } from '@/api'
 import type { PageDeclaration } from '@/router/pageDeclarations'
 import * as VueRuntime from 'vue'
+import { validatePluginEntryUrl, validatePluginStyleUrl } from '@/plugins/ui/pluginSecurity'
 
 const logger = window.electronAPI.getLogger('插件前端加载器')
 
 const PLUGIN_RESOURCE_LOAD_TIMEOUT_MS = 8000
+const PLUGIN_ELEMENT_TAG_PATTERN = /^[a-z][a-z0-9]*-[a-z0-9-]*[a-z0-9]$/
 const loadedEntries = new Map<string, Promise<void>>()
 const loadedStyles = new Map<string, LoadedStyle>()
 
@@ -229,19 +231,33 @@ export async function ensurePluginFrontendPage(
   if (!page.element_tag) {
     throw new Error('页面缺少 element_tag')
   }
+  if (!PLUGIN_ELEMENT_TAG_PATTERN.test(page.element_tag)) {
+    throw new Error(`页面 element_tag 格式无效: ${page.element_tag}`)
+  }
   if (page.dev_frontend_error) {
     throw new Error(page.dev_frontend_error)
   }
 
   exposeVueRuntime()
 
-  const releaseStyles = await acquireStyles(
-    page.style_asset_urls.map(styleUrl => toAbsoluteUrl(styleUrl))
-  )
+  const entryValidation = validatePluginEntryUrl(page.entry_asset_url)
+  if (!entryValidation.safe) {
+    throw new Error(`插件入口 URL 安全校验失败: ${entryValidation.reason}`)
+  }
+
+  const validatedStyleUrls = page.style_asset_urls.map(styleUrl => {
+    const validation = validatePluginStyleUrl(styleUrl)
+    if (!validation.safe) {
+      throw new Error(`插件样式 URL 安全校验失败: ${validation.reason}`)
+    }
+    return validation.sanitizedUrl || styleUrl
+  })
+
+  const releaseStyles = await acquireStyles(validatedStyleUrls.map(toAbsoluteUrl))
   const releasePage = combineReleases([releaseStyles])
 
   try {
-    const entryUrl = toAbsoluteUrl(page.entry_asset_url)
+    const entryUrl = toAbsoluteUrl(entryValidation.sanitizedUrl || page.entry_asset_url)
     await loadPluginEntry(page, entryUrl)
     await waitForElement(page.element_tag)
     return releasePage

@@ -1,4 +1,4 @@
-﻿import { spawn } from 'child_process'
+import { spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -8,6 +8,7 @@ import {
   nativeImage,
   nativeTheme,
   screen,
+  session,
   shell,
   Tray,
   type Display,
@@ -45,6 +46,17 @@ import {
   readElevationHandoffToken,
   waitForSingleInstanceLock,
 } from './services/singleInstanceHandoff'
+import { installCspHeaders } from './services/contentSecurityPolicy'
+import {
+  installPermissionHandler,
+  installPermissionCheckHandler,
+} from './services/permissionPolicy'
+import {
+  isSafeIframeSandbox,
+  isSafePluginUrl,
+  hasDangerousScriptInjection,
+  validatePluginContent,
+} from './services/pluginSecurityPolicy'
 import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
@@ -210,43 +222,72 @@ const defaultConfig: AppConfig = {
   },
 }
 
+function getConfigPath(): string {
+  return path.join(getAppRoot(), 'config', 'frontend_config.json')
+}
+
+/**
+ * loadConfig 的进程内 memo。
+ *
+ * loadConfig 有 ~15 个调用点，其中 win.on('show'/'hide'/'minimize') 与防抖保存回调
+ * 都在热路径上。配置只由本主进程写入，所有写入口都会使缓存失效，因此命中时无需
+ * 再做 stat/read/parse；调用方拿到副本，不能污染缓存。
+ */
+let configCache: AppConfig | null = null
+
 //加载配置
 function loadConfig(): AppConfig {
-  try {
-    const appRoot = getAppRoot()
-    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+  if (configCache != null) {
+    return structuredClone(configCache)
+  }
 
-    if (fs.existsSync(configPath)) {
-      const configData = fs.readFileSync(configPath, 'utf8')
-      const config = JSON.parse(configData)
-      return { ...defaultConfig, ...config }
+  try {
+    const configPath = getConfigPath()
+    if (!fs.existsSync(configPath)) {
+      return structuredClone(defaultConfig)
     }
+
+    const configData = fs.readFileSync(configPath, 'utf8')
+    const config = { ...defaultConfig, ...JSON.parse(configData) }
+    configCache = structuredClone(config)
+    return structuredClone(config)
   } catch {
+    configCache = null
     logger.error('加载配置失败')
   }
-  return defaultConfig
+  return structuredClone(defaultConfig)
 }
 
 // 保存配置
 function saveConfig(config: AppConfig) {
   try {
-    const appRoot = getAppRoot()
-    const configDir = path.join(appRoot, 'config')
-    const configPath = path.join(configDir, 'frontend_config.json')
+    const configPath = getConfigPath()
+    const configDir = path.dirname(configPath)
 
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true })
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    configCache = null
   } catch {
+    configCache = null
     logger.error('保存配置失败')
   }
 }
 
-// 创建托盘
-function createTray() {
-  if (tray) return
+/**
+ * 托盘图标探测结果缓存。
+ *
+ * 图标位置在进程生命周期内不会变化，但用户每次切换"常驻显示托盘"都会走
+ * destroyTray/createTray，重新做最多 4 次 existsSync 加一次磁盘解码。
+ */
+let cachedTrayIcon: Electron.NativeImage | null = null
+
+function resolveTrayIcon(): Electron.NativeImage {
+  if (cachedTrayIcon) {
+    return cachedTrayIcon
+  }
 
   // 尝试多个可能的图标路径
   const iconPaths = [
@@ -256,7 +297,7 @@ function createTray() {
     path.join(app.getAppPath(), 'dist/AUTO-MAS.ico'),
   ]
 
-  let trayIcon
+  let trayIcon: Electron.NativeImage | undefined
 
   try {
     // 尝试加载图标
@@ -279,6 +320,18 @@ function createTray() {
     logger.error('加载托盘图标失败')
     trayIcon = nativeImage.createEmpty()
   }
+
+  // 打包资源路径在进程生命周期内不会改变；失败结果也缓存，避免每次重建托盘
+  // 都重复探测四个路径。
+  cachedTrayIcon = trayIcon
+  return trayIcon
+}
+
+// 创建托盘
+function createTray() {
+  if (tray) return
+
+  const trayIcon = resolveTrayIcon()
 
   tray = new Tray(trayIcon)
 
@@ -559,11 +612,88 @@ function createWindow() {
     }
   })
 
+  // 页面加载失败/超时的共享状态与处理函数
+  // did-fail-load 与 page-load-timeout 都需要：显示窗口 + 发送 IPC + 原生对话框兜底
+  const pageLoadTimeoutMs = app.isPackaged ? 30_000 : 60_000
+  let pageLoadTimer: NodeJS.Timeout | null = null
+  let pageLoadTimedOut = false
+  let startupFailureHandled = false
+
+  const showStartupFailureDialog = (errorCode: number, errorDescription: string): void => {
+    if (startupFailureHandled) return
+    if (pageLoadTimer) {
+      clearTimeout(pageLoadTimer)
+      pageLoadTimer = null
+    }
+    startupFailureHandled = true
+
+    // 确保窗口可见，避免用户面对隐形进程
+    if (!win.isDestroyed() && !win.isVisible()) {
+      win.show()
+    }
+
+    // 尝试向 renderer 发送结构化错误（渲染进程可能已部分可用）
+    try {
+      if (!win.isDestroyed()) {
+        win.webContents.send('startup-error', {
+          type: 'startup-error',
+          errorCode,
+          errorDescription,
+          timestamp: Date.now(),
+        })
+      }
+    } catch {
+      // webContents 可能已销毁
+    }
+
+    // 原生对话框兜底：渲染进程可能完全不可用，需提供重试/退出入口
+    dialog
+      .showMessageBox(win, {
+        type: 'error',
+        title: 'AUTO-MAS 启动失败',
+        message: 'AUTO-MAS 启动失败',
+        detail: `[${errorCode}] ${errorDescription}\n\n可以选择重试加载或安全退出应用。`,
+        buttons: ['重试加载', '安全退出'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          // 重试加载：重置标志，允许再次失败时显示对话框
+          startupFailureHandled = false
+          pageLoadTimedOut = false
+          if (devServer) {
+            win.loadURL(devServer)
+          } else {
+            win.loadFile(indexHtmlPath)
+          }
+          // 重新挂载超时保护
+          pageLoadTimer = setTimeout(() => {
+            pageLoadTimedOut = true
+            logger.error(`页面加载超时 (${pageLoadTimeoutMs / 1000}s)，重试后仍未就绪`)
+            showStartupFailureDialog(
+              -408,
+              `页面加载超时 (${pageLoadTimeoutMs / 1000}秒)，请检查网络连接或重新启动应用`
+            )
+          }, pageLoadTimeoutMs)
+        } else {
+          // 安全退出
+          isQuitting = true
+          app.quit()
+        }
+      })
+      .catch(error => {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`显示启动失败对话框异常: ${errorMsg}`)
+      })
+  }
+
   win.webContents.on(
     'did-fail-load',
     (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame) return
       logger.error(`页面加载失败: ${errorCode} ${errorDescription}, URL: ${validatedURL}`)
+      showStartupFailureDialog(errorCode, errorDescription || '页面加载失败')
     }
   )
 
@@ -668,6 +798,26 @@ function createWindow() {
     logger.info(`加载生产环境页面: ${indexHtmlPath}`)
     win.loadFile(indexHtmlPath)
   }
+
+  // 页面加载超时保护：超时后显示窗口 + 发送 IPC + 原生对话框兜底
+  pageLoadTimer = setTimeout(() => {
+    pageLoadTimedOut = true
+    logger.error(
+      `页面加载超时 (${pageLoadTimeoutMs / 1000}s)，可能原因：后端未就绪、离线或资源损坏`
+    )
+    showStartupFailureDialog(
+      -408,
+      `页面加载超时 (${pageLoadTimeoutMs / 1000}秒)，请检查网络连接或重新启动应用`
+    )
+  }, pageLoadTimeoutMs)
+
+  // 页面加载成功时清除超时计时器
+  win.webContents.once('did-finish-load', () => {
+    if (!pageLoadTimedOut && pageLoadTimer) {
+      clearTimeout(pageLoadTimer)
+      pageLoadTimer = null
+    }
+  })
 
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
@@ -907,10 +1057,11 @@ ipcMain.handle('log:export', async () => {
       return { success: false, error: '日志目录不存在' }
     }
 
-    // 选择保存位置
+    // 选择保存位置：默认定位到 appRoot/debug（app.log / frontend.log 所在目录），
+    // 避免对话框落在系统“最近使用”目录，用户找不到绿色包自带的日志
     const result = await dialog.showSaveDialog(mainWindow, {
       title: '导出日志',
-      defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
+      defaultPath: path.join(debugDir, `logs-${new Date().toISOString().slice(0, 10)}.zip`),
       filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
     })
 
@@ -1061,6 +1212,34 @@ ipcMain.handle('app-quit', () => {
   app.quit()
 })
 
+// ==================== 插件安全校验 IPC ====================
+
+/** 检查 iframe sandbox 属性是否安全。 */
+ipcMain.handle('plugin:isSafeIframeSandbox', async (_event, sandboxAttribute: string) => {
+  return isSafeIframeSandbox(sandboxAttribute)
+})
+
+/** 验证插件页面 URL 是否安全。 */
+ipcMain.handle(
+  'plugin:isSafePluginUrl',
+  async (_event, candidateUrl: string, pluginFileRoots?: string[]) => {
+    return isSafePluginUrl(candidateUrl, app.isPackaged, pluginFileRoots)
+  }
+)
+
+/** 检查 HTML 内容是否包含危险脚本注入。 */
+ipcMain.handle('plugin:hasDangerousScriptInjection', async (_event, htmlContent: string) => {
+  return hasDangerousScriptInjection(htmlContent)
+})
+
+/** 综合校验插件内容安全性。 */
+ipcMain.handle(
+  'plugin:validatePluginContent',
+  async (_event, htmlContent: string, pluginUrl: string) => {
+    return validatePluginContent(htmlContent, pluginUrl, app.isPackaged)
+  }
+)
+
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
@@ -1121,14 +1300,22 @@ ipcMain.handle('open-file', async (_event, filePath: string) => {
   }
 })
 
-// 显示文件所在目录并选中文件
+// 显示文件所在目录并选中文件；若目标本身是目录（如 appRoot/debug 日志目录），
+// 直接在资源管理器中打开该目录内部，让用户直接看到 app.log / frontend.log
 ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   try {
     const resolvedPath = resolveRendererFilePath(filePath)
     if (!fs.existsSync(resolvedPath)) {
       throw new Error('File does not exist')
     }
-    shell.showItemInFolder(resolvedPath)
+    if (fs.statSync(resolvedPath).isDirectory()) {
+      const openError = await shell.openPath(resolvedPath)
+      if (openError) {
+        throw new Error(openError)
+      }
+    } else {
+      shell.showItemInFolder(resolvedPath)
+    }
     return { success: true }
   } catch (error) {
     logger.error(`显示文件所在目录失败: ${error}`)
@@ -1256,6 +1443,11 @@ ipcMain.handle('get-theme-info', async () => {
 // 获取应用路径
 ipcMain.handle('get-app-path', async (_event, name: any) => {
   try {
+    // 绿色包日志固定写入 appRoot/debug（与 logger.ts 的 resolvePathFn 同源）。
+    // app.getPath('logs') 指向 AppData 下并不存在的目录，会让“打开日志”误入导出兜底对话框。
+    if (name === 'logs') {
+      return path.join(getAppRoot(), 'debug')
+    }
     return app.getPath(name)
   } catch {
     logger.error(`获取路径 ${name} 失败`)
@@ -1317,6 +1509,7 @@ ipcMain.handle('save-config', async (_event, config) => {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    configCache = null
     logger.info(`配置已保存到: ${configPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态
@@ -1503,6 +1696,13 @@ function registerApplicationLifecycle(): void {
     logger.info(`Node版本: ${process.versions.node}`)
     logger.info(`平台: ${process.platform}`)
 
+    // 安装安全策略（CSP、权限、安全检查）
+    installCspHeaders(session.defaultSession, app.isPackaged)
+    logger.info(`CSP 已安装 (${app.isPackaged ? '生产态' : '开发态'})`)
+    installPermissionHandler(session.defaultSession)
+    installPermissionCheckHandler(session.defaultSession)
+    logger.info('权限处理器已安装 (deny-by-default)')
+
     const startupConfig = loadConfig()
     createWindow()
 
@@ -1524,6 +1724,20 @@ function registerApplicationLifecycle(): void {
     }).catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`生命周期后端预热失败，将由初始化流程处理: ${errorMsg}`)
+      // 向 renderer 发送结构化错误，避免启动页永久 spinner
+      const backendErrorPayload = {
+        type: 'startup-error' as const,
+        errorCode: -503,
+        errorDescription: `后端服务预热失败: ${errorMsg}`,
+        timestamp: Date.now(),
+      }
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('startup-error', backendErrorPayload)
+        }
+      } catch {
+        // webContents 可能已销毁
+      }
     })
   })
 

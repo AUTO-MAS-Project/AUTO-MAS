@@ -76,13 +76,38 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            placeholder="密码仅用于储存以防遗忘，此外无任何作用"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
+          <div class="sensitive-field">
+            <a-input-password
+              :value="passwordDraft"
+              :placeholder="passwordPlaceholder"
+              :disabled="loading"
+              size="large"
+              autocomplete="new-password"
+              @update:value="passwordDraft = $event"
+            />
+            <div class="sensitive-actions">
+              <span class="sensitive-hint">原值不会回显，也不会因浏览表单被重复提交</span>
+              <a-space size="small">
+                <a-button
+                  v-if="hasStoredPassword"
+                  size="small"
+                  danger
+                  :disabled="loading"
+                  @click="clearPassword"
+                >
+                  清空原值
+                </a-button>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :disabled="loading || !passwordDraft"
+                  @click="savePassword"
+                >
+                  保存新值
+                </a-button>
+              </a-space>
+            </div>
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -259,9 +284,11 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
   serverOptions: any[]
@@ -275,22 +302,52 @@ defineProps<{
 const emit = defineEmits<{
   selectAndImportInfrastructureConfig: []
   save: [key: string, value: any]
+  sensitiveSave: [key: 'Info.Password', intent: 'replace' | 'clear', value?: string]
 }>()
+
+const passwordDraft = ref('')
+const hasStoredPassword = computed(() => Boolean(props.formData?.Info?.Password))
+const passwordPlaceholder = computed(() =>
+  hasStoredPassword.value ? '已保存；留空保持原值，输入新值后明确保存' : '请输入密码'
+)
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const savePassword = () => {
+  if (!passwordDraft.value) return
+  emit('sensitiveSave', 'Info.Password', 'replace', passwordDraft.value)
+}
+
+const clearPassword = () => {
+  Modal.confirm({
+    title: '清空已保存密码？',
+    content: '该操作会明确清空已保存的密码，不影响其他用户配置。',
+    okText: '清空',
+    cancelText: '取消',
+    okType: 'danger',
+    centered: true,
+    onOk: () => emit('sensitiveSave', 'Info.Password', 'clear', ''),
+  })
+}
+
+defineExpose({
+  resetPasswordDraft: () => {
+    passwordDraft.value = ''
+  },
+})
 </script>
 
 <style scoped>
 .form-section {
-  margin-bottom: 32px;
+  margin-bottom: var(--v6-space-4);
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -298,20 +355,12 @@ const emitSave = (key: string, value: any) => {
 
 .section-header h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -319,34 +368,58 @@ const emitSave = (key: string, value: any) => {
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
+  color: var(--v6-color-text);
+  font-size: var(--v6-font-size-base);
 }
 
 .help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-base);
   cursor: help;
-  transition: color 0.3s ease;
+  transition: color var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .help-icon:hover {
-  color: var(--ant-color-primary);
+  color: var(--v6-color-info);
 }
 
 .modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
+  border-radius: var(--v6-radius-md);
+  border: 1px solid var(--v6-color-border);
+  background: var(--v6-color-surface);
 }
 
 .modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
+  border-color: var(--v6-color-info);
 }
 
 .modern-input:focus,
 .modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-3);
+}
+
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
+}
+
+@media (max-width: 768px) {
+  .sensitive-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

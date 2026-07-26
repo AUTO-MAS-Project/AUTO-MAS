@@ -9,7 +9,6 @@ const {
   recordingKeyField = null,
   startRecordKey = undefined,
   stopRecordKey = undefined,
-  onSelectVisibleChange = undefined,
 } = defineProps<{
   config: ToolsConfig_ArknightsPC
   disabled?: boolean
@@ -103,17 +102,11 @@ const isRecording = (fieldName: string) => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="config.Enabled"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              v-model:checked="config.Enabled"
               :disabled="disabled"
               @change="handleChange('Enabled', $event)"
-              @dropdown-visible-change="onSelectVisibleChange"
-            >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
       </a-row>
@@ -475,6 +468,33 @@ const isRecording = (fieldName: string) => {
 .item-hint {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
+}
+
+/*
+ * iPad 设置式自适应瀑布双栏：
+ * 宽容器（tools-page 容器 >980px）时卡片流入两列、各自纵向堆叠——
+ * 基础设置（矮卡）与键位配置（高卡）并排，消除矮卡下方整行空白；
+ * 窄容器保持默认的单列堆叠。
+ * 采用 CSS multi-column：卡片 break-inside: avoid + inline-block/width:100% 防断裂，
+ * 卡片内部结构与既有间距不做任何改动。
+ */
+@container tools-page (min-width: 981px) {
+  .tab-content {
+    columns: 2;
+    column-gap: var(--v6-space-3);
+  }
+
+  .tab-content > * {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
+    break-inside: avoid;
+  }
+
+  /* 工具简介为全宽横幅（内部为三段横排），横跨双栏，保持原有视觉 */
+  .tab-content > .tool-intro {
+    column-span: all;
+  }
 }
 
 /* 响应式调整 */

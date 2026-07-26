@@ -17,7 +17,6 @@
             v-for="plan in planList"
             :key="plan.id"
             :type="activePlanId === plan.id ? 'primary' : 'default'"
-            size="large"
             class="plan-button"
             @click="handlePlanClick(plan.id)"
           >
@@ -88,33 +87,34 @@ const getPlanTypeLabel = (planType: string) => {
 
 <style scoped>
 .plan-selector-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--v6-color-surface-transparent);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
 .card-title {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 18px;
+  gap: var(--v6-space-3);
+  font-size: var(--v6-font-size-lg);
   font-weight: 600;
 }
 
 .plan-selection-container {
-  padding: 16px;
+  padding: var(--v6-space-1) 0;
 }
 
 .plan-buttons-container {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--v6-space-3);
 }
 
 .plan-button {
   flex: 1 1 120px;
-  border-radius: 8px;
+  border-radius: var(--v6-radius-control);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -131,7 +131,12 @@ const getPlanTypeLabel = (planType: string) => {
 
 /* 深度样式 */
 .plan-selector-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+  padding: 0 var(--v6-space-4);
+}
+
+.plan-selector-card :deep(.ant-card-body) {
+  padding: var(--v6-space-3) var(--v6-space-4);
 }
 </style>

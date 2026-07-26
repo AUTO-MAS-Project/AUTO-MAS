@@ -74,18 +74,34 @@
           <template #label>
             <span class="form-label">
               密码
-              <a-tooltip title="用户密码，PC 端需要切换账号时必须填写，模拟器暂不支持账号切换">
+              <a-tooltip
+                title="用户密码（加密存储）。PC 端切换账号时需要填写；模拟器暂不支持账号切换。留空保持原值，输入新值替换，点击“清空原值”清空"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            placeholder="请输入密码"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
+          <div class="sensitive-field-row">
+            <a-input-password
+              :value="passwordDraft"
+              :placeholder="passwordPlaceholder"
+              :disabled="loading"
+              size="large"
+              autocomplete="new-password"
+              @update:value="(val: string) => handlePasswordInput(val)"
+              @blur="handlePasswordBlur"
+            />
+            <a-button
+              v-if="!loading && hasStoredPassword"
+              size="small"
+              type="link"
+              danger
+              :disabled="passwordExplicitlyCleared"
+              @click="handleClearPassword"
+            >
+              {{ passwordExplicitlyCleared ? '已清空' : '清空原值' }}
+            </a-button>
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -240,6 +256,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import {
   EditOutlined,
   ImportOutlined,
@@ -247,14 +264,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
-const emit = defineEmits<{
-  save: [key: string, value: any]
-  configure: []
-  importConfig: []
-  scriptConfig: []
-}>()
-
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
   resourceOptions: Array<{ label: string; value: string }>
@@ -262,6 +272,23 @@ defineProps<{
   configLoading?: boolean
   importLoading?: boolean
   showConfigMask?: boolean
+}>()
+
+const emit = defineEmits<{
+  save: [key: string, value: any]
+  /**
+   * 敏感字段保存意图（Lane 06 任务书第 2 条）。
+   *
+   * - `keep`：用户未触碰密码字段，不发送给后端（保持原密文）。
+   * - `replace`：用户输入了新明文，发送给后端（后端加密为新密文）。
+   * - `clear`：用户点击“清空原值”，发送空串 `""` 给后端（后端加密为空密文）。
+   */
+  sensitiveSave: [key: string, intent: 'keep' | 'replace' | 'clear', value?: string]
+  /** 敏感字段 dirty 状态变更；父组件用于 useUnsavedChangesGuard.isDirty。 */
+  sensitiveDirtyChange: [key: string, dirty: boolean]
+  configure: []
+  importConfig: []
+  scriptConfig: []
 }>()
 
 const modeOptions = [
@@ -274,9 +301,112 @@ const quickConfigOptions = [
   { label: '关闭', value: false },
 ]
 
+// ============================================================
+// 密码字段：草稿驱动，不在 DOM 显示明文（Lane 06 任务书第 1 条）
+// ============================================================
+
+/** 密码草稿：用户在 input 中输入的内容；初始空串，不回显后端解密的明文。 */
+const passwordDraft = ref('')
+
+/** 用户是否显式点击“清空原值”。 */
+const passwordExplicitlyCleared = ref(false)
+
+/** 后端是否已存储密码（modelValue 中 Info.Password 非空）。 */
+const hasStoredPassword = computed(() => {
+  const stored = props.formData?.Info?.Password
+  return typeof stored === 'string' && stored.length > 0
+})
+
+/** DOM 占位文本：根据后端是否已存储和显式清空状态切换。 */
+const passwordPlaceholder = computed(() => {
+  if (passwordExplicitlyCleared.value) {
+    return '已清空。留空保持清空状态，输入新值替换'
+  }
+  if (hasStoredPassword.value) {
+    return '已保存。留空保持原值，输入新值替换'
+  }
+  return '请输入密码'
+})
+
+/**
+ * 用户在密码字段输入时：
+ * - 更新本地草稿（不写回 formData.Info.Password，避免明文进入 DOM/modelValue）。
+ * - 重新输入时撤销“显式清空”意图（替换优先于清空）。
+ * - 通知父组件 dirty 状态变更。
+ */
+const handlePasswordInput = (val: string) => {
+  passwordDraft.value = val
+  if (val !== '' && passwordExplicitlyCleared.value) {
+    passwordExplicitlyCleared.value = false
+  }
+  emit('sensitiveDirtyChange', 'Info.Password', val !== '' || passwordExplicitlyCleared.value)
+}
+
+/**
+ * 用户点击“清空原值”按钮：
+ * - 把草稿置空。
+ * - 设置 explicitCleared = true，下次 blur 时发送 clear 意图。
+ */
+const handleClearPassword = () => {
+  if (!hasStoredPassword.value) {
+    return
+  }
+  passwordDraft.value = ''
+  passwordExplicitlyCleared.value = true
+  emit('sensitiveDirtyChange', 'Info.Password', true)
+}
+
+/**
+ * blur 时按真实后端保存协议发送意图：
+ * - 草稿为空且未显式清空 → `keep`（不发送给后端，保持原密文）。
+ * - 草稿非空 → `replace`（发送新明文，后端加密为新密文）。
+ * - 显式清空 → `clear`（发送空串 `""`，后端加密为空密文）。
+ */
+const handlePasswordBlur = () => {
+  if (passwordExplicitlyCleared.value) {
+    emit('sensitiveSave', 'Info.Password', 'clear', '')
+    // 后端处理完成后父组件应调用 resetPasswordDraft。
+    return
+  }
+  if (passwordDraft.value === '') {
+    // 未输入也未清空：保持原值，不发送给后端。
+    emit('sensitiveSave', 'Info.Password', 'keep')
+    return
+  }
+  emit('sensitiveSave', 'Info.Password', 'replace', passwordDraft.value)
+}
+
+/**
+ * 父组件在保存成功 / 权威 reload 后调用：清空草稿与 explicitCleared。
+ *
+ * 通过 watch formData.Info.Password 实现：后端 reload 后 Password 字段更新（可能是新密文解密后的明文），
+ * 此时草稿失去意义，必须清空。
+ */
+watch(
+  () => props.formData?.Info?.Password,
+  () => {
+    passwordDraft.value = ''
+    passwordExplicitlyCleared.value = false
+    emit('sensitiveDirtyChange', 'Info.Password', false)
+  }
+)
+
+// 通用字段：保持原有的 @blur → emit('save') 模式
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+/**
+ * 暴露给父组件：手动重置密码草稿。
+ * 父组件在 useUnsavedChangesGuard 离开确认或表单 reset 后调用。
+ */
+defineExpose({
+  resetPasswordDraft: () => {
+    passwordDraft.value = ''
+    passwordExplicitlyCleared.value = false
+  },
+  isPasswordDirty: () => passwordDraft.value !== '' || passwordExplicitlyCleared.value,
+})
 </script>
 
 <style scoped>
@@ -331,5 +461,23 @@ const emitSave = (key: string, value: any) => {
 .modern-input {
   border-radius: 8px;
   border: 2px solid var(--ant-color-border);
+}
+
+.sensitive-field-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.sensitive-field-row :deep(.ant-input-password) {
+  width: 100%;
+}
+
+.sensitive-field-row :deep(.ant-btn-link) {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

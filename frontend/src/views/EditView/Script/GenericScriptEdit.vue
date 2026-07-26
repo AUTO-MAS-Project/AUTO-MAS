@@ -1,15 +1,12 @@
 <template>
-  <div class="page-header">
-    <div class="header-nav">
-      <a-breadcrumb>
-        <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>通用脚本编辑</a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
+  <ScriptEditPageHeader
+    :title="script?.name || '脚本配置'"
+    subtitle="按脚本 Schema 编辑配置，敏感字段保存后自动脱敏"
+    :type-label="script?.displayName || script?.type || '未知类型'"
+    :type-color="getScriptTypeTagColor(script?.type || '', script?.themeColor)"
+    @back="router.push('/scripts')"
+  >
+    <template #actions>
       <HeaderSchemaActionButton
         v-for="action in headerSchemaActions"
         :key="action.key"
@@ -23,20 +20,10 @@
       <a-button type="primary" :loading="saving" :disabled="!script" @click="handleSave"
         >保存配置</a-button
       >
-      <a-button @click="router.push('/scripts')">返回</a-button>
-    </a-space>
-  </div>
+    </template>
+  </ScriptEditPageHeader>
 
   <a-card class="config-card" :loading="loading">
-    <template #title>
-      <a-space>
-        <span>{{ script?.name || '脚本配置' }}</span>
-        <a-tag :color="getScriptTypeTagColor(script?.type || '', script?.themeColor)">
-          {{ script?.displayName || script?.type || '未知类型' }}
-        </a-tag>
-      </a-space>
-    </template>
-
     <a-alert
       v-if="loadError"
       class="config-load-error"
@@ -80,6 +67,10 @@ import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
+import {
+  buildSchemaSavePayload,
+  sanitizeErrorForLog,
+} from '@/composables/useSensitiveFieldStrategy'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type { Script } from '@/types/script'
 import type { SchemaFieldDefinition, SchemaValidationErrorMap } from '@/types/schemaForm'
@@ -89,6 +80,7 @@ import {
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
 import { collectHeaderSchemaActions } from '@/utils/schemaActions'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
@@ -167,15 +159,24 @@ const handleSave = async () => {
     return
   }
 
+  const schema = script.value?.schema || {}
+  const payload =
+    schemaFormRef.value?.buildSavePayload() ?? buildSchemaSavePayload(formModel.value, schema, {})
   saving.value = true
   try {
-    await api.updateScript(scriptId, formModel.value)
+    await api.updateScript(scriptId, payload)
+    schemaFormRef.value?.resetSensitiveDrafts()
     message.success('脚本配置已保存')
     await loadScript()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存通用脚本失败: ${errorMsg}`)
-    message.error(errorMsg)
+    const safeError = sanitizeErrorForLog(
+      sanitizeErrorForLog(errorMsg, payload, schema),
+      formModel.value,
+      schema
+    )
+    logger.error(`保存通用脚本失败: ${safeError}`)
+    message.error(safeError)
   } finally {
     saving.value = false
   }
@@ -191,8 +192,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  gap: 16px;
+  margin-bottom: var(--v6-space-6);
+  gap: var(--v6-space-4);
 }
 
 .header-nav {
@@ -200,11 +201,14 @@ onMounted(() => {
 }
 
 .config-card {
-  border-radius: 16px;
+  border-radius: var(--v6-radius-lg);
+  background: var(--v6-color-surface);
+  border: 1px solid var(--v6-color-border-subtle);
+  box-shadow: var(--v6-shadow-card);
 }
 
 .config-load-error {
-  margin-bottom: 16px;
+  margin-bottom: var(--v6-space-4);
 }
 
 @media (max-width: 768px) {
@@ -214,3 +218,4 @@ onMounted(() => {
   }
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

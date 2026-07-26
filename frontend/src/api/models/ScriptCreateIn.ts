@@ -22,7 +22,6 @@ export namespace ScriptCreateIn {
         GENERAL = 'General',
         OKWW = 'Okww',
         OK_SCRIPT = 'OkScript',
-        OKEF = 'Okef',
         MAA_END = 'MaaEnd',
         M9A = 'M9A',
         MAA_FW = 'MaaFW',

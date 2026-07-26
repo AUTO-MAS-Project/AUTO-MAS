@@ -2,6 +2,9 @@
   <a-card title="任务列表" class="queue-item-card">
     <template #extra>
       <a-space>
+        <a-tag :color="cycleEnabled ? 'processing' : 'default'">
+          {{ cycleEnabled ? '循环队列已启用' : '循环队列未启用' }}
+        </a-tag>
         <a-button type="primary" :loading="loading" @click="addQueueItem">
           <template #icon>
             <PlusOutlined />
@@ -11,17 +14,19 @@
       </a-space>
     </template>
 
-    <!-- 使用vuedraggable替换a-table实现拖拽功能 -->
+    <div class="cycle-help">
+      调度参数始终可以预先配置；只有队列的“循环运行”开启后，宿主才会按父级顺序执行已到期项目。
+    </div>
+
     <div class="draggable-table-container">
-      <!-- 表头 -->
       <div class="draggable-table-header">
         <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">序号</div>
         <div class="header-cell script-cell">脚本任务</div>
+        <div class="header-cell schedule-cell">循环调度</div>
         <div class="header-cell actions-cell">操作</div>
       </div>
 
-      <!-- 拖拽内容区域 -->
       <draggable
         v-model="queueItems"
         group="queueItems"
@@ -33,6 +38,7 @@
         drag-class="drag"
         handle=".drag-handle"
         class="draggable-container"
+        @start="onDragStart"
         @end="onDragEnd"
       >
         <template #item="{ element: record, index }">
@@ -45,124 +51,258 @@
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell script-cell">
               <a-select
-                v-model:value="record.script"
+                :value="record.script"
                 size="small"
                 style="width: 200px"
                 class="script-select"
                 placeholder="请选择脚本"
                 :options="scriptOptions"
+                :disabled="loading"
                 allow-clear
-                @change="updateQueueItemScript(record)"
+                @change="onScriptChange(record, $event)"
               />
             </div>
+            <div class="row-cell schedule-cell">
+              <div class="schedule-editor">
+                <div class="schedule-row">
+                  <span class="schedule-label">启用</span>
+                  <a-switch
+                    :checked="record.scheduleEnabled"
+                    :disabled="loading"
+                    @change="onScheduleEnabledChange(record, $event)"
+                  />
+                  <a-select
+                    :value="record.scheduleMode"
+                    class="schedule-mode"
+                    size="small"
+                    :disabled="loading"
+                    @change="onScheduleModeChange(record, $event)"
+                  >
+                    <a-select-option value="fixed_time">固定时间</a-select-option>
+                    <a-select-option value="interval">间隔运行</a-select-option>
+                  </a-select>
+                </div>
+
+                <div v-if="record.scheduleMode === 'fixed_time'" class="schedule-row">
+                  <a-input
+                    :value="record.scheduleTime"
+                    type="time"
+                    size="small"
+                    class="schedule-time"
+                    :disabled="loading"
+                    @blur="updateScheduleTime(record, $event)"
+                  />
+                  <a-checkbox-group
+                    :value="record.scheduleDays"
+                    :options="dayOptions"
+                    :disabled="loading"
+                    @change="onScheduleDaysChange(record, $event)"
+                  />
+                </div>
+
+                <div v-else class="schedule-row">
+                  <span class="schedule-label">每</span>
+                  <a-input-number
+                    :value="record.intervalMinutes"
+                    :min="1"
+                    :max="10080"
+                    size="small"
+                    :disabled="loading"
+                    @change="updateIntervalMinutes(record, $event)"
+                  />
+                  <span class="schedule-label">分钟</span>
+                  <a-select
+                    :value="record.intervalAnchor"
+                    class="schedule-anchor"
+                    size="small"
+                    :disabled="loading"
+                    @change="onIntervalAnchorChange(record, $event)"
+                  >
+                    <a-select-option value="start">从开始时间</a-select-option>
+                    <a-select-option value="finish">从完成时间</a-select-option>
+                  </a-select>
+                </div>
+
+                <div class="schedule-row schedule-meta">
+                  <span class="schedule-label">下次</span>
+                  <a-input
+                    :value="displayNextRunAt(record.nextRunAt)"
+                    size="small"
+                    class="next-run-input"
+                    placeholder="YYYY-MM-DD HH:mm:ss"
+                    :disabled="loading"
+                    @blur="updateNextRunAt(record, $event)"
+                  />
+                  <span v-if="hasRun(record)" class="last-run">
+                    上次完成 {{ displayTimestamp(record.lastCycleFinishedAt) }}
+                  </span>
+                </div>
+                <div class="schedule-row cycle-state-row">
+                  <a-tag :color="cycleStateColor(record.cycleState)">
+                    {{ cycleStateLabel(record.cycleState) }}
+                  </a-tag>
+                  <span v-if="record.cycleError" class="cycle-error" :title="record.cycleError">
+                    {{ record.cycleError }}
+                  </span>
+                  <span v-else-if="record.cycleState === 'running'" class="cycle-run-id">
+                    运行 ID {{ shortRunId(record.cycleRunId) }}
+                  </span>
+                  <span v-if="hasCycleUpdate(record)" class="cycle-updated-at">
+                    更新于 {{ displayTimestamp(record.cycleUpdatedAt) }}
+                  </span>
+                </div>
+              </div>
+            </div>
             <div class="row-cell actions-cell">
-              <a-space>
-                <a-popconfirm
-                  title="确定要删除这个任务吗？"
-                  ok-text="确定"
-                  cancel-text="取消"
-                  @confirm="deleteQueueItem(record.id)"
-                >
-                  <a-button size="middle" danger>
-                    <DeleteOutlined />
-                    删除
-                  </a-button>
-                </a-popconfirm>
-              </a-space>
+              <a-popconfirm
+                title="确定要删除这个任务吗？"
+                ok-text="确定"
+                cancel-text="取消"
+                @confirm="deleteQueueItem(record.id)"
+              >
+                <a-button size="middle" danger :disabled="loading">
+                  <DeleteOutlined />
+                  删除
+                </a-button>
+              </a-popconfirm>
             </div>
           </div>
         </template>
       </draggable>
 
-      <!-- 空状态 -->
-      <div v-if="queueItems.length === 0" class="empty-state">
-        <div class="empty-content">
-          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-        </div>
-      </div>
+      <EmptyState
+        v-if="queueItems.length === 0"
+        compact
+        title="暂无队列项"
+        description="添加脚本任务后，可在这里调整执行顺序和循环计划。"
+      />
     </div>
   </a-card>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, nextTick, watch } from 'vue'
-import { message } from 'ant-design-vue'
+import { Service, type QueueItem_Schedule } from '@/api'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
-import { Service } from '@/api'
-const logger = window.electronAPI.getLogger('队列项管理')
+import EmptyState from '@/components/v6/EmptyState.vue'
+import type { QueueItemRecord } from '../useQueueLogic'
 
-// Props
+const logger = window.electronAPI.getLogger('队列项管理')
+const SENTINEL_TIMESTAMP = '2000-01-01 00:00:00'
+
+type ScheduleDay =
+  | 'Monday'
+  | 'Tuesday'
+  | 'Wednesday'
+  | 'Thursday'
+  | 'Friday'
+  | 'Saturday'
+  | 'Sunday'
+
 interface Props {
   queueId: string
-  queueItems: any[]
+  queueItems: QueueItemRecord[]
+  cycleEnabled?: boolean
 }
 
-const props = defineProps<Props>()
-
-// Emits
+const props = withDefaults(defineProps<Props>(), {
+  cycleEnabled: false,
+})
 const emit = defineEmits<{
-  refresh: []
+  refresh: [queueId: string]
 }>()
 
-// 响应式数据
 const loading = ref(false)
 const isDraggingQueueItem = ref(false)
-
-// 选项数据
 const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
-
-// 表格列配置
-const _queueColumns = [
-  {
-    title: '序号',
-    key: 'index',
-    width: 80,
-    align: 'center',
-  },
-  {
-    title: '脚本任务',
-    key: 'script',
-    align: 'center',
-    ellipsis: true,
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 100,
-    align: 'center',
-  },
+const dayOptions: Array<{ label: string; value: ScheduleDay }> = [
+  { label: '一', value: 'Monday' },
+  { label: '二', value: 'Tuesday' },
+  { label: '三', value: 'Wednesday' },
+  { label: '四', value: 'Thursday' },
+  { label: '五', value: 'Friday' },
+  { label: '六', value: 'Saturday' },
+  { label: '日', value: 'Sunday' },
 ]
 
-// 计算属性 - 使用props传入的数据
-const queueItems = ref(props.queueItems)
+const cloneItem = (item: QueueItemRecord): QueueItemRecord => ({
+  ...item,
+  scheduleDays: [...item.scheduleDays],
+})
+const cloneItems = (items: QueueItemRecord[]): QueueItemRecord[] => items.map(cloneItem)
+const queueItems = ref<QueueItemRecord[]>(cloneItems(props.queueItems))
+let pendingPropsSync = false
 
-// 监听props变化
+const syncFromProps = () => {
+  queueItems.value = cloneItems(props.queueItems)
+  pendingPropsSync = false
+}
+
 watch(
-  () => props.queueItems,
-  newQueueItems => {
-    if (!isDraggingQueueItem.value) {
-      queueItems.value = newQueueItems
+  [() => props.queueId, () => props.queueItems],
+  () => {
+    if (isDraggingQueueItem.value || loading.value) {
+      pendingPropsSync = true
+      return
     }
+    syncFromProps()
   },
   { deep: true }
 )
 
-// 加载脚本选项
+const normalizeScriptId = (value: unknown): string | null =>
+  typeof value === 'string' && value.length > 0 ? value : null
+const normalizeMode = (value: unknown): 'fixed_time' | 'interval' =>
+  value === 'interval' ? 'interval' : 'fixed_time'
+const normalizeAnchor = (value: unknown): 'start' | 'finish' =>
+  value === 'finish' ? 'finish' : 'start'
+const normalizeDays = (value: unknown): ScheduleDay[] =>
+  Array.isArray(value)
+    ? value.filter((day): day is ScheduleDay => dayOptions.some(option => option.value === day))
+    : []
+const eventValue = (event: Event): string => (event.target as HTMLInputElement | null)?.value ?? ''
+const displayTimestamp = (value: string): string =>
+  !value || value === SENTINEL_TIMESTAMP ? '尚未运行' : value
+const displayNextRunAt = (value: string): string => (value === SENTINEL_TIMESTAMP ? '' : value)
+const hasRun = (record: QueueItemRecord): boolean =>
+  record.lastCycleFinishedAt !== SENTINEL_TIMESTAMP
+const hasCycleUpdate = (record: QueueItemRecord): boolean =>
+  record.cycleUpdatedAt !== SENTINEL_TIMESTAMP
+const shortRunId = (runId: string): string => runId.slice(0, 8) || '待分配'
+const cycleStateLabel = (state: QueueItemRecord['cycleState']): string =>
+  ({
+    idle: '尚未运行',
+    running: '运行中',
+    succeeded: '上次成功',
+    failed: '上次失败',
+    cancelled: '上次取消',
+  })[state]
+const cycleStateColor = (
+  state: QueueItemRecord['cycleState']
+): 'default' | 'processing' | 'success' | 'error' | 'warning' =>
+  ({
+    idle: 'default',
+    running: 'processing',
+    succeeded: 'success',
+    failed: 'error',
+    cancelled: 'warning',
+  })[state] as 'default' | 'processing' | 'success' | 'error' | 'warning'
+
+const finishMutation = async () => {
+  loading.value = false
+  await nextTick()
+  if (pendingPropsSync && !isDraggingQueueItem.value) syncFromProps()
+}
+
 const loadOptions = async () => {
   try {
-    logger.info('开始加载脚本选项...')
-    // 使用正确的API获取脚本下拉框选项
     const scriptsResponse = await Service.getScriptComboxApiInfoComboxScriptPost()
-    logger.debug(`脚本API响应: ${JSON.stringify(scriptsResponse)}`)
-
     if (scriptsResponse.code === 200) {
-      logger.debug(`脚本API响应数据: ${JSON.stringify(scriptsResponse.data)}`)
-      // 直接使用接口返回的combox选项
       scriptOptions.value = scriptsResponse.data || []
-      logger.debug(`处理后的脚本选项: ${JSON.stringify(scriptOptions.value)}`)
     } else {
-      logger.error(`脚本API响应错误: ${JSON.stringify(scriptsResponse)}`)
+      logger.error(`脚本 API 响应错误: ${JSON.stringify(scriptsResponse)}`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -170,138 +310,249 @@ const loadOptions = async () => {
   }
 }
 
-// 更新队列项脚本
-const updateQueueItemScript = async (record: any) => {
+const updateQueueItem = async (
+  record: QueueItemRecord,
+  data: Record<string, unknown>,
+  applyLocal: () => void,
+  failureLabel: string
+) => {
+  if (loading.value) return
+  const requestQueueId = props.queueId
   try {
     loading.value = true
-
     const response = await Service.updateItemApiQueueItemUpdatePost({
-      queueId: props.queueId,
+      queueId: requestQueueId,
       queueItemId: record.id,
-      data: {
-        Info: {
-          ScriptId: record.script,
-        },
-      },
+      data,
     })
-
-    if (response.code === 200) {
-      emit('refresh')
-    } else {
-      message.error('脚本更新失败: ' + (response.message || '未知错误'))
+    if (response.code !== 200) {
+      message.error(`${failureLabel}: ${response.message || '未知错误'}`)
+      return
     }
-  } catch (error: any) {
+    if (props.queueId === requestQueueId) {
+      applyLocal()
+      emit('refresh', requestQueueId)
+    }
+  } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`更新脚本失败: ${errorMsg}`)
-    message.error(`更新脚本失败: ${errorMsg}`)
+    logger.error(`${failureLabel}: ${errorMsg}`)
+    message.error(`${failureLabel}: ${errorMsg}`)
   } finally {
-    loading.value = false
+    await finishMutation()
   }
 }
 
-// 添加队列项
+const updateQueueItemScript = async (record: QueueItemRecord, script: string | null) => {
+  if (script === record.script) return
+  await updateQueueItem(
+    record,
+    { Info: { ScriptId: script } },
+    () => {
+      record.script = script
+    },
+    '脚本更新失败'
+  )
+}
+
+const onScriptChange = (record: QueueItemRecord, value: unknown) =>
+  updateQueueItemScript(record, normalizeScriptId(value))
+
+const applySchedulePatch = (record: QueueItemRecord, patch: QueueItem_Schedule) => {
+  if (patch.Enabled !== undefined && patch.Enabled !== null) record.scheduleEnabled = patch.Enabled
+  if (patch.Mode) record.scheduleMode = patch.Mode
+  if (patch.Days) record.scheduleDays = [...patch.Days]
+  if (patch.Time) record.scheduleTime = patch.Time
+  if (patch.IntervalMinutes !== undefined && patch.IntervalMinutes !== null)
+    record.intervalMinutes = patch.IntervalMinutes
+  if (patch.IntervalAnchor) record.intervalAnchor = patch.IntervalAnchor
+  if (patch.NextRunAt) record.nextRunAt = patch.NextRunAt
+}
+
+const updateSchedule = async (record: QueueItemRecord, patch: QueueItem_Schedule) => {
+  await updateQueueItem(
+    record,
+    { Schedule: patch },
+    () => applySchedulePatch(record, patch),
+    '循环调度更新失败'
+  )
+}
+
+const onScheduleEnabledChange = (record: QueueItemRecord, value: unknown) =>
+  updateSchedule(record, { Enabled: Boolean(value) })
+const onScheduleModeChange = (record: QueueItemRecord, value: unknown) =>
+  updateSchedule(record, { Mode: normalizeMode(value) })
+const onScheduleDaysChange = (record: QueueItemRecord, value: unknown) =>
+  updateSchedule(record, { Days: normalizeDays(value) })
+const onIntervalAnchorChange = (record: QueueItemRecord, value: unknown) =>
+  updateSchedule(record, { IntervalAnchor: normalizeAnchor(value) })
+
+const updateScheduleTime = async (record: QueueItemRecord, event: Event) => {
+  const value = eventValue(event)
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    message.error('运行时间必须使用 HH:mm 格式')
+    return
+  }
+  if (value !== record.scheduleTime) await updateSchedule(record, { Time: value })
+}
+
+const updateIntervalMinutes = async (record: QueueItemRecord, value: unknown) => {
+  const minutes = Number(value)
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080) {
+    message.error('间隔分钟数必须是 1 到 10080 的整数')
+    return
+  }
+  if (minutes !== record.intervalMinutes) await updateSchedule(record, { IntervalMinutes: minutes })
+}
+
+const updateNextRunAt = async (record: QueueItemRecord, event: Event) => {
+  const value = eventValue(event).trim() || SENTINEL_TIMESTAMP
+  if (
+    value !== SENTINEL_TIMESTAMP &&
+    !/^\d{4}-\d{2}-\d{2} (?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(value)
+  ) {
+    message.error('下次运行时间必须使用 YYYY-MM-DD HH:mm:ss 格式')
+    return
+  }
+  if (value !== record.nextRunAt) await updateSchedule(record, { NextRunAt: value })
+}
+
 const addQueueItem = async () => {
+  if (loading.value) return
+  const requestQueueId = props.queueId
   try {
     loading.value = true
-
-    // 直接创建队列项，默认ScriptId为null（未选择）
-    const createResponse = await Service.addItemApiQueueItemAddPost({
-      queueId: props.queueId,
-    })
-
-    if (createResponse.code === 200 && createResponse.queueItemId) {
-      emit('refresh')
+    const response = await Service.addItemApiQueueItemAddPost({ queueId: requestQueueId })
+    if (response.code === 200 && response.queueItemId) {
+      if (props.queueId === requestQueueId) emit('refresh', requestQueueId)
     } else {
-      message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
+      message.error(`任务添加失败: ${response.message || '未知错误'}`)
     }
-  } catch (error: any) {
+  } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加任务失败: ${errorMsg}`)
     message.error(`添加任务失败: ${errorMsg}`)
   } finally {
-    loading.value = false
+    await finishMutation()
   }
 }
 
-// 删除队列项
 const deleteQueueItem = async (itemId: string) => {
+  if (loading.value) return
+  const requestQueueId = props.queueId
   try {
+    loading.value = true
     const response = await Service.deleteItemApiQueueItemDeletePost({
-      queueId: props.queueId,
+      queueId: requestQueueId,
       queueItemId: itemId,
     })
-
     if (response.code === 200) {
-      // 确保删除后刷新数据
-      emit('refresh')
+      if (props.queueId === requestQueueId) {
+        queueItems.value = queueItems.value.filter(item => item.id !== itemId)
+        emit('refresh', requestQueueId)
+      }
     } else {
-      message.error('删除队列项失败: ' + (response.message || '未知错误'))
+      message.error(`删除队列项失败: ${response.message || '未知错误'}`)
     }
-  } catch (error: any) {
+  } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除队列项失败: ${errorMsg}`)
     message.error(`删除队列项失败: ${errorMsg}`)
+  } finally {
+    await finishMutation()
   }
 }
 
-// 拖拽结束处理函数
-const onDragEnd = async (evt: any) => {
-  // 如果位置没有变化，直接返回
-  if (evt.oldIndex === evt.newIndex) {
+let dragStartSnapshot: QueueItemRecord[] = []
+let dragStartQueueId = ''
+
+const onDragStart = () => {
+  isDraggingQueueItem.value = true
+  dragStartQueueId = props.queueId
+  dragStartSnapshot = cloneItems(queueItems.value)
+}
+
+const onDragEnd = async (event: { oldIndex?: number; newIndex?: number }) => {
+  if (event.oldIndex === event.newIndex) {
+    dragStartSnapshot = []
+    isDraggingQueueItem.value = false
+    if (props.queueId !== dragStartQueueId) syncFromProps()
+    else pendingPropsSync = false
+    dragStartQueueId = ''
     return
   }
 
-  isDraggingQueueItem.value = true
+  const requestQueueId = props.queueId
+  const rollbackLocalOrder = () => {
+    if (dragStartSnapshot.length > 0) queueItems.value = cloneItems(dragStartSnapshot)
+  }
 
   try {
     loading.value = true
-
-    // 构造排序后的ID列表
-    const sortedIds = queueItems.value.map(item => item.id)
-
-    // 调用排序API
     const response = await Service.reorderItemApiQueueItemOrderPost({
-      queueId: props.queueId,
-      indexList: sortedIds,
+      queueId: requestQueueId,
+      indexList: queueItems.value.map(item => item.id),
     })
-
     if (response.code === 200) {
-      // 刷新数据以确保与服务器同步
-      emit('refresh')
+      if (props.queueId === requestQueueId) emit('refresh', requestQueueId)
     } else {
-      message.error('更新任务顺序失败: ' + (response.message || '未知错误'))
-      // 如果失败，刷新数据恢复原状态
-      emit('refresh')
+      rollbackLocalOrder()
+      message.error(`更新任务顺序失败: ${response.message || '未知错误'}`)
     }
-  } catch (error: any) {
+  } catch (error) {
+    rollbackLocalOrder()
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拖拽排序失败: ${errorMsg}`)
     message.error(`更新任务顺序失败: ${errorMsg}`)
-    // 如果失败，刷新数据恢复原状态
-    emit('refresh')
+    if (props.queueId === requestQueueId) emit('refresh', requestQueueId)
   } finally {
     loading.value = false
-    nextTick(() => {
-      isDraggingQueueItem.value = false
-    })
+    dragStartSnapshot = []
+    isDraggingQueueItem.value = false
+    await nextTick()
+    if (props.queueId !== requestQueueId) syncFromProps()
+    else pendingPropsSync = false
+    dragStartQueueId = ''
   }
 }
 
-// 初始化
-onMounted(() => {
-  loadOptions()
-})
+onMounted(loadOptions)
 </script>
 
 <style scoped>
+/* 队列页的两个管理区属于同一工作台：外层卡片弱化为透明容器,
+   只保留轻量分节标题,避免 queue-workspace 卡片内再套白色卡片 */
 .queue-item-card {
-  margin-bottom: 24px;
-  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  margin: var(--v6-space-4) 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.queue-item-card :deep(.ant-card-head) {
+  min-height: 52px;
+  padding: 0;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .queue-item-card :deep(.ant-card-head-title) {
-  font-size: 18px;
+  padding: var(--v6-space-3) 0;
+  font-size: 15px;
   font-weight: 600;
+}
+
+.queue-item-card :deep(.ant-card-extra) {
+  padding: var(--v6-space-2) 0;
+}
+
+.queue-item-card :deep(.ant-card-body) {
+  padding: var(--v6-space-3) 0 0;
+}
+
+.cycle-help {
+  margin-bottom: 12px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
 }
 
 /* 操作按钮布局 */
@@ -374,12 +625,14 @@ onMounted(() => {
   gap: 8px;
 }
 
-/* 拖拽表格样式 */
+/* 拖拽表格样式:窄容器下允许横向滚动兜底,避免撑破页面 */
 .draggable-table-container {
   width: 100%;
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: var(--v6-color-border) transparent;
 }
 
 .draggable-table-header {
@@ -413,8 +666,15 @@ onMounted(() => {
 }
 
 .script-cell {
+  width: 220px;
+  min-width: 220px;
+}
+
+.schedule-cell {
   flex: 1;
-  min-width: 200px;
+  /* 原 520px 导致行最小宽约 976px,窄容器必然溢出;
+     调度编辑器内部 schedule-row 已支持 flex-wrap,300px 足够可用 */
+  min-width: 300px;
 }
 
 .actions-cell {
@@ -476,14 +736,94 @@ onMounted(() => {
 }
 
 .row-cell.script-cell {
+  width: 220px;
+  min-width: 220px;
+}
+
+.row-cell.schedule-cell {
   flex: 1;
-  min-width: 200px;
+  min-width: 300px;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .row-cell.actions-cell {
   width: 120px;
   min-width: 120px;
   max-width: 120px;
+}
+
+.schedule-editor {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-row {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.schedule-label {
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
+}
+
+.schedule-mode,
+.schedule-anchor {
+  width: 132px;
+}
+
+.schedule-time {
+  width: 112px;
+}
+
+.schedule-meta {
+  flex-wrap: nowrap;
+}
+
+.next-run-input {
+  width: 172px;
+}
+
+.last-run {
+  overflow: hidden;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cycle-state-row {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.cycle-error,
+.cycle-run-id,
+.cycle-updated-at {
+  overflow: hidden;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cycle-error {
+  max-width: 260px;
+  color: var(--ant-color-error);
+}
+
+.cycle-run-id {
+  max-width: 150px;
+}
+
+.cycle-updated-at {
+  margin-left: auto;
 }
 
 /* 拖拽状态样式 */
@@ -543,37 +883,18 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
+  min-height: 132px;
+  padding: var(--v6-space-4);
 }
 
-.empty-content {
-  display: flex;
-  justify-content: center;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-/* 响应式设计 */
-@media (max-width: 1200px) {
+/* 响应式设计:按队列页容器宽度响应(侧栏挤压时同样生效),不用视口 @media */
+@container queue-page (max-width: 1200px) {
   .queue-items-grid {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   }
 }
 
-@media (max-width: 768px) {
+@container queue-page (max-width: 768px) {
   .queue-items-grid {
     grid-template-columns: 1fr;
   }
@@ -601,10 +922,19 @@ onMounted(() => {
   .index-cell,
   .drag-cell,
   .script-cell,
+  .schedule-cell,
   .actions-cell {
     width: 100% !important;
     min-width: auto !important;
     max-width: none !important;
+  }
+
+  .draggable-table-header {
+    display: none;
+  }
+
+  .schedule-meta {
+    flex-wrap: wrap;
   }
 }
 
