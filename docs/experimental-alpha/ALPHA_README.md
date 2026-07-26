@@ -14,6 +14,17 @@ AUTO-MAS v6 Experimental Alpha 是用于受控 A 测的独立候选包，不是�
 
 这些标识的目的，是把 Alpha 与现有稳定安装区分开。它们不能代替对实际产物的检查。
 
+## 本候选身份（alpha.10）
+
+本草案对应候选身份 `v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11`，snapshot_id 为 `nexus-overdrive-all-plugins-v6.0.0-alpha.20260726.r11-portable-v11`。身份字段已同步写入 `app/core/config.py`、`frontend/package.json` 顶层 `version`、`res/version.json` 与 `res/integration-snapshot.json`。具体便携包的版本、SHA-256 和来源记录仍以同一次构建的 `alpha-release-manifest.json` 为准；本节身份字段只是源码侧声明，不代填实际产物哈希。
+
+本候选的能力边界：
+
+- **全功能绿色免安装 Alpha**：仅 Full 便携 ZIP 形态，随包携带完整离线 wheelhouse、runtime-lock、integration-snapshot 与来源记录；不接受 Lite 包替代，不提供安装器。
+- **Config v2 authoritative 是默认且唯一的生产配置权威源**：进程默认模式与无效环境变量回退均为 `authoritative`；该模式下正式运行链选用 `NativeConfigFacade`，不再构造 legacy `AppConfig`/`ConfigBase` 对象图，legacy JSON-first 保存与旧的 legacy 投影加载都会显式失败，不存在混合权威。`off`/`shadow`/`canary`/`authoritative` 四种显式模式仅保留用于受控回滚与诊断，不是默认路径。首启在任何 plugins/core 导入前，把 r6 八个 JSON 根的**原始字节**冻结为不可变快照（`config/.config-v2-original/`），并仅在没有已提交 generation 时从该快照一次性迁移；此后每次启动都加载已校验的 CURRENT generation，不回退到可变的 legacy JSON。敏感字段以 DPAPI 应用绑定加密保存（密文带 `DPAPI:v1:` 前缀），写入为原子 generation 事务。需要回到 r6 时，可随时导出完整八根 r6 格式 JSON 回滚 bundle 到 `config/.config-v2-r6-rollback/`（含 manifest 与每根 sha256），该导出从不覆盖 live config 或已有 bundle。`unverified`：真机旧 profile 的首次迁移与崩溃恢复尚无 GUI 回归记录。
+- **WS v2 主链路与兼容桥并存**：WebSocket 主链路为 `{id,type,data}` 协议并保留兼容桥；不宣称旧 WS 链已完全退出。
+- **真实游戏/模拟器/Agent 未自动验证**：所有真实设备、模拟器控制、账号登录和自动化执行均标记为 `unverified`。源码中的调用链、interface 解析和 dry-run 不等于真实运行成功；任何“可用”结论必须由人工手测卡回填。
+
 ## 安装边界（必须遵守）
 
 1. 只使用由本次 Alpha 构建给出的 Full 便携 ZIP，并先核对同目录的 SHA-256 清单和发行清单。

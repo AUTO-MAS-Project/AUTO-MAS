@@ -2,6 +2,13 @@
 
 > 所有卡片初始状态均为 `unverified`。执行者必须使用实际 Alpha 包、记录包哈希、Windows 版本、执行时间、日志和截图。不得使用冻结 r6 目录作为安装或清理目标。
 
+## 本候选身份（alpha.10）
+
+- 候选版本：`v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11`（snapshot_id `nexus-overdrive-all-plugins-v6.0.0-alpha.20260726.r11-portable-v11`）。
+- 包型：仅 Full 绿色免安装包；不提供安装器，不接受 Lite 包替代。
+- Config v2 / WS v2：Config v2 authoritative 是默认且唯一的生产配置权威源，首启从不可变 r6 原始快照一次性迁移，之后不回退可变 legacy JSON；WS 主链路为 `{id,type,data}` 协议并保留兼容桥。手测中若涉及配置迁移/回滚，按 AT-03 验证首启迁移结果与 r6 回滚 bundle 导出，不得以静态检查代替真机记录。
+- 真实游戏/模拟器/Agent：所有真实设备能力均为 `unverified`；手测卡 AT-05/AT-06/AT-07 涉及真实执行时需单独授权并保留完整日志。
+
 ## 通用记录
 
 | 字段 | 回填值 |
@@ -43,11 +50,13 @@
 **状态：`unverified`**
 
 1. 先对 r6 用户数据创建可恢复副本，并记录原始路径与哈希；不要操作冻结 r6 发布目录。
-2. 在隔离副本中验证 Alpha 对旧配置的导入/兼容行为，记录每个被迁移或新建的文件。
-3. 关闭 Alpha 后确认 r6 副本仍可按原方式启动；如需回滚，恢复备份而非手工删除未知文件。
-4. 记录任何配置字段丢失、明文泄漏、重复任务或无法恢复的情况。
+2. 在隔离副本中验证 Alpha 首启对旧配置的一次性迁移：确认 `config/.config-v2-original/` 已冻结 r6 八个 JSON 根的原始字节，并记录每个被迁移或新建的文件。
+3. 重启 Alpha，确认第二次启动加载的是已提交的 CURRENT generation，而不是重新读取可变的 legacy JSON。
+4. 导出一次 r6 回滚 bundle，确认 `config/.config-v2-r6-rollback/r6-rollback-<generation>/` 下八根 r6 格式 JSON 与 manifest（含每根 sha256）齐全，且 live config 与已有 bundle 未被覆盖。
+5. 关闭 Alpha 后确认 r6 副本仍可按原方式启动；如需回滚，使用回滚 bundle 或恢复备份，而非手工删除未知文件。
+6. 记录任何配置字段丢失、明文泄漏、重复任务或无法恢复的情况。
 
-需回传：前后文件清单与哈希、导入日志、回滚步骤、r6 副本启动结果。
+需回传：前后文件清单与哈希、迁移日志、冻结快照与回滚 bundle 的路径/哈希、回滚步骤、r6 副本启动结果。
 
 ## AT-04：插件加载与失败隔离
 
