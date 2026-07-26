@@ -72,7 +72,7 @@ packages = [
     { name = "automas-hsr-adapter-sra", version = "0.1.5" },
     { name = "automas-hsr-adapter-m7a", version = "0.1.6" },
     { name = "automas-plugin-mxu-import", version = "0.1.0" },
-    { name = "automas_plugin_maaend_adapter", version = "0.0.4" },
+    { name = "automas_plugin_maaend_adapter", version = "0.0.6" },
     { name = "automas_script_maa", version = "0.0.6" },
 ]
 

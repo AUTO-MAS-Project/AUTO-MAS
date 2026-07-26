@@ -1,14 +1,14 @@
 {
   "schema_version": 3,
   "generator": "scripts/complete_integration_wheelhouse.ps1",
-  "generated_at": "2026-07-24T06:46:40.0000000+00:00",
+  "generated_at": "2026-07-25T06:59:42.3298669+00:00",
   "artifact_scope": "complete-windows-x64-runtime-wheelhouse",
   "expected_plugin_distribution_count": 23,
   "expected_plugin_entry_point_count": 21,
   "runtime_lock": {
     "filename": "runtime-lock.json",
-    "size_bytes": 94093,
-    "sha256": "254b697becbde141d32f65382c8485efbcdbc4350a5388a9a3f94f9cf04975e5"
+    "size_bytes": 94085,
+    "sha256": "c997225474bd20535ad20ab93820d96634dbc4b036d44d7110bb332a95415a3f"
   },
   "source_locks": [
     {
@@ -227,7 +227,7 @@
         "plugin"
       ],
       "distribution": "automas_plugin_maaend_adapter",
-      "version": "0.0.4",
+      "version": "0.0.6",
       "entry_points": [
         {
           "group": "auto_mas.plugins",
@@ -245,13 +245,13 @@
         "repository_dirty": true,
         "digest": {
           "algorithm": "sha256-path-length-size-content-hash-v1",
-          "sha256": "c6106cb932ee8d06efba1a73b022f62f11c4ad42999ca6929fa09febee654c0c",
-          "file_count": 15
+          "sha256": "b4704f309a87f7e65936af43809c660756db70faa5ca4253bea6376d04b1492f",
+          "file_count": 18
         }
       },
-      "filename": "automas_plugin_maaend_adapter-0.0.4-py3-none-any.whl",
-      "size_bytes": 24589,
-      "sha256": "529267385b56d1ae829f885c199837fb57702bf8f39e1967824574d28daeb0b5"
+      "filename": "automas_plugin_maaend_adapter-0.0.6-py3-none-any.whl",
+      "size_bytes": 27879,
+      "sha256": "8a4765bd96255e7fa8c4eec770fe0532f9c7118cc6ebbdcdf7738ce9a00d6df2"
     },
     {
       "kind": "plugin",
