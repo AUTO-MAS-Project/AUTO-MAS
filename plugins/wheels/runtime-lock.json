@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-24T06:46:40.0000000+00:00",
+  "generated_at": "2026-07-25T06:59:42.3298669+00:00",
   "target": {
     "implementation": "cpython",
     "python_version": "3.12",
@@ -10,7 +10,7 @@
   },
   "resolution": {
     "default_index": "https://pypi.org",
-    "exclude_newer": "2026-07-24T05:00:00.0000000+00:00",
+    "exclude_newer": "2026-07-24T13:00:00+08:00",
     "host_input_sha256": "5af595a4e45ec7256bda6091ee2ea571d06db2be6493ddc9434d7cae525cc808",
     "combined_input_sha256": "51ab77ba8f8adc2947695c3cc7fa1df1c32787c8962dd176c8819d2c67088ceb",
     "host_pylock_sha256": "531b664ae7321657bac97832ea67abb6cce4ff4b881c2df151de6af5b44eb391",
@@ -1852,11 +1852,11 @@
     },
     {
       "distribution": "automas_plugin_maaend_adapter",
-      "version": "0.0.4",
+      "version": "0.0.6",
       "scope": "plugin",
-      "filename": "automas_plugin_maaend_adapter-0.0.4-py3-none-any.whl",
-      "size_bytes": 24589,
-      "sha256": "529267385b56d1ae829f885c199837fb57702bf8f39e1967824574d28daeb0b5",
+      "filename": "automas_plugin_maaend_adapter-0.0.6-py3-none-any.whl",
+      "size_bytes": 27879,
+      "sha256": "8a4765bd96255e7fa8c4eec770fe0532f9c7118cc6ebbdcdf7738ce9a00d6df2",
       "entry_points": [
         {
           "group": "auto_mas.plugins",

@@ -5,6 +5,8 @@ build/
 dist/
 wheels/
 logs/
+!/frontend/src/views/Logs/
+!/frontend/src/views/Logs/**
 *.egg-info
 
 # Virtual environments
@@ -78,10 +80,24 @@ uv.lock
 /tests/
 **/test_*.py
 **/*_test.py
+!/tests/
+!/tests/api/
+!/tests/api/test_game_center_api.py
+!/tests/api/test_game_center_openapi.py
+!/tests/plugins/
+!/tests/plugins/test_game_center_core_plugin.py
+!/tests/services/
+!/tests/services/test_game_center_service.py
+# 前端测试文件默认跟踪（Lane 01 修复：! 规则在 block 之后，新测试自动进入 Git/CI）
 **/*.test.ts
 **/*.test.tsx
 **/*.spec.ts
 **/*.spec.tsx
+!/frontend/src/**/*.test.ts
+!/frontend/src/**/*.test.tsx
+!/frontend/src/**/*.spec.ts
+!/frontend/src/**/*.spec.tsx
+# 以下为历史手动例外，保留以确保兼容；新测试无需在此重复声明。
 !/frontend/src/composables/useWebSocket.test.ts
 !/frontend/src/views/pluginActionTransport.test.ts
 !/frontend/src/utils/websocketAuth.test.ts

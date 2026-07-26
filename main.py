@@ -28,6 +28,7 @@ import ctypes
 import json
 import logging
 import socket
+import subprocess
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -51,10 +52,26 @@ UVICORN_WS_MAX_QUEUE_MESSAGES = DEFAULT_WS_QUEUE_MESSAGES
 
 
 def prepare_configuration_startup(config_dir: Path) -> None:
-    """Freeze legacy bytes and reject unsupported modes before Config import."""
-    from app.configuration import assert_config_v2_startup_mode_ready
-    from app.configuration.compat import ensure_legacy_original_snapshot
+    """Upgrade legacy data, freeze legacy bytes, reject unsupported modes.
 
+    Ordering contract: the standalone v1.7->v1.11 upgrade must complete
+    before ``ensure_legacy_original_snapshot`` freezes the roots (the
+    snapshot stays fail-closed on pre-v1.11 data), and both run before any
+    Config import so no legacy ``AppConfig`` graph is ever constructed.
+    """
+    from app.configuration import assert_config_v2_startup_mode_ready
+    from app.configuration.compat import (
+        ensure_legacy_original_snapshot,
+        upgrade_legacy_data,
+    )
+
+    upgrade_result = upgrade_legacy_data(config_dir.parent)
+    if upgrade_result.performed:
+        logger.info(
+            "旧版用户数据已升级: "
+            f"{upgrade_result.from_version} -> {upgrade_result.to_version} "
+            f"({', '.join(upgrade_result.steps)})"
+        )
     ensure_legacy_original_snapshot(config_dir)
     assert_config_v2_startup_mode_ready()
 
@@ -189,18 +206,76 @@ for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
 def is_admin() -> bool:
     """检查当前程序是否以管理员身份运行"""
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except:  # noqa: E722
         return False
+
+
+def _self_elevation_requested() -> bool:
+    """自提权必须显式开启，默认关闭。
+
+    发布包以 ``asInvoker`` 打包（frontend/package.json ``build.win``），提权由
+    前端「以管理员身份重启」重启整个 Electron 后统一发起，后端作为子进程继承
+    提升令牌。后端若自行 ShellExecuteW("runas") 重启，会同时丢失：
+      * Electron 的 spawn 子进程句柄（waitUntilReady 立即判定"后端进程已退出"）；
+      * stdio 管道（启动失败日志全空，无法诊断）；
+      * 进程环境（AUTO_MAS_BACKEND_OWNER_TOKEN 无文件兜底）；
+      * PID 归属（ws_meta 的 Owner-Pid 与归属标记必然不匹配，导致关闭阶段
+        无法停止后端，残留孤儿进程长期占用 36163）。
+    """
+    return str(os.getenv("AUTO_MAS_SELF_ELEVATE", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _relaunch_command_line() -> str:
+    """重建提升后进程的参数行，保留解释器隔离标志与全部脚本参数。
+
+    Electron 以 ``python.exe -I main.py`` 启动后端；``-I`` 不出现在 sys.argv
+    中，只重放 sys.argv[0] 会让提升后的进程重新受 PYTHONPATH/PYTHONHOME 污染。
+    """
+    arguments: list[str] = []
+    if sys.flags.isolated:
+        arguments.append("-I")
+    else:
+        if sys.flags.ignore_environment:
+            arguments.append("-E")
+        if sys.flags.no_user_site:
+            arguments.append("-s")
+        if getattr(sys.flags, "safe_path", 0):
+            arguments.append("-P")
+    arguments.append(os.path.realpath(sys.argv[0]))
+    arguments.extend(sys.argv[1:])
+    return subprocess.list2cmdline(arguments)
 
 
 @logger.catch(reraise=True)
 def main():
     if not is_admin():
-        ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
+        if _self_elevation_requested():
+            shell_execute_result = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",
+                sys.executable,
+                _relaunch_command_line(),
+                os.getcwd(),
+                1,
+            )
+            if shell_execute_result <= 32:
+                raise RuntimeError(
+                    "请求管理员权限启动失败 "
+                    f"(ShellExecuteW={shell_execute_result})"
+                )
+            sys.exit(0)
+
+        logger.info(
+            "后端以非提升令牌运行。开机自启任务计划、提升态模拟器窗口自动化等"
+            "功能需要管理员权限时，请通过前端「以管理员身份重启」重启整个应用，"
+            "由 Electron 统一提权后重新拉起后端。"
         )
-        sys.exit(0)
 
     # 端口冲突必须在任何配置迁移、快照冻结或插件导入前失败，避免失败启动污染用户数据。
     assert_port_available("127.0.0.1", 36163)
@@ -349,17 +424,20 @@ def main():
 
         market_channel.register()
 
-        # 初始化 Config v2 服务（Experimental Alpha）
+        # 初始化 Config v2 服务
         plugin_start_attempted = False
         try:
             await config_service.initialize()
             plugin_start_attempted = True
             await PluginManager.start(fast_startup=False)
 
+            # missing 仅包含内建核心 provider 缺失（宿主 bootstrap 损坏）；
+            # 插件承载的脚本缺 provider 已在校验内部降级为 error 日志 +
+            # 记录不可用，不阻断启动。
             missing_script_types = validate_script_type_registry(Config)
             if missing_script_types:
                 raise RuntimeError(
-                    "脚本类型注册不完整，以下脚本未找到可用 provider: "
+                    "内建核心脚本类型 provider 缺失，宿主注册表已损坏: "
                     + "; ".join(missing_script_types)
                 )
         except BaseException:
@@ -373,6 +451,12 @@ def main():
                 await config_service.shutdown()
             except BaseException:
                 logger.exception("启动回滚失败: Config v2")
+            try:
+                close_config = getattr(Config, "close", None)
+                if close_config is not None:
+                    close_config()
+            except BaseException:
+                logger.exception("启动回滚失败: 原生配置根")
 
             from app.core.ws.bootstrap import shutdown_ws_core
 
@@ -427,6 +511,17 @@ def main():
                 "全部自动化任务", lambda: TaskManager.stop_task("ALL")
             )
             await run_shutdown_step("插件系统", PluginManager.stop)
+            from app.plugins.server import plugin_server
+            from app.utils.websocket import ws_client_manager
+
+            await run_shutdown_step(
+                "插件 WebSocket",
+                lambda: plugin_server.close_websockets(reason="后端服务关闭"),
+            )
+            await run_shutdown_step(
+                "辅助 WebSocket",
+                ws_client_manager.shutdown,
+            )
             await run_shutdown_step("主计时器", MainTimer.stop)
 
             await run_shutdown_step("Matomo", Matomo.close)
@@ -435,6 +530,13 @@ def main():
             from app.core.config_service import config_service
 
             await run_shutdown_step("Config v2", config_service.shutdown)
+
+            async def close_config_roots() -> None:
+                close_config = getattr(Config, "close", None)
+                if close_config is not None:
+                    close_config()
+
+            await run_shutdown_step("原生配置根", close_config_roots)
 
             if shutdown_errors:
                 if len(shutdown_errors) == 1:
@@ -450,6 +552,9 @@ def main():
             yield
         finally:
             shutdown_errors: list[BaseException] = []
+            from app.core.ws.manager import ws_manager
+
+            await ws_manager.begin_inbound_quiesce()
             try:
                 await shutdown_coordinator.run_teardown()
             except BaseException as error:
