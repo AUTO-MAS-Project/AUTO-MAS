@@ -33,6 +33,8 @@ CONNECTION_REPLACED_CLOSE_CODE = 4001
 CONNECTION_REPLACED_CLOSE_REASON = "connection replaced"
 MESSAGE_TOO_BIG_CLOSE_CODE = 1009
 MESSAGE_TOO_BIG_CLOSE_REASON = "message too large"
+SERVICE_CLOSING_CLOSE_CODE = 1012
+SERVICE_CLOSING_CLOSE_REASON = "service closing"
 
 # 应用层在进入 Pydantic/业务分发前后的统一上限。传输层仍保留 uvicorn /
 # websockets 自己的帧上限，两层共同避免单条消息占用无界内存。
@@ -60,6 +62,8 @@ DIALOG_RESPONSE = "dialog.response"
 # 更新（id=Update）
 UPDATE_PROGRESS = "update.progress"
 UPDATE_COMPLETED = "update.completed"
+UPDATE_VERIFYING = "update.verifying"
+UPDATE_INSTALLING = "update.installing"
 UPDATE_FAILED = "update.failed"
 UPDATE_CANCELLED = "update.cancelled"
 

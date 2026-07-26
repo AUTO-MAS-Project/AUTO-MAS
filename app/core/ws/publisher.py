@@ -16,13 +16,29 @@ from . import protocol
 logger = get_logger("WS发布器")
 
 
+# 语义终结事件 -> 该 id 应从可合并缓存清除的状态类型。
+# 任务完成后其 task.info.updated 条目不再需要快照恢复，否则
+# 一次性任务 UUID 会让缓存与 snapshot.response 无界增长。
+TERMINAL_EVENT_DISCARDS: dict[str, tuple[str, ...]] = {
+    protocol.TASK_COMPLETED: (protocol.TASK_INFO_UPDATED,),
+}
+
+# 每个 type 缓存的 id 数软上限；超限按最旧修订号淘汰并告警。
+MAX_CACHE_IDS_PER_TYPE = 128
+
+
 class MergeableStateCache:
     """按 ``(id, type)`` 保存可合并状态的最新值。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        max_ids_per_type: int | None = MAX_CACHE_IDS_PER_TYPE,
+    ) -> None:
         self._cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._revisions: dict[tuple[str, str], int] = {}
         self._global_revision = 0
+        self._max_ids_per_type = max_ids_per_type
 
     def update(self, id: str, type: str, data: dict[str, Any]) -> int:
         if type not in protocol.MERGEABLE_TYPES:
@@ -31,7 +47,48 @@ class MergeableStateCache:
         self._global_revision += 1
         self._cache[key] = copy.deepcopy(data)
         self._revisions[key] = self._global_revision
+        self._evict_overflow(type, protected_key=key)
         return self._global_revision
+
+    def discard(self, id: str, type: str) -> bool:
+        """移除单个条目；命中时递增全局修订号并返回 True。"""
+
+        key = (id, type)
+        if key not in self._cache:
+            return False
+        del self._cache[key]
+        self._revisions.pop(key, None)
+        self._global_revision += 1
+        return True
+
+    def _evict_overflow(
+        self,
+        type: str,
+        *,
+        protected_key: tuple[str, str],
+    ) -> None:
+        """超过每 type 软上限时淘汰修订号最旧的条目。"""
+
+        limit = self._max_ids_per_type
+        if limit is None or limit <= 0:
+            return
+        keys = [key for key in self._cache if key[1] == type]
+        overflow = len(keys) - limit
+        if overflow <= 0:
+            return
+        evictable = sorted(
+            (key for key in keys if key != protected_key),
+            key=lambda key: self._revisions.get(key, 0),
+        )[:overflow]
+        for key in evictable:
+            self._cache.pop(key, None)
+            self._revisions.pop(key, None)
+        if evictable:
+            logger.warning(
+                f"可合并状态缓存超过每 type 上限 {limit}，"
+                f"type={type} 已淘汰最旧 {len(evictable)} 条: "
+                f"{[key[0] for key in evictable]}"
+            )
 
     def get(
         self,
@@ -153,6 +210,13 @@ class WSPublisher:
 
         payload = data.model_dump() if isinstance(data, BaseModel) else dict(data or {})
         message_id = str(id or "")
+        # 语义终结事件先清理缓存，即使该消息本身被拒发也不留脏条目。
+        for stale_type in TERMINAL_EVENT_DISCARDS.get(type, ()):
+            if self._cache.discard(message_id, stale_type):
+                logger.debug(
+                    f"终结事件清除缓存状态: id={message_id}, "
+                    f"type={stale_type}, event={type}"
+                )
         message = protocol.build_message(message_id, type, payload)
         try:
             message_size = protocol.message_size_bytes(message)
@@ -167,7 +231,7 @@ class WSPublisher:
         if message_size > protocol.DEFAULT_MAX_MESSAGE_BYTES:
             logger.warning(
                 "WS 发布消息超过应用层上限，已拒绝缓存和发送: "
-                f"id={message_id}, type={type}, "
+                f"id={message_id}, type={type}, size={message_size}, "
                 f"limit={protocol.DEFAULT_MAX_MESSAGE_BYTES}"
             )
             return False

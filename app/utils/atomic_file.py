@@ -4,10 +4,32 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
+
+
+def create_staging_directory(parent: Path, *, prefix: str) -> Path:
+    """在 ``parent`` 内创建继承父目录 ACL 的唯一暂存目录。
+
+    ``tempfile.mkdtemp`` 在 Windows 上会为目录附加仅限当前令牌所有者的
+    显式 DACL;暂存目录经 ``os.replace``/``os.rename`` 发布后该 DACL 仍然
+    保留,导致提升与非提升进程之间无法互相访问发布产物。持久产物的
+    暂存目录必须使用默认安全描述符(继承父目录 ACL)。
+    """
+    parent = Path(parent)
+    for _ in range(64):
+        candidate = parent / f"{prefix}{secrets.token_hex(8)}"
+        try:
+            os.mkdir(candidate)
+        except FileExistsError:
+            continue
+        return candidate
+    raise FileExistsError(
+        f"unable to allocate a unique staging directory in {parent}"
+    )
 
 
 def atomic_write_text(

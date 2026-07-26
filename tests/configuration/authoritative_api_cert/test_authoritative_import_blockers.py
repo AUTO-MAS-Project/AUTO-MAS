@@ -4,8 +4,9 @@
 """
 import os
 import sys
-import pytest
 from pathlib import Path
+
+import pytest
 
 # 确保工作树在 sys.path 中
 WORKTREE = Path(__file__).resolve().parents[3]
@@ -13,18 +14,16 @@ if str(WORKTREE) not in sys.path:
     sys.path.insert(0, str(WORKTREE))
 
 
-class TestAuthoritativeStartupBlocker:
-    """验证 authoritative 模式启动门禁按预期 fail-closed。"""
+class TestAuthoritativeStartupMode:
+    """验证原生 authoritative 模式已通过启动门禁。"""
 
-    def test_assert_config_v2_startup_mode_ready_raises(self):
-        """authoritative 模式下 assert 应 raise ConfigV2AuthoritativeUnavailableError。"""
+    def test_assert_config_v2_startup_mode_ready_accepts_authoritative(self):
         from app.configuration import (
             CONFIG_V2_MODE_AUTHORITATIVE,
-            ConfigV2AuthoritativeUnavailableError,
             assert_config_v2_startup_mode_ready,
         )
-        with pytest.raises(ConfigV2AuthoritativeUnavailableError):
-            assert_config_v2_startup_mode_ready(CONFIG_V2_MODE_AUTHORITATIVE)
+
+        assert_config_v2_startup_mode_ready(CONFIG_V2_MODE_AUTHORITATIVE)
 
     def test_shadow_mode_passes(self):
         """shadow 模式下 assert 不应 raise。"""
@@ -78,19 +77,20 @@ class TestApiRouterLazyLoading:
 
     def test_router_lazy_import_works(self):
         """app.api 的 __getattr__ 应能延迟加载所有路由器。"""
+        from fastapi import APIRouter
+
         from app.api import (
             core_router,
+            emulator_router,
             info_router,
             plan_router,
-            emulator_router,
-            queue_router,
-            tools_router,
-            setting_router,
-            ws_router,
-            plugins_router,
             plugin_gateway_router,
+            plugins_router,
+            queue_router,
+            setting_router,
+            tools_router,
+            ws_router,
         )
-        from fastapi import APIRouter
         for router, name in [
             (core_router, "core"),
             (info_router, "info"),
@@ -141,3 +141,24 @@ class TestTopLevelImportBlockers:
             and "ConfigBase" in node.module
             for node in top_level_imports
         )
+
+
+@pytest.mark.asyncio
+async def test_authoritative_plugin_sync_never_enters_legacy_collection_migration(
+    monkeypatch,
+):
+    """Config v2 roots must not be treated as legacy MultipleConfig objects."""
+    import app.configuration as configuration
+    from app.plugins.manager import _PluginManager
+
+    monkeypatch.setattr(
+        configuration,
+        "CONFIG_V2_MODE",
+        configuration.CONFIG_V2_MODE_AUTHORITATIVE,
+    )
+
+    # A bare manager has none of the loader/registry state required by the
+    # legacy migration.  Returning cleanly proves authoritative mode exits
+    # before touching that old runtime chain.
+    manager = _PluginManager.__new__(_PluginManager)
+    await manager._sync_script_types_and_migrate_legacy_configs(discovered={})

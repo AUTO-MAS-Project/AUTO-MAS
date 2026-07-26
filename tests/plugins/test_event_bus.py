@@ -361,30 +361,40 @@ class AuthoritativeImportBoundaryTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_authoritative_timer_is_import_safe_and_fails_closed(self) -> None:
-        result = _run_authoritative_import(
-            """
-            import asyncio
-            import sys
+    def test_authoritative_timer_uses_native_runtime_without_legacy_import(
+        self,
+    ) -> None:
+        with TemporaryDirectory(prefix="automas-native-timer-") as directory:
+            result = _run_authoritative_import(
+                """
+                import asyncio
+                import sys
+                from unittest.mock import AsyncMock, patch
 
-            from app.core import MainTimer
-            from app.core.task_manager import TaskRuntimeUnavailableError
+                from app.core import Config, MainTimer
 
-            async def main():
-                try:
-                    await MainTimer.start()
-                except TaskRuntimeUnavailableError:
-                    return
-                raise AssertionError("authoritative timer unexpectedly started")
+                async def main():
+                    await Config.init_config()
+                    try:
+                        with (
+                            patch.object(MainTimer, "second_task", AsyncMock()),
+                            patch.object(MainTimer, "hour_task", AsyncMock()),
+                        ):
+                            await MainTimer.start()
+                            assert MainTimer.started is True
+                            await MainTimer.stop()
+                            assert MainTimer.started is False
+                    finally:
+                        Config.close()
 
-            asyncio.run(main())
-            assert "app.core.config" not in sys.modules
-            assert "app.models.ConfigBase" not in sys.modules
-            assert "app.models.config" not in sys.modules
-            """
-        )
+                asyncio.run(main())
+                assert "app.core.config" not in sys.modules
+                assert "app.models.ConfigBase" not in sys.modules
+                assert "app.models.config" not in sys.modules
+                """,
+                cwd=Path(directory),
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
-
     def test_authoritative_legacy_script_routes_support_static_crud_contract(self) -> None:
         """The established /api/scripts transport works for native static roots."""
 
@@ -615,31 +625,42 @@ class AuthoritativeImportBoundaryTest(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_authoritative_manual_game_sign_fails_closed_before_legacy_import(
+    def test_authoritative_manual_game_sign_uses_native_root_without_legacy_import(
         self,
     ) -> None:
-        """An incomplete native scheduler must not start legacy network work."""
+        """The native signer boundary must not instantiate ConfigBase."""
 
-        result = _run_authoritative_import(
-            """
-            import asyncio
-            import sys
+        with TemporaryDirectory(prefix="automas-native-game-sign-run-") as directory:
+            result = _run_authoritative_import(
+                """
+                import asyncio
+                import sys
+                from unittest.mock import AsyncMock, patch
 
-            from app.api import tools
+                from app.api import tools
+                from app.core import Config
 
-            async def main():
-                response = await tools.manual_game_sign()
-                assert response.code == 503, response
-                assert response.status == "unavailable", response
+                async def main():
+                    await Config.init_config()
+                    try:
+                        with patch(
+                            "app.tools.game_sign.run_all_sign_in",
+                            AsyncMock(return_value=[]),
+                        ):
+                            response = await tools.manual_game_sign()
+                        assert response.code == 200, response
+                        assert response.status == "success", response
+                    finally:
+                        Config.close()
 
-            asyncio.run(main())
-            assert "app.tools.game_sign" not in sys.modules
-            assert "app.core.config" not in sys.modules
-            assert "app.models.ConfigBase" not in sys.modules
-            """
-        )
+                asyncio.run(main())
+                assert "app.core.config" not in sys.modules
+                assert "app.models.ConfigBase" not in sys.modules
+                assert "app.models.config" not in sys.modules
+                """,
+                cwd=Path(directory),
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
-
     def test_authoritative_game_sign_account_routes_use_native_root_only(
         self,
     ) -> None:

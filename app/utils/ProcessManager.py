@@ -327,8 +327,34 @@ class ProcessManager:
             return self.process.returncode is None
         return False
 
+    def _get_child_processes(self) -> list[psutil.Process]:
+        """获取当前跟踪主进程的所有子进程 (递归)"""
+
+        if self.main_pid is None:
+            return []
+
+        try:
+            return psutil.Process(self.main_pid).children(recursive=True)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return []
+
     async def kill(self) -> None:
-        """停止监视器并中止所有跟踪的进程"""
+        """停止监视器并中止所有跟踪的进程 (含其子进程树)"""
+
+        # 先中止子进程树, 避免仅杀死主进程后残留孤儿进程;
+        # 任一环节失败时降级为仅中止主进程
+        with suppress(Exception):
+            children = self._get_child_processes()
+            for child in children:
+                with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                    child.terminate()
+            if children:
+                _, alive = await asyncio.get_running_loop().run_in_executor(
+                    None, psutil.wait_procs, children, 3
+                )
+                for child in alive:
+                    with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                        child.kill()
 
         if self.target_process is not None and self.target_process.is_running():
             with suppress(psutil.NoSuchProcess, psutil.AccessDenied):

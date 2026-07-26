@@ -15,12 +15,13 @@ from __future__ import annotations
 import os
 import shutil
 import stat
-import tempfile
 import unicodedata
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from .atomic_file import create_staging_directory
 
 
 _WINDOWS_INVALID_CHARACTERS = frozenset('<>:"|?*')
@@ -292,11 +293,11 @@ def _extract_validated_members(
 ) -> list[Path]:
     destination_parent = destination.parent
     destination_parent.mkdir(parents=True, exist_ok=True)
-    temporary_root = Path(
-        tempfile.mkdtemp(
-            prefix=f".{destination.name}.extract-",
-            dir=destination_parent,
-        )
+    # 解压结果经 os.replace 发布为持久目录;mkdtemp 的仅限当前令牌 DACL
+    # 会随发布保留,导致另一提升级别的进程无法访问,改用继承 ACL 暂存目录。
+    temporary_root = create_staging_directory(
+        destination_parent,
+        prefix=f".{destination.name}.extract-",
     )
     extracted_parts: list[tuple[str, ...]] = []
     expanded_bytes = 0

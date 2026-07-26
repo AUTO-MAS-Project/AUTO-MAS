@@ -1060,6 +1060,7 @@ class ConfigBase(ABC):
         self.is_locked = False
         self._loading_persisted_data = False
         self._save_lock = asyncio.Lock()
+        self._mutation_lock = asyncio.Lock()
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
         # 配置项索引
@@ -1272,17 +1273,62 @@ class ConfigBase(ABC):
             配置项新值
         """
 
-        if not self._config_item_index.get(group, {}).get(name):
-            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+        await self.set_many([(group, name, value)])
 
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+    async def set_many(
+        self,
+        changes: list[tuple[str, str, Any]],
+        *,
+        expected: list[tuple[str, str, Any]] | None = None,
+    ) -> None:
+        """原子应用多个字段并只提交一次；失败时恢复内存与持久化快照。"""
 
-        is_changed = self._config_item_index[group][name].setValue(value)
-        if not is_changed:
-            return
+        async with self._mutation_lock:
+            if self.is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        await self._commit_changes()
+            for group, name, expected_value in expected or []:
+                item = self._config_item_index.get(group, {}).get(name)
+                if item is None:
+                    raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+                actual_value = item.getValue()
+                if actual_value != expected_value:
+                    raise RuntimeError(
+                        "配置比较并交换前置条件失败: "
+                        f"{group}.{name} 期望 {expected_value!r}, "
+                        f"实际 {actual_value!r}"
+                    )
+
+            resolved: list[ConfigItem] = []
+            for group, name, _value in changes:
+                item = self._config_item_index.get(group, {}).get(name)
+                if item is None:
+                    raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+                resolved.append(item)
+
+            snapshots = [
+                (item, deepcopy(item.value), item._last_entropy_migration)
+                for item in dict.fromkeys(resolved)
+            ]
+            changed = False
+            try:
+                for item, (_group, _name, value) in zip(resolved, changes):
+                    changed = item.setValue(value) or changed
+                if changed:
+                    await self._commit_changes()
+            except BaseException as error:
+                for item, old_value, migrated in snapshots:
+                    item.value = old_value
+                    item._last_entropy_migration = migrated
+                if changed:
+                    try:
+                        await self._commit_changes()
+                    except BaseException as rollback_error:
+                        error.add_note(
+                            "配置批量写入失败后的持久化回滚也失败: "
+                            f"{type(rollback_error).__name__}: {rollback_error}"
+                        )
+                raise
 
     def bind(self, group: str, name: str, slot: Callable[[Any], Any]):
         """
@@ -1401,6 +1447,7 @@ class MultipleConfig(Generic[T]):
         self.is_locked = False
         self._loading_persisted_data = False
         self._save_lock = asyncio.Lock()
+        self._mutation_lock = asyncio.Lock()
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
     def __getitem__(self, key: uuid.UUID) -> T:
@@ -1652,25 +1699,40 @@ class MultipleConfig(Generic[T]):
             新创建的配置项的唯一标识符和实例
         """
 
-        if config_type not in self.sub_config_type.values():
-            raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
+        async with self._mutation_lock:
+            if config_type not in self.sub_config_type.values():
+                raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
 
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+            if self.is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        uid = uuid.uuid4()
-        self.order.append(uid)
-        self.data[uid] = config_type()
+            uid = uuid.uuid4()
+            config = config_type()
+            self.order.append(uid)
+            self.data[uid] = config
 
-        for save_method in self._save_methods:
-            await self.data[uid].add_save_method(save_method)
+            try:
+                for save_method in self._save_methods:
+                    await config.add_save_method(save_method)
 
-        if self.file:
-            await self.data[uid].add_save_method(self.save)
+                if self.file:
+                    await config.add_save_method(self.save)
 
-        await self._commit_changes()
+                await self._commit_changes()
+            except BaseException as error:
+                self.data.pop(uid, None)
+                if uid in self.order:
+                    self.order.remove(uid)
+                try:
+                    await self._commit_changes()
+                except BaseException as rollback_error:
+                    error.add_note(
+                        "新增配置失败后的持久化回滚也失败: "
+                        f"{type(rollback_error).__name__}: {rollback_error}"
+                    )
+                raise
 
-        return uid, self.data[uid]
+            return uid, config
 
     async def remove(self, uid: uuid.UUID):
         """
@@ -1682,19 +1744,33 @@ class MultipleConfig(Generic[T]):
             要移除的配置项的唯一标识符
         """
 
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+        async with self._mutation_lock:
+            if self.is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        if uid not in self.data:
-            raise ValueError(f"配置项 '{uid}' 不存在")
+            if uid not in self.data:
+                raise ValueError(f"配置项 '{uid}' 不存在")
 
-        if self.data[uid].is_locked:
-            raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
+            if self.data[uid].is_locked:
+                raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
 
-        self.data.pop(uid)
-        self.order.remove(uid)
+            previous_index = self.order.index(uid)
+            removed = self.data.pop(uid)
+            self.order.remove(uid)
 
-        await self._commit_changes()
+            try:
+                await self._commit_changes()
+            except BaseException as error:
+                self.data[uid] = removed
+                self.order.insert(previous_index, uid)
+                try:
+                    await self._commit_changes()
+                except BaseException as rollback_error:
+                    error.add_note(
+                        "删除配置失败后的持久化回滚也失败: "
+                        f"{type(rollback_error).__name__}: {rollback_error}"
+                    )
+                raise
 
     async def setOrder(self, order: list[uuid.UUID]):
         """
@@ -1706,15 +1782,29 @@ class MultipleConfig(Generic[T]):
             新的配置项顺序
         """
 
-        if set(order) != set(self.data.keys()):
-            raise ValueError("顺序与当前配置项不匹配")
+        async with self._mutation_lock:
+            if set(order) != set(self.data.keys()) or len(order) != len(
+                self.data
+            ):
+                raise ValueError("顺序与当前配置项不匹配")
 
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+            if self.is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        self.order = order
-
-        await self._commit_changes()
+            previous_order = list(self.order)
+            self.order = list(order)
+            try:
+                await self._commit_changes()
+            except BaseException as error:
+                self.order = previous_order
+                try:
+                    await self._commit_changes()
+                except BaseException as rollback_error:
+                    error.add_note(
+                        "顺序提交失败后的持久化回滚也失败: "
+                        f"{type(rollback_error).__name__}: {rollback_error}"
+                    )
+                raise
 
     async def lock(self):
         """

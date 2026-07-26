@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from .plugin_gateway import router as plugin_gateway_router
     from .scripts2 import router as scripts2_router
     from .script_types import router as script_types_router
+    from .game_center import router as game_center_router
 
     qr_login_router: APIRouter | None
 
@@ -66,6 +67,7 @@ _ROUTER_MODULES: dict[str, str] = {
     "plugin_gateway_router": ".plugin_gateway",
     "scripts2_router": ".scripts2",
     "script_types_router": ".script_types",
+    "game_center_router": ".game_center",
 }
 
 
@@ -89,6 +91,7 @@ __all__ = [
     "scripts_router",
     "scripts2_router",
     "script_types_router",
+    "game_center_router",
     "plan_router",
     "emulator_router",
     "queue_router",

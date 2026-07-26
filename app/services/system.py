@@ -28,6 +28,7 @@ import subprocess
 import tempfile
 import getpass
 from contextlib import suppress
+from xml.sax.saxutils import escape as xml_escape
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
@@ -85,13 +86,22 @@ class _SystemHandler:
             # 获取当前用户和时间
             current_user = getpass.getuser()
             current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            executable_path = Path.cwd() / "AUTO-MAS.exe"
+            xml_user = xml_escape(
+                current_user,
+                {'"': "&quot;", "'": "&apos;"},
+            )
+            xml_executable = xml_escape(
+                str(executable_path),
+                {'"': "&quot;", "'": "&apos;"},
+            )
 
             # XML 模板
             xml_content = f"""<?xml version="1.0" encoding="UTF-16"?>
             <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
                 <RegistrationInfo>
                     <Date>{current_time}</Date>
-                    <Author>{current_user}</Author>
+                    <Author>{xml_user}</Author>
                     <Description>AUTO-MAS自启动服务</Description>
                     <URI>\\AUTO-MAS_AutoStart</URI>
                 </RegistrationInfo>
@@ -128,7 +138,7 @@ class _SystemHandler:
                 </Settings>
                 <Actions Context="Author">
                     <Exec>
-                        <Command>{Path.cwd() / 'AUTO-MAS.exe'}</Command>
+                        <Command>{xml_executable}</Command>
                         <Arguments>--auto-start</Arguments>
                     </Exec>
                 </Actions>
@@ -154,7 +164,7 @@ class _SystemHandler:
 
                 if result.returncode == 0:
                     logger.success(
-                        f"程序自启动任务计划已创建或更新: {Path.cwd() / 'AUTO-MAS.exe'}"
+                        f"程序自启动任务计划已创建或更新: {executable_path}"
                     )
                 else:
                     logger.error(f"程序自启动任务计划创建或更新失败({result.returncode}):")
@@ -218,30 +228,43 @@ class _SystemHandler:
                 await self.kill_emulator_processes()
                 logger.info("执行关机操作")
                 await self._request_frontend_close()
-                subprocess.run(["shutdown", "/s", "/t", "0"])
+                subprocess.run(
+                    ["shutdown", "/s", "/t", "0"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
 
             elif mode == "ShutdownForce":
                 logger.info("执行强制关机操作")
                 await self._request_frontend_close()
-                subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
+                subprocess.run(
+                    ["shutdown", "/s", "/t", "0", "/f"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
 
             elif mode == "Reboot":
 
                 await self.kill_emulator_processes()
                 logger.info("执行重启操作")
                 await self._request_frontend_close()
-                subprocess.run(["shutdown", "/r", "/t", "0"])
+                subprocess.run(
+                    ["shutdown", "/r", "/t", "0"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
 
             elif mode == "Hibernate":
 
                 logger.info("执行休眠操作")
-                subprocess.run(["shutdown", "/h"])
+                subprocess.run(
+                    ["shutdown", "/h"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
 
             elif mode == "Sleep":
 
                 logger.info("执行睡眠操作")
                 subprocess.run(
-                    ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
+                    ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
 
             elif mode == "KillSelf" and Config.server is not None:
@@ -256,7 +279,10 @@ class _SystemHandler:
                 await self.kill_emulator_processes()
                 logger.info("执行注销此账户操作")
                 await self._request_frontend_close()
-                subprocess.run(["shutdown", "/l"])
+                subprocess.run(
+                    ["shutdown", "/l"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
 
         elif sys.platform.startswith("linux"):
 

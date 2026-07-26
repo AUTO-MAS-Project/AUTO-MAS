@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 _CONFIG_SERVICE_MODULE: ModuleType
 _CONFIG_IMPORT_TEMP: tempfile.TemporaryDirectory[str]
@@ -38,30 +38,25 @@ def _new_config_service():
 
 
 class AuthoritativeGateTest(unittest.IsolatedAsyncioTestCase):
-    def test_authoritative_mode_is_rejected_before_legacy_runtime(self) -> None:
+    def test_authoritative_mode_is_ready_without_legacy_runtime(self) -> None:
         service = _new_config_service()
         with patch("app.core.config_service.CONFIG_V2_MODE", "authoritative"):
-            with self.assertRaisesRegex(RuntimeError, "eight production roots"):
-                service.assert_startup_mode_ready()
+            service.assert_startup_mode_ready()
 
     def test_shadow_mode_remains_available(self) -> None:
         service = _new_config_service()
         with patch("app.core.config_service.CONFIG_V2_MODE", "shadow"):
             service.assert_startup_mode_ready()
 
-    async def test_initialize_fails_before_registering_process_hooks(self) -> None:
+    async def test_initialize_registers_only_native_process_hooks(self) -> None:
         service = _new_config_service()
-        claim_owner = Mock()
         configure_outbox = Mock()
         configure_observer = Mock()
         register_codecs = Mock()
+        unregister_codecs = Mock()
 
         with (
             patch("app.core.config_service.CONFIG_V2_MODE", "authoritative"),
-            patch(
-                "app.core.config_service._claim_config_service_owner",
-                claim_owner,
-            ),
             patch(
                 "app.core.config_service.configure_outbox_hooks",
                 configure_outbox,
@@ -71,14 +66,23 @@ class AuthoritativeGateTest(unittest.IsolatedAsyncioTestCase):
                 configure_observer,
             ),
             patch.object(service, "_register_legacy_codecs", register_codecs),
+            patch.object(
+                service,
+                "_unregister_legacy_codecs",
+                unregister_codecs,
+            ),
+            patch(
+                "app.core.config_service.shutdown_runtime",
+                AsyncMock(),
+            ),
         ):
-            with self.assertRaisesRegex(RuntimeError, "eight production roots"):
-                await service.initialize()
+            await service.initialize()
+            await service.shutdown()
 
-        claim_owner.assert_not_called()
-        configure_outbox.assert_not_called()
+        self.assertEqual(configure_outbox.call_count, 2)
         configure_observer.assert_not_called()
         register_codecs.assert_not_called()
+        unregister_codecs.assert_called_once_with()
 
     async def test_legacy_backed_authoritative_load_and_save_are_blocked(self) -> None:
         service = _new_config_service()
@@ -90,9 +94,15 @@ class AuthoritativeGateTest(unittest.IsolatedAsyncioTestCase):
                 adapter_write,
             ),
         ):
-            with self.assertRaisesRegex(RuntimeError, "eight production roots"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "initialized by NativeConfigFacade",
+            ):
                 await service._authoritative_load()
-            with self.assertRaisesRegex(RuntimeError, "eight production roots"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "rejects legacy JSON-first saves",
+            ):
                 await service.save_config(Path("Config.json"), {"secret": "not-used"})
 
         adapter_write.assert_not_called()

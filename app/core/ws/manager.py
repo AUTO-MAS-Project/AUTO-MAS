@@ -47,6 +47,7 @@ class WSManager:
         max_outbound_queue_size: int = DEFAULT_WS_QUEUE_MESSAGES,
         send_timeout: float = DEFAULT_WS_SEND_TIMEOUT_SECONDS,
         max_message_bytes: int = DEFAULT_WS_MAX_MESSAGE_BYTES,
+        inflight_drain_timeout: float = 10.0,
     ) -> None:
         self._connection: WSConnection | None = None
         self._connection_lock = asyncio.Lock()
@@ -64,6 +65,11 @@ class WSManager:
         self._max_outbound_queue_size = max(1, int(max_outbound_queue_size))
         self._send_timeout = max(0.001, float(send_timeout))
         self._max_message_bytes = max(1, int(max_message_bytes))
+        self._inflight_drain_timeout = max(
+            0.001, float(inflight_drain_timeout)
+        )
+        self._inbound_quiesced = False
+        self._closing = False
         self._sync_config_compat = sync_config_compat
 
     @property
@@ -74,6 +80,14 @@ class WSManager:
     def is_connected(self) -> bool:
         connection = self._connection
         return connection is not None and connection.is_connected
+
+    @property
+    def is_closing(self) -> bool:
+        return self._closing
+
+    @property
+    def is_inbound_quiesced(self) -> bool:
+        return self._inbound_quiesced
 
     @property
     def backend_pid(self) -> int:
@@ -121,6 +135,12 @@ class WSManager:
             logger.warning("拒绝未通过本地握手认证的主 WebSocket 连接")
             await websocket.close(code=1008, reason="authentication required")
             return
+        if self._closing or self._inbound_quiesced:
+            await websocket.close(
+                code=protocol.SERVICE_CLOSING_CLOSE_CODE,
+                reason=protocol.SERVICE_CLOSING_CLOSE_REASON,
+            )
+            return
 
         connection = WSConnection(
             websocket,
@@ -132,9 +152,21 @@ class WSManager:
         await connection.accept(subprotocol=selected_subprotocol)
 
         async with self._connection_lock:
-            old_connection = self._connection
-            self._connection = connection
-            self._set_config_compat(connected=True)
+            if self._closing or self._inbound_quiesced:
+                old_connection = None
+                reject_for_shutdown = True
+            else:
+                old_connection = self._connection
+                self._connection = connection
+                self._set_config_compat(connected=True)
+                reject_for_shutdown = False
+
+        if reject_for_shutdown:
+            await connection.close(
+                code=protocol.SERVICE_CLOSING_CLOSE_CODE,
+                reason=protocol.SERVICE_CLOSING_CLOSE_REASON,
+            )
+            return
 
         if old_connection is not None and old_connection is not connection:
             logger.warning("已有主连接，新连接将替换旧连接")
@@ -232,16 +264,37 @@ class WSManager:
                 await task
         self._hook_tasks.clear()
 
+    async def begin_inbound_quiesce(self) -> None:
+        """停止接受新连接/业务消息，但保留当前连接用于最终出站通知。"""
+
+        async with self._connection_lock:
+            self._inbound_quiesced = True
+
+    async def end_inbound_quiesce(self) -> None:
+        """关闭流程失败时恢复入站；完整 shutdown 后不得重新开放。"""
+
+        async with self._connection_lock:
+            if not self._closing:
+                self._inbound_quiesced = False
+
+    async def drain_inflight(self) -> None:
+        """排空已经接受的入站任务，供插件 teardown 前建立安静边界。"""
+
+        await self._drain_all_inflight()
+
     async def shutdown(self) -> None:
+        async with self._connection_lock:
+            self._inbound_quiesced = True
+            self._closing = True
         await self.cancel_hook_tasks()
         await self.close_connection(code=1001, reason="服务关闭")
         # A cancelled ``asyncio.to_thread(subprocess.run)`` does not stop the
         # child process. Drain accepted commands so plugin/runtime mutations
         # finish their invalidate/discover/publish tail before shutdown exits.
-        await self._drain_all_inflight()
+        await self.drain_inflight()
 
     async def _receive_loop(self, connection: WSConnection) -> None:
-        while connection.is_connected:
+        while connection.is_connected and not self._closing:
             try:
                 raw = await connection.receive_json()
             except WebSocketDisconnect:
@@ -275,6 +328,14 @@ class WSManager:
 
             envelope = protocol.parse_envelope(raw)
             if envelope is None:
+                continue
+
+            # shutdown 可能与 receive_json 同时发生。已经从传输层取出的消息
+            # 在 closing 生效后也不得再触发 heartbeat、Broadcast 或业务命令。
+            if self._closing:
+                break
+            if self._inbound_quiesced:
+                logger.debug("主 WebSocket 正在关闭准备期，已静默丢弃入站消息")
                 continue
 
             # close 无法保证已在 receive_json 内取出的旧消息立即消失；替换后
@@ -318,6 +379,12 @@ class WSManager:
         connection: WSConnection,
         envelope: Any,
     ) -> bool:
+        if (
+            self._closing
+            or self._inbound_quiesced
+            or not self._is_current(connection)
+        ):
+            return False
         active_count = sum(len(tasks) for tasks in self._inflight_messages.values())
         if active_count >= self._max_inflight_messages:
             return False
@@ -391,8 +458,24 @@ class WSManager:
             for task in connection_tasks
             if task is not current and not task.done()
         ]
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if not tasks:
+            return
+
+        _, pending = await asyncio.wait(
+            tasks,
+            timeout=self._inflight_drain_timeout,
+        )
+        if not pending:
+            return
+
+        logger.warning(
+            "主 WebSocket 入站任务排空超时，取消剩余任务: "
+            f"pending={len(pending)}, "
+            f"timeout={self._inflight_drain_timeout:.3f}s"
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
     def _is_current(self, connection: WSConnection) -> bool:
         return self._connection is connection and connection.is_connected

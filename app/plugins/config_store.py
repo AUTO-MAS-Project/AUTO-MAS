@@ -238,7 +238,36 @@ class PluginConfigStore:
             },
         }
 
-        await Config.PluginConfig.load(payload)
+        # ``load`` is a legacy ConfigBase protocol.  Do not infer the mode from
+        # attribute presence: a native compatibility facade can intentionally
+        # expose a similarly named helper while authoritative mode must keep
+        # persistence on the Config v2 transaction path.
+        from app.configuration import CONFIG_V2_MODE, CONFIG_V2_MODE_AUTHORITATIVE
+
+        if CONFIG_V2_MODE != CONFIG_V2_MODE_AUTHORITATIVE:
+            legacy_load = getattr(Config.PluginConfig, "load", None)
+            if legacy_load is not None:
+                await legacy_load(payload)
+                return
+
+        # Authoritative Config v2 exposes a native PluginConfig entry instead
+        # of the legacy ConfigBase ``load`` surface.  Replace the root through
+        # the native transaction APIs so default-instance creation remains
+        # atomic and persists in the same generation as the version update.
+        from app.configuration import config_manager
+        from app.configuration.roots.plugin_config import PluginInstance
+
+        plugin_root = Config.PluginConfig
+        instances = plugin_root.PluginInstances
+        async with config_manager.transaction():
+            plugin_root.Data.Version = max(1, version)
+            await plugin_root.commit()
+
+            for uid in tuple(instances.keys()):
+                instances.remove(uid)
+            for uid, wire in instance_index.items():
+                instances.add(PluginInstance, uid=uid, wire=wire)
+            await instances.commit()
 
     def generate_instance_id(self, plugin_name: str) -> str:
         """

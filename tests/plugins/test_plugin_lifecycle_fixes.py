@@ -786,6 +786,72 @@ def _build_transaction_manager(
 class PluginInstanceTransactionTest(unittest.TestCase):
     """验证 add/update/delete 配置与运行态具有一致的事务边界。"""
 
+    def test_partial_config_update_preserves_omitted_nested_secrets(self) -> None:
+        root = {
+            "version": 1,
+            "instances": [
+                {
+                    "id": "demo:one",
+                    "plugin": "demo",
+                    "enabled": False,
+                    "name": "One",
+                    "config": {
+                        "account": {
+                            "name": "before",
+                            "token": "keep-this-secret",
+                        },
+                        "retry": 2,
+                    },
+                }
+            ],
+        }
+        manager = _build_transaction_manager(root, started=False)
+
+        asyncio.run(
+            manager.update_instance_transaction(
+                instance_id="demo:one",
+                config={"account": {"name": "after"}},
+            )
+        )
+
+        self.assertEqual(
+            manager.config_store.root["instances"][0]["config"],
+            {
+                "account": {
+                    "name": "after",
+                    "token": "keep-this-secret",
+                },
+                "retry": 2,
+            },
+        )
+
+    def test_partial_config_update_allows_explicit_secret_clear(self) -> None:
+        root = {
+            "version": 1,
+            "instances": [
+                {
+                    "id": "demo:one",
+                    "plugin": "demo",
+                    "enabled": False,
+                    "name": "One",
+                    "config": {"account": {"token": "old-secret"}},
+                }
+            ],
+        }
+        manager = _build_transaction_manager(root, started=False)
+
+        asyncio.run(
+            manager.update_instance_transaction(
+                instance_id="demo:one",
+                config={"account": {"token": ""}},
+            )
+        )
+
+        self.assertEqual(
+            manager.config_store.root["instances"][0]["config"],
+            {"account": {"token": ""}},
+        )
+
     def test_concurrent_updates_do_not_lose_each_others_writes(self) -> None:
         root = {
             "version": 1,
@@ -1082,6 +1148,156 @@ class PluginInstanceApiDelegationTest(unittest.TestCase):
         self.assertEqual(result.status, "error")
         self.assertIn("回滚不完整", result.message)
 
+
+
+
+class ServiceFacadeDependencyTest(unittest.TestCase):
+    """验证插件门面与注册中心使用一致的依赖名归一化语义。"""
+
+    def test_names_supports_all_public_input_shapes(self) -> None:
+        from app.plugins.context import ServiceFacade
+
+        cases = (
+            (None, set()),
+            ("  alpha  ", {"alpha"}),
+            ([" alpha ", "beta", ""], {"alpha", "beta"}),
+            ((" alpha ", "beta", None), {"alpha", "beta"}),
+            ({" alpha ", "beta", ""}, {"alpha", "beta"}),
+        )
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(ServiceFacade._names(raw), expected)
+
+    def test_list_dependencies_wait_until_services_exist(self) -> None:
+        from app.plugins.context import ServiceFacade
+        from app.plugins.service_registry import ServiceRegistry
+
+        registry = ServiceRegistry()
+        ready = MagicMock()
+        facade = ServiceFacade(
+            ctx=object(),
+            plugin_name="consumer",
+            instance_id="consumer:one",
+            logger=MagicMock(),
+            registry=registry,
+        )
+
+        facade.inject(needs=["emulator", "foo"], ready=ready)
+
+        self.assertEqual(facade.miss(), {"emulator", "foo"})
+        ready.assert_not_called()
+        registry.set("emulator", object(), "emulator:provider")
+        self.assertEqual(facade.miss(), {"foo"})
+        ready.assert_not_called()
+        registry.set("foo", object(), "foo:provider")
+        self.assertEqual(facade.miss(), set())
+        ready.assert_called_once()
+
+
+class _CoordinatedPluginConfigStore:
+    """暴露首个读快照暂停点，稳定复现无锁读改写覆盖竞态。"""
+
+    def __init__(self, root: dict) -> None:
+        self.root = deepcopy(root)
+        self.first_read_started = asyncio.Event()
+        self.allow_first_read = asyncio.Event()
+        self.read_count = 0
+
+    async def get_root(self, *_args, **_kwargs) -> dict:
+        self.read_count += 1
+        snapshot = deepcopy(self.root)
+        if self.read_count == 1:
+            self.first_read_started.set()
+            await self.allow_first_read.wait()
+        return snapshot
+
+    async def save_root(self, _plugins_dir, root, **_kwargs) -> None:
+        await asyncio.sleep(0)
+        self.root = deepcopy(root)
+
+
+class PluginRepairResilienceTest(unittest.TestCase):
+    """验证失效实例修复与用户写入共享事务锁，并在关闭时被回收。"""
+
+    def test_repair_serializes_with_concurrent_config_write(self) -> None:
+        from app.plugins.manager import _PluginManager
+
+        async def scenario() -> None:
+            store = _CoordinatedPluginConfigStore(
+                {
+                    "version": 1,
+                    "instances": [
+                        {
+                            "id": "demo:broken",
+                            "plugin": "demo",
+                            "enabled": True,
+                            "name": "Old name",
+                            "config": {},
+                        }
+                    ],
+                }
+            )
+            manager = _PluginManager.__new__(_PluginManager)
+            manager.loader = SimpleNamespace(
+                startup_failed_instances={"demo:broken": "activation failed"},
+                startup_missing_instances=set(),
+            )
+            manager.config_store = store
+            manager.plugins_dir = Path("plugins")
+            manager._config_write_lock = asyncio.Lock()
+            writer_entered = asyncio.Event()
+
+            async def concurrent_write() -> None:
+                async with manager._config_write_lock:
+                    writer_entered.set()
+                    root = await store.get_root(manager.plugins_dir, {})
+                    root["instances"][0]["name"] = "New name"
+                    await store.save_root(manager.plugins_dir, root)
+
+            with patch("app.plugins.manager.schedule_plugin_snapshot"):
+                repair = asyncio.create_task(
+                    manager._repair_invalid_instances_after_start({})
+                )
+                await asyncio.wait_for(store.first_read_started.wait(), timeout=1)
+                writer = asyncio.create_task(concurrent_write())
+                await asyncio.sleep(0)
+                self.assertFalse(writer_entered.is_set())
+                store.allow_first_read.set()
+                await asyncio.gather(repair, writer)
+
+            instance = store.root["instances"][0]
+            self.assertFalse(instance["enabled"])
+            self.assertEqual(instance["name"], "New name")
+
+        asyncio.run(scenario())
+
+    def test_stop_cancels_pending_repair_task(self) -> None:
+        from app.plugins.manager import _PluginManager
+
+        async def scenario() -> None:
+            manager = _PluginManager.__new__(_PluginManager)
+            manager.started = True
+            manager.events = MagicMock()
+            manager.loader = SimpleNamespace(unload_all=AsyncMock())
+            manager._pending_local_install = None
+            cancelled = asyncio.Event()
+
+            async def long_running_repair() -> None:
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+
+            manager._pending_repair = asyncio.create_task(long_running_repair())
+            await asyncio.sleep(0)
+            await manager.stop()
+
+            self.assertTrue(cancelled.is_set())
+            self.assertIsNone(manager._pending_repair)
+            manager.loader.unload_all.assert_awaited_once()
+
+        asyncio.run(scenario())
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import re
@@ -129,6 +130,8 @@ class PluginWebSocketSession:
         self.websocket = websocket
         self.path = path
         self.instance_id = instance_id
+        self._close_lock = asyncio.Lock()
+        self._closed = False
 
     async def send_json(self, data: Any) -> None:
         """发送 JSON 消息。"""
@@ -140,7 +143,12 @@ class PluginWebSocketSession:
 
     async def close(self, code: int = 1000, reason: str = "正常关闭") -> None:
         """关闭当前 WebSocket 连接。"""
-        await self.websocket.close(code=code, reason=reason)
+
+        async with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            await self.websocket.close(code=code, reason=reason)
 
 
 class PluginServerRegistry:
@@ -151,6 +159,7 @@ class PluginServerRegistry:
         self._ws_routes: Dict[str, PluginWebSocketRoute] = {}
         self._actions: Dict[str, Dict[str, PluginAction]] = {}
         self._outbound_names: Dict[str, set[str]] = {}
+        self._active_ws_sessions: Dict[str, set[PluginWebSocketSession]] = {}
 
     def register_http(
         self,
@@ -305,6 +314,50 @@ class PluginServerRegistry:
         """查找匹配当前 WebSocket 请求的插件路由。"""
         return self._ws_routes.get(_normalize_path(path))
 
+    def track_websocket(self, session: PluginWebSocketSession) -> None:
+        """登记插件声明式 WebSocket 会话，供卸载和关闭流程回收。"""
+
+        self._active_ws_sessions.setdefault(session.instance_id, set()).add(session)
+
+    def untrack_websocket(self, session: PluginWebSocketSession) -> None:
+        """移除已结束的插件声明式 WebSocket 会话。"""
+
+        sessions = self._active_ws_sessions.get(session.instance_id)
+        if sessions is None:
+            return
+        sessions.discard(session)
+        if not sessions:
+            self._active_ws_sessions.pop(session.instance_id, None)
+
+    async def close_websockets(
+        self,
+        instance_id: str | None = None,
+        *,
+        code: int = 1001,
+        reason: str = "插件服务关闭",
+    ) -> None:
+        """关闭指定插件或全部插件拥有的声明式 WebSocket 会话。"""
+
+        if instance_id is None:
+            sessions = [
+                session
+                for owner_sessions in self._active_ws_sessions.values()
+                for session in owner_sessions
+            ]
+        else:
+            sessions = list(self._active_ws_sessions.get(instance_id, set()))
+
+        if sessions:
+            await asyncio.gather(
+                *(
+                    session.close(code=code, reason=reason)
+                    for session in sessions
+                ),
+                return_exceptions=True,
+            )
+        for session in sessions:
+            self.untrack_websocket(session)
+
     async def dispatch_http(self, request: PluginHttpRequest) -> Any:
         """调用插件 HTTP 处理器。"""
         route = self.resolve_http(request.path, request.method)
@@ -317,6 +370,10 @@ class PluginServerRegistry:
         owner = str(instance_id or "").strip()
         if not owner:
             return
+        await self.close_websockets(
+            owner,
+            reason="插件已卸载",
+        )
         self._http_routes = {
             path: route for path, route in self._http_routes.items() if route.instance_id != owner
         }

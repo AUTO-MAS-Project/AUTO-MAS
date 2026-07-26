@@ -24,6 +24,8 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from app.configuration import compat as compat_module
 from app.configuration.compat import LegacyWireAdapter
 
@@ -122,16 +124,10 @@ class TestSaveConfigAuxiliaryFailure:
                 shadow_toml = config_path.with_suffix(".v2.shadow.toml")
                 assert not shadow_toml.exists(), "shadow TOML 不应存在"
 
-    def test_authoritative_mode_rejects_at_startup_gate(self) -> None:
-        """authoritative 模式下 save_config 入口 assert_startup_mode_ready 先抛。
-
-        config_service.py:337 调 self.assert_startup_mode_ready()，它调
-        assert_config_v2_startup_mode_ready(CONFIG_V2_MODE)，在 authoritative 时
-        抛 ConfigV2AuthoritativeUnavailableError，先于 line 338 的 uses_legacy_runtime 检查。
-        """
+    def test_authoritative_mode_rejects_legacy_json_save(self) -> None:
+        """authoritative 运行时不允许重新进入 legacy JSON-first 写链。"""
         import asyncio
 
-        from app.configuration import ConfigV2AuthoritativeUnavailableError
         from app.core import config_service as cs
 
         failing_adapter = mock.create_autospec(LegacyWireAdapter, instance=True)
@@ -141,11 +137,11 @@ class TestSaveConfigAuxiliaryFailure:
         with mock.patch.object(cs, "CONFIG_V2_MODE", "authoritative"), \
              mock.patch.object(cs, "legacy_adapter", failing_adapter):
             service = cs.ConfigService()
-            try:
+            with pytest.raises(
+                RuntimeError,
+                match="rejects legacy JSON-first saves",
+            ):
                 asyncio.run(service.save_config(Path("Config.json"), {"Data": {}}))
-                raise AssertionError("应抛 ConfigV2AuthoritativeUnavailableError")
-            except ConfigV2AuthoritativeUnavailableError:
-                pass
         failing_adapter.shadow_write.assert_not_called()
 
     def test_dead_code_branch_is_authoritative_unreachable(self) -> None:

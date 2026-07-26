@@ -26,7 +26,11 @@ from fastapi import APIRouter, Body, Query
 
 from app.core import Config
 from app.services import Updater
-from app.services.update import EmbeddedUpdaterManualOnlyError
+from app.services.update import (
+    EmbeddedUpdaterManualOnlyError,
+    UpdateDigestUnavailableError,
+    UpdateIntegrityError,
+)
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])

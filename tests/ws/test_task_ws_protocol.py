@@ -57,7 +57,46 @@ def test_cycle_task_ws_data_preserves_legacy_task_info_and_adds_state() -> None:
         "cycleNextRunAt": "2026-07-24 18:30:00",
         "cycleWaitingReason": "等待下一个队列项",
         "cycleCurrentItemId": "item-2",
+        "cycleNext": None,
+        "cycleNextList": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_cycle_change_publishes_cycle_state_not_only_legacy_list() -> None:
+    preview = {
+        "queueItemId": "item-1",
+        "scriptId": "script-1",
+        "scriptName": "示例脚本",
+        "nextRunAt": "2026-07-24 18:30:00",
+        "isDue": False,
+        "isRunning": False,
+    }
+    task_info = TaskInfo(
+        mode="CycleRun",
+        task_id="task-cycle",
+        queue_id="queue-1",
+        script_id=None,
+        user_id=None,
+        cycle_next_list=[preview],
+    )
+
+    with patch(
+        "app.core.task_manager.Publisher.send",
+        new_callable=AsyncMock,
+    ) as send, patch.object(
+        task_info,
+        "_emit_task_progress",
+        new_callable=AsyncMock,
+    ), patch.object(
+        task_info,
+        "_emit_task_log",
+        new_callable=AsyncMock,
+    ):
+        await task_info.on_change()
+
+    assert send.await_args.kwargs["data"]["cycleNext"] == preview
+    assert send.await_args.kwargs["data"]["cycleNextList"] == [preview]
 
 
 def test_non_cycle_task_ws_data_keeps_legacy_shape() -> None:

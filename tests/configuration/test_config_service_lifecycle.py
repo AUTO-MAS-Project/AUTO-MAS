@@ -208,3 +208,101 @@ class TestConfigServiceLifecycle(IsolatedAsyncioTestCase):
 
         self.assertFalse(service._initialized)
         self.assertEqual(shutdown_runtime.await_count, 2)
+
+class TestMainTimerResilience(IsolatedAsyncioTestCase):
+    """验证定时循环的单项故障隔离、守护重启与关闭回收。"""
+
+    async def test_second_loop_continues_after_single_item_failure(self) -> None:
+        from app.core.timer import _MainTimer
+
+        timer = _MainTimer()
+        timer.timed_start = AsyncMock(side_effect=[OSError("write failed"), None])
+        timer._run_arknights_scheduled_task = AsyncMock()
+        timer.check_game_sign = AsyncMock()
+        sleep_calls = 0
+
+        async def stop_after_two_iterations(_delay: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls >= 2:
+                raise asyncio.CancelledError
+
+        with patch("app.core.timer.asyncio.sleep", new=stop_after_two_iterations):
+            with self.assertRaises(asyncio.CancelledError):
+                await timer.second_task()
+
+        self.assertEqual(timer.timed_start.await_count, 2)
+        self.assertEqual(timer._run_arknights_scheduled_task.await_count, 2)
+        self.assertEqual(timer.check_game_sign.await_count, 2)
+
+    async def test_hour_loop_continues_after_single_upload_failure(self) -> None:
+        from app.core.timer import _MainTimer
+
+        timer = _MainTimer()
+        timer._upload_version_statistics = AsyncMock(
+            side_effect=[OSError("write failed"), None]
+        )
+        sleep_calls = 0
+
+        async def stop_after_two_iterations(_delay: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls >= 2:
+                raise asyncio.CancelledError
+
+        with patch("app.core.timer.asyncio.sleep", new=stop_after_two_iterations):
+            with self.assertRaises(asyncio.CancelledError):
+                await timer.hour_task()
+
+        self.assertEqual(timer._upload_version_statistics.await_count, 2)
+
+    async def test_supervisor_restarts_unexpectedly_terminated_loop(self) -> None:
+        from app.core.timer import _MainTimer
+
+        timer = _MainTimer()
+        restarted = asyncio.Event()
+        attempts = 0
+
+        async def loop_factory() -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("unexpected stop")
+            restarted.set()
+            await asyncio.Event().wait()
+
+        with patch("app.core.timer.TIMER_RESTART_DELAY", 0):
+            task = asyncio.create_task(timer._supervise("测试定时器", loop_factory))
+            await asyncio.wait_for(restarted.wait(), timeout=1)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertEqual(attempts, 2)
+
+    async def test_stop_cancels_and_awaits_both_loops(self) -> None:
+        from app.core.timer import _MainTimer
+
+        timer = _MainTimer()
+        timer.started = True
+        second_cancelled = asyncio.Event()
+        hour_cancelled = asyncio.Event()
+
+        async def wait_until_cancelled(marker: asyncio.Event) -> None:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                marker.set()
+                raise
+
+        timer.second_timer = asyncio.create_task(wait_until_cancelled(second_cancelled))
+        timer.hour_timer = asyncio.create_task(wait_until_cancelled(hour_cancelled))
+        await asyncio.sleep(0)
+
+        await timer.stop()
+
+        self.assertTrue(second_cancelled.is_set())
+        self.assertTrue(hour_cancelled.is_set())
+        self.assertTrue(timer.second_timer.done())
+        self.assertTrue(timer.hour_timer.done())
+        self.assertFalse(timer.started)

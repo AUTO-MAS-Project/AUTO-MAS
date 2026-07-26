@@ -11,7 +11,12 @@ from app.api.plugin_gateway import dispatch_plugin_websocket
 from app.api.websocket import websocket_dynamic_channel
 from app.core.ws.manager import ws_manager
 from app.core.ws.security import build_auth_subprotocol
-from app.plugins.server import PluginWebSocketRoute, plugin_server
+from app.plugins.server import (
+    PluginServerRegistry,
+    PluginWebSocketRoute,
+    PluginWebSocketSession,
+    plugin_server,
+)
 from app.utils.websocket import (
     ReverseWebSocketSession,
     WSClientManager,
@@ -139,6 +144,26 @@ class TestAuxiliaryWebSocketRoute(IsolatedAsyncioTestCase):
         self.assertTrue(websocket.accepted)
         self.assertEqual(websocket.accepted_subprotocol, expected_protocol)
         self.assertFalse(open_session.await_args.kwargs["allow_commands"])
+
+    async def test_closing_backend_rejects_auxiliary_channel_before_accept(
+        self,
+    ) -> None:
+        websocket = FakeWebSocket(auth_token=ws_manager.auth_token)
+
+        with (
+            patch.object(ws_manager, "_inbound_quiesced", True),
+            patch.object(
+                ws_client_manager,
+                "openwsr",
+                new=AsyncMock(return_value=ClosedSession()),
+            ) as open_session,
+        ):
+            await websocket_dynamic_channel(websocket, "plugin")
+
+        self.assertFalse(websocket.accepted)
+        self.assertEqual(websocket.close_code, 1012)
+        self.assertEqual(websocket.close_reason, "service closing")
+        open_session.assert_not_awaited()
 
     async def test_wsdev_is_unavailable_outside_explicit_dev_mode(self) -> None:
         websocket = FakeWebSocket(auth_token=ws_manager.auth_token)
@@ -273,6 +298,21 @@ class TestReverseWebSocketLifecycle(IsolatedAsyncioTestCase):
         callback.assert_not_awaited()
         self.assertEqual(websocket.close_code, 1009)
 
+    async def test_manager_shutdown_closes_all_auxiliary_sessions(self) -> None:
+        manager = WSClientManager()
+        outbound = AsyncMock()
+        reverse = AsyncMock()
+        manager._clients["outbound"] = outbound
+        manager._reverse_sessions["reverse"] = reverse
+
+        await manager.shutdown()
+
+        self.assertTrue(manager.is_closing)
+        outbound.disconnect.assert_awaited_once()
+        reverse.disconnect.assert_awaited_once()
+        self.assertEqual(manager._clients, {})
+        self.assertEqual(manager._reverse_sessions, {})
+
 
 class TestPluginWebSocketGateway(IsolatedAsyncioTestCase):
     async def test_unauthenticated_gateway_request_is_rejected_before_lookup(
@@ -311,3 +351,34 @@ class TestPluginWebSocketGateway(IsolatedAsyncioTestCase):
         )
         resolve_route.assert_called_once_with("/private-channel")
         route.on_message.assert_not_awaited()
+
+    async def test_closing_backend_rejects_plugin_gateway_before_lookup(self) -> None:
+        websocket = FakeWebSocket(auth_token=ws_manager.auth_token)
+
+        with (
+            patch.object(ws_manager, "_inbound_quiesced", True),
+            patch.object(plugin_server, "resolve_websocket") as resolve_route,
+        ):
+            await dispatch_plugin_websocket("private-channel", websocket)
+
+        self.assertFalse(websocket.accepted)
+        self.assertEqual(websocket.close_code, 1012)
+        self.assertEqual(websocket.close_reason, "service closing")
+        resolve_route.assert_not_called()
+
+    async def test_unregister_owner_closes_tracked_plugin_websocket(self) -> None:
+        websocket = FakeWebSocket()
+        registry = PluginServerRegistry()
+        session = PluginWebSocketSession(
+            websocket,
+            path="/private-channel",
+            instance_id="local-plugin-instance",
+        )
+        registry.track_websocket(session)
+
+        await registry.unregister_owner("local-plugin-instance")
+
+        self.assertTrue(websocket.closed)
+        self.assertEqual(websocket.close_code, 1001)
+        self.assertEqual(websocket.close_reason, "插件已卸载")
+        self.assertEqual(registry._active_ws_sessions, {})

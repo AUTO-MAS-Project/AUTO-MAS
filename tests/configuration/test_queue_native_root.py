@@ -39,9 +39,8 @@ def _legacy_queue(
         queue_items["instances"] = [
             {"uid": str(queue_item_uid), "type": "QueueItem"}
         ]
-        queue_items[str(queue_item_uid)] = {
-            "Info": {"ScriptId": script_id}
-        }
+        queue_items[str(queue_item_uid)] = _queue_item_defaults()
+        queue_items[str(queue_item_uid)]["Info"]["ScriptId"] = script_id
 
     time_sets: dict[str, object] = {"instances": []}
     if time_set_uid is not None:
@@ -63,6 +62,7 @@ def _legacy_queue(
                 "Name": "测试队列",
                 "TimeEnabled": True,
                 "StartUpEnabled": False,
+                "CycleEnabled": False,
                 "AfterAccomplish": "NoAction",
             },
             "Data": {"LastTimedStart": "2026-07-23 08:30"},
@@ -70,6 +70,39 @@ def _legacy_queue(
                 "TimeSet": time_sets,
                 "QueueItem": queue_items,
             },
+        },
+    }
+
+
+def _queue_item_defaults() -> dict[str, object]:
+    return {
+        "Info": {"ScriptId": "-"},
+        "Schedule": {
+            "Enabled": True,
+            "Mode": "fixed_time",
+            "Days": [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ],
+            "Time": "00:00",
+            "IntervalMinutes": 480,
+            "IntervalAnchor": "start",
+            "NextRunAt": "2000-01-01 00:00:00",
+        },
+        "Data": {
+            "LastCycleStartedAt": "2000-01-01 00:00:00",
+            "LastCycleFinishedAt": "2000-01-01 00:00:00",
+            "CycleRunId": "",
+            "CycleState": "idle",
+            "CycleRevision": 0,
+            "CycleResult": "",
+            "CycleError": "",
+            "CycleUpdatedAt": "2000-01-01 00:00:00",
         },
     }
 
@@ -288,9 +321,12 @@ class QueueLegacyConversionTest(unittest.TestCase):
         first_payload["SubConfigsInfo"]["QueueItem"]["instances"].append(
             {"uid": str(second_item), "type": "QueueItem"}
         )
-        first_payload["SubConfigsInfo"]["QueueItem"][str(second_item)] = {
-            "Info": {"ScriptId": str(second_script)}
-        }
+        first_payload["SubConfigsInfo"]["QueueItem"][
+            str(second_item)
+        ] = _queue_item_defaults()
+        first_payload["SubConfigsInfo"]["QueueItem"][str(second_item)][
+            "Info"
+        ]["ScriptId"] = str(second_script)
         legacy = {
             "instances": [
                 {"uid": str(second_queue), "type": "QueueConfig"},
@@ -338,6 +374,7 @@ class QueueLegacyConversionTest(unittest.TestCase):
                 "Name": "新队列",
                 "TimeEnabled": False,
                 "StartUpEnabled": False,
+                "CycleEnabled": False,
                 "AfterAccomplish": "NoAction",
             },
         )
@@ -374,7 +411,7 @@ class QueueLegacyConversionTest(unittest.TestCase):
         )[str(queue_uid)]["SubConfigsInfo"]
         self.assertEqual(
             restored["QueueItem"][str(item_uid)],
-            {"Info": {"ScriptId": "-"}},
+            _queue_item_defaults(),
         )
         self.assertEqual(
             restored["TimeSet"][str(time_uid)],

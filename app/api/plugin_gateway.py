@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
+from app.core.ws import protocol
 from app.core.ws.manager import ws_manager
 from app.core.ws.security import authenticate_websocket_subprotocol
 from app.plugins.server import (
@@ -157,6 +158,12 @@ async def dispatch_plugin_websocket(path: str, websocket: WebSocket) -> None:
         logger.warning("拒绝未通过本地握手认证的插件 WebSocket 连接")
         await websocket.close(code=1008, reason="authentication required")
         return
+    if ws_manager.is_closing or ws_manager.is_inbound_quiesced:
+        await websocket.close(
+            code=protocol.SERVICE_CLOSING_CLOSE_CODE,
+            reason=protocol.SERVICE_CLOSING_CLOSE_REASON,
+        )
+        return
 
     route_path = f"/{path}".rstrip("/") or "/"
     route = plugin_server.resolve_websocket(route_path)
@@ -170,6 +177,7 @@ async def dispatch_plugin_websocket(path: str, websocket: WebSocket) -> None:
         path=route_path,
         instance_id=route.instance_id,
     )
+    plugin_server.track_websocket(session)
 
     try:
         if route.on_connect is not None:
@@ -203,6 +211,7 @@ async def dispatch_plugin_websocket(path: str, websocket: WebSocket) -> None:
         except Exception:
             pass
     finally:
+        plugin_server.untrack_websocket(session)
         if route.on_disconnect is not None:
             try:
                 await _maybe_await(_call_ws_lifecycle(route.on_disconnect, session))

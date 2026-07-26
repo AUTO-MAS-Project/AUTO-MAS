@@ -5,7 +5,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from pydantic import BaseModel
 
@@ -24,6 +25,7 @@ class _PluginScriptInfo(BaseModel):
 
 class _PluginScriptRun(BaseModel):
     Enabled: bool = True
+    Token: str = "script-secret"
 
 
 class _PluginScriptForm(BaseModel):
@@ -38,6 +40,7 @@ class _PluginUserInfo(BaseModel):
 class _PluginUserForm(BaseModel):
     Info: _PluginUserInfo = _PluginUserInfo()
     Account: str = ""
+    Token: str = "user-secret"
 
 
 def _native_script_type_registry() -> ScriptTypeRegistry:
@@ -78,6 +81,48 @@ def _register_test_plugin(registry: ScriptTypeRegistry) -> None:
 
 
 class NativeConfigFacadeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_system_settings_apply_on_start_and_observe_commits(self) -> None:
+        system = SimpleNamespace(
+            set_SelfStart=AsyncMock(),
+            set_Sleep=AsyncMock(),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            facade = NativeConfigFacade(
+                workspace_root=root,
+                config_directory=root / "config",
+                bind_system_settings=True,
+            )
+            with patch.object(
+                NativeConfigFacade,
+                "_system_handler",
+                return_value=system,
+            ):
+                await facade.init_config()
+                try:
+                    system.set_SelfStart.assert_awaited_once_with(False)
+                    system.set_Sleep.assert_awaited_once_with(False)
+
+                    await facade.set("Start", "IfSelfStart", True)
+                    await facade.set("Function", "IfAllowSleep", True)
+                    self.assertEqual(
+                        system.set_SelfStart.await_args_list[-1].args,
+                        (True,),
+                    )
+                    self.assertEqual(system.set_Sleep.await_args_list[-1].args, (True,))
+
+                    system.set_SelfStart.reset_mock()
+                    system.set_SelfStart.side_effect = RuntimeError("side effect failed")
+                    with patch(
+                        "app.configuration.v2.signals.logger.warning"
+                    ) as warning:
+                        await facade.set("Start", "IfSelfStart", False)
+                    self.assertFalse(facade.get("Start", "IfSelfStart"))
+                    system.set_SelfStart.assert_awaited_once_with(False)
+                    self.assertTrue(warning.called)
+                finally:
+                    facade.close()
+
     async def test_authoritative_builtin_providers_use_native_config_entries(
         self,
     ) -> None:
@@ -199,6 +244,40 @@ class NativeConfigFacadeTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 facade.close()
 
+    async def test_script_record_enumeration_skips_one_unprojectable_entry(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            facade = NativeConfigFacade(
+                workspace_root=root,
+                config_directory=root / "config",
+            )
+            await facade.init_config()
+            try:
+                valid_id, _ = await facade.add_script("SRC")
+                async with config_manager.transaction():
+                    invalid_id = facade.roots.scripts.add(PluginScript)
+                    await facade.roots.scripts.commit()
+                registry = _native_script_type_registry()
+
+                with (
+                    patch(
+                        "app.core.script_types.script_type_registry",
+                        registry,
+                    ),
+                    patch("app.core.native_config.logger.warning") as warning,
+                ):
+                    records = await facade.get_script_records()
+                    with self.assertRaisesRegex(KeyError, "PluginTypeKey"):
+                        await facade.get_script_records(str(invalid_id))
+
+                self.assertEqual([record.id for record in records], [str(valid_id)])
+                self.assertEqual(records[0].type, "SRC")
+                self.assertTrue(warning.called)
+            finally:
+                facade.close()
+
     async def test_native_plugin_crud_and_scripts2_records(self) -> None:
         """Provider-backed PluginScript/User records persist as Config v2."""
 
@@ -244,6 +323,15 @@ class NativeConfigFacadeTest(unittest.IsolatedAsyncioTestCase):
                             "Account": "alpha-account",
                         },
                     )
+                    await facade.update_script(
+                        str(script_id),
+                        {"Run": {"Enabled": True}},
+                    )
+                    await facade.update_user(
+                        str(script_id),
+                        str(user_id),
+                        {"Info": {"Name": "Updated user again"}},
+                    )
                     records = await facade.get_script_records(str(script_id))
                     user_records = await facade.get_user_records(
                         str(script_id),
@@ -251,14 +339,16 @@ class NativeConfigFacadeTest(unittest.IsolatedAsyncioTestCase):
                     )
 
                 self.assertEqual(records[0].name, "Updated plugin")
-                self.assertFalse(records[0].config["Run"]["Enabled"])
+                self.assertTrue(records[0].config["Run"]["Enabled"])
+                self.assertEqual(records[0].config["Run"]["Token"], "script-secret")
                 self.assertEqual(records[0].user_count, 1)
                 self.assertEqual(user_records[0].type, "AlphaPlugin")
-                self.assertEqual(user_records[0].name, "Updated user")
+                self.assertEqual(user_records[0].name, "Updated user again")
                 self.assertEqual(
                     user_records[0].config["Account"],
                     "alpha-account",
                 )
+                self.assertEqual(user_records[0].config["Token"], "user-secret")
             finally:
                 facade.close()
 
@@ -503,6 +593,7 @@ class NativeConfigFacadeTest(unittest.IsolatedAsyncioTestCase):
             ("M9A", "M9AConfig", "M9AUserConfig"),
             ("MaaFW", "MaaFWConfig", "MaaFWUserConfig"),
             ("General", "GeneralConfig", "GeneralUserConfig"),
+            ("Okww", "OkwwConfig", "OkwwUserConfig"),
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -544,7 +635,7 @@ class NativeConfigFacadeTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(RuntimeError, "暂不支持复制"):
                     await facade.add_script("MAA", str(script_id))
 
-                for script_type in ("Okww", "OkScript", "PluginScript", "Unknown"):
+                for script_type in ("OkScript", "PluginScript", "Unknown"):
                     with self.subTest(script_type=script_type):
                         with self.assertRaisesRegex(RuntimeError, "尚未完成原生"):
                             await facade.add_script(script_type)

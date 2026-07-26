@@ -40,6 +40,7 @@ _QUEUE_INFO_DEFAULTS: dict[str, object] = {
     "Name": "新队列",
     "TimeEnabled": False,
     "StartUpEnabled": False,
+    "CycleEnabled": False,
     "AfterAccomplish": "NoAction",
 }
 _QUEUE_DATA_DEFAULTS: dict[str, object] = {
@@ -51,6 +52,25 @@ _TIME_SET_DEFAULTS: dict[str, object] = {
     "Time": "00:00",
 }
 _QUEUE_ITEM_DEFAULTS: dict[str, object] = {"ScriptId": "-"}
+_QUEUE_ITEM_SCHEDULE_DEFAULTS: dict[str, object] = {
+    "Enabled": True,
+    "Mode": "fixed_time",
+    "Days": list(WEEKDAYS),
+    "Time": "00:00",
+    "IntervalMinutes": 480,
+    "IntervalAnchor": "start",
+    "NextRunAt": "2000-01-01 00:00:00",
+}
+_QUEUE_ITEM_DATA_DEFAULTS: dict[str, object] = {
+    "LastCycleStartedAt": "2000-01-01 00:00:00",
+    "LastCycleFinishedAt": "2000-01-01 00:00:00",
+    "CycleRunId": "",
+    "CycleState": "idle",
+    "CycleRevision": 0,
+    "CycleResult": "",
+    "CycleError": "",
+    "CycleUpdatedAt": "2000-01-01 00:00:00",
+}
 
 
 def _validate_clock(value: str) -> str:
@@ -67,6 +87,16 @@ def _validate_last_timed_start(value: str) -> str:
     except ValueError:
         raise ValueError(
             "LastTimedStart 必须使用 %Y-%m-%d %H:%M 格式"
+        ) from None
+    return value
+
+
+def _validate_cycle_datetime(value: str) -> str:
+    try:
+        datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        raise ValueError(
+            "循环时间必须使用 %Y-%m-%d %H:%M:%S 格式"
         ) from None
     return value
 
@@ -97,7 +127,65 @@ class QueueItem(ConfigEntry):
             ),
         ] = "-"
 
+    class ScheduleGroup(ConfigGroup):
+        Enabled: Annotated[bool, Field(strict=True)] = True
+        Mode: Literal["fixed_time", "interval"] = "fixed_time"
+        Days: Annotated[
+            list[
+                Literal[
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+            ],
+            Field(strict=True),
+        ] = Field(default_factory=lambda: list(WEEKDAYS))
+        Time: Annotated[
+            str,
+            Field(strict=True),
+            AfterValidator(_validate_clock),
+        ] = "00:00"
+        IntervalMinutes: Annotated[int, Field(strict=True, ge=1, le=10080)] = 480
+        IntervalAnchor: Literal["start", "finish"] = "start"
+        NextRunAt: Annotated[
+            str,
+            Field(strict=True),
+            AfterValidator(_validate_cycle_datetime),
+        ] = "2000-01-01 00:00:00"
+
+    class DataGroup(ConfigGroup):
+        LastCycleStartedAt: Annotated[
+            str,
+            Field(strict=True),
+            AfterValidator(_validate_cycle_datetime),
+        ] = "2000-01-01 00:00:00"
+        LastCycleFinishedAt: Annotated[
+            str,
+            Field(strict=True),
+            AfterValidator(_validate_cycle_datetime),
+        ] = "2000-01-01 00:00:00"
+        CycleRunId: Annotated[str, Field(strict=True)] = ""
+        CycleState: Literal[
+            "idle", "running", "succeeded", "failed", "cancelled"
+        ] = "idle"
+        CycleRevision: Annotated[
+            int, Field(strict=True, ge=0, le=2147483647)
+        ] = 0
+        CycleResult: Annotated[str, Field(strict=True)] = ""
+        CycleError: Annotated[str, Field(strict=True)] = ""
+        CycleUpdatedAt: Annotated[
+            str,
+            Field(strict=True),
+            AfterValidator(_validate_cycle_datetime),
+        ] = "2000-01-01 00:00:00"
+
     Info: InfoGroup = Field(default_factory=InfoGroup)
+    Schedule: ScheduleGroup = Field(default_factory=ScheduleGroup)
+    Data: DataGroup = Field(default_factory=DataGroup)
 
 
 class TimeSet(ConfigEntry):
@@ -153,6 +241,8 @@ class Queue(ConfigEntry):
         TimeEnabled: Annotated[bool, Field(strict=True)] = False
         # QueueConfig - 是否在宿主启动时运行
         StartUpEnabled: Annotated[bool, Field(strict=True)] = False
+        # QueueConfig - 是否允许循环运行
+        CycleEnabled: Annotated[bool, Field(strict=True)] = False
         # QueueConfig - 队列完成后的系统动作
         AfterAccomplish: Literal[
             "NoAction",
@@ -312,7 +402,7 @@ def _normalize_queue_info(value: object, *, path: str) -> WireDict:
 
     if not isinstance(info["Name"], str):
         raise TypeError(f"{path}.Name 必须是字符串")
-    for name in ("TimeEnabled", "StartUpEnabled"):
+    for name in ("TimeEnabled", "StartUpEnabled", "CycleEnabled"):
         if not isinstance(info[name], bool):
             raise TypeError(f"{path}.{name} 必须是布尔值")
     action = info["AfterAccomplish"]
@@ -381,7 +471,7 @@ def _normalize_time_set(value: object, *, path: str) -> WireDict:
 
 def _normalize_queue_item(value: object, *, path: str) -> WireDict:
     entry = _require_dict(value, path=path)
-    unknown_groups = sorted(set(entry) - {"Info"})
+    unknown_groups = sorted(set(entry) - {"Info", "Schedule", "Data"})
     if unknown_groups:
         raise ValueError(
             "未知队列配置路径: "
@@ -400,7 +490,104 @@ def _normalize_queue_item(value: object, *, path: str) -> WireDict:
     if not isinstance(script_id, str):
         raise TypeError(f"{path}.Info.ScriptId 必须是字符串")
     _validate_script_id(script_id)
-    return {"Info": info}
+
+    raw_schedule = _require_dict(
+        entry.get("Schedule", {}),
+        path=f"{path}.Schedule",
+    )
+    unknown_schedule = sorted(
+        set(raw_schedule) - set(_QUEUE_ITEM_SCHEDULE_DEFAULTS)
+    )
+    if unknown_schedule:
+        raise ValueError(
+            "未知队列配置路径: "
+            + ", ".join(f"{path}.Schedule.{name}" for name in unknown_schedule)
+        )
+    schedule = {
+        **_QUEUE_ITEM_SCHEDULE_DEFAULTS,
+        "Days": list(WEEKDAYS),
+    }
+    schedule.update(raw_schedule)
+    if not isinstance(schedule["Enabled"], bool):
+        raise TypeError(f"{path}.Schedule.Enabled 必须是布尔值")
+    if schedule["Mode"] not in {"fixed_time", "interval"}:
+        raise ValueError(f"{path}.Schedule.Mode 仅允许 fixed_time 或 interval")
+    days = schedule["Days"]
+    if not isinstance(days, list):
+        raise TypeError(f"{path}.Schedule.Days 必须是列表")
+    if any(not isinstance(day, str) or day not in WEEKDAYS for day in days):
+        raise ValueError(f"{path}.Schedule.Days 必须是英文星期名称列表")
+    if not isinstance(schedule["Time"], str):
+        raise TypeError(f"{path}.Schedule.Time 必须是字符串")
+    _validate_clock(schedule["Time"])
+    minutes = schedule["IntervalMinutes"]
+    if (
+        not isinstance(minutes, int)
+        or isinstance(minutes, bool)
+        or not 1 <= minutes <= 10080
+    ):
+        raise ValueError(
+            f"{path}.Schedule.IntervalMinutes 必须在 1 到 10080 之间"
+        )
+    if schedule["IntervalAnchor"] not in {"start", "finish"}:
+        raise ValueError(f"{path}.Schedule.IntervalAnchor 仅允许 start 或 finish")
+    if not isinstance(schedule["NextRunAt"], str):
+        raise TypeError(f"{path}.Schedule.NextRunAt 必须是字符串")
+    _validate_cycle_datetime(schedule["NextRunAt"])
+
+    raw_data = _require_dict(entry.get("Data", {}), path=f"{path}.Data")
+    unknown_data = sorted(set(raw_data) - set(_QUEUE_ITEM_DATA_DEFAULTS))
+    if unknown_data:
+        raise ValueError(
+            "未知队列配置路径: "
+            + ", ".join(f"{path}.Data.{name}" for name in unknown_data)
+        )
+    cycle_data = dict(_QUEUE_ITEM_DATA_DEFAULTS)
+    cycle_data.update(raw_data)
+    for name in (
+        "LastCycleStartedAt",
+        "LastCycleFinishedAt",
+        "CycleUpdatedAt",
+    ):
+        timestamp = cycle_data[name]
+        if not isinstance(timestamp, str):
+            raise TypeError(f"{path}.Data.{name} 必须是字符串")
+        _validate_cycle_datetime(timestamp)
+    run_id = cycle_data["CycleRunId"]
+    if not isinstance(run_id, str):
+        raise TypeError(f"{path}.Data.CycleRunId 必须是字符串")
+    if run_id:
+        try:
+            UUID(run_id)
+        except ValueError:
+            raise ValueError(
+                f"{path}.Data.CycleRunId 必须为空或 UUID 字符串"
+            ) from None
+    if cycle_data["CycleState"] not in {
+        "idle",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    }:
+        raise ValueError(
+            f"{path}.Data.CycleState 仅允许 idle、running、succeeded、"
+            "failed 或 cancelled"
+        )
+    revision = cycle_data["CycleRevision"]
+    if (
+        not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or not 0 <= revision <= 2147483647
+    ):
+        raise ValueError(
+            f"{path}.Data.CycleRevision 必须在 0 到 2147483647 之间"
+        )
+    for name in ("CycleResult", "CycleError"):
+        if not isinstance(cycle_data[name], str):
+            raise TypeError(f"{path}.Data.{name} 必须是字符串")
+
+    return {"Info": info, "Schedule": schedule, "Data": cycle_data}
 
 
 def _legacy_nested_to_wire(

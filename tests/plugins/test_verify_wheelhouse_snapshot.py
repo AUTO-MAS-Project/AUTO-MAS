@@ -300,5 +300,211 @@ class VerifyWheelhouseSnapshotTest(unittest.TestCase):
         self.assertEqual(_count_wheels(Path("/nonexistent/path/that/should/not/exist")), 0)
 
 
+class VerifyWheelhouseSnapshotPyprojectPinTest(unittest.TestCase):
+    """Lane 13: pyproject plugin-bootstrap pin ↔ runtime-lock plugin version 一致性。"""
+
+    def _build_repo_with_bootstrap_section(
+        self, tmp_root: Path, *, bootstrap_packages_toml: str
+    ) -> dict[str, Path]:
+        """构造一个含 [tool.auto-mas.plugin-bootstrap] 的最小宿主根目录。"""
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        pyproject_content = (
+            "[project]\n"
+            'name = "test"\n'
+            'version = "0.1.0"\n'
+            "\n"
+            "[tool.auto-mas.plugin-bootstrap]\n"
+            f"packages = [\n{bootstrap_packages_toml}\n]\n"
+        )
+        (tmp_root / "pyproject.toml").write_text(pyproject_content, encoding="utf-8")
+
+        wheels_dir = tmp_root / "plugins" / "wheels"
+        wheels_dir.mkdir(parents=True, exist_ok=True)
+
+        # 写两个 wheel：auto-mas-core 6.0.0a1 + plugin-1 1.0.0
+        for filename in [
+            "auto_mas_core-6.0.0a1-py3-none-any.whl",
+            "plugin_1-1.0.0-py3-none-any.whl",
+        ]:
+            (wheels_dir / filename).write_bytes(b"fake wheel")
+
+        runtime_lock = {
+            "schema_version": 1,
+            "plugins": [
+                {"scope": "plugin", "distribution": "auto-mas-core", "version": "6.0.0a1"},
+                {"scope": "plugin", "distribution": "plugin-1", "version": "1.0.0"},
+            ],
+            "host_runtime": [],
+            "plugin_runtime": [],
+            "install_contract": {"protected_host_distributions": []},
+            "expected_plugin_entry_points": [
+                {"group": "auto_mas.plugins", "name": f"plugin_{i}"}
+                for i in range(2)
+            ],
+        }
+        runtime_lock_path = wheels_dir / "runtime-lock.json"
+        _write_json(runtime_lock_path, runtime_lock)
+
+        manifest = {
+            "schema_version": 3,
+            "artifact_scope": "complete-windows-x64-runtime-wheelhouse",
+            "expected_plugin_distribution_count": 2,
+            "expected_plugin_entry_point_count": 2,
+            "runtime_lock": {
+                "filename": "runtime-lock.json",
+                "size_bytes": (runtime_lock_path).stat().st_size,
+                "sha256": _sha256_file(runtime_lock_path),
+            },
+            "wheels": [
+                {
+                    "kind": "plugin",
+                    "scopes": ["plugin"],
+                    "distribution": "auto-mas-core",
+                    "version": "6.0.0a1",
+                    "entry_points": [],
+                    "filename": "auto_mas_core-6.0.0a1-py3-none-any.whl",
+                    "size_bytes": 11,
+                    "sha256": _sha256_file(wheels_dir / "auto_mas_core-6.0.0a1-py3-none-any.whl"),
+                },
+                {
+                    "kind": "plugin",
+                    "scopes": ["plugin"],
+                    "distribution": "plugin-1",
+                    "version": "1.0.0",
+                    "entry_points": [],
+                    "filename": "plugin_1-1.0.0-py3-none-any.whl",
+                    "size_bytes": 11,
+                    "sha256": _sha256_file(wheels_dir / "plugin_1-1.0.0-py3-none-any.whl"),
+                },
+            ],
+        }
+        manifest_path = wheels_dir / "manifest.json"
+        _write_json(manifest_path, manifest)
+
+        manifest_sha = _sha256_file(manifest_path)
+        runtime_lock_sha = _sha256_file(runtime_lock_path)
+
+        snapshot = {
+            "schema_version": 1,
+            "snapshot_id": "test-snapshot",
+            "version": "v6.0.0-test",
+            "generated_at": "2026-07-23T00:00:00.000Z",
+            "deployment_mode": "bundled-snapshot",
+            "required_paths": ["app"],
+            "wheel_manifest": "plugins/wheels/manifest.json",
+            "wheelhouse_contract": {
+                "manifest_schema_version": 3,
+                "runtime_lock_schema_version": 1,
+                "wheel_count": 2,
+                "plugin_distribution_count": 2,
+                "plugin_entry_point_count": 2,
+                "core_distribution_version": "6.0.0a1",
+                "manifest_sha256": manifest_sha,
+                "runtime_lock_sha256": runtime_lock_sha,
+            },
+            "update_policy": "test",
+        }
+        snapshot_path = tmp_root / "res" / "integration-snapshot.json"
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(snapshot_path, snapshot)
+
+        return {
+            "root": tmp_root,
+            "snapshot": snapshot_path,
+            "wheels": wheels_dir,
+            "manifest": manifest_path,
+            "runtime_lock": runtime_lock_path,
+        }
+
+    def test_pyproject_pin_matches_runtime_lock_passes(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self._build_repo_with_bootstrap_section(
+                Path(tmp),
+                bootstrap_packages_toml=(
+                    '    { name = "auto-mas-core", version = "6.0.0a1" },\n'
+                    '    { name = "plugin-1", version = "1.0.0" }'
+                ),
+            )
+            result = verify_wheelhouse_snapshot(paths["root"])
+            self.assertEqual(result["wheel_count"], 2)
+
+    def test_pyproject_pin_differs_from_runtime_lock_raises(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self._build_repo_with_bootstrap_section(
+                Path(tmp),
+                bootstrap_packages_toml=(
+                    '    { name = "auto-mas-core", version = "6.0.0a1" },\n'
+                    '    { name = "plugin-1", version = "9.9.9" }'
+                ),
+            )
+            with self.assertRaisesRegex(
+                SnapshotDriftError,
+                r"pyproject plugin-bootstrap pin 与 runtime-lock 不一致.*plugin[-_]1.*9\.9\.9.*1\.0\.0",
+            ):
+                verify_wheelhouse_snapshot(paths["root"])
+
+    def test_pyproject_pin_missing_from_runtime_lock_raises(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self._build_repo_with_bootstrap_section(
+                Path(tmp),
+                bootstrap_packages_toml=(
+                    '    { name = "auto-mas-core", version = "6.0.0a1" },\n'
+                    '    { name = "plugin-1", version = "1.0.0" },\n'
+                    '    { name = "missing-pkg", version = "0.1.0" }'
+                ),
+            )
+            with self.assertRaisesRegex(
+                SnapshotDriftError,
+                r"pyproject plugin-bootstrap 声明 missing[-_]pkg==0\.1\.0.*runtime-lock\.plugins 中找不到",
+            ):
+                verify_wheelhouse_snapshot(paths["root"])
+
+    def test_pyproject_only_package_name_does_not_trigger_strict_match(self) -> None:
+        """仅声明包名（无 version/specifier）时不做严格相等匹配。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self._build_repo_with_bootstrap_section(
+                Path(tmp),
+                bootstrap_packages_toml=(
+                    '    "auto-mas-core",\n'
+                    '    "plugin-1"'
+                ),
+            )
+            result = verify_wheelhouse_snapshot(paths["root"])
+            self.assertEqual(result["plugin_distribution_count"], 2)
+
+    def test_pyproject_without_bootstrap_section_skips_pin_check(self) -> None:
+        """无 [tool.auto-mas.plugin-bootstrap] section 时不报 pin 漂移。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # 用 _build_minimal_repo 构造不含 bootstrap section 的 pyproject
+            paths = _build_minimal_repo(Path(tmp), wheel_count=2)
+            result = verify_wheelhouse_snapshot(paths["root"])
+            self.assertEqual(result["wheel_count"], 2)
+
+    def test_pyproject_with_specifier_does_not_trigger_strict_match(self) -> None:
+        """specifier 形式声明交给运行时范围匹配，此处不强制相等。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self._build_repo_with_bootstrap_section(
+                Path(tmp),
+                bootstrap_packages_toml=(
+                    '    { name = "auto-mas-core", version = "6.0.0a1" },\n'
+                    '    { name = "plugin-1", specifier = ">=1.0.0,<2.0.0" }'
+                ),
+            )
+            result = verify_wheelhouse_snapshot(paths["root"])
+            self.assertEqual(result["plugin_distribution_count"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

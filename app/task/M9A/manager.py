@@ -152,6 +152,15 @@ class M9AManager(TaskExecuteBase):
         script_id = uuid.UUID(self.script_info.script_id)
         await Config.ScriptConfig[script_id].lock()
         self.script_config = Config.ScriptConfig[script_id]
+        # NOTE [Config v2 authoritative 已知遗留 - 游离内存视图]:
+        # 此处的 MultipleConfig 是任务内的游离工作副本：未 connect 文件、自身不落盘，
+        # 数据来自权威存储 UserData.toDict() 的一次性快照（含解密语义）。运行期间
+        # 子任务的 get()/set() 仅作用于该副本（保留 legacy 校验/自动纠错行为），
+        # final_task 经权威 UserData.load(...) 一次性写回，落盘始终由权威存储完成，
+        # 不构成双权威。迁移方向：ScriptConfigStore.load_user_collection()/
+        # save_user_models()（参见 app/task/SRC/manager.py 与 script_maa 插件适配器），
+        # 前提是本脚本类型具备 native 用户模型 provider，且写回 payload 中
+        # instances[].type 类型名保持兼容。
         self.user_config = MultipleConfig([M9AUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id} 已锁定，M9A 配置提取完成")

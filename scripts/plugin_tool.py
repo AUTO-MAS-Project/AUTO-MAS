@@ -379,6 +379,8 @@ def run_command(command: list[str], *, cwd: Path) -> SyncResult:
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError as exc:

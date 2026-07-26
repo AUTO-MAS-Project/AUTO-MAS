@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Iterable, Sequence, TypeVar
 
@@ -18,6 +19,18 @@ _DAY_NAME_TO_WEEKDAY = {
 }
 
 _T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class QueueCycleEntry:
+    """运行时循环候选；``parent_index`` 来自 QueueItem 的权威顺序。"""
+
+    parent_index: int
+    script_index: int
+    queue_item_id: str
+    script_id: str
+    script_name: str
+    next_run_at: datetime
 
 
 def parse_cycle_datetime(value: object) -> datetime | None:
@@ -103,17 +116,52 @@ def calculate_next_cycle_run(
     raise RuntimeError("无法计算固定时间循环的下一次运行时间")
 
 
+def calculate_next_cycle_after_run(
+    *,
+    mode: str,
+    days: Iterable[str],
+    time_text: str,
+    interval_minutes: int,
+    interval_anchor: str,
+    started_at: datetime,
+    finished_at: datetime,
+) -> datetime:
+    """计算一次运行后的下一时刻，保证结果严格晚于本次完成时间。"""
+
+    if mode == "interval":
+        if not 1 <= interval_minutes <= 10080:
+            raise ValueError("IntervalMinutes 必须在 1 到 10080 之间")
+        if interval_anchor not in {"start", "finish"}:
+            raise ValueError("IntervalAnchor 必须是 start 或 finish")
+        anchor = started_at if interval_anchor == "start" else finished_at
+        candidate = anchor + timedelta(minutes=interval_minutes)
+        while candidate <= finished_at:
+            candidate += timedelta(minutes=interval_minutes)
+        return candidate
+
+    # 固定时间初次装载允许“当前分钟”立即到期；一次运行完成后则必须
+    # 从下一分钟开始搜索，避免同一分钟内形成紧循环。
+    return calculate_next_cycle_run(
+        now=finished_at.replace(second=0, microsecond=0) + timedelta(minutes=1),
+        mode=mode,
+        days=days,
+        time_text=time_text,
+        interval_minutes=interval_minutes,
+        interval_anchor=interval_anchor,
+    )
+
+
 def select_due_cycle_item(
     candidates: Sequence[tuple[int, _T, datetime]],
     *,
     now: datetime,
 ) -> tuple[int, _T, datetime] | None:
-    """选择已经到期的最早队列项，同一时刻保持队列顺序。"""
+    """选择已经到期的队列项，父级队列顺序是唯一优先级来源。"""
 
     due = [candidate for candidate in candidates if candidate[2] <= now]
     if not due:
         return None
-    return min(due, key=lambda candidate: (candidate[2], candidate[0]))
+    return min(due, key=lambda candidate: candidate[0])
 
 
 def is_cycle_script_success(

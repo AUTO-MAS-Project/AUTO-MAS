@@ -63,6 +63,9 @@ class TestCoreClose(IsolatedAsyncioTestCase):
         server.should_exit = False
         events: list[str] = []
 
+        async def drain() -> None:
+            events.append("drain")
+
         async def teardown() -> None:
             events.append("teardown")
 
@@ -79,14 +82,32 @@ class TestCoreClose(IsolatedAsyncioTestCase):
             patch.object(core_api.Publisher, "send", side_effect=send) as publisher_send,
             patch.object(core_api.Config, "server", server),
             patch.object(core_api, "is_backend_dev_mode", return_value=False),
+            patch.object(
+                core_api.ws_manager,
+                "begin_inbound_quiesce",
+                new_callable=AsyncMock,
+            ) as begin_quiesce,
+            patch.object(
+                core_api.ws_manager,
+                "end_inbound_quiesce",
+                new_callable=AsyncMock,
+            ) as end_quiesce,
+            patch.object(
+                core_api.ws_manager,
+                "drain_inflight",
+                side_effect=drain,
+            ) as drain_inflight,
         ):
             result = await core_api.close()
             self.assertIsNotNone(core_api._shutdown_task)
             await asyncio.wait_for(core_api._shutdown_task, timeout=1)
 
         self.assertEqual(result.code, 200)
-        self.assertEqual(events, ["teardown", "ready"])
+        self.assertEqual(events, ["drain", "teardown", "ready"])
         self.assertTrue(server.should_exit)
+        begin_quiesce.assert_awaited_once()
+        drain_inflight.assert_awaited_once()
+        end_quiesce.assert_not_awaited()
         publisher_send.assert_awaited_once_with(
             id=protocol.ID_MAIN,
             type=protocol.BACKEND_SHUTDOWN_READY,
@@ -106,6 +127,16 @@ class TestCoreClose(IsolatedAsyncioTestCase):
             patch.object(core_api.Publisher, "send", new_callable=AsyncMock) as send,
             patch.object(core_api.Config, "server", server),
             patch.object(core_api, "is_backend_dev_mode", return_value=False),
+            patch.object(
+                core_api.ws_manager,
+                "begin_inbound_quiesce",
+                new_callable=AsyncMock,
+            ) as begin_quiesce,
+            patch.object(
+                core_api.ws_manager,
+                "end_inbound_quiesce",
+                new_callable=AsyncMock,
+            ) as end_quiesce,
         ):
             await core_api.close()
             self.assertIsNotNone(core_api._shutdown_task)
@@ -113,6 +144,9 @@ class TestCoreClose(IsolatedAsyncioTestCase):
 
         send.assert_not_awaited()
         self.assertFalse(server.should_exit)
+        begin_quiesce.assert_awaited_once()
+        end_quiesce.assert_awaited_once()
+
     async def test_repeated_close_reuses_running_task(self) -> None:
         started = asyncio.Event()
         release = asyncio.Event()
@@ -155,6 +189,11 @@ class TestCoreClose(IsolatedAsyncioTestCase):
             patch.object(core_api.Publisher, "send", new_callable=AsyncMock) as send,
             patch.object(core_api.Config, "server", server),
             patch.object(core_api, "is_backend_dev_mode", return_value=True),
+            patch.object(
+                core_api.ws_manager,
+                "begin_inbound_quiesce",
+                new_callable=AsyncMock,
+            ) as begin_quiesce,
         ):
             await core_api.close()
             self.assertIsNotNone(core_api._shutdown_task)
@@ -166,4 +205,5 @@ class TestCoreClose(IsolatedAsyncioTestCase):
             id=protocol.ID_MAIN,
             type=protocol.BACKEND_SHUTDOWN_READY,
         )
+        begin_quiesce.assert_not_awaited()
         self.assertFalse(server.should_exit)

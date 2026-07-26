@@ -256,12 +256,9 @@ class ServiceFacade:
 
     @staticmethod
     def _names(raw: str | list[str] | tuple[str, ...] | set[str] | None) -> set[str]:
-        if raw is None:
-            return set()
-        if isinstance(raw, str):
-            name = raw.strip()
-            return {name} if name else set()
-        return set()
+        # 直接复用注册中心的归一化实现，保证 str/list/tuple/set/None 五种输入
+        # 在门面层与 ServiceRegistry 层行为完全一致，避免序列型依赖被静默丢弃。
+        return ServiceRegistry._names(raw)
 
     def _warn(self, name: str) -> None:
         if name in self._declared:

@@ -22,6 +22,7 @@
 import asyncio
 import random
 from datetime import datetime, timedelta
+from typing import Any, Awaitable, Callable
 
 from app.services import Matomo
 from app.utils import get_logger
@@ -31,20 +32,57 @@ from .task_manager import TaskManager, TaskRuntimeUnavailableError
 
 logger = get_logger("主业务定时器")
 
+# 定时循环协程意外终止后的自愈重启间隔（秒）。
+TIMER_RESTART_DELAY = 5.0
+
+
+def _log_timer_task_exit(name: str, task: "asyncio.Task") -> None:
+    """定时器任务终止时的兜底日志。
+
+    MainTimer 是模块级单例并持有 task 强引用，正常情况下没有任何代码 await 这
+    两个 task，因此协程一旦意外结束连 asyncio 默认的 "exception was never
+    retrieved" 都不会出现。此回调保证任何非取消的终止都至少留下 ERROR 日志。
+    """
+
+    if task.cancelled():
+        return
+    try:
+        error = task.exception()
+    except asyncio.CancelledError:  # pragma: no cover - 竞态兜底
+        return
+    if error is not None:
+        logger.opt(exception=error).error(
+            f"{name} 已异常终止，定时调度停止：{type(error).__name__}: {error}"
+        )
+    else:
+        logger.error(f"{name} 已意外结束，定时调度停止")
+
 
 async def _ensure_timer_runtime_available() -> None:
-    """Do not start a half-migrated timer in authoritative Config v2 mode."""
+    """Require the selected native runtime before timer tasks are spawned."""
 
     from app.configuration import (
         CONFIG_V2_MODE,
         CONFIG_V2_MODE_AUTHORITATIVE,
     )
 
-    if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+    if (
+        CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE
+        and not Config.initialized
+    ):
         raise TaskRuntimeUnavailableError(
-            "Config v2 authoritative timer is unavailable: native game-sign "
-            "and task dispatch ports are not ready"
+            "Config v2 authoritative timer is unavailable before the native "
+            "configuration runtime is initialized"
         )
+
+
+def _game_sign_accounts():
+    """Resolve the v2 standalone root or the rollback-mode legacy child."""
+
+    native_accounts = getattr(Config, "GameSign_Accounts", None)
+    if native_accounts is not None:
+        return native_accounts
+    return Config.ToolsConfig.GameSign_Accounts
 
 
 class _MainTimer:
@@ -60,8 +98,18 @@ class _MainTimer:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
-        self.second_timer = asyncio.create_task(MainTimer.second_task())
-        self.hour_timer = asyncio.create_task(MainTimer.hour_task())
+        self.second_timer = asyncio.create_task(
+            self._supervise("每秒定期任务", self.second_task)
+        )
+        self.hour_timer = asyncio.create_task(
+            self._supervise("每小时定期任务", self.hour_task)
+        )
+        self.second_timer.add_done_callback(
+            lambda task: _log_timer_task_exit("每秒定期任务守护协程", task)
+        )
+        self.hour_timer.add_done_callback(
+            lambda task: _log_timer_task_exit("每小时定期任务守护协程", task)
+        )
         self.started = True
         logger.info("主业务定时器启动")
 
@@ -74,12 +122,71 @@ class _MainTimer:
         self.second_timer.cancel()
         self.hour_timer.cancel()
         try:
-            await self.second_timer
-            await self.hour_timer
-        except asyncio.CancelledError:
-            logger.info("主业务定时器已关闭")
+            # 逐个 await 时首个 CancelledError 会跳过后续 await，导致另一个 task
+            # 永远不被回收，因此用 gather 一次性等待两个 task 结束。
+            results = await asyncio.gather(
+                self.second_timer, self.hour_timer, return_exceptions=True
+            )
         finally:
             self.started = False
+
+        for name, result in zip(("每秒定期任务", "每小时定期任务"), results):
+            if isinstance(result, BaseException) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                logger.error(
+                    f"{name} 关闭时抛出异常：{type(result).__name__}: {result}"
+                )
+        logger.info("主业务定时器已关闭")
+
+    async def _supervise(self, name: str, factory: Callable[[], Awaitable[None]]) -> None:
+        """守护定时循环协程：意外终止时记录 ERROR 并自愈重启。
+
+        Args:
+            name (str): 用于日志的循环名称。
+            factory (Callable[[], Awaitable[None]]): 生成定时循环协程的工厂。
+
+        Returns:
+            None: 仅在被取消时退出。
+        """
+
+        while True:
+            try:
+                await factory()
+            except asyncio.CancelledError:
+                # 正常关闭路径必须能取消，绝不吞掉。
+                raise
+            except Exception as error:
+                logger.opt(exception=error).error(
+                    f"{name} 异常终止，将在 {TIMER_RESTART_DELAY} 秒后自动重启："
+                    f"{type(error).__name__}: {error}"
+                )
+            else:
+                logger.error(
+                    f"{name} 意外结束，将在 {TIMER_RESTART_DELAY} 秒后自动重启"
+                )
+            await asyncio.sleep(TIMER_RESTART_DELAY)
+
+    @staticmethod
+    async def _run_guarded(name: str, awaitable: Awaitable[Any]) -> None:
+        """执行单个定时子项并隔离其异常，避免单次失败杀死整个定时循环。
+
+        Args:
+            name (str): 用于日志的子项名称。
+            awaitable (Awaitable[Any]): 待执行的子项。
+
+        Returns:
+            None: 无返回值。
+        """
+
+        try:
+            await awaitable
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.opt(exception=error).error(
+                f"{name} 执行失败，已跳过本轮：{type(error).__name__}: {error}"
+            )
 
     async def second_task(self):
         """每秒定期任务"""
@@ -87,16 +194,25 @@ class _MainTimer:
 
         while True:
 
-            await self.timed_start()
+            await self._run_guarded("定时启动代理任务", self.timed_start())
 
-            if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
-                from app.MaaFW import ArknightWin32Toolkit
+            await self._run_guarded(
+                "明日方舟 PC 端定时任务", self._run_arknights_scheduled_task()
+            )
 
-                await ArknightWin32Toolkit.scheduled_task()
-
-            await self.check_game_sign()
+            await self._run_guarded("游戏社区签到检查", self.check_game_sign())
 
             await asyncio.sleep(1)
+
+    async def _run_arknights_scheduled_task(self) -> None:
+        """按配置执行明日方舟 PC 端定时任务。"""
+
+        if not Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+            return
+
+        from app.MaaFW import ArknightWin32Toolkit
+
+        await ArknightWin32Toolkit.scheduled_task()
 
     async def hour_task(self):
         """每小时定期任务"""
@@ -105,25 +221,32 @@ class _MainTimer:
 
         while True:
 
-            if (
-                datetime.strptime(
-                    Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
-                ).date()
-                != datetime.now().date()
-            ):
-                await Matomo.send_event(
-                    "App",
-                    "Version",
-                    Config.VERSION,
-                    1 if "beta" in Config.VERSION else 0,
-                )
-                await Config.set(
-                    "Data",
-                    "LastStatisticsUpload",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                )
+            await self._run_guarded("版本统计上报", self._upload_version_statistics())
 
             await asyncio.sleep(3600)
+
+    async def _upload_version_statistics(self) -> None:
+        """每日上报一次版本统计信息。"""
+
+        if (
+            datetime.strptime(
+                Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
+            ).date()
+            == datetime.now().date()
+        ):
+            return
+
+        await Matomo.send_event(
+            "App",
+            "Version",
+            Config.VERSION,
+            1 if "beta" in Config.VERSION else 0,
+        )
+        await Config.set(
+            "Data",
+            "LastStatisticsUpload",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
 
     @logger.catch()
     async def timed_start(self):
@@ -185,7 +308,7 @@ class _MainTimer:
 
         # 检查是否所有启用的用户今日都已签到
         all_users_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+        for uid, account in _game_sign_accounts().items():
             if account.get("GameSignAccount", "Enabled"):
                 if account.get("GameSignAccount", "LastSignDate") != today:
                     all_users_signed = False
@@ -267,7 +390,7 @@ class _MainTimer:
 
             # 检查是否所有用户都已签到，更新全局 LastSignDate
             all_signed_after = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            for uid, account in _game_sign_accounts().items():
                 if account.get("GameSignAccount", "Enabled"):
                     if account.get("GameSignAccount", "LastSignDate") != today:
                         all_signed_after = False
@@ -300,7 +423,7 @@ class _MainTimer:
 
         # 快速检查：是否所有用户都已签到
         all_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+        for uid, account in _game_sign_accounts().items():
             if account.get("GameSignAccount", "Enabled"):
                 if account.get("GameSignAccount", "LastSignDate") != today:
                     all_signed = False
@@ -322,7 +445,7 @@ class _MainTimer:
 
             # 签到后检查是否所有用户都已完成
             all_signed_after = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            for uid, account in _game_sign_accounts().items():
                 if account.get("GameSignAccount", "Enabled"):
                     if account.get("GameSignAccount", "LastSignDate") != today:
                         all_signed_after = False

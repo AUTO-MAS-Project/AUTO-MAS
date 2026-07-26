@@ -2,13 +2,14 @@
 
 不启动真实应用/游戏/模拟器，仅测试 facade 方法的基本调用契约。
 """
+import json
 import os
 import sys
-import json
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 WORKTREE = Path(__file__).resolve().parents[3]
 if str(WORKTREE) not in sys.path:
@@ -133,23 +134,24 @@ class TestNativeConfigFacadeMethodSignatures:
             "get_game_sign_accounts", "add_game_sign_account", "get_game_sign_account",
             "update_game_sign_account", "delete_game_sign_account", "reorder_game_sign_accounts",
             "get_webhook", "add_webhook", "update_webhook", "del_webhook", "reorder_webhook",
+            "get_git_version", "get_stage", "get_stage_info",
+            "get_script_combox", "get_task_combox", "get_plan_combox",
+            "get_emulator_combox", "get_emulator_devices_combox",
+            "get_notice", "get_web_config", "get_proxy_overview",
+            "search_history", "merge_statistic_info", "clean_old_history",
+            "save_maa_log", "save_maaend_log", "save_src_log",
+            "save_general_log", "import_script_from_file",
+            "export_script_to_file", "import_script_from_web",
+            "upload_script_to_web", "import_script_config_file",
+            "set_infrastructure", "get_user_combox_infrastructure",
         ]
         for method_name in required_methods:
             assert hasattr(NativeConfigFacade, method_name), f"facade 缺少 {method_name}"
 
     def test_facade_missing_methods_known(self):
-        """验证已知缺失的方法列表（这些是预期内未迁移的）。"""
+        """验证非配置运行时职责没有被错误塞入 facade。"""
         from app.core.native_config import NativeConfigFacade
         known_missing = [
-            "get_stage", "get_stage_info", "get_git_version",
-            "get_script_combox", "get_task_combox", "get_plan_combox",
-            "get_notice", "get_web_config", "get_proxy_overview",
-            "search_history", "merge_statistic_info",
-            "import_script_from_file", "export_script_to_file",
-            "import_script_from_web", "upload_script_to_web",
-            "import_script_config_file",
-            "set_infrastructure", "get_user_combox_infrastructure",
-            "save_maa_log", "clean_old_history",
             "share_config", "import_config",
             "load_maafw", "load_maa_end", "load_m9a", "load_src",
             "load_plugin_adapters", "unload_plugin_adapters", "reload_plugin_adapters",
@@ -167,27 +169,21 @@ class TestNativeConfigFacadeMethodSignatures:
 class TestConfigServiceAuthoritativeRouting:
     """测试 ConfigService 在 authoritative 模式下的行为。"""
 
-    def test_config_service_raises_on_authoritative(self):
-        """authoritative 模式下 ConfigService 应拒绝初始化。"""
-        from app.configuration import (
-            CONFIG_V2_MODE_AUTHORITATIVE,
-            ConfigV2AuthoritativeUnavailableError,
-        )
+    def test_config_service_accepts_authoritative(self):
+        """authoritative 模式由原生 facade 持有配置根。"""
+        from app.configuration import CONFIG_V2_MODE_AUTHORITATIVE
         from app.core.config_service import ConfigService
         svc = ConfigService()
-        # 模拟 authoritative 模式
         with patch("app.core.config_service.CONFIG_V2_MODE", CONFIG_V2_MODE_AUTHORITATIVE):
-            with pytest.raises(ConfigV2AuthoritativeUnavailableError):
-                svc.assert_startup_mode_ready()
+            svc.assert_startup_mode_ready()
 
     def test_config_service_uses_legacy_runtime_flag(self):
         """验证 uses_legacy_runtime 属性。"""
         from app.core.config_service import ConfigService
         svc = ConfigService()
-        # 默认 shadow 模式下 uses_legacy_runtime=True
-        assert svc.uses_legacy_runtime is True
+        assert svc.uses_legacy_runtime is False
         assert svc.is_v2_active is True
-        assert svc.mode == "shadow"
+        assert svc.mode == "authoritative"
 
 
 class TestWSBootstrapAuthoritativeSafety:

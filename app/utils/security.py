@@ -82,6 +82,13 @@ def sanitize_log_message(message: str) -> str:
         (r"(token=)[^&\s]+", r"\1***"),  # token参数
         (r"(api_key=)[^&\s]+", r"\1***"),  # api_key参数
         (r"(secret=)[^&\s]+", r"\1***"),  # secret参数
+        # 冒号形式（如 "token: xxx" / "token：xxx"）；仅当 key 词后紧跟半角/全角冒号才匹配，
+        # 避免误伤普通语句
+        (r"(cdk[:：]\s*)[^&\s]+", r"\1***"),  # cdk冒号形式
+        (r"(password[:：]\s*)[^&\s]+", r"\1***"),  # password冒号形式
+        (r"(token[:：]\s*)[^&\s]+", r"\1***"),  # token冒号形式
+        (r"(api_key[:：]\s*)[^&\s]+", r"\1***"),  # api_key冒号形式
+        (r"(secret[:：]\s*)[^&\s]+", r"\1***"),  # secret冒号形式
     ]
 
     sanitized_message = message

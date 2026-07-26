@@ -36,6 +36,7 @@ from typing import Optional, Dict, Any, Callable
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.utils.websocket import ws_client_manager
+from app.core.ws import protocol
 from app.core.ws.manager import ws_manager
 from app.core.ws.security import authenticate_websocket_subprotocol
 from app.api.ws_command import list_ws_commands
@@ -818,6 +819,12 @@ async def websocket_dynamic_channel(websocket: WebSocket, channel_name: str):
     if selected_subprotocol is None:
         logger.warning(f"辅助 WebSocket 通道握手认证失败: /api/ws/{channel_name}")
         await websocket.close(code=1008, reason="authentication required")
+        return
+    if ws_manager.is_closing or ws_manager.is_inbound_quiesced:
+        await websocket.close(
+            code=protocol.SERVICE_CLOSING_CLOSE_CODE,
+            reason=protocol.SERVICE_CLOSING_CLOSE_REASON,
+        )
         return
 
     channel_config = ws_client_manager.get_reverse_channel_config(channel_name)

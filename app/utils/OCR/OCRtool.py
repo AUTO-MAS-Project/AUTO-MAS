@@ -44,6 +44,10 @@ from app.utils.exception import (
 # 你现在已经学会了OCR识别的基础知识了！快来试试吧！
 
 logger = get_logger("OCR模块")
+
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 class OCRTool:
     #  默认宽高比 16:9，用于图像预处理
     aspect_ratio_width = 16
@@ -438,7 +442,8 @@ class OCRTool:
                 cmd,
                 capture_output=True,
                 timeout=10,
-                check=False
+                check=False,
+                creationflags=_CREATE_NO_WINDOW,
             )
 
             if result.returncode != 0:
@@ -466,7 +471,8 @@ class OCRTool:
                     connect_cmd,
                     capture_output=True,
                     timeout=10,
-                    check=False
+                    check=False,
+                    creationflags=_CREATE_NO_WINDOW,
                 )
 
                 if connect_result.returncode != 0:
@@ -514,7 +520,8 @@ class OCRTool:
                 cmd,
                 capture_output=True,
                 timeout=30,
-                check=False
+                check=False,
+                creationflags=_CREATE_NO_WINDOW,
             )
 
             if result.returncode != 0:
@@ -526,27 +533,32 @@ class OCRTool:
             if not image_data:
                 raise RuntimeError("ADB screencap 返回空数据")
 
-            # Windows 环境下需要处理换行符问题
-            # screencap -p 在 Windows 上会将 \n (0x0A) 转换为 \r\n (0x0D 0x0A)
-            # 这会破坏 PNG 文件格式，需要将 \r\n 替换回 \n
-            image_data = image_data.replace(b'\r\n', b'\n')
-
             logger.debug(f"ADB screencap 返回数据大小: {len(image_data)} 字节")
 
-            # 使用 PIL 从字节流加载图像
+            # 现代 adb 通常直接返回有效 PNG；仅在原始字节解析失败后兼容旧版 CRLF 转换。
             from io import BytesIO
-            try:
-                pillow_img = Image.open(BytesIO(image_data))
-                logger.info(f"成功通过 ADB screencap 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})")
-                return pillow_img
-            except Exception as img_error:
-                # 如果 PNG 方法失败，记录详细信息并尝试降级到 raw 方法
-                logger.warning(f"PNG 数据解析失败: {img_error}，尝试使用 raw 方法...")
-                # 保存调试信息
-                if len(image_data) > 0:
-                    logger.debug(f"数据前 100 字节: {image_data[:100]}")
-                # 降级到 raw 方法
-                return OCRTool._adb_screencap_raw(adb_path, serial)
+
+            candidates = [image_data]
+            normalized_data = image_data.replace(b'\r\n', b'\n')
+            if normalized_data != image_data:
+                candidates.append(normalized_data)
+
+            decode_error: Exception | None = None
+            for candidate in candidates:
+                try:
+                    pillow_img = Image.open(BytesIO(candidate))
+                    pillow_img.load()
+                    logger.info(
+                        f"成功通过 ADB screencap 获取截图 "
+                        f"(设备: {serial}, 尺寸: {pillow_img.size})"
+                    )
+                    return pillow_img
+                except Exception as img_error:
+                    decode_error = img_error
+
+            logger.warning(f"PNG 数据解析失败: {decode_error}，尝试使用 raw 方法...")
+            logger.debug(f"数据前 100 字节: {image_data[:100]}")
+            return OCRTool._adb_screencap_raw(adb_path, serial)
 
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"ADB screencap 命令超时 (设备: {serial})")
@@ -580,7 +592,8 @@ class OCRTool:
                 cmd,
                 capture_output=True,
                 timeout=30,
-                check=False
+                check=False,
+                creationflags=_CREATE_NO_WINDOW,
             )
 
             if result.returncode != 0:

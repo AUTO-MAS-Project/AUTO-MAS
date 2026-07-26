@@ -5,14 +5,29 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-# 测试文件位于:
-#   AUTO-MAS-Projects/AUTO-MAS-workspace/worktrees/all-plugins-integration/
-#   tests/plugin_blackbox/reference/conftest.py
-# 回溯 6 层到 AUTO-MAS-Projects 工作区根（parents[0]=reference 目录本身）。
-_WORKSPACE_ROOT: Path = Path(__file__).resolve().parents[6]
+# 优先定位实际存在的外层 reference 语料库。精简 clone 或短路径工作树
+# 可能没有原历史目录深度，此时退回宿主仓库旁的可选 reference 路径，
+# 由下方严格门禁决定是否要求它存在。
+_TEST_FILE = Path(__file__).resolve()
+_HOST_ROOT = _TEST_FILE.parents[3]
+_WORKSPACE_ROOT = next(
+    (
+        parent
+        for parent in _TEST_FILE.parents
+        if (parent / "reference").is_dir()
+    ),
+    _HOST_ROOT.parent,
+)
 REFERENCE_ROOT: Path = _WORKSPACE_ROOT / "reference"
+
+# reference 是工作区外部语料，不属于宿主或便携包运行时依赖。开发机可以只保留
+# 一部分样本；需要认证完整语料库时显式开启严格门禁。
+STRICT_REFERENCE_CORPUS: bool = (
+    os.environ.get("AUTO_MAS_REQUIRE_REFERENCE_CORPUS", "").strip() == "1"
+)
 
 # 源码样本:interface.json 在 assets/ 下;二进制样本:interface.json 在根目录。
 # 元素: (样本目录名, interface.json 相对路径)

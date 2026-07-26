@@ -1,4 +1,4 @@
-"""AUTO-MAS 配置框架 v2（Experimental Alpha）。
+"""AUTO-MAS 原生配置框架 v2。
 
 基于 config_framework_v2 参考实现，提供：
 - ConfigNode / ConfigEntry / ConfigCollection / ConfigGroup 统一抽象
@@ -22,30 +22,37 @@ CONFIG_V2_MODE_SHADOW = "shadow"
 CONFIG_V2_MODE_CANARY = "canary"
 CONFIG_V2_MODE_AUTHORITATIVE = "authoritative"
 
-CONFIG_V2_MODE: str = os.getenv("AUTO_MAS_CONFIG_V2_MODE", "shadow")
-
-# Alpha 默认 shadow；authoritative 值可被识别，但启动门禁会在原生根完成前拒绝。
-if CONFIG_V2_MODE not in (
+_CONFIG_V2_MODES = (
     CONFIG_V2_MODE_OFF,
     CONFIG_V2_MODE_SHADOW,
     CONFIG_V2_MODE_CANARY,
     CONFIG_V2_MODE_AUTHORITATIVE,
-):
-    CONFIG_V2_MODE = CONFIG_V2_MODE_SHADOW
+)
+
+CONFIG_V2_MODE: str = os.getenv(
+    "AUTO_MAS_CONFIG_V2_MODE",
+    CONFIG_V2_MODE_AUTHORITATIVE,
+)
+if CONFIG_V2_MODE not in _CONFIG_V2_MODES:
+    CONFIG_V2_MODE = CONFIG_V2_MODE_AUTHORITATIVE
 
 
 class ConfigV2AuthoritativeUnavailableError(RuntimeError):
-    """Native production roots are not ready for authoritative startup."""
+    """Deprecated compatibility error retained for external imports."""
 
 
 def assert_config_v2_startup_mode_ready(mode: str | None = None) -> None:
-    """Reject authoritative mode until all production roots are native v2."""
+    """Validate the selected startup mode.
+
+    All four modes remain available for controlled rollback and diagnostics.
+    The default authoritative mode is backed by the eight native production
+    roots and no longer needs a feature-readiness exception.
+    """
+
     effective_mode = CONFIG_V2_MODE if mode is None else mode
-    if effective_mode == CONFIG_V2_MODE_AUTHORITATIVE:
-        raise ConfigV2AuthoritativeUnavailableError(
-            "Config v2 authoritative is unavailable: all eight production "
-            "roots must be native Config v2 roots before legacy Config "
-            "initialization can be removed"
+    if effective_mode not in _CONFIG_V2_MODES:
+        raise ValueError(
+            f"unsupported Config v2 startup mode: {effective_mode!r}"
         )
 
 

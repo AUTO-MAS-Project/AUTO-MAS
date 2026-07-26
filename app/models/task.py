@@ -121,6 +121,7 @@ class TaskItem(ABC):
     cycle_next_run_at: str | None = None  # 下一次运行时间
     cycle_waiting_reason: str | None = None  # 当前等待原因
     cycle_current_item_id: str | None = None  # 当前循环队列项ID
+    cycle_next_list: list[dict[str, object]] = field(default_factory=list)
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -184,6 +185,10 @@ class TaskItem(ABC):
                     "cycleNextRunAt": self.cycle_next_run_at,
                     "cycleWaitingReason": self.cycle_waiting_reason,
                     "cycleCurrentItemId": self.cycle_current_item_id,
+                    "cycleNext": (
+                        self.cycle_next_list[0] if self.cycle_next_list else None
+                    ),
+                    "cycleNextList": list(self.cycle_next_list),
                 }
             )
         return data

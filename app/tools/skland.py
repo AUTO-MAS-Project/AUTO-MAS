@@ -362,9 +362,8 @@ async def skland_sign_in(
             )
             rsp = response.json()
         if rsp["status"] != 0:
-            raise Exception(
-                f"使用token: {token_value[:3]}******{token_value[-3:]} 获得认证代码失败: {rsp.get('msg')}"
-            )
+            # 异常文本会进入返回值并被转发到日志与前端通知，不得携带 token 片段
+            raise Exception(f"使用已配置的 token 获得认证代码失败: {rsp.get('msg')}")
         return rsp["data"]["code"]
 
     async def get_binding_list(cred, sign_token, app_code_override: str | None = None):

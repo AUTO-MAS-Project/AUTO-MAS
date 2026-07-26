@@ -71,8 +71,8 @@ class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
     value: Optional[str] = Field(..., description="实际值")
     supported_modes: Optional[
-        List[Literal["AutoProxy", "ManualReview", "ScriptConfig"]]
-    ] = Field(default=None, description="任务项支持的执行模式；非脚本项为空")
+        List[Literal["AutoProxy", "ManualReview", "ScriptConfig", "CycleRun"]]
+    ] = Field(default=None, description="任务项支持的执行模式")
 
 
 class ComboBoxOut(OutBase):
@@ -119,6 +119,162 @@ class EmulatorConfig(BaseModel):
     Info: Optional[EmulatorConfig_Info] = Field(
         default=None, description="模拟器基础信息"
     )
+
+
+class GameConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="游戏名称")
+    Platform: Optional[Literal["pc", "emulator"]] = Field(
+        default=None, description="运行平台"
+    )
+    Provider: Optional[str] = Field(default=None, description="游戏 provider 名称")
+    PresetKey: Optional[str] = Field(default=None, description="来源预设标识")
+
+
+class GameConfig_Data(BaseModel):
+    InstallPath: Optional[str] = Field(default=None, description="PC 游戏安装路径")
+    PackageName: Optional[str] = Field(default=None, description="安卓包名")
+    EmulatorId: Optional[str] = Field(default=None, description="模拟器配置 ID")
+    EmulatorIndex: Optional[str] = Field(default=None, description="模拟器实例索引")
+    AdbPath: Optional[str] = Field(default=None, description="ADB 可执行文件路径")
+    LaunchArgs: Optional[str] = Field(default=None, description="额外启动参数")
+
+
+class GameConfig_Cache(BaseModel):
+    LocalVersion: str = Field(default="", description="本地版本")
+    LatestVersion: str = Field(default="", description="provider 报告的最新版本")
+    NeedsUpdate: bool = Field(default=False, description="是否存在可用更新")
+    Installed: bool = Field(default=False, description="是否已安装")
+    LastChecked: Optional[str] = Field(default=None, description="最后检查时间")
+
+
+class GameConfig(BaseModel):
+    Info: Optional[GameConfig_Info] = Field(default=None, description="游戏基础信息")
+    Data: Optional[GameConfig_Data] = Field(default=None, description="游戏定位数据")
+    Cache: Optional[GameConfig_Cache] = Field(
+        default=None, description="只读 provider 检查缓存"
+    )
+    Revision: Optional[int] = Field(
+        default=None, ge=1, description="用于并发更新校验的配置版本"
+    )
+
+
+class GameConfigIndexItem(BaseModel):
+    uid: str = Field(..., description="游戏 UUID")
+    type: Literal["GameConfig"] = Field(
+        default="GameConfig", description="配置类型"
+    )
+
+
+class GameGetIn(BaseModel):
+    gameId: Optional[str] = Field(default=None, description="游戏 UUID；为空时返回全部")
+
+
+class GameGetOut(OutBase):
+    index: List[GameConfigIndexItem] = Field(
+        default_factory=list, description="游戏配置顺序"
+    )
+    data: Dict[str, GameConfig] = Field(default_factory=dict, description="游戏配置")
+
+
+class GameAddIn(BaseModel):
+    preset: Optional[str] = Field(default=None, description="可选 provider 预设")
+    data: GameConfig = Field(default_factory=GameConfig, description="初始游戏配置")
+
+
+class GameCreateOut(OutBase):
+    gameId: str = Field(default="", description="新建游戏 UUID")
+    data: GameConfig = Field(default_factory=GameConfig, description="新建游戏配置")
+
+
+class GameUpdateIn(BaseModel):
+    gameId: str = Field(..., description="游戏 UUID")
+    data: GameConfig = Field(..., description="游戏配置局部更新")
+    expectedRevision: Optional[int] = Field(
+        default=None, ge=1, description="期望的当前配置版本"
+    )
+
+
+class GameDeleteIn(BaseModel):
+    gameId: str = Field(..., description="游戏 UUID")
+    expectedRevision: Optional[int] = Field(
+        default=None, ge=1, description="期望的当前配置版本"
+    )
+
+
+class GameReorderIn(BaseModel):
+    indexList: List[str] = Field(..., description="完整的游戏 UUID 顺序")
+
+
+class GameOperateIn(BaseModel):
+    gameId: str = Field(..., description="游戏 UUID")
+
+
+class GameProviderItem(BaseModel):
+    name: str = Field(..., description="provider 稳定名称")
+    displayName: str = Field(..., description="provider 展示名称")
+    platforms: List[Literal["pc", "emulator"]] = Field(
+        default_factory=list, description="支持的平台"
+    )
+    capabilities: List[
+        Literal["check", "install_or_update", "launch", "close"]
+    ] = Field(
+        default_factory=list, description="实际支持的动作"
+    )
+    owner: str = Field(..., description="注册 provider 的插件实例")
+
+
+class GameProvidersOut(OutBase):
+    providers: List[GameProviderItem] = Field(
+        default_factory=list, description="当前可用的 provider"
+    )
+
+
+class GamePresetItem(BaseModel):
+    key: str = Field(..., description="预设稳定标识")
+    name: str = Field(..., description="游戏展示名称")
+    platform: Literal["pc", "emulator"] = Field(..., description="运行平台")
+    provider: str = Field(..., description="预设使用的 provider")
+    executable: str = Field(default="", description="PC 可执行文件名提示")
+    packageName: str = Field(default="", description="安卓包名")
+
+
+class GamePresetsOut(OutBase):
+    presets: List[GamePresetItem] = Field(
+        default_factory=list, description="可创建的内置游戏预设"
+    )
+
+
+class GameCheckOut(OutBase):
+    local_version: str = Field(default="", description="本地版本")
+    latest_version: str = Field(default="", description="最新版本")
+    needs_update: bool = Field(default=False, description="是否存在可用更新")
+    installed: bool = Field(default=False, description="是否已安装")
+
+
+class GameOperationOut(OutBase):
+    provider: str = Field(default="", description="实际执行动作的 provider")
+
+
+class GameTaskStatusOut(OutBase):
+    running: bool = Field(default=False, description="任务是否仍在运行")
+    taskId: str = Field(default="", description="任务 UUID")
+    gameId: str = Field(default="", description="游戏 UUID")
+    action: Literal["install_or_update"] = Field(
+        default="install_or_update",
+        description="任务动作",
+    )
+    taskStatus: Optional[
+        Literal["running", "completed", "failed", "cancelled"]
+    ] = Field(default=None, description="任务状态；没有历史任务时为空")
+    phase: str = Field(default="", description="当前执行阶段")
+    percent: float = Field(default=0.0, ge=0.0, le=100.0, description="进度百分比")
+    downloaded: int = Field(default=0, ge=0, description="已下载字节数")
+    total: int = Field(default=0, ge=0, description="总字节数")
+    speed: float = Field(default=0.0, ge=0.0, description="下载速度（字节/秒）")
+    detail: str = Field(default="", description="当前阶段或失败原因")
+    startedAt: Optional[str] = Field(default=None, description="任务开始时间")
+    updatedAt: Optional[str] = Field(default=None, description="任务最后更新时间")
+    finishedAt: Optional[str] = Field(default=None, description="任务结束时间")
 
 
 class ToolsConfig_ArknightsPC(BaseModel):
@@ -349,8 +505,65 @@ class QueueItem_Info(BaseModel):
     )
 
 
+class QueueItem_Schedule(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用循环调度")
+    Mode: Optional[Literal["fixed_time", "interval"]] = Field(
+        default=None, description="循环调度模式"
+    )
+    Days: Optional[
+        List[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ]
+    ] = Field(default=None, description="固定时间调度执行周期")
+    Time: Optional[str] = Field(
+        default=None, description="固定时间调度执行时间，格式 HH:mm"
+    )
+    IntervalMinutes: Optional[int] = Field(
+        default=None, ge=1, le=10080, description="间隔调度分钟数"
+    )
+    IntervalAnchor: Optional[Literal["start", "finish"]] = Field(
+        default=None, description="间隔调度基准"
+    )
+    NextRunAt: Optional[str] = Field(
+        default=None, description="下一次运行时间，格式 YYYY-MM-DD HH:mm:ss"
+    )
+
+
+class QueueItem_Data(BaseModel):
+    LastCycleStartedAt: Optional[str] = Field(
+        default=None, description="上次循环开始时间"
+    )
+    LastCycleFinishedAt: Optional[str] = Field(
+        default=None, description="上次循环完成时间"
+    )
+    CycleRunId: Optional[str] = Field(default=None, description="本轮循环运行ID")
+    CycleState: Optional[
+        Literal["idle", "running", "succeeded", "failed", "cancelled"]
+    ] = Field(default=None, description="循环运行持久化状态")
+    CycleRevision: Optional[int] = Field(
+        default=None, ge=0, le=2147483647, description="队列项循环状态修订号"
+    )
+    CycleResult: Optional[str] = Field(default=None, description="最近循环运行结果")
+    CycleError: Optional[str] = Field(default=None, description="最近循环运行错误")
+    CycleUpdatedAt: Optional[str] = Field(
+        default=None, description="循环状态更新时间"
+    )
+
+
 class QueueItem(BaseModel):
     Info: Optional[QueueItem_Info] = Field(default=None, description="队列项")
+    Schedule: Optional[QueueItem_Schedule] = Field(
+        default=None, description="循环调度配置"
+    )
+    Data: Optional[QueueItem_Data] = Field(default=None, description="循环运行数据")
 
 
 class TimeSet_Info(BaseModel):
@@ -379,6 +592,7 @@ class QueueConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="队列名称")
     TimeEnabled: Optional[bool] = Field(default=None, description="是否启用定时")
     StartUpEnabled: Optional[bool] = Field(default=None, description="是否启动时运行")
+    CycleEnabled: Optional[bool] = Field(default=None, description="是否允许循环运行")
     AfterAccomplish: Optional[
         Literal[
             "NoAction",
@@ -2018,6 +2232,12 @@ class WSTaskInfoUpdatedData(BaseModel):
     )
     cycleCurrentItemId: Optional[str] = Field(
         default=None, description="当前循环队列项ID"
+    )
+    cycleNext: Optional[Dict[str, Any]] = Field(
+        default=None, description="循环队列下一项预览"
+    )
+    cycleNextList: List[Dict[str, Any]] = Field(
+        default_factory=list, description="循环队列后续项预览"
     )
 
 

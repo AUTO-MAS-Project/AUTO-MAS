@@ -26,10 +26,18 @@ from .. import (
     write_wire_toml,
 )
 from ..v2.support.logger import get_logger
+from .legacy_data_upgrade import (
+    LegacyDataUpgradeConflictError,
+    LegacyDataUpgradeError,
+    LegacyDataUpgradeResult,
+    upgrade_legacy_data,
+)
 from .legacy_original_snapshot import (
     LEGACY_ROOT_FILE_NAMES,
+    LegacyDataUpgradeRequiredError,
     LegacyOriginalSnapshot,
     LegacyOriginalSnapshotError,
+    LegacyOriginalSnapshotPermissionError,
     ensure_legacy_original_snapshot,
 )
 
@@ -247,10 +255,16 @@ legacy_adapter = LegacyWireAdapter()
 __all__ = [
     "LEGACY_ROOT_FILE_NAMES",
     "LegacyCodec",
+    "LegacyDataUpgradeConflictError",
+    "LegacyDataUpgradeError",
+    "LegacyDataUpgradeRequiredError",
+    "LegacyDataUpgradeResult",
     "LegacyOriginalSnapshot",
     "LegacyOriginalSnapshotError",
+    "LegacyOriginalSnapshotPermissionError",
     "LegacyPreflight",
     "LegacyWireAdapter",
     "ensure_legacy_original_snapshot",
     "legacy_adapter",
+    "upgrade_legacy_data",
 ]

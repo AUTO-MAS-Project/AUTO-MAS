@@ -34,9 +34,17 @@ def _find_uv() -> str | None:
     """查找 uv 可执行文件路径。
 
     查找顺序：
-    1. Electron 安装位置 (environment/python/Scripts/uv.exe)
-    2. 系统 PATH
+    1. AUTO_MAS_UV_EXE 环境变量（用户/Electron 显式指定）
+    2. Electron 安装位置 (environment/python/Scripts/uv.exe)
+    3. 系统 PATH
     """
+    override = os.environ.get("AUTO_MAS_UV_EXE", "").strip().strip('"')
+    if override:
+        override_path = Path(override)
+        if override_path.is_file() and os.access(override_path, os.X_OK):
+            return str(override_path)
+        logger.warning(f"AUTO_MAS_UV_EXE 指向的路径不可用，已忽略: {override}")
+
     local_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if local_uv.is_file():
         return str(local_uv)
@@ -110,6 +118,8 @@ def install_uv(install_dir: Path | None = None) -> bool:
         cwd=str(Path.cwd()),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if completed.returncode != 0:

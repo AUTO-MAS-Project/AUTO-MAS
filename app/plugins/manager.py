@@ -73,6 +73,23 @@ class _DeclaredScriptTypeBinding:
 class _PluginManager:
     """协调插件的生命周期并为 MAS 核心提供事件 API。"""
 
+    @classmethod
+    def _merge_config_patch(
+        cls,
+        base: Dict[str, Any],
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Deep-merge an instance config patch for omission-based secret keep."""
+
+        merged = deepcopy(base)
+        for key, value in patch.items():
+            current = merged.get(key)
+            if isinstance(current, dict) and isinstance(value, dict):
+                merged[key] = cls._merge_config_patch(current, value)
+            else:
+                merged[key] = deepcopy(value)
+        return merged
+
     def __init__(self) -> None:
         self.started = False
         self.events = EventBus()
@@ -99,6 +116,9 @@ class _PluginManager:
         # API、旧 WS、主 WS 与开发 HMR 均可触发这些入口，不能只依赖传输层锁。
         self._operation_lock = asyncio.Lock()
         self._pending_local_install: asyncio.Task | None = None
+        # start() 派生的失效实例修复任务，stop() 必须取消它，避免其在关闭之后
+        # 继续对插件配置执行读-改-写。
+        self._pending_repair: asyncio.Task | None = None
 
     def invalidate_discover_cache(self) -> None:
         self._discover_cache = None
@@ -358,16 +378,35 @@ class _PluginManager:
                 continue
             for entry_name in project.entry_point_names:
                 infos = installed_entry_points.get(entry_name, [])
-                valid = len(infos) == 1 and all(
-                    self._normalize_distribution_name(getattr(info, "distribution", "")) == distribution
-                    and str(getattr(info, "version", "") or "").strip() == expected_version
-                    and getattr(info, "editable_project_path", None) is None
-                    for info in infos
-                )
-                if not valid:
+                if not infos:
+                    # 缺失入口点不是覆盖漂移：随包 wheel 引导（初始化向导）
+                    # 尚未完成时也会走到这里，报错必须指向正确的处置方向。
+                    raise RuntimeError(
+                        "锁定插件入口点尚未按随包 wheel 安装，插件引导可能未完成: "
+                        f"distribution={project.distribution_name}, entry_point={entry_name}"
+                    )
+                drifts: list[str] = []
+                if len(infos) != 1:
+                    drifts.append(f"入口点提供者数量异常({len(infos)})")
+                for info in infos:
+                    info_distribution = self._normalize_distribution_name(
+                        getattr(info, "distribution", "")
+                    )
+                    info_version = str(getattr(info, "version", "") or "").strip()
+                    if info_distribution != distribution:
+                        drifts.append(f"来源发行版漂移({info_distribution or '未知'})")
+                    if info_version != expected_version:
+                        drifts.append(
+                            f"版本漂移(已安装 {info_version or '未知'}, 锁定 {expected_version})"
+                        )
+                    if getattr(info, "editable_project_path", None) is not None:
+                        drifts.append("editable 覆盖")
+                if drifts:
                     raise RuntimeError(
                         "锁定插件已被 editable/版本漂移覆盖，拒绝继续启动: "
-                        f"distribution={project.distribution_name}, entry_point={entry_name}"
+                        f"distribution={project.distribution_name}, "
+                        f"entry_point={entry_name}, "
+                        + "; ".join(dict.fromkeys(drifts))
                     )
 
     def _should_install_local_project(
@@ -1241,6 +1280,19 @@ class _PluginManager:
     ) -> None:
         """同步脚本类型映射，并把旧宿主脚本配置迁移到插件当前类。"""
 
+        from app.configuration import (
+            CONFIG_V2_MODE,
+            CONFIG_V2_MODE_AUTHORITATIVE,
+        )
+
+        # Authoritative mode exposes Config v2 production roots through
+        # NativeConfigFacade.  The migration below mutates legacy
+        # MultipleConfig internals (sub_config_type/data/_save_methods) and
+        # must never run against a native ConfigCollection.  Native script
+        # roots are already materialized by the authoritative runtime.
+        if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+            return
+
         from app.core import Config
         from app.core.script_types import (
             apply_script_type_registry_to_global_config,
@@ -1678,7 +1730,13 @@ class _PluginManager:
                 else:
                     if next_plugin not in discovered:
                         raise ValueError(f"未发现插件: {next_plugin}")
-                    raw_config = config if config is not None else target.get("config", {})
+                    existing_config = target.get("config", {})
+                    if not isinstance(existing_config, dict):
+                        raise ValueError(f"插件实例配置无效: {instance_id}")
+                    if config is not None and next_plugin == target_plugin:
+                        raw_config = self._merge_config_patch(existing_config, config)
+                    else:
+                        raw_config = config if config is not None else existing_config
                     effective_config = self.config_store.load_effective_config(
                         next_plugin,
                         raw_config,
@@ -1865,7 +1923,9 @@ class _PluginManager:
         await self.loader.load_instances(instances)
         await self._sync_script_types_and_migrate_legacy_configs(discovered=discovered)
         if not fast_startup:
-            asyncio.create_task(self._repair_invalid_instances_after_start(discovered))
+            self._pending_repair = asyncio.create_task(
+                self._repair_invalid_instances_after_start(discovered)
+            )
         self.started = True
         schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
         logger.info("插件系统启动完成")
@@ -1890,56 +1950,61 @@ class _PluginManager:
 
         missing_ids = set(getattr(self.loader, "startup_missing_instances", set()) or set())
 
-        try:
-            root = await self.config_store.get_root(
-                self.plugins_dir,
-                discovered,
-                auto_create_missing=False,
-            )
-        except Exception as e:
-            logger.error(f"读取插件配置失败，跳过失效实例修复: {type(e).__name__}: {e}")
-            return
-
-        instances = root.get("instances", [])
-        if not isinstance(instances, list):
-            return
-
-        changed = False
         removed_ids: list[str] = []
         disabled_ids: list[str] = []
-        new_instances = []
 
-        for item in instances:
-            if not isinstance(item, dict):
+        # 与本文件其余配置读-改-写序列保持一致：整段持配置写锁，避免与并发的
+        # 用户配置写入交叉，导致陈旧快照回写整体回退他人变更（save_root 是
+        # remove-all/re-add-all 语义），或本次自动禁用被对方覆盖。
+        async with self._config_write_lock:
+            try:
+                root = await self.config_store.get_root(
+                    self.plugins_dir,
+                    discovered,
+                    auto_create_missing=False,
+                )
+            except Exception as e:
+                logger.error(f"读取插件配置失败，跳过失效实例修复: {type(e).__name__}: {e}")
+                return
+
+            instances = root.get("instances", [])
+            if not isinstance(instances, list):
+                return
+
+            changed = False
+            new_instances = []
+
+            for item in instances:
+                if not isinstance(item, dict):
+                    new_instances.append(item)
+                    continue
+
+                instance_id = str(item.get("id") or "")
+                if not instance_id:
+                    new_instances.append(item)
+                    continue
+
+                if instance_id in missing_ids:
+                    removed_ids.append(instance_id)
+                    changed = True
+                    continue
+
+                if instance_id in failed and bool(item.get("enabled", False)):
+                    item["enabled"] = False
+                    disabled_ids.append(instance_id)
+                    changed = True
+
                 new_instances.append(item)
-                continue
 
-            instance_id = str(item.get("id") or "")
-            if not instance_id:
-                new_instances.append(item)
-                continue
+            if not changed:
+                return
 
-            if instance_id in missing_ids:
-                removed_ids.append(instance_id)
-                changed = True
-                continue
-
-            if instance_id in failed and bool(item.get("enabled", False)):
-                item["enabled"] = False
-                disabled_ids.append(instance_id)
-                changed = True
-
-            new_instances.append(item)
-
-        if not changed:
-            return
-
-        root["instances"] = new_instances
-        try:
-            await self.config_store.save_root(self.plugins_dir, root)
-        except Exception as e:
-            logger.error(f"保存插件配置失败，失效实例修复未落盘: {type(e).__name__}: {e}")
-            return
+            root["instances"] = new_instances
+            try:
+                await self.config_store.save_root(self.plugins_dir, root)
+            except Exception as e:
+                logger.error(f"保存插件配置失败，失效实例修复未落盘: {type(e).__name__}: {e}")
+                return
 
         if removed_ids:
             logger.warning(f"已删除未发现插件的实例配置: {', '.join(removed_ids)}")
@@ -1973,6 +2038,19 @@ class _PluginManager:
                 pass
             except Exception as e:
                 logger.warning(f"停止插件系统时取消后台安装任务失败: {type(e).__name__}: {e}")
+
+        # 取消 start() 派生的失效实例修复任务，避免其在 unload_all 之后仍按启动
+        # 时的陈旧快照回写插件配置，覆盖关闭期间或重启后的配置变更。
+        pending_repair = getattr(self, "_pending_repair", None)
+        self._pending_repair = None
+        if pending_repair is not None and not pending_repair.done():
+            pending_repair.cancel()
+            try:
+                await pending_repair
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"停止插件系统时取消失效实例修复任务失败: {type(e).__name__}: {e}")
 
         await self.loader.unload_all()
         self.events.clear()

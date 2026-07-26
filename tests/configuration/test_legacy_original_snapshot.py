@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import stat
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,12 +15,51 @@ from unittest.mock import patch
 from app.configuration.compat import legacy_original_snapshot as snapshot_module
 from app.configuration.compat.legacy_original_snapshot import (
     LEGACY_ROOT_FILE_NAMES,
+    LegacyDataUpgradeRequiredError,
     LegacyOriginalSnapshotError,
+    LegacyOriginalSnapshotPermissionError,
     ensure_legacy_original_snapshot,
 )
 
 
 class LegacyOriginalSnapshotTest(unittest.TestCase):
+    def test_pre_v111_data_fails_before_creating_immutable_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            (config_dir / "Config.json").write_text("{}", encoding="utf-8")
+            data_dir = root / "data"
+            data_dir.mkdir()
+            with closing(sqlite3.connect(data_dir / "data.db")) as database:
+                database.execute("CREATE TABLE version(v text)")
+                database.execute("INSERT INTO version VALUES(?)", ("v1.7",))
+                database.commit()
+
+            with self.assertRaisesRegex(
+                LegacyDataUpgradeRequiredError,
+                r"v1\.7.*Config\.check_data",
+            ):
+                ensure_legacy_original_snapshot(config_dir)
+
+            self.assertFalse((config_dir / ".config-v2-original").exists())
+
+    def test_v111_data_allows_immutable_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            data_dir = root / "data"
+            data_dir.mkdir()
+            with closing(sqlite3.connect(data_dir / "data.db")) as database:
+                database.execute("CREATE TABLE version(v text)")
+                database.execute("INSERT INTO version VALUES(?)", ("v1.11",))
+                database.commit()
+
+            snapshot = ensure_legacy_original_snapshot(config_dir)
+
+            self.assertTrue(snapshot.created)
+
     def test_snapshot_preserves_root_order_and_opaque_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir) / "config"
@@ -283,6 +324,90 @@ class LegacyOriginalSnapshotTest(unittest.TestCase):
                 "manifest",
             ):
                 ensure_legacy_original_snapshot(config_dir)
+
+    def test_staging_directory_never_uses_mkdtemp_owner_only_acl(self) -> None:
+        # Python 3.12 的 mkdtemp 在 Windows 上附加仅限当前令牌的 DACL,
+        # 发布后的 generation 会对另一提升级别的进程拒绝访问。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir) / "config"
+            with patch.object(
+                snapshot_module.tempfile,
+                "mkdtemp",
+                side_effect=AssertionError(
+                    "generation staging must not use tempfile.mkdtemp"
+                ),
+            ):
+                snapshot = ensure_legacy_original_snapshot(config_dir)
+
+            self.assertTrue(snapshot.created)
+            self.assertTrue(snapshot.generation_path.is_dir())
+            self.assertEqual(
+                [
+                    path.name
+                    for path in snapshot.generation_path.parent.iterdir()
+                ],
+                [snapshot.generation],
+            )
+
+    def test_access_denied_generation_recovers_with_acl_reset(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir) / "config"
+            first = ensure_legacy_original_snapshot(config_dir)
+            manifest_path = first.manifest_path
+            state = {"repaired": False}
+            real_lstat = Path.lstat
+
+            def fake_lstat(self: Path):
+                if self == manifest_path and not state["repaired"]:
+                    raise PermissionError(13, "Access is denied", str(self), 5)
+                return real_lstat(self)
+
+            def fake_repair(path: Path) -> bool:
+                self.assertEqual(path, first.generation_path)
+                state["repaired"] = True
+                return True
+
+            with (
+                patch.object(Path, "lstat", fake_lstat),
+                patch.object(
+                    snapshot_module,
+                    "_try_restore_acl_inheritance",
+                    side_effect=fake_repair,
+                ),
+            ):
+                recovered = ensure_legacy_original_snapshot(config_dir)
+
+            self.assertFalse(recovered.created)
+            self.assertEqual(recovered.generation, first.generation)
+            self.assertTrue(state["repaired"])
+
+    def test_access_denied_generation_fails_closed_without_acl_repair(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir) / "config"
+            first = ensure_legacy_original_snapshot(config_dir)
+            manifest_path = first.manifest_path
+            real_lstat = Path.lstat
+
+            def fake_lstat(self: Path):
+                if self == manifest_path:
+                    raise PermissionError(13, "Access is denied", str(self), 5)
+                return real_lstat(self)
+
+            with (
+                patch.object(Path, "lstat", fake_lstat),
+                patch.object(
+                    snapshot_module,
+                    "_try_restore_acl_inheritance",
+                    return_value=False,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    LegacyOriginalSnapshotPermissionError,
+                    "not accessible",
+                ):
+                    ensure_legacy_original_snapshot(config_dir)
 
     def test_corrupted_snapshot_bytes_fail_hash_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

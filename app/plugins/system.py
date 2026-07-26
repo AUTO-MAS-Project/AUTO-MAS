@@ -88,5 +88,9 @@ def get_system_plugin_default_instances() -> dict[str, dict[str, Any]]:
 def get_core_plugin_routers() -> list[APIRouter]:
     ensure_system_plugin_source_on_path()
     from auto_mas_core.routers import get_routers
+    from app.api.game_center import router as game_center_router
 
-    return list(get_routers())
+    routers = list(get_routers())
+    if game_center_router not in routers:
+        routers.append(game_center_router)
+    return routers

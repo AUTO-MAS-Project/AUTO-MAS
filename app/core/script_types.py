@@ -94,6 +94,33 @@ LEGACY_SCRIPT_TYPE_BY_TYPE_KEY = {
     item["type_key"]: item for item in LEGACY_SCRIPT_TYPE_METADATA
 }
 
+# 宿主自身在 _register_builtin_providers 中注册的核心脚本类型。
+# 只有这些 provider 缺失才意味着宿主 bootstrap 已损坏，需要硬失败终止启动；
+# 其余脚本类型均由插件承载，缺失时必须降级为"记录不可用"，保证应用可启动。
+BUILTIN_CORE_TYPE_KEYS = frozenset({"SRC", "General"})
+
+# Config v2 原生脚本/用户记录类名 -> 权威脚本类型键。
+# 与 app/core/native_config.py 的 _NATIVE_SCRIPT_CRUD_DESCRIPTORS 保持一致。
+# PluginScript/PluginUser 记录必须按 Meta.PluginTypeKey 解析，不在此表内。
+NATIVE_SCRIPT_ENTRY_TYPE_KEYS: dict[str, str] = {
+    "MaaScript": "MAA",
+    "SrcScript": "SRC",
+    "MaaEndScript": "MaaEnd",
+    "M9AScript": "M9A",
+    "MaaFWScript": "MaaFW",
+    "GeneralScript": "General",
+    "OkwwScript": "Okww",
+}
+NATIVE_USER_ENTRY_TYPE_KEYS: dict[str, str] = {
+    "MaaUser": "MAA",
+    "SrcUser": "SRC",
+    "MaaEndUser": "MaaEnd",
+    "M9AUser": "M9A",
+    "MaaFWUser": "MaaFW",
+    "GeneralUser": "General",
+    "OkwwUser": "Okww",
+}
+
 
 def _is_legacy_config_class(config_class: type[Any]) -> bool:
     """Check the legacy boundary without importing it on native-only startup."""
@@ -318,22 +345,45 @@ class ScriptTypeRegistry:
         return self._providers[type_key]
 
     def get_by_script_config(self, config: Any | type[Any] | str) -> ScriptTypeProvider:
-        """根据脚本配置类解析提供者。"""
+        """根据脚本配置类解析提供者。
+
+        Config v2 原生记录类（如 MaaFWScript）不会以类名进注册表——插件
+        provider 以自身配置类名（如 MaaFWConfig）注册。此处按原生类名表
+        回退到类型键解析，保证已注册 provider 的原生记录可以被解析。
+        """
 
         class_name = _resolve_class_name(config)
         provider = self._providers_by_script_class.get(class_name)
-        if provider is None:
-            raise KeyError(f"未注册的脚本配置类: {class_name}")
-        return provider
+        if provider is not None:
+            return provider
+        native_type_key = NATIVE_SCRIPT_ENTRY_TYPE_KEYS.get(class_name)
+        if native_type_key is not None:
+            try:
+                return self.get(native_type_key)
+            except KeyError:
+                raise KeyError(
+                    f"未注册的脚本配置类: {class_name} "
+                    f"(脚本类型 {native_type_key} 的 provider 未加载)"
+                ) from None
+        raise KeyError(f"未注册的脚本配置类: {class_name}")
 
     def get_by_user_config(self, config: Any | type[Any] | str) -> ScriptTypeProvider:
         """根据用户配置类解析提供者。"""
 
         class_name = _resolve_class_name(config)
         provider = self._providers_by_user_class.get(class_name)
-        if provider is None:
-            raise KeyError(f"未注册的用户配置类: {class_name}")
-        return provider
+        if provider is not None:
+            return provider
+        native_type_key = NATIVE_USER_ENTRY_TYPE_KEYS.get(class_name)
+        if native_type_key is not None:
+            try:
+                return self.get(native_type_key)
+            except KeyError:
+                raise KeyError(
+                    f"未注册的用户配置类: {class_name} "
+                    f"(脚本类型 {native_type_key} 的 provider 未加载)"
+                ) from None
+        raise KeyError(f"未注册的用户配置类: {class_name}")
 
     def list(self) -> list[ScriptTypeProvider]:
         """按注册顺序返回全部提供者。"""
@@ -728,13 +778,76 @@ def apply_script_type_registry_to_global_config(global_config: Any) -> None:
             provider.bind_related_config(global_config)
 
 
+def _script_record_label(script_id: Any, script_config: Any) -> str:
+    """尽力解析脚本记录的展示名称，失败时回退到 id。"""
+
+    try:
+        script_name = str(script_config.get("Info", "Name") or "").strip()
+    except Exception:
+        script_name = ""
+    return script_name or str(script_id)
+
+
 def validate_script_type_registry(global_config: Any) -> list[str]:
-    """校验当前已加载脚本配置是否都存在对应 provider。"""
+    """校验当前已加载脚本配置是否都存在对应 provider。
+
+    返回值 missing 仅包含内建核心 provider（BUILTIN_CORE_TYPE_KEYS）缺失
+    的硬失败记录；插件承载的脚本记录缺 provider 时记录 error 日志并继续
+    启动——对应记录在读取时会经由 build_unavailable_plugin_fallback_provider
+    呈现为"不可用"，插件卸载或损坏不得阻止应用启动。
+
+    Config v2 authoritative 模式下 global_config 是 NativeConfigFacade，
+    ScriptConfig 中是原生记录（MaaFWScript/PluginScript 等）：其类名不进
+    注册表键空间，必须通过 get_script_type_key 按权威类型键解析。
+    """
 
     from app.models.plugin_script_config import PluginScriptConfig
 
     missing: list[str] = []
+    native_type_key_resolver = getattr(global_config, "get_script_type_key", None)
+
     for script_id, script_config in global_config.ScriptConfig.items():
+        # ---- Config v2 authoritative：原生记录统一按脚本类型键解析 ----
+        if native_type_key_resolver is not None:
+            config_class_name = type(script_config).__name__
+            try:
+                type_key = str(native_type_key_resolver(script_id) or "").strip()
+            except Exception as exc:
+                logger.error(
+                    "脚本记录无法解析脚本类型键，该脚本将标记为不可用，启动继续: "
+                    f"script_id={script_id}, "
+                    f"script_name={_script_record_label(script_id, script_config)}, "
+                    f"config_class={config_class_name} "
+                    f"({type(exc).__name__}: {exc})"
+                )
+                continue
+            if not type_key:
+                logger.error(
+                    "脚本记录缺少脚本类型键，该脚本将标记为不可用，启动继续: "
+                    f"script_id={script_id}, "
+                    f"script_name={_script_record_label(script_id, script_config)}, "
+                    f"config_class={config_class_name}"
+                )
+                continue
+            try:
+                script_type_registry.get(type_key)
+            except KeyError:
+                label = _script_record_label(script_id, script_config)
+                if type_key in BUILTIN_CORE_TYPE_KEYS:
+                    missing.append(
+                        f"script_id={script_id}, script_name={label}, "
+                        f"type_key={type_key}, config_class={config_class_name}"
+                    )
+                    continue
+                logger.error(
+                    "插件承载的脚本类型 provider 未加载，该脚本将标记为不可用，"
+                    "启动继续: "
+                    f"script_id={script_id}, script_name={label}, "
+                    f"type_key={type_key}, config_class={config_class_name}"
+                )
+            continue
+
+        # ---- legacy 模式：维持按类名解析 + 遗留回退 ----
         if isinstance(script_config, PluginScriptConfig):
             type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
             if not type_key:
@@ -742,11 +855,11 @@ def validate_script_type_registry(global_config: Any) -> list[str]:
             try:
                 script_type_registry.get(type_key)
             except KeyError:
-                script_name = str(script_config.get("Info", "Name") or "").strip()
-                label = script_name or str(script_id)
-                logger.warning(
-                    "插件脚本类型 provider 未加载: "
-                    f"script_id={script_id}, script_name={label}, type_key={type_key}"
+                logger.error(
+                    "插件脚本类型 provider 未加载，该脚本将标记为不可用，启动继续: "
+                    f"script_id={script_id}, "
+                    f"script_name={_script_record_label(script_id, script_config)}, "
+                    f"type_key={type_key}"
                 )
             continue
 
@@ -754,53 +867,37 @@ def validate_script_type_registry(global_config: Any) -> list[str]:
             provider = script_type_registry.get_by_script_config(script_config)
         except KeyError:
             fallback_provider = build_legacy_fallback_provider_by_script_config(script_config)
+            label = _script_record_label(script_id, script_config)
             if fallback_provider is not None:
-                script_name = ""
-                try:
-                    script_name = str(script_config.get("Info", "Name") or "").strip()
-                except Exception:
-                    script_name = ""
-                label = script_name or str(script_id)
                 logger.warning(
                     "脚本类型 provider 未启用，启动时将以离线模式保留该脚本: "
                     f"script_id={script_id}, script_name={label}, "
                     f"type={fallback_provider.type_key}, config_class={type(script_config).__name__}"
                 )
                 continue
-            script_name = ""
-            try:
-                script_name = str(script_config.get("Info", "Name") or "").strip()
-            except Exception:
-                script_name = ""
-            label = script_name or str(script_id)
-            missing.append(
-                f"script_id={script_id}, script_name={label}, config_class={type(script_config).__name__}"
+            logger.error(
+                "脚本记录未找到可用 provider，该脚本将标记为不可用，启动继续: "
+                f"script_id={script_id}, script_name={label}, "
+                f"config_class={type(script_config).__name__}"
             )
             continue
 
         if not _is_provider_compatible_with_script_config(provider, script_config):
-            script_name = ""
-            try:
-                script_name = str(script_config.get("Info", "Name") or "").strip()
-            except Exception:
-                script_name = ""
-            label = script_name or str(script_id)
-            missing.append(
-                f"script_id={script_id}, script_name={label}, provider={provider.type_key}, "
+            logger.error(
+                "脚本配置类与 provider 不兼容，该脚本将标记为不可用，启动继续: "
+                f"script_id={script_id}, "
+                f"script_name={_script_record_label(script_id, script_config)}, "
+                f"provider={provider.type_key}, "
                 f"config_class={type(script_config).__name__}"
             )
             continue
 
         if provider.script_config_class is not type(script_config):
-            script_name = ""
-            try:
-                script_name = str(script_config.get("Info", "Name") or "").strip()
-            except Exception:
-                script_name = ""
-            label = script_name or str(script_id)
             logger.warning(
                 "脚本配置类已通过兼容映射接入 provider，启动继续: "
-                f"script_id={script_id}, script_name={label}, provider={provider.type_key}, "
+                f"script_id={script_id}, "
+                f"script_name={_script_record_label(script_id, script_config)}, "
+                f"provider={provider.type_key}, "
                 f"loaded_class={type(script_config).__module__}.{type(script_config).__name__}, "
                 f"provider_class={provider.script_config_class.__module__}.{provider.script_config_class.__name__}"
             )
@@ -860,7 +957,13 @@ def _is_provider_compatible_with_script_config(
         provider.script_config_class.__name__,
         str(provider.legacy_config_class_name or "").strip(),
     }
-    return config_class_name in compatible_names
+    if config_class_name in compatible_names:
+        return True
+
+    # Config v2 原生记录类通过类型键接入 provider（与 get_by_script_config
+    # 的原生回退保持一致），类型键一致即视为兼容。
+    native_type_key = NATIVE_SCRIPT_ENTRY_TYPE_KEYS.get(config_class_name)
+    return native_type_key is not None and native_type_key == provider.type_key
 
 
 def _normalize_entry_point_provider(loaded: Any) -> list[ScriptTypeProvider]:

@@ -68,3 +68,9 @@ class TestWebSocketSenderMigration(TestCase):
         self.assertIn("useWebSocket", source)
         self.assertNotIn("new WebSocket", source)
         self.assertNotIn("/api/ws/plugin", source)
+
+    def test_startup_queue_uses_ws_core_connection_state(self) -> None:
+        source = Path("app/core/task_manager.py").read_text(encoding="utf-8")
+
+        self.assertIn("MainConnection.is_connected", source)
+        self.assertNotIn("Config.websocket", source)
