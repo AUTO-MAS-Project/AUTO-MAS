@@ -94,28 +94,13 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
 async def manual_game_sign() -> OutBase:
     """手动触发游戏社区签到"""
 
-    # The native GameSign scheduler/runner port is not ready yet.  Do not
-    # accidentally import the legacy sign-in chain (which performs network
-    # work and reads legacy ToolsConfig) merely because an authoritative API
-    # route was called.
-    from app.configuration import (
-        CONFIG_V2_MODE,
-        CONFIG_V2_MODE_AUTHORITATIVE,
-    )
-
-    if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
-        return OutBase(
-            code=503,
-            status="unavailable",
-            message=(
-                "Config v2 authoritative 模式尚未提供 GameSign 执行端口；"
-                "请使用 shadow/legacy 兼容模式或等待原生调度器完成"
-            ),
-        )
-
     try:
-        from app.tools.game_sign import run_all_sign_in, format_sign_results
-        from app.tools.game_sign import merge_sign_results
+        from app.tools.game_sign import (
+            format_sign_results,
+            get_game_sign_accounts,
+            merge_sign_results,
+            run_all_sign_in,
+        )
 
         results = await run_all_sign_in(force=True)
 
@@ -129,7 +114,7 @@ async def manual_game_sign() -> OutBase:
         # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
         today = datetime.now().strftime("%Y-%m-%d")
         all_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+        for uid, account in get_game_sign_accounts().items():
             if account.get("GameSignAccount", "Enabled"):
                 if account.get("GameSignAccount", "LastSignDate") != today:
                     all_signed = False

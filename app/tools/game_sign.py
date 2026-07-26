@@ -33,6 +33,21 @@ from .game_sign_result import build_skland_sign_results
 logger = get_logger("游戏社区签到")
 
 
+def get_game_sign_accounts():
+    """Return the selected runtime's authoritative account collection.
+
+    Config v2 owns game-sign accounts as an independent production root,
+    while rollback modes retain the historical collection nested under
+    `ToolsConfig`. Keep this compatibility decision at the boundary so the
+    signer itself never reaches into Config v2 storage internals.
+    """
+
+    native_accounts = getattr(Config, "GameSign_Accounts", None)
+    if native_accounts is not None:
+        return native_accounts
+    return Config.ToolsConfig.GameSign_Accounts
+
+
 async def _check_system_time() -> bool:
     """校准系统时间，避免因时间偏差导致签到失败
 
@@ -77,7 +92,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
         logger.warning("系统时间偏差过大，跳过本轮游戏社区签到")
         return results
 
-    for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+    for uid, account in get_game_sign_accounts().items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
         account_enabled = account.get("GameSignAccount", "Enabled")
         account_uid = str(uid)

@@ -982,6 +982,7 @@ class WSClientManager:
         self._max_history_per_client = 200
         self._debug_connections: List[Any] = []  # WebSocket 连接列表
         self._logger = get_logger("WS管理器")
+        self._closing = False
         self._reserved_reverse_channels: set[str] = {
             "client",
             "message",
@@ -990,6 +991,12 @@ class WSClientManager:
         }
         self._system_clients.add(self.MAIN_CLIENT_NAME)
         self._system_clients.add(self.KOISHI_CLIENT_NAME)
+
+    @property
+    def is_closing(self) -> bool:
+        """返回辅助 WebSocket 管理器是否已进入关闭态。"""
+
+        return self._closing
 
     def register_reverse_channel(
         self,
@@ -1194,6 +1201,8 @@ class WSClientManager:
     ) -> WebSocketClient:
         """创建新的 WebSocket 客户端"""
 
+        if self._closing:
+            raise RuntimeError("辅助 WebSocket 管理器正在关闭")
         if name in self._reverse_sessions and name in self._system_clients:
             raise ValueError(f"系统会话 [{name}] 已被占用，不能创建同名正向客户端")
 
@@ -1288,6 +1297,8 @@ class WSClientManager:
         allow_commands: bool = True,
     ) -> ReverseWebSocketSession:
         """正式的反向 WebSocket 打开接口。"""
+        if self._closing:
+            raise RuntimeError("辅助 WebSocket 管理器正在关闭")
         if name in self._clients and name in self._system_clients:
             raise ValueError(f"系统会话 [{name}] 已被正向客户端占用，不能创建同名反向会话")
 
@@ -1372,8 +1383,38 @@ class WSClientManager:
             raise
         return session
 
+    async def shutdown(self) -> None:
+        """关闭全部正向/反向辅助连接并停止后台重连任务。"""
+
+        self._closing = True
+        names = set(self._clients) | set(self._reverse_sessions)
+        for name in names:
+            try:
+                await self.disconnect_client(name)
+            except Exception as error:
+                self._logger.warning(
+                    f"关闭辅助 WebSocket [{name}] 失败: "
+                    f"{type(error).__name__}: {error}"
+                )
+
+        remaining_tasks = [
+            task for task in self._tasks.values() if not task.done()
+        ]
+        for task in remaining_tasks:
+            task.cancel()
+        if remaining_tasks:
+            await asyncio.gather(*remaining_tasks, return_exceptions=True)
+
+        self._tasks.clear()
+        self._reverse_sessions.clear()
+        self._clients.clear()
+        self._message_history.clear()
+        self._debug_connections.clear()
+
     async def connect_client(self, name: str) -> bool:
         """连接客户端（非阻塞方式启动）"""
+        if self._closing:
+            return False
         client = self._clients.get(name)
         if not client:
             session = self._reverse_sessions.get(name)

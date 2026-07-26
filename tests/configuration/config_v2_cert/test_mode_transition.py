@@ -4,8 +4,7 @@
 - ``LegacyWireAdapter`` 属性互斥性
 - ``shadow_write`` 文件后缀行为（off 不写、shadow 写 ``.v2.shadow.toml``、
   canary 写 ``.v2.toml``）
-- ``assert_config_v2_startup_mode_ready`` 门禁（authoritative 必须
-  fail-closed，其余模式放行）
+- ``assert_config_v2_startup_mode_ready`` 对四种受支持模式均放行
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from app.configuration import (
     CONFIG_V2_MODE_CANARY,
     CONFIG_V2_MODE_OFF,
     CONFIG_V2_MODE_SHADOW,
-    ConfigV2AuthoritativeUnavailableError,
     assert_config_v2_startup_mode_ready,
 )
 from app.configuration.compat import (
@@ -227,7 +225,7 @@ class ShadowWriteFileSuffixTest(unittest.TestCase):
 
 
 class StartupModeGateTest(unittest.TestCase):
-    """``assert_config_v2_startup_mode_ready`` 必须只拒绝 authoritative。"""
+    """四种受支持模式都可启动，authoritative 为生产默认值。"""
 
     def test_off_mode_passes_gate(self) -> None:
         assert_config_v2_startup_mode_ready(CONFIG_V2_MODE_OFF)
@@ -238,25 +236,26 @@ class StartupModeGateTest(unittest.TestCase):
     def test_canary_mode_passes_gate(self) -> None:
         assert_config_v2_startup_mode_ready(CONFIG_V2_MODE_CANARY)
 
-    def test_authoritative_mode_fails_closed(self) -> None:
-        with self.assertRaisesRegex(
-            ConfigV2AuthoritativeUnavailableError,
-            "all eight production roots",
-        ):
-            assert_config_v2_startup_mode_ready(
-                CONFIG_V2_MODE_AUTHORITATIVE
-            )
+    def test_authoritative_mode_passes_gate(self) -> None:
+        assert_config_v2_startup_mode_ready(
+            CONFIG_V2_MODE_AUTHORITATIVE
+        )
 
     def test_none_mode_uses_process_default_and_may_pass(self) -> None:
         """``mode=None`` 时使用进程级 ``CONFIG_V2_MODE`` 默认值。"""
         import app.configuration as config_module
 
         default_mode = config_module.CONFIG_V2_MODE
-        if default_mode == CONFIG_V2_MODE_AUTHORITATIVE:
-            with self.assertRaises(ConfigV2AuthoritativeUnavailableError):
-                assert_config_v2_startup_mode_ready(None)
-        else:
-            assert_config_v2_startup_mode_ready(None)
+        self.assertIn(
+            default_mode,
+            {
+                CONFIG_V2_MODE_OFF,
+                CONFIG_V2_MODE_SHADOW,
+                CONFIG_V2_MODE_CANARY,
+                CONFIG_V2_MODE_AUTHORITATIVE,
+            },
+        )
+        assert_config_v2_startup_mode_ready(None)
 
 
 class AuthoritativeModeBlockTransitionTest(unittest.IsolatedAsyncioTestCase):
@@ -284,8 +283,8 @@ class AuthoritativeModeBlockTransitionTest(unittest.IsolatedAsyncioTestCase):
                 ),
             ):
                 with self.assertRaisesRegex(
-                    ConfigV2AuthoritativeUnavailableError,
-                    "all eight production roots",
+                    RuntimeError,
+                    "initialized by NativeConfigFacade",
                 ):
                     await service._authoritative_load()
 
@@ -316,8 +315,8 @@ class AuthoritativeModeBlockTransitionTest(unittest.IsolatedAsyncioTestCase):
                 ) as shadow_write,
             ):
                 with self.assertRaisesRegex(
-                    ConfigV2AuthoritativeUnavailableError,
-                    "all eight production roots",
+                    RuntimeError,
+                    "rejects legacy JSON-first saves",
                 ):
                     await service.save_config(
                         legacy_path,

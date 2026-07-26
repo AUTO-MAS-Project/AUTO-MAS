@@ -10,12 +10,17 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import re
+import shutil
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
+import httpx
 from pydantic import BaseModel
 
 from app.configuration.authoritative import (
@@ -40,6 +45,8 @@ from app.configuration.roots.script import (
     MaaFWUser,
     MaaScript,
     MaaUser,
+    OkwwScript,
+    OkwwUser,
     PluginScript,
     PluginUser,
     SrcScript,
@@ -49,6 +56,15 @@ from app.configuration.v2.collection import ConfigCollection
 from app.configuration.v2.entry import ConfigEntry
 from app.configuration.v2.fields import is_virtual_model_field
 from app.configuration.v2.manager import config_manager
+from app.utils import get_logger
+from app.utils.constants import (
+    RESOURCE_STAGE_DATE_TEXT,
+    RESOURCE_STAGE_DROP_INFO,
+    RESOURCE_STAGE_INFO,
+    UTC4,
+)
+
+logger = get_logger("配置管理")
 
 
 PowerAction = Literal[
@@ -94,6 +110,9 @@ _NATIVE_SCRIPT_CRUD_DESCRIPTORS = (
     _NativeScriptCrudDescriptor(
         "General", "GeneralConfig", GeneralScript, "GeneralUserConfig", GeneralUser
     ),
+    _NativeScriptCrudDescriptor(
+        "Okww", "OkwwConfig", OkwwScript, "OkwwUserConfig", OkwwUser
+    ),
     # Plugin records are readable so existing users can inspect opaque
     # metadata.  Their public type is resolved from Meta.PluginTypeKey and
     # writes are handled by the provider-aware native codec, never by this
@@ -134,6 +153,7 @@ class NativeConfigFacade:
         *,
         workspace_root: Path | None = None,
         config_directory: Path | None = None,
+        bind_system_settings: bool = False,
     ) -> None:
         self.workspace_root = Path(
             Path.cwd() if workspace_root is None else workspace_root
@@ -154,6 +174,11 @@ class NativeConfigFacade:
         self.power_sign: PowerAction = "NoAction"
         self.temp_task: list[asyncio.Task[Any]] = []
         self.loop: asyncio.AbstractEventLoop | None = None
+        self._stage_refreshing = False
+        self._repo: Any | None = None
+        self._repo_initialized = False
+        self._bind_system_settings = bind_system_settings
+        self._system_observers_registered = False
 
         self._runtime = AuthoritativeConfigurationRuntime(self.config_path)
 
@@ -225,9 +250,87 @@ class NativeConfigFacade:
         self.history_path.mkdir(parents=True, exist_ok=True)
         self.loop = asyncio.get_running_loop()
         await self._runtime.initialize()
+        if self._bind_system_settings:
+            self._register_system_setting_observers()
+            await self._apply_current_system_settings()
 
     def close(self) -> None:
+        self._disconnect_system_setting_observers()
+        for task in self.temp_task:
+            if not task.done():
+                task.cancel()
+        self.temp_task.clear()
         self._runtime.close()
+
+    @staticmethod
+    def _system_handler() -> Any:
+        """Resolve the host system service lazily to avoid import cycles."""
+
+        from app.services import System
+
+        return System
+
+    async def _on_self_start_changed(self, _sender: object, event: Any) -> None:
+        await self._system_handler().set_SelfStart(bool(event.value))
+
+    async def _on_allow_sleep_changed(self, _sender: object, event: Any) -> None:
+        await self._system_handler().set_Sleep(bool(event.value))
+
+    def _register_system_setting_observers(self) -> None:
+        if self._system_observers_registered:
+            return
+        root = self.roots.config
+        root.connect_observer(
+            self._on_self_start_changed,
+            group="Start",
+            field="IfSelfStart",
+        )
+        root.connect_observer(
+            self._on_allow_sleep_changed,
+            group="Function",
+            field="IfAllowSleep",
+        )
+        self._system_observers_registered = True
+
+    def _disconnect_system_setting_observers(self) -> None:
+        if not self._system_observers_registered or not self.initialized:
+            return
+        root = self.roots.config
+        root.disconnect_observer(
+            self._on_self_start_changed,
+            group="Start",
+            field="IfSelfStart",
+        )
+        root.disconnect_observer(
+            self._on_allow_sleep_changed,
+            group="Function",
+            field="IfAllowSleep",
+        )
+        self._system_observers_registered = False
+
+    async def _apply_current_system_settings(self) -> None:
+        """Apply hydrated values without making host startup fail on OS errors."""
+
+        system = self._system_handler()
+        actions = (
+            (
+                "Start.IfSelfStart",
+                system.set_SelfStart,
+                self.get("Start", "IfSelfStart"),
+            ),
+            (
+                "Function.IfAllowSleep",
+                system.set_Sleep,
+                self.get("Function", "IfAllowSleep"),
+            ),
+        )
+        for path, setter, value in actions:
+            try:
+                await setter(bool(value))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(f"应用系统配置失败: {path}")
 
     def export_r6_rollback_bundle(self, export_parent: Path | None = None) -> Path:
         return self._runtime.export_r6_rollback_bundle(export_parent)
@@ -237,6 +340,24 @@ class NativeConfigFacade:
 
     async def set(self, group: str, field: str, value: object) -> None:
         await self.roots.config.set(group, field, value)
+
+    @property
+    def proxy(self) -> httpx.Proxy | None:
+        """Return the configured HTTP proxy without exposing credentials."""
+
+        proxy_address = str(self.get("Update", "ProxyAddress") or "").strip()
+        if not proxy_address:
+            return None
+        if not proxy_address.startswith(
+            ("http://", "https://", "socks5://", "socks4://")
+        ):
+            proxy_address = f"http://{proxy_address}"
+        try:
+            logger.info("已启用网络代理")
+            return httpx.Proxy(proxy_address)
+        except Exception as exc:
+            logger.warning(f"代理配置无效 ({type(exc).__name__})")
+            return None
 
     async def toDict(  # noqa: N802 - stable host transport surface
         self,
@@ -518,6 +639,23 @@ class NativeConfigFacade:
         return fallback
 
     @classmethod
+    def _merge_form_payload(
+        cls,
+        base: Mapping[str, Any],
+        override: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Deep-merge a partial form update without retaining shared objects."""
+
+        merged = copy.deepcopy(dict(base))
+        for key, value in override.items():
+            current = merged.get(key)
+            if isinstance(current, dict) and isinstance(value, Mapping):
+                merged[key] = cls._merge_form_payload(current, value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
+    @classmethod
     async def _provider_form_payload(
         cls,
         provider: Any,
@@ -734,12 +872,22 @@ class NativeConfigFacade:
         index: list[dict[str, str]] = []
         data: dict[str, dict[str, object]] = {}
         for uid, entry in selected:
-            descriptor = self._script_descriptor_for_entry(entry)
+            try:
+                descriptor = self._script_descriptor_for_entry(entry)
+                transport = await self._legacy_script_entry_transport(
+                    entry,
+                    descriptor,
+                )
+            except Exception as exc:
+                if script_id is not None:
+                    raise
+                logger.warning(
+                    "跳过无法投影的脚本记录 "
+                    f"{uid} ({type(entry).__name__}): {type(exc).__name__}"
+                )
+                continue
             index.append({"uid": str(uid), "type": descriptor.legacy_script_type})
-            data[str(uid)] = await self._legacy_script_entry_transport(
-                entry,
-                descriptor,
-            )
+            data[str(uid)] = transport
         return index, data
 
     async def update_script(
@@ -757,7 +905,13 @@ class NativeConfigFacade:
             self._require_native_provider(provider, action="更新")
             from app.core.script_config_codec import form_to_storage
 
-            payload = await form_to_storage(provider, dict(data), "script")
+            current_form = await self._provider_form_payload(
+                provider,
+                entry.get("PluginData", "Config"),
+                "script",
+            )
+            merged_form = self._merge_form_payload(current_form, data)
+            payload = await form_to_storage(provider, merged_form, "script")
             name = self._record_name(
                 provider,
                 payload,
@@ -892,8 +1046,14 @@ class NativeConfigFacade:
             self._require_native_provider(provider, action="更新用户")
             from app.core.script_config_codec import form_to_storage
 
-            payload = await form_to_storage(provider, dict(data), "user")
             user = script.UserData[UUID(user_id)]
+            current_form = await self._provider_form_payload(
+                provider,
+                user.get("PluginData", "Config"),
+                "user",
+            )
+            merged_form = self._merge_form_payload(current_form, data)
+            payload = await form_to_storage(provider, merged_form, "user")
             name = self._record_name(
                 provider,
                 payload,
@@ -959,18 +1119,18 @@ class NativeConfigFacade:
 
         records: list[ScriptRecord] = []
         for uid, entry in selected:
-            provider = self._resolve_script_record_provider(entry)
-            config_data = await self._script_record_config_data(entry)
-            name = self._record_name(
-                provider,
-                config_data,
-                str(entry.get("Info", "Name") or provider.display_name),
-            )
-            if type(entry) is PluginScript:
-                config_data.setdefault("Info", {})["Name"] = name
-            capability = provider.resolve_record_capability(config_data)
-            records.append(
-                ScriptRecord(
+            try:
+                provider = self._resolve_script_record_provider(entry)
+                config_data = await self._script_record_config_data(entry)
+                name = self._record_name(
+                    provider,
+                    config_data,
+                    str(entry.get("Info", "Name") or provider.display_name),
+                )
+                if type(entry) is PluginScript:
+                    config_data.setdefault("Info", {})["Name"] = name
+                capability = provider.resolve_record_capability(config_data)
+                record = ScriptRecord(
                     id=str(uid),
                     type=provider.type_key,
                     name=name,
@@ -991,7 +1151,15 @@ class NativeConfigFacade:
                     edit_hint=provider.metadata.get("script_edit_hint"),
                     user_count=len(entry.UserData),
                 )
-            )
+            except Exception as exc:
+                if script_id is not None:
+                    raise
+                logger.warning(
+                    "跳过无法投影的脚本记录 "
+                    f"{uid} ({type(entry).__name__}): {type(exc).__name__}"
+                )
+                continue
+            records.append(record)
         return records
 
     async def get_user_records(
@@ -1349,11 +1517,975 @@ class NativeConfigFacade:
             index_list,
         )
 
+    def _get_repo(self) -> Any | None:
+        """Lazily open the workspace repository without a startup dependency."""
+
+        if self._repo_initialized:
+            return self._repo
+        self._repo_initialized = True
+        try:
+            from git import Repo
+
+            self._repo = Repo(self.workspace_root)
+        except Exception as exc:
+            logger.warning(f"Git 仓库初始化失败 ({type(exc).__name__})")
+            self._repo = None
+        return self._repo
+
+    async def get_git_version(self) -> tuple[bool, str, str]:
+        """Return repository or bundled-snapshot version information."""
+
+        def read_git_info() -> tuple[bool, str, str]:
+            repo = self._get_repo()
+            if repo is None:
+                snapshot_path = (
+                    self.workspace_root / "res" / "integration-snapshot.json"
+                )
+                try:
+                    snapshot = json.loads(
+                        snapshot_path.read_text(encoding="utf-8")
+                    )
+                    source = snapshot.get("source", {})
+                    commit_hash = str(
+                        source.get("official_dev_v2") or "snapshot"
+                    )
+                    snapshot_id = str(
+                        snapshot.get("snapshot_id") or "bundled"
+                    )
+                    generated_at = str(
+                        snapshot.get("generated_at") or "unknown"
+                    )
+                    return (
+                        True,
+                        f"{commit_hash}+{snapshot_id}",
+                        generated_at,
+                    )
+                except (
+                    OSError,
+                    UnicodeError,
+                    json.JSONDecodeError,
+                    AttributeError,
+                ):
+                    return False, "unknown", "unknown"
+
+            current_commit = repo.head.commit
+            commit_hash = current_commit.hexsha
+            commit_time = datetime.fromtimestamp(
+                current_commit.committed_date
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                origin = repo.remotes.origin
+                origin.fetch()
+                remote_commit = repo.commit(
+                    f"origin/{repo.active_branch.name}"
+                )
+                is_latest = current_commit.hexsha == remote_commit.hexsha
+            except Exception as exc:
+                logger.warning(
+                    f"无法获取远程分支信息 ({type(exc).__name__})"
+                )
+                is_latest = False
+            return bool(is_latest), commit_hash, commit_time
+
+        return await asyncio.to_thread(read_git_info)
+
+    async def get_stage(self) -> dict[str, list[dict[str, str]]]:
+        """Return cached stage data and refresh it in the background."""
+
+        last_updated = datetime.strptime(
+            str(self.get("Data", "LastStageUpdated")),
+            "%Y-%m-%d %H:%M:%S",
+        )
+        if datetime.now() - timedelta(hours=1) >= last_updated:
+            if not self._stage_refreshing:
+                self._stage_refreshing = True
+                task = asyncio.create_task(self._refresh_stage())
+                self.temp_task.append(task)
+
+                def finish(refresh_task: asyncio.Task[Any]) -> None:
+                    self._stage_refreshing = False
+                    if refresh_task in self.temp_task:
+                        self.temp_task.remove(refresh_task)
+
+                task.add_done_callback(finish)
+        stage = json.loads(str(self.get("Data", "Stage")))
+        return stage if isinstance(stage, dict) else {}
+
+    async def _refresh_stage(self) -> None:
+        logger.info("开始获取活动关卡信息")
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(
+                    "https://api.maa.plus/MaaAssistantArknights/api/gui/"
+                    "StageActivityV2.json",
+                    headers={
+                        "If-None-Match": str(
+                            self.get("Data", "StageETag")
+                        )
+                    },
+                )
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if response.status_code == 304:
+                await self.set("Data", "LastStageUpdated", now)
+            elif response.status_code == 200:
+                payload = (
+                    response.json()
+                    .get("Official", {})
+                    .get("sideStoryStage", {})
+                )
+                await self.roots.config.set_many(
+                    {
+                        "Data": {
+                            "LastStageUpdated": now,
+                            "StageETag": (
+                                response.headers.get("ETag")
+                                or response.headers.get("etag")
+                                or ""
+                            ),
+                            "StageData": json.dumps(
+                                payload,
+                                ensure_ascii=False,
+                            ),
+                        }
+                    }
+                )
+            else:
+                logger.warning(
+                    f"无法从 MAA 服务器获取活动关卡信息: "
+                    f"HTTP {response.status_code}"
+                )
+        except Exception as exc:
+            logger.warning(
+                f"无法从 MAA 服务器获取活动关卡信息 "
+                f"({type(exc).__name__})"
+            )
+
+    async def get_stage_info(
+        self,
+        type: Literal[
+            "User",
+            "Today",
+            "ALL",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+            "Info",
+        ],
+    ) -> object:
+        stage = await self.get_stage()
+        if type == "Info":
+            today = datetime.now(tz=UTC4).isoweekday()
+            resource = [
+                RESOURCE_STAGE_DROP_INFO[item["value"]]
+                for item in RESOURCE_STAGE_INFO
+                if today in item["days"]
+                and item["value"] in RESOURCE_STAGE_DROP_INFO
+            ]
+            return {"Activity": stage.get("Info", []), "Resource": resource}
+        if type == "User":
+            data = copy.deepcopy(stage.get("ALL", []))
+            for item in data:
+                item["label"] = RESOURCE_STAGE_DATE_TEXT.get(
+                    item["value"],
+                    item["label"],
+                )
+            return data
+        if type == "Today":
+            return stage.get(datetime.now(tz=UTC4).strftime("%A"), [])
+        return stage.get(type, [])
+
+    async def get_script_combox(self) -> list[dict[str, object]]:
+        data: list[dict[str, object]] = [
+            {"label": "未选择", "value": "-"}
+        ]
+        for record in await self.get_script_records():
+            if not record.available:
+                continue
+            label = (
+                record.name
+                if record.type == "MaaFW"
+                else f"{record.type} - {record.name}"
+            )
+            data.append(
+                {
+                    "label": label,
+                    "value": record.id,
+                    "supported_modes": list(record.supported_modes),
+                }
+            )
+        return data
+
+    async def get_task_combox(self) -> list[dict[str, object]]:
+        data: list[dict[str, object]] = [
+            {"label": "未选择", "value": None}
+        ]
+        for uid, queue in self.roots.queues.items():
+            script_ids = [
+                str(item.get("Info", "ScriptId") or "").strip()
+                for item in queue.QueueItem.values()
+            ]
+            script_ids = [
+                script_id
+                for script_id in script_ids
+                if script_id not in ("", "-")
+            ]
+            supported_modes: list[str] | None = None
+            available = True
+            for script_id in script_ids:
+                try:
+                    capability = await self.get_script_record_capability(
+                        script_id
+                    )
+                except (KeyError, ValueError):
+                    available = False
+                    break
+                if not capability.available:
+                    available = False
+                    break
+                modes = list(capability.supported_modes or ())
+                supported_modes = (
+                    modes
+                    if supported_modes is None
+                    else [
+                        mode
+                        for mode in supported_modes
+                        if mode in modes
+                    ]
+                )
+            if available and supported_modes:
+                data.append(
+                    {
+                        "label": f"队列 - {queue.get('Info', 'Name')}",
+                        "value": str(uid),
+                        "supported_modes": supported_modes,
+                    }
+                )
+
+        for record in await self.get_script_records():
+            entry = self.roots.scripts[UUID(record.id)]
+            if record.available and not entry.is_locked:
+                label = (
+                    record.name
+                    if record.type == "MaaFW"
+                    else f"{record.type} - {record.name}"
+                )
+                data.append(
+                    {
+                        "label": f"脚本 - {label}",
+                        "value": record.id,
+                        "supported_modes": list(record.supported_modes),
+                    }
+                )
+        return data
+
+    async def get_plan_combox(self) -> list[dict[str, str]]:
+        return [
+            {"label": "固定", "value": "Fixed"},
+            *[
+                {
+                    "label": str(plan.get("Info", "Name")),
+                    "value": str(uid),
+                }
+                for uid, plan in self.roots.plans.items()
+            ],
+        ]
+
+    async def get_emulator_combox(self) -> list[dict[str, str]]:
+        return [
+            {"label": "未选择", "value": "-"},
+            *[
+                {
+                    "label": str(emulator.get("Info", "Name")),
+                    "value": str(uid),
+                }
+                for uid, emulator in self.roots.emulators.items()
+            ],
+        ]
+
+    async def get_emulator_devices_combox(
+        self,
+        emulator_id: str,
+    ) -> list[dict[str, str]]:
+        emulator = self.roots.emulators[UUID(emulator_id)]
+        if emulator.get("Info", "Type") == "general":
+            return []
+        from app.core.emulator_manager import EmulatorManager
+
+        instance = await EmulatorManager.get_emulator_instance(emulator_id)
+        devices = await instance.getInfo(None)
+        return [
+            {"label": "未选择", "value": "-"},
+            *[
+                {"label": device.title, "value": str(index)}
+                for index, device in devices.items()
+            ],
+        ]
+
+    async def get_notice(self) -> tuple[bool, dict[str, str]]:
+        cached = json.loads(str(self.get("Data", "Notice")))
+        last_updated = datetime.strptime(
+            str(self.get("Data", "LastNoticeUpdated")),
+            "%Y-%m-%d %H:%M:%S",
+        )
+        if datetime.now() - timedelta(hours=1) < last_updated:
+            notice = cached.get("notice_dict", {})
+            return False, notice if isinstance(notice, dict) else {}
+
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(
+                    "https://api.auto-mas.top/file/Server/notice.json",
+                    headers={
+                        "If-None-Match": str(
+                            self.get("Data", "NoticeETag")
+                        )
+                    },
+                )
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if response.status_code == 304:
+                await self.set("Data", "LastNoticeUpdated", now)
+            elif response.status_code == 200:
+                cached = response.json()
+                await self.roots.config.set_many(
+                    {
+                        "Data": {
+                            "LastNoticeUpdated": now,
+                            "NoticeETag": (
+                                response.headers.get("ETag")
+                                or response.headers.get("etag")
+                                or ""
+                            ),
+                            "IfShowNotice": True,
+                            "Notice": json.dumps(
+                                cached,
+                                ensure_ascii=False,
+                            ),
+                        }
+                    }
+                )
+        except Exception as exc:
+            logger.warning(
+                f"无法从 AUTO-MAS 服务器获取公告信息 "
+                f"({type(exc).__name__})"
+            )
+
+        notice = cached.get("notice_dict", {})
+        return (
+            bool(self.get("Data", "IfShowNotice")),
+            notice if isinstance(notice, dict) else {},
+        )
+
+    async def get_web_config(self) -> object:
+        local_config = json.loads(str(self.get("Data", "WebConfig")))
+        last_updated = datetime.strptime(
+            str(self.get("Data", "LastWebConfigUpdated")),
+            "%Y-%m-%d %H:%M:%S",
+        )
+        if datetime.now() - timedelta(hours=1) < last_updated:
+            return local_config
+
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(
+                    "https://share.auto-mas.top/api/list/config/general"
+                )
+            if response.status_code != 200:
+                return local_config
+            remote_config = response.json()
+        except Exception as exc:
+            logger.warning(
+                f"无法从 AUTO-MAS 服务器获取配置分享中心信息 "
+                f"({type(exc).__name__})"
+            )
+            return local_config
+
+        await self.roots.config.set_many(
+            {
+                "Data": {
+                    "LastWebConfigUpdated": datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "WebConfig": json.dumps(
+                        remote_config,
+                        ensure_ascii=False,
+                    ),
+                }
+            }
+        )
+        return remote_config
+
+    async def save_maa_log(
+        self,
+        log_path: Path,
+        logs: list[str],
+        maa_result: str,
+    ) -> bool:
+        """Persist MAA logs and derive the host's historical statistics."""
+
+        data: dict[str, Any] = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": {},
+            "sanity": 0,
+            "sanity_full_at": "",
+            "maa_result": maa_result,
+        }
+        has_six_star = False
+        for line in logs:
+            sanity = re.search(r"理智:\s*(\d+)/\d+", line)
+            if sanity:
+                data["sanity"] = int(sanity.group(1))
+            full_at = re.search(
+                r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*"
+                r"回满。\(\d+h\s+\d+m\s+后\))",
+                line,
+            )
+            if full_at:
+                data["sanity_full_at"] = full_at.group(1)
+
+        confirmed = False
+        star_level: str | None = None
+        index = 0
+        while index < len(logs):
+            if "公招识别结果:" in logs[index]:
+                star_level = None
+                index += 1
+                while index < len(logs) and "Tags" not in logs[index]:
+                    index += 1
+                if index < len(logs):
+                    match = re.search(r"(\d+)\s*★ Tags", logs[index])
+                    if match:
+                        star_level = f"{match.group(1)}★"
+                        has_six_star |= star_level == "6★"
+            if index < len(logs) and "已确认招募" in logs[index]:
+                confirmed = True
+            if confirmed and star_level:
+                data["recruit_statistics"][star_level] += 1
+                confirmed = False
+                star_level = None
+            index += 1
+
+        fights: list[tuple[int, int]] = []
+        for start, line in enumerate(logs):
+            if "开始任务: Fight" not in line and "开始任务: 理智作战" not in line:
+                continue
+            for end in range(start + 1, len(logs)):
+                if (
+                    "完成任务: Fight" in logs[end]
+                    or "完成任务: 理智作战" in logs[end]
+                ):
+                    fights.append((start, end))
+                    break
+                if (
+                    "开始任务: Fight" in logs[end]
+                    or "开始任务: 理智作战" in logs[end]
+                ):
+                    break
+
+        all_drops: dict[str, dict[str, int]] = {}
+        for start, end in fights:
+            current_stage: str | None = None
+            last_drops: dict[str, int] = {}
+            for line in logs[start : end + 1]:
+                stage_match = re.search(
+                    r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:",
+                    line,
+                )
+                if stage_match:
+                    current_stage = stage_match.group(1)
+                    last_drops = {}
+                    continue
+                if current_stage is None:
+                    continue
+                for item, raw_total in re.findall(
+                    r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)"
+                    r"(?:\s*\(\+[\d,]+[kK]?\))?",
+                    line,
+                    re.M,
+                ):
+                    if item in {
+                        "当前次数",
+                        "理智",
+                        "最快截图耗时",
+                        "专精等级",
+                        "剩余时间",
+                    }:
+                        continue
+                    normalized = raw_total.replace(",", "")
+                    last_drops[item] = (
+                        int(normalized[:-1]) * 1000
+                        if normalized.lower().endswith("k")
+                        else int(normalized)
+                    )
+            if current_stage and last_drops:
+                target = all_drops.setdefault(current_stage, {})
+                for item, count in last_drops.items():
+                    target[item] = target.get(item, 0) + count
+        data["drop_statistics"] = all_drops
+
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
+        return has_six_star
+
+    @staticmethod
+    async def _save_basic_log(
+        log_path: Path,
+        logs: list[str],
+        result_key: str,
+        result: str,
+    ) -> None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text(
+            "".join(logs),
+            encoding="utf-8",
+        )
+        log_path.with_suffix(".json").write_text(
+            json.dumps(
+                {result_key: result},
+                ensure_ascii=False,
+                indent=4,
+            ),
+            encoding="utf-8",
+        )
+
+    async def save_maaend_log(
+        self,
+        log_path: Path,
+        logs: list[str],
+        maaend_result: str,
+    ) -> None:
+        await self._save_basic_log(
+            log_path,
+            logs,
+            "maaend_result",
+            maaend_result,
+        )
+
+    async def save_src_log(
+        self,
+        log_path: Path,
+        logs: list[str],
+        src_result: str,
+    ) -> None:
+        await self._save_basic_log(
+            log_path,
+            logs,
+            "src_result",
+            src_result,
+        )
+
+    async def save_general_log(
+        self,
+        log_path: Path,
+        logs: list[str],
+        general_result: str,
+    ) -> None:
+        await self._save_basic_log(
+            log_path,
+            logs,
+            "general_result",
+            general_result,
+        )
+
+    async def _general_script_payload(
+        self,
+        script_id: str,
+    ) -> dict[str, Any]:
+        entry = self.roots.scripts[UUID(script_id)]
+        if self.get_script_type_key(script_id) != "General":
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
+        payload = await self._script_record_config_data(entry)
+        payload.pop("UserData", None)
+        payload.pop("SubConfigsInfo", None)
+        return payload
+
+    async def import_script_from_file(
+        self,
+        script_id: str,
+        json_file: str,
+    ) -> None:
+        path = Path(json_file)
+        if not path.is_file():
+            raise FileNotFoundError(f"文件不存在: {path}")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise TypeError("脚本配置文件必须包含 JSON 对象")
+        await self._general_script_payload(script_id)
+        await self.update_script(script_id, payload)
+
+    async def _shareable_general_script_payload(
+        self,
+        script_id: str,
+        name: str,
+    ) -> dict[str, Any]:
+        payload = copy.deepcopy(
+            await self._general_script_payload(script_id)
+        )
+        info = payload.setdefault("Info", {})
+        script = payload.setdefault("Script", {})
+        root_path = Path(str(info.get("RootPath") or ""))
+        info["Name"] = name
+        for field in (
+            "ScriptPath",
+            "ConfigPath",
+            "LogPath",
+            "TrackProcessExe",
+        ):
+            raw_path = str(script.get(field) or "")
+            if not raw_path:
+                continue
+            path = Path(raw_path)
+            try:
+                relative = path.relative_to(root_path)
+            except (ValueError, OSError):
+                continue
+            script[field] = str(Path("C:/脚本根目录") / relative)
+        info["RootPath"] = "C:/脚本根目录"
+        return payload
+
+    async def export_script_to_file(
+        self,
+        script_id: str,
+        json_file: str,
+    ) -> None:
+        path = Path(json_file)
+        payload = await self._shareable_general_script_payload(
+            script_id,
+            path.stem,
+        )
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
+
+    async def import_script_from_web(
+        self,
+        script_id: str,
+        url: str,
+    ) -> None:
+        await self._general_script_payload(script_id)
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ConnectionError(
+                "无法从 AUTO-MAS 服务器获取配置内容"
+            ) from exc
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("远程脚本配置必须是 JSON 对象")
+        if payload.get("code", 200) == 500:
+            raise ConnectionError(
+                str(payload.get("message") or "远程配置服务返回错误")
+            )
+        await self.update_script(script_id, payload)
+
+    async def upload_script_to_web(
+        self,
+        script_id: str,
+        config_name: str,
+        author: str,
+        description: str,
+    ) -> None:
+        payload = await self._shareable_general_script_payload(
+            script_id,
+            config_name,
+        )
+        files = {
+            "file": (
+                f"{config_name}&&"
+                f"{int(datetime.now().timestamp() * 1000)}.json",
+                json.dumps(payload, ensure_ascii=False),
+                "application/json",
+            )
+        }
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy,
+                follow_redirects=True,
+            ) as client:
+                response = await client.post(
+                    "https://share.auto-mas.top/api/upload/share",
+                    files=files,
+                    data={
+                        "username": author,
+                        "description": description,
+                    },
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ConnectionError(
+                "无法上传配置到 AUTO-MAS 服务器"
+            ) from exc
+
+    async def set_infrastructure(
+        self,
+        script_id: str,
+        user_id: str,
+        json_file: str,
+    ) -> None:
+        if self.get_script_type_key(script_id) != "MAA":
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+        path = Path(json_file)
+        if not path.is_file():
+            raise FileNotFoundError(f"文件未找到: {path}")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not payload.get("plans"):
+            raise ValueError("未找到有效的基建排班信息")
+        if payload.get("title", "文件标题") == "文件标题":
+            payload["title"] = path.stem
+        await self.update_user(
+            script_id,
+            user_id,
+            {
+                "Data": {
+                    "CustomInfrast": json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                    )
+                }
+            },
+        )
+
+    async def get_user_combox_infrastructure(
+        self,
+        script_id: str,
+        user_id: str,
+    ) -> list[dict[str, str]]:
+        if self.get_script_type_key(script_id) != "MAA":
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+        script = self.roots.scripts[UUID(script_id)]
+        user = script.UserData[UUID(user_id)]
+        if type(user) is PluginUser:
+            provider = self._resolve_script_record_provider(script)
+            form = await self._provider_form_payload(
+                provider,
+                user.get("PluginData", "Config"),
+                "user",
+            )
+            raw = form.get("Data", {}).get("CustomInfrast", {})
+            payload = (
+                json.loads(raw)
+                if isinstance(raw, str)
+                else copy.deepcopy(raw)
+            )
+        else:
+            raw = user.get("Data", "CustomInfrast")
+            payload = json.loads(str(raw or "{}"))
+        return [
+            {
+                "label": str(plan.get("name") or f"排班 {index + 1}"),
+                "value": str(index),
+            }
+            for index, plan in enumerate(payload.get("plans", []))
+        ]
+
+    async def import_script_config_file(
+        self,
+        script_id: str,
+        user_id: str | None,
+    ) -> None:
+        if self.get_script_type_key(script_id) != "MaaEnd":
+            raise TypeError("当前脚本类型暂不支持导入配置文件")
+        entry = self.roots.scripts[UUID(script_id)]
+        payload = await self._script_record_config_data(entry)
+        source = Path(str(payload.get("Info", {}).get("Path") or "")) / "config"
+        if not (source / "mxu-MaaEnd.json").is_file():
+            raise FileNotFoundError(
+                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 "
+                "MaaEnd 完成配置文件生成"
+            )
+        owner = user_id or "Default"
+        target = (
+            self.workspace_root
+            / "data"
+            / script_id
+            / owner
+            / "ConfigFile"
+        )
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, target, dirs_exist_ok=True)
+
+    async def merge_statistic_info(
+        self,
+        statistic_path_list: list[Path],
+    ) -> dict[str, object]:
+        data: dict[str, Any] = {"index": {}}
+        for json_file in statistic_path_list:
+            try:
+                single_data = json.loads(
+                    json_file.read_text(encoding="utf-8")
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"无法解析文件 {json_file} "
+                    f"({type(exc).__name__})"
+                )
+                continue
+
+            for key, value in single_data.items():
+                if key == "recruit_statistics":
+                    target = data.setdefault(key, {})
+                    for star_level, count in value.items():
+                        target[star_level] = target.get(star_level, 0) + count
+                elif key == "drop_statistics":
+                    target = data.setdefault(key, {})
+                    for stage, drops in value.items():
+                        target_stage = target.setdefault(stage, {})
+                        for item, count in drops.items():
+                            target_stage[item] = (
+                                target_stage.get(item, 0) + count
+                            )
+                elif key in {"sanity", "sanity_full_at"}:
+                    data[key] = value
+                elif key in {
+                    "maa_result",
+                    "maaend_result",
+                    "src_result",
+                    "general_result",
+                }:
+                    actual_date = (
+                        datetime.strptime(
+                            f"{json_file.parent.parent.name} "
+                            f"{json_file.stem}",
+                            "%Y-%m-%d %H-%M-%S",
+                        )
+                        .replace(tzinfo=UTC4)
+                        .astimezone()
+                    )
+                    success = value == "Success!"
+                    if not success:
+                        data.setdefault("error_info", {})[
+                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
+                        ] = value
+                    data["index"][actual_date] = {
+                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        "status": "DONE" if success else "ERROR",
+                        "jsonFile": str(json_file),
+                    }
+
+        data["index"] = [
+            data["index"][key] for key in sorted(data["index"])
+        ]
+        result = {key: value for key, value in data.items() if value}
+        result.setdefault("index", [])
+        return result
+
+    async def search_history(
+        self,
+        mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, dict[str, list[Path]]]:
+        history: dict[str, dict[str, list[Path]]] = {}
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue
+            try:
+                folder_date = datetime.strptime(
+                    date_folder.name,
+                    "%Y-%m-%d",
+                ).date()
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+                continue
+            if not start_date <= folder_date <= end_date:
+                continue
+            if mode == "DAILY":
+                bucket = folder_date.strftime("%Y-%m-%d")
+            elif mode == "WEEKLY":
+                bucket = folder_date.strftime("%G-W%V")
+            elif mode == "MONTHLY":
+                bucket = folder_date.strftime("%Y-%m")
+            else:
+                raise ValueError("无效的合并模式")
+            users = history.setdefault(bucket, {})
+            for user_folder in date_folder.iterdir():
+                if user_folder.is_dir():
+                    users.setdefault(user_folder.stem, []).extend(
+                        user_folder.glob("*.json")
+                    )
+        return dict(
+            sorted(
+                history.items(),
+                key=lambda item: item[0],
+                reverse=True,
+            )
+        )
+
+    async def get_proxy_overview(self) -> dict[str, object]:
+        today = datetime.now(tz=UTC4).date()
+        bucket = today.strftime("%Y-%m-%d")
+        history = await self.search_history("DAILY", today, today)
+        if bucket not in history:
+            return {}
+        overview: dict[str, object] = {}
+        for user, paths in history[bucket].items():
+            merged = await self.merge_statistic_info(paths)
+            records = merged.get("index", [])
+            dates = [
+                datetime.strptime(item["date"], "%Y-%m-%d %H:%M:%S")
+                for item in records
+            ]
+            errors = merged.get("error_info", {})
+            overview[user] = {
+                "LastProxyDate": (
+                    max(dates).strftime("%Y-%m-%d %H:%M:%S")
+                    if dates
+                    else "暂无代理数据"
+                ),
+                "ProxyTimes": len(records),
+                "ErrorTimes": len(errors),
+                "ErrorInfo": errors,
+            }
+        return overview
+
+    async def clean_old_history(self) -> None:
+        retention_days = int(
+            self.get("Function", "HistoryRetentionTime")
+        )
+        if retention_days == 0:
+            return
+        today = datetime.now(tz=UTC4).date()
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue
+            try:
+                folder_date = datetime.strptime(
+                    date_folder.name,
+                    "%Y-%m-%d",
+                ).date()
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+                continue
+            if today - folder_date > timedelta(days=retention_days):
+                shutil.rmtree(date_folder, ignore_errors=True)
+
 
 # Construction is side-effect free: directories and generations are touched
 # only by ``init_config``.  This singleton mirrors the stable host import
 # surface while remaining independent from the legacy object graph.
-Config = NativeConfigFacade()
+Config = NativeConfigFacade(bind_system_settings=True)
 
 
 __all__ = ["Config", "NativeConfigFacade", "PowerAction"]

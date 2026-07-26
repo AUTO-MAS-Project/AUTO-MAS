@@ -2,28 +2,127 @@
 
 验证每个 API endpoint 使用的 Config 方法在 facade 中是否存在。
 """
-import os
-import sys
+import ast
 import json
-import pytest
+import sys
 from pathlib import Path
+
+import pytest
 
 WORKTREE = Path(__file__).resolve().parents[3]
 if str(WORKTREE) not in sys.path:
     sys.path.insert(0, str(WORKTREE))
 
 
-# 加载 endpoint 矩阵
-EVIDENCE_DIR = Path(
-    r"D:\trae_projects\AUTO-MAS-Projects\_alpha_build\a1"
-    r"\deepseek-authoritative-api-cert-20260723"
-)
-ENDPOINT_MATRIX_PATH = EVIDENCE_DIR / "api_endpoint_matrix.json"
+def _find_endpoint_matrix() -> Path | None:
+    """Locate the migrated certification artifact without pinning a drive layout."""
+
+    relative_path = (
+        Path("_alpha_build")
+        / "a1"
+        / "deepseek-authoritative-api-cert-20260723"
+        / "api_endpoint_matrix.json"
+    )
+    for root in (WORKTREE, *WORKTREE.parents):
+        candidate = root / relative_path
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+ENDPOINT_MATRIX_PATH = _find_endpoint_matrix()
 
 
 def _load_matrix():
-    with open(ENDPOINT_MATRIX_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    if ENDPOINT_MATRIX_PATH is not None:
+        with open(ENDPOINT_MATRIX_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    return _build_endpoint_matrix()
+
+
+_ROUTER_NAMES = ("plan", "queue", "tools", "scripts", "info", "history")
+_HTTP_METHODS = {
+    "delete": "DELETE",
+    "get": "GET",
+    "patch": "PATCH",
+    "post": "POST",
+    "put": "PUT",
+}
+
+
+def _route_entries(function: ast.AsyncFunctionDef | ast.FunctionDef):
+    """Yield current FastAPI route metadata from one endpoint function."""
+
+    for decorator in function.decorator_list:
+        if not (
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Attribute)
+            and isinstance(decorator.func.value, ast.Name)
+            and decorator.func.value.id == "router"
+        ):
+            continue
+        decorator_name = decorator.func.attr.lower()
+        if decorator_name not in {*_HTTP_METHODS, "api_route"}:
+            continue
+
+        path = ""
+        if decorator.args:
+            value = decorator.args[0]
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                path = value.value
+
+        methods = [_HTTP_METHODS[decorator_name]] if decorator_name in _HTTP_METHODS else []
+        if decorator_name == "api_route":
+            for keyword in decorator.keywords:
+                if keyword.arg != "methods" or not isinstance(
+                    keyword.value,
+                    (ast.List, ast.Tuple),
+                ):
+                    continue
+                methods = [
+                    str(item.value).upper()
+                    for item in keyword.value.elts
+                    if isinstance(item, ast.Constant)
+                    and isinstance(item.value, str)
+                ]
+
+        for method in methods:
+            yield {"method": method, "path": path}
+
+
+def _direct_config_calls(function: ast.AsyncFunctionDef | ast.FunctionDef) -> list[str]:
+    """Collect public direct ``Config.method(...)`` facade calls."""
+
+    calls = {
+        f"Config.{node.func.attr}("
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "Config"
+    }
+    return sorted(calls)
+
+
+def _build_endpoint_matrix() -> dict[str, object]:
+    """Build a reproducible matrix from the current API source tree."""
+
+    routers: dict[str, dict[str, list[dict[str, object]]]] = {}
+    for router_name in _ROUTER_NAMES:
+        source_path = WORKTREE / "app" / "api" / f"{router_name}.py"
+        tree = ast.parse(
+            source_path.read_text(encoding="utf-8"),
+            filename=str(source_path),
+        )
+        endpoints: list[dict[str, object]] = []
+        for node in tree.body:
+            if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
+                continue
+            config_calls = _direct_config_calls(node)
+            for route in _route_entries(node):
+                endpoints.append({**route, "config_calls": config_calls})
+        routers[router_name] = {"endpoints": endpoints}
+    return {"routers": routers}
 
 
 _DEFERRED_NON_FACADE_MEMBERS = {"_game_sign_result_data"}

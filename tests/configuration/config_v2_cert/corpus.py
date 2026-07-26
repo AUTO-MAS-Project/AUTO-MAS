@@ -437,8 +437,29 @@ def _time_set_entry(time: str = "08:00") -> dict[str, object]:
 
 
 def _queue_item_entry(script_id: str = "-") -> dict[str, object]:
+    import calendar
+
     return {
         "Info": {"ScriptId": script_id},
+        "Schedule": {
+            "Enabled": True,
+            "Mode": "fixed_time",
+            "Days": list(calendar.day_name),
+            "Time": "00:00",
+            "IntervalMinutes": 480,
+            "IntervalAnchor": "start",
+            "NextRunAt": "2000-01-01 00:00:00",
+        },
+        "Data": {
+            "LastCycleStartedAt": "2000-01-01 00:00:00",
+            "LastCycleFinishedAt": "2000-01-01 00:00:00",
+            "CycleRunId": "",
+            "CycleState": "idle",
+            "CycleRevision": 0,
+            "CycleResult": "",
+            "CycleError": "",
+            "CycleUpdatedAt": "2000-01-01 00:00:00",
+        },
     }
 
 
@@ -449,6 +470,7 @@ def _queue_entry(name: str = "队列") -> dict[str, object]:
             "Name": name,
             "TimeEnabled": False,
             "StartUpEnabled": False,
+            "CycleEnabled": False,
             "AfterAccomplish": "NoAction",
         },
         "Data": {

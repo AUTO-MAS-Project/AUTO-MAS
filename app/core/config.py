@@ -63,6 +63,7 @@ from app.utils.constants import (
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
+from app.utils.atomic_file import atomic_write_json
 from .script_types import (
     ScriptRecordCapability,
     apply_script_type_registry_to_global_config,
@@ -110,7 +111,7 @@ async def _ws_send_json(data: dict) -> None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v6.0.0-alpha.NEXUS-OVERDRIVE.20260724.5"
+    VERSION = "v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11"
 
     def __init__(self) -> None:
         super().__init__()
@@ -221,6 +222,16 @@ class AppConfig(GlobalConfig):
                 migration_marker.touch()
             except OSError:
                 logger.warning("无法创建迁移标记文件，下次启动仍会检查迁移")
+
+        maaend_migration_marker = (
+            self.config_path / ".migrated_maaend_plugin_storage_v1"
+        )
+        if not maaend_migration_marker.exists():
+            await self._migrate_maaend_scripts_to_plugin_storage()
+            try:
+                maaend_migration_marker.touch()
+            except OSError:
+                logger.warning("无法创建 MaaEnd 迁移标记文件，下次启动仍会检查迁移")
 
         # 游戏签到：连接账号组 MultipleConfig
         await self.ToolsConfig.GameSign_Accounts.connect(
@@ -777,6 +788,75 @@ class AppConfig(GlobalConfig):
         return isinstance(script_config, OkwwConfig)
 
     @staticmethod
+    def _is_maaend_legacy_script_config(script_config: ConfigBase) -> bool:
+        """Return whether the record is an old host-owned MaaEndConfig."""
+
+        from app.models.config import MaaEndConfig
+
+        return isinstance(script_config, MaaEndConfig)
+
+    @staticmethod
+    def _maaend_legacy_script_payload(data: dict[str, Any]) -> dict[str, Any]:
+        payload = strip_sub_configs(copy.deepcopy(data))
+        raw_game = payload.get("Game")
+        game = dict(raw_game) if isinstance(raw_game, dict) else {}
+        controller_type = str(game.get("ControllerType") or "").strip().lower()
+        if controller_type in {"win32", "win32-front"}:
+            game["ControllerType"] = "Win32"
+        elif controller_type == "adb":
+            game["ControllerType"] = "Adb"
+
+        raw_emulator = payload.get("Emulator")
+        emulator = dict(raw_emulator) if isinstance(raw_emulator, dict) else {}
+        legacy_emulator_id = game.pop("EmulatorId", None)
+        legacy_emulator_index = game.pop("EmulatorIndex", None)
+        if (
+            str(emulator.get("Id") or "").strip() in {"", "-"}
+            and legacy_emulator_id is not None
+        ):
+            emulator["Id"] = legacy_emulator_id
+        if (
+            str(emulator.get("Index") or "").strip() in {"", "-"}
+            and legacy_emulator_index is not None
+        ):
+            emulator["Index"] = legacy_emulator_index
+
+        payload["Game"] = game
+        if emulator:
+            payload["Emulator"] = emulator
+        return payload
+
+    @staticmethod
+    def _maaend_legacy_user_payload(data: dict[str, Any]) -> dict[str, Any]:
+        payload = copy.deepcopy(data)
+        sub_configs = payload.pop("SubConfigsInfo", None)
+
+        raw_info = payload.get("Info")
+        info = dict(raw_info) if isinstance(raw_info, dict) else {}
+        legacy_id = info.pop("Id", None)
+        info.pop("Password", None)
+        account = info.get("Account")
+        if (
+            (not isinstance(account, str) or not account.strip())
+            and isinstance(legacy_id, str)
+            and legacy_id.strip()
+        ):
+            info["Account"] = legacy_id.strip()
+        payload["Info"] = info
+
+        custom_webhooks = (
+            sub_configs.get("Notify_CustomWebhooks")
+            if isinstance(sub_configs, dict)
+            else None
+        )
+        if isinstance(custom_webhooks, dict):
+            raw_notify = payload.get("Notify")
+            notify = dict(raw_notify) if isinstance(raw_notify, dict) else {}
+            notify["CustomWebhooks"] = copy.deepcopy(custom_webhooks)
+            payload["Notify"] = notify
+        return payload
+
+    @staticmethod
     def _pick_config_group(
         data: dict[str, Any],
         group: str,
@@ -1041,6 +1121,83 @@ class AppConfig(GlobalConfig):
         for default_config_dir in legacy_default_dirs:
             shutil.rmtree(default_config_dir, ignore_errors=True)
         logger.success("旧 Okww 脚本已迁移到插件脚本容器")
+
+    async def _migrate_maaend_scripts_to_plugin_storage(self) -> None:
+        """Move legacy MaaEnd records into the encrypted plugin container.
+
+        The migration decrypts legacy fields only in memory, retires Password,
+        upgrades Id to Account, and writes one atomically protected JSON envelope.
+        Any persistence or observer failure restores both the in-memory graph and
+        the previous on-disk payload before the exception is re-raised.
+        """
+
+        from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
+
+        migrate_list = [
+            script_uid
+            for script_uid, script_config in self.ScriptConfig.items()
+            if self._is_maaend_legacy_script_config(script_config)
+            and not isinstance(script_config, PluginScriptConfig)
+        ]
+        if not migrate_list:
+            return
+
+        logger.info(
+            f"检测到 {len(migrate_list)} 个旧 MaaEnd 脚本，开始迁移到插件加密容器"
+        )
+        original_payload = await self.ScriptConfig.toDict(if_decrypt=False)
+        original_records = {
+            script_uid: self.ScriptConfig.data[script_uid]
+            for script_uid in migrate_list
+        }
+        replacements: dict[uuid.UUID, PluginScriptConfig] = {}
+
+        for script_uid in migrate_list:
+            legacy_script = original_records[script_uid]
+            script_payload = self._maaend_legacy_script_payload(
+                await legacy_script.toDict(if_decrypt=True)
+            )
+
+            plugin_script = PluginScriptConfig()
+            await plugin_script.set("Meta", "PluginTypeKey", "MaaEnd")
+            await plugin_script.set("Info", "Name", legacy_script.get("Info", "Name"))
+            await plugin_script.set(
+                "PluginData",
+                "Config",
+                json.dumps(script_payload, ensure_ascii=False),
+            )
+
+            for user_uid, legacy_user in legacy_script.UserData.items():
+                user_payload = self._maaend_legacy_user_payload(
+                    await legacy_user.toDict(if_decrypt=True)
+                )
+                plugin_user = PluginUserConfig()
+                await plugin_user.set("Meta", "PluginTypeKey", "MaaEnd")
+                await plugin_user.set("Info", "Name", legacy_user.get("Info", "Name"))
+                await plugin_user.set(
+                    "PluginData",
+                    "Config",
+                    json.dumps(user_payload, ensure_ascii=False),
+                )
+                plugin_script.UserData.order.append(user_uid)
+                plugin_script.UserData.data[user_uid] = plugin_user
+
+            if self.ScriptConfig.file is not None:
+                await plugin_script.add_save_method(self.ScriptConfig.save)
+            for save_method in self.ScriptConfig._save_methods:
+                await plugin_script.add_save_method(save_method)
+            replacements[script_uid] = plugin_script
+
+        try:
+            self.ScriptConfig.data.update(replacements)
+            await self.ScriptConfig.save()
+        except BaseException:
+            self.ScriptConfig.data.update(original_records)
+            if self.ScriptConfig.file is not None:
+                atomic_write_json(self.ScriptConfig.file, original_payload)
+            raise
+
+        logger.success("旧 MaaEnd 脚本已迁移到插件加密容器")
 
     async def add_script(
         self,
@@ -2334,16 +2491,26 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.QueueConfig[queue_uid].set(group, name, value)
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            changes = [
+                (group, name, value)
+                for group, items in data.items()
+                for name, value in items.items()
+            ]
+            await self.QueueConfig[queue_uid].set_many(changes)
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -2375,7 +2542,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加时间设置配置")
 
         queue_uid = uuid.UUID(queue_id)
-        uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
 
         return uid, config
 
@@ -2389,13 +2559,17 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .TimeSet[time_set_uid]
-                    .set(group, name, value)
-                )
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            changes = [
+                (group, name, value)
+                for group, items in data.items()
+                for name, value in items.items()
+            ]
+            await self.QueueConfig[queue_uid].TimeSet[
+                time_set_uid
+            ].set_many(changes)
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
@@ -2405,7 +2579,10 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
 
-        await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
 
     async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序时间设置"""
@@ -2414,9 +2591,12 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        await self.QueueConfig[queue_uid].TimeSet.setOrder(
-            list(map(uuid.UUID, index_list))
-        )
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            await self.QueueConfig[queue_uid].TimeSet.setOrder(
+                list(map(uuid.UUID, index_list))
+            )
 
     async def get_queue_item(
         self, queue_id: str, queue_item_id: Optional[str]
@@ -2444,7 +2624,12 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            uid, config = await self.QueueConfig[queue_uid].QueueItem.add(
+                QueueItem
+            )
 
         return uid, config
 
@@ -2458,13 +2643,17 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .QueueItem[queue_item_uid]
-                    .set(group, name, value)
-                )
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            changes = [
+                (group, name, value)
+                for group, items in data.items()
+                for name, value in items.items()
+            ]
+            await self.QueueConfig[queue_uid].QueueItem[
+                queue_item_uid
+            ].set_many(changes)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
@@ -2474,7 +2663,10 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
 
-        await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
     async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序队列项"""
@@ -2483,9 +2675,12 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        await self.QueueConfig[queue_uid].QueueItem.setOrder(
-            list(map(uuid.UUID, index_list))
-        )
+        from app.core.task_manager import TaskManager
+
+        async with TaskManager.queue_edit(queue_uid):
+            await self.QueueConfig[queue_uid].QueueItem.setOrder(
+                list(map(uuid.UUID, index_list))
+            )
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
@@ -2938,22 +3133,28 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取任务下拉框信息")
         data = [{"label": "未选择", "value": None}]
         for uid, queue in self.QueueConfig.items():
-            script_ids = [
-                str(queue_item.get("Info", "ScriptId") or "").strip()
-                for queue_item in queue.QueueItem.values()
-                if str(queue_item.get("Info", "ScriptId") or "").strip()
-                not in ("", "-")
-            ]
+            queue_items = list(queue.QueueItem.values())
+            script_ids = []
+            cycle_script_ids = []
+            for queue_item in queue_items:
+                script_id = str(
+                    queue_item.get("Info", "ScriptId") or ""
+                ).strip()
+                if script_id in ("", "-"):
+                    continue
+                script_ids.append(script_id)
+                if queue_item.get("Schedule", "Enabled"):
+                    cycle_script_ids.append(script_id)
+
             queue_modes: list[str] | None = None
-            queue_available = True
             for script_id in script_ids:
                 try:
                     capability = await self.get_script_record_capability(script_id)
                 except (KeyError, ValueError):
-                    queue_available = False
+                    queue_modes = []
                     break
                 if not capability.available:
-                    queue_available = False
+                    queue_modes = []
                     break
                 current_modes = list(capability.supported_modes or ())
                 queue_modes = (
@@ -2961,13 +3162,37 @@ class AppConfig(GlobalConfig):
                     if queue_modes is None
                     else [mode for mode in queue_modes if mode in current_modes]
                 )
-            if not queue_available or (script_ids and not queue_modes):
+
+            supported_modes = list(queue_modes or ())
+            cycle_available = bool(
+                queue.get("Info", "CycleEnabled") and cycle_script_ids
+            )
+            if cycle_available:
+                for script_id in cycle_script_ids:
+                    try:
+                        capability = await self.get_script_record_capability(
+                            script_id
+                        )
+                    except (KeyError, ValueError):
+                        cycle_available = False
+                        break
+                    if (
+                        not capability.available
+                        or "AutoProxy"
+                        not in list(capability.supported_modes or ())
+                    ):
+                        cycle_available = False
+                        break
+            if cycle_available:
+                supported_modes.append("CycleRun")
+            if not supported_modes:
                 continue
+
             data.append(
                 {
                     "label": f"队列 - {queue.get('Info', 'Name')}",
                     "value": str(uid),
-                    "supported_modes": queue_modes,
+                    "supported_modes": supported_modes,
                 }
             )
         for uid, script in self.ScriptConfig.items():

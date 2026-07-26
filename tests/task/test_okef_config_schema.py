@@ -1,7 +1,13 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+_WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+_PLUGIN_SOURCE = _WORKSPACE_ROOT / "plugins" / "ok_script_adapter" / "src"
+if str(_PLUGIN_SOURCE) not in sys.path:
+    sys.path.insert(0, str(_PLUGIN_SOURCE))
 
 from ok_script_adapter.okef_config_schema import (
     build_fields_for_config,

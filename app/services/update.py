@@ -24,6 +24,7 @@ import re
 import time
 import json
 import os
+import hashlib
 import asyncio
 import shutil
 import httpx
@@ -54,6 +55,14 @@ class EmbeddedUpdaterPolicyError(EmbeddedUpdaterManualOnlyError):
     """随包更新策略无法安全解析。"""
 
 
+class UpdateIntegrityError(RuntimeError):
+    """更新包完整性校验失败。"""
+
+
+class UpdateDigestUnavailableError(RuntimeError):
+    """无法获取可信摘要，需要手动更新。"""
+
+
 class _UpdateHandler:
 
     def __init__(self) -> None:
@@ -64,6 +73,13 @@ class _UpdateHandler:
         self.last_check_time: Optional[datetime] = None
         self.update_version_info: Optional[Dict[str, List[str]]] = None
         self.mirror_chyan_download_url: Optional[str] = None
+        # 下载 job 绑定：确保安装只操作本次下载的特定文件（Lane 01 修复）
+        self._download_job_id: Optional[str] = None
+        self._download_job_version: Optional[str] = None
+        self._download_job_path: Optional[Path] = None
+        self._download_job_digest: Optional[str] = None
+        self._download_job_digest_source: Optional[str] = None
+        self._download_job_expected_size: int = 0
 
     @staticmethod
     def _snapshot_policy_paths() -> list[Path]:
@@ -207,6 +223,13 @@ class _UpdateHandler:
         except asyncio.CancelledError:
             pass
         self._cleanup_download()
+        # Lane 01 修复：取消下载时清除残留 job 绑定
+        self._download_job_id = None
+        self._download_job_version = None
+        self._download_job_path = None
+        self._download_job_digest = None
+        self._download_job_digest_source = None
+        self._download_job_expected_size = 0
 
         if notify:
             await Publisher.send(
@@ -270,6 +293,114 @@ class _UpdateHandler:
         finally:
             if not self.is_switching_source:
                 self.is_locked = False
+
+    def _clear_download_job(self) -> None:
+        """清除当前下载 job 绑定，释放锁。"""
+        self._download_job_id = None
+        self._download_job_version = None
+        self._download_job_path = None
+        self._download_job_digest = None
+        self._download_job_digest_source = None
+        self._download_job_expected_size = 0
+        if not self.is_switching_source:
+            self.is_locked = False
+
+    async def _fetch_trusted_digest(
+        self, download_url: str
+    ) -> tuple[str, str] | None:
+        """尝试从官方发布获取可信 SHA256 摘要。
+
+        按优先级尝试以下来源：
+        1. ``{download_url}.sha256`` — 配套 .sha256 文件
+        2. ``{download_url}.sha256sum`` — 备选命名
+
+        Returns:
+            ``(sha256_hex, source_label)`` 或 ``None``（无可用来源）。
+            不得编造哈希来源；返回 None 时调用方必须 fail closed。
+        """
+        for suffix in (".sha256", ".sha256sum"):
+            digest_url = f"{download_url}{suffix}"
+            try:
+                async with httpx.AsyncClient(
+                    follow_redirects=True, timeout=15.0
+                ) as client:
+                    response = await client.get(digest_url)
+                    if response.status_code != 200:
+                        continue
+                    content = response.text.strip()
+                    # 格式: "<sha256hex>  <filename>" 或纯 "<sha256hex>"
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split()
+                        digest_hex = parts[0].lower()
+                        if len(digest_hex) == 64 and all(
+                            c in "0123456789abcdef" for c in digest_hex
+                        ):
+                            return digest_hex, suffix.lstrip(".")
+            except Exception as error:
+                logger.debug(f"获取摘要 {digest_url} 失败: {error}")
+                continue
+        return None
+
+    @staticmethod
+    def _compute_sha256(file_path: Path) -> str:
+        """计算文件的 SHA256 十六进制摘要。"""
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            while chunk := f.read(1024 * 1024):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    async def _verify_package_integrity(self) -> None:
+        """校验下载包完整性。
+
+        1. 获取可信摘要
+        2. 计算本地文件 SHA256
+        3. 比对
+
+        Raises:
+            UpdateDigestUnavailableError: 无法获取可信摘要，fail closed
+            UpdateIntegrityError: 摘要不匹配
+        """
+        if self._download_job_path is None:
+            raise UpdateIntegrityError("下载 job 未绑定文件，无法校验")
+
+        download_url = self._get_download_url(self._get_download_source())
+        digest_result = await self._fetch_trusted_digest(download_url)
+
+        if digest_result is None:
+            raise UpdateDigestUnavailableError(
+                "无法获取官方发布的可信校验摘要，已为安全起见拒绝自动安装。"
+                "请手动下载新的测试安装包。"
+            )
+
+        trusted_digest, source_label = digest_result
+        self._download_job_digest_source = source_label
+        self._download_job_digest = trusted_digest
+
+        actual_digest = self._compute_sha256(self._download_job_path)
+        if actual_digest != trusted_digest:
+            raise UpdateIntegrityError(
+                f"更新包完整性校验失败: 期望 {trusted_digest[:16]}..., "
+                f"实际 {actual_digest[:16]}..."
+            )
+
+        logger.success(
+            f"完整性校验通过 (来源: {source_label}, "
+            f"SHA256: {trusted_digest[:16]}...)"
+        )
+
+    def _validate_download_size(
+        self, actual_size: int, expected_size: int
+    ) -> None:
+        """校验下载大小与 Content-Length 声明一致。"""
+        if expected_size > 0 and actual_size != expected_size:
+            raise UpdateIntegrityError(
+                f"下载大小与声明不符: 期望 {expected_size} 字节, "
+                f"实际 {actual_size} 字节"
+            )
 
     def _get_download_source(self) -> str:
         return Config.get("Update", "Source")
@@ -414,20 +545,6 @@ class _UpdateHandler:
             self.is_locked = False
             return None
 
-        if (Path.cwd() / f"UpdatePack_{self.remote_version}.zip").exists():
-            logger.info(
-                f"更新包已存在: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
-            )
-            await Publisher.send(
-                id=protocol.ID_UPDATE,
-                type=protocol.UPDATE_COMPLETED,
-                data={
-                    "file": str(Path.cwd() / f"UpdatePack_{self.remote_version}.zip")
-                },
-            )
-            self.is_locked = False
-            return None
-
         source = self._get_download_source()
         try:
             download_url = self._get_download_url(source)
@@ -471,7 +588,9 @@ class _UpdateHandler:
 
                         logger.info(f"连接成功: {download_url}, 状态码: {status_code}")
 
-                        file_size = int(response.headers.get("content-length", 0) or 0)
+                        declared_size = int(
+                            response.headers.get("content-length", 0) or 0
+                        )
                         downloaded_size = 0
                         last_download_size = 0
                         speed = 0
@@ -503,25 +622,42 @@ class _UpdateHandler:
                                         type=protocol.UPDATE_PROGRESS,
                                         data=WSUpdateProgressData(
                                             downloaded_size=downloaded_size,
-                                            file_size=file_size,
+                                            file_size=declared_size,
                                             speed=speed,
                                             source=source,
                                         ),
                                     )
 
-                # 重命名临时文件为最终包
-                (Path.cwd() / "download.temp").rename(
+                # Lane 01 修复：校验下载大小后再原子晋升
+                self._validate_download_size(downloaded_size, declared_size)
+
+                final_path = (
                     Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
                 )
+                # 原子晋升：重命名临时文件为最终包
+                # 必须使用 os.replace: Windows 上 Path.rename 遇到同名残留包会抛
+                # FileExistsError, 而校验失败路径不会清理旧 UpdatePack_*.zip
+                os.replace(Path.cwd() / "download.temp", final_path)
+
+                # Lane 01 修复：绑定下载 job，安装时只操作此特定文件
+                self._download_job_id = uuid4().hex
+                self._download_job_version = self.remote_version
+                self._download_job_path = final_path
+                self._download_job_expected_size = downloaded_size
 
                 logger.success(
-                    f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒, 保存位置: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
+                    f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, "
+                    f"耗时: {time.time() - start_time:.2f} 秒, "
+                    f"保存位置: {final_path}, job_id: {self._download_job_id}"
                 )
                 await Publisher.send(
                     id=protocol.ID_UPDATE,
                     type=protocol.UPDATE_COMPLETED,
                     data={
-                        "file": str(Path.cwd() / f"UpdatePack_{self.remote_version}.zip")
+                        "file": str(final_path),
+                        "size": downloaded_size,
+                        "job_id": self._download_job_id,
+                        "version": self.remote_version,
                     },
                 )
                 self.is_locked = False
@@ -541,6 +677,7 @@ class _UpdateHandler:
 
             if (Path.cwd() / "download.temp").exists():
                 (Path.cwd() / "download.temp").unlink()
+            self._clear_download_job()
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
@@ -560,26 +697,69 @@ class _UpdateHandler:
             )
             return None
 
-        logger.info("开始应用更新")
-        self.is_locked = True
-
-        versions = {
-            version.parse(match.group(1)): f.name
-            for f in Path.cwd().glob("UpdatePack_*.zip")
-            if (match := re.match(r"UpdatePack_(.+)\.zip$", f.name))
-        }
-        logger.info(f"检测到的更新包: {versions.values()}")
-
-        if not versions:
+        # Lane 01 修复：安装必须绑定到本次下载 job，禁止扫描目录选最高版本
+        if self._download_job_path is None or not self._download_job_path.is_file():
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "未检测到更新包, 请先下载更新"},
+                data={
+                    "message": "未检测到绑定的下载任务，请先下载更新。"
+                    "手动安装请使用独立安装包。"
+                },
             )
             self.is_locked = False
             return None
 
-        update_package = Path.cwd() / versions[max(versions)]
+        update_package = self._download_job_path
+        job_version = self._download_job_version
+        job_id = self._download_job_id
+
+        logger.info(
+            f"开始应用更新: job_id={job_id}, version={job_version}, "
+            f"package={update_package}"
+        )
+        self.is_locked = True
+
+        # Lane 01 修复：安装前校验完整性
+        # 无法获取可信摘要时 fail closed，不静默执行安装程序
+        await Publisher.send(
+            id=protocol.ID_UPDATE,
+            type=protocol.UPDATE_VERIFYING,
+            data={
+                "job_id": job_id,
+                "version": job_version,
+                "file": str(update_package),
+            },
+        )
+
+        try:
+            await self._verify_package_integrity()
+        except UpdateDigestUnavailableError as e:
+            logger.warning(f"完整性校验跳过（无可用摘要）: {e}")
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={
+                    "message": str(e),
+                    "job_id": job_id,
+                    "version": job_version,
+                },
+            )
+            self._clear_download_job()
+            return None
+        except UpdateIntegrityError as e:
+            logger.error(f"完整性校验失败: {e}")
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={
+                    "message": f"更新包校验失败: {e}",
+                    "job_id": job_id,
+                    "version": job_version,
+                },
+            )
+            self._clear_download_job()
+            return None
 
         staging_directory = (
             Path.cwd() / ".auto-mas-update" / f"extract-{uuid4().hex}"
@@ -598,12 +778,26 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": f"解压失败, {type(e).__name__}: {e}"},
+                data={
+                    "message": f"解压失败, {type(e).__name__}: {e}",
+                    "job_id": job_id,
+                    "version": job_version,
+                },
             )
             self.is_locked = False
             return None
 
         logger.success(f"安全解压完成: {update_package} 到 {staging_directory}")
+
+        await Publisher.send(
+            id=protocol.ID_UPDATE,
+            type=protocol.UPDATE_INSTALLING,
+            data={
+                "job_id": job_id,
+                "version": job_version,
+                "message": "正在启动安装程序，成功后应用将自动退出",
+            },
+        )
 
         logger.info("启动更新程序")
         try:
@@ -628,18 +822,21 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": f"启动更新程序失败, {type(e).__name__}: {e}"},
+                data={
+                    "message": f"启动更新程序失败, {type(e).__name__}: {e}",
+                    "job_id": job_id,
+                    "version": job_version,
+                },
             )
             self.is_locked = False
             return None
 
         logger.info("正在删除旧更新包文件")
-        for file_name in versions.values():
-            package_path = Path.cwd() / file_name
+        for old_package in Path.cwd().glob("UpdatePack_*.zip"):
             try:
-                package_path.unlink(missing_ok=True)
+                old_package.unlink(missing_ok=True)
             except OSError as e:
-                logger.warning(f"删除旧更新包失败: {package_path}, {e}")
+                logger.warning(f"删除旧更新包失败: {old_package}, {e}")
 
         logger.info("正在清理旧版本注册表项")
         try:
@@ -652,7 +849,7 @@ class _UpdateHandler:
         except Exception as e:
             logger.warning(f"清理旧版本注册表项失败: {e}")
 
-        self.is_locked = False
+        self._clear_download_job()
         await System.set_power("KillSelf")
 
 

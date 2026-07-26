@@ -166,7 +166,7 @@ class ConfigService:
     - off：完全使用 legacy Config
     - shadow：legacy 为权威源，v2 影子写入
     - canary：v2 可写，legacy 仍为权威
-    - authoritative：在八个原生生产根完成迁移前 fail-closed
+    - authoritative：八个原生生产根作为唯一运行时权威
 
     legacy Config 对象只能服务于 off/shadow/canary。它们不能作为
     authoritative 的读取 fallback、迁移解析器或保存备份，否则会形成
@@ -195,7 +195,7 @@ class ConfigService:
         return CONFIG_V2_MODE != CONFIG_V2_MODE_AUTHORITATIVE
 
     def assert_startup_mode_ready(self) -> None:
-        """Reject fake authoritative startup before legacy side effects."""
+        """Validate the selected process mode before global side effects."""
         assert_config_v2_startup_mode_ready(CONFIG_V2_MODE)
 
     async def initialize(self) -> None:
@@ -320,7 +320,9 @@ class ConfigService:
     async def _authoritative_load(self) -> None:
         """Reject the removed legacy-backed authoritative projection."""
         self.assert_startup_mode_ready()
-        raise RuntimeError("unreachable authoritative compatibility path")
+        raise RuntimeError(
+            "authoritative configuration is initialized by NativeConfigFacade"
+        )
 
     async def save_config(
         self,

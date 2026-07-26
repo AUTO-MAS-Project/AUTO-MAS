@@ -98,9 +98,15 @@ class LogMonitor:
                 continue
 
             if not if_mtime_checked:
-                file_mtime_date = date.fromtimestamp(log_file_path.stat().st_mtime)
-                if file_mtime_date == date.today():
+                try:
                     log_stat = log_file_path.stat()
+                except (FileNotFoundError, PermissionError) as e:
+                    logger.warning(f"文件访问错误: {e}")
+                    await asyncio.sleep(1)
+                    continue
+
+                file_mtime_date = date.fromtimestamp(log_stat.st_mtime)
+                if file_mtime_date == date.today():
                     if_mtime_checked = True
                 else:
                     if warned_mtime_date != file_mtime_date:

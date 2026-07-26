@@ -121,6 +121,43 @@ async def test_script_leases_are_owner_aware_and_release_residual_locks(
 
 
 @pytest.mark.asyncio
+async def test_script_lease_release_uses_mapping_access_not_async_export_get(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MultipleConfig.get exports data asynchronously; leases need the live node."""
+
+    script_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    node = _FakeScriptNode()
+
+    class _FakeMultipleConfig:
+        def __contains__(self, key: uuid.UUID) -> bool:
+            return key == script_id
+
+        def __getitem__(self, key: uuid.UUID) -> _FakeScriptNode:
+            assert key == script_id
+            return node
+
+        async def get(self, _key: uuid.UUID) -> dict:
+            raise AssertionError("lease cleanup must not call async export get()")
+
+    monkeypatch.setattr(
+        task_manager,
+        "Config",
+        SimpleNamespace(ScriptConfig=_FakeMultipleConfig()),
+    )
+    manager = task_manager._TaskManager()
+    manager._script_leases[script_id] = task_id
+    node.is_locked = True
+
+    await manager._release_script_leases(task_id)
+
+    assert manager._script_leases == {}
+    assert node.is_locked is False
+    assert node.unlock_count == 1
+
+
+@pytest.mark.asyncio
 async def test_partial_lease_acquire_rolls_back_owned_nodes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

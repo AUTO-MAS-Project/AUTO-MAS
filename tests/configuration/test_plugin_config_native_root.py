@@ -6,7 +6,8 @@ import copy
 import json
 import re
 import unittest
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 from app.configuration import ConfigAggregateError
@@ -17,6 +18,7 @@ from app.configuration.roots.plugin_config import (
     plugin_config_wire_to_legacy,
 )
 from app.configuration.v2.support.security import DPAPIDecryptionResult
+from app.plugins.config_store import PluginConfigStore
 
 _CIPHERTEXT = "DPAPI:v1:Y2lwaGVydGV4dA=="
 
@@ -50,6 +52,69 @@ def _legacy_plugin_config(
 
 
 class PluginConfigNativeRootTest(unittest.IsolatedAsyncioTestCase):
+    async def test_plugin_store_writes_authoritative_native_root(self) -> None:
+        """Plugin bootstrap must not call the removed legacy ``load`` API."""
+
+        with (
+            patch(
+                "app.configuration.v2.encrypted.dpapi_encrypt",
+                return_value=_CIPHERTEXT,
+            ),
+            patch(
+                "app.configuration.v2.encrypted.dpapi_decrypt_with_status",
+                return_value=DPAPIDecryptionResult('{"answer": 42}', False),
+            ),
+        ):
+            root = PluginConfig()
+            await root.activate()
+            stale_uid = root.PluginInstances.add(
+                PluginInstance,
+                wire={
+                    "Info": {"Plugin": "stale", "Id": "old"},
+                    "Data": {"ConfigRaw": "{}"},
+                },
+            )
+            await root.PluginInstances.commit()
+
+            store = PluginConfigStore(schema_manager=MagicMock())
+            store._resolve_storage_config = MagicMock(  # type: ignore[method-assign]
+                side_effect=lambda _name, config, **_kwargs: config
+            )
+            compatibility_load = AsyncMock()
+            native_facade = SimpleNamespace(
+                PluginConfig=SimpleNamespace(
+                    Data=root.Data,
+                    PluginInstances=root.PluginInstances,
+                    commit=root.commit,
+                    load=compatibility_load,
+                )
+            )
+            with patch("app.core.Config", native_facade):
+                await store._write_root(
+                    {
+                        "version": 3,
+                        "instances": [
+                            {
+                                "id": "demo:primary",
+                                "plugin": "demo",
+                                "enabled": True,
+                                "name": "主实例",
+                                "config": {"answer": 42},
+                            }
+                        ],
+                    }
+                )
+
+            compatibility_load.assert_not_awaited()
+            self.assertEqual(root.Data.Version, 3)
+            self.assertNotIn(stale_uid, root.PluginInstances)
+            self.assertEqual(len(root.PluginInstances), 1)
+            instance = next(iter(root.PluginInstances.values()))
+            self.assertEqual(instance.Info.Plugin, "demo")
+            self.assertEqual(instance.Info.Id, "primary")
+            self.assertEqual(instance.Info.Name, "主实例")
+            self.assertEqual(json.loads(instance.Data.ConfigRaw), {"answer": 42})
+
     async def test_activation_crud_update_and_order(self) -> None:
         def encrypt(_value: str) -> str:
             return _CIPHERTEXT

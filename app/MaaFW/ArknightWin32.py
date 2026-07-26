@@ -43,6 +43,7 @@ from maa.controller import (
 from maa.custom_action import CustomAction
 
 
+from app.configuration import CONFIG_V2_MODE, CONFIG_V2_MODE_AUTHORITATIVE
 from app.core import Config, MaaFWManager
 from app.core.ws import Publisher, protocol
 from app.models.schema import WSTaskNoticeData
@@ -62,10 +63,25 @@ class _ArknightWin32Toolkit:
         self.listener = keyboard.Listener()
 
         Config.ToolsConfig.arknights_pc_get_connected = self.get_connect_status
-        Config.ToolsConfig.bind("ArknightsPC", "Enabled", self.on_enabled_change)
+        # 显式按运行模式分流：legacy ``bind`` 仅存在于 ConfigBase;
+        # authoritative 的原生根用 after-commit 观察者承接同一回调语义。
+        if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+            Config.ToolsConfig.connect_observer(
+                self._on_enabled_observer,
+                group="ArknightsPC",
+                field="Enabled",
+            )
+        else:
+            Config.ToolsConfig.bind(
+                "ArknightsPC", "Enabled", self.on_enabled_change
+            )
 
         self.p = psutil.Process(os.getpid())
         self.original_nice = self.p.nice()
+
+    async def _on_enabled_observer(self, _sender: object, event) -> None:
+        """原生配置 after-commit 观察者到 legacy 回调签名的适配。"""
+        await self.on_enabled_change(bool(event.value))
 
     async def init(self) -> None:
 
@@ -240,7 +256,13 @@ def __getattr__(name: str):
     global _toolkit
     if name == "ArknightWin32Toolkit":
         if _toolkit is None:
-            _toolkit = _ArknightWin32Toolkit()
+            try:
+                _toolkit = _ArknightWin32Toolkit()
+            except BaseException:
+                # 模块级 __getattr__ 抛出的 AttributeError 会被 import 机制
+                # 吞成 "cannot import name",先落真实堆栈再向上抛。
+                logger.exception("ArknightWin32Toolkit 初始化失败")
+                raise
         return _toolkit
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

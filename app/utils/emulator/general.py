@@ -140,9 +140,10 @@ class GeneralDeviceManager(DeviceBase):
         ):
 
             # 检查窗口可见性是否符合预期
-            if self.process_managers[idx].main_pid is not None and (
-                win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
-                == is_visible
+            # 必须使用窗口句柄, 传入 PID 会被 IsWindowVisible 当作无效句柄恒返回 0
+            main_hwnd = self.process_managers[idx].main_hwnd
+            if main_hwnd is not None and (
+                bool(win32gui.IsWindowVisible(main_hwnd)) == is_visible
             ):
                 return status
 

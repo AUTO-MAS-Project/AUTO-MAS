@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 import threading
-import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +38,7 @@ from .production import (
     production_wire_roots_to_legacy,
 )
 from .v2.manager import config_manager
+from app.utils.atomic_file import create_staging_directory
 
 AUTHORITATIVE_STORE_DIRECTORY_NAME = ".config-v2-authoritative"
 ROLLBACK_EXPORT_DIRECTORY_NAME = ".config-v2-r6-rollback"
@@ -367,8 +367,10 @@ class AuthoritativeConfigurationRuntime:
                 "r6 rollback bundle target already exists"
             )
 
-        staging_path = Path(
-            tempfile.mkdtemp(prefix=".pending-r6-rollback-", dir=str(parent))
+        # 回滚 bundle 是持久产物;mkdtemp 的仅限当前令牌 DACL 会在发布后
+        # 保留,令另一提升级别的进程无法读取,因此改用继承 ACL 的暂存目录。
+        staging_path = create_staging_directory(
+            parent, prefix=".pending-r6-rollback-"
         )
         root_records: list[dict[str, object]] = []
         try:

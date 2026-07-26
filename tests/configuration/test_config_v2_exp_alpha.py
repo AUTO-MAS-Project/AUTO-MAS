@@ -26,7 +26,6 @@ from app.configuration import (
     ConfigEntry,
     ConfigGroup,
     ConfigManager,
-    ConfigV2AuthoritativeUnavailableError,
     EncryptedValue,
     EncryptedValueError,
     FieldChangeEvent,
@@ -34,13 +33,13 @@ from app.configuration import (
     RefDeleteAction,
     Trigger,
     Virtual,
+    config_manager,
     encrypted,
-    ref,
     read_wire_toml,
+    ref,
     trigger_field,
     virtual_field,
     write_wire_toml,
-    config_manager,
 )
 from app.configuration.compat import LegacyWireAdapter
 from app.configuration.runtime import (
@@ -51,17 +50,23 @@ from app.configuration.runtime import (
 )
 from app.configuration.v2.support.security import DPAPI_CONFIG_PREFIX, dpapi_encrypt
 from app.core.config_service import _SchemaBoundLegacyCodec, _snapshot_legacy_config
+from app.models.config import GlobalConfig
 from app.models.ConfigBase import (
     ConfigBase as LegacyConfigBase,
+)
+from app.models.ConfigBase import (
     ConfigItem as LegacyConfigItem,
+)
+from app.models.ConfigBase import (
     EncryptedJSONValidator,
     EncryptedValidator,
-    MultipleConfig as LegacyMultipleConfig,
     StringValidator,
     URLValidator,
     configure_config_save_observer,
 )
-from app.models.config import GlobalConfig
+from app.models.ConfigBase import (
+    MultipleConfig as LegacyMultipleConfig,
+)
 from app.utils.atomic_file import atomic_write_json
 
 
@@ -1953,7 +1958,7 @@ class TestLegacyPreflight(IsolatedAsyncioTestCase):
             self.assertTrue(shadow["Data"]["Config"].startswith("cipher:"))
             self.assertNotIn("secret", shadow_path.read_text(encoding="utf-8"))
 
-    async def test_authoritative_mode_initialize_fails_before_hook_registration(
+    async def test_authoritative_mode_initializes_without_legacy_hooks(
         self,
     ) -> None:
         from app.core.config_service import ConfigService
@@ -1983,16 +1988,13 @@ class TestLegacyPreflight(IsolatedAsyncioTestCase):
                 AsyncMock(),
             ),
         ):
-            with self.assertRaisesRegex(
-                ConfigV2AuthoritativeUnavailableError,
-                "all eight production roots",
-            ):
-                await service.initialize()
+            await service.initialize()
+            await service.shutdown()
 
         auth_load.assert_not_awaited()
         register_codecs.assert_not_called()
-        unregister_codecs.assert_not_called()
-        configure_hooks.assert_not_called()
+        unregister_codecs.assert_called_once_with()
+        self.assertEqual(configure_hooks.call_count, 2)
         configure_observer.assert_not_called()
         self.assertFalse(service._initialized)
         self.assertEqual(service._lifecycle_state, "idle")
@@ -2150,7 +2152,7 @@ class TestLegacyPreflight(IsolatedAsyncioTestCase):
 
 
 class TestAuthoritativeMode(IsolatedAsyncioTestCase):
-    """authoritative 在八个原生生产根完成前必须 fail-closed。"""
+    """authoritative 不得重新进入已移除的 legacy 投影链。"""
 
     async def test_authoritative_load_rejects_legacy_backed_v2_projection(
         self,
@@ -2183,8 +2185,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 ):
                     service._register_legacy_codecs()
                     with self.assertRaisesRegex(
-                        ConfigV2AuthoritativeUnavailableError,
-                        "all eight production roots",
+                        RuntimeError,
+                        "initialized by NativeConfigFacade",
                     ):
                         await service._authoritative_load()
 
@@ -2227,8 +2229,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 ):
                     service._register_legacy_codecs()
                     with self.assertRaisesRegex(
-                        ConfigV2AuthoritativeUnavailableError,
-                        "all eight production roots",
+                        RuntimeError,
+                        "initialized by NativeConfigFacade",
                     ):
                         await service._authoritative_load()
 
@@ -2238,8 +2240,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 service._unregister_legacy_codecs()
 
     async def test_authoritative_gate_runs_before_legacy_preflight(self) -> None:
-        from app.core.config_service import ConfigService
         from app.configuration.compat import LegacyPreflight
+        from app.core.config_service import ConfigService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             legacy_path = Path(temp_dir) / "Config.json"
@@ -2272,8 +2274,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 ):
                     service._register_legacy_codecs()
                     with self.assertRaisesRegex(
-                        ConfigV2AuthoritativeUnavailableError,
-                        "all eight production roots",
+                        RuntimeError,
+                        "initialized by NativeConfigFacade",
                     ):
                         await service._authoritative_load()
 
@@ -2313,8 +2315,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 ):
                     service._register_legacy_codecs()
                     with self.assertRaisesRegex(
-                        ConfigV2AuthoritativeUnavailableError,
-                        "all eight production roots",
+                        RuntimeError,
+                        "initialized by NativeConfigFacade",
                     ):
                         await service._authoritative_load()
 
@@ -2343,8 +2345,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
             patch("app.configuration.compat.CONFIG_V2_MODE", "authoritative"),
         ):
             with self.assertRaisesRegex(
-                ConfigV2AuthoritativeUnavailableError,
-                "all eight production roots",
+                RuntimeError,
+                "initialized by NativeConfigFacade",
             ):
                 await service._authoritative_load()
 
@@ -2381,8 +2383,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 ):
                     service._register_legacy_codecs()
                     with self.assertRaisesRegex(
-                        ConfigV2AuthoritativeUnavailableError,
-                        "all eight production roots",
+                        RuntimeError,
+                        "initialized by NativeConfigFacade",
                     ):
                         await service._authoritative_load()
 
@@ -2418,8 +2420,8 @@ class TestAuthoritativeMode(IsolatedAsyncioTestCase):
                 ):
                     service._register_legacy_codecs()
                     with self.assertRaisesRegex(
-                        ConfigV2AuthoritativeUnavailableError,
-                        "all eight production roots",
+                        RuntimeError,
+                        "rejects legacy JSON-first saves",
                     ):
                         await service.save_config(
                             legacy_path,

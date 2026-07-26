@@ -88,7 +88,7 @@ EXPECTED_BOOTSTRAP_PLUGINS: list[tuple[str, str, str, str]] = [
     (
         "maaend_adapter",
         "automas_plugin_maaend_adapter",
-        "0.0.3",
+        "0.0.6",
         "auto_mas.plugins",
     ),
     ("script_MAA", "automas_script_maa", "0.0.6", "auto_mas.plugins"),

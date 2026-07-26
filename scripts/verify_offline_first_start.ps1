@@ -105,6 +105,245 @@ $runtimeUv = Join-Path $AppDir "environment\python\Scripts\uv.exe"
 Write-Check "Full 包 Python runtime 存在" (Test-Path $runtimePython -PathType Leaf) $runtimePython
 Write-Check "Full 包 uv runtime 存在" (Test-Path $runtimeUv -PathType Leaf) $runtimeUv
 
+# ── 1b. 三方一致性检查 (Lane 13): pyproject pin ↔ runtime-lock ↔ wheel filenames ──
+Write-Host "`n=== 1b. 三方一致性检查 (pyproject pin vs runtime-lock vs wheel filenames) ===" -ForegroundColor Cyan
+
+function Normalize-DistributionName {
+    param([string]$Name)
+    return ($Name.Trim().ToLower() -replace '[-_.]+', '_')
+}
+
+function Parse-PyprojectBootstrapPackages {
+    param([string]$PyprojectPath)
+    $result = @{}
+    if (-not (Test-Path -LiteralPath $PyprojectPath -PathType Leaf)) {
+        return $result
+    }
+    $content = Get-Content -LiteralPath $PyprojectPath -Raw -ErrorAction SilentlyContinue
+    if (-not $content) { return $result }
+
+    $marker = '[tool.auto-mas.plugin-bootstrap]'
+    $markerIdx = $content.IndexOf($marker)
+    if ($markerIdx -lt 0) { return $result }
+    $sectionStart = $markerIdx + $marker.Length
+    $rest = $content.Substring($sectionStart)
+    $nextSection = [regex]::Match($rest, '(?m)^\s*\[[^\]]+\]\s*$')
+    $sectionBody = if ($nextSection.Success) { $rest.Substring(0, $nextSection.Index) } else { $rest }
+
+    $pkgsMatch = [regex]::Match($sectionBody, '(?ms)^\s*packages\s*=\s*\[(.*?)\]')
+    if (-not $pkgsMatch.Success) { return $result }
+    $arrayBody = $pkgsMatch.Groups[1].Value
+
+    # Split top-level items by comma, ignoring commas inside { } or " ".
+    $items = New-Object System.Collections.ArrayList
+    $current = New-Object System.Text.StringBuilder
+    $braceDepth = 0
+    $inSingle = $false
+    $inDouble = $false
+    for ($i = 0; $i -lt $arrayBody.Length; $i++) {
+        $ch = $arrayBody[$i]
+        if ($inSingle) {
+            [void]$current.Append($ch)
+            if ($ch -eq "'") { $inSingle = $false }
+            continue
+        }
+        if ($inDouble) {
+            [void]$current.Append($ch)
+            if ($ch -eq '"') { $inDouble = $false }
+            continue
+        }
+        if ($ch -eq "'") { $inSingle = $true; [void]$current.Append($ch); continue }
+        if ($ch -eq '"') { $inDouble = $true; [void]$current.Append($ch); continue }
+        if ($ch -eq '{') { $braceDepth++; [void]$current.Append($ch); continue }
+        if ($ch -eq '}') { $braceDepth = [Math]::Max(0, $braceDepth - 1); [void]$current.Append($ch); continue }
+        if ($ch -eq ',' -and $braceDepth -eq 0) {
+            $t = $current.ToString().Trim()
+            if ($t) { [void]$items.Add($t) }
+            $current = New-Object System.Text.StringBuilder
+            continue
+        }
+        [void]$current.Append($ch)
+    }
+    $tail = $current.ToString().Trim()
+    if ($tail) { [void]$items.Add($tail) }
+
+    foreach ($rawItem in $items) {
+        $item = $rawItem.Trim()
+        if (-not $item) { continue }
+        if ($item.StartsWith('"') -and $item.EndsWith('"') -and $item.Length -ge 2) {
+            $name = $item.Substring(1, $item.Length - 2).Trim()
+            if ($name) {
+                $key = Normalize-DistributionName -Name $name
+                if (-not $result.ContainsKey($key)) {
+                    $result[$key] = @{ name = $name; version = $null; specifier = $null }
+                }
+            }
+            continue
+        }
+        if ($item.StartsWith('{') -and $item.EndsWith('}')) {
+            $body = $item.Substring(1, $item.Length - 2)
+            $fields = @{}
+            $fieldItems = New-Object System.Collections.ArrayList
+            $cur = New-Object System.Text.StringBuilder
+            $bd = 0
+            $s1 = $false; $s2 = $false
+            for ($i = 0; $i -lt $body.Length; $i++) {
+                $ch = $body[$i]
+                if ($s1) { [void]$cur.Append($ch); if ($ch -eq "'") { $s1 = $false }; continue }
+                if ($s2) { [void]$cur.Append($ch); if ($ch -eq '"') { $s2 = $false }; continue }
+                if ($ch -eq "'") { $s1 = $true; [void]$cur.Append($ch); continue }
+                if ($ch -eq '"') { $s2 = $true; [void]$cur.Append($ch); continue }
+                if ($ch -eq '{') { $bd++; [void]$cur.Append($ch); continue }
+                if ($ch -eq '}') { $bd = [Math]::Max(0, $bd - 1); [void]$cur.Append($ch); continue }
+                if ($ch -eq ',' -and $bd -eq 0) {
+                    $t = $cur.ToString().Trim()
+                    if ($t) { [void]$fieldItems.Add($t) }
+                    $cur = New-Object System.Text.StringBuilder
+                    continue
+                }
+                [void]$cur.Append($ch)
+            }
+            $ftail = $cur.ToString().Trim()
+            if ($ftail) { [void]$fieldItems.Add($ftail) }
+
+            foreach ($f in $fieldItems) {
+                $eq = $f.IndexOf('=')
+                if ($eq -le 0) { continue }
+                $k = $f.Substring(0, $eq).Trim()
+                $v = $f.Substring($eq + 1).Trim()
+                if ($k -and $v) {
+                    if (($v.StartsWith('"') -and $v.EndsWith('"')) -or ($v.StartsWith("'") -and $v.EndsWith("'"))) {
+                        $v = $v.Substring(1, $v.Length - 2)
+                    }
+                    $fields[$k] = $v
+                }
+            }
+            $pkgName = $fields['name']
+            if (-not $pkgName) { continue }
+            $key = Normalize-DistributionName -Name $pkgName
+            if (-not $result.ContainsKey($key)) {
+                $result[$key] = @{
+                    name = $pkgName
+                    version = $fields['version']
+                    specifier = $fields['specifier']
+                }
+            }
+        }
+    }
+    return $result
+}
+
+function Parse-WheelFilename {
+    param([string]$Filename)
+    if (-not $Filename) { return $null }
+    if (-not $Filename.ToLower().EndsWith('.whl')) { return $null }
+    $base = $Filename.Substring(0, $Filename.Length - 4)
+    $parts = $base -split '-'
+    if ($parts.Count -lt 5 -or -not $parts[0] -or -not $parts[1]) { return $null }
+    return @{ distribution = $parts[0]; version = $parts[1] }
+}
+
+$pyprojectPath = Join-Path $snapshotRoot "pyproject.toml"
+$pyprojectExists = Test-Path -LiteralPath $pyprojectPath -PathType Leaf
+Write-Check "pyproject.toml 存在" $pyprojectExists $pyprojectPath
+
+$threePartyOk = $true
+$threePartyDetails = New-Object System.Collections.ArrayList
+
+if ($pyprojectExists -and (Test-Path -LiteralPath $runtimeLockPath -PathType Leaf) -and $wheelsExists) {
+    $pyprojectPkgs = Parse-PyprojectBootstrapPackages -PyprojectPath $pyprojectPath
+
+    $runtimeLockJson = $null
+    try {
+        $runtimeLockJson = Get-Content -LiteralPath $runtimeLockPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        $threePartyOk = $false
+        [void]$threePartyDetails.Add("runtime-lock.json 解析失败: $($_.Exception.Message)")
+    }
+
+    $wheelFiles = Get-ChildItem -Path $wheelsDir -Filter "*.whl" -File -ErrorAction SilentlyContinue
+    $wheelVersions = @{}       # normalized distribution -> version
+    $wheelFilenames = @{}      # normalized distribution -> filename
+    $wheelDuplicates = @()
+    foreach ($wf in $wheelFiles) {
+        $parsed = Parse-WheelFilename -Filename $wf.Name
+        if (-not $parsed) { continue }
+        $key = Normalize-DistributionName -Name $parsed.distribution
+        if ($wheelVersions.ContainsKey($key)) {
+            if ($wheelVersions[$key] -ne $parsed.version) {
+                $wheelDuplicates += "$($parsed.distribution): $($wheelFilenames[$key]) ($($wheelVersions[$key])) vs $($wf.Name) ($($parsed.version))"
+            }
+        } else {
+            $wheelVersions[$key] = $parsed.version
+            $wheelFilenames[$key] = $wf.Name
+        }
+    }
+    if ($wheelDuplicates.Count -gt 0) {
+        $threePartyOk = $false
+        [void]$threePartyDetails.Add("wheelhouse 出现同分发多版本: $($wheelDuplicates -join '; ')")
+    }
+
+    if ($runtimeLockJson) {
+        $rlPlugins = @{}
+        foreach ($entry in $runtimeLockJson.plugins) {
+            $key = Normalize-DistributionName -Name $entry.distribution
+            $rlPlugins[$key] = @{ version = $entry.version; filename = $entry.filename }
+        }
+
+        # Check 1: pyproject pin vs runtime-lock version
+        foreach ($k in ($pyprojectPkgs.Keys | Sort-Object)) {
+            $pkg = $pyprojectPkgs[$k]
+            if (-not $rlPlugins.ContainsKey($k)) {
+                if ($pkg.version -or $pkg.specifier) {
+                    $threePartyOk = $false
+                    [void]$threePartyDetails.Add("pyproject 声明 `"$($pkg.name)$(if ($pkg.version) { '==' + $pkg.version } elseif ($pkg.specifier) { $pkg.specifier })`"，但 runtime-lock 中缺失该 plugin 条目")
+                }
+                continue
+            }
+            $rlVer = $rlPlugins[$k].version
+            if ($pkg.version -and $pkg.version -ne $rlVer) {
+                $threePartyOk = $false
+                [void]$threePartyDetails.Add("distribution `"$($pkg.name)`": pyproject pin=`"$($pkg.version)`" vs runtime-lock=`"$rlVer`"")
+            }
+        }
+
+        # Check 2: runtime-lock vs wheel filename version
+        foreach ($k in ($rlPlugins.Keys | Sort-Object)) {
+            $rl = $rlPlugins[$k]
+            if (-not $wheelVersions.ContainsKey($k)) {
+                $threePartyOk = $false
+                [void]$threePartyDetails.Add("runtime-lock 声明 `"$($k)==$($rl.version)`" (wheel: $($rl.filename))，但 wheelhouse 中找不到对应 wheel 文件")
+                continue
+            }
+            if ($wheelVersions[$k] -ne $rl.version) {
+                $threePartyOk = $false
+                [void]$threePartyDetails.Add("distribution `"$k`": runtime-lock=`"$($rl.version)`" (lock filename: $($rl.filename)) vs wheel filename=`"$($wheelVersions[$k])`" (actual: $($wheelFilenames[$k]))")
+            }
+        }
+
+        # Check 3: pyproject pin vs wheel filename version (cross-check, redundant but explicit)
+        foreach ($k in ($pyprojectPkgs.Keys | Sort-Object)) {
+            $pkg = $pyprojectPkgs[$k]
+            if (-not $pkg.version) { continue }
+            if (-not $wheelVersions.ContainsKey($k)) {
+                # Already reported in Check 1/2 if applicable
+                continue
+            }
+            if ($wheelVersions[$k] -ne $pkg.version) {
+                $threePartyOk = $false
+                [void]$threePartyDetails.Add("distribution `"$($pkg.name)`": pyproject pin=`"$($pkg.version)`" vs wheel filename=`"$($wheelVersions[$k])`" ($($wheelFilenames[$k]))")
+            }
+        }
+    }
+
+    $pyprojectCount = $pyprojectPkgs.Count
+    $rlPluginCount = if ($runtimeLockJson) { @($runtimeLockJson.plugins).Count } else { 0 }
+    $wheelPluginCount = $wheelFiles.Count
+    [void]$threePartyDetails.Add("pyproject bootstrap packages=$pyprojectCount, runtime-lock plugins=$rlPluginCount, wheel files=$wheelPluginCount")
+}
+
+Write-Check "三方一致性 (pyproject pin vs runtime-lock vs wheel filename)" $threePartyOk ($threePartyDetails -join '; ')
+
 # ── 2. 进程与端口冲突检查 ──
 Write-Host "`n=== 2. 进程与端口冲突检查 ===" -ForegroundColor Cyan
 

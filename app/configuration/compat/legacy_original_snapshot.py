@@ -11,9 +11,12 @@ import hashlib
 import json
 import os
 import re
+import secrets
+import sqlite3
 import stat
+import subprocess
 import tempfile
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterator
@@ -36,6 +39,27 @@ _GENERATION_PATTERN = re.compile(r"original-[0-9a-f]{24}")
 
 class LegacyOriginalSnapshotError(RuntimeError):
     """The immutable pre-migration snapshot is absent, damaged, or unsafe."""
+
+
+class LegacyDataUpgradeRequiredError(LegacyOriginalSnapshotError):
+    """Legacy data structures must be upgraded before immutable capture."""
+
+
+class LegacyOriginalSnapshotPermissionError(LegacyOriginalSnapshotError):
+    """A snapshot path exists but the current process token cannot access it.
+
+    On Windows this typically means the path was created by a process with a
+    different elevation level, so its security descriptor does not grant the
+    current token access.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            "original snapshot path is not accessible with the current "
+            f"process token: {path} (it may have been created by a process "
+            "with a different elevation level)"
+        )
 
 
 @dataclass(frozen=True)
@@ -88,6 +112,7 @@ def ensure_legacy_original_snapshot(config_dir: Path) -> LegacyOriginalSnapshot:
     """
 
     config_dir = Path(config_dir)
+    _assert_legacy_data_upgrade_complete(config_dir)
     _ensure_plain_directory(config_dir, create=True)
 
     snapshot_dir = config_dir / SNAPSHOT_DIRECTORY_NAME
@@ -100,7 +125,7 @@ def ensure_legacy_original_snapshot(config_dir: Path) -> LegacyOriginalSnapshot:
         if _lexical_stat(current_path) is not None:
             generation, expected_manifest_hash = _read_current(current_path)
             generation_path = generations_dir / generation
-            manifest_path = _validate_generation(
+            manifest_path = _validate_generation_with_acl_recovery(
                 generation_path,
                 expected_generation=generation,
                 expected_manifest_hash=expected_manifest_hash,
@@ -128,7 +153,7 @@ def ensure_legacy_original_snapshot(config_dir: Path) -> LegacyOriginalSnapshot:
             )
         if published:
             generation_path = published[0]
-            manifest_path = _validate_generation(
+            manifest_path = _validate_generation_with_acl_recovery(
                 generation_path,
                 expected_generation=generation_path.name,
             )
@@ -157,9 +182,7 @@ def ensure_legacy_original_snapshot(config_dir: Path) -> LegacyOriginalSnapshot:
             "roots": root_records,
         }
 
-        staging_path = Path(
-            tempfile.mkdtemp(prefix=".pending-", dir=str(generations_dir))
-        )
+        staging_path = _create_staging_directory(generations_dir)
         try:
             files_dir = staging_path / "files"
             files_dir.mkdir()
@@ -198,6 +221,43 @@ def ensure_legacy_original_snapshot(config_dir: Path) -> LegacyOriginalSnapshot:
             generation_path=generation_path,
             manifest_path=manifest_path,
             created=True,
+        )
+
+
+def _assert_legacy_data_upgrade_complete(config_dir: Path) -> None:
+    """Refuse to freeze pre-v1.11 roots before legacy ``check_data`` runs.
+
+    The legacy upgrader is asynchronous and mutates configuration structures,
+    so this synchronous snapshot layer cannot safely run it.  It can, however,
+    fail before creating snapshot state and leave an actionable diagnosis.
+    """
+
+    database_path = config_dir.parent / "data" / "data.db"
+    database_stat = _lexical_stat(database_path)
+    if database_stat is None:
+        return
+    if not _is_plain_file_stat(database_stat):
+        raise LegacyDataUpgradeRequiredError(
+            "legacy data version cannot be verified from an unsafe data.db path"
+        )
+
+    try:
+        database_uri = f"{database_path.resolve(strict=False).as_uri()}?mode=ro"
+        with closing(sqlite3.connect(database_uri, uri=True)) as database:
+            rows = database.execute("SELECT v FROM version").fetchall()
+    except (OSError, sqlite3.DatabaseError) as exc:
+        raise LegacyDataUpgradeRequiredError(
+            "legacy data version cannot be verified before the immutable "
+            f"snapshot ({type(exc).__name__}); run Config.check_data() first"
+        ) from exc
+
+    versions = [row[0] for row in rows if len(row) == 1 and isinstance(row[0], str)]
+    if versions != ["v1.11"]:
+        version_label = versions[0] if len(versions) == 1 else "invalid"
+        raise LegacyDataUpgradeRequiredError(
+            "legacy data upgrade must complete before the immutable original "
+            f"snapshot: found {version_label}, required v1.11; run "
+            "Config.check_data() before ensure_legacy_original_snapshot()"
         )
 
 
@@ -289,6 +349,73 @@ def _published_generation_directories(generations_dir: Path) -> list[Path]:
             )
         published.append(path)
     return sorted(published, key=lambda path: path.name)
+
+
+def _create_staging_directory(generations_dir: Path) -> Path:
+    """Create a ``.pending-*`` staging directory with an inherited ACL.
+
+    ``tempfile.mkdtemp`` attaches an owner-only DACL on Windows.  The staging
+    directory is published via ``os.replace``, so that DACL would outlive
+    publication and deny the generation to tokens with a different owner
+    (for example an elevated creator followed by a non-elevated reader).
+    A default-security ``mkdir`` inherits the parent ACL instead.
+    """
+    for _ in range(64):
+        candidate = generations_dir / f".pending-{secrets.token_hex(8)}"
+        try:
+            os.mkdir(candidate)
+        except FileExistsError:
+            continue
+        return candidate
+    raise LegacyOriginalSnapshotError(
+        "unable to allocate a unique original snapshot staging directory"
+    )
+
+
+def _validate_generation_with_acl_recovery(
+    generation_path: Path,
+    *,
+    expected_generation: str,
+    expected_manifest_hash: str | None = None,
+) -> Path:
+    """Validate a published generation, repairing a broken DACL once.
+
+    Generations staged by earlier builds through ``tempfile.mkdtemp`` carry an
+    owner-only Windows DACL; a token with a different owner cannot even stat
+    the manifest.  One best-effort ACL reset keeps startup working for tokens
+    that hold WRITE_DAC or ownership; otherwise validation stays fail-closed.
+    """
+    try:
+        return _validate_generation(
+            generation_path,
+            expected_generation=expected_generation,
+            expected_manifest_hash=expected_manifest_hash,
+        )
+    except LegacyOriginalSnapshotPermissionError:
+        if not _try_restore_acl_inheritance(generation_path):
+            raise
+        return _validate_generation(
+            generation_path,
+            expected_generation=expected_generation,
+            expected_manifest_hash=expected_manifest_hash,
+        )
+
+
+def _try_restore_acl_inheritance(path: Path) -> bool:
+    """Best-effort ``icacls /reset`` so the path re-inherits its parent ACL."""
+    if os.name != "nt":
+        return False
+    try:
+        completed = subprocess.run(
+            ["icacls", str(path), "/reset", "/t", "/c", "/q"],
+            capture_output=True,
+            check=False,
+            timeout=30.0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
 
 
 def _validate_generation(
@@ -543,6 +670,8 @@ def _lexical_stat(path: Path) -> os.stat_result | None:
         return path.lstat()
     except FileNotFoundError:
         return None
+    except PermissionError as exc:
+        raise LegacyOriginalSnapshotPermissionError(path) from exc
 
 
 def _is_reparse_point(path_stat: os.stat_result) -> bool:
@@ -638,7 +767,9 @@ def _unlock_one_byte(lock_file: BinaryIO) -> None:
 
 __all__ = [
     "LEGACY_ROOT_FILE_NAMES",
+    "LegacyDataUpgradeRequiredError",
     "LegacyOriginalSnapshot",
     "LegacyOriginalSnapshotError",
+    "LegacyOriginalSnapshotPermissionError",
     "ensure_legacy_original_snapshot",
 ]

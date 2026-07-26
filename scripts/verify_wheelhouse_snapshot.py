@@ -90,6 +90,246 @@ def _normalized_distribution_name(value: Any) -> str:
     return re.sub(r"[-_.]+", "-", str(value or "").strip().lower())
 
 
+# ── Lane 13: pyproject.toml [tool.auto-mas.plugin-bootstrap] pin 解析 ──
+# 与 pluginBootstrapService.ts 的 loadDeclaredPackageSpecs 行为一致：
+# 仅支持 packages 数组中的字符串与 inline table 写法，不引入完整 TOML 依赖。
+# 解析失败时不抛错，只返回空列表；调用方决定是否在严格模式下记入 mismatch。
+PYPROJECT_BOOTSTRAP_SECTION = "[tool.auto-mas.plugin-bootstrap]"
+
+
+def _parse_pyproject_bootstrap_packages(pyproject_path: Path) -> list[dict[str, str | None]]:
+    """解析 pyproject.toml 的 [tool.auto-mas.plugin-bootstrap].packages。
+
+    Returns:
+        list[dict]: 每项形如 ``{"name": str, "version": str|None, "specifier": str|None}``。
+        文件缺失或无该 section 时返回空列表。
+    """
+    if not pyproject_path.is_file():
+        return []
+    try:
+        content = pyproject_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    marker_index = content.find(PYPROJECT_BOOTSTRAP_SECTION)
+    if marker_index < 0:
+        return []
+    rest = content[marker_index + len(PYPROJECT_BOOTSTRAP_SECTION):]
+    # 找到下一个 section 起始 ([xxx])，截断当前 section 主体
+    next_section = re.search(r"(?m)^\s*\[[^\]]+\]\s*$", rest)
+    section_body = rest[: next_section.start()] if next_section else rest
+
+    packages_match = re.search(r"(?ms)^\s*packages\s*=\s*\[(.*?)\]", section_body)
+    if not packages_match:
+        return []
+    array_body = packages_match.group(1)
+
+    # 按顶层逗号拆分（忽略 { } / 引号内的逗号）
+    items: list[str] = []
+    current: list[str] = []
+    brace_depth = 0
+    in_single = False
+    in_double = False
+    escaping = False
+    for ch in array_body:
+        if escaping:
+            current.append(ch)
+            escaping = False
+            continue
+        if (in_single or in_double) and ch == "\\":
+            current.append(ch)
+            escaping = True
+            continue
+        if not in_single and ch == '"':
+            in_double = not in_double
+            current.append(ch)
+            continue
+        if not in_double and ch == "'":
+            in_single = not in_single
+            current.append(ch)
+            continue
+        if not in_single and not in_double:
+            if ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                brace_depth = max(0, brace_depth - 1)
+            elif ch == "," and brace_depth == 0:
+                token = "".join(current).strip()
+                if token:
+                    items.append(token)
+                current = []
+                continue
+        current.append(ch)
+    tail = "".join(current).strip()
+    if tail:
+        items.append(tail)
+
+    result: list[dict[str, str | None]] = []
+    seen: set[str] = set()
+    for raw_item in items:
+        item = raw_item.strip()
+        if not item:
+            continue
+        # 字符串形式："package-name"
+        if (item.startswith('"') and item.endswith('"')) or (
+            item.startswith("'") and item.endswith("'")
+        ):
+            name = _decode_toml_string_literal(item).strip()
+            if not name:
+                continue
+            key = _normalized_distribution_name(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append({"name": name, "version": None, "specifier": None})
+            continue
+        # inline table 形式：{ name = "...", version = "...", specifier = "..." }
+        if item.startswith("{") and item.endswith("}"):
+            body = item[1:-1].strip()
+            fields: dict[str, str] = {}
+            for field_token in _split_inline_table_fields(body):
+                eq = field_token.find("=")
+                if eq <= 0:
+                    continue
+                k = field_token[:eq].strip()
+                v = field_token[eq + 1:].strip()
+                if k and v:
+                    fields[k] = _decode_toml_string_literal(v)
+            name = (fields.get("name") or "").strip()
+            if not name:
+                continue
+            key = _normalized_distribution_name(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(
+                {
+                    "name": name,
+                    "version": fields.get("version") or None,
+                    "specifier": fields.get("specifier") or None,
+                }
+            )
+    return result
+
+
+def _split_inline_table_fields(body: str) -> list[str]:
+    """拆分 inline table 顶层字段（同 splitTopLevelArrayItems 简化版）"""
+    items: list[str] = []
+    current: list[str] = []
+    brace_depth = 0
+    in_single = False
+    in_double = False
+    escaping = False
+    for ch in body:
+        if escaping:
+            current.append(ch)
+            escaping = False
+            continue
+        if (in_single or in_double) and ch == "\\":
+            current.append(ch)
+            escaping = True
+            continue
+        if not in_single and ch == '"':
+            in_double = not in_double
+            current.append(ch)
+            continue
+        if not in_double and ch == "'":
+            in_single = not in_single
+            current.append(ch)
+            continue
+        if not in_single and not in_double:
+            if ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                brace_depth = max(0, brace_depth - 1)
+            elif ch == "," and brace_depth == 0:
+                token = "".join(current).strip()
+                if token:
+                    items.append(token)
+                current = []
+                continue
+        current.append(ch)
+    tail = "".join(current).strip()
+    if tail:
+        items.append(tail)
+    return items
+
+
+def _decode_toml_string_literal(raw: str) -> str:
+    value = raw.strip()
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
+        inner = value[1:-1]
+        return (
+            inner
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\'", "'")
+            .replace("\\\\", "\\")
+            .strip()
+        )
+    return value
+
+
+def _compare_pyproject_pin_with_runtime_lock(
+    pyproject_path: Path, runtime_lock: dict[str, Any]
+) -> list[str]:
+    """Lane 13: 校验 pyproject plugin-bootstrap pin 与 runtime-lock plugin version 一致。
+
+    - 仅对 pyproject 中显式声明 version 的包做严格匹配；specifier 形式的包跳过
+      （与 pluginBootstrapService.isVersionAllowed 行为一致，specifier 用范围匹配，
+      无法用相等比较直接判定漂移；这里只做"pin 不应滞后/超前于 lock"的精确检测）。
+    - 对 runtime-lock 中存在但 pyproject 未声明的包：跳过（runtime 依赖可能在
+      wheelhouse 中但不需要被 pyproject 显式声明）。
+    """
+    mismatches: list[str] = []
+    declared = _parse_pyproject_bootstrap_packages(pyproject_path)
+    if not declared:
+        return mismatches  # pyproject 不在或 section 缺失：留给上层判断
+
+    plugins = runtime_lock.get("plugins") if isinstance(runtime_lock, dict) else None
+    if not isinstance(plugins, list):
+        mismatches.append(
+            "runtime-lock.plugins 不是列表；无法与 pyproject plugin-bootstrap pin 比对"
+        )
+        return mismatches
+
+    lock_by_name: dict[str, str] = {}
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            continue
+        name = _normalized_distribution_name(entry.get("distribution"))
+        version = str(entry.get("version") or "").strip()
+        if name and version:
+            lock_by_name[name] = version
+
+    for pkg in declared:
+        name = _normalized_distribution_name(pkg.get("name") or "")
+        if not name:
+            continue
+        pinned_version = pkg.get("version")
+        if not pinned_version:
+            # 仅包名或 specifier 形式：交给运行时 specifier 匹配；此处不强制相等
+            continue
+        lock_version = lock_by_name.get(name)
+        if lock_version is None:
+            mismatches.append(
+                f"pyproject plugin-bootstrap 声明 {name}=={pinned_version}，"
+                f"但 runtime-lock.plugins 中找不到该 distribution"
+            )
+            continue
+        if lock_version != pinned_version:
+            mismatches.append(
+                f"pyproject plugin-bootstrap pin 与 runtime-lock 不一致: "
+                f"distribution={name}, pyproject_pin={pinned_version!r}, "
+                f"runtime_lock_version={lock_version!r}"
+            )
+    return mismatches
+
+
 def verify_wheelhouse_snapshot(
     repository_root: Path | None = None,
     *,
@@ -223,6 +463,14 @@ def verify_wheelhouse_snapshot(
             mismatches.append(
                 f"runtime_lock_sha256 期望 {expected_runtime_lock_sha.lower()}, 实际 {actual_runtime_lock_sha.lower()}"
             )
+
+    # Lane 13 P0: pyproject plugin-bootstrap pin ↔ runtime-lock plugin version 一致性
+    # 当 pyproject.toml 在宿主根目录可见时做严格匹配；缺失则不报错（适配 --wheelhouse
+    # 指向独立 wheelhouse 但 pyproject 不在场的情况，例如对冻结 r6 单独校验）。
+    pyproject_path = repo / "pyproject.toml"
+    if pyproject_path.is_file():
+        pin_mismatches = _compare_pyproject_pin_with_runtime_lock(pyproject_path, runtime_lock)
+        mismatches.extend(pin_mismatches)
 
     if mismatches:
         raise SnapshotDriftError(

@@ -135,9 +135,17 @@ async def _shutdown_backend() -> None:
         logger.warning("后端开发模式下忽略退出，仅完成任务清理")
         return
 
+    await ws_manager.begin_inbound_quiesce()
     try:
+        # 已接受的 WS 命令可能仍在修改插件或运行时状态。必须先排空，
+        # 再进入插件 teardown，避免关闭阶段与在途命令并发。
+        await ws_manager.drain_inflight()
         await shutdown_coordinator.run_teardown()
-    except Exception as error:
+    except asyncio.CancelledError:
+        await ws_manager.end_inbound_quiesce()
+        raise
+    except BaseException as error:
+        await ws_manager.end_inbound_quiesce()
         logger.exception(
             f"后端清理失败，取消发送退出完成信号: "
             f"{type(error).__name__}: {error}"

@@ -22,10 +22,12 @@
 
 import uuid
 import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Dict, Literal
 
 from app.plugins import PluginEventFactory, PluginEventNames
-from .ws import Publisher, protocol
+from .ws import MainConnection, Publisher, protocol
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.models.schema import (
@@ -35,9 +37,46 @@ from app.models.schema import (
     WSTaskNoticeData,
 )
 from app.utils import get_logger
+from .queue_cycle import (
+    QueueCycleEntry,
+    calculate_next_cycle_after_run,
+    calculate_next_cycle_run,
+    format_cycle_datetime,
+    is_cycle_script_success,
+)
 
 
 logger = get_logger("业务调度")
+
+CYCLE_IDLE_POLL_SECONDS = 30
+CYCLE_LEASE_RETRY_SECONDS = 5
+
+# task.log.updated 推送保留的日志尾部窗口（字符数）。
+# - 日志最新内容在尾部，前端日志页整条覆盖显示，需要远大于插件事件
+#   2000 字符 tail 的合理回看窗口；
+# - WS 应用层单条消息上限为 4MB（protocol.DEFAULT_MAX_MESSAGE_BYTES），
+#   超限消息会被发布器整条拒发，前端日志会静默停更。512K 字符即使全部
+#   是 3~4 字节的 UTF-8 字符（CJK/emoji），序列化后也不超过约 2MB，
+#   相对 4MB 上限留有充足余量。
+TASK_LOG_PUSH_TAIL_CHARS = 512 * 1024
+
+
+def build_task_log_push_payload(log_text: str | None) -> dict:
+    """构造 task.log.updated 的推送 payload；超长日志仅保留尾部。
+
+    截断时附加 ``truncated`` 与 ``log_total_length``（原始字符数）字段。
+    前端消费端（frontend/src/views/scheduler/useSchedulerLogic.ts 的
+    handleUpdateMessage）只读取 ``data.log``，多余字段会被忽略。
+    """
+
+    text = log_text or ""
+    if len(text) <= TASK_LOG_PUSH_TAIL_CHARS:
+        return {"log": text}
+    return {
+        "log": text[-TASK_LOG_PUSH_TAIL_CHARS:],
+        "truncated": True,
+        "log_total_length": len(text),
+    }
 
 
 class TaskRuntimeUnavailableError(RuntimeError):
@@ -86,6 +125,49 @@ async def _ensure_task_runtime_available() -> None:
             "Config v2 authoritative task dispatch is unavailable before "
             "the native configuration runtime is initialized"
         )
+
+
+async def _set_many_with_expected(
+    entry,
+    changes: list[tuple[str, str, object]],
+    *,
+    expected: list[tuple[str, str, object]],
+) -> None:
+    """Atomically apply a legacy/v2 config update with CAS semantics.
+
+    Legacy ``ConfigBase`` exposes ``expected=`` directly. Native Config v2
+    accepts a grouped mapping instead, so compare and stage the update while
+    holding its global transaction lock. This prevents another writer from
+    interleaving between the comparison and commit.
+    """
+
+    from app.configuration import (
+        CONFIG_V2_MODE,
+        CONFIG_V2_MODE_AUTHORITATIVE,
+        config_manager,
+    )
+
+    if CONFIG_V2_MODE != CONFIG_V2_MODE_AUTHORITATIVE:
+        await entry.set_many(changes, expected=expected)
+        return
+
+    grouped: dict[str, dict[str, object]] = {}
+    for group, field, value in changes:
+        grouped.setdefault(group, {})[field] = value
+
+    async with config_manager.transaction():
+        conflicts: list[tuple[str, str, object, object]] = []
+        for group, field, wanted in expected:
+            actual = entry.get(group, field)
+            if actual != wanted:
+                conflicts.append((group, field, wanted, actual))
+        if conflicts:
+            detail = ", ".join(
+                f"{group}.{field}: expected {wanted!r}, got {actual!r}"
+                for group, field, wanted, actual in conflicts
+            )
+            raise RuntimeError(f"配置 CAS 冲突: {detail}")
+        await entry.set_many(grouped)
 
 
 def _resolve_queue_name(queue_id: str | None) -> str | None:
@@ -194,13 +276,15 @@ class TaskInfo(TaskItem):
         await Publisher.send(
             id=self.task_id,
             type=protocol.TASK_INFO_UPDATED,
-            data={"task_info": self.asdict},
+            data=self.ws_data,
         )
         if self.current_index != -1:
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
-                data={"log": self.script_list[self.current_index].log},
+                data=build_task_log_push_payload(
+                    self.script_list[self.current_index].log
+                ),
             )
 
         await self._emit_task_progress()
@@ -209,12 +293,15 @@ class TaskInfo(TaskItem):
 
 class Task(TaskExecuteBase):
 
-    def __init__(self, task_info: TaskInfo):
+    def __init__(self, task_info: TaskInfo, *, lease_manager=None):
         super().__init__()
         self.task_info = task_info
+        self._lease_manager = lease_manager
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
+        self._cycle_script_items: dict[str, ScriptItem] = {}
+        self._active_cycle_run_ids: dict[str, str] = {}
 
     def _resolve_script_provider(self, script_uid: uuid.UUID):
         """解析脚本对应的 provider，兼容插件脚本。"""
@@ -326,6 +413,19 @@ class Task(TaskExecuteBase):
 
     async def prepare(self):
 
+        if self.task_info.mode == "CycleRun":
+            if self.task_info.queue_id is None:
+                raise RuntimeError("循环运行必须选择队列")
+            await self._collect_cycle_entries(
+                uuid.UUID(self.task_info.queue_id),
+                datetime.now(),
+            )
+            logger.success(
+                f"循环任务 {self.task_info.task_id} 检索完成，"
+                f"包含 {len(self.task_info.script_list)} 个脚本项"
+            )
+            return
+
         # 初始化任务列表
         script_ids = (
             [
@@ -355,9 +455,534 @@ class Task(TaskExecuteBase):
             f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个脚本项"
         )
 
+    async def _recover_interrupted_cycle_run(
+        self,
+        queue_item,
+        *,
+        item_key: str,
+        now: datetime,
+    ) -> None:
+        """将不属于当前 Task 的 running 状态收敛为 failed，保留已消费的 NextRunAt。"""
+
+        if queue_item.get("Data", "CycleState") != "running":
+            return
+        run_id = str(queue_item.get("Data", "CycleRunId") or "")
+        if run_id and self._active_cycle_run_ids.get(item_key) == run_id:
+            return
+
+        revision = queue_item.get("Data", "CycleRevision")
+        timestamp = format_cycle_datetime(now)
+        try:
+            await _set_many_with_expected(
+                queue_item,
+                [
+                    ("Data", "LastCycleFinishedAt", timestamp),
+                    ("Data", "CycleState", "failed"),
+                    ("Data", "CycleRevision", revision + 1),
+                    ("Data", "CycleResult", "interrupted"),
+                    (
+                        "Data",
+                        "CycleError",
+                        "宿主在循环运行期间中断；已保留 NextRunAt 防止立即重复",
+                    ),
+                    ("Data", "CycleUpdatedAt", timestamp),
+                ],
+                expected=[
+                    ("Data", "CycleRunId", run_id),
+                    ("Data", "CycleState", "running"),
+                    ("Data", "CycleRevision", revision),
+                ],
+            )
+        except RuntimeError as error:
+            logger.warning(f"循环队列项 {item_key} 中断恢复 CAS 冲突: {error}")
+
+    async def _collect_cycle_entries(
+        self,
+        queue_uid: uuid.UUID,
+        now: datetime,
+    ) -> list[QueueCycleEntry]:
+        """按父级 QueueItem 顺序收集候选，并同步可展示的首次运行时间。"""
+
+        if queue_uid not in Config.QueueConfig:
+            raise RuntimeError("循环队列已被删除")
+
+        queue = Config.QueueConfig[queue_uid]
+        entries: list[QueueCycleEntry] = []
+        script_items: list[ScriptItem] = []
+        active_item_ids: set[str] = set()
+
+        for parent_index, (queue_item_uid, queue_item) in enumerate(
+            queue.QueueItem.items()
+        ):
+            script_id = str(queue_item.get("Info", "ScriptId") or "").strip()
+            if script_id in {"", "-"}:
+                continue
+            try:
+                script_uid = uuid.UUID(script_id)
+            except ValueError:
+                logger.warning(f"循环队列项 {queue_item_uid} 的脚本 ID 无效")
+                continue
+            if script_uid not in Config.ScriptConfig:
+                logger.warning(f"循环队列项 {queue_item_uid} 引用的脚本已删除")
+                continue
+
+            item_key = str(queue_item_uid)
+            active_item_ids.add(item_key)
+            script_config = Config.ScriptConfig[script_uid]
+            script_item = self._cycle_script_items.get(item_key)
+            if script_item is None or script_item.script_id != script_id:
+                script_item = ScriptItem(
+                    script_id=script_id,
+                    status="等待",
+                    name=script_config.get("Info", "Name"),
+                    user_list=[
+                        UserItem(
+                            user_id=str(uuid.uuid4()),
+                            name="暂未加载",
+                            status="等待",
+                        )
+                    ],
+                )
+                self._cycle_script_items[item_key] = script_item
+            else:
+                script_item.name = script_config.get("Info", "Name")
+            script_index = len(script_items)
+            script_items.append(script_item)
+
+            if not queue_item.get("Schedule", "Enabled"):
+                continue
+            await self._recover_interrupted_cycle_run(
+                queue_item,
+                item_key=item_key,
+                now=now,
+            )
+
+            next_run_at = calculate_next_cycle_run(
+                now=now,
+                mode=queue_item.get("Schedule", "Mode"),
+                days=queue_item.get("Schedule", "Days"),
+                time_text=queue_item.get("Schedule", "Time"),
+                interval_minutes=queue_item.get(
+                    "Schedule", "IntervalMinutes"
+                ),
+                interval_anchor=queue_item.get(
+                    "Schedule", "IntervalAnchor"
+                ),
+                next_run_at=queue_item.get("Schedule", "NextRunAt"),
+                last_started_at=queue_item.get(
+                    "Data", "LastCycleStartedAt"
+                ),
+                last_finished_at=queue_item.get(
+                    "Data", "LastCycleFinishedAt"
+                ),
+            )
+            persisted_next = queue_item.get("Schedule", "NextRunAt")
+            if (
+                persisted_next == "2000-01-01 00:00:00"
+                and next_run_at > now
+            ):
+                await queue_item.set(
+                    "Schedule",
+                    "NextRunAt",
+                    format_cycle_datetime(next_run_at),
+                )
+
+            entries.append(
+                QueueCycleEntry(
+                    parent_index=parent_index,
+                    script_index=script_index,
+                    queue_item_id=item_key,
+                    script_id=script_id,
+                    script_name=script_item.name,
+                    next_run_at=next_run_at,
+                )
+            )
+
+        for item_key in set(self._cycle_script_items) - active_item_ids:
+            self._cycle_script_items.pop(item_key, None)
+        self.task_info.script_list = script_items
+        return entries
+
+    @staticmethod
+    def _cycle_preview_payload(
+        entry: QueueCycleEntry,
+        *,
+        now: datetime,
+        is_running: bool = False,
+    ) -> dict[str, object]:
+        return {
+            "queueItemId": entry.queue_item_id,
+            "scriptId": entry.script_id,
+            "scriptName": entry.script_name,
+            "nextRunAt": format_cycle_datetime(entry.next_run_at),
+            "isDue": entry.next_run_at <= now,
+            "isRunning": is_running,
+        }
+
+    async def _set_cycle_state(
+        self,
+        entries: list[QueueCycleEntry],
+        *,
+        now: datetime,
+        active: QueueCycleEntry | None = None,
+        waiting_reason: str | None = None,
+    ) -> None:
+        """发布最多四项预览；已到期项始终按父级顺序排列。"""
+
+        due = sorted(
+            (entry for entry in entries if entry.next_run_at <= now),
+            key=lambda entry: entry.parent_index,
+        )
+        future = sorted(
+            (entry for entry in entries if entry.next_run_at > now),
+            key=lambda entry: (entry.next_run_at, entry.parent_index),
+        )
+        ordered = [*due, *future]
+        if active is not None:
+            ordered = [
+                active,
+                *(
+                    entry
+                    for entry in ordered
+                    if entry.queue_item_id != active.queue_item_id
+                ),
+            ]
+
+        preview = [
+            self._cycle_preview_payload(
+                entry,
+                now=now,
+                is_running=(
+                    active is not None
+                    and entry.queue_item_id == active.queue_item_id
+                ),
+            )
+            for entry in ordered[:4]
+        ]
+        self.task_info.cycle_queue_id = self.task_info.queue_id
+        self.task_info.cycle_current_item_id = (
+            active.queue_item_id if active is not None else None
+        )
+        self.task_info.cycle_next_list = preview
+        self.task_info.cycle_next_run_at = (
+            str(preview[0]["nextRunAt"]) if preview else None
+        )
+        self.task_info.cycle_waiting_reason = waiting_reason
+        await self.task_info.on_change()
+
+    async def _run_cycle_script(
+        self,
+        queue_uid: uuid.UUID,
+        entry: QueueCycleEntry,
+    ) -> bool | None:
+        """运行一个到期项；租约冲突返回 None，调用方稍后重试。"""
+
+        if self._lease_manager is None:
+            raise RuntimeError("循环任务未绑定租约管理器")
+
+        task_uid = uuid.UUID(self.task_info.task_id)
+        script_uid = uuid.UUID(entry.script_id)
+        try:
+            await self._lease_manager._acquire_script_leases(
+                task_uid,
+                [script_uid],
+            )
+        except Exception as error:
+            self.task_info.script_list[entry.script_index].status = "等待"
+            logger.warning(
+                f"循环队列项 {entry.queue_item_id} 暂不可执行，本轮跳过: "
+                f"{type(error).__name__}: {error}"
+            )
+            await self._set_cycle_state(
+                await self._collect_cycle_entries(queue_uid, datetime.now()),
+                now=datetime.now(),
+                active=entry,
+                waiting_reason=f"{type(error).__name__}: {error}",
+            )
+            return None
+
+        try:
+            queue_item = Config.QueueConfig[queue_uid].QueueItem[
+                uuid.UUID(entry.queue_item_id)
+            ]
+            script_item = self.task_info.script_list[entry.script_index]
+            started_at = datetime.now()
+            started_text = format_cycle_datetime(started_at)
+            previous_next_run = queue_item.get("Schedule", "NextRunAt")
+            previous_revision = queue_item.get("Data", "CycleRevision")
+            run_id = str(uuid.uuid4())
+            provisional_next_run = calculate_next_cycle_after_run(
+                mode=queue_item.get("Schedule", "Mode"),
+                days=queue_item.get("Schedule", "Days"),
+                time_text=queue_item.get("Schedule", "Time"),
+                interval_minutes=queue_item.get(
+                    "Schedule", "IntervalMinutes"
+                ),
+                interval_anchor=queue_item.get(
+                    "Schedule", "IntervalAnchor"
+                ),
+                started_at=started_at,
+                finished_at=started_at,
+            )
+            # 在产生外部脚本副作用前一次提交“已开始 + 已消费 due”；
+            # 即使随后进程崩溃，重启也不会立即重复同一到期项。
+            await _set_many_with_expected(
+                queue_item,
+                [
+                    ("Data", "LastCycleStartedAt", started_text),
+                    ("Data", "CycleRunId", run_id),
+                    ("Data", "CycleState", "running"),
+                    ("Data", "CycleRevision", previous_revision + 1),
+                    ("Data", "CycleResult", ""),
+                    ("Data", "CycleError", ""),
+                    ("Data", "CycleUpdatedAt", started_text),
+                    (
+                        "Schedule",
+                        "NextRunAt",
+                        format_cycle_datetime(provisional_next_run),
+                    ),
+                ],
+                expected=[
+                    ("Data", "CycleRevision", previous_revision),
+                    ("Schedule", "NextRunAt", previous_next_run),
+                ],
+            )
+            self._active_cycle_run_ids[entry.queue_item_id] = run_id
+            script_item.status = "运行"
+            await self._set_cycle_state(
+                await self._collect_cycle_entries(queue_uid, started_at),
+                now=started_at,
+                active=entry,
+            )
+
+            script_event_data = self._build_script_event_data()
+            await PluginEventFactory.emit_script_event_async(
+                event=PluginEventNames.SCRIPT_START,
+                source="core.task_manager",
+                task_id=self.task_info.task_id,
+                script_id=entry.script_id,
+                script_name=entry.script_name,
+                mode=self.task_info.mode,
+                status=script_item.status,
+                data=script_event_data,
+            )
+        except BaseException:
+            self._active_cycle_run_ids.pop(entry.queue_item_id, None)
+            await self._lease_manager._release_script_leases(
+                task_uid,
+                [script_uid],
+            )
+            raise
+
+        cancelled = False
+        run_error: str | None = None
+        success = False
+        try:
+            capability = await Config.get_script_record_capability(script_uid)
+            if not capability.available:
+                raise RuntimeError(
+                    capability.unavailable_reason or "脚本当前不可用"
+                )
+            if "AutoProxy" not in (capability.supported_modes or ()):
+                raise RuntimeError("脚本不支持循环运行所需的 AutoProxy 模式")
+            provider = self._resolve_script_provider(script_uid)
+            await self.spawn(provider.create_manager(script_item))
+        except asyncio.CancelledError:
+            cancelled = True
+            run_error = "任务已取消"
+            script_item.status = "取消"
+            raise
+        except Exception as error:
+            run_error = f"{type(error).__name__}: {error}"
+            script_item.status = "异常"
+            logger.exception(
+                f"循环队列脚本 {entry.script_name} 运行异常: {error}"
+            )
+        finally:
+            finished_at = datetime.now()
+            finished_text = format_cycle_datetime(finished_at)
+            if not cancelled:
+                success = (
+                    run_error is None
+                    and is_cycle_script_success(
+                        script_item.status,
+                        (user.status for user in script_item.user_list),
+                    )
+                )
+                if not success and run_error is None:
+                    run_error = "脚本状态未完成"
+                    script_item.status = "异常"
+            final_state = (
+                "cancelled"
+                if cancelled
+                else "succeeded"
+                if success
+                else "failed"
+            )
+            final_result = (
+                "cancelled"
+                if cancelled
+                else "success"
+                if success
+                else "error"
+            )
+            next_run_at = provisional_next_run
+            if not cancelled:
+                next_run_at = calculate_next_cycle_after_run(
+                    mode=queue_item.get("Schedule", "Mode"),
+                    days=queue_item.get("Schedule", "Days"),
+                    time_text=queue_item.get("Schedule", "Time"),
+                    interval_minutes=queue_item.get(
+                        "Schedule", "IntervalMinutes"
+                    ),
+                    interval_anchor=queue_item.get(
+                        "Schedule", "IntervalAnchor"
+                    ),
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+            try:
+                await _set_many_with_expected(
+                    queue_item,
+                    [
+                        ("Data", "LastCycleFinishedAt", finished_text),
+                        ("Data", "CycleState", final_state),
+                        (
+                            "Data",
+                            "CycleRevision",
+                            previous_revision + 2,
+                        ),
+                        ("Data", "CycleResult", final_result),
+                        ("Data", "CycleError", run_error or ""),
+                        ("Data", "CycleUpdatedAt", finished_text),
+                        (
+                            "Schedule",
+                            "NextRunAt",
+                            format_cycle_datetime(next_run_at),
+                        ),
+                    ],
+                    expected=[
+                        ("Data", "CycleRunId", run_id),
+                        ("Data", "CycleState", "running"),
+                        (
+                            "Data",
+                            "CycleRevision",
+                            previous_revision + 1,
+                        ),
+                        (
+                            "Schedule",
+                            "NextRunAt",
+                            format_cycle_datetime(provisional_next_run),
+                        ),
+                    ],
+                )
+            finally:
+                self._active_cycle_run_ids.pop(entry.queue_item_id, None)
+                await self._lease_manager._release_script_leases(
+                    task_uid,
+                    [script_uid],
+                )
+
+        result_event = (
+            PluginEventNames.SCRIPT_SUCCESS
+            if success
+            else PluginEventNames.SCRIPT_ERROR
+        )
+        await PluginEventFactory.emit_script_event_async(
+            event=result_event,
+            source="core.task_manager",
+            task_id=self.task_info.task_id,
+            script_id=entry.script_id,
+            script_name=entry.script_name,
+            mode=self.task_info.mode,
+            status=script_item.status,
+            error=run_error,
+            result=result_event,
+            data=script_event_data,
+        )
+        await PluginEventFactory.emit_script_event_async(
+            event=PluginEventNames.SCRIPT_EXIT,
+            source="core.task_manager",
+            task_id=self.task_info.task_id,
+            script_id=entry.script_id,
+            script_name=entry.script_name,
+            mode=self.task_info.mode,
+            status=script_item.status,
+            error=run_error,
+            result=result_event,
+            data=script_event_data,
+        )
+        return success
+
+    async def _run_cycle_task(self) -> None:
+        if self.task_info.queue_id is None:
+            raise RuntimeError("循环运行必须选择队列")
+        queue_uid = uuid.UUID(self.task_info.queue_id)
+        await self._emit_task_start()
+        logger.info(f"循环运行队列启动: {queue_uid}")
+
+        while True:
+            if queue_uid not in Config.QueueConfig:
+                raise RuntimeError("循环队列已被删除")
+            if not Config.QueueConfig[queue_uid].get("Info", "CycleEnabled"):
+                logger.info(f"循环队列 {queue_uid} 已关闭循环开关，结束任务")
+                return
+
+            now = datetime.now()
+            entries = await self._collect_cycle_entries(queue_uid, now)
+            due_entries = sorted(
+                (
+                    entry
+                    for entry in entries
+                    if entry.next_run_at <= now
+                ),
+                key=lambda entry: entry.parent_index,
+            )
+            if not due_entries:
+                await self._set_cycle_state(
+                    entries,
+                    now=now,
+                    waiting_reason=(
+                        "没有启用且有效的循环队列项"
+                        if not entries
+                        else "等待下一次运行"
+                    ),
+                )
+                wait_seconds = CYCLE_IDLE_POLL_SECONDS
+                if entries:
+                    wait_seconds = min(
+                        CYCLE_IDLE_POLL_SECONDS,
+                        max(
+                            1,
+                            int(
+                                (
+                                    min(
+                                        entry.next_run_at
+                                        for entry in entries
+                                    )
+                                    - now
+                                ).total_seconds()
+                            ),
+                        ),
+                    )
+                await asyncio.sleep(wait_seconds)
+                continue
+
+            ran_any = False
+            for entry in due_entries:
+                self.task_info.current_index = entry.script_index
+                result = await self._run_cycle_script(queue_uid, entry)
+                if result is not None:
+                    ran_any = True
+            if not ran_any:
+                await asyncio.sleep(CYCLE_LEASE_RETRY_SECONDS)
+
     async def main_task(self):
 
         await self.prepare()
+        if self.task_info.mode == "CycleRun":
+            await self._run_cycle_task()
+            return
         await self._emit_task_start()
         await self.task_info._emit_task_progress()
 
@@ -628,9 +1253,14 @@ class _TaskManager:
         self._startup_queue_running = False
         self._script_lease_guard = asyncio.Lock()
         self._script_leases: dict[uuid.UUID, uuid.UUID] = {}
+        self._queue_leases: dict[uuid.UUID, uuid.UUID] = {}
 
     @staticmethod
-    def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
+    def _queue_script_ids(
+        queue_id: uuid.UUID,
+        *,
+        enabled_only: bool = False,
+    ) -> list[uuid.UUID]:
         """返回队列中实际引用的脚本 ID。"""
 
         return [
@@ -640,6 +1270,10 @@ class _TaskManager:
                 script_id := str(queue_item.get("Info", "ScriptId") or "").strip()
             )
             and script_id != "-"
+            and (
+                not enabled_only
+                or queue_item.get("Schedule", "Enabled")
+            )
         ]
 
     async def _validate_task_capabilities(
@@ -697,25 +1331,68 @@ class _TaskManager:
                         self._script_leases.pop(script_id, None)
                 raise
 
-    async def _release_script_leases(self, task_uid: uuid.UUID) -> None:
+    async def _release_script_leases(
+        self,
+        task_uid: uuid.UUID,
+        only_script_ids: list[uuid.UUID] | None = None,
+    ) -> None:
         """Release only leases owned by ``task_uid`` and sweep residual locks."""
 
         async with self._script_lease_guard:
+            allowed = (
+                set(only_script_ids) if only_script_ids is not None else None
+            )
             script_ids = [
                 script_id
                 for script_id, owner in self._script_leases.items()
                 if owner == task_uid
+                and (allowed is None or script_id in allowed)
             ]
             for script_id in reversed(script_ids):
-                script = Config.ScriptConfig.get(script_id)
+                script = (
+                    Config.ScriptConfig[script_id]
+                    if script_id in Config.ScriptConfig
+                    else None
+                )
                 if script is not None and script.is_locked:
                     await script.unlock()
                 if self._script_leases.get(script_id) == task_uid:
                     self._script_leases.pop(script_id, None)
 
+    async def _acquire_queue_lease(
+        self,
+        task_uid: uuid.UUID,
+        queue_uid: uuid.UUID,
+    ) -> None:
+        """同一父队列只允许一个生产任务，空队列也不能绕过互斥。"""
+
+        async with self._script_lease_guard:
+            owner = self._queue_leases.get(queue_uid)
+            if owner is not None and owner != task_uid:
+                raise RuntimeError(f"队列 {queue_uid} 已由任务 {owner} 占用")
+            self._queue_leases[queue_uid] = task_uid
+
+    async def _release_queue_lease(self, task_uid: uuid.UUID) -> None:
+        async with self._script_lease_guard:
+            for queue_uid, owner in list(self._queue_leases.items()):
+                if owner == task_uid:
+                    self._queue_leases.pop(queue_uid, None)
+
+    @asynccontextmanager
+    async def queue_edit(self, queue_uid: uuid.UUID):
+        """阻止运行任务与队列结构/API 编辑交错。"""
+
+        async with self._script_lease_guard:
+            owner = self._queue_leases.get(queue_uid)
+            if owner is not None:
+                raise RuntimeError(
+                    f"队列 {queue_uid} 正由任务 {owner} 运行，请先停止任务"
+                )
+            yield
+
     async def add_task(
         self,
-        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
+        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "CycleRun"],
         id: str,
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
@@ -734,6 +1411,13 @@ class _TaskManager:
 
         await _ensure_task_runtime_available()
         uid = uuid.UUID(id)
+        if mode not in {
+            "AutoProxy",
+            "ManualReview",
+            "ScriptConfig",
+            "CycleRun",
+        }:
+            raise ValueError(f"不支持的任务模式: {mode}")
 
         if mode == "ScriptConfig":
             if uid in Config.ScriptConfig:
@@ -752,11 +1436,17 @@ class _TaskManager:
                 else:
                     raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
         elif uid in Config.QueueConfig:
+            if mode == "CycleRun" and not Config.QueueConfig[uid].get(
+                "Info", "CycleEnabled"
+            ):
+                raise RuntimeError("该队列未开启循环模式")
             task_uid = uuid.uuid4()
             queue_id = uid
             script_uid = None
             user_uid = None
         elif uid in Config.ScriptConfig:
+            if mode == "CycleRun":
+                raise RuntimeError("循环运行只能选择调度队列")
             task_uid = uuid.uuid4()
             queue_id = None
             script_uid = uid
@@ -765,14 +1455,29 @@ class _TaskManager:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
         target_script_ids = (
-            self._queue_script_ids(queue_id)
+            self._queue_script_ids(
+                queue_id,
+                enabled_only=mode == "CycleRun",
+            )
             if queue_id is not None
             else [script_uid] if script_uid is not None else []
         )
-        await self._validate_task_capabilities(mode, target_script_ids)
-        await self._acquire_script_leases(task_uid, target_script_ids)
-
         try:
+            if queue_id is not None:
+                await self._acquire_queue_lease(task_uid, queue_id)
+            capability_mode = (
+                "AutoProxy" if mode == "CycleRun" else mode
+            )
+            await self._validate_task_capabilities(
+                capability_mode,
+                target_script_ids,
+            )
+            if mode != "CycleRun":
+                await self._acquire_script_leases(
+                    task_uid,
+                    target_script_ids,
+                )
+
             logger.info(f"创建任务: {task_uid}, 模式: {mode}")
             if new_task_info:
                 await Publisher.send(
@@ -793,13 +1498,17 @@ class _TaskManager:
                 user_id=str(user_uid) if user_uid else None,
                 resume_from_script_id=resume_from_script_id,
             )
-            self.task_handler[task_uid] = Task(self.task_info[task_uid])
+            self.task_handler[task_uid] = Task(
+                self.task_info[task_uid],
+                lease_manager=self,
+            )
             self.task_handler[task_uid].execute()
             asyncio.create_task(self.clean_task(task_uid))
         except BaseException:
             self.task_info.pop(task_uid, None)
             self.task_handler.pop(task_uid, None)
             await self._release_script_leases(task_uid)
+            await self._release_queue_lease(task_uid)
             raise
 
         return task_uid
@@ -808,9 +1517,13 @@ class _TaskManager:
         power_enabled = False
         try:
             await self.task_handler[task_uid].accomplish.wait()
-            power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
+            power_enabled = bool(
+                self.task_info[task_uid].mode
+                not in {"ScriptConfig", "CycleRun"}
+            )
         finally:
             await self._release_script_leases(task_uid)
+            await self._release_queue_lease(task_uid)
             self.task_info.pop(task_uid, None)
             self.task_handler.pop(task_uid, None)
 
@@ -867,7 +1580,7 @@ class _TaskManager:
         try:
             await asyncio.sleep(10)
 
-            if Config.websocket is None:
+            if not MainConnection.is_connected:
                 logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
                 return
 
@@ -878,13 +1591,22 @@ class _TaskManager:
                 if queue.get("Info", "StartUpEnabled"):
                     logger.info(f"启动时需要运行的队列：{uid}")
                     try:
+                        mode = (
+                            "CycleRun"
+                            if queue.get("Info", "CycleEnabled")
+                            else "AutoProxy"
+                        )
                         await TaskManager.add_task(
-                            "AutoProxy",
+                            mode,
                             str(uid),
                             new_task_info={
                                 "queueId": str(uid),
                                 "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                                "taskType": "启动时代理",
+                                "taskType": (
+                                    "启动时循环"
+                                    if mode == "CycleRun"
+                                    else "启动时代理"
+                                ),
                             },
                         )
                     except (RuntimeError, ValueError) as error:

@@ -38,6 +38,8 @@ logger = get_logger("插件加载器")
 
 HOST_EMULATOR_COMPAT_OWNER = "host:legacy-emulator"
 EMULATOR_SERVICE_NAME = "emulator"
+HOST_GAME_CENTER_OWNER = "host:game-center"
+GAME_CENTER_SERVICE_NAME = "game_center"
 
 
 def _utc8_now_iso() -> str:
@@ -148,6 +150,42 @@ class PluginLoader:
 
         self.service.drop(HOST_EMULATOR_COMPAT_OWNER)
 
+    def _register_host_game_center(self) -> None:
+        """Publish the host game-center service when no plugin owns it."""
+
+        if self.service.owners(GAME_CENTER_SERVICE_NAME):
+            return
+
+        from app.services.game_center import get_default_game_center_service
+
+        self.service.set(
+            GAME_CENTER_SERVICE_NAME,
+            get_default_game_center_service(),
+            HOST_GAME_CENTER_OWNER,
+        )
+
+    def _drop_host_game_center(self) -> None:
+        """Remove only the synthetic game-center provider."""
+
+        self.service.drop(HOST_GAME_CENTER_OWNER)
+
+    def _unregister_game_provider_owner(self, owner: str) -> None:
+        """清理扩展插件注册到 typed game-center 服务中的 provider。"""
+
+        service = self.service.get(GAME_CENTER_SERVICE_NAME)
+        if service is None:
+            return
+        try:
+            from app.services.game_center import GameCenterService
+
+            if isinstance(service, GameCenterService):
+                service.unregister_provider_owner(owner)
+        except Exception as error:
+            logger.warning(
+                f"清理游戏 provider 失败 owner={owner}: "
+                f"{type(error).__name__}: {error}"
+            )
+
     def _restore_host_emulator_compat_after_provider_failure(
         self,
         provides: set[str],
@@ -160,6 +198,18 @@ class PluginLoader:
         ):
             self._register_host_emulator_compat()
 
+    def _restore_host_game_center_after_provider_failure(
+        self,
+        provides: set[str],
+    ) -> None:
+        """Restore the host game-center service after a real owner fails."""
+
+        if (
+            GAME_CENTER_SERVICE_NAME in provides
+            and not self.service.ready(GAME_CENTER_SERVICE_NAME)
+        ):
+            self._register_host_game_center()
+
     def _configure_host_compat_services(
         self,
         meta_map: Dict[str, tuple[set[str], set[str], set[str]]],
@@ -170,7 +220,14 @@ class PluginLoader:
             EMULATOR_SERVICE_NAME in provides
             for provides, _needs, _wants in meta_map.values()
         )
+        has_real_game_center_provider = any(
+            GAME_CENTER_SERVICE_NAME in provides
+            for provides, _needs, _wants in meta_map.values()
+        )
         self._drop_host_emulator_compat()
+        self._drop_host_game_center()
+        if not has_real_game_center_provider:
+            self._register_host_game_center()
         if has_real_emulator_provider:
             return False
 
@@ -1036,6 +1093,7 @@ class PluginLoader:
                 stop_reason="load_failure",
             )
             self._unregister_record_listeners(record)
+            self._unregister_game_provider_owner(record.instance_id)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
@@ -1051,6 +1109,7 @@ class PluginLoader:
                 stop_reason="load_failure",
             )
             self._unregister_record_listeners(record)
+            self._unregister_game_provider_owner(record.instance_id)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
@@ -1062,6 +1121,41 @@ class PluginLoader:
             logger.exception(f"插件加载失败: {plugin_name}, error={e}")
 
         return record
+
+    async def _unload_existing_instance_if_any(
+        self,
+        instance_id: str,
+        *,
+        reason: str,
+    ) -> None:
+        """安全卸载同 instance_id 的旧实例，避免 ACTIVE 孤儿与监听器泄漏。
+
+        - 若 ``records`` 中没有该 instance_id，直接返回。
+        - 若旧记录 status 已是 ``unloaded``，仅清理残留监听器/服务后返回。
+        - 否则调用 ``unload_instance`` 走完整 on_stop → on_unload 与监听器/
+          服务/页面/script_type 注销流程；卸载失败时记录 warning 但不抛错，
+          避免阻断新实例加载（错误仍可通过旧 record.error 观察）。
+
+        Args:
+            instance_id (str): 实例 ID。
+            reason (str): 传递给 on_stop 的停止原因。
+        """
+        old_record = self.records.get(instance_id)
+        if old_record is None:
+            return
+        if old_record.status == "unloaded":
+            # 已经卸载完成，但可能仍有残留监听器/服务引用，做一次幂等清理。
+            self._unregister_record_listeners(old_record)
+            self._unregister_game_provider_owner(instance_id)
+            self.service.drop(instance_id)
+            return
+        try:
+            await self.unload_instance(instance_id, stop_reason=reason)
+        except Exception as error:
+            logger.warning(
+                f"覆盖同名实例时旧实例卸载失败，继续加载新实例: "
+                f"instance_id={instance_id}, error={type(error).__name__}: {error}"
+            )
 
     async def load_instance(
         self,
@@ -1078,6 +1172,11 @@ class PluginLoader:
         """
         加载单个插件实例并返回实例记录。
 
+        若 ``instance_id`` 已存在旧记录，会先调用 ``unload_instance`` 清理旧
+        实例（on_stop → on_unload、监听器、服务、页面、script_type）后再创建
+        新记录。这避免 ACTIVE 孤儿与监听器/服务值泄漏，同时为同名覆盖提供
+        可观察的诊断痕迹（旧记录 status 切换为 unloaded、generation 保留）。
+
         Args:
             instance_id (str): 插件实例 ID。
             plugin_name (str): 插件名。
@@ -1093,6 +1192,8 @@ class PluginLoader:
         if plugin_name not in self.discovered_plugins:
             self.discover()
         if plugin_name not in self.discovered_plugins:
+            # 即便未发现插件，也要清理同 instance_id 的旧实例，避免遗留孤儿。
+            await self._unload_existing_instance_if_any(instance_id, reason="replace:unknown_plugin")
             record = PluginRecord(
                 instance_id=instance_id,
                 plugin_name=plugin_name,
@@ -1103,6 +1204,11 @@ class PluginLoader:
             self._mark_error(record, f"未发现插件: {plugin_name}")
             self.records[instance_id] = record
             return record
+
+        # P1 修复：覆盖同名 active/error 实例前先卸载旧实例，避免监听器、
+        # 服务值、页面注册等运行态泄漏。reload_instance 走 unload+load 路径，
+        # 这里只在直接调用 load_instance 的场景兜底。
+        await self._unload_existing_instance_if_any(instance_id, reason="replace:load_instance")
 
         plugin_source = self.discovered_plugins[plugin_name]
         record = PluginRecord(
@@ -1141,6 +1247,9 @@ class PluginLoader:
                 self._restore_host_emulator_compat_after_provider_failure(
                     merged_provides
                 )
+                self._restore_host_game_center_after_provider_failure(
+                    merged_provides
+                )
                 return record
 
             if (
@@ -1149,6 +1258,12 @@ class PluginLoader:
                 in self.service.owners(EMULATOR_SERVICE_NAME)
             ):
                 self._drop_host_emulator_compat()
+            if (
+                GAME_CENTER_SERVICE_NAME in merged_provides
+                and HOST_GAME_CENTER_OWNER
+                in self.service.owners(GAME_CENTER_SERVICE_NAME)
+            ):
+                self._drop_host_game_center()
 
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
@@ -1204,6 +1319,7 @@ class PluginLoader:
                 stop_reason="load_failure",
             )
             self._unregister_record_listeners(record)
+            self._unregister_game_provider_owner(record.instance_id)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
@@ -1214,6 +1330,9 @@ class PluginLoader:
             self._restore_host_emulator_compat_after_provider_failure(
                 declared_provides
             )
+            self._restore_host_game_center_after_provider_failure(
+                declared_provides
+            )
             self._mark_error(record, str(e))
             logger.error(f"插件实例加载失败: {instance_id}, error={e}")
         except Exception as e:
@@ -1222,6 +1341,7 @@ class PluginLoader:
                 stop_reason="load_failure",
             )
             self._unregister_record_listeners(record)
+            self._unregister_game_provider_owner(record.instance_id)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
@@ -1230,6 +1350,9 @@ class PluginLoader:
             page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
             self._restore_host_emulator_compat_after_provider_failure(
+                declared_provides
+            )
+            self._restore_host_game_center_after_provider_failure(
                 declared_provides
             )
             self._mark_error(record, f"{type(e).__name__}: {e}")
@@ -1270,6 +1393,11 @@ class PluginLoader:
         if self._configure_host_compat_services(meta_map):
             for instance_id, missing_services in list(missing_map.items()):
                 missing_services.discard(EMULATOR_SERVICE_NAME)
+                if not missing_services:
+                    missing_map.pop(instance_id, None)
+        if self.service.ready(GAME_CENTER_SERVICE_NAME):
+            for instance_id, missing_services in list(missing_map.items()):
+                missing_services.discard(GAME_CENTER_SERVICE_NAME)
                 if not missing_services:
                     missing_map.pop(instance_id, None)
 
@@ -1351,6 +1479,7 @@ class PluginLoader:
         """
         record = self.records.get(plugin_name)
         if record is None:
+            self._unregister_game_provider_owner(plugin_name)
             self.service.drop(plugin_name)
             return
 
@@ -1375,6 +1504,7 @@ class PluginLoader:
             return
         finally:
             self._unregister_record_listeners(record)
+            self._unregister_game_provider_owner(record.instance_id)
             self.service.drop(record.instance_id)
             if (
                 EMULATOR_SERVICE_NAME in record.provides
@@ -1382,6 +1512,12 @@ class PluginLoader:
                 and not self.service.ready(EMULATOR_SERVICE_NAME)
             ):
                 self._register_host_emulator_compat()
+            if (
+                GAME_CENTER_SERVICE_NAME in record.provides
+                and not self._busy
+                and not self.service.ready(GAME_CENTER_SERVICE_NAME)
+            ):
+                self._register_host_game_center()
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
@@ -1546,5 +1682,6 @@ class PluginLoader:
                 await self.unload_plugin(plugin_name)
         finally:
             self._drop_host_emulator_compat()
+            self._drop_host_game_center()
             self._pulse.clear()
             self._busy = False
