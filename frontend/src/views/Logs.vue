@@ -1,327 +1,298 @@
+<template>
+  <div class="logs-page">
+    <PageHeader
+      title="日志"
+      subtitle="查看前后端运行日志，筛选问题并导出诊断信息"
+      compact
+      transparent
+    />
+
+    <section class="logs-panel" aria-label="日志查看器">
+      <div class="logs-toolbar-wrap">
+        <LogToolbar
+          v-model:source="source"
+          v-model:level="levelFilter"
+          v-model:keyword="keywordFilter"
+          :is-realtime="isRealtime"
+          :is-paused="isPaused"
+          :exporting="exporting"
+          :refreshing="loading"
+          :can-copy="filteredLines.length > 0"
+          :can-clear="rawLines.length > 0"
+          @refresh="handleRefresh"
+          @toggle-realtime="toggleRealtime"
+          @toggle-pause="togglePause"
+          @copy="handleCopy"
+          @clear="handleClear"
+          @export="handleExport"
+        />
+      </div>
+
+      <div class="logs-main">
+        <a-spin :spinning="loading" tip="加载日志中...">
+          <ErrorState
+            v-if="error && !loading"
+            class="logs-error-state"
+            title="日志加载失败"
+            :description="error"
+            :on-retry="load"
+          />
+
+          <EmptyState
+            v-else-if="filteredLines.length === 0 && !loading"
+            class="logs-empty-state"
+            title="暂无日志"
+            :description="emptyDescription"
+          />
+
+          <LogLineList
+            v-else
+            ref="logListRef"
+            :lines="filteredLines"
+            :keyword="keywordFilter"
+            :paused="isPaused"
+            :auto-scroll="isRealtime"
+          />
+        </a-spin>
+      </div>
+
+      <footer class="logs-footer">
+        <span class="footer-stat">源文件：{{ fileName }}</span>
+        <span class="footer-stat">显示 {{ filteredLines.length }} / {{ rawLines.length }} 行</span>
+        <span v-if="connectionState === 'reconnecting'" class="footer-stat footer-reconnecting">
+          重连中 ({{ retryCount }}/5)...
+          <a-button size="small" type="link" @click="retry">立即重试</a-button>
+        </span>
+        <span
+          v-else-if="connectionState === 'disconnected'"
+          class="footer-stat footer-disconnected"
+        >
+          已断开
+          <a-button size="small" type="link" @click="retry">重新连接</a-button>
+        </span>
+        <span v-else-if="isRealtime && !isPaused" class="footer-stat footer-live">
+          <span class="live-dot" aria-hidden="true" />
+          实时刷新中
+        </span>
+        <span v-else-if="isPaused" class="footer-stat footer-paused">滚动已暂停</span>
+        <span v-else-if="viewCleared" class="footer-stat">视图已清空</span>
+      </footer>
+    </section>
+  </div>
+</template>
+
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import type { editor } from 'monaco-editor'
-import { useTheme } from '@/composables/useTheme'
+import LogToolbar from './Logs/components/LogToolbar.vue'
+import LogLineList from './Logs/components/LogLineList.vue'
+import PageHeader from '@/components/mac/PageHeader.vue'
+import EmptyState from '@/components/v6/EmptyState.vue'
+import ErrorState from '@/components/v6/ErrorState.vue'
+import { useLogViewer } from './Logs/useLogViewer'
+
 const logger = window.electronAPI.getLogger('日志查看')
-const { themeMode } = useTheme()
 
-// 日志显示模式类型
-type LogMode = 'follow' | 'browse'
-
-const logs = ref<string>('')
-const loading = ref(false)
+const logListRef = ref<InstanceType<typeof LogLineList> | null>(null)
 const exporting = ref(false)
-const logMode = ref<LogMode>('follow')
-const selectedLogFile = ref<'app' | 'frontend'>('app')
-const realTimeEnabled = ref(true)
-let editorInstance: any = null
-let refreshInterval: NodeJS.Timeout | null = null
 
-// Monaco Editor 主题
-const editorTheme = computed(() => {
-  const mode = themeMode.value
-  if (mode === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs'
+const {
+  source,
+  loading,
+  error,
+  isRealtime,
+  isPaused,
+  viewCleared,
+  keywordFilter,
+  levelFilter,
+  connectionState,
+  retryCount,
+  rawLines,
+  filteredLines,
+  fileName,
+  load,
+  retry,
+  toggleRealtime,
+  togglePause,
+  clearView,
+  exportLogs,
+  copyLines,
+} = useLogViewer()
+
+const emptyDescription = computed(() => {
+  if (viewCleared.value) {
+    return '当前视图已清空，磁盘日志未被删除；点击刷新可重新读取。'
   }
-  return mode === 'dark' ? 'vs-dark' : 'vs'
+  if (rawLines.value.length === 0) {
+    return '当前日志文件为空，或尚未生成日志。'
+  }
+  if (keywordFilter.value || levelFilter.value) {
+    return '没有匹配当前筛选条件的日志，请调整关键词或级别。'
+  }
+  return '暂无日志。'
 })
 
-// Monaco Editor 配置
-const editorOptions: editor.IStandaloneEditorConstructionOptions = {
-  readOnly: true,
-  fontSize: 13,
-  lineNumbers: 'on',
-  minimap: { enabled: false },
-  scrollBeyondLastLine: false,
-  automaticLayout: true,
-  wordWrap: 'on',
-  wrappingIndent: 'same',
-  scrollbar: {
-    vertical: 'auto',
-    horizontal: 'auto',
-    useShadows: false,
-  },
+const handleRefresh = async () => {
+  await load()
+  logListRef.value?.scrollToBottom()
 }
 
-// 处理编辑器挂载
-const handleEditorMount = (editor: any) => {
-  editorInstance = editor
-  // 初始滚动到底部
-  if (logMode.value === 'follow' && logs.value) {
-    nextTick(() => scrollToBottom())
-  }
+const handleClear = () => {
+  clearView()
+  message.success('已清空当前日志视图，磁盘日志未被删除')
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
-  if (editorInstance) {
-    const lineCount = editorInstance.getModel()?.getLineCount()
-    if (lineCount) {
-      editorInstance.revealLine(lineCount)
-      editorInstance.setScrollTop(editorInstance.getScrollHeight())
-    }
-  }
-}
-
-// 切换日志模式
-const toggleLogMode = () => {
-  if (logMode.value === 'follow') {
-    // 从保持最新切换到自由浏览
-    logMode.value = 'browse'
+const handleCopy = async () => {
+  const ok = await copyLines(filteredLines.value)
+  if (ok) {
+    message.success(`已复制 ${filteredLines.value.length} 行日志`)
+    logger.info(`复制日志 ${filteredLines.value.length} 行`)
   } else {
-    // 从自由浏览切换到保持最新
-    logMode.value = 'follow'
-    setTimeout(scrollToBottom, 10)
+    message.error('复制失败')
+    logger.error('复制日志失败')
   }
 }
 
-// 加载日志
-const loadLogs = async (silent = false) => {
-  if (!silent) {
-    loading.value = true
-  }
-  try {
-    const fileName = selectedLogFile.value === 'app' ? 'app.log' : 'frontend.log'
-    const logContent = await window.electronAPI?.getLogs?.(0, fileName)
-    if (logContent) {
-      logs.value = logContent
-      // 只在保持最新模式下自动滚动
-      if (logMode.value === 'follow') {
-        nextTick(() => scrollToBottom())
-      }
-    } else {
-      logs.value = ''
-    }
-  } catch (error) {
-    if (!silent) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`加载日志失败: ${errorMsg}`)
-      message.error('加载日志失败')
-    }
-  } finally {
-    if (!silent) {
-      loading.value = false
-    }
-  }
-}
-
-// 开始实时刷新
-const startRealTimeRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
-  refreshInterval = setInterval(() => {
-    loadLogs(true) // 静默刷新
-  }, 2000) // 每2秒刷新一次
-}
-
-// 停止实时刷新
-const stopRealTimeRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
-  }
-}
-
-// 切换实时刷新
-const toggleRealTime = () => {
-  realTimeEnabled.value = !realTimeEnabled.value
-  if (realTimeEnabled.value) {
-    startRealTimeRefresh()
-    message.success('已启用自动更新')
-  } else {
-    stopRealTimeRefresh()
-    message.info('已停止自动更新')
-  }
-}
-
-// 导出日志压缩包
-const exportLogsZip = async () => {
+const handleExport = async () => {
   exporting.value = true
   try {
-    const result = await window.electronAPI?.exportLogs?.()
-
-    if (!result) {
-      message.error('导出功能未响应，请检查程序')
-      logger.error('导出日志失败: 未收到响应')
-      return
-    }
-
-    if (result?.success) {
-      message.success(result.message || '日志压缩包导出成功')
+    const result = await exportLogs()
+    if (result.success) {
+      message.success(result.message || '日志导出成功')
       logger.info(`日志导出成功: ${result.zipPath}`)
-      // 打开文件夹并定位到压缩包
-      if (result.zipPath) {
-        await window.electronAPI?.showItemInFolder?.(result.zipPath)
-      }
     } else {
-      const errorMsg = result?.error || '日志导出失败'
-      logger.error(`导出日志失败: ${errorMsg}`)
-      message.error(errorMsg)
+      const msg = result.error || '日志导出失败'
+      message.error(msg)
+      logger.error(`导出日志失败: ${msg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`导出日志失败: ${errorMsg}`)
-    message.error(`导出日志异常: ${errorMsg}`)
   } finally {
     exporting.value = false
   }
 }
-
-// 切换日志文件
-const onLogFileChange = () => {
-  loadLogs()
-}
-
-// 监听日志内容变化
-watch(logs, () => {
-  if (logMode.value === 'follow') {
-    nextTick(() => scrollToBottom())
-  }
-})
-
-onMounted(() => {
-  loadLogs()
-  if (realTimeEnabled.value) {
-    startRealTimeRefresh()
-  }
-})
-
-onUnmounted(() => {
-  stopRealTimeRefresh()
-})
 </script>
 
-<template>
-  <div class="logs-container">
-    <div class="logs-header">
-      <h1 class="page-title">日志查看</h1>
-      <div class="header-actions">
-        <a-space :size="12">
-          <a-radio-group
-            v-model:value="selectedLogFile"
-            button-style="solid"
-            @change="onLogFileChange"
-          >
-            <a-radio-button value="app">后端日志</a-radio-button>
-            <a-radio-button value="frontend">前端日志</a-radio-button>
-          </a-radio-group>
-
-          <a-button :type="logMode === 'follow' ? 'primary' : 'default'" @click="toggleLogMode">
-            {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
-          </a-button>
-
-          <a-button :type="realTimeEnabled ? 'primary' : 'default'" @click="toggleRealTime">
-            <template #icon>
-              <SyncOutlined :spin="realTimeEnabled" />
-            </template>
-            {{ realTimeEnabled ? '自动更新' : '停止更新' }}
-          </a-button>
-
-          <a-button :loading="exporting" type="primary" @click="exportLogsZip">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出压缩包
-          </a-button>
-        </a-space>
-      </div>
-    </div>
-
-    <div class="logs-content">
-      <a-spin :spinning="loading" tip="加载日志中...">
-        <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
-          <vue-monaco-editor
-            v-model:value="logs"
-            language="log"
-            :theme="editorTheme"
-            :options="editorOptions"
-            class="log-editor"
-            @mount="handleEditorMount"
-          />
-        </div>
-      </a-spin>
-    </div>
-  </div>
-</template>
-
 <style scoped>
-.logs-container {
-  width: 100%;
+.logs-page {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 20px;
   box-sizing: border-box;
+  overflow: hidden;
+  background: var(--v6-color-window);
 }
 
-.logs-header {
+.logs-panel {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  margin: var(--v6-space-3) var(--v6-content-padding-inline) var(--v6-space-5);
+  overflow: hidden;
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: color-mix(in srgb, var(--v6-color-surface) 88%, transparent);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.logs-toolbar-wrap {
   flex-shrink: 0;
+  padding: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
-.page-title {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.header-actions {
+.logs-main {
   display: flex;
-  gap: 12px;
-}
-
-.logs-content {
   flex: 1;
-  background: var(--ant-color-bg-container);
-  border-radius: 12px;
-  padding: 20px;
+  min-height: 0;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
 
-.editor-container {
-  flex: 1;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  overflow: hidden;
-  transition: all 0.3s ease;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 保持最新模式：添加视觉提示 */
-.log-locked {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-.log-editor {
-  flex: 1;
-  min-height: 0;
-}
-
-:deep(.monaco-editor) {
-  border-radius: 8px;
-}
-
-:deep(.ant-spin-nested-loading),
-:deep(.ant-spin-container) {
+.logs-main :deep(.ant-spin-nested-loading),
+.logs-main :deep(.ant-spin-container) {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.logs-error-state,
+.logs-empty-state {
+  flex: 1;
+  min-height: 0;
+}
+
+.logs-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--v6-space-4);
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: var(--v6-space-1) var(--v6-space-3);
+  border-top: 1px solid var(--v6-color-border-subtle);
+  font-size: var(--v6-font-size-xs);
+  color: var(--v6-color-text-tertiary);
+  flex-wrap: wrap;
+}
+
+.footer-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v6-space-1);
+}
+
+.footer-live {
+  color: var(--v6-color-success);
+}
+
+.footer-paused {
+  color: var(--v6-color-warning);
+}
+
+.footer-disconnected {
+  color: var(--v6-color-error);
+}
+
+.footer-reconnecting {
+  color: var(--v6-color-warning);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: log-live-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes log-live-pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 低性能模式 / reduced-motion */
+:root[data-perf-mode='low'] .live-dot {
+  animation: none;
+}
+
+:root[data-perf-mode='low'] .logs-panel {
+  background: var(--v6-color-surface);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
 }
 </style>

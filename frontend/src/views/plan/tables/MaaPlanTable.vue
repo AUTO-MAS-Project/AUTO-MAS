@@ -149,6 +149,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
+import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
@@ -156,6 +157,8 @@ import {
   preloadAllStageOptions,
   getCachedStageOptions,
 } from '@/composables/usePlanDataCoordinator'
+
+const logger = window.electronAPI.getLogger('MAA计划表')
 
 interface PlanChangeOptions {
   refresh?: boolean
@@ -243,12 +246,20 @@ const simpleColumns = [
 
 // 更新配置数据 - 直接调用父组件的保存函数
 const updateConfigValue = async (rowKey: string, timeKey: TimeKey, value: any) => {
+  // Lane 8：保留旧值快照，API 失败时通过 updateConfig 回滚本地状态。
+  const oldValue = coordinator.getConfig(timeKey, rowKey)
+
   // 更新本地状态
   coordinator.updateConfig(timeKey, rowKey, value)
 
   // 构建后端 API 路径，例如 "Monday.Stage" 或 "Monday.MedicineNumb"
   const apiPath = `${timeKey}.${rowKey}`
-  await props.handlePlanChange(apiPath, value)
+  const success = await props.handlePlanChange(apiPath, value)
+
+  if (!success && oldValue !== undefined) {
+    // API 失败：回滚本地状态到旧值
+    coordinator.updateConfig(timeKey, rowKey, oldValue)
+  }
 }
 
 // 自定义关卡保存 - 失去焦点或按回车时保存
@@ -280,7 +291,9 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
     'Saturday',
     'Sunday',
   ]
-  let allSaved = true
+  // Lane 8：跟踪失败的时间维度，用于部分成功提示和回滚。
+  const failedKeys: TimeKey[] = []
+  let lastSavedIndex = -1
   for (let i = 0; i < timeKeys.length; i++) {
     const timeKey = timeKeys[i]
     const timeConfig = planConfig[timeKey] as Record<string, any>
@@ -294,16 +307,37 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
         }
       }
       // 保存更新后的时间配置
+      // 只有最后一次成功才触发 refresh，避免中间刷新覆盖未保存的本地状态。
       const saved = await props.handlePlanChange(timeKey, timeConfig, {
-        refresh: i === timeKeys.length - 1,
+        refresh: false,
         forceCustomStages: false,
       })
-      allSaved = allSaved && saved
+      if (saved) {
+        lastSavedIndex = i
+      } else {
+        failedKeys.push(timeKey)
+      }
     }
   }
 
-  if (allSaved) {
+  if (failedKeys.length === 0) {
+    // 全部成功：更新快照
     savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
+  } else {
+    // Lane 8：部分或全部失败。coordinator 的 customStageDefinitions 已被
+    // updateCustomStageDefinition 更新为新值，但后端可能只有部分写入。
+    // 通过 updateCustomStageDefinition 回滚 coordinator 到旧值，
+    // 下次切换计划或刷新时从后端重新加载实际状态。
+    logger.warn(`自定义关卡 ${index} 保存部分失败，失败的时间维度: ${failedKeys.join(', ')}`)
+    // 回滚 coordinator 到旧值（这会把所有引用 newValue 的槽位恢复为 oldValue）
+    coordinator.updateCustomStageDefinition(index, oldValue)
+    // 恢复 tempCustomStages 到实际保存状态
+    tempCustomStages.value = { ...savedCustomStages.value }
+    if (lastSavedIndex >= 0) {
+      message.warning(`自定义关卡部分保存失败（${failedKeys.join('、')}），已恢复到上次保存的状态`)
+    } else {
+      message.error(`自定义关卡保存失败，已恢复到上次保存的状态`)
+    }
   }
 }
 
@@ -477,47 +511,81 @@ const TIME_KEYS: TimeKey[] = [
 ]
 
 const enableAllStages = async (stageKey: string) => {
+  // Lane 8：批量操作前快照所有受影响的时间维度，API 失败时回滚。
+  const snapshots = new Map<TimeKey, ReturnType<typeof coordinator.snapshotTimeConfig>>()
   for (const timeKey of TIME_KEYS) {
     if (isStageAvailable(stageKey, timeKey)) {
       const enabledCount = getEnabledStageCount(timeKey)
       if (enabledCount < 4) {
+        snapshots.set(timeKey, coordinator.snapshotTimeConfig(timeKey))
         coordinator.toggleStage(stageKey, timeKey, true)
       }
     }
   }
   // 保存整个时间配置
   const planConfig = coordinator.toApiData()
+  const failedKeys: TimeKey[] = []
   for (const timeKey of TIME_KEYS) {
     const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
+    if (timeConfig && snapshots.has(timeKey)) {
+      const success = await props.handlePlanChange(timeKey, timeConfig)
+      if (!success) {
+        failedKeys.push(timeKey)
+      }
     }
+  }
+  // 回滚失败的维度
+  if (failedKeys.length > 0) {
+    for (const key of failedKeys) {
+      coordinator.restoreTimeConfig(key, snapshots.get(key))
+    }
+    message.warning(`部分时间维度启用失败（${failedKeys.join('、')}），已恢复原值`)
   }
 }
 
 const disableAllStages = async (stageKey: string) => {
+  // Lane 8：批量操作前快照所有受影响的时间维度，API 失败时回滚。
+  const snapshots = new Map<TimeKey, ReturnType<typeof coordinator.snapshotTimeConfig>>()
   for (const timeKey of TIME_KEYS) {
+    snapshots.set(timeKey, coordinator.snapshotTimeConfig(timeKey))
     coordinator.toggleStage(stageKey, timeKey, false)
   }
   // 保存整个时间配置
   const planConfig = coordinator.toApiData()
+  const failedKeys: TimeKey[] = []
   for (const timeKey of TIME_KEYS) {
     const timeConfig = planConfig[timeKey]
     if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
+      const success = await props.handlePlanChange(timeKey, timeConfig)
+      if (!success) {
+        failedKeys.push(timeKey)
+      }
     }
+  }
+  // 回滚失败的维度
+  if (failedKeys.length > 0) {
+    for (const key of failedKeys) {
+      coordinator.restoreTimeConfig(key, snapshots.get(key))
+    }
+    message.warning(`部分时间维度禁用失败（${failedKeys.join('、')}），已恢复原值`)
   }
 }
 
 // 处理关卡切换 - 直接保存修改的字段
 const handleStageToggle = async (stageKey: string, timeKey: TimeKey, enabled: boolean) => {
+  // Lane 8：保留旧值快照，API 失败时回滚本地状态。
+  const snapshot = coordinator.snapshotTimeConfig(timeKey)
   coordinator.toggleStage(stageKey, timeKey, enabled)
 
   // 获取当前时间配置并保存
   const planConfig = coordinator.toApiData()
   const timeConfig = planConfig[timeKey]
   if (timeConfig) {
-    await props.handlePlanChange(timeKey, timeConfig)
+    const success = await props.handlePlanChange(timeKey, timeConfig)
+    if (!success) {
+      // API 失败：恢复本地状态
+      coordinator.restoreTimeConfig(timeKey, snapshot)
+    }
   }
 }
 

@@ -399,6 +399,9 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 <style scoped>
 .create-layout {
+  /* 弹窗内容脱离页面 DOM(teleport),页面容器查询不可达,
+     在弹窗内容根声明自己的容器驱动内部响应式 */
+  container: script-create-dialog / inline-size;
   min-height: 500px;
   margin: -8px -24px 0;
 }
@@ -648,7 +651,8 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 
-@media (max-width: 760px) {
+/* 按弹窗内容实际宽度响应(窗口收窄时 antd 弹窗会随视口收缩) */
+@container script-create-dialog (max-width: 760px) {
   .type-grid {
     grid-template-columns: 1fr;
   }

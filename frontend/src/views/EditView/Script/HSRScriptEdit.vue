@@ -1,34 +1,23 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-            编辑 HSR 脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditPageHeader
+    title="HSR 脚本配置"
+    subtitle="配置三月七 / SRA、模块分配与培养目标"
+    type-label="HSR"
+    type-color="purple"
+    @back="handleCancel"
+  />
 
   <div class="script-edit-content">
-    <a-card title="HSR 脚本配置" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag color="purple" class="type-tag"> HSR (三月七 / SRA) </a-tag>
-      </template>
+    <a-card :loading="pageLoading" class="config-card">
+      <a-alert
+        v-if="saveError"
+        type="error"
+        show-icon
+        closable
+        :message="saveError"
+        style="margin-bottom: 12px"
+        @close="saveError = ''"
+      />
 
       <a-alert
         v-if="capabilitySnapshot?.unavailable_reason && !capabilitySnapshot?.warnings?.length"
@@ -526,11 +515,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import {
@@ -540,6 +525,7 @@ import {
 } from '@/composables/useHSRPluginApi'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
 import { buildHSRCapabilityView } from '@/views/HSRUserEdit/capabilityView'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 type HSRTaskMapping = Partial<
   Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', HSREngine>
@@ -583,6 +569,9 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const saveError = ref('')
+let pendingSaveCount = 0
+let saveQueue: Promise<void> = Promise.resolve()
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 let pluginSystemSubscriptionId: string | null = null
 
@@ -643,23 +632,40 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
   'Game.Path',
 ])
 
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+const handleChange = (category: string, key: string, value: unknown): Promise<boolean> => {
+  if (isInitializing.value) return Promise.resolve(false)
+
+  pendingSaveCount += 1
   isSaving.value = true
-  try {
-    const updateData: any = { [category]: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return
-    logger.info(`配置已保存: ${category}.${key}`)
-    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-      await refreshScript()
+  saveError.value = ''
+
+  const persist = async (): Promise<boolean> => {
+    try {
+      const updateData: Record<string, Record<string, unknown>> = {
+        [category]: { [key]: value },
+      }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) throw new Error('后端未确认保存成功')
+      logger.info(`配置已保存: ${category}.${key}`)
+      if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`) && pendingSaveCount === 1) {
+        await refreshScript()
+      }
+      return true
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      saveError.value = `保存 ${category}.${key} 失败：${errorMsg}`
+      message.error(saveError.value)
+      return false
+    } finally {
+      pendingSaveCount -= 1
+      isSaving.value = pendingSaveCount > 0
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
   }
+
+  const queued = saveQueue.then(persist, persist)
+  saveQueue = queued.then(() => undefined)
+  return queued
 }
 
 // 当前可用脚本集合由插件注册表与脚本选择求交得到。
@@ -755,21 +761,7 @@ const handleTaskMappingChange = (module: string, value: 'M7A' | 'SRA') => {
   handleChange('TaskMapping', module, value)
 }
 
-const handleRunConfigChange = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData: any = { Run: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return
-    logger.info(`配置已保存: Run.${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-}
+const handleRunConfigChange = async (key: string, value: unknown) => handleChange('Run', key, value)
 
 const handleM7AConfigChange = async (key: string, value: unknown) => {
   await handleChange('M7A', key, value)
@@ -780,7 +772,7 @@ const handleCultivationTargetChange = async (key: string, value: unknown) => {
 }
 
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const normalizedValue = value ?? 60
   hsrConfig.Game[key] = normalizedValue
   await handleChange('Game', key, normalizedValue)
@@ -819,16 +811,18 @@ const selectPath = async (key: string) => {
       }
     }
 
+    let saved = false
     if (key === 'M7A.Path') {
-      await handleChange('M7A', 'Path', path)
+      saved = await handleChange('M7A', 'Path', path)
     } else if (key === 'SRA.Path') {
-      await handleChange('SRA', 'Path', path)
+      saved = await handleChange('SRA', 'Path', path)
     } else if (key === 'Game.Path') {
-      await handleChange('Game', 'Path', path)
+      saved = await handleChange('Game', 'Path', path)
     } else {
       logger.warn(`未知的路径 key: ${key}`)
       return
     }
+    if (!saved) return
     message.success('路径已选择')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -844,11 +838,9 @@ const handleCancel = () => {
 // 清空路径：保存空字符串到后端，然后级联重排 TaskMapping。
 const clearPath = async (key: string) => {
   if (key === 'M7A.Path') {
-    await handleChange('M7A', 'Path', '')
-    hsrConfig.M7A.Path = ''
+    if (await handleChange('M7A', 'Path', '')) hsrConfig.M7A.Path = ''
   } else if (key === 'SRA.Path') {
-    await handleChange('SRA', 'Path', '')
-    hsrConfig.SRA.Path = ''
+    if (await handleChange('SRA', 'Path', '')) hsrConfig.SRA.Path = ''
   }
 }
 
@@ -1098,3 +1090,4 @@ onUnmounted(() => {
   height: 40px;
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

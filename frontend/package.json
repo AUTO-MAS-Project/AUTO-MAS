@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "v6.0.0-alpha.NEXUS-OVERDRIVE.20260724.5",
+  "version": "v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",

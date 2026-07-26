@@ -9,6 +9,14 @@ const versionJson = require('../res/version.json')
 /** Keep optional heavy runtimes outside the application entry chunk. */
 export function resolveVendorChunk(moduleId: string): string | undefined {
   const normalizedId = moduleId.replace(/\\/g, '/')
+  // Vite 的 __vitePreload 辅助模块被每个含动态 import 的 chunk 共享，且不在
+  // node_modules 下。放任 Rollup 分配时它会落进某个懒加载 vendor chunk（实测
+  // 落进 vendor-monaco），于是入口为了拿这一个函数而静态依赖 4.2 MB 的编辑器，
+  // index.html 因此写出 vendor-monaco 的 modulepreload 与阻塞式 stylesheet。
+  // 固定放进入口本就必须加载的 vendor-ui。
+  if (normalizedId.includes('vite/preload-helper')) {
+    return 'vendor-ui'
+  }
   if (!normalizedId.includes('/node_modules/')) {
     return undefined
   }

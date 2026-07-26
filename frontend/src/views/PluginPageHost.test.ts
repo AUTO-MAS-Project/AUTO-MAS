@@ -165,6 +165,25 @@ const PluginPageHost = compileSfcComponent('PluginPageHost.vue', {
     }),
   },
   '@/router/pageDeclarations': {},
+  '@/plugins/ui/pluginSecurity': {
+    validatePluginIframeUrl: (url: string) => ({
+      safe: true,
+      sanitizedUrl: /^https?:\/\//i.test(url)
+        ? url
+        : `${state.apiBase.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`,
+    }),
+  },
+  '@/plugins/ui/PluginErrorBoundary.vue': {
+    default: {
+      name: 'PluginErrorBoundary',
+      props: ['extensionId', 'pluginName'],
+      emits: ['disable', 'retry'],
+      setup:
+        (_props: unknown, { slots }: { slots: Record<string, () => unknown> }) =>
+        () =>
+          slots.default?.(),
+    },
+  },
 })
 
 // ===== 功能性桩 DOM =====
@@ -572,6 +591,23 @@ describe('PluginPageHost iframe 宿主', () => {
     expect(iframe).not.toBeNull()
     const src = iframe.getAttribute('src')
     expect(src).toBe('http://example.com/page')
+  })
+
+  it('页面声明切换时更新 iframe 地址并重置重试参数', async () => {
+    const { container, app } = await mountHost(basePage({ url: '/plugin/first' }))
+    currentApp = app
+
+    app._instance!.props.page = basePage({
+      id: 'p2',
+      path: '/p2',
+      title: '第二页',
+      url: '/plugin/second',
+    })
+    await nextTick()
+
+    const iframe = findByTag(container, 'IFRAME')
+    expect(iframe).not.toBeNull()
+    expect(iframe.getAttribute('src')).toBe('http://localhost:36163/plugin/second')
   })
 
   it('保留插件 URL 的已有查询和 fragment', async () => {

@@ -144,8 +144,12 @@ import {
   LoadingOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
+
+// 异步加载，避免 4.2 MB 的 monaco chunk 成为本路由的静态依赖。
+const VueMonacoEditor = defineAsyncComponent(() =>
+  import('@guolao/vue-monaco-editor').then(module => module.VueMonacoEditor)
+)
 
 interface Props {
   open: boolean
@@ -195,8 +199,8 @@ const displayLogContent = computed(() => {
   display: flex;
   flex-direction: column;
   height: 85vh;
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  background: var(--v6-color-surface);
+  border-radius: var(--v6-radius-card);
   overflow: hidden;
 }
 
@@ -204,29 +208,29 @@ const displayLogContent = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
+  padding: var(--v6-space-3) var(--v6-space-5);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+  background: var(--v6-color-surface);
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--v6-space-3);
 }
 
 .header-left {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--v6-space-2);
 }
 
 .header-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--v6-space-3);
 }
 
 .header-icon {
-  font-size: 20px;
-  color: var(--ant-color-primary);
+  font-size: var(--v6-font-size-lg);
+  color: var(--v6-color-info);
 }
 
 .header-text {
@@ -236,96 +240,96 @@ const displayLogContent = computed(() => {
 }
 
 .header-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 .header-subtitle {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-xs);
+  color: var(--v6-color-text-secondary);
 }
 
 .empty-lines-checkbox {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-text-secondary);
 }
 
 .header-stats {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--v6-space-4);
 }
 
 .stat-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--v6-space-2);
 }
 
 .stat-label {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-xs);
+  color: var(--v6-color-text-secondary);
 }
 
 .stat-items {
   display: flex;
-  gap: 8px;
+  gap: var(--v6-space-2);
 }
 
 .stat-item {
   display: flex;
   align-items: center;
   gap: 2px;
-  font-size: 12px;
-  padding: 2px 6px;
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
+  font-size: var(--v6-font-size-xs);
+  padding: 2px var(--v6-space-1);
+  background: var(--v6-vibrancy-hover);
+  border-radius: var(--v6-radius-sm);
 }
 
 .star-text {
-  font-weight: 500;
+  font-weight: var(--v6-font-weight-medium);
 }
 
 .star-text.star-1,
 .star-text.star-2 {
-  color: #8c8c8c;
+  color: var(--v6-color-text-tertiary);
 }
 
 .star-text.star-3 {
-  color: #1890ff;
+  color: var(--v6-color-info);
 }
 
 .star-text.star-4 {
-  color: #722ed1;
+  color: var(--v6-color-processing);
 }
 
 .star-text.star-5 {
-  color: #faad14;
+  color: var(--v6-color-warning);
 }
 
 .star-text.star-6 {
-  color: #f5222d;
+  color: var(--v6-color-error);
 }
 
 .stat-count {
-  color: var(--ant-color-text);
-  font-weight: 600;
+  color: var(--v6-color-text);
+  font-weight: var(--v6-font-weight-semibold);
 }
 
 .drop-btn {
-  font-size: 12px;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  border: 1px solid var(--ant-color-primary);
-  border-radius: 4px;
-  padding: 2px 8px;
+  font-size: var(--v6-font-size-xs);
+  color: var(--v6-color-info);
+  background: var(--v6-color-info-bg);
+  border: 1px solid var(--v6-color-info);
+  border-radius: var(--v6-radius-sm);
+  padding: 2px var(--v6-space-2);
   height: auto;
 }
 
 .drop-btn:hover {
-  background: var(--ant-color-primary);
-  color: #fff;
+  background: var(--v6-color-info);
+  color: var(--v6-color-text-inverse);
 }
 
 .drop-popover {
@@ -335,7 +339,7 @@ const displayLogContent = computed(() => {
 }
 
 .drop-stage {
-  margin-bottom: 12px;
+  margin-bottom: var(--v6-space-3);
 }
 
 .drop-stage:last-child {
@@ -343,30 +347,30 @@ const displayLogContent = computed(() => {
 }
 
 .stage-name {
-  font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 6px;
-  color: var(--ant-color-text);
+  font-weight: var(--v6-font-weight-semibold);
+  font-size: var(--v6-font-size-sm);
+  margin-bottom: var(--v6-space-1);
+  color: var(--v6-color-text);
 }
 
 .stage-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--v6-space-1);
 }
 
 .drop-item {
-  font-size: 12px;
-  padding: 2px 8px;
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-xs);
+  padding: 2px var(--v6-space-2);
+  background: var(--v6-vibrancy-hover);
+  border-radius: var(--v6-radius-sm);
+  color: var(--v6-color-text-secondary);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--v6-space-1);
 }
 
 .modal-body {
@@ -389,7 +393,7 @@ const displayLogContent = computed(() => {
 }
 
 .log-editor :deep(.monaco-editor .monaco-editor-background) {
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--v6-color-surface);
 }
 
 .empty-log {
@@ -398,27 +402,27 @@ const displayLogContent = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  color: var(--ant-color-text-secondary);
+  gap: var(--v6-space-3);
+  color: var(--v6-color-text-secondary);
 }
 
 .empty-icon {
   font-size: 48px;
-  color: var(--ant-color-text-quaternary);
+  color: var(--v6-color-text-quaternary);
 }
 
 .empty-title {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-lg);
+  color: var(--v6-color-text-secondary);
 }
 
 .error-message {
-  font-size: 13px;
-  color: var(--ant-color-error);
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-error);
   max-width: 400px;
   text-align: center;
-  padding: 8px 16px;
-  background: var(--ant-color-error-bg);
-  border-radius: 6px;
+  padding: var(--v6-space-2) var(--v6-space-4);
+  background: var(--v6-color-error-bg);
+  border-radius: var(--v6-radius-control);
 }
 </style>

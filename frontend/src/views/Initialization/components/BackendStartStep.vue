@@ -1,7 +1,5 @@
 <template>
   <div class="step-panel">
-    <h3>启动应用</h3>
-
     <div class="install-section">
       <!-- 启动中 -->
       <div v-if="status === 'starting'" class="start-progress">
@@ -11,30 +9,28 @@
 
       <!-- 后端状态显示 -->
       <div v-else-if="status === 'running'" class="backend-status">
-        <a-card title="后端服务状态" size="small">
-          <div class="status-grid">
-            <div class="status-item">
-              <span class="label">运行状态:</span>
-              <a-tag color="success">运行中</a-tag>
-            </div>
-            <div class="status-item">
-              <span class="label">进程 PID:</span>
-              <span class="value">{{ backendPid || '-' }}</span>
-            </div>
-            <div class="status-item">
-              <span class="label">WebSocket:</span>
-              <a-tag :color="wsConnected ? 'success' : 'warning'">
-                {{ wsConnected ? '已连接' : '连接中...' }}
-              </a-tag>
-            </div>
-            <div class="status-item">
-              <span class="label">版本检查:</span>
-              <a-tag :color="pollingStarted ? 'success' : 'default'">
-                {{ pollingStarted ? '已启动' : '准备中...' }}
-              </a-tag>
-            </div>
+        <div class="status-grid" role="status" aria-label="后端服务状态">
+          <div class="status-item">
+            <span class="label">运行状态</span>
+            <a-tag color="success">运行中</a-tag>
           </div>
-        </a-card>
+          <div class="status-item">
+            <span class="label">进程 PID</span>
+            <span class="value">{{ backendPid || '-' }}</span>
+          </div>
+          <div class="status-item">
+            <span class="label">WebSocket</span>
+            <a-tag :color="wsConnected ? 'success' : 'warning'">
+              {{ wsConnected ? '已连接' : '连接中…' }}
+            </a-tag>
+          </div>
+          <div class="status-item">
+            <span class="label">版本检查</span>
+            <a-tag :color="pollingStarted ? 'success' : 'default'">
+              {{ pollingStarted ? '已启动' : '准备中…' }}
+            </a-tag>
+          </div>
+        </div>
       </div>
 
       <!-- 完成状态 -->
@@ -51,21 +47,20 @@
         <div class="failed-summary">
           <div class="failed-copy">
             <h4 class="failed-title">后端启动失败</h4>
-            <p class="help-message rgb-text">如果需要帮助，请截图下方完整日志寻求帮助</p>
+            <p class="help-message">可先查看文档或截图下方完整日志寻求帮助。</p>
           </div>
 
           <a-space class="failed-actions">
-            <a-button type="primary" danger class="doc-button" @click="handleOpenDocumentation"
-              >点此查看文档</a-button
-            >
+            <a-button @click="handleOpenDocumentation">查看排障文档</a-button>
             <a-button v-if="showSkipButton" @click="emit('skip')">跳过此步骤</a-button>
             <a-button type="primary" @click="handleRetry">重试</a-button>
           </a-space>
         </div>
 
-        <a-card v-if="backendLogs" size="small" class="failed-log-card">
+        <section v-if="backendLogs" class="failed-log-surface" aria-label="后端启动日志">
+          <div class="failed-log-header">启动日志</div>
           <pre ref="backendLogRef" class="backend-log-output">{{ backendLogs }}</pre>
-        </a-card>
+        </section>
       </div>
     </div>
   </div>
@@ -73,6 +68,7 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 const logger = window.electronAPI.getLogger('后端启动步骤')
@@ -134,10 +130,12 @@ async function handleOpenDocumentation() {
     const result = await window.electronAPI.openUrl(backendStartFailureDocUrl)
     if (!result.success) {
       logger.error(`打开后端启动失败文档失败: ${String(result.error)}`)
+      message.error(`无法打开文档，请手动访问：${backendStartFailureDocUrl}`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`打开后端启动失败文档失败: ${errorMsg}`)
+    message.error(`无法打开文档，请手动访问：${backendStartFailureDocUrl}`)
   }
 }
 
@@ -225,6 +223,11 @@ async function startBackend() {
     emit('update:status', 'success')
     progressStatus.value = 'success'
 
+    // WebSocket 未连接时向用户披露，避免假成功
+    if (!wsConnected.value) {
+      message.warning('WebSocket 连接失败，部分功能可能不可用')
+    }
+
     // 合并完成信息到一行日志
     logger.info(
       `后端服务启动完成 - PID: ${backendPid.value}, WebSocket: ${wsConnected.value ? '已连接' : '未连接'}, 版本检查: ${pollingStarted.value ? '已启动' : '未启动'}`
@@ -281,7 +284,7 @@ onUnmounted(() => {
 
 <style scoped>
 .step-panel {
-  padding: 20px;
+  padding: var(--v6-space-5);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -293,17 +296,10 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.step-panel h3 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 20px;
-}
-
 .install-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--v6-space-5);
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -314,8 +310,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 40px 0;
+  gap: var(--v6-space-4);
+  padding: var(--v6-space-10) 0;
 }
 
 .start-progress :deep(.ant-progress) {
@@ -324,36 +320,43 @@ onUnmounted(() => {
 }
 
 .status-text {
-  font-size: 16px;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  color: var(--v6-color-text);
   text-align: center;
 }
 
 .backend-status {
-  padding: 12px 0;
+  padding: var(--v6-space-3) 0;
 }
 
 .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  gap: var(--v6-space-3);
   width: 100%;
   box-sizing: border-box;
 }
 
 .status-item {
   display: flex;
+  min-height: 56px;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding: var(--v6-space-3) var(--v6-space-4);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-control);
+  background: var(--v6-vibrancy-hover);
 }
 
 .status-item .label {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
+  font-weight: var(--v6-font-weight-medium);
+  color: var(--v6-color-text-secondary);
 }
 
 .status-item .value {
-  color: var(--ant-color-text);
+  color: var(--v6-color-text);
+  font-family: var(--v6-font-mono);
 }
 
 .completed-status {
@@ -376,11 +379,11 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border: 1px solid var(--ant-color-error-border);
-  border-radius: 14px;
-  background: var(--ant-color-error-bg);
+  gap: var(--v6-space-4);
+  padding: var(--v6-space-4);
+  border: 1px solid var(--v6-color-error-border);
+  border-radius: var(--v6-radius-card);
+  background: var(--v6-color-error-bg);
 }
 
 .failed-copy {
@@ -397,99 +400,43 @@ onUnmounted(() => {
 
 .failed-title {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--v6-font-size-xl);
   line-height: 1.2;
-  color: var(--ant-color-text);
+  color: var(--v6-color-text);
 }
 
 .help-message {
   margin: 10px 0 0;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.rgb-text {
-  background: linear-gradient(90deg, #ff4d4f, #faad14, #52c41a, #1677ff, #eb2f96, #ff4d4f);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: rgb-flow 5s linear infinite;
 }
 
 .failed-actions {
   flex-shrink: 0;
 }
 
-.doc-button {
-  position: relative;
-  overflow: hidden;
-  border: none;
-  background: linear-gradient(135deg, #ff4d4f, #fa541c, #faad14, #eb2f96) !important;
-  background-size: 240% 240% !important;
-  box-shadow: 0 10px 24px rgba(255, 77, 79, 0.28);
-  animation: rgb-button-flow 4s linear infinite;
-}
-
-.doc-button:hover,
-.doc-button:focus {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 28px rgba(255, 77, 79, 0.34);
-}
-
-.doc-button::before {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  background: linear-gradient(
-    120deg,
-    rgba(255, 255, 255, 0.28),
-    transparent 42%,
-    rgba(255, 255, 255, 0.14)
-  );
-  pointer-events: none;
-}
-
-@keyframes rgb-flow {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 220% 50%;
-  }
-}
-
-@keyframes rgb-button-flow {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 220% 50%;
-  }
-}
-
-.failed-log-card {
+.failed-log-surface {
   display: flex;
+  flex-direction: column;
   width: 100%;
   min-height: 0;
   flex: 1;
   overflow: hidden;
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: var(--v6-color-surface);
 }
 
-.failed-log-card :deep(.ant-card-head) {
-  min-height: 44px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.failed-log-card :deep(.ant-card-body) {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  padding: 0;
+.failed-log-header {
+  flex: 0 0 auto;
+  padding: var(--v6-space-3) var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+  font-weight: var(--v6-font-weight-semibold);
 }
 
 .backend-log-output {
@@ -498,16 +445,16 @@ onUnmounted(() => {
   height: 100%;
   width: 100%;
   overflow: auto;
-  padding: 16px 18px 18px;
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  padding: var(--v6-space-4);
+  background: transparent;
+  color: var(--v6-color-text);
+  font-family: var(--v6-font-mono);
+  font-size: var(--v6-font-size-sm);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   scrollbar-width: thin;
-  scrollbar-color: rgba(120, 130, 150, 0.65) rgba(255, 255, 255, 0.06);
+  scrollbar-color: var(--v6-color-border-strong) transparent;
 }
 
 .backend-log-output::-webkit-scrollbar {
@@ -516,19 +463,19 @@ onUnmounted(() => {
 }
 
 .backend-log-output::-webkit-scrollbar-track {
-  background: rgba(127, 127, 127, 0.08);
+  background: transparent;
   border-radius: 999px;
 }
 
 .backend-log-output::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: rgba(120, 130, 150, 0.58);
+  background: var(--v6-color-border-strong);
   background-clip: padding-box;
 }
 
 .backend-log-output::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.78);
+  background: var(--v6-color-text-tertiary);
   background-clip: padding-box;
 }
 

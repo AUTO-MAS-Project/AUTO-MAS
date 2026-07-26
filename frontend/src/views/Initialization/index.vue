@@ -1,42 +1,183 @@
 <template>
   <div class="initialization-page">
-    <div class="header">
-      <a-typography-title :level="3">
-        欢迎使用 AUTO-MAS，正在自动配置您的运行环境
-      </a-typography-title>
-    </div>
+    <MacPageHeader
+      title="欢迎使用 AUTO-MAS"
+      subtitle="自动化脚本管理平台，让游戏日常更轻松"
+      transparent
+      class="initialization-hero"
+    >
+      <template #title>
+        <div class="initialization-brand">
+          <div class="robot-mark" aria-hidden="true">
+            <span class="robot-eye" />
+            <span class="robot-eye" />
+          </div>
+          <h1>欢迎使用 AUTO-MAS</h1>
+        </div>
+      </template>
+      <template #subtitle>
+        <p class="initialization-subtitle">自动化脚本管理平台，让游戏日常更轻松</p>
+      </template>
+      <div class="hero-progress">
+        <span class="hero-progress__label">{{ progressSummary }}</span>
+        <a-progress
+          :percent="overallProgress"
+          :show-info="false"
+          :status="stepStatus === 'error' ? 'exception' : 'normal'"
+          size="small"
+        />
+      </div>
+      <template #actions>
+        <a-button
+          v-if="isCurrentFailure"
+          aria-label="跳过整个初始化流程"
+          @click="forceEnterVisible = true"
+        >
+          跳过初始化
+        </a-button>
+      </template>
+    </MacPageHeader>
 
-    <a-steps :current="currentStepIndex" :status="stepStatus" class="init-steps">
-      <a-step v-for="step in steps" :key="step.key" :title="step.title" />
-    </a-steps>
+    <main class="initialization-content" aria-label="初始化向导">
+      <aside class="stage-rail" aria-label="初始化阶段">
+        <div class="stage-rail__heading">
+          <span>初始化进度</span>
+          <strong>{{ completedStepCount }}/{{ steps.length }}</strong>
+        </div>
+        <ol class="stage-list">
+          <li v-for="(step, index) in steps" :key="step.key">
+            <button
+              type="button"
+              class="stage-nav-item"
+              :class="[
+                `stage-nav-item--${normalizedStepStatus(stepStates[step.key].status)}`,
+                { 'stage-nav-item--active': viewedStepIndex === index },
+              ]"
+              :disabled="!canViewStep(index)"
+              :aria-current="viewedStepIndex === index ? 'step' : undefined"
+              @click="selectViewedStep(index)"
+            >
+              <span class="stage-nav-item__index">
+                <span v-if="normalizedStepStatus(stepStates[step.key].status) === 'success'"
+                  >✓</span
+                >
+                <span v-else-if="normalizedStepStatus(stepStates[step.key].status) === 'failure'"
+                  >!</span
+                >
+                <span v-else>{{ index + 1 }}</span>
+              </span>
+              <span class="stage-nav-item__copy">
+                <strong>{{ step.title }}</strong>
+                <small>{{ stepStatusLabel(stepStates[step.key].status) }}</small>
+              </span>
+              <span
+                v-if="index === currentStepIndex"
+                class="stage-nav-item__current"
+                aria-label="当前执行阶段"
+              />
+            </button>
+          </li>
+        </ol>
+        <p class="stage-rail__hint">可回看已完成阶段；不会重复执行安装操作。</p>
+      </aside>
 
-    <div class="step-content">
-      <!-- 当前步骤内容 -->
-      <component
-        :is="currentStepComponent"
-        v-bind="currentStepProps"
-        @update:selected-mirror="handleMirrorSelect"
-        @retry="handleRetry"
-        @skip="handleSkip"
-        @complete="handleBackendComplete"
-        @error="handleBackendError"
-      />
-    </div>
+      <MacSection :padding="false" class="init-stage-card">
+        <template #header>
+          <div class="stage-heading">
+            <div>
+              <span class="stage-kicker">
+                步骤 {{ viewedStepIndex + 1 }}
+                <template v-if="isViewingHistory"> · 历史记录</template>
+              </span>
+              <h2>{{ viewedStep.title }}</h2>
+              <p>{{ viewedStepDescription }}</p>
+            </div>
+            <MacStatePanel
+              :type="viewedPanelType"
+              :title="viewedPanelTitle"
+              compact
+              class="current-state-panel"
+            >
+              <p class="current-state-message">{{ viewedPanelDescription }}</p>
+              <p v-if="viewedStep.canSkip && !isViewingHistory" class="current-step-boundary">
+                此步骤失败后可以跳过；基础运行环境与插件安装步骤不可跳过。
+              </p>
+            </MacStatePanel>
+          </div>
+        </template>
 
-    <!-- 步骤操作按钮区域 - 后端启动完成后会自动进入应用，不需要手动按钮 -->
-    <div class="step-actions"></div>
+        <div v-if="isViewingHistory" class="step-history" aria-label="阶段执行记录">
+          <div class="step-history__summary">
+            <span
+              class="step-history__badge"
+              :class="`step-history__badge--${normalizedStepStatus(viewedStepState.status)}`"
+            >
+              {{ stepStatusLabel(viewedStepState.status) }}
+            </span>
+            <strong>{{ viewedStepState.message || `${viewedStep.title}暂无附加信息` }}</strong>
+          </div>
+          <a-progress
+            v-if="viewedStepState.progress > 0"
+            :percent="viewedStepState.progress"
+            :status="
+              normalizedStepStatus(viewedStepState.status) === 'failure' ? 'exception' : 'success'
+            "
+          />
+          <dl class="step-history__facts">
+            <div>
+              <dt>阶段</dt>
+              <dd>{{ viewedStep.title }}</dd>
+            </div>
+            <div>
+              <dt>执行结果</dt>
+              <dd>{{ stepStatusLabel(viewedStepState.status) }}</dd>
+            </div>
+            <div v-if="viewedStepState.checkInfo?.version">
+              <dt>检测版本</dt>
+              <dd>{{ viewedStepState.checkInfo.version }}</dd>
+            </div>
+            <div v-if="viewedStepState.currentMirror">
+              <dt>使用镜像</dt>
+              <dd>{{ viewedStepState.currentMirror }}</dd>
+            </div>
+          </dl>
+          <a-alert
+            v-if="viewedStepState.failureDetails"
+            type="error"
+            show-icon
+            message="失败诊断"
+            :description="viewedStepState.failureDetails.reason"
+          />
+          <a-button type="link" class="return-current-step" @click="followCurrentStep">
+            返回当前阶段：{{ currentStep.title }}
+          </a-button>
+        </div>
+        <div v-else class="step-content">
+          <component
+            :is="currentStepComponent"
+            v-bind="currentStepProps"
+            @update:selected-mirror="handleMirrorSelect"
+            @retry="handleRetry"
+            @skip="handleSkip"
+            @complete="handleBackendComplete"
+            @error="handleBackendError"
+            @update:status="handleBackendStatus"
+          />
+        </div>
+      </MacSection>
+    </main>
   </div>
 
   <!-- 跳过初始化弹窗 -->
   <a-modal
     v-model:open="forceEnterVisible"
-    title="警告"
+    title="跳过初始化并进入应用？"
     ok-text="我知道我在做什么"
     cancel-text="取消"
     @ok="handleForceEnterConfirm"
   >
     <a-alert
-      message="注意"
+      message="仅在你已经手动完成环境配置时使用"
       description="你正在尝试跳过初始化流程，可能导致程序无法正常运行。请确保你已经手动完成了所有配置。"
       type="warning"
       show-icon
@@ -47,11 +188,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
+import MacPageHeader from '@/components/mac/PageHeader.vue'
+import MacSection from '@/components/mac/Section.vue'
+import MacStatePanel from '@/components/mac/StatePanel.vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { getBackendVersion } from '@/composables/useVersionService'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
+import {
+  transitionToFailure as toFailure,
+  transitionToSkipped as toSkipped,
+  transitionToRetry as toRetry,
+  parsePluginWarnings,
+  type InitStepFailureDetails,
+  type InitStepCheckInfo,
+  type PluginBootstrapWarningLike,
+  type PluginVersionConflict,
+} from '@/composables/useInitializationStateMachine'
 
 const logger = window.electronAPI.getLogger('初始化流程')
 
@@ -68,6 +222,7 @@ const steps = [
 
 // ==================== 状态管理 ====================
 const currentStepIndex = ref(0)
+const viewedStepIndex = ref(0)
 const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
 const initCompleted = ref(false)
 const forceEnterVisible = ref(false)
@@ -78,8 +233,18 @@ const targetBranch = ref(isDev ? 'dev' : 'dev_v2')
 logger.info(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
 
 // 各步骤状态
+// Lane 8：状态机包含 waiting/processing/running/success/failed/failure/skipped/retry
+// 保留 'processing' 与 'failed' 用于兼容已有逻辑；新代码统一用 running/failure/skipped/retry
 interface StepState {
-  status: 'waiting' | 'processing' | 'success' | 'failed'
+  status:
+    | 'waiting'
+    | 'processing'
+    | 'running'
+    | 'success'
+    | 'failed'
+    | 'failure'
+    | 'skipped'
+    | 'retry'
   message: string
   progress: number
   showMirrorSelection: boolean
@@ -94,149 +259,103 @@ interface StepState {
   deployMessage: string
   deployProgress: number
   operationDesc: string
-  checkInfo?: {
-    exeExists?: boolean
-    canRun?: boolean
-    version?: string
-    exists?: boolean
-    isGitRepo?: boolean
-    isHealthy?: boolean
-    requirementsExists?: boolean
-    needsInstall?: boolean
-  }
+  checkInfo?: InitStepCheckInfo
   mirrorProgress?: {
     current: number
     total: number
   }
+  /** Lane 8：结构化失败诊断 */
+  failureDetails?: InitStepFailureDetails
+  /** Lane 8：插件安装步骤的原始 warnings（来自 installPluginBootstrap） */
+  pluginWarnings?: PluginBootstrapWarningLike[]
+  /** Lane 8：解析后的版本锁冲突结构化列表 */
+  pluginVersionConflicts?: PluginVersionConflict[]
 }
 
-const stepStates = ref<Record<string, StepState>>({
-  python: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  pip: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  git: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  repository: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  dependency: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  'plugin-bootstrap': {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  backend: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
+const createInitialStepState = (): StepState => ({
+  status: 'waiting',
+  message: '',
+  progress: 0,
+  showMirrorSelection: false,
+  mirrors: [],
+  selectedMirror: '',
+  countdown: 0,
+  currentMirror: '',
+  downloadSpeed: '',
+  downloadSize: '',
+  installMessage: '',
+  installProgress: 0,
+  deployMessage: '',
+  deployProgress: 0,
+  operationDesc: '',
 })
+
+const stepStates = ref<Record<string, StepState>>(
+  Object.fromEntries(steps.map(s => [s.key, createInitialStepState()]))
+)
 
 // 倒计时定时器
 let countdownTimer: NodeJS.Timeout | null = null
 
 // ==================== 计算属性 ====================
 const currentStep = computed(() => steps[currentStepIndex.value])
+const currentStepState = computed(() => stepStates.value[currentStep.value.key])
+const viewedStep = computed(() => steps[viewedStepIndex.value])
+const viewedStepState = computed(() => stepStates.value[viewedStep.value.key])
+const isViewingHistory = computed(() => viewedStepIndex.value !== currentStepIndex.value)
+const isCurrentFailure = computed(
+  () => currentStepState.value.status === 'failed' || currentStepState.value.status === 'failure'
+)
+
+const progressSummary = computed(() => `第 ${currentStepIndex.value + 1} 步，共 ${steps.length} 步`)
+const completedStepCount = computed(
+  () =>
+    Object.values(stepStates.value).filter(state => ['success', 'skipped'].includes(state.status))
+      .length
+)
+const overallProgress = computed(() =>
+  Math.round(
+    ((completedStepCount.value + Math.min(1, Math.max(0, currentStepState.value.progress / 100))) /
+      steps.length) *
+      100
+  )
+)
+
+const viewedPanelType = computed<'neutral' | 'info' | 'success' | 'warning' | 'error'>(() => {
+  const status = viewedStepState.value.status
+  if (status === 'success') return 'success'
+  if (status === 'failed' || status === 'failure') return 'error'
+  if (status === 'skipped') return 'warning'
+  if (status === 'running' || status === 'processing' || status === 'retry') return 'info'
+  return 'neutral'
+})
+
+const viewedPanelTitle = computed(() => {
+  const status = viewedStepState.value.status
+  if (status === 'success') return `${viewedStep.value.title}已完成`
+  if (status === 'failed' || status === 'failure') return `${viewedStep.value.title}需要处理`
+  if (status === 'skipped') return `${viewedStep.value.title}已跳过`
+  if (status === 'retry') return `正在重试${viewedStep.value.title}`
+  if (status === 'running' || status === 'processing') return `正在执行${viewedStep.value.title}`
+  return `等待执行${viewedStep.value.title}`
+})
+
+const viewedPanelDescription = computed(
+  () =>
+    viewedStepState.value.failureDetails?.reason ||
+    viewedStepState.value.message ||
+    '正在准备此阶段所需的资源。'
+)
+
+const viewedStepDescription = computed(() => {
+  if (viewedStep.value.key === 'backend') {
+    return '启动后端、建立 WebSocket 连接并确认版本检查可用'
+  }
+  if (viewedStep.value.canSkip) {
+    return '失败时可选择镜像重试，或在确认影响后跳过此步骤'
+  }
+  return '此步骤是运行所必需的；失败时请选择镜像源并重试'
+})
 
 const currentStepComponent = computed(() => {
   // 后端启动步骤使用专门的组件
@@ -249,6 +368,7 @@ const currentStepComponent = computed(() => {
 const currentStepProps = computed(() => {
   const state = stepStates.value[currentStep.value.key]
   const step = currentStep.value
+  const isFailure = state.status === 'failed' || state.status === 'failure'
 
   return {
     title: step.title,
@@ -256,13 +376,10 @@ const currentStepProps = computed(() => {
     message: state.message,
     progress: state.progress,
     showProgress: true,
-    progressStatus: (state.status === 'failed' ? 'exception' : 'normal') as
-      | 'normal'
-      | 'exception'
-      | 'success',
+    progressStatus: (isFailure ? 'exception' : 'normal') as 'normal' | 'exception' | 'success',
     successTitle: `${step.title}完成`,
     showMirrorSelection: state.showMirrorSelection, // 所有步骤失败时都显示镜像源选择
-    showSkipButton: step.canSkip && state.status === 'failed', // 只有可跳过的步骤且失败时才显示跳过按钮
+    showSkipButton: step.canSkip && isFailure, // 只有可跳过的步骤且失败时才显示跳过按钮
     mirrors: state.mirrors,
     selectedMirror: state.selectedMirror,
     countdown: state.countdown,
@@ -276,10 +393,53 @@ const currentStepProps = computed(() => {
     operationDesc: state.operationDesc,
     checkInfo: state.checkInfo,
     mirrorProgress: state.mirrorProgress,
+    failureDetails: state.failureDetails,
+    // Lane 8：插件版本锁冲突展示
+    pluginVersionConflicts: state.pluginVersionConflicts,
   }
 })
 
 // ==================== 方法 ====================
+
+function normalizedStepStatus(status: StepState['status']) {
+  if (status === 'success') return 'success'
+  if (status === 'failed' || status === 'failure') return 'failure'
+  if (status === 'skipped') return 'skipped'
+  if (status === 'processing' || status === 'running' || status === 'retry') return 'running'
+  return 'waiting'
+}
+
+function stepStatusLabel(status: StepState['status']) {
+  const normalized = normalizedStepStatus(status)
+  if (normalized === 'success') return '已完成'
+  if (normalized === 'failure') return '需要处理'
+  if (normalized === 'skipped') return '已跳过'
+  if (normalized === 'running') return status === 'retry' ? '重试中' : '进行中'
+  return '等待中'
+}
+
+function canViewStep(index: number) {
+  if (index <= currentStepIndex.value) return true
+  const status = normalizedStepStatus(stepStates.value[steps[index].key].status)
+  return status !== 'waiting'
+}
+
+function selectViewedStep(index: number) {
+  if (!canViewStep(index)) return
+  viewedStepIndex.value = index
+}
+
+function followCurrentStep() {
+  viewedStepIndex.value = currentStepIndex.value
+}
+
+function setCurrentStep(index: number) {
+  const wasFollowingCurrent = viewedStepIndex.value === currentStepIndex.value
+  currentStepIndex.value = index
+  if (wasFollowingCurrent) {
+    viewedStepIndex.value = index
+  }
+}
 
 // 格式化速度
 function formatSpeed(bytesPerSecond: number): string {
@@ -314,6 +474,8 @@ function formatSize(bytes: number): string {
 function handleProgress(stepKey: string, progressData: any) {
   const state = stepStates.value[stepKey]
   if (!state) return
+  // 防御 IPC 回调传入 null/undefined 或非对象导致解构抛错
+  if (!progressData || typeof progressData !== 'object') return
 
   const { stage, progress, message: msg, details } = progressData
 
@@ -334,7 +496,7 @@ function handleProgress(stepKey: string, progressData: any) {
     logger.info(`[${stepKey}] 完成 - 100%`)
   } else if (progress > 0) {
     // 进度更新中
-    state.status = 'processing'
+    state.status = 'running'
     state.message = msg
     // 控制进度条显示为整数
     state.progress = Math.round(progress)
@@ -386,7 +548,7 @@ function handleProgress(stepKey: string, progressData: any) {
     // 进度为 0，只在还没有进度时才重置
     // 避免在安装过程中因为某些中间步骤发送 progress: 0 导致进度条跳回0
     if (state.progress === 0 || state.status === 'waiting') {
-      state.status = 'processing'
+      state.status = 'running'
       state.message = msg || '准备中...'
       state.progress = 0
       logger.info(`[${stepKey}] 开始 - ${msg}`)
@@ -400,9 +562,11 @@ function handleProgress(stepKey: string, progressData: any) {
 // 执行单个步骤
 async function executeStep(stepKey: string): Promise<boolean> {
   const state = stepStates.value[stepKey]
-  state.status = 'processing'
+  state.status = 'running'
   state.progress = 0
   state.message = '正在执行...'
+  state.showMirrorSelection = false
+  state.countdown = 0
 
   try {
     let result: any
@@ -447,6 +611,21 @@ async function executeStep(stepKey: string): Promise<boolean> {
       state.installMessage = ''
       state.installProgress = 0
       state.operationDesc = ''
+      state.failureDetails = undefined
+
+      // Lane 8：插件安装成功时仍保留 warnings（非致命警告，需向用户披露）
+      if (
+        stepKey === 'plugin-bootstrap' &&
+        Array.isArray(result.warnings) &&
+        result.warnings.length > 0
+      ) {
+        state.pluginWarnings = result.warnings
+        state.pluginVersionConflicts = parsePluginWarnings(result.warnings)
+        logger.warn(`[${stepKey}] 完成但携带 ${result.warnings.length} 条警告：`, result.warnings)
+      } else {
+        state.pluginWarnings = undefined
+        state.pluginVersionConflicts = undefined
+      }
 
       logger.info(`步骤 ${stepKey} 完成`)
 
@@ -455,14 +634,33 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
       return true
     } else {
-      throw new Error(result.error || '执行失败')
+      // Lane 8：后端错误必须保留具体原因，不得只显示"执行失败"
+      const backendError = result.error || result.message || ''
+      // Lane 8：插件安装失败时，把 warnings 一并交给状态机解析为版本冲突
+      const pluginWarnings =
+        stepKey === 'plugin-bootstrap' && Array.isArray(result.warnings)
+          ? result.warnings
+          : undefined
+      const err = new Error(backendError || '后端未返回具体错误，请查看应用日志')
+      ;(err as any).pluginWarnings = pluginWarnings
+      throw err
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`步骤 ${stepKey} 失败: ${errorMsg}`)
 
-    state.status = 'failed'
-    state.message = errorMsg
+    // Lane 8：使用状态机生成结构化失败诊断
+    const pluginWarnings = (error as any)?.pluginWarnings as
+      | PluginBootstrapWarningLike[]
+      | undefined
+    const nextState = toFailure(state, errorMsg, {
+      stepKey,
+      mirrorTried: state.currentMirror || undefined,
+      mirrorProgress: state.mirrorProgress,
+      pluginWarnings,
+    })
+    Object.assign(state, nextState)
+    state.status = 'failure'
     state.showMirrorSelection = true
 
     // 开始倒计时
@@ -480,7 +678,7 @@ async function startInitialization(startIndex: number = 0) {
     // 依次执行每个步骤
     for (let i = startIndex; i < steps.length; i++) {
       const step = steps[i]
-      currentStepIndex.value = i
+      setCurrentStep(i)
 
       logger.info(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
 
@@ -521,18 +719,18 @@ async function handleSkip() {
   logger.info(`跳过步骤: ${stepKey}`)
 
   if (state) {
+    stepStatus.value = 'process'
     // 清除倒计时
     if (countdownTimer) {
       clearInterval(countdownTimer)
       countdownTimer = null
     }
 
-    // 标记为已跳过
-    state.status = 'success'
-    state.progress = 100
-    state.message = '已跳过'
+    // Lane 8：使用 skipped 状态而非 success+message
+    const skippedState = toSkipped(state)
+    Object.assign(state, skippedState)
+    state.status = 'skipped'
     state.showMirrorSelection = false
-    state.countdown = 0
 
     message.warning(`已跳过 ${currentStep.value.title}`)
 
@@ -542,7 +740,7 @@ async function handleSkip() {
     // 继续执行后续步骤
     for (let i = currentStepIndex.value + 1; i < steps.length; i++) {
       const step = steps[i]
-      currentStepIndex.value = i
+      setCurrentStep(i)
 
       logger.info(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
 
@@ -554,12 +752,13 @@ async function handleSkip() {
       }
     }
 
-    // 如果跳过的步骤是后端步骤，或者我们已经完成了所有步骤
-    if (stepKey === 'backend' || currentStepIndex.value === steps.length - 1) {
-      logger.info('后端步骤已跳过或所有步骤已完成，准备进入应用')
+    // 只有显式跳过 backend 步骤本身时才直接进入应用（用户选择离线）
+    // 跳过非 backend 步骤时，循环结束后需等待 BackendStartStep 组件 emit complete
+    if (stepKey === 'backend') {
+      logger.info('后端步骤已跳过，准备进入应用')
       handleLocalEnterApp()
     } else {
-      // 所有步骤完成
+      // 所有步骤完成，等待 BackendStartStep 启动后端并 emit complete
       logger.info('初始化流程执行完成，等待后端启动完成...')
     }
   }
@@ -570,13 +769,17 @@ async function handleRetry() {
   const state = stepStates.value[stepKey]
 
   if (state) {
+    stepStatus.value = 'process'
     // 清除倒计时
     if (countdownTimer) {
       clearInterval(countdownTimer)
       countdownTimer = null
     }
 
-    // 重置状态
+    // Lane 8：先进入 retry 状态，便于用户感知
+    const retryState = toRetry(state)
+    Object.assign(state, retryState)
+    state.status = 'retry'
     state.showMirrorSelection = false
     state.countdown = 0
 
@@ -589,7 +792,7 @@ async function handleRetry() {
       // 继续执行后续步骤
       for (let i = currentStepIndex.value + 1; i < steps.length; i++) {
         const step = steps[i]
-        currentStepIndex.value = i
+        setCurrentStep(i)
 
         logger.info(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
 
@@ -605,6 +808,26 @@ async function handleRetry() {
       logger.info('初始化流程执行完成，等待后端启动完成...')
     }
   }
+}
+
+function handleBackendStatus(status: 'waiting' | 'starting' | 'running' | 'success' | 'failed') {
+  const state = stepStates.value.backend
+  if (status === 'waiting') {
+    state.status = 'waiting'
+    return
+  }
+  if (status === 'starting' || status === 'running') {
+    state.status = 'running'
+    state.message = status === 'starting' ? '正在启动后端服务' : '后端已启动，正在完成连接检查'
+    return
+  }
+  if (status === 'success') {
+    state.status = 'success'
+    state.progress = 100
+    state.message = '后端服务启动成功'
+    return
+  }
+  state.status = 'failure'
 }
 
 // 处理后端启动完成
@@ -646,8 +869,11 @@ async function handleBackendComplete() {
 function handleBackendError(error: string) {
   logger.error(`后端启动失败: ${error}`)
   const state = stepStates.value.backend
-  state.status = 'failed'
-  state.message = error
+  // Lane 8：后端失败也使用状态机生成结构化诊断
+  const nextState = toFailure(state, error, { stepKey: 'backend' })
+  Object.assign(state, nextState)
+  state.status = 'failure'
+  state.showMirrorSelection = false
   stepStatus.value = 'error'
 }
 
@@ -746,6 +972,7 @@ async function loadMirrorConfigs() {
     logger.error(`加载镜像源配置失败: ${errorMsg}`)
     // 镜像源配置由 Electron MirrorService 管理，如果失败则使用其默认配置
     logger.warn('镜像源配置加载失败，将使用 Electron MirrorService 的默认配置')
+    message.warning('镜像源云端配置加载失败，已切换为本地默认配置')
   }
 }
 
@@ -788,13 +1015,12 @@ onMounted(async () => {
     logger.info('强制后端更新模式：跳过前3步，从源码拉取开始')
     startFromIndex = 3 // 从第4步（索引3）开始
 
-    // 跳过前 3 步（python, pip, git），标记为成功
+    // 跳过前 3 步（python, pip, git）— Lane 8：使用 skipped 状态
     for (let i = 0; i < 3; i++) {
       const stepKey = steps[i].key
       const state = stepStates.value[stepKey]
-      state.status = 'success'
-      state.progress = 100
-      state.message = '已跳过'
+      Object.assign(state, toSkipped(state))
+      state.status = 'skipped'
       state.showMirrorSelection = false
       state.countdown = 0
     }
@@ -806,13 +1032,12 @@ onMounted(async () => {
       logger.info(`自动更新已关闭，初始化版本号一致（${version}），跳过安装步骤，启动后端`)
       startFromIndex = steps.length - 1
 
-      // 跳过前 5 步（python, pip, git, repository, dependency），只启动后端
+      // 跳过前 5 步（python, pip, git, repository, dependency）— Lane 8：使用 skipped 状态
       for (let i = 0; i < steps.length - 1; i++) {
         const stepKey = steps[i].key
         const state = stepStates.value[stepKey]
-        state.status = 'success'
-        state.progress = 100
-        state.message = '已跳过'
+        Object.assign(state, toSkipped(state))
+        state.status = 'skipped'
         state.showMirrorSelection = false
         state.countdown = 0
       }
@@ -839,6 +1064,8 @@ onMounted(async () => {
   api.onPluginBootstrapProgress?.((progress: any) => handleProgress('plugin-bootstrap', progress))
 
   api.onBackendStatus?.((status: any) => {
+    // 防御 IPC 回调传入 null/undefined 导致 status.isRunning 抛错
+    if (!status || typeof status !== 'object') return
     logger.info(`后端状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
     if (status.isRunning) {
       const state = stepStates.value.backend
@@ -880,91 +1107,489 @@ onUnmounted(() => {
 .initialization-page {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20px;
   width: 100%;
   height: 100%;
-  padding: 20px;
+  min-height: 0;
   box-sizing: border-box;
-  background-color: var(--ant-color-bg-layout);
-  color: var(--ant-color-text);
+  /* macOS 风格中性背景：窗口灰 + 极轻的顶部到底部明度渐变（两种主题均由 token 驱动） */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--v6-color-surface) 45%, var(--v6-color-window)) 0%,
+    var(--v6-color-window) 36%
+  );
+  background-color: var(--v6-color-window);
+  color: var(--v6-color-text);
+  overflow: auto;
 }
 
-.header {
+.initialization-hero {
+  display: flex;
+  flex: 0 0 auto;
+  width: min(930px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 24px 0 14px;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.initialization-hero :deep(.mac-page-header__content) {
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  margin-bottom: 20px;
-  width: 100%;
-  max-width: 1000px;
 }
 
-.header h3 {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--ant-color-text);
+.initialization-hero :deep(.mac-page-header__title-group) {
+  align-items: center;
 }
 
-.init-steps {
-  margin-bottom: 20px;
+.initialization-hero :deep(.mac-page-header__aside) {
   width: 100%;
-  max-width: 1000px;
+  margin-left: 0;
+}
+
+.initialization-hero :deep(.mac-page-header__actions) {
+  position: absolute;
+  top: var(--v6-space-3);
+  right: var(--v6-content-padding-inline);
+}
+
+.initialization-brand {
+  text-align: center;
+}
+
+.initialization-brand h1 {
+  margin: 14px 0 4px;
+  color: var(--v6-color-text);
+  font-size: 30px;
+  font-weight: 720;
+  letter-spacing: -0.035em;
+}
+
+.initialization-brand p {
+  margin: 0;
+  color: var(--v6-color-text-secondary);
+}
+
+.initialization-subtitle {
+  margin: 0;
+  color: var(--v6-color-text-secondary);
+}
+
+.robot-mark {
+  position: relative;
+  display: flex;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid var(--v6-color-border);
+  border-radius: 24px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--v6-color-info) 58%, white),
+    var(--v6-color-info)
+  );
+  box-shadow:
+    var(--v6-shadow-lg),
+    inset 0 1px 0 rgb(255 255 255 / 42%);
+}
+
+.robot-mark::before {
+  position: absolute;
+  width: 52px;
+  height: 34px;
+  border: 4px solid rgb(255 255 255 / 96%);
+  border-radius: 11px;
+  content: '';
+}
+
+.robot-mark::after {
+  position: absolute;
+  top: 19px;
+  width: 4px;
+  height: 11px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -3px 0 2px rgb(255 255 255 / 95%);
+  content: '';
+}
+
+.robot-eye {
+  z-index: 1;
+  width: 5px;
+  height: 7px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 96%);
+}
+
+.hero-progress {
+  display: flex;
+  width: min(620px, 100%);
+  align-items: center;
+  gap: var(--v6-space-3);
+  color: var(--v6-color-text-secondary);
+  font-size: 12px;
+}
+
+.hero-progress :deep(.ant-progress) {
+  flex: 1;
+  margin: 0;
+}
+
+.hero-progress__label {
+  flex: 0 0 auto;
+}
+
+.initialization-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 0 24px 28px;
+  padding-inline: var(--v6-content-padding-inline);
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+/* 顶部横向 stepper：七个阶段横排在标题区下方、内容卡上方 */
+.stage-rail {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: var(--v6-space-3) var(--v6-space-4);
+  border: 1px solid var(--v6-color-border);
+  border-radius: 18px;
+  background: var(--v6-color-surface);
+  box-shadow: var(--v6-shadow-card);
+  color: var(--v6-color-text);
+}
+
+.stage-rail__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--v6-space-2);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+}
+
+.stage-rail__heading strong {
+  color: var(--v6-color-text);
+}
+
+.stage-list {
+  display: flex;
+  margin: 0;
+  padding: 0 0 var(--v6-space-1);
+  flex-direction: row;
+  gap: var(--v6-space-1);
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+
+.stage-list li {
+  min-width: 140px;
+  flex: 1 1 140px;
+  scroll-snap-align: start;
+}
+
+.stage-nav-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 54px;
+  padding: var(--v6-space-2) var(--v6-space-3);
+  border: 0;
+  border-radius: 12px;
+  align-items: center;
+  gap: var(--v6-space-3);
+  background: transparent;
+  color: var(--v6-color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.stage-nav-item:not(:disabled):hover {
+  background: color-mix(in srgb, var(--v6-color-info) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.stage-nav-item:disabled {
+  color: var(--v6-color-text-tertiary);
+  cursor: default;
+}
+
+.stage-nav-item--active {
+  background: color-mix(in srgb, var(--v6-color-info) 16%, transparent);
+}
+
+.stage-nav-item__index {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 1px solid color-mix(in srgb, var(--v6-color-text-tertiary) 42%, transparent);
+  border-radius: 50%;
+  place-items: center;
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+  font-weight: 700;
+}
+
+.stage-nav-item--success .stage-nav-item__index {
+  border-color: color-mix(in srgb, var(--v6-color-success) 46%, transparent);
+  background: color-mix(in srgb, var(--v6-color-success) 14%, transparent);
+  color: var(--v6-color-success);
+}
+
+.stage-nav-item--failure .stage-nav-item__index {
+  border-color: color-mix(in srgb, var(--v6-color-error) 48%, transparent);
+  background: color-mix(in srgb, var(--v6-color-error) 12%, transparent);
+  color: var(--v6-color-error);
+}
+
+.stage-nav-item--running .stage-nav-item__index,
+.stage-nav-item--active .stage-nav-item__index {
+  border-color: var(--v6-color-info);
+  background: var(--v6-color-info);
+  color: var(--v6-color-surface);
+}
+
+.stage-nav-item__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stage-nav-item__copy strong,
+.stage-nav-item__copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-nav-item__copy strong {
+  font-size: var(--v6-font-size-sm);
+}
+
+.stage-nav-item__copy small {
+  color: var(--v6-color-text-tertiary);
+  font-size: 11px;
+}
+
+.stage-nav-item__current {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--v6-color-info);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--v6-color-info) 13%, transparent);
+}
+
+.stage-rail__hint {
+  margin: var(--v6-space-2) var(--v6-space-1) 0;
+  color: var(--v6-color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.current-state-panel {
+  width: min(360px, 46%);
+  flex-shrink: 0;
+}
+
+.current-state-message,
+.current-step-boundary {
+  margin: 0;
+}
+
+.current-step-boundary {
+  margin-top: var(--v6-space-1);
+  color: var(--v6-color-text-tertiary);
+}
+
+.init-stage-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--v6-color-border);
+  border-radius: 18px;
+  background: var(--v6-color-surface);
+  box-shadow: var(--v6-shadow-md);
+  color: var(--v6-color-text);
+  flex-direction: column;
+}
+
+.stage-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 26px 18px;
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.stage-heading h2 {
+  margin: 3px 0 5px;
+  color: var(--v6-color-text);
+  font-size: 20px;
+}
+
+.stage-heading p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--v6-color-text-secondary);
+  font-size: 13px;
+}
+
+.stage-kicker {
+  color: var(--v6-color-info);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .step-content {
-  background-color: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 24px;
-  /* min-height: 400px; Remove fixed min-height to allow shrinking on small screens */
-  flex: 1;
-  /* Take available vertical space */
-  min-height: 0;
-  /* Allow shrinking below content size */
-  width: 100%;
-  max-width: 1000px;
-  box-sizing: border-box;
   display: flex;
-  /* Enable flex for children (StepPanel) */
+  min-height: 330px;
+  height: 100%;
+  padding: 18px 22px 22px;
   flex-direction: column;
   overflow: auto;
-  /* Allow scrolling when content overflows */
 }
 
-.step-actions {
+.step-history {
   display: flex;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 20px;
-  width: 100%;
-  max-width: 1000px;
+  min-height: 330px;
+  padding: var(--v6-space-6);
+  flex-direction: column;
+  gap: var(--v6-space-5);
+  overflow: auto;
 }
 
-/* 响应式优化 */
-@media (max-width: 768px) {
-  .initialization-page {
-    gap: 15px;
-    padding: 10px;
+.step-history__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--v6-space-3);
+}
+
+.step-history__badge {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--v6-color-text-tertiary) 12%, transparent);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+}
+
+.step-history__badge--success {
+  background: color-mix(in srgb, var(--v6-color-success) 14%, transparent);
+  color: var(--v6-color-success);
+}
+
+.step-history__badge--failure {
+  background: color-mix(in srgb, var(--v6-color-error) 13%, transparent);
+  color: var(--v6-color-error);
+}
+
+.step-history__badge--skipped {
+  background: color-mix(in srgb, var(--v6-color-warning) 14%, transparent);
+  color: var(--v6-color-warning);
+}
+
+.step-history__facts {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v6-space-3);
+}
+
+.step-history__facts > div {
+  padding: var(--v6-space-3);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--v6-color-fill-tertiary) 62%, transparent);
+}
+
+.step-history__facts dt {
+  color: var(--v6-color-text-tertiary);
+  font-size: 11px;
+}
+
+.step-history__facts dd {
+  margin: 4px 0 0;
+  color: var(--v6-color-text);
+  overflow-wrap: anywhere;
+}
+
+.return-current-step {
+  align-self: flex-start;
+  padding-inline: 0;
+}
+
+@media (max-width: 900px) {
+  .initialization-content {
+    padding: var(--v6-space-3);
+    gap: var(--v6-space-3);
   }
 
-  .header h3 {
-    font-size: 20px;
+  .initialization-hero {
+    width: calc(100% - 24px);
   }
 
-  .init-steps {
-    :deep(.ant-steps-item-title) {
-      white-space: normal;
-    }
+  .stage-rail {
+    padding: var(--v6-space-2) var(--v6-space-3);
+  }
+
+  .stage-rail__heading,
+  .stage-rail__hint {
+    display: none;
+  }
+
+  .stage-nav-item {
+    min-height: 50px;
+  }
+
+  .stage-nav-item:not(:disabled):hover {
+    transform: none;
+  }
+
+  .stage-heading {
+    flex-direction: column;
+  }
+
+  .current-state-panel {
+    width: 100%;
   }
 
   .step-content {
-    padding: 16px;
     min-height: 300px;
+  }
+
+  .step-history__facts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (max-width: 480px) {
-  .step-actions {
-    flex-direction: column;
-    align-items: stretch;
+:root[data-perf-mode='low'] .initialization-page {
+  scroll-behavior: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .initialization-page {
+    scroll-behavior: auto;
   }
 }
 </style>

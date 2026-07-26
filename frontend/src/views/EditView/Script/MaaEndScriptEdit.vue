@@ -25,25 +25,15 @@
     </div>
   </teleport>
 
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
+  <ScriptEditPageHeader
+    title="MaaEnd 脚本配置"
+    subtitle="配置游戏、脚本会话与运行参数"
+    type-label="MaaEnd"
+    @back="handleCancel"
+  >
+    <template #actions>
       <a-button
         type="primary"
-        size="large"
         :loading="maaEndConfigLoading"
         :disabled="pageLoading || showMaaEndConfigMask"
         @click="handleMaaEndConfig"
@@ -53,21 +43,11 @@
         </template>
         {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
       </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </ScriptEditPageHeader>
 
   <div class="script-edit-content">
-    <a-card title="MaaEnd 脚本配置" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag class="type-tag">MaaEnd</a-tag>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-alert message="重要提示" type="warning" show-icon class="notice-alert">
         <template #description>
           <div class="notice-content">
@@ -381,13 +361,9 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { handleExternalLink } from '@/utils/openExternal'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import BasicInfoFields from '@/views/EditView/shared/BasicInfoFields.vue'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -956,3 +932,4 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// 用 hoisted 句柄让 vi.mock 工厂可以引用到同一个 mock 函数，
-// 测试体里再按需控制它的返回值。
 const fetchMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/utils/httpSecurity', () => ({
@@ -19,7 +17,6 @@ interface ImageInstance {
   src: string
 }
 
-// 模拟成功解码的 Image：设置 src 后在下一个 microtask 触发 onload。
 const stubImageSuccess = (): ImageInstance[] => {
   vi.stubGlobal(
     'Image',
@@ -40,6 +37,26 @@ const stubImageSuccess = (): ImageInstance[] => {
   return []
 }
 
+const stubImageFail = (): ImageInstance[] => {
+  vi.stubGlobal(
+    'Image',
+    class FakeImage {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      decoding = ''
+      private _src = ''
+      get src() {
+        return this._src
+      }
+      set src(value: string) {
+        this._src = value
+        queueMicrotask(() => this.onerror?.())
+      }
+    }
+  )
+  return []
+}
+
 const okResponse = (payload: unknown) => ({
   ok: true,
   status: 200,
@@ -48,18 +65,102 @@ const okResponse = (payload: unknown) => ({
 
 const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 
+function createMockIndexedDB() {
+  const store: Record<string, string> = {}
+  const createdStores = new Set<string>()
+  const mockStore = {
+    put: vi.fn((value: string, key: string) => {
+      store[key] = value
+      const req = {
+        onsuccess: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+      }
+      queueMicrotask(() => req.onsuccess?.())
+      return req
+    }),
+    get: vi.fn((key: string) => {
+      const req = {
+        onsuccess: null as ((e: { target: { result: string | undefined } }) => void) | null,
+        onerror: null as (() => void) | null,
+      }
+      queueMicrotask(() => req.onsuccess?.({ target: { result: store[key] } }))
+      return req
+    }),
+    delete: vi.fn((key: string) => {
+      delete store[key]
+      const req = {
+        onsuccess: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+      }
+      queueMicrotask(() => req.onsuccess?.())
+      return req
+    }),
+  }
+  const mockTx = {
+    oncomplete: null as (() => void) | null,
+    onerror: null as ((e: Event) => void) | null,
+    objectStore: vi.fn(() => {
+      queueMicrotask(() => mockTx.oncomplete?.())
+      return mockStore
+    }),
+  }
+  const mockDB = {
+    transaction: vi.fn(() => mockTx),
+    objectStoreNames: {
+      contains: vi.fn((name: string) => createdStores.has(name)),
+    },
+    createObjectStore: vi.fn((name: string) => {
+      createdStores.add(name)
+      return mockStore
+    }),
+    close: vi.fn(),
+  }
+  const mockOpenRequest = {
+    onupgradeneeded: null as (() => void) | null,
+    onsuccess: null as ((e: { target: { result: typeof mockDB } }) => void) | null,
+    onerror: null as (() => void) | null,
+    error: null,
+    result: mockDB,
+  }
+
+  vi.stubGlobal('indexedDB', {
+    open: vi.fn(() => {
+      queueMicrotask(() => {
+        mockOpenRequest.onupgradeneeded?.()
+        mockOpenRequest.onsuccess?.({ target: { result: mockDB } })
+      })
+      return mockOpenRequest
+    }),
+  })
+
+  return { store, mockStore }
+}
+
 const loadUseAppBackground = async () => {
   vi.resetModules()
   vi.stubGlobal('window', {
     electronAPI: { getLogger: () => logger },
   })
+  const storageMock: Record<string, string> = {}
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => storageMock[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      storageMock[key] = value
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete storageMock[key]
+    }),
+  })
+  createMockIndexedDB()
   return await import('./useAppBackground')
 }
 
 describe('useAppBackground cssVars surface', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     fetchMock.mockReset()
+    stubImageSuccess()
+    fetchMock.mockResolvedValueOnce(okResponse({ enabled: false }))
   })
 
   afterEach(() => {
@@ -89,10 +190,11 @@ describe('useAppBackground cssVars surface', () => {
 })
 
 describe('useAppBackground loadBackground success and fallback', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     fetchMock.mockReset()
     stubImageSuccess()
+    fetchMock.mockResolvedValueOnce(okResponse({ enabled: false }))
   })
 
   afterEach(() => {
@@ -101,6 +203,11 @@ describe('useAppBackground loadBackground success and fallback', () => {
   })
 
   it('loads a safe plugin background and reflects it in cssVars', async () => {
+    const { useAppBackground } = await loadUseAppBackground()
+    const bg = useAppBackground()
+    await vi.waitUntil(() => bg.loaded.value === true)
+    fetchMock.mockReset()
+
     fetchMock.mockResolvedValueOnce(
       okResponse({
         enabled: true,
@@ -109,8 +216,6 @@ describe('useAppBackground loadBackground success and fallback', () => {
         opacity: 80,
       })
     )
-    const { useAppBackground } = await loadUseAppBackground()
-    const bg = useAppBackground()
 
     await bg.loadBackground()
 
@@ -127,10 +232,12 @@ describe('useAppBackground loadBackground success and fallback', () => {
   })
 
   it('falls back to the default surface when the request throws', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('network down'))
     const { useAppBackground } = await loadUseAppBackground()
     const bg = useAppBackground()
+    await vi.waitUntil(() => bg.loaded.value === true)
+    fetchMock.mockReset()
 
+    fetchMock.mockRejectedValueOnce(new Error('network down'))
     await bg.loadBackground()
 
     expect(bg.background.value.enabled).toBe(false)
@@ -140,14 +247,16 @@ describe('useAppBackground loadBackground success and fallback', () => {
   })
 
   it('falls back to the default surface when the backend reports an error status', async () => {
+    const { useAppBackground } = await loadUseAppBackground()
+    const bg = useAppBackground()
+    await vi.waitUntil(() => bg.loaded.value === true)
+    fetchMock.mockReset()
+
     fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 500,
       json: async () => ({ message: 'backend error' }),
     })
-    const { useAppBackground } = await loadUseAppBackground()
-    const bg = useAppBackground()
-
     await bg.loadBackground()
 
     expect(bg.background.value.enabled).toBe(false)
@@ -156,10 +265,11 @@ describe('useAppBackground loadBackground success and fallback', () => {
 })
 
 describe('useAppBackground loadBackground race protection', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     fetchMock.mockReset()
     stubImageSuccess()
+    fetchMock.mockResolvedValueOnce(okResponse({ enabled: false }))
   })
 
   afterEach(() => {
@@ -168,6 +278,11 @@ describe('useAppBackground loadBackground race protection', () => {
   })
 
   it('keeps the newest response and ignores a stale in-flight response', async () => {
+    const { useAppBackground } = await loadUseAppBackground()
+    const bg = useAppBackground()
+    await vi.waitUntil(() => bg.loaded.value === true)
+    fetchMock.mockReset()
+
     let resolveFirst!: (response: unknown) => void
     const firstResponse = new Promise(resolve => {
       resolveFirst = resolve
@@ -179,9 +294,6 @@ describe('useAppBackground loadBackground race protection', () => {
         image_url: '/api/plugins/frontend/background/image?new',
       })
     )
-
-    const { useAppBackground } = await loadUseAppBackground()
-    const bg = useAppBackground()
 
     const firstCall = bg.loadBackground()
     const secondCall = bg.loadBackground()
@@ -199,5 +311,62 @@ describe('useAppBackground loadBackground race protection', () => {
 
     expect(bg.background.value.imageUrl).toContain('image?new')
     expect(bg.background.value.imageUrl).not.toContain('stale')
+  })
+})
+
+describe('useAppBackground selectLocalImage with IndexedDB persistence', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    fetchMock.mockReset()
+    stubImageSuccess()
+    fetchMock.mockResolvedValueOnce(okResponse({ enabled: false }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('saves user image to IndexedDB (not localStorage) and enables background', async () => {
+    const { useAppBackground } = await loadUseAppBackground()
+    const bg = useAppBackground()
+    await vi.waitUntil(() => bg.loaded.value === true)
+
+    const testDataUrl = 'data:image/png;base64,testimage123'
+    class MockFileReader {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      result = testDataUrl
+      readAsDataURL = vi.fn(function (this: MockFileReader) {
+        queueMicrotask(() => this.onload?.())
+      })
+    }
+    vi.stubGlobal('FileReader', MockFileReader)
+
+    const fakeFile = {
+      name: 'test.png',
+      type: 'image/png',
+      size: 1024,
+      lastModified: Date.now(),
+      slice: () => new Blob(),
+      arrayBuffer: async () => new ArrayBuffer(0),
+      stream: () => new ReadableStream(),
+      text: async () => '',
+    } as File
+
+    const result = await bg.selectLocalImage(fakeFile)
+    expect(result.success).toBe(true)
+    expect(bg.background.value.enabled).toBe(true)
+    expect(bg.background.value.source).toBe('user')
+    expect(bg.background.value.imageUrl).toBe(testDataUrl)
+
+    const storedSettings = JSON.parse(
+      (localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c: unknown[]) => c[0] === 'v6-user-background'
+      )?.[1] ?? '{}'
+    )
+    expect(storedSettings.enabled).toBe(true)
+    expect(storedSettings.source).toBe('user')
+    expect(storedSettings.imageDataUrl).toBeUndefined()
   })
 })

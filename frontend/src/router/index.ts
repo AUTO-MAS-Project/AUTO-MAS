@@ -20,6 +20,10 @@ const routes = [
     component: () => import('../views/Initialization/index.vue'),
     meta: { title: 'AUTO-MAS \u521d\u59cb\u5316' },
   },
+  {
+    path: '/emulators',
+    redirect: () => ({ path: '/game-center', query: { tab: 'emulators' } }),
+  },
   ...createPageRoutes(FALLBACK_PAGE_DECLARATIONS),
   {
     path: '/scripts/:id/edit/src',
@@ -80,6 +84,12 @@ const routes = [
     name: 'OkScriptScriptEdit',
     component: () => import('../views/EditView/Script/OkScriptScriptEdit.vue'),
     meta: { title: '编辑 ok-script 项目' },
+  },
+  {
+    path: '/scripts/:id/edit/maa',
+    name: 'MAAScriptEdit',
+    component: () => import('../views/EditView/Script/MAAScriptEdit.vue'),
+    meta: { title: '编辑MAA脚本' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',

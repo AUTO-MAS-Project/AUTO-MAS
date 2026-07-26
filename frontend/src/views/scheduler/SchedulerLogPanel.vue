@@ -16,11 +16,7 @@
     </div>
     <div ref="logContentRef" class="log-content" :class="{ 'log-locked': logMode === 'follow' }">
       <div v-if="!logContent" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
-          </div>
-        </div>
+        <EmptyState compact title="暂无日志" description="任务开始后，运行日志会显示在这里。" />
       </div>
       <div v-else-if="usePlainLog" ref="plainLogContainerRef" class="plain-log-container">
         <pre class="log-text">{{ logContent }}</pre>
@@ -41,8 +37,22 @@
 
 <script setup lang="ts">
 import { useLogHighlight } from '@/composables/useLogHighlight'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { computed, nextTick, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
+import EmptyState from '@/components/v6/EmptyState.vue'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  toRefs,
+  watch,
+} from 'vue'
+
+// 异步加载，避免 4.2 MB 的 monaco chunk 成为本路由的静态依赖。
+const VueMonacoEditor = defineAsyncComponent(() =>
+  import('@guolao/vue-monaco-editor').then(module => module.VueMonacoEditor)
+)
 
 interface Props {
   logContent: string
@@ -198,13 +208,15 @@ onUnmounted(() => {
 
 <style scoped>
 .log-panel {
+  container: scheduler-log / inline-size;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--v6-color-surface-transparent);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  border: 1px solid var(--v6-color-border-subtle);
+  backdrop-filter: blur(18px) saturate(1.08);
   overflow: hidden;
 }
 
@@ -213,16 +225,16 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: var(--v6-space-3) var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   flex-shrink: 0;
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text-heading);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 .log-controls {
@@ -232,10 +244,10 @@ onUnmounted(() => {
 .log-content {
   flex: 1;
   overflow: hidden;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-  font-size: 14px;
+  font-family: var(--v6-font-mono);
+  font-size: var(--v6-font-size-base);
   line-height: 1.5;
-  transition: all 0.2s ease;
+  transition: background-color var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .monaco-container {
@@ -246,8 +258,8 @@ onUnmounted(() => {
 .plain-log-container {
   height: 100%;
   overflow: auto;
-  padding: 12px 16px;
-  background: var(--ant-color-bg-container);
+  padding: var(--v6-space-3) var(--v6-space-4);
+  background: transparent;
 }
 
 .monaco-container :deep(.monaco-editor) {
@@ -260,15 +272,15 @@ onUnmounted(() => {
 }
 
 .log-locked::-webkit-scrollbar-thumb {
-  background-color: var(--ant-color-primary) !important;
-  border-radius: 6px;
+  background-color: var(--v6-color-info);
+  border-radius: var(--v6-radius-control);
 }
 
 .log-text {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
-  color: var(--ant-color-text);
+  color: var(--v6-color-text);
   font: inherit;
 }
 
@@ -279,33 +291,21 @@ onUnmounted(() => {
   height: 100%;
 }
 
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
+/* .log-panel 自身规则须由外层 scheduler/index.vue 的 scheduler-log-host
+   宿主容器驱动(@container 不能命中声明容器的元素自身) */
+@container scheduler-log-host (max-width: 768px) {
   .log-panel {
-    background: var(--app-background-card-bg, var(--ant-color-bg-container, #1f1f1f));
-    border: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .section-header {
-    border-bottom: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .log-text {
-    color: var(--ant-color-text, #ffffff);
+    border-radius: var(--v6-radius-md);
   }
 }
 
-@media (max-width: 768px) {
-  .log-panel {
-    border-radius: 8px;
-  }
-
+@container scheduler-log (max-width: 768px) {
   .section-header {
-    padding: 12px;
+    padding: var(--v6-space-3);
   }
 
   .log-content {
-    padding: 12px;
+    padding: var(--v6-space-3);
   }
 }
 
@@ -317,34 +317,5 @@ onUnmounted(() => {
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

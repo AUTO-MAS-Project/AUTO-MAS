@@ -1,41 +1,50 @@
 <template>
-  <div
-    class="plugin-page plugin-element-host"
-    :style="hostStyle"
-    :data-theme="themeIsDark ? 'dark' : 'light'"
+  <PluginErrorBoundary
+    :extension-id="page.frontend_plugin || page.id"
+    :plugin-name="page.title"
+    @disable="handleDisableExtension"
+    @retry="retryLoad"
   >
-    <a-spin v-if="loading" size="large" tip="正在加载插件页面" />
-    <a-result
-      v-else-if="errorMessage"
-      status="warning"
-      title="插件页面加载失败"
-      :sub-title="errorMessage"
-    >
-      <template #extra>
-        <a-button type="primary" @click="retryLoad">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          重试
-        </a-button>
-      </template>
-    </a-result>
-    <component
-      :is="resolvedTag"
-      v-else-if="resolvedTag"
-      :title="page.title"
-      :data-page-id="page.id"
-      :data-plugin-id="page.frontend_plugin || ''"
+    <div
+      class="plugin-page plugin-element-host"
+      :style="hostStyle"
       :data-theme="themeIsDark ? 'dark' : 'light'"
-      class="plugin-element-host__root"
-    />
-    <a-result
-      v-else
-      status="warning"
-      title="插件页面缺少入口"
-      sub-title="页面声明未提供可用的 custom element。"
-    />
-  </div>
+    >
+      <a-spin v-if="loading" size="large" tip="正在加载插件页面" />
+      <a-result
+        v-else-if="errorMessage"
+        class="plugin-host-state"
+        status="warning"
+        title="插件页面加载失败"
+        :sub-title="errorMessage"
+      >
+        <template #extra>
+          <a-button type="primary" @click="retryLoad">
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+            重试
+          </a-button>
+        </template>
+      </a-result>
+      <component
+        :is="resolvedTag"
+        v-else-if="resolvedTag"
+        :title="page.title"
+        :data-page-id="page.id"
+        :data-plugin-id="page.frontend_plugin || ''"
+        :data-theme="themeIsDark ? 'dark' : 'light'"
+        class="plugin-element-host__root"
+      />
+      <a-result
+        v-else
+        class="plugin-host-state"
+        status="warning"
+        title="插件页面缺少入口"
+        sub-title="页面声明未提供可用的 custom element。"
+      />
+    </div>
+  </PluginErrorBoundary>
 </template>
 
 <script lang="ts" setup>
@@ -50,6 +59,12 @@ import {
 import { setPluginPageContext } from '@/plugin/pluginPageContext'
 import { useAppBackground } from '@/composables/useAppBackground'
 import { useTheme } from '@/composables/useTheme'
+import { validatePluginEntryUrl } from '@/plugins/ui/pluginSecurity'
+import {
+  isManifestVersionSupported,
+  getSupportedManifestVersion,
+} from '@/plugins/ui/pluginUIManifest'
+import PluginErrorBoundary from '@/plugins/ui/PluginErrorBoundary.vue'
 
 const props = defineProps<{
   page: PageDeclaration
@@ -100,6 +115,27 @@ async function loadPage(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   syncPageContext()
+
+  // 安全校验：manifest 版本必须受支持
+  if (props.page.manifest_version != null) {
+    if (!isManifestVersionSupported(props.page.manifest_version)) {
+      loading.value = false
+      errorMessage.value = `不支持插件 manifest 版本: ${props.page.manifest_version}，当前仅支持版本 ${getSupportedManifestVersion()}`
+      return
+    }
+  }
+
+  // 安全校验：插件入口脚本 URL 必须通过安全审核
+  const entryUrl = props.page.entry_asset_url
+  if (entryUrl) {
+    const validation = validatePluginEntryUrl(entryUrl)
+    if (!validation.safe) {
+      loading.value = false
+      errorMessage.value = `插件入口 URL 安全校验失败: ${validation.reason}`
+      return
+    }
+  }
+
   try {
     const loadedPageRelease = await ensurePluginFrontendPage(props.page)
     if (disposed || generation !== loadGeneration) {
@@ -122,6 +158,16 @@ async function loadPage(): Promise<void> {
 
 function retryLoad(): void {
   void loadPage()
+}
+
+function handleDisableExtension(extensionId?: string): void {
+  const logger = window.electronAPI?.getLogger?.('插件Element宿主')
+  logger?.warn(`插件扩展已在当前页面停用: extensionId=${extensionId || props.page.id}`)
+  loadGeneration += 1
+  releasePage?.()
+  releasePage = null
+  errorMessage.value = `插件扩展 "${extensionId || props.page.id}" 已在当前页面停用；点击重试或重新进入页面即可恢复。`
+  loading.value = false
 }
 
 watch(
@@ -177,5 +223,30 @@ onBeforeUnmount(() => {
   font-family: var(--v6-font-sans);
   font-size: 14px;
   line-height: 1.5;
+}
+
+.plugin-host-state {
+  align-self: flex-start;
+  width: min(560px, calc(100% - var(--v6-space-8)));
+  margin: var(--v6-space-8) auto 0;
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-card);
+  background: color-mix(in srgb, var(--v6-color-surface) 78%, transparent);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
+}
+
+.plugin-host-state :deep(.ant-result-icon) {
+  display: none;
+}
+
+.plugin-host-state :deep(.ant-result-title) {
+  font-size: var(--v6-font-size-lg);
+}
+
+.plugin-host-state :deep(.ant-result-subtitle) {
+  font-size: var(--v6-font-size-sm);
 }
 </style>

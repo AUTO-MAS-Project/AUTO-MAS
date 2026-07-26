@@ -6,86 +6,81 @@
 
   <!-- 主要内容 -->
   <div v-else class="queue-main">
-    <!-- 页面头部 -->
-    <div class="queue-header">
-      <div class="header-left">
-        <h1 class="page-title">调度队列</h1>
-      </div>
-      <div class="header-actions">
-        <a-space size="middle">
-          <a-button type="primary" size="large" @click="handleAddQueue">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            新建队列
-          </a-button>
+    <!-- 页面头部：统一 MacPageHeader 规范（compact + transparent，动作在右侧） -->
+    <MacPageHeader
+      class="queue-page-header"
+      title="调度队列"
+      subtitle="编排队列项与定时设置，控制批量任务的执行顺序"
+      compact
+      transparent
+    >
+      <a-space size="middle">
+        <a-button type="primary" @click="openQueueCreateDialog">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          新建队列
+        </a-button>
 
-          <a-popconfirm
-            v-if="queueList.length > 0"
-            title="确定要删除这个队列吗？"
-            ok-text="确定"
-            cancel-text="取消"
-            @confirm="handleRemoveQueue(activeQueueId)"
-          >
-            <a-button danger size="large" :disabled="!activeQueueId">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              删除当前队列
-            </a-button>
-          </a-popconfirm>
-        </a-space>
-      </div>
-    </div>
+        <a-popconfirm
+          v-if="queueList.length > 0"
+          title="确定要删除这个队列吗？"
+          ok-text="确定"
+          cancel-text="取消"
+          @confirm="handleRemoveQueue(activeQueueId)"
+        >
+          <a-button danger :disabled="!activeQueueId">
+            <template #icon>
+              <DeleteOutlined />
+            </template>
+            删除当前队列
+          </a-button>
+        </a-popconfirm>
+      </a-space>
+    </MacPageHeader>
 
     <!-- 空状态 -->
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-image-container">
-          <img src="../../assets/NoData.png" alt="暂无数据" class="empty-image" />
-        </div>
-        <div class="empty-text-content">
-          <h3 class="empty-title">暂无队列</h3>
-          <p class="empty-description">您还没有创建任何队列</p>
-        </div>
-      </div>
+      <EmptyState
+        compact
+        title="暂无队列"
+        description="创建普通队列或循环队列，开始编排自动化任务。"
+      >
+        <template #action>
+          <a-button type="primary" @click="openQueueCreateDialog">
+            <template #icon><PlusOutlined /></template>
+            新建队列
+          </a-button>
+        </template>
+      </EmptyState>
     </div>
 
     <!-- 队列内容 -->
     <div v-else class="queue-content">
-      <!-- 队列选择卡片 -->
-      <a-card class="queue-selector-card" :bordered="false">
-        <template #title>
-          <div class="card-title">
+      <section class="queue-workspace">
+        <div class="queue-selector-bar">
+          <div class="queue-selector-label">
             <span>队列选择</span>
             <a-tag :color="queueList.length > 0 ? 'success' : 'default'">
               {{ queueList.length }} 个队列
             </a-tag>
           </div>
-        </template>
-
-        <div class="queue-selection-container">
-          <!-- 队列按钮组 -->
-          <div class="queue-buttons-container">
-            <a-space wrap size="middle">
-              <a-button
-                v-for="queue in queueList"
-                :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'"
-                size="large"
-                class="queue-button"
-                @click="onQueueChange(queue.id)"
-              >
-                {{ queue.name }}
-              </a-button>
-            </a-space>
-          </div>
+          <nav class="queue-buttons-container" aria-label="选择调度队列">
+            <button
+              v-for="queue in queueList"
+              :key="queue.id"
+              type="button"
+              class="queue-button"
+              :class="{ 'queue-button--active': activeQueueId === queue.id }"
+              :aria-current="activeQueueId === queue.id ? 'true' : undefined"
+              @click="onQueueChange(queue.id)"
+            >
+              {{ queue.name }}
+            </button>
+          </nav>
         </div>
-      </a-card>
 
-      <!-- 队列配置卡片 -->
-      <a-card class="queue-config-card" :bordered="false">
-        <template #title>
+        <header class="queue-config-header">
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
               <span class="queue-title-text">{{ currentQueueName || '队列配置' }}</span>
@@ -107,12 +102,12 @@
               />
             </div>
           </div>
-        </template>
+        </header>
 
-        <!-- 队列开关配置 -->
-        <div class="config-section">
-          <a-row :gutter="24">
-            <a-col :span="6">
+        <div class="queue-config-content">
+          <!-- 队列开关配置 -->
+          <div class="config-section">
+            <div class="config-grid">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">启动时运行</span>
@@ -123,15 +118,12 @@
                 <a-select
                   v-model:value="currentStartUpEnabled"
                   style="width: 100%"
-                  size="large"
                   @change="(value: any) => handleConfigChange('StartUpEnabled', value)"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
               </div>
-            </a-col>
-            <a-col :span="6">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">定时运行</span>
@@ -142,15 +134,28 @@
                 <a-select
                   v-model:value="currentTimeEnabled"
                   style="width: 100%"
-                  size="large"
                   @change="(value: any) => handleConfigChange('TimeEnabled', value)"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
               </div>
-            </a-col>
-            <a-col :span="12">
+              <div class="form-item-vertical">
+                <div class="form-label-wrapper">
+                  <span class="form-label">循环运行</span>
+                  <a-tooltip title="按每个队列项的循环调度设置持续运行；启用后运行中的队列禁止编辑">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </div>
+                <a-select
+                  v-model:value="currentCycleEnabled"
+                  style="width: 100%"
+                  @change="(value: any) => handleConfigChange('CycleEnabled', value)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </div>
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">完成后操作</span>
@@ -163,590 +168,155 @@
                   style="width: 100%"
                   :options="afterAccomplishOptions"
                   placeholder="请选择操作"
-                  size="large"
                   @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
                 />
               </div>
-            </a-col>
-          </a-row>
+            </div>
+          </div>
+
+          <!-- 定时项管理 -->
+          <a-col :span="24" class="manager-col">
+            <TimeSetManager
+              v-if="activeQueueId && currentQueueData"
+              :queue-id="activeQueueId"
+              :time-sets="currentTimeSets"
+              style="font-size: 14px"
+              @refresh="refreshTimeSets"
+            />
+          </a-col>
+
+          <!-- 队列项管理 -->
+          <a-col :span="24" class="manager-col">
+            <QueueItemManager
+              v-if="activeQueueId && currentQueueData"
+              :queue-id="activeQueueId"
+              :queue-items="currentQueueItems"
+              :cycle-enabled="currentCycleEnabled"
+              style="font-size: 14px"
+              @refresh="refreshQueueItems"
+            />
+          </a-col>
         </div>
-        <a-divider />
-
-        <!-- 定时项管理 -->
-        <a-col :span="24" class="manager-col">
-          <TimeSetManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :time-sets="currentTimeSets"
-            style="font-size: 14px"
-            @refresh="refreshTimeSets"
-          />
-        </a-col>
-
-        <!-- 队列项管理 -->
-        <a-col :span="24" class="manager-col">
-          <QueueItemManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :queue-items="currentQueueItems"
-            style="font-size: 14px"
-            @refresh="refreshQueueItems"
-          />
-        </a-col>
-      </a-card>
+      </section>
     </div>
   </div>
+
+  <a-modal
+    v-model:open="queueCreateDialogOpen"
+    title="选择队列类型"
+    ok-text="创建队列"
+    cancel-text="取消"
+    :confirm-loading="queueCreating"
+    :closable="!queueCreating"
+    :mask-closable="!queueCreating"
+    @ok="confirmQueueCreate"
+  >
+    <a-radio-group v-model:value="selectedQueueType" class="queue-type-options">
+      <a-radio-button value="normal" class="queue-type-option">
+        <span class="queue-type-title">普通队列</span>
+        <span class="queue-type-description">按队列顺序执行一次，适合手动或定时任务。</span>
+      </a-radio-button>
+      <a-radio-button value="cycle" class="queue-type-option">
+        <span class="queue-type-title">循环队列</span>
+        <span class="queue-type-description">启用循环调度，按每个队列项的周期持续运行。</span>
+      </a-radio-button>
+    </a-radio-group>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
-import { Service } from '@/api'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
+import EmptyState from '@/components/v6/EmptyState.vue'
+import MacPageHeader from '@/components/mac/PageHeader.vue'
 import {
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { useQueueLogic } from './useQueueLogic'
 
-const logger = window.electronAPI.getLogger('调度队列')
+type QueueCreationType = 'normal' | 'cycle'
 
-// 卸载守卫：防止组件卸载后的 async 回调写入响应式状态，导致 Vue 运行时错误
-let isMounted = true
-// 队列列表和当前选中的队列
-const queueList = ref<Array<{ id: string; name: string }>>([])
-const activeQueueId = ref<string>('')
-const currentQueueData = ref<Record<string, any> | null>(null)
+const {
+  queueList,
+  activeQueueId,
+  currentQueueData,
+  currentQueueName,
+  currentStartUpEnabled,
+  currentTimeEnabled,
+  currentCycleEnabled,
+  currentAfterAccomplish,
+  isEditingQueueName,
+  currentTimeSets,
+  currentQueueItems,
+  loading,
+  afterAccomplishOptions,
+  refreshTimeSets,
+  refreshQueueItems,
+  startEditQueueName,
+  finishEditQueueName,
+  handleConfigChange,
+  handleAddQueue,
+  handleRemoveQueue,
+  onQueueChange,
+  initialize,
+  cleanup,
+} = useQueueLogic()
 
-// 当前队列的名称和状态
-const currentQueueName = ref<string>('')
-const currentQueueEnabled = ref<boolean>(true)
-// 新增：启动时运行和定时运行的开关状态
-const currentStartUpEnabled = ref<boolean>(false)
-const currentTimeEnabled = ref<boolean>(false)
-// 新增：完成后操作状态
-const currentAfterAccomplish = ref<string>('NoAction')
-// 队列名称编辑状态
-const isEditingQueueName = ref<boolean>(false)
+const queueCreateDialogOpen = ref(false)
+const queueCreating = ref(false)
+const selectedQueueType = ref<QueueCreationType>('normal')
 
-// 完成后操作选项
-const afterAccomplishOptions = [
-  { label: '无操作', value: 'NoAction' },
-  { label: '关机', value: 'Shutdown' },
-  { label: '强制关机', value: 'ShutdownForce' },
-  { label: '重启', value: 'Reboot' },
-  { label: '休眠', value: 'Hibernate' },
-  { label: '睡眠', value: 'Sleep' },
-  { label: '退出软件', value: 'KillSelf' },
+const openQueueCreateDialog = () => {
+  selectedQueueType.value = 'normal'
+  queueCreateDialogOpen.value = true
+}
 
-  { label: '注销此账户', value: 'Logoff' },
-]
-
-// 当前队列的定时项和队列项
-const currentTimeSets = ref<any[]>([])
-const currentQueueItems = ref<any[]>([])
-
-const loading = ref(true)
-
-// 获取队列列表
-const fetchQueues = async () => {
-  loading.value = true
+const confirmQueueCreate = async () => {
+  if (queueCreating.value) return
+  queueCreating.value = true
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
-    if (!isMounted) return
-    if (response.code === 200) {
-      // 处理队列数据
-      logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
-
-      if (response.index && response.index.length > 0) {
-        queueList.value = response.index.map((item: any, index: number) => {
-          try {
-            // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
-            const queueId = item.uid
-            const queueName = response.data[queueId]?.Info?.Name || `新调度队列`
-            logger.debug(`Queue ID: ${queueId}, Name: ${queueName}, Type: ${typeof queueId}`) // 调试日志
-            return {
-              id: queueId,
-              name: queueName,
-            }
-          } catch (itemError) {
-            const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-            logger.warn(`解析队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-            return {
-              id: `queue_${index}`,
-              name: `新调度队列`,
-            }
-          }
-        })
-
-        // 如果有队列且没有选中的队列，默认选中第一个
-        if (queueList.value.length > 0 && !activeQueueId.value) {
-          activeQueueId.value = queueList.value[0].id
-          logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
-          // 使用nextTick确保DOM更新后再加载数据
-          nextTick(() => {
-            loadQueueData(activeQueueId.value).catch(error => {
-              const errorMsg = error instanceof Error ? error.message : String(error)
-              logger.error(`加载队列数据失败: ${errorMsg}`)
-            })
-          })
-        }
-      } else {
-        logger.debug('队列列表为空') // 调试日志
-        queueList.value = []
-        currentQueueData.value = null
-      }
-    } else {
-      const errorMsg = response instanceof Error ? response.message : String(response)
-      logger.error(`API响应错误: ${errorMsg}`)
-      queueList.value = []
-      currentQueueData.value = null
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取队列列表失败: ${errorMsg}`)
-    queueList.value = []
-    currentQueueData.value = null
+    const created = await handleAddQueue(selectedQueueType.value === 'cycle')
+    if (created) queueCreateDialogOpen.value = false
   } finally {
-    loading.value = false
+    queueCreating.value = false
   }
 }
 
-// 加载队列数据
-const loadQueueData = async (queueId: string) => {
-  if (!queueId) return
-
-  try {
-    const response = await Service.getQueuesApiQueueGetPost({})
-    if (!isMounted) return
-    currentQueueData.value = response.data
-
-    // 根据API响应数据更新队列信息
-    if (response.data && response.data[queueId]) {
-      const queueData = response.data[queueId]
-
-      // 更新队列名称和状态
-      const currentQueue = queueList.value.find(queue => queue.id === queueId)
-      if (currentQueue) {
-        currentQueueName.value = currentQueue.name
-      }
-
-      // 使用nextTick确保DOM更新后再加载数据
-      await nextTick()
-      if (!isMounted) return
-
-      // 更新开关状态 - 从API响应中获取
-      currentStartUpEnabled.value = queueData.Info?.StartUpEnabled ?? false
-      currentTimeEnabled.value = queueData.Info?.TimeEnabled ?? false
-      // 更新完成后操作状态 - 从API响应中获取
-      currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
-      await new Promise(resolve => setTimeout(resolve, 50))
-      if (!isMounted) return
-
-      // 加载定时项和队列项数据 - 添加错误处理
-      try {
-        await refreshTimeSets()
-      } catch (timeError) {
-        const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
-        logger.error(`刷新定时项失败: ${errorMsg}`)
-      }
-
-      try {
-        await refreshQueueItems()
-      } catch (itemError) {
-        const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-        logger.error(`刷新队列项失败: ${errorMsg}`)
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载队列数据失败: ${errorMsg}`)
-    // 不显示错误消息，避免干扰用户体验
-  }
-}
-
-// 刷新定时项数据
-const refreshTimeSets = async () => {
-  if (!activeQueueId.value) {
-    currentTimeSets.value = []
-    return
-  }
-
-  try {
-    // 使用专门的定时项API获取数据
-    const response = await Service.getTimeSetApiQueueTimeGetPost({
-      queueId: activeQueueId.value,
-    })
-
-    if (response.code !== 200) {
-      logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
-      // 不清空数组，避免骨架屏闪现
-      return
-    }
-
-    const timeSets: any[] = []
-
-    // 处理定时项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
-        try {
-          const timeSetId = item.uid
-          if (!timeSetId || !response.data || !response.data[timeSetId]) return
-
-          const timeSetData = response.data[timeSetId]
-          if (timeSetData?.Info) {
-            // 解析时间字符串 "HH:mm"
-            const originalTimeString = timeSetData.Info.Time || '00:00'
-            const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
-
-            // 创建标准化的时间字符串
-            const validHours = Math.max(0, Math.min(23, hours))
-            const validMinutes = Math.max(0, Math.min(59, minutes))
-            const timeString = `${validHours.toString().padStart(2, '0')}:${validMinutes.toString().padStart(2, '0')}`
-
-            timeSets.push({
-              id: timeSetId,
-              time: timeString,
-              enabled: Boolean(timeSetData.Info.Enabled),
-              days: timeSetData.Info.Days || [],
-            })
-          }
-        } catch (itemError) {
-          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-          logger.warn(`解析单个定时项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-        }
-      })
-    }
-
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    if (!isMounted) return
-    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-    currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
-    logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新定时项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
-  }
-}
-
-// 刷新队列项数据
-const refreshQueueItems = async () => {
-  if (!activeQueueId.value) {
-    // 不清空数组，避免骨架屏闪现
-    return
-  }
-
-  try {
-    // 使用专门的队列项API获取数据
-    const response = await Service.getItemApiQueueItemGetPost({
-      queueId: activeQueueId.value,
-    })
-
-    if (response.code !== 200) {
-      logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
-      // 不清空数组，避免骨架屏闪现
-      return
-    }
-
-    const queueItems: any[] = []
-
-    // 处理队列项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
-        try {
-          const queueItemId = item.uid
-          if (!queueItemId || !response.data || !response.data[queueItemId]) return
-
-          const queueItemData = response.data[queueItemId]
-          if (queueItemData?.Info) {
-            queueItems.push({
-              id: queueItemId,
-              script: queueItemData.Info.ScriptId || '',
-            })
-          }
-        } catch (itemError) {
-          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-          logger.warn(`解析单个队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-        }
-      })
-    }
-
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    if (!isMounted) return
-    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-    currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
-    logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新队列项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
-  }
-}
-
-// 队列名称编辑失焦处理 - 保存到后端
-const onQueueNameBlur = async () => {
-  // 当用户编辑完队列名称后，更新按钮显示的名称并保存
-  if (activeQueueId.value) {
-    const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
-    if (currentQueue) {
-      currentQueue.name =
-        currentQueueName.value || `队列 ${queueList.value.indexOf(currentQueue) + 1}`
-    }
-    // 保存到后端
-    await handleSaveChange('Name', currentQueueName.value)
-  }
-}
-
-// 开始编辑队列名称
-const startEditQueueName = () => {
-  isEditingQueueName.value = true
-  // 使用 nextTick 确保 DOM 更新后再获取焦点
-  setTimeout(() => {
-    const input = document.querySelector('.queue-title-input input') as HTMLInputElement
-    if (input) {
-      input.focus()
-      input.select()
-    }
-  }, 100)
-}
-
-// 完成编辑队列名称
-const finishEditQueueName = () => {
-  isEditingQueueName.value = false
-  onQueueNameBlur()
-}
-
-// 统一的配置字段变更处理 - 即时保存单个字段
-const handleConfigChange = async (key: string, value: any) => {
-  await handleSaveChange(key, value)
-}
-
-// 添加队列
-const handleAddQueue = async () => {
-  try {
-    const response = await Service.addQueueApiQueueAddPost()
-
-    if (response.code === 200 && response.queueId) {
-      // 播放添加队列成功音频
-      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
-      const { playSound } = useAudioPlayer()
-      await playSound('add_queue')
-
-      const defaultName = '新队列'
-      const newQueue = {
-        id: response.queueId,
-        name: defaultName,
-      }
-      queueList.value.push(newQueue)
-      activeQueueId.value = newQueue.id
-
-      // 设置默认名称到输入框中
-      currentQueueName.value = defaultName
-      currentQueueEnabled.value = true
-
-      await loadQueueData(newQueue.id)
-
-      // 显示名称修改提示
-      message.info('已创建新的调度队列，建议您修改为更有意义的名称', 3)
-    } else {
-      message.error('队列创建失败: ' + (response.message || '未知错误'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`添加队列失败: ${errorMsg}`)
-    message.error(`添加队列失败: ${errorMsg}`)
-  }
-}
-
-// 删除队列
-const handleRemoveQueue = async (queueId: string) => {
-  try {
-    const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
-
-    if (response.code === 200) {
-      // 播放删除队列成功音频
-      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
-      const { playSound } = useAudioPlayer()
-      await playSound('delete_queue')
-
-      const index = queueList.value.findIndex(queue => queue.id === queueId)
-      if (index > -1) {
-        queueList.value.splice(index, 1)
-        if (activeQueueId.value === queueId) {
-          activeQueueId.value = queueList.value[0]?.id || ''
-          if (activeQueueId.value) {
-            await loadQueueData(activeQueueId.value)
-          } else {
-            currentQueueData.value = null
-          }
-        }
-      }
-      message.success('队列删除成功')
-    } else {
-      message.error('删除队列失败: ' + (response.message || '未知错误'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`删除队列失败: ${errorMsg}`)
-    message.error(`删除队列失败: ${errorMsg}`)
-  }
-}
-
-// 队列切换
-const onQueueChange = async (queueId: string) => {
-  if (!queueId) return
-
-  try {
-    // 立即更新activeQueueId以确保按钮高亮切换
-    activeQueueId.value = queueId
-    // 清空当前数据，避免渲染问题
-    currentTimeSets.value = []
-    currentQueueItems.value = []
-
-    await loadQueueData(queueId)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`队列切换失败: ${errorMsg}`)
-  }
-}
-
-// 刷新当前队列配置 - 保存成功后调用
-const refreshQueueConfig = async () => {
-  if (!activeQueueId.value) return
-
-  try {
-    const response = await Service.getQueuesApiQueueGetPost({})
-    if (!isMounted) return
-    if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
-      currentQueueData.value = response.data
-      const queueData = response.data[activeQueueId.value]
-
-      // 更新本地状态
-      if (queueData.Info) {
-        currentQueueName.value = queueData.Info.Name || ''
-        currentStartUpEnabled.value = queueData.Info.StartUpEnabled ?? false
-        currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
-        currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
-
-        // 更新队列列表中的名称
-        const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
-        if (currentQueue) {
-          currentQueue.name = queueData.Info.Name || currentQueue.name
-        }
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新队列配置失败: ${errorMsg}`)
-  }
-}
-
-// 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
-const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
-  if (!activeQueueId.value) return false
-
-  try {
-    // 构建只包含变更字段的数据
-    const queueData: Record<string, any> = {
-      Info: { [key]: value },
-    }
-
-    const response = await Service.updateQueueApiQueueUpdatePost({
-      queueId: activeQueueId.value,
-      data: queueData,
-    })
-
-    if (response.code !== 200) {
-      message.error(response.message || '保存失败')
-      return false
-    }
-
-    // 保存成功后重新获取最新配置
-    await refreshQueueConfig()
-    return true
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存队列数据失败: ${errorMsg}`)
-    message.error(`保存队列数据失败: ${errorMsg}`)
-    return false
-  }
-}
-
-// 注意：配置保存已改为即时保存，由各个 @change 事件触发，不再使用 watch 自动保存
-
-// 初始化
 onMounted(async () => {
-  try {
-    await fetchQueues()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`初始化失败: ${errorMsg}`)
-    loading.value = false
-  }
+  await initialize()
 })
 
 onUnmounted(() => {
-  isMounted = false
+  cleanup()
 })
 </script>
 
 <style scoped>
-.queue-container {
-  min-height: 100vh;
-  background: transparent;
-  padding: 24px;
-}
-
 .loading-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 400px;
+  min-height: 240px;
 }
 
 .queue-main {
+  min-width: 0;
   margin: 0 auto;
   background: transparent;
+  container: queue-page / inline-size;
 }
 
-/* 页面头部 */
-.queue-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
+/* 页面头部：页面容器自带内边距，抵消 PageHeader 的全宽内边距保持对齐 */
+.queue-page-header {
+  margin-bottom: var(--v6-space-4);
 }
 
-.header-left {
-  flex: 1;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.page-description {
-  margin: 0;
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.5;
-}
-
-.header-actions {
-  flex-shrink: 0;
+.queue-page-header :deep(.mac-page-header) {
+  padding-inline: 4px;
 }
 
 /* 空状态 */
@@ -754,162 +324,112 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 500px;
-  padding: 60px 20px;
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.02), rgba(24, 144, 255, 0.01));
-  border-radius: 16px;
-  margin: 20px 0;
-}
-
-.empty-content {
-  text-align: center;
-  max-width: 480px;
-  animation: fadeInUp 0.8s ease-out;
-}
-
-.empty-image-container {
-  position: relative;
-  margin-bottom: 32px;
-  display: inline-block;
-}
-
-.empty-image-container::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: -20px;
-  right: -20px;
-  bottom: -20px;
-  background: radial-gradient(circle, rgba(24, 144, 255, 0.1) 0%, transparent 70%);
-  border-radius: 50%;
-  animation: pulse 3s ease-in-out infinite;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-.empty-text-content {
-  margin-top: 16px;
-}
-
-.empty-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0 0 12px 0;
-  background: linear-gradient(135deg, var(--ant-color-text), var(--ant-color-text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.empty-description {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-  opacity: 0.8;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
+  min-height: 240px;
+  padding: var(--v6-space-6);
+  background: var(--v6-color-surface-transparent);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  margin: var(--v6-space-4) 0;
+  backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
 /* 队列内容 */
 .queue-content {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  min-width: 0;
 }
 
-/* 队列选择卡片 */
-.queue-selector-card {
-  background: var(--app-background-card-bg, var(--ant-color-bg-container));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+/* 一个连续工作区承载队列选择、策略与内容，避免每段再套独立卡片。 */
+.queue-workspace {
+  overflow: hidden;
+  background: var(--v6-color-surface-transparent);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
-.card-title {
+.queue-selector-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 18px;
+  gap: var(--v6-space-4);
+  min-height: 60px;
+  padding: 10px var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.queue-selector-label {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--v6-space-2);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
   font-weight: 600;
 }
 
-.queue-selection-container {
-  padding: 16px;
-}
-
-/* 队列按钮组 */
 .queue-buttons-container {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 6px;
 }
 
 .queue-button {
-  flex: 1 1 120px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--v6-color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color var(--v6-motion-fast) var(--v6-ease-out),
+    background var(--v6-motion-fast) var(--v6-ease-out),
+    border-color var(--v6-motion-fast) var(--v6-ease-out);
 }
 
-/* 队列配置卡片 */
-.queue-config-card {
-  background: var(--app-background-card-bg, var(--ant-color-bg-container));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  min-height: 600px;
+.queue-button:hover {
+  color: var(--v6-color-text);
+  background: var(--v6-vibrancy-hover);
 }
 
-.status-label {
-  color: var(--ant-color-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
+.queue-button--active {
+  border-color: color-mix(in srgb, var(--v6-color-primary) 22%, transparent);
+  background: color-mix(in srgb, var(--v6-color-primary) 12%, transparent);
+  color: var(--v6-color-primary);
+  font-weight: 600;
 }
 
-/* 队列名称编辑 */
+.queue-button:focus-visible {
+  outline: none;
+  box-shadow: var(--v6-focus-ring);
+}
+
+.queue-config-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-config-header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--v6-space-5);
+}
+
+.queue-config-content {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--v6-space-5) var(--v6-space-4);
+}
+
 .queue-title-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .queue-title-display {
@@ -919,7 +439,7 @@ onUnmounted(() => {
 }
 
 .queue-title-text {
-  font-size: 18px;
+  font-size: var(--v6-font-size-lg);
   font-weight: 600;
   color: var(--ant-color-text);
 }
@@ -929,35 +449,50 @@ onUnmounted(() => {
   padding: 0;
 }
 
-/* 队列名称输入框 */
 .queue-title-input {
   flex: 1;
   max-width: 400px;
-  border-radius: 8px;
+  border-radius: var(--v6-radius-control);
   transition: all 0.2s ease;
 }
 
-/* 配置区域 */
 .config-section {
-  margin-bottom: 12px;
+  padding: var(--v6-space-4) 0 var(--v6-space-5);
+  border-top: 1px solid var(--v6-color-border-subtle);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
-/* 定时项与队列项上下布局 */
-.managers-row {
-  margin-bottom: 24px;
+/* 开关配置网格:按 queue-page 容器宽度响应(替代视口栅格 a-col),
+   宽容器 4 列 / 中容器 2 列 / 窄容器 1 列 */
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+@container queue-page (max-width: 1200px) {
+  .config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container queue-page (max-width: 576px) {
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .manager-col {
   display: flex;
   flex-direction: column;
+  margin-top: var(--v6-space-3);
 }
 
-/* 垂直排列的表单项 */
 .form-item-vertical {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .form-label-wrapper {
@@ -966,7 +501,6 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-/* 表单标签 */
 .form-label {
   font-weight: 600;
   color: var(--ant-color-text);
@@ -974,95 +508,80 @@ onUnmounted(() => {
 }
 
 .help-icon {
-  color: #8c8c8c;
+  color: var(--v6-color-text-tertiary);
   font-size: 14px;
 }
 
-/* 完成后操作配置 */
-.after-accomplish-settings {
+.queue-type-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v6-space-3, 12px);
+  width: 100%;
+}
+
+.queue-type-option {
+  display: flex;
+  height: auto;
+  min-height: 104px;
+  align-items: flex-start;
+  padding: var(--v6-space-4, 16px);
+  border: 1px solid var(--v6-color-border-subtle) !important;
+  border-radius: var(--v6-radius-control, 8px) !important;
+  background: var(--v6-color-surface-transparent);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  white-space: normal;
+}
+
+.queue-type-option::before {
+  display: none !important;
+}
+
+.queue-type-option.ant-radio-button-wrapper-checked {
+  border-color: var(--v6-color-primary) !important;
+  background: var(--ant-color-primary-bg);
+  box-shadow: 0 0 0 1px var(--v6-color-primary);
+}
+
+.queue-type-option :deep(> span:last-child) {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--v6-space-1, 4px);
 }
 
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.setting-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.setting-title {
-  font-size: 16px;
-  font-weight: 500;
+.queue-type-title {
   color: var(--ant-color-text);
+  font-size: var(--v6-font-size-base, 14px);
+  font-weight: var(--v6-font-weight-semibold, 600);
 }
 
-.setting-description {
-  font-size: 14px;
+.queue-type-description {
   color: var(--ant-color-text-secondary);
+  font-size: var(--v6-font-size-sm, 13px);
+  line-height: 1.6;
 }
 
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .queue-container {
-    padding: 16px;
+/* 以实际内容区宽度响应：侧栏展开时也不会把布局误判成宽屏。
+   页头自身的窄屏换行由 MacPageHeader 内置容器查询处理。 */
+@container queue-page (max-width: 640px) {
+  .queue-selector-bar,
+  .queue-config-header,
+  .queue-config-content {
+    padding-inline: var(--v6-space-3);
   }
 
-  .queue-header {
-    flex-direction: column;
+  .queue-selector-bar {
     align-items: flex-start;
-    gap: 16px;
+    flex-direction: column;
   }
 
-  .page-title {
-    font-size: 28px;
-  }
-}
-
-@media (max-width: 768px) {
-  .queue-container {
-    padding: 12px;
-  }
-
-  .page-title {
-    font-size: 24px;
-  }
-
-  .page-description {
-    font-size: 14px;
+  .queue-type-options {
+    grid-template-columns: 1fr;
   }
 
   .queue-title-input {
-    max-width: 100%;
-  }
-
-  .header-actions {
     width: 100%;
-    display: flex;
-    justify-content: center;
+    max-width: none;
   }
-}
-
-/* 深度样式使用全局CSS变量 */
-.queue-selector-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .queue-title-input :deep(.ant-input) {
@@ -1070,18 +589,7 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.queue-title-input :deep(.ant-input:focus) {
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .queue-selector-card {
-    background: var(--app-background-card-bg, var(--ant-color-bg-container));
-  }
-
-  .queue-config-card {
-    background: var(--app-background-card-bg, var(--ant-color-bg-container));
-  }
+.queue-title-input :deep(.ant-input:focus-visible) {
+  box-shadow: var(--v6-focus-ring-inset);
 }
 </style>

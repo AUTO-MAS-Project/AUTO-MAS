@@ -5,8 +5,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
+import { useLowPerfMode } from '@/composables/useLowPerfMode'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
 import {
@@ -20,9 +21,15 @@ import * as THREE from 'three'
 const logger = window.electronAPI.getLogger('卫星动画')
 
 const CONFIG = {
-  containerHeight: 400,
-  orbitRadiusX: 400,
-  orbitRadiusY: 170,
+  // 尺寸自适应：不再使用固定容器高度/轨道半径，
+  // 轨道半径由容器宽高比推导（见 computeLayout），任何宽度下轨道不裁切
+  fallbackWidth: 800,
+  fallbackHeight: 420,
+  baseAspect: 2, // 基准设计宽高比（800x400），用于卡片/辉光比例基准
+  minCardScale: 0.7,
+  maxCardScale: 1.6,
+  orbitEdgePadding: 14, // 世界单位：轨道极点（含卫星卡半宽）与可视边缘的留白
+  orbitVerticalFill: 0.92, // 轨道纵向可用高度占可视高度的比例
   orbitTilt: 0.35,
   orbitOpacity: 0.4,
   centerCardSize: 90,
@@ -35,6 +42,7 @@ const CONFIG = {
   centerFloatAmplitude: 4,
   centerFloatSpeed: 0.8,
   cameraFov: 50,
+  cameraPosition: { x: 0, y: 80, z: 500 },
   cardAppearDelay: 150,
   cardAppearDuration: 400,
   glowSizeMultiplier: 3.5,
@@ -43,8 +51,85 @@ const CONFIG = {
   statusUpdateInterval: 10000,
 }
 
+/**
+ * 随容器尺寸推导的场景布局（世界单位）。
+ * 相机固定不动，容器宽高比只改变视锥在 z=0 平面的可视世界宽度；
+ * 轨道半径、卡片/辉光比例均相对可视尺寸计算，而非绝对像素。
+ */
+interface SceneLayout {
+  width: number
+  height: number
+  orbitRadiusX: number
+  orbitRadiusY: number
+  cardScale: number
+  centerCardSize: number
+  satelliteCardSize: number
+  satelliteFloatAmplitude: number
+  centerFloatAmplitude: number
+}
+
+function computeLayout(width: number, height: number): SceneLayout {
+  const w = Math.max(width, 1)
+  const h = Math.max(height, 1)
+  const { x, y, z } = CONFIG.cameraPosition
+  const cameraDistance = Math.hypot(x, y, z)
+  // 垂直 fov 固定 → 可视世界高度恒定；宽度随容器宽高比伸缩
+  const halfFovRad = THREE.MathUtils.degToRad(CONFIG.cameraFov / 2)
+  const visibleHeight = 2 * cameraDistance * Math.tan(halfFovRad)
+  const visibleWidth = visibleHeight * (w / h)
+
+  // 卡片/辉光比例：相对基准宽高比的可视宽度开方缩放，避免宽屏下卡片过大或窄屏下过小
+  const baseVisibleWidth = visibleHeight * CONFIG.baseAspect
+  const cardScale = THREE.MathUtils.clamp(
+    Math.sqrt(visibleWidth / baseVisibleWidth),
+    CONFIG.minCardScale,
+    CONFIG.maxCardScale
+  )
+
+  const satelliteCardSize = CONFIG.satelliteCardSize * cardScale
+  const satelliteFloatAmplitude = CONFIG.satelliteFloatAmplitude * cardScale
+  const satelliteHalf = satelliteCardSize / 2
+
+  // 横向：轨道极点 + 卫星卡半宽 + 留白 ≤ 可视半宽 → 铺满且不裁切
+  const orbitRadiusX = Math.max(
+    visibleWidth / 2 - satelliteHalf - CONFIG.orbitEdgePadding,
+    satelliteCardSize
+  )
+  // 纵向：投影半径 rY*cos(tilt) + 浮动幅度 + 卫星卡半宽 ≤ 可视半高 * orbitVerticalFill
+  const orbitRadiusY = Math.max(
+    ((visibleHeight / 2) * CONFIG.orbitVerticalFill - satelliteHalf - satelliteFloatAmplitude) /
+      Math.cos(CONFIG.orbitTilt),
+    satelliteCardSize
+  )
+
+  return {
+    width: w,
+    height: h,
+    orbitRadiusX,
+    orbitRadiusY,
+    cardScale,
+    centerCardSize: CONFIG.centerCardSize * cardScale,
+    satelliteCardSize,
+    satelliteFloatAmplitude,
+    centerFloatAmplitude: CONFIG.centerFloatAmplitude * cardScale,
+  }
+}
+
 const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
+
+let layout: SceneLayout = computeLayout(CONFIG.fallbackWidth, CONFIG.fallbackHeight)
+let resizeObserver: ResizeObserver | null = null
+// 卡片出现动画是否已完成（完成后 resize 需手动同步新的 cardScale）
+let cardsRevealed = false
+
+function measureContainer(): { width: number; height: number } {
+  const el = container.value
+  return {
+    width: el?.clientWidth || CONFIG.fallbackWidth,
+    height: el?.clientHeight || CONFIG.fallbackHeight,
+  }
+}
 
 let orbitScene: THREE.Scene | null = null
 let glowScene: THREE.Scene | null = null
@@ -75,11 +160,23 @@ let updateInterval: ReturnType<typeof setInterval> | null = null
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 
 const { isDark } = useTheme()
+const { isLowPerf } = useLowPerfMode()
 const { getScripts } = useScriptRegistryApi()
+const prefersReducedMotion = ref(false)
+const motionAllowed = computed(() => !isLowPerf.value && !prefersReducedMotion.value)
+let reducedMotionQuery: MediaQueryList | null = null
+
+const syncReducedMotion = (event: MediaQueryListEvent) => {
+  prefersReducedMotion.value = event.matches
+}
 
 onUnmounted(() => {
   isUnmounted = true
+  resizeObserver?.disconnect()
+  resizeObserver = null
   window.removeEventListener('resize', handleResize)
+  reducedMotionQuery?.removeEventListener?.('change', syncReducedMotion)
+  reducedMotionQuery = null
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId)
     animationFrameId = null
@@ -269,16 +366,8 @@ async function createCard(size: number, depth: number, imageUrl: string): Promis
 }
 
 function createEllipticalOrbit(): THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> {
-  const curve = new THREE.EllipseCurve(
-    0,
-    0,
-    CONFIG.orbitRadiusX,
-    CONFIG.orbitRadiusY,
-    0,
-    2 * Math.PI,
-    false,
-    0
-  )
+  // 单位圆几何 + scale 表达椭圆半径：resize 时只需更新 scale，无需重建几何
+  const curve = new THREE.EllipseCurve(0, 0, 1, 1, 0, 2 * Math.PI, false, 0)
   const points = curve.getPoints(128)
   const geometry = new THREE.BufferGeometry().setFromPoints(points)
   const colors = getThemeColors()
@@ -288,6 +377,7 @@ function createEllipticalOrbit(): THREE.Line<THREE.BufferGeometry, THREE.LineBas
     opacity: CONFIG.orbitOpacity,
   })
   const line = new THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>(geometry, material)
+  line.scale.set(layout.orbitRadiusX, layout.orbitRadiusY, 1)
   line.rotation.x = CONFIG.orbitTilt
   return line
 }
@@ -355,15 +445,16 @@ async function initSceneInternal(): Promise<void> {
     logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
   }
 
-  const w = container.value.clientWidth
+  const { width: w, height: h } = measureContainer()
+  layout = computeLayout(w, h)
 
-  camera = new THREE.PerspectiveCamera(CONFIG.cameraFov, w / CONFIG.containerHeight, 0.1, 5000)
-  camera.position.set(0, 80, 500)
+  camera = new THREE.PerspectiveCamera(CONFIG.cameraFov, w / h, 0.1, 5000)
+  camera.position.set(CONFIG.cameraPosition.x, CONFIG.cameraPosition.y, CONFIG.cameraPosition.z)
   camera.lookAt(0, 0, 0)
 
   orbitScene = new THREE.Scene()
   orbitRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  orbitRenderer.setSize(w, CONFIG.containerHeight)
+  orbitRenderer.setSize(w, h)
   orbitRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   orbitRenderer.setClearColor(0x000000, 0)
   orbitRenderer.domElement.style.position = 'absolute'
@@ -374,7 +465,7 @@ async function initSceneInternal(): Promise<void> {
 
   glowScene = new THREE.Scene()
   glowRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  glowRenderer.setSize(w, CONFIG.containerHeight)
+  glowRenderer.setSize(w, h)
   glowRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   glowRenderer.setClearColor(0x000000, 0)
   glowRenderer.domElement.style.position = 'absolute'
@@ -386,7 +477,7 @@ async function initSceneInternal(): Promise<void> {
 
   cardScene = new THREE.Scene()
   cardRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  cardRenderer.setSize(w, CONFIG.containerHeight)
+  cardRenderer.setSize(w, h)
   cardRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   cardRenderer.setClearColor(0x000000, 0)
   cardRenderer.domElement.style.position = 'absolute'
@@ -424,8 +515,8 @@ async function initSceneInternal(): Promise<void> {
   })
   const centerGlow = new THREE.Sprite(centerGlowMaterial)
   centerGlow.scale.set(
-    CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
-    CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
+    layout.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
+    layout.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
     1
   )
   centerGlowSprite = centerGlow
@@ -452,8 +543,8 @@ async function initSceneInternal(): Promise<void> {
     })
     const activityGlowSprite = new THREE.Sprite(activityGlowMaterial)
     activityGlowSprite.scale.set(
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
+      layout.satelliteCardSize * CONFIG.glowSizeMultiplier,
+      layout.satelliteCardSize * CONFIG.glowSizeMultiplier,
       1
     )
     glowScene.add(activityGlowSprite)
@@ -467,8 +558,8 @@ async function initSceneInternal(): Promise<void> {
     })
     const errorGlowSprite = new THREE.Sprite(errorGlowMaterial)
     errorGlowSprite.scale.set(
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
+      layout.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
+      layout.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
       1
     )
     glowScene.add(errorGlowSprite)
@@ -491,6 +582,11 @@ async function initSceneInternal(): Promise<void> {
 }
 
 function animateAppear() {
+  if (!motionAllowed.value) {
+    revealCardsImmediately()
+    return
+  }
+
   const appearStart = Date.now()
   const totalDuration = CONFIG.cardAppearDelay * (satellites.length + 1) + CONFIG.cardAppearDuration
 
@@ -499,25 +595,17 @@ function animateAppear() {
 
     const elapsed = Date.now() - appearStart
     if (elapsed > totalDuration) {
-      if (centerCard) {
-        const frontMaterial = getCardFrontMaterial(centerCard)
-        if (frontMaterial) frontMaterial.opacity = 1
-        centerCard.scale.set(1, 1, 1)
-      }
-      satellites.forEach(sat => {
-        const frontMaterial = getCardFrontMaterial(sat)
-        if (frontMaterial) frontMaterial.opacity = 1
-        sat.scale.set(1, 1, 1)
-      })
+      revealCardsImmediately()
       return
     }
 
+    // 几何按基准尺寸创建，实际大小随布局比例（layout.cardScale）缩放
     const centerProgress = Math.min(1, elapsed / CONFIG.cardAppearDuration)
     const easedCenter = easeOutCubic(centerProgress)
     if (centerCard) {
       const frontMaterial = getCardFrontMaterial(centerCard)
       if (frontMaterial) frontMaterial.opacity = easedCenter
-      centerCard.scale.set(easedCenter, easedCenter, easedCenter)
+      centerCard.scale.setScalar(easedCenter * layout.cardScale)
     }
 
     satellites.forEach((sat, i) => {
@@ -526,13 +614,27 @@ function animateAppear() {
       const eased = easeOutCubic(Math.max(0, progress))
       const frontMaterial = getCardFrontMaterial(sat)
       if (frontMaterial) frontMaterial.opacity = eased
-      sat.scale.set(eased, eased, eased)
+      sat.scale.setScalar(eased * layout.cardScale)
     })
 
     appearAnimationFrameId = requestAnimationFrame(step)
   }
 
   appearAnimationFrameId = requestAnimationFrame(step)
+}
+
+function revealCardsImmediately(): void {
+  cardsRevealed = true
+  if (centerCard) {
+    const frontMaterial = getCardFrontMaterial(centerCard)
+    if (frontMaterial) frontMaterial.opacity = 1
+    centerCard.scale.setScalar(layout.cardScale)
+  }
+  satellites.forEach(satellite => {
+    const frontMaterial = getCardFrontMaterial(satellite)
+    if (frontMaterial) frontMaterial.opacity = 1
+    satellite.scale.setScalar(layout.cardScale)
+  })
 }
 
 function easeOutCubic(t: number): number {
@@ -542,19 +644,19 @@ function easeOutCubic(t: number): number {
 function animate(): void {
   if (isUnmounted || !camera) return
 
-  const time = Date.now()
+  const time = motionAllowed.value ? Date.now() : 0
   const numSatellites = satellites.length
 
   for (let i = 0; i < numSatellites; i++) {
     const sat = satellites[i]
     const angle = sat.userData.angle + time * CONFIG.satelliteOrbitSpeed
-    const x = Math.cos(angle) * CONFIG.orbitRadiusX
-    const y = Math.sin(angle) * CONFIG.orbitRadiusY
+    const x = Math.cos(angle) * layout.orbitRadiusX
+    const y = Math.sin(angle) * layout.orbitRadiusY
     const tiltedY = y * Math.cos(CONFIG.orbitTilt)
     const z = y * Math.sin(CONFIG.orbitTilt)
     const floatOffset =
       Math.sin(time * CONFIG.satelliteFloatSpeed * 0.001 + i * ((Math.PI * 2) / numSatellites)) *
-      CONFIG.satelliteFloatAmplitude
+      layout.satelliteFloatAmplitude
 
     sat.position.set(x, tiltedY + floatOffset, z)
     sat.lookAt(camera.position)
@@ -565,7 +667,7 @@ function animate(): void {
     centerCard.lookAt(camera.position)
     centerCard.rotation.z = 0
     const centerFloat =
-      Math.sin(time * CONFIG.centerFloatSpeed * 0.001) * CONFIG.centerFloatAmplitude
+      Math.sin(time * CONFIG.centerFloatSpeed * 0.001) * layout.centerFloatAmplitude
     centerCard.position.y = centerFloat
   }
 
@@ -577,7 +679,7 @@ function animate(): void {
         sat.position.z + CONFIG.activityGlowZOffset
       )
 
-      const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
+      const baseScale = layout.satelliteCardSize * CONFIG.glowSizeMultiplier
       if (state.status.errorVisible) {
         state.activityGlowSprite.material.opacity = 0
       } else if (state.status.running) {
@@ -606,7 +708,7 @@ function animate(): void {
         const faintPulse = state.status.running
           ? 0.5 + 0.5 * Math.sin(time * 0.003)
           : 0.5 + 0.5 * Math.sin(time * 0.0016)
-        const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08
+        const baseScale = layout.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08
         const pulseFactor = state.status.running ? 1 + faintPulse * 0.12 : 1 + faintPulse * 0.04
         state.errorGlowSprite.material.color.setHex(state.status.running ? 0xffc247 : 0xff5a5f)
         state.errorGlowSprite.material.opacity = state.status.running
@@ -632,12 +734,12 @@ function animate(): void {
       centerGlowSprite.material.color.setHSL(hue, 0.75, 0.6)
       centerGlowSprite.material.opacity = 0.58 + flash * 0.34
       centerGlowSprite.scale.setScalar(
-        CONFIG.centerCardSize * (CONFIG.glowSizeMultiplier * 0.82 + flash * 0.1)
+        layout.centerCardSize * (CONFIG.glowSizeMultiplier * 0.82 + flash * 0.1)
       )
     } else {
       centerGlowSprite.material.color.setHex(0x6ce08a)
       centerGlowSprite.material.opacity = 0.85
-      centerGlowSprite.scale.setScalar(CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.85)
+      centerGlowSprite.scale.setScalar(layout.centerCardSize * CONFIG.glowSizeMultiplier * 0.85)
     }
   }
 
@@ -645,22 +747,45 @@ function animate(): void {
   if (glowRenderer && glowScene) glowRenderer.render(glowScene, camera)
   if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
 
-  animationFrameId = requestAnimationFrame(animate)
+  animationFrameId = motionAllowed.value ? requestAnimationFrame(animate) : null
 }
 
 function handleResize(): void {
   if (!container.value || !camera) return
-  const w = container.value.clientWidth
-  camera.aspect = w / CONFIG.containerHeight
-  camera.position.set(0, 80, 500)
+  const { width: w, height: h } = measureContainer()
+  layout = computeLayout(w, h)
+  camera.aspect = w / h
   camera.updateProjectionMatrix()
-  if (orbitRenderer) orbitRenderer.setSize(w, CONFIG.containerHeight)
-  if (glowRenderer) glowRenderer.setSize(w, CONFIG.containerHeight)
-  if (cardRenderer) cardRenderer.setSize(w, CONFIG.containerHeight)
+  if (orbitRenderer) orbitRenderer.setSize(w, h)
+  if (glowRenderer) glowRenderer.setSize(w, h)
+  if (cardRenderer) cardRenderer.setSize(w, h)
+  orbitLine?.scale.set(layout.orbitRadiusX, layout.orbitRadiusY, 1)
+  // 出现动画已结束时，卡片比例需随新布局同步；动画进行中由每帧 eased * cardScale 覆盖
+  if (cardsRevealed) revealCardsImmediately()
+  if (!motionAllowed.value) animate()
 }
 
 watch(isDark, () => {
   updateAllThemeColors()
+  if (!motionAllowed.value) animate()
+})
+
+watch(motionAllowed, enabled => {
+  if (enabled) {
+    if (animationFrameId === null) animate()
+    return
+  }
+
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  if (appearAnimationFrameId !== null) {
+    cancelAnimationFrame(appearAnimationFrameId)
+    appearAnimationFrameId = null
+  }
+  revealCardsImmediately()
+  animate()
 })
 
 async function updateSatelliteStates() {
@@ -674,6 +799,7 @@ async function updateSatelliteStates() {
         errorVisible: false,
       }
     })
+    if (!motionAllowed.value) animate()
   } catch (error) {
     logger.error(`更新状态失败: ${String(error)}`)
   }
@@ -681,13 +807,25 @@ async function updateSatelliteStates() {
 
 onMounted(async () => {
   isUnmounted = false
+  if (typeof window.matchMedia === 'function') {
+    reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    prefersReducedMotion.value = reducedMotionQuery.matches
+    reducedMotionQuery.addEventListener?.('change', syncReducedMotion)
+  }
   try {
     await initScene()
   } catch (e) {
     logger.error(`init failed: ${String(e)}`)
   }
   animate()
-  window.addEventListener('resize', handleResize)
+  // 容器尺寸自适应：优先 ResizeObserver（卡片跨度/容器查询变化也会触发），
+  // 不可用时回退 window resize
+  if (typeof ResizeObserver !== 'undefined' && container.value) {
+    resizeObserver = new ResizeObserver(() => handleResize())
+    resizeObserver.observe(container.value)
+  } else {
+    window.addEventListener('resize', handleResize)
+  }
 
   updateSatelliteStates()
   updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
@@ -711,7 +849,9 @@ onMounted(async () => {
 <style scoped>
 .satellite-container {
   width: 100%;
-  height: 400px;
+  /* 高度跟随父卡片（flex 列布局）自适应，不再固定像素高度 */
+  flex: 1 1 auto;
+  min-height: 300px;
   position: relative;
   overflow: hidden;
 }

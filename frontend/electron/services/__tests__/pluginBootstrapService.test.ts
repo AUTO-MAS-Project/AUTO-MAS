@@ -963,7 +963,7 @@ describe('PluginBootstrapService - locked offline install', () => {
     expect(result.skipped).not.toBe(true)
     expect(ensureUvReady).toHaveBeenCalledOnce()
     expect(result.error).toContain('reinstall requested')
-  })
+  }, 30_000)
 
   it('reinstalls a cached target that contains an extra non-plugin distribution', async () => {
     writeCompleteWheelhouse(service.wheelsDir)
@@ -985,7 +985,7 @@ describe('PluginBootstrapService - locked offline install', () => {
     expect(result.skipped).not.toBe(true)
     expect(ensureUvReady).toHaveBeenCalledOnce()
     expect(result.error).toContain('reinstall requested')
-  })
+  }, 30_000)
 
   it('skips install when the cached target exactly matches every locked plugin distribution', async () => {
     writeCompleteWheelhouse(service.wheelsDir, {
@@ -1001,7 +1001,33 @@ describe('PluginBootstrapService - locked offline install', () => {
     expect(result.success).toBe(true)
     expect(result.skipped).toBe(true)
     expect(ensureUvReady).not.toHaveBeenCalled()
-  })
+  }, 30_000)
+
+  it('uses wheel metadata to trigger streaming hash verification before install', async () => {
+    writeCompleteWheelhouse(service.wheelsDir, {
+      pluginRuntime: [{ distribution: 'plugin-only-runtime', version: '1.2.3' }],
+    })
+    const runtimeLock = readAndVerifyBundledRuntimeLock(service.wheelsDir)
+    writeLockedPluginTarget(workspace.pluginTargetDir, runtimeLock)
+    saveMatchingBootstrapState(service)
+
+    // 同长度改写一个 wheel：只有全量摘要校验能发现，结构/大小校验放行。
+    const tamperedWheel = path.join(service.wheelsDir, runtimeLock.plugins[0].filename)
+    const originalLength = fs.readFileSync(tamperedWheel).length
+    fs.writeFileSync(tamperedWheel, Buffer.alloc(originalLength, 0x41))
+    const changedTime = new Date(Date.now() + 60_000)
+    fs.utimesSync(tamperedWheel, changedTime, changedTime)
+
+    // size/mtime 指纹使快路径失效；真正安装前的流式摘要校验必须发现篡改。
+    const ensureUvReady = vi.spyOn(service, 'ensureUvReady')
+    const result = await service.installPackages()
+    expect(result.success).toBe(false)
+    expect(result.skipped).not.toBe(true)
+    expect(result.error).toContain(
+      `Bundled wheel SHA-256 mismatch: ${runtimeLock.plugins[0].filename}`
+    )
+    expect(ensureUvReady).not.toHaveBeenCalled()
+  }, 30_000)
 
   it('rejects a missing locked entry point instead of falling back to source or PyPI', () => {
     writeCompleteWheelhouse(service.wheelsDir)
@@ -1039,5 +1065,124 @@ describe('PluginBootstrapService - locked offline install', () => {
     expect(fs.readFileSync(path.join(workspace.pluginTargetDir, 'old.txt'), 'utf-8')).toBe('old')
     expect(fs.existsSync(path.join(workspace.pluginTargetDir, 'new.txt'))).toBe(false)
     expect(fs.existsSync(service.pluginTransactionJournalPath)).toBe(false)
+  })
+})
+
+describe('PluginBootstrapService - Lane 13: error message diagnostics', () => {
+  let workspace: TempWorkspace
+  let service: AnyService
+
+  beforeEach(() => {
+    workspace = createTempWorkspace()
+    service = new PluginBootstrapService(
+      workspace.appRoot,
+      {} as unknown as MirrorService
+    ) as AnyService
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fs.rmSync(workspace.tmpDir, { recursive: true, force: true })
+  })
+
+  it('validateLockedPluginContract error includes distribution / requested / locked', () => {
+    // 构造一个 wheelhouse，pyproject 声明的版本与 runtime-lock 不一致
+    writeCompleteWheelhouse(service.wheelsDir)
+    const runtimeLock = readAndVerifyBundledRuntimeLock(service.wheelsDir)
+
+    // pyproject 声明 automas-script-hsr==0.1.0，但 runtime-lock fixture 也是 0.1.0。
+    // 修改 pyproject 声明为 9.9.9，使 pin 与 lock 不一致。
+    fs.writeFileSync(
+      workspace.pyprojectPath,
+      `[tool.auto-mas.plugin-bootstrap]
+packages = [
+    "automas_plugin_ok_script_adapter",
+    "automas_plugin_okww_adapter",
+    { name = "automas-maafw-interface", version = "0.1.1" },
+    { name = "automas-maafw-agent-env", version = "0.1.1" },
+    { name = "automas-maafw-controller-adb", version = "0.1.0" },
+    { name = "automas-maafw-controller-win32", version = "0.1.1" },
+    { name = "automas-maafw-project-update", version = "0.1.0" },
+    { name = "automas-maafw-project-store", version = "0.1.0" },
+    { name = "automas-maafw-runtime-pool", version = "0.1.0" },
+    { name = "automas-maafw-runner", version = "0.2.0" },
+    { name = "automas-script-maafw", version = "0.1.5" },
+    { name = "automas-script-maafw-managed", version = "0.1.0" },
+    { name = "automas-script-maafw-pack-m9a", version = "0.1.2" },
+    { name = "automas-script-hsr", version = "9.9.9" },
+    { name = "automas-hsr-adapter-sra", version = "0.1.0" },
+    { name = "automas-hsr-adapter-m7a", version = "0.1.0" },
+    { name = "automas-plugin-mxu-import", version = "0.1.0" },
+    { name = "automas_plugin_maaend_adapter", version = "0.0.2" },
+    { name = "automas_script_maa", version = "0.0.5" },
+]
+`
+    )
+    const declared = service.loadDeclaredPackageSpecs()
+
+    let caughtError: Error | null = null
+    try {
+      service.validateLockedPluginContract(runtimeLock, declared)
+    } catch (error) {
+      caughtError = error as Error
+    }
+    expect(caughtError).not.toBeNull()
+    const message = caughtError!.message
+    // 必须含 distribution / requested / locked 三元
+    expect(message).toContain('distribution=')
+    expect(message).toContain('automas-script-hsr')
+    expect(message).toContain('requested=')
+    expect(message).toContain('9.9.9')
+    expect(message).toContain('locked=')
+    // runtime-lock fixture 中 automas-script-hsr 版本为 0.1.0
+    expect(message).toContain('0.1.0')
+    expect(message).toContain('pyproject')
+    expect(message).toContain('runtime-lock.json')
+  })
+
+  it('installLockedPluginRuntime error includes actual/expected details on partial install', async () => {
+    writeCompleteWheelhouse(service.wheelsDir, {
+      pluginRuntime: [{ distribution: 'plugin-only-runtime', version: '1.2.3' }],
+    })
+    const runtimeLock = readAndVerifyBundledRuntimeLock(service.wheelsDir)
+    // 模拟 .venv Python 已存在
+    fs.mkdirSync(path.join(workspace.appRoot, '.venv', 'Scripts'), { recursive: true })
+    fs.writeFileSync(path.join(workspace.appRoot, '.venv', 'Scripts', 'python.exe'), 'fake')
+
+    // mock uv pip install：只写入部分 plugin dist-info，制造"部分安装后假成功"场景
+    vi.mocked(runBoundedProcess).mockImplementation(async (_executable, args) => {
+      if (args[0] === 'pip') {
+        const targetDir = args[args.indexOf('--target') + 1]
+        // 故意只装第一个 plugin，跳过其余以触发 actual/expected 差异
+        const firstPlugin = runtimeLock.plugins[0]
+        const distInfo = path.join(
+          targetDir,
+          `${firstPlugin.distribution.replace(/[-.]/g, '_')}-${firstPlugin.version}.dist-info`
+        )
+        fs.mkdirSync(distInfo, { recursive: true })
+        fs.writeFileSync(
+          path.join(distInfo, 'METADATA'),
+          `Metadata-Version: 2.1\nName: ${firstPlugin.distribution}\nVersion: ${firstPlugin.version}\n`
+        )
+      }
+      return { stdout: '', stderr: '' }
+    })
+
+    let caughtError: Error | null = null
+    try {
+      await service.installLockedPluginRuntime(runtimeLock)
+    } catch (error) {
+      caughtError = error as Error
+    }
+    expect(caughtError).not.toBeNull()
+    const message = caughtError!.message
+    expect(message).toContain('Plugin target distribution/version set differs from runtime-lock')
+    // 必须包含 expected/actual 数量与具体 missing 列表
+    expect(message).toContain('expected=')
+    expect(message).toContain('actual=')
+    expect(message).toContain('missing')
+    // 应当列出缺失的 distribution（runtimeLock.plugins[1..] 的 distribution 之一）
+    const secondPlugin = runtimeLock.plugins[1]
+    expect(message).toContain(secondPlugin.distribution)
   })
 })

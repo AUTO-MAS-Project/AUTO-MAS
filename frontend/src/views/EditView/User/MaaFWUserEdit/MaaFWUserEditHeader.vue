@@ -1,14 +1,25 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-left">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <span class="breadcrumb-current">用户配置</span>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
+  <PageHeader
+    class="user-edit-header"
+    :title="`编辑 ${scriptName || 'MaaFramework'} 用户`"
+    subtitle="配置任务队列、预设、账号记录与通知"
+    compact
+    transparent
+    :bordered="false"
+  >
+    <template #title>
+      <div class="header-title">
+        <img
+          :src="getScriptIcon(scriptType, scriptIconUrl)"
+          :alt="scriptType || 'MaaFramework'"
+          class="header-icon"
+          @error="event => handleScriptIconError(event, scriptType)"
+        />
+        <span>{{ `编辑 ${scriptName || 'MaaFramework'} 用户` }}</span>
+        <a-tag color="processing">MaaFW</a-tag>
+      </div>
+    </template>
+    <template #default>
       <Transition name="save-chip-fade">
         <span
           v-if="saveStatus !== 'idle'"
@@ -24,17 +35,16 @@
           }}</span>
         </span>
       </Transition>
-    </div>
-
-    <a-space>
+    </template>
+    <template #actions>
       <a-button size="large" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
         返回
       </a-button>
-    </a-space>
-  </div>
+    </template>
+  </PageHeader>
 </template>
 
 <script setup lang="ts">
@@ -44,8 +54,13 @@ import {
   CloseCircleOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue'
+import PageHeader from '@/components/mac/PageHeader.vue'
+import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 
 defineProps<{
+  scriptName: string
+  scriptType: string
+  scriptIconUrl: string | null
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
   saveErrorMessage: string
 }>()
@@ -58,35 +73,28 @@ const emit = defineEmits<{
 <style scoped>
 .user-edit-header {
   max-width: 1400px;
-  margin: 0 auto 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  margin: 0 auto var(--v6-space-4);
 }
 
-.header-left {
+.header-title {
   display: flex;
-  flex: 1;
   align-items: center;
-  gap: 12px;
   min-width: 0;
+  gap: var(--v6-space-2);
 }
 
-.breadcrumb-link {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
+.header-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.breadcrumb-current {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ant-color-text);
-  font-weight: 600;
-  white-space: nowrap;
+.header-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: var(--v6-radius-sm);
+  object-fit: contain;
 }
 
 .save-status-chip {

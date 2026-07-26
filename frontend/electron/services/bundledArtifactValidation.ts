@@ -1,6 +1,7 @@
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
+import { pipeline } from 'stream/promises'
 
 export interface BundledPluginEntryPoint {
   group: string
@@ -95,8 +96,63 @@ function normalizeDistributionName(name: string): string {
     .replace(/[-_.]+/g, '-')
 }
 
+/**
+ * 单个 wheel 的流式读取块大小与并发度。
+ *
+ * 一次性 ``readFileSync`` 整个 wheelhouse 会把主进程事件循环阻塞整整一轮哈希
+ * （实测 127 wheel / 146 MiB 在热 page cache 下约 100ms，冷盘可达秒级），
+ * 期间所有 ``ipcMain.handle`` 排队。流式读取让每个 chunk 之间都能回到事件循环。
+ */
+const WHEEL_DIGEST_CHUNK_BYTES = 1024 * 1024
+const WHEEL_DIGEST_CONCURRENCY = 4
+
 function sha256File(filePath: string): string {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
+}
+
+/** 流式 SHA-256：与 {@link sha256File} 结果一致，但不阻塞事件循环。 */
+async function sha256FileStreaming(filePath: string): Promise<string> {
+  const hash = crypto.createHash('sha256')
+  await pipeline(fs.createReadStream(filePath, { highWaterMark: WHEEL_DIGEST_CHUNK_BYTES }), hash)
+  return hash.digest('hex')
+}
+
+/** 有界并发地流式哈希一组文件，返回与入参同序的摘要数组。 */
+async function sha256FilesStreaming(filePaths: string[]): Promise<string[]> {
+  const digests = new Array<string>(filePaths.length)
+  let nextIndex = 0
+  const hashNext = async (): Promise<void> => {
+    for (;;) {
+      const index = nextIndex
+      nextIndex += 1
+      if (index >= filePaths.length) {
+        return
+      }
+      digests[index] = await sha256FileStreaming(filePaths[index])
+    }
+  }
+  const workerCount = Math.min(WHEEL_DIGEST_CONCURRENCY, filePaths.length)
+  await Promise.all(Array.from({ length: workerCount }, () => hashNext()))
+  return digests
+}
+
+/**
+ * 解析 wheel 文件名中的 distribution 与 version。
+ *
+ * Wheel 文件名规范: ``<distribution>-<version>(-<rest>)*<python_tag>-<abi_tag>-<platform_tag>.whl``
+ * 这里只关心前两段；任何无法识别的文件名返回 ``null``，由调用方决定如何处理。
+ */
+export function parseWheelFilenameParts(
+  filename: string
+): { distribution: string; version: string } | null {
+  if (!filename || !filename.toLowerCase().endsWith('.whl')) {
+    return null
+  }
+  const parts = filename.slice(0, -4).split('-')
+  if (parts.length < 5 || !parts[0] || !parts[1]) {
+    return null
+  }
+  return { distribution: parts[0], version: parts[1] }
 }
 
 function assertSafeWheelRecord(
@@ -206,7 +262,21 @@ export function listBundledWheelFiles(wheelsDir: string): string[] {
     .map(entry => entry.name)
 }
 
-export function verifyBundledWheelDirectory(wheelsDir: string): string[] {
+interface BundledWheelInventory {
+  wheelFiles: string[]
+  /** manifest 声明的 wheel，按小写文件名索引，保持 manifest 声明顺序。 */
+  declaredByName: Map<string, BundledWheelManifestItem>
+}
+
+/**
+ * 校验 wheelhouse 的结构与元数据：manifest 可解析、声明集合与磁盘文件集合一一对应、
+ * 每个 wheel 的字节大小与声明一致、无同分发多版本。
+ *
+ * 这一步只做 readdir/statSync 与 manifest.json 的解析（实测约 1ms），不读取任何
+ * wheel 内容；内容摘要由 {@link verifyBundledWheelDirectory}（同步）或
+ * {@link verifyBundledWheelDigestsAsync}（流式）单独完成。
+ */
+function collectBundledWheelInventory(wheelsDir: string): BundledWheelInventory {
   const wheelFiles = listBundledWheelFiles(wheelsDir)
   if (wheelFiles.length === 0) {
     throw new Error(`Bundled wheel directory contains no wheel: ${wheelsDir}`)
@@ -228,6 +298,7 @@ export function verifyBundledWheelDirectory(wheelsDir: string): string[] {
   }
 
   const declaredByName = new Map<string, BundledWheelManifestItem>()
+  const declaredDistributionVersions = new Map<string, { filename: string; version: string }>()
   for (const item of manifest.wheels) {
     assertSafeWheelRecord(item as BundledRuntimeLockEntry, 'Bundled wheel manifest')
 
@@ -236,6 +307,31 @@ export function verifyBundledWheelDirectory(wheelsDir: string): string[] {
       throw new Error(`Bundled wheel manifest contains a duplicate: ${item.filename}`)
     }
     declaredByName.set(normalizedFilename, item)
+
+    // Lane 13 P0: 同分发多版本静默覆盖检测。manifest 内每条记录可以显式声明
+    // distribution/version；缺失时回退到 wheel 文件名解析，确保始终能比对。
+    const declaredDistribution = normalizeDistributionName(item.distribution || '')
+    const declaredVersion = typeof item.version === 'string' ? item.version : ''
+    const parsedFromFilename = parseWheelFilenameParts(item.filename)
+    const effectiveDistribution =
+      declaredDistribution || normalizeDistributionName(parsedFromFilename?.distribution || '')
+    const effectiveVersion = declaredVersion || parsedFromFilename?.version || ''
+    if (effectiveDistribution && effectiveVersion) {
+      const previous = declaredDistributionVersions.get(effectiveDistribution)
+      if (previous !== undefined && previous.version !== effectiveVersion) {
+        throw new Error(
+          `Bundled wheel manifest declares multiple versions for distribution "${effectiveDistribution}": ` +
+            `"${previous.version}" (${previous.filename}) vs "${effectiveVersion}" (${item.filename}). ` +
+            `Offline bootstrap must ship exactly one version per distribution.`
+        )
+      }
+      if (previous === undefined) {
+        declaredDistributionVersions.set(effectiveDistribution, {
+          filename: item.filename,
+          version: effectiveVersion,
+        })
+      }
+    }
   }
 
   const actualNames = new Set(wheelFiles.map(filename => filename.toLowerCase()))
@@ -257,13 +353,50 @@ export function verifyBundledWheelDirectory(wheelsDir: string): string[] {
         `Bundled wheel size mismatch: ${item.filename} (expected ${item.size_bytes}, got ${actualSize})`
       )
     }
-    const actualSha256 = sha256File(wheelPath)
-    if (actualSha256.toLowerCase() !== item.sha256.toLowerCase()) {
-      throw new Error(`Bundled wheel SHA-256 mismatch: ${item.filename}`)
-    }
   }
 
-  return wheelFiles
+  return { wheelFiles, declaredByName }
+}
+
+function assertWheelDigest(item: BundledWheelManifestItem, actualSha256: string): void {
+  if (actualSha256.toLowerCase() !== item.sha256.toLowerCase()) {
+    throw new Error(`Bundled wheel SHA-256 mismatch: ${item.filename}`)
+  }
+}
+
+/**
+ * 只做结构/大小校验，不读取 wheel 内容。
+ *
+ * 供"本次启动不需要安装"的快路径使用：仍能拦截缺失、多余、被截断或被替换成不同
+ * 长度的 wheel，但不再为一次纯跳过的启动付出全量哈希代价。
+ */
+export function verifyBundledWheelDirectoryMetadata(wheelsDir: string): string[] {
+  return collectBundledWheelInventory(wheelsDir).wheelFiles
+}
+
+/** 全量校验（结构 + 同步内容摘要）。保持原有同步 API 供构建脚本与测试使用。 */
+export function verifyBundledWheelDirectory(wheelsDir: string): string[] {
+  const inventory = collectBundledWheelInventory(wheelsDir)
+  for (const item of inventory.declaredByName.values()) {
+    assertWheelDigest(item, sha256File(path.join(wheelsDir, item.filename)))
+  }
+  return inventory.wheelFiles
+}
+
+/**
+ * 全量校验（结构 + 流式内容摘要），不阻塞事件循环。
+ *
+ * 必须在任何把 wheelhouse 交给 uv 之前调用。摘要比对在全部哈希完成后按 manifest
+ * 声明顺序进行，因此错误信息与同步版本完全一致、与并发调度无关。
+ */
+export async function verifyBundledWheelDigestsAsync(wheelsDir: string): Promise<string[]> {
+  const inventory = collectBundledWheelInventory(wheelsDir)
+  const items = [...inventory.declaredByName.values()]
+  const digests = await sha256FilesStreaming(items.map(item => path.join(wheelsDir, item.filename)))
+  for (let index = 0; index < items.length; index += 1) {
+    assertWheelDigest(items[index], digests[index])
+  }
+  return inventory.wheelFiles
 }
 
 /**
@@ -271,7 +404,24 @@ export function verifyBundledWheelDirectory(wheelsDir: string): string[] {
  * A plugin-only seed manifest is deliberately rejected here.
  */
 export function readAndVerifyBundledRuntimeLock(wheelsDir: string): BundledRuntimeLock {
-  const wheelFiles = verifyBundledWheelDirectory(wheelsDir)
+  return completeRuntimeLockVerification(wheelsDir, verifyBundledWheelDirectory(wheelsDir))
+}
+
+/**
+ * 与 {@link readAndVerifyBundledRuntimeLock} 校验完全相同的清单/锁文件契约，
+ * 但跳过 127 个 wheel 的内容摘要（仍校验 runtime-lock.json 自身的摘要）。
+ *
+ * 用于在决定"是否真的需要安装"之前拿到 install plan：这一步不会把任何 wheel 交给
+ * uv，真正安装前必须再调用 {@link verifyBundledWheelDigestsAsync}。
+ */
+export function readBundledRuntimeLockMetadata(wheelsDir: string): BundledRuntimeLock {
+  return completeRuntimeLockVerification(wheelsDir, verifyBundledWheelDirectoryMetadata(wheelsDir))
+}
+
+function completeRuntimeLockVerification(
+  wheelsDir: string,
+  wheelFiles: string[]
+): BundledRuntimeLock {
   const manifestPath = path.join(wheelsDir, 'manifest.json')
   const manifest = readJsonFileWithOptionalBom<BundledWheelManifest>(manifestPath)
   if (
@@ -348,7 +498,10 @@ export function readAndVerifyBundledRuntimeLock(wheelsDir: string): BundledRunti
   const manifestByFilename = new Map(
     manifest.wheels.map(item => [item.filename.toLowerCase(), item] as const)
   )
-  const seenDistributions = new Map<string, BundledRuntimeWheelScope>()
+  const seenDistributions = new Map<
+    string,
+    { scope: BundledRuntimeWheelScope; version: string; filename: string }
+  >()
   const seenFilenames = new Set<string>()
   const allLockEntries: BundledRuntimeLockEntry[] = []
   const validateScope = (
@@ -371,13 +524,32 @@ export function readAndVerifyBundledRuntimeLock(wheelsDir: string): BundledRunti
         throw new Error(`Bundled runtime lock contains an invalid ${expectedScope} package`)
       }
       const normalizedDistribution = normalizeDistributionName(entry.distribution)
-      const previousScope = seenDistributions.get(normalizedDistribution)
-      if (previousScope != null) {
+      const previous = seenDistributions.get(normalizedDistribution)
+      if (previous !== undefined) {
+        // Lane 13 P0: 错误信息必须明确给出 distribution / 已记录版本 / 当前版本 / 已记录文件 / 当前文件，
+        // 让"同分发多版本静默覆盖"在生产中可被一眼诊断。跨 scope 同名也归入此类，但区分
+        // "cross-scope"与"same-scope duplicate"两种语义，避免误导。
+        const scopeRelation =
+          previous.scope === expectedScope ? 'same-scope duplicate' : 'cross-scope duplicate'
+        if (previous.version !== entry.version) {
+          throw new Error(
+            `Bundled runtime lock declares multiple versions for distribution "${entry.distribution}" ` +
+              `(${scopeRelation}): "${previous.version}" (${previous.filename}, scope=${previous.scope}) ` +
+              `vs "${entry.version}" (${entry.filename}, scope=${expectedScope}). ` +
+              `Offline bootstrap must ship exactly one version per distribution.`
+          )
+        }
         throw new Error(
-          `Bundled runtime lock distribution crosses scopes: ${entry.distribution} (${previousScope}/${expectedScope})`
+          `Bundled runtime lock declares duplicate entries for distribution "${entry.distribution}" ` +
+            `(${scopeRelation}): "${previous.version}" appears in both ${previous.filename} ` +
+            `(scope=${previous.scope}) and ${entry.filename} (scope=${expectedScope}).`
         )
       }
-      seenDistributions.set(normalizedDistribution, expectedScope)
+      seenDistributions.set(normalizedDistribution, {
+        scope: expectedScope,
+        version: entry.version,
+        filename: entry.filename,
+      })
       const normalizedFilename = entry.filename.toLowerCase()
       if (seenFilenames.has(normalizedFilename)) {
         throw new Error(`Bundled runtime lock repeats wheel filename: ${entry.filename}`)

@@ -63,13 +63,39 @@
         </a-checkbox>
       </a-col>
       <a-col :span="18">
-        <a-input
-          v-model:value="formData.Notify.ServerChanKey"
-          placeholder="请输入 SENDKEY"
-          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-          size="large"
-          @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-        />
+        <!--
+          Lane 06 任务书第 1、2 条：
+          - ServerChanKey 是敏感字段（schema 中 sensitive=True，见 HSRUserNotifyConfig.ServerChanKey）。
+          - 不得使用普通 a-input 直接绑定解密明文；改为 a-input-password + 草稿驱动。
+          - 保存语义与 BasicInfoSection/SkylandConfigSection 一致：
+            keep（省略） / replace（新值） / clear（空串）。
+        -->
+        <div class="sensitive-field-row">
+          <a-input-password
+            :value="serverChanKeyDraft"
+            :placeholder="serverChanKeyPlaceholder"
+            :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+            size="large"
+            autocomplete="new-password"
+            @update:value="(val: string) => handleServerChanKeyInput(val)"
+            @blur="handleServerChanKeyBlur"
+          />
+          <a-button
+            v-if="
+              !loading &&
+              formData.Notify.Enabled &&
+              formData.Notify.IfServerChan &&
+              hasStoredServerChanKey
+            "
+            size="small"
+            type="link"
+            danger
+            :disabled="serverChanKeyExplicitlyCleared"
+            @click="handleClearServerChanKey"
+          >
+            {{ serverChanKeyExplicitlyCleared ? '已清空' : '清空原值' }}
+          </a-button>
+        </div>
       </a-col>
     </a-row>
 
@@ -80,9 +106,10 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
   scriptId?: string
@@ -91,11 +118,92 @@ defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  /**
+   * 敏感字段保存意图（与 BasicInfoSection/SkylandConfigSection 一致，Lane 06 任务书第 2 条）：
+   * - `keep`：未触碰 → 不发送给后端。
+   * - `replace`：输入新值 → 发送新明文。
+   * - `clear`：显式清空 → 发送空串 `""`。
+   */
+  sensitiveSave: [key: string, intent: 'keep' | 'replace' | 'clear', value?: string]
+  sensitiveDirtyChange: [key: string, dirty: boolean]
 }>()
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+// ============================================================
+// ServerChanKey 敏感字段：草稿驱动，不在 DOM 显示明文
+// ============================================================
+
+const serverChanKeyDraft = ref('')
+const serverChanKeyExplicitlyCleared = ref(false)
+
+const hasStoredServerChanKey = computed(() => {
+  const stored = props.formData?.Notify?.ServerChanKey
+  return typeof stored === 'string' && stored.length > 0
+})
+
+const serverChanKeyPlaceholder = computed(() => {
+  if (serverChanKeyExplicitlyCleared.value) {
+    return '已清空。留空保持清空状态，输入新值替换'
+  }
+  if (hasStoredServerChanKey.value) {
+    return '已保存。留空保持原值，输入新值替换'
+  }
+  return '请输入 SENDKEY'
+})
+
+const handleServerChanKeyInput = (val: string) => {
+  serverChanKeyDraft.value = val
+  if (val !== '' && serverChanKeyExplicitlyCleared.value) {
+    serverChanKeyExplicitlyCleared.value = false
+  }
+  emit(
+    'sensitiveDirtyChange',
+    'Notify.ServerChanKey',
+    val !== '' || serverChanKeyExplicitlyCleared.value
+  )
+}
+
+const handleClearServerChanKey = () => {
+  if (!hasStoredServerChanKey.value) {
+    return
+  }
+  serverChanKeyDraft.value = ''
+  serverChanKeyExplicitlyCleared.value = true
+  emit('sensitiveDirtyChange', 'Notify.ServerChanKey', true)
+}
+
+const handleServerChanKeyBlur = () => {
+  if (serverChanKeyExplicitlyCleared.value) {
+    emit('sensitiveSave', 'Notify.ServerChanKey', 'clear', '')
+    return
+  }
+  if (serverChanKeyDraft.value === '') {
+    emit('sensitiveSave', 'Notify.ServerChanKey', 'keep')
+    return
+  }
+  emit('sensitiveSave', 'Notify.ServerChanKey', 'replace', serverChanKeyDraft.value)
+}
+
+watch(
+  () => props.formData?.Notify?.ServerChanKey,
+  () => {
+    serverChanKeyDraft.value = ''
+    serverChanKeyExplicitlyCleared.value = false
+    emit('sensitiveDirtyChange', 'Notify.ServerChanKey', false)
+  }
+)
+
+defineExpose({
+  resetServerChanKeyDraft: () => {
+    serverChanKeyDraft.value = ''
+    serverChanKeyExplicitlyCleared.value = false
+  },
+  isServerChanKeyDirty: () =>
+    serverChanKeyDraft.value !== '' || serverChanKeyExplicitlyCleared.value,
+})
 </script>
 
 <style scoped>
@@ -124,5 +232,24 @@ const emitSave = (key: string, value: any) => {
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
+}
+
+.sensitive-field-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+
+.sensitive-field-row :deep(.ant-input-password) {
+  width: 100%;
+}
+
+.sensitive-field-row :deep(.ant-btn-link) {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

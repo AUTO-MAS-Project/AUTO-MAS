@@ -1,431 +1,572 @@
 <template>
-  <div class="schema-form" :class="`schema-form-${layout}`">
-    <div v-for="group in normalizedGroups" :key="group.key" class="schema-group">
-      <div v-if="showGroupTitle(group)" class="schema-group-title">
-        {{ group.label || group.key }}
-      </div>
+  <div class="schema-form" :class="`schema-form-${layout}`" :data-status="status">
+    <div v-if="status === 'schema-error'" class="schema-form-banner schema-form-banner-error">
+      <span>Schema 加载失败，无法渲染表单。</span>
+    </div>
+    <div v-else-if="status === 'loading'" class="schema-form-banner schema-form-banner-loading">
+      <a-spin size="small" />
+      <span>正在加载配置项…</span>
+    </div>
+    <template v-else>
+      <div
+        v-for="group in normalizedGroups"
+        :key="group.key"
+        class="schema-group"
+        :class="{ 'schema-group-readonly': effectiveReadonly }"
+      >
+        <div v-if="showGroupTitle(group)" class="schema-group-title">
+          {{ group.label || group.key }}
+        </div>
 
-      <a-form layout="vertical" :class="{ 'schema-form-grid': layout === 'plugin-grid' }">
-        <a-form-item
-          v-for="field in group.fields"
-          :key="getFieldPath(field)"
-          :label="getFieldLabel(field)"
-          :required="Boolean(field.required)"
-          :help="getFieldHelp(field)"
-          :validate-status="validationErrors[getFieldPath(field)] ? 'error' : undefined"
-          :class="[
-            'schema-item',
-            `schema-item-${field.type}`,
-            layout === 'plugin-grid' ? `schema-item-size-${getFieldLayoutSize(field)}` : '',
-          ]"
-        >
-          <div class="schema-field-head">
-            <a-space size="6">
-              <a-tag class="type-tag" color="processing">{{ getTypeLabel(field) }}</a-tag>
-              <a-tag v-if="field.required" color="error">必填</a-tag>
-              <a-tag v-if="isPasswordField(field)" color="gold">敏感</a-tag>
-              <a-tag v-if="field.readonly && !isButtonField(field)" color="default">只读</a-tag>
-            </a-space>
-          </div>
-
-          <template v-if="isButtonField(field)">
-            <a-button
-              type="primary"
-              :loading="actionLoadingId === getFieldPath(field)"
-              :disabled="readonly"
-              @click="handleButtonClick(getFieldPath(field), field)"
-            >
-              {{ getActionLabel(field) }}
-            </a-button>
-          </template>
-
-          <template v-else-if="isAutocompleteField(field)">
-            <a-auto-complete
-              :value="getAutocompleteInputValue(getFieldPath(field), field)"
-              style="width: 100%"
-              :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
-              @focus="handleAutocompleteFocus(getFieldPath(field), field)"
-              @blur="handleAutocompleteBlur(getFieldPath(field), field)"
-              @select="(val: string) => handleAutocompleteSelect(getFieldPath(field), field, val)"
-              @update:value="(val: string) => handleAutocompleteInput(getFieldPath(field), val)"
-            />
-          </template>
-
-          <template v-else-if="isOrderedMultiSelectField(field)">
-            <div class="schema-ordered-multiselect">
-              <button
-                v-for="(option, index) in getFieldOptions(field)"
-                :key="`${getFieldPath(field)}-${String(option.value)}`"
-                type="button"
-                class="schema-ordered-option"
-                :class="{
-                  'schema-ordered-option-active': isOrderedOptionChecked(
-                    getFieldPath(field),
-                    field,
-                    index
-                  ),
-                }"
-                :disabled="readonly || field.readonly"
-                @click="toggleOrderedOption(getFieldPath(field), field, index)"
-              >
-                <span class="schema-ordered-option-index">{{ index + 1 }}</span>
-                <span class="schema-ordered-option-label">{{ option.label }}</span>
-              </button>
+        <a-form layout="vertical" :class="{ 'schema-form-grid': layout === 'plugin-grid' }">
+          <a-form-item
+            v-for="field in group.fields"
+            :key="getFieldPath(field)"
+            :label="getFieldLabel(field)"
+            :required="Boolean(field.required)"
+            :help="getFieldHelp(field, validationErrors[getFieldPath(field)] ?? undefined)"
+            :validate-status="validationErrors[getFieldPath(field)] ? 'error' : undefined"
+            :class="[
+              'schema-item',
+              `schema-item-${field.type}`,
+              layout === 'plugin-grid' ? `schema-item-size-${getFieldLayoutSizeClass(field)}` : '',
+            ]"
+          >
+            <div class="schema-field-head">
+              <a-space size="6">
+                <a-tag class="type-tag" color="processing">{{ getTypeLabel(field) }}</a-tag>
+                <a-tag v-if="field.required" color="error">必填</a-tag>
+                <a-tag v-if="isSensitiveField(field)" color="gold">敏感</a-tag>
+                <a-tag v-if="field.readonly && !isButtonField(field)" color="default">只读</a-tag>
+              </a-space>
             </div>
-          </template>
 
-          <template v-else-if="isMultiSelectField(field)">
-            <a-select
-              mode="multiple"
-              :value="getEnumListValue(getFieldPath(field))"
-              style="width: 100%"
-              :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: unknown[]) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
+            <template v-if="isButtonField(field)">
+              <a-button
+                type="primary"
+                :loading="actionLoadingId === getFieldPath(field) || status === 'action-running'"
+                :disabled="effectiveReadonly || status === 'action-running'"
+                @click="handleButtonClick(getFieldPath(field), field)"
+              >
+                {{ getActionLabel(field) }}
+              </a-button>
+            </template>
 
-          <template v-else-if="isSelectField(field)">
-            <a-select
-              :value="getFieldValue(getFieldPath(field))"
-              style="width: 100%"
-              :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: unknown) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
+            <template v-else-if="isAutocompleteField(field)">
+              <a-auto-complete
+                :value="getAutocompleteInputValue(getFieldPath(field), field)"
+                style="width: 100%"
+                :options="getFieldOptions(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @focus="handleAutocompleteFocus(getFieldPath(field), field)"
+                @blur="handleAutocompleteBlur(getFieldPath(field), field, emitUpdate)"
+                @select="
+                  (val: string) =>
+                    handleAutocompleteSelect(getFieldPath(field), field, val, emitUpdate)
+                "
+                @update:value="(val: string) => handleAutocompleteInput(getFieldPath(field), val)"
+              />
+            </template>
 
-          <template v-else-if="isBooleanField(field)">
-            <a-switch
-              :checked="getBooleanValue(getFieldPath(field))"
-              checked-children="是"
-              un-checked-children="否"
-              :disabled="readonly || field.readonly"
-              @update:checked="(val: boolean) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
+            <template v-else-if="isOrderedMultiSelectField(field)">
+              <div class="schema-ordered-multiselect">
+                <button
+                  v-for="(option, index) in getFieldOptions(field)"
+                  :key="`${getFieldPath(field)}-${String(option.value)}`"
+                  type="button"
+                  class="schema-ordered-option"
+                  :class="{
+                    'schema-ordered-option-active': isOrderedOptionChecked(
+                      field,
+                      getFieldValue(getFieldPath(field)),
+                      index
+                    ),
+                  }"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @click="toggleOrderedOptionAt(field, index)"
+                >
+                  <span class="schema-ordered-option-index">{{ index + 1 }}</span>
+                  <span class="schema-ordered-option-label">{{ option.label }}</span>
+                </button>
+              </div>
+            </template>
 
-          <template v-else-if="isPathField(field)">
-            <div class="schema-path-field">
+            <template v-else-if="isMultiSelectField(field)">
+              <a-select
+                mode="multiple"
+                :value="getEnumListValue(getFieldValue(getFieldPath(field)))"
+                style="width: 100%"
+                :options="getFieldOptions(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:value="
+                  (val: unknown[]) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
+              />
+            </template>
+
+            <template v-else-if="isSelectField(field)">
+              <a-select
+                :value="getFieldValue(getFieldPath(field))"
+                style="width: 100%"
+                :options="getFieldOptions(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:value="
+                  (val: unknown) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
+              />
+            </template>
+
+            <template v-else-if="isBooleanField(field)">
+              <a-switch
+                :checked="getBooleanValue(getFieldValue(getFieldPath(field)))"
+                checked-children="是"
+                un-checked-children="否"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:checked="
+                  (val: boolean) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
+              />
+            </template>
+
+            <template v-else-if="isPathField(field)">
+              <div class="schema-path-field">
+                <a-input
+                  :value="String(getFieldValue(getFieldPath(field)) ?? '')"
+                  :placeholder="getFieldPlaceholder(field)"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @update:value="
+                    (val: string) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                  "
+                />
+                <a-button
+                  v-if="hasElectronPathPicker()"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @click="pickPath(getFieldPath(field), field)"
+                >
+                  选择
+                </a-button>
+              </div>
+            </template>
+
+            <template v-else-if="isStringField(field)">
+              <div v-if="isSensitiveField(field)" class="schema-sensitive-field">
+                <a-input-password
+                  :value="getSensitiveDraft(getFieldPath(field))"
+                  :placeholder="getSensitivePlaceholder(currentModelValue, field)"
+                  :maxlength="getStringMaxLength(field)"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @update:value="(val: string) => handleSensitiveInput(getFieldPath(field), val)"
+                />
+                <a-button
+                  v-if="!effectiveReadonly && !field.readonly"
+                  size="small"
+                  type="link"
+                  danger
+                  :disabled="!canClearSensitive(getFieldPath(field))"
+                  @click="clearSensitiveDraft(getFieldPath(field))"
+                >
+                  {{ isSensitiveFieldCleared(currentModelValue, field) ? '已清空' : '清空原值' }}
+                </a-button>
+              </div>
+              <a-textarea
+                v-else-if="isTextareaField(field)"
+                :value="String(getFieldValue(getFieldPath(field)) ?? '')"
+                :placeholder="getFieldPlaceholder(field)"
+                :maxlength="getStringMaxLength(field)"
+                :rows="getTextareaRows(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:value="
+                  (val: string) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
+              />
+              <a-input
+                v-else
+                :value="String(getFieldValue(getFieldPath(field)) ?? '')"
+                :placeholder="getFieldPlaceholder(field)"
+                :maxlength="getStringMaxLength(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:value="
+                  (val: string) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
+              />
+            </template>
+
+            <template v-else-if="isSliderField(field)">
+              <div class="schema-slider-field">
+                <a-slider
+                  :value="getSliderValue(field, getFieldValue(getFieldPath(field)))"
+                  :min="getNumberMin(field)"
+                  :max="getNumberMax(field)"
+                  :step="getNumberStep(field)"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @update:value="
+                    (val: number) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                  "
+                />
+                <a-input-number
+                  :value="getNumberValue(getFieldValue(getFieldPath(field)))"
+                  class="schema-slider-number"
+                  :min="getNumberMin(field)"
+                  :max="getNumberMax(field)"
+                  :step="getNumberStep(field)"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @update:value="
+                    (val: number | null) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                  "
+                />
+              </div>
+            </template>
+
+            <template v-else-if="isNumberField(field)">
+              <a-input-number
+                :value="getNumberValue(getFieldValue(getFieldPath(field)))"
+                style="width: 100%"
+                :min="getNumberMin(field)"
+                :max="getNumberMax(field)"
+                :step="getNumberStep(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:value="
+                  (val: number | null) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
+              />
+            </template>
+
+            <template v-else-if="isListField(field)">
+              <a-space direction="vertical" style="width: 100%">
+                <a-button
+                  size="small"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @click="
+                    emitUpdate(
+                      addListRow(currentModelValue, getFieldPath(field), getListItemType(field))
+                    )
+                  "
+                >
+                  新增一行
+                </a-button>
+                <a-table
+                  :columns="listColumns"
+                  :data-source="getListRows(currentModelValue, getFieldPath(field))"
+                  :pagination="false"
+                  size="small"
+                  row-key="__rowKey"
+                >
+                  <template #bodyCell="{ column, record, index }">
+                    <template v-if="column.key === 'value'">
+                      <a-switch
+                        v-if="getListItemType(field) === 'boolean'"
+                        :checked="Boolean(record.value)"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @update:checked="
+                          (val: boolean) =>
+                            emitUpdate(
+                              updateListRowValue(
+                                currentModelValue,
+                                getFieldPath(field),
+                                index,
+                                val,
+                                getListItemType(field)
+                              )
+                            )
+                        "
+                      />
+                      <a-input-number
+                        v-else-if="getListItemType(field) === 'number'"
+                        style="width: 100%"
+                        :value="
+                          typeof record.value === 'number'
+                            ? record.value
+                            : Number(record.value || 0)
+                        "
+                        :disabled="effectiveReadonly || field.readonly"
+                        @update:value="
+                          (val: number | null) =>
+                            emitUpdate(
+                              updateListRowValue(
+                                currentModelValue,
+                                getFieldPath(field),
+                                index,
+                                val ?? 0,
+                                getListItemType(field)
+                              )
+                            )
+                        "
+                      />
+                      <a-input
+                        v-else
+                        :value="String(record.value ?? '')"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @update:value="
+                          (val: string) =>
+                            emitUpdate(
+                              updateListRowValue(
+                                currentModelValue,
+                                getFieldPath(field),
+                                index,
+                                val,
+                                getListItemType(field)
+                              )
+                            )
+                        "
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'action'">
+                      <a-button
+                        danger
+                        size="small"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @click="
+                          emitUpdate(removeListRow(currentModelValue, getFieldPath(field), index))
+                        "
+                      >
+                        删除
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </a-space>
+            </template>
+
+            <template v-else-if="field.type === 'key_value'">
+              <a-space direction="vertical" style="width: 100%">
+                <a-button
+                  size="small"
+                  :disabled="effectiveReadonly || field.readonly"
+                  @click="emitUpdate(addKeyValueRow(currentModelValue, getFieldPath(field)))"
+                >
+                  新增一行
+                </a-button>
+                <a-table
+                  :columns="keyValueColumns"
+                  :data-source="getKeyValueRows(currentModelValue, getFieldPath(field))"
+                  :pagination="false"
+                  size="small"
+                  row-key="__rowKey"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'key'">
+                      <a-input
+                        :value="record.key"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @blur="
+                          (e: FocusEvent) =>
+                            emitUpdate(
+                              updateKeyValueRowKey(
+                                currentModelValue,
+                                getFieldPath(field),
+                                record.key,
+                                String((e.target as HTMLInputElement).value || '')
+                              )
+                            )
+                        "
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'value'">
+                      <a-input
+                        :value="record.value"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @update:value="
+                          (val: string) =>
+                            emitUpdate(
+                              updateKeyValueRowValue(
+                                currentModelValue,
+                                getFieldPath(field),
+                                record.key,
+                                val
+                              )
+                            )
+                        "
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'action'">
+                      <a-button
+                        danger
+                        size="small"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @click="
+                          emitUpdate(
+                            removeKeyValueRow(currentModelValue, getFieldPath(field), record.key)
+                          )
+                        "
+                      >
+                        删除
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </a-space>
+            </template>
+
+            <template v-else-if="field.type === 'table'">
+              <a-space direction="vertical" style="width: 100%">
+                <a-space>
+                  <a-button
+                    size="small"
+                    :disabled="effectiveReadonly || field.readonly"
+                    @click="emitUpdate(addTableRow(currentModelValue, getFieldPath(field)))"
+                  >
+                    新增行
+                  </a-button>
+                  <a-button
+                    size="small"
+                    :disabled="effectiveReadonly || field.readonly"
+                    @click="emitUpdate(addTableColumn(currentModelValue, getFieldPath(field)))"
+                  >
+                    新增列
+                  </a-button>
+                </a-space>
+                <a-table
+                  :columns="getTableColumns(currentModelValue, getFieldPath(field))"
+                  :data-source="getTableRows(currentModelValue, getFieldPath(field))"
+                  :pagination="false"
+                  size="small"
+                  row-key="__rowKey"
+                >
+                  <template #bodyCell="{ column, record, index }">
+                    <template v-if="column.key === 'action'">
+                      <a-button
+                        danger
+                        size="small"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @click="
+                          emitUpdate(removeTableRow(currentModelValue, getFieldPath(field), index))
+                        "
+                      >
+                        删除
+                      </a-button>
+                    </template>
+                    <template v-else>
+                      <a-input
+                        :value="String(record[column.key] ?? '')"
+                        :disabled="effectiveReadonly || field.readonly"
+                        @update:value="
+                          (val: string) =>
+                            emitUpdate(
+                              updateTableCellValue(
+                                currentModelValue,
+                                getFieldPath(field),
+                                index,
+                                String(column.key),
+                                val
+                              )
+                            )
+                        "
+                      />
+                    </template>
+                  </template>
+                </a-table>
+              </a-space>
+            </template>
+
+            <template v-else-if="isJsonField(field)">
+              <a-textarea
+                :value="getJsonText(currentModelValue, getFieldPath(field))"
+                :rows="getTextareaRows(field)"
+                :disabled="effectiveReadonly || field.readonly"
+                @blur="handleJsonBlur(getFieldPath(field), $event)"
+              />
+            </template>
+
+            <template v-else>
               <a-input
                 :value="String(getFieldValue(getFieldPath(field)) ?? '')"
                 :placeholder="getFieldPlaceholder(field)"
-                :disabled="readonly || field.readonly"
-                @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
+                :disabled="effectiveReadonly || field.readonly"
+                @update:value="
+                  (val: string) => updateFieldValue(getFieldPath(field), val, emitUpdate)
+                "
               />
-              <a-button
-                v-if="hasElectronPathPicker()"
-                :disabled="readonly || field.readonly"
-                @click="pickPath(getFieldPath(field), field)"
-              >
-                选择
-              </a-button>
-            </div>
-          </template>
-
-          <template v-else-if="isStringField(field)">
-            <a-input-password
-              v-if="isPasswordField(field)"
-              :value="String(getFieldValue(getFieldPath(field)) ?? '')"
-              :placeholder="getFieldPlaceholder(field)"
-              :maxlength="getStringMaxLength(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
-            />
-            <a-textarea
-              v-else-if="isTextareaField(field)"
-              :value="String(getFieldValue(getFieldPath(field)) ?? '')"
-              :placeholder="getFieldPlaceholder(field)"
-              :maxlength="getStringMaxLength(field)"
-              :rows="getTextareaRows(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
-            />
-            <a-input
-              v-else
-              :value="String(getFieldValue(getFieldPath(field)) ?? '')"
-              :placeholder="getFieldPlaceholder(field)"
-              :maxlength="getStringMaxLength(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
-
-          <template v-else-if="isSliderField(field)">
-            <div class="schema-slider-field">
-              <a-slider
-                :value="getSliderValue(getFieldPath(field), field)"
-                :min="getNumberMin(field)"
-                :max="getNumberMax(field)"
-                :step="getNumberStep(field)"
-                :disabled="readonly || field.readonly"
-                @update:value="(val: number) => updateFieldValue(getFieldPath(field), val)"
-              />
-              <a-input-number
-                :value="getNumberValue(getFieldPath(field))"
-                class="schema-slider-number"
-                :min="getNumberMin(field)"
-                :max="getNumberMax(field)"
-                :step="getNumberStep(field)"
-                :disabled="readonly || field.readonly"
-                @update:value="(val: number | null) => updateFieldValue(getFieldPath(field), val)"
-              />
-            </div>
-          </template>
-
-          <template v-else-if="isNumberField(field)">
-            <a-input-number
-              :value="getNumberValue(getFieldPath(field))"
-              style="width: 100%"
-              :min="getNumberMin(field)"
-              :max="getNumberMax(field)"
-              :step="getNumberStep(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: number | null) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
-
-          <template v-else-if="isListField(field)">
-            <a-space direction="vertical" style="width: 100%">
-              <a-button
-                size="small"
-                :disabled="readonly || field.readonly"
-                @click="addListRow(getFieldPath(field), getListItemType(field))"
-              >
-                新增一行
-              </a-button>
-              <a-table
-                :columns="listColumns"
-                :data-source="getListRows(getFieldPath(field))"
-                :pagination="false"
-                size="small"
-                row-key="__rowKey"
-              >
-                <template #bodyCell="{ column, record, index }">
-                  <template v-if="column.key === 'value'">
-                    <a-switch
-                      v-if="getListItemType(field) === 'boolean'"
-                      :checked="Boolean(record.value)"
-                      :disabled="readonly || field.readonly"
-                      @update:checked="
-                        (val: boolean) =>
-                          updateListRowValue(
-                            getFieldPath(field),
-                            index,
-                            val,
-                            getListItemType(field)
-                          )
-                      "
-                    />
-                    <a-input-number
-                      v-else-if="getListItemType(field) === 'number'"
-                      style="width: 100%"
-                      :value="
-                        typeof record.value === 'number' ? record.value : Number(record.value || 0)
-                      "
-                      :disabled="readonly || field.readonly"
-                      @update:value="
-                        (val: number | null) =>
-                          updateListRowValue(
-                            getFieldPath(field),
-                            index,
-                            val ?? 0,
-                            getListItemType(field)
-                          )
-                      "
-                    />
-                    <a-input
-                      v-else
-                      :value="String(record.value ?? '')"
-                      :disabled="readonly || field.readonly"
-                      @update:value="
-                        (val: string) =>
-                          updateListRowValue(
-                            getFieldPath(field),
-                            index,
-                            val,
-                            getListItemType(field)
-                          )
-                      "
-                    />
-                  </template>
-                  <template v-else-if="column.key === 'action'">
-                    <a-button
-                      danger
-                      size="small"
-                      :disabled="readonly || field.readonly"
-                      @click="removeListRow(getFieldPath(field), index)"
-                    >
-                      删除
-                    </a-button>
-                  </template>
-                </template>
-              </a-table>
-            </a-space>
-          </template>
-
-          <template v-else-if="field.type === 'key_value'">
-            <a-space direction="vertical" style="width: 100%">
-              <a-button
-                size="small"
-                :disabled="readonly || field.readonly"
-                @click="addKeyValueRow(getFieldPath(field))"
-              >
-                新增一行
-              </a-button>
-              <a-table
-                :columns="keyValueColumns"
-                :data-source="getKeyValueRows(getFieldPath(field))"
-                :pagination="false"
-                size="small"
-                row-key="__rowKey"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'key'">
-                    <a-input
-                      :value="record.key"
-                      :disabled="readonly || field.readonly"
-                      @blur="
-                        (e: FocusEvent) =>
-                          updateKeyValueRowKey(
-                            getFieldPath(field),
-                            record.key,
-                            String((e.target as HTMLInputElement).value || '')
-                          )
-                      "
-                    />
-                  </template>
-                  <template v-else-if="column.key === 'value'">
-                    <a-input
-                      :value="record.value"
-                      :disabled="readonly || field.readonly"
-                      @update:value="
-                        (val: string) =>
-                          updateKeyValueRowValue(getFieldPath(field), record.key, val)
-                      "
-                    />
-                  </template>
-                  <template v-else-if="column.key === 'action'">
-                    <a-button
-                      danger
-                      size="small"
-                      :disabled="readonly || field.readonly"
-                      @click="removeKeyValueRow(getFieldPath(field), record.key)"
-                    >
-                      删除
-                    </a-button>
-                  </template>
-                </template>
-              </a-table>
-            </a-space>
-          </template>
-
-          <template v-else-if="field.type === 'table'">
-            <a-space direction="vertical" style="width: 100%">
-              <a-space>
-                <a-button
-                  size="small"
-                  :disabled="readonly || field.readonly"
-                  @click="addTableRow(getFieldPath(field))"
-                >
-                  新增行
-                </a-button>
-                <a-button
-                  size="small"
-                  :disabled="readonly || field.readonly"
-                  @click="addTableColumn(getFieldPath(field))"
-                >
-                  新增列
-                </a-button>
-              </a-space>
-              <a-table
-                :columns="getTableColumns(getFieldPath(field))"
-                :data-source="getTableRows(getFieldPath(field))"
-                :pagination="false"
-                size="small"
-                row-key="__rowKey"
-              >
-                <template #bodyCell="{ column, record, index }">
-                  <template v-if="column.key === 'action'">
-                    <a-button
-                      danger
-                      size="small"
-                      :disabled="readonly || field.readonly"
-                      @click="removeTableRow(getFieldPath(field), index)"
-                    >
-                      删除
-                    </a-button>
-                  </template>
-                  <template v-else>
-                    <a-input
-                      :value="String(record[column.key] ?? '')"
-                      :disabled="readonly || field.readonly"
-                      @update:value="
-                        (val: string) =>
-                          updateTableCellValue(getFieldPath(field), index, String(column.key), val)
-                      "
-                    />
-                  </template>
-                </template>
-              </a-table>
-            </a-space>
-          </template>
-
-          <template v-else-if="isJsonField(field)">
-            <a-textarea
-              :value="getJsonText(getFieldPath(field))"
-              :rows="getTextareaRows(field)"
-              :disabled="readonly || field.readonly"
-              @blur="handleJsonBlur(getFieldPath(field), $event)"
-            />
-          </template>
-
-          <template v-else>
-            <a-input
-              :value="String(getFieldValue(getFieldPath(field)) ?? '')"
-              :placeholder="getFieldPlaceholder(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
-        </a-form-item>
-      </a-form>
-    </div>
+            </template>
+          </a-form-item>
+        </a-form>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import type {
-  GroupedSchemaDefinition,
   SchemaDefinition,
   SchemaFieldDefinition,
-  SchemaGroupDefinition,
   SchemaValidationErrorMap,
 } from '@/types/schemaForm'
+import { useSchemaFormModel } from '@/composables/useSchemaFormModel'
+import {
+  isSensitiveField,
+  getSensitivePlaceholder,
+  isSensitiveFieldCleared,
+  hasSensitiveDirtyChange,
+  buildSensitiveSavePatch,
+  buildSchemaSavePayload,
+} from '@/composables/useSensitiveFieldStrategy'
+import {
+  addKeyValueRow,
+  addListRow,
+  addTableColumn,
+  addTableRow,
+  cloneModel,
+  collectValidationErrors,
+  getActionLabel,
+  getBooleanValue,
+  getFieldHelp,
+  getFieldLabel,
+  getFieldLayoutSizeClass,
+  getFieldOptions,
+  getFieldPath,
+  getFieldPlaceholder,
+  getJsonText,
+  getKeyValueRows,
+  getListRows,
+  getListItemType,
+  getNumberMax,
+  getNumberMin,
+  getNumberStep,
+  getNumberValue,
+  getSliderValue,
+  getStringMaxLength,
+  getTableColumns,
+  getTableRows,
+  getTextareaRows,
+  getTypeLabel,
+  getEnumListValue,
+  isAutocompleteField,
+  isBooleanField,
+  isButtonField,
+  isJsonField,
+  isListField,
+  isMultiSelectField,
+  isNumberField,
+  isOrderedMultiSelectField,
+  isOrderedOptionChecked,
+  isPathField,
+  isSelectField,
+  isSliderField,
+  isStringField,
+  isTextareaField,
+  normalizeSchemaGroups,
+  parseJsonInput,
+  removeKeyValueRow,
+  removeListRow,
+  removeTableRow,
+  setValueByPath,
+  toggleOrderedOption,
+  updateKeyValueRowKey,
+  updateKeyValueRowValue,
+  updateListRowValue,
+  updateTableCellValue,
+} from '@/utils/schemaFormCore'
 
-interface ListRow {
-  __rowKey: string
-  value: unknown
-}
-
-interface KeyValueRow {
-  __rowKey: string
-  key: string
-  value: string
-}
-
-interface TableRow {
-  __rowKey: string
-  [key: string]: unknown
-}
-
-interface TableColumn {
-  title: string
-  dataIndex: string
-  key: string
-}
+export type SchemaFormStatus =
+  | 'idle'
+  | 'loading'
+  | 'schema-error'
+  | 'validation-error'
+  | 'save-error'
+  | 'action-running'
+  | 'action-failed'
+  | 'readonly'
+  | 'disabled'
 
 const props = withDefaults(
   defineProps<{
@@ -435,12 +576,18 @@ const props = withDefaults(
     hideFields?: string[]
     actionLoadingId?: string
     layout?: 'single' | 'plugin-grid'
+    /** 表单状态：影响渲染与交互。 */
+    status?: SchemaFormStatus
+    /** 显式禁用所有字段（与 readonly 区别：disabled 不展示只读标签）。 */
+    disabled?: boolean
   }>(),
   {
     readonly: false,
     hideFields: () => [],
     actionLoadingId: '',
     layout: 'plugin-grid',
+    status: 'idle',
+    disabled: false,
   }
 )
 
@@ -448,10 +595,8 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: Record<string, any>): void
   (e: 'trigger-action', payload: { field: string; fieldSchema: SchemaFieldDefinition }): void
   (e: 'validation-change', errors: SchemaValidationErrorMap): void
+  (e: 'sensitive-dirty-change', dirty: boolean): void
 }>()
-
-const validationErrors = ref<SchemaValidationErrorMap>({})
-const autocompleteDrafts = ref<Record<string, string>>({})
 
 const listColumns = [
   { title: '值', dataIndex: 'value', key: 'value' },
@@ -464,408 +609,140 @@ const keyValueColumns = [
   { title: '操作', dataIndex: 'action', key: 'action' },
 ]
 
-const getFieldPath = (field: SchemaFieldDefinition) => field.key || field.name || ''
+/** 实际只读状态：readonly prop 或 status=readonly/disabled。 */
+const effectiveReadonly = computed(
+  () =>
+    props.readonly || props.status === 'readonly' || props.status === 'disabled' || props.disabled
+)
 
-const shouldRenderField = (field: SchemaFieldDefinition) =>
-  !field.hidden && !props.hideFields.includes(getFieldPath(field))
+/** 敏感字段草稿：DOM 中显示的值，初始为空串（不回显明文）。 */
+const sensitiveDrafts = ref<Record<string, string>>({})
 
-const normalizedGroups = computed<SchemaGroupDefinition[]>(() => {
-  if (!props.schema) {
-    return []
+/** 显式清空标志：用户点击“清空原值”按钮的字段集合。 */
+const sensitiveExplicitClears = ref<Set<string>>(new Set())
+
+/** 读取敏感字段在 DOM 中应显示的草稿值。 */
+const getSensitiveDraft = (field: string): string => sensitiveDrafts.value[field] ?? ''
+
+/**
+ * 用户在敏感字段中输入时：仅更新本地草稿，**不污染 modelValue**。
+ *
+ * 设计理由（对应 Lane 06 任务书第 3 条）：
+ * - 敏感字段的 modelValue 来自后端密文解密，前端不得把未加密的草稿写回 modelValue。
+ * - 保存时由父组件通过 `collectSensitiveSavePatch` 取出 patch 提交后端。
+ * - 用户输入触发 dirty，但不触发即时 emit('update:modelValue')。
+ */
+const handleSensitiveInput = (field: string, value: string) => {
+  sensitiveDrafts.value[field] = value
+  // 用户重新输入时撤销“显式清空”意图（替换优先于清空）。
+  if (value !== '' && sensitiveExplicitClears.value.has(field)) {
+    sensitiveExplicitClears.value.delete(field)
   }
-
-  if ('groups' in props.schema && Array.isArray((props.schema as GroupedSchemaDefinition).groups)) {
-    return (props.schema as GroupedSchemaDefinition).groups
-      .map(group => ({
-        ...group,
-        fields: (group.fields || []).filter(shouldRenderField),
-      }))
-      .filter(group => group.fields.length > 0)
-  }
-
-  const fields = Object.entries(props.schema as Record<string, SchemaFieldDefinition>)
-    .map(([field, fieldSchema]) => ({
-      ...fieldSchema,
-      key: field,
-    }))
-    .filter(shouldRenderField)
-
-  return [
-    {
-      key: 'default',
-      label: '',
-      fields,
-    },
-  ]
-})
-
-const cloneModel = () => JSON.parse(JSON.stringify(props.modelValue || {}))
-
-const showGroupTitle = (group: SchemaGroupDefinition) =>
-  normalizedGroups.value.length > 1 && Boolean(group.label || group.key)
-
-const getFieldLabel = (field: SchemaFieldDefinition) =>
-  field.label || field.title || field.description || getFieldPath(field)
-
-const getFieldPlaceholder = (field: SchemaFieldDefinition) =>
-  typeof field.placeholder === 'string' ? field.placeholder : undefined
-
-const getFieldOptions = (field: SchemaFieldDefinition) => {
-  if (Array.isArray(field.options) && field.options.length > 0) {
-    return field.options.map(item => {
-      if (item && typeof item === 'object' && 'value' in item) {
-        const option = item as { label?: unknown; value: unknown }
-        return {
-          label: String(option.label ?? option.value),
-          value: option.value,
-        }
-      }
-      return {
-        label: String(item),
-        value: item,
-      }
-    })
-  }
-  return (field.enum || []).map(item => ({
-    label: String(item),
-    value: item,
-  }))
+  emit('sensitive-dirty-change', hasSensitiveDirty())
 }
 
-const getOptionLabelByValue = (field: SchemaFieldDefinition, value: unknown) => {
-  const matched = getFieldOptions(field).find(option => option.value === value)
-  return matched ? String(matched.label) : undefined
-}
-
-const getOptionValueByLabel = (field: SchemaFieldDefinition, label: string) => {
-  const matched = getFieldOptions(field).find(option => String(option.label) === label)
-  return matched?.value
-}
-
-const normalizeOrderedMultiSelectValue = (field: SchemaFieldDefinition, value: unknown) => {
-  const selected = new Set(Array.isArray(value) ? value : [])
-  const normalized: unknown[] = []
-  for (const option of getFieldOptions(field)) {
-    if (selected.has(option.value)) {
-      normalized.push(option.value)
-    }
-  }
-  return normalized
-}
-
-const hasSelectableOptions = (field: SchemaFieldDefinition) =>
-  (Array.isArray(field.options) && field.options.length > 0) ||
-  (Array.isArray(field.enum) && field.enum.length > 0)
-
-const getActionLabel = (field: SchemaFieldDefinition) => {
-  const action = field.action || field.button
-  return action?.label || getFieldLabel(field)
-}
-
-const schemaFieldSizeAliases = {
-  small: '1/3',
-  half: '1/2',
-  medium: '2/3',
-  large: '1/1',
-} as const
-
-const schemaFieldSizeClasses = {
-  '1/1': '1-1',
-  '1/2': '1-2',
-  '1/3': '1-3',
-  '2/3': '2-3',
-  '1/4': '1-4',
-  '3/4': '3-4',
-} as const
-
-const schemaFieldSizes = [
-  ...Object.keys(schemaFieldSizeClasses),
-  ...Object.keys(schemaFieldSizeAliases),
-] as const
-
-const _isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefinition['size']> =>
-  typeof value === 'string' &&
-  schemaFieldSizes.includes(value as NonNullable<SchemaFieldDefinition['size']>)
-
-const normalizeFieldLayoutSize = (
-  size: SchemaFieldDefinition['size']
-): keyof typeof schemaFieldSizeClasses => {
-  if (typeof size !== 'string') {
-    return '1/3'
-  }
-
-  if (size in schemaFieldSizeClasses) {
-    return size as keyof typeof schemaFieldSizeClasses
-  }
-
-  if (size in schemaFieldSizeAliases) {
-    return schemaFieldSizeAliases[size as keyof typeof schemaFieldSizeAliases]
-  }
-
-  return '1/3'
-}
-
-const getFieldLayoutSize = (field: SchemaFieldDefinition) =>
-  schemaFieldSizeClasses[normalizeFieldLayoutSize(field.size)]
-
-const getValueByPath = (source: Record<string, any>, path: string) => {
-  if (!path) {
-    return undefined
-  }
-  return path.split('.').reduce<any>((current, key) => {
-    if (current == null || typeof current !== 'object') {
-      return undefined
-    }
-    return current[key]
-  }, source)
-}
-
-const setValueByPath = (source: Record<string, any>, path: string, value: unknown) => {
-  const keys = path.split('.')
-  let current: Record<string, any> = source
-
-  keys.forEach((key, index) => {
-    if (index === keys.length - 1) {
-      current[key] = value
-      return
-    }
-
-    if (!current[key] || typeof current[key] !== 'object' || Array.isArray(current[key])) {
-      current[key] = {}
-    }
-    current = current[key]
-  })
-}
-
-const getFieldValue = (field: string) => getValueByPath(props.modelValue || {}, field)
-
-const updateFieldValue = (field: string, value: unknown) => {
-  const nextValue = cloneModel()
-  setValueByPath(nextValue, field, value)
-  emit('update:modelValue', nextValue)
-}
-
-const syncAutocompleteDraft = (field: string, fieldSchema: SchemaFieldDefinition) => {
-  const rawValue = getFieldValue(field)
-  autocompleteDrafts.value[field] =
-    getOptionLabelByValue(fieldSchema, rawValue) ?? String(rawValue ?? '')
-}
-
-const getAutocompleteInputValue = (field: string, fieldSchema: SchemaFieldDefinition) => {
-  const current = autocompleteDrafts.value[field]
-  if (typeof current === 'string') {
-    return current
-  }
-  const rawValue = getFieldValue(field)
-  return getOptionLabelByValue(fieldSchema, rawValue) ?? String(rawValue ?? '')
-}
-
-const handleAutocompleteInput = (field: string, value: string) => {
-  autocompleteDrafts.value[field] = value
-}
-
-const handleAutocompleteSelect = (
-  field: string,
-  fieldSchema: SchemaFieldDefinition,
-  value: string
-) => {
-  const matchedLabel = getOptionLabelByValue(fieldSchema, value)
-  autocompleteDrafts.value[field] = matchedLabel ?? value
-  updateFieldValue(field, value)
-}
-
-const handleAutocompleteBlur = (field: string, fieldSchema: SchemaFieldDefinition) => {
-  const draftValue = autocompleteDrafts.value[field]
-  if (typeof draftValue !== 'string') {
-    syncAutocompleteDraft(field, fieldSchema)
+/**
+ * 用户显式点击“清空原值”：
+ * - 把草稿置空；
+ * - 把字段加入 explicitClears 集合，构造 patch 时写入空串 `""`（对应后端清空语义）。
+ *
+ * 不可清空的情况：
+ * - 字段已在 modelValue 中为空（原值已经是空），点击清空无意义 → 按钮 disabled。
+ */
+const clearSensitiveDraft = (field: string) => {
+  if (!canClearSensitive(field)) {
     return
   }
-
-  const trimmedValue = draftValue.trim()
-  if (!trimmedValue) {
-    updateFieldValue(field, '')
-    autocompleteDrafts.value[field] = ''
-    return
+  sensitiveDrafts.value[field] = ''
+  if (!sensitiveExplicitClears.value.has(field)) {
+    sensitiveExplicitClears.value = new Set([...sensitiveExplicitClears.value, field])
   }
-
-  const matchedByLabel = getOptionValueByLabel(fieldSchema, trimmedValue)
-  if (matchedByLabel !== undefined) {
-    updateFieldValue(field, matchedByLabel)
-    autocompleteDrafts.value[field] =
-      getOptionLabelByValue(fieldSchema, matchedByLabel) ?? trimmedValue
-    return
-  }
-
-  const matchedByValueLabel = getOptionLabelByValue(fieldSchema, trimmedValue)
-  if (matchedByValueLabel !== undefined) {
-    updateFieldValue(field, trimmedValue)
-    autocompleteDrafts.value[field] = matchedByValueLabel
-    return
-  }
-
-  updateFieldValue(field, trimmedValue)
-  autocompleteDrafts.value[field] = trimmedValue
+  emit('sensitive-dirty-change', hasSensitiveDirty())
 }
 
-const handleAutocompleteFocus = (field: string, fieldSchema: SchemaFieldDefinition) => {
-  syncAutocompleteDraft(field, fieldSchema)
+/** 判断敏感字段当前是否可清空：只有原值非空（modelValue 中有值）时才允许清空。 */
+const canClearSensitive = (field: string): boolean => {
+  if (effectiveReadonly.value) {
+    return false
+  }
+  const groups = normalizedGroups.value
+  const fieldSchema = groups.flatMap(g => g.fields).find(f => getFieldPath(f) === field)
+  if (!fieldSchema) {
+    return false
+  }
+  return !isSensitiveFieldCleared(currentModelValue.value, fieldSchema)
 }
 
-const toFiniteNumber = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-  return undefined
-}
-
-const getSchemaConstraint = (field: SchemaFieldDefinition, key: string) => field.constraints?.[key]
-
-const hasFieldAction = (field: SchemaFieldDefinition) =>
-  Boolean(
-    (field.action && typeof field.action === 'object') ||
-    (field.button && typeof field.button === 'object')
+/**
+ * 收集敏感字段的保存 patch。
+ *
+ * 父组件在“保存”按钮点击时调用此方法，获取需要发送给后端的敏感字段 patch：
+ * - 未触碰字段：不包含在 patch 中（后端保持原值）。
+ * - 输入新值字段：patch 中含新字符串（后端加密为新密文）。
+ * - 显式清空字段：patch 中含空串 `""`（后端加密为空密文）。
+ *
+ * 与后端契约严格对齐（见 START_SNAPSHOT.md 证据 1-3）。
+ */
+const collectSensitiveSavePatch = (): Record<string, any> =>
+  buildSensitiveSavePatch(
+    props.schema,
+    { ...sensitiveDrafts.value },
+    new Set(sensitiveExplicitClears.value)
   )
-const isButtonField = (field: SchemaFieldDefinition) =>
-  field.type === 'button' || field.type === 'action' || hasFieldAction(field)
-const isAutocompleteField = (field: SchemaFieldDefinition) =>
-  Boolean(field.allow_custom) && isStringField(field) && hasSelectableOptions(field)
-const isOrderedMultiSelectField = (field: SchemaFieldDefinition) =>
-  field.selection_mode === 'ordered' && field.type === 'multiselect'
-const isSelectField = (field: SchemaFieldDefinition) =>
-  field.type === 'select' ||
-  (!isAutocompleteField(field) && !isMultiSelectField(field) && hasSelectableOptions(field))
-const isMultiSelectField = (field: SchemaFieldDefinition) =>
-  !isOrderedMultiSelectField(field) &&
-  (field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field)))
-const isBooleanField = (field: SchemaFieldDefinition) =>
-  field.type === 'boolean' || field.type === 'bool'
-const isPathField = (field: SchemaFieldDefinition) =>
-  ['folder', 'file', 'path'].includes(field.type)
-const isStringField = (field: SchemaFieldDefinition) =>
-  ['string', 'str', 'uuid', 'datetime', 'related-id', 'readonly'].includes(field.type)
-const isSliderField = (field: SchemaFieldDefinition) => field.type === 'slider'
-const isNumberField = (field: SchemaFieldDefinition) =>
-  ['number', 'integer', 'int', 'float', 'slider'].includes(field.type)
-const isListField = (field: SchemaFieldDefinition) =>
-  field.type === 'list' || field.type.startsWith('list[')
-const isJsonField = (field: SchemaFieldDefinition) => field.type === 'json'
-const _isDictionaryField = (field: SchemaFieldDefinition) =>
-  field.type === 'dict' || field.type.startsWith('dict[')
-const isPasswordField = (field: SchemaFieldDefinition) =>
-  (isStringField(field) && field.format === 'password') || field.type === 'password'
-const isTextareaField = (field: SchemaFieldDefinition) =>
-  isJsonField(field) || (isStringField(field) && field.format === 'textarea')
 
-const getListItemType = (field: SchemaFieldDefinition) => {
-  if (field.item_type) {
-    return field.item_type
-  }
-  const matched = /^list\[(.+)]$/.exec(field.type)
-  return matched?.[1] || 'string'
+/**
+ * 构造可直接提交的完整表单 payload。
+ *
+ * 原始 model 中所有敏感字段先被移除，再只合入用户明确替换/清空的 patch，
+ * 避免未触碰的解密值被重新发送。
+ */
+const buildSavePayload = (): Record<string, any> =>
+  buildSchemaSavePayload(currentModelValue.value, props.schema, collectSensitiveSavePatch())
+
+/** 敏感字段是否存在未保存变更（用于 useUnsavedChangesGuard.isDirty）。 */
+const hasSensitiveDirty = (): boolean =>
+  hasSensitiveDirtyChange(
+    props.schema,
+    { ...sensitiveDrafts.value },
+    new Set(sensitiveExplicitClears.value)
+  )
+
+/**
+ * 保存成功 / 权威 reload 后调用：清空所有草稿与显式清空标志。
+ *
+ * 设计理由：reload 后 modelValue 已更新为新密文解密的明文，前端草稿失去意义；
+ * 若不清空，下次 DOM 渲染会显示陈旧草稿。
+ */
+const resetSensitiveDrafts = () => {
+  sensitiveDrafts.value = {}
+  sensitiveExplicitClears.value = new Set()
+  emit('sensitive-dirty-change', false)
 }
 
-const getBooleanValue = (field: string) => Boolean(getFieldValue(field))
-
-const getNumberValue = (field: string) => {
-  const value = getFieldValue(field)
-  if (typeof value === 'number') {
-    return value
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const numberValue = Number(value)
-    return Number.isFinite(numberValue) ? numberValue : undefined
-  }
-  return undefined
+const emitUpdate = (next: Record<string, any>) => {
+  emit('update:modelValue', next)
 }
 
-const getSliderValue = (field: string, fieldSchema: SchemaFieldDefinition) => {
-  const value = getNumberValue(field)
-  if (value !== undefined) {
-    return value
-  }
-  return getNumberMin(fieldSchema) ?? 0
-}
-
-const getEnumListValue = (field: string) => {
-  const value = getFieldValue(field)
-  return Array.isArray(value) ? value : []
-}
-
-const getOrderedMultiSelectValue = (field: string, fieldSchema: SchemaFieldDefinition) =>
-  normalizeOrderedMultiSelectValue(fieldSchema, getFieldValue(field))
-
-const isOrderedOptionChecked = (
-  field: string,
-  fieldSchema: SchemaFieldDefinition,
-  index: number
-) => {
-  const options = getFieldOptions(fieldSchema)
-  const current = getOrderedMultiSelectValue(field, fieldSchema)
-  return current.includes(options[index]?.value)
-}
-
-const toggleOrderedOption = (field: string, fieldSchema: SchemaFieldDefinition, index: number) => {
-  const options = getFieldOptions(fieldSchema)
-  const current = getOrderedMultiSelectValue(field, fieldSchema)
-  const target = options[index]?.value
-  const exists = current.includes(target)
-  const next = exists
-    ? current.filter(item => item !== target)
-    : normalizeOrderedMultiSelectValue(fieldSchema, [...current, target])
-  updateFieldValue(field, next)
-}
-
-const getStringMaxLength = (field: SchemaFieldDefinition) =>
-  toFiniteNumber(getSchemaConstraint(field, 'max_length'))
-
-const getTextareaRows = (field: SchemaFieldDefinition) => {
-  const rows = toFiniteNumber(field.rows)
-  return rows && rows > 0 ? rows : 4
-}
-
-const getNumberMin = (field: SchemaFieldDefinition) => {
-  if (typeof field.min === 'number') {
-    return field.min
-  }
-  const ge = toFiniteNumber(getSchemaConstraint(field, 'ge'))
-  if (ge !== undefined) {
-    return ge
-  }
-  return toFiniteNumber(getSchemaConstraint(field, 'gt'))
-}
-
-const getNumberMax = (field: SchemaFieldDefinition) => {
-  if (typeof field.max === 'number') {
-    return field.max
-  }
-  const le = toFiniteNumber(getSchemaConstraint(field, 'le'))
-  if (le !== undefined) {
-    return le
-  }
-  return toFiniteNumber(getSchemaConstraint(field, 'lt'))
-}
-
-const getNumberStep = (field: SchemaFieldDefinition) => {
-  if (typeof field.step === 'number') {
-    return field.step
-  }
-  const multipleOf = toFiniteNumber(getSchemaConstraint(field, 'multiple_of'))
-  if (multipleOf && multipleOf > 0) {
-    return multipleOf
-  }
-  return field.type === 'integer' || field.type === 'int' ? 1 : undefined
-}
-
-const getPathKind = (field: SchemaFieldDefinition) => {
-  if (field.path_kind === 'folder' || field.type === 'folder') {
-    return 'folder'
-  }
-  return 'file'
-}
+const {
+  normalizedGroups,
+  validationErrors,
+  currentModelValue,
+  getFieldValue,
+  showGroupTitle,
+  getAutocompleteInputValue,
+  handleAutocompleteInput,
+  handleAutocompleteSelect,
+  handleAutocompleteBlur,
+  handleAutocompleteFocus,
+  updateFieldValue,
+  validate,
+  setFieldError,
+} = useSchemaFormModel({
+  modelValue: () => props.modelValue,
+  schema: () => props.schema,
+  hideFields: () => props.hideFields,
+  onValidationChange: errors => emit('validation-change', errors),
+})
 
 const hasElectronPathPicker = () => {
   if (typeof window === 'undefined') {
@@ -881,35 +758,29 @@ const pickPath = async (field: string, fieldSchema: SchemaFieldDefinition) => {
   if (!hasElectronPathPicker()) {
     return
   }
-
-  if (getPathKind(fieldSchema) === 'folder') {
+  const kind =
+    fieldSchema.path_kind === 'folder' || fieldSchema.type === 'folder' ? 'folder' : 'file'
+  if (kind === 'folder') {
     const selected = await window.electronAPI.selectFolder()
     if (selected) {
-      updateFieldValue(field, selected)
+      updateFieldValue(field, selected, emitUpdate)
     }
     return
   }
-
   const selected = await window.electronAPI.selectFile(fieldSchema.filters)
   if (Array.isArray(selected) && selected[0]) {
-    updateFieldValue(field, selected[0])
+    updateFieldValue(field, selected[0], emitUpdate)
   }
 }
 
-const getJsonText = (field: string) => JSON.stringify(getFieldValue(field) ?? {}, null, 2)
-
 const handleJsonBlur = (field: string, event: FocusEvent) => {
   const value = String((event.target as HTMLTextAreaElement).value || '')
-  try {
-    const parsed = value.trim() ? JSON.parse(value) : {}
-    updateFieldValue(field, parsed)
-  } catch {
-    validationErrors.value = {
-      ...validationErrors.value,
-      [field]: 'JSON 格式无效',
-    }
-    emit('validation-change', validationErrors.value)
+  const { value: parsed, error } = parseJsonInput(value)
+  if (error) {
+    setFieldError(field, error)
+    return
   }
+  updateFieldValue(field, parsed, emitUpdate)
 }
 
 const flushActiveField = async () => {
@@ -928,414 +799,71 @@ const handleButtonClick = async (field: string, fieldSchema: SchemaFieldDefiniti
   emit('trigger-action', { field, fieldSchema })
 }
 
-const normalizeListValueByType = (value: unknown, itemType?: string) => {
-  if (itemType === 'number') {
-    if (typeof value === 'number') {
-      return value
-    }
-    const numberValue = Number(value)
-    return Number.isFinite(numberValue) ? numberValue : 0
-  }
-  if (itemType === 'boolean') {
-    return Boolean(value)
-  }
-  return String(value ?? '')
+/** 切换 ordered-multiselect 字段中指定索引的 option 选中状态。 */
+const toggleOrderedOptionAt = (field: SchemaFieldDefinition, index: number) => {
+  const path = getFieldPath(field)
+  const nextValue = toggleOrderedOption(field, getFieldValue(path), index)
+  const next = cloneModel(currentModelValue.value)
+  setValueByPath(next, path, nextValue)
+  emit('update:modelValue', next)
 }
 
-const getListRows = (field: string): ListRow[] => {
-  const value = getFieldValue(field)
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.map((item, index) => ({
-    __rowKey: `${field}-${index}`,
-    value: item,
-  }))
-}
-
-const addListRow = (field: string, itemType?: string) => {
-  const value = getFieldValue(field)
-  const list = Array.isArray(value) ? [...value] : []
-  if (itemType === 'number') {
-    list.push(0)
-  } else if (itemType === 'boolean') {
-    list.push(false)
-  } else {
-    list.push('')
-  }
-  updateFieldValue(field, list)
-}
-
-const removeListRow = (field: string, index: number) => {
-  const value = getFieldValue(field)
-  const list = Array.isArray(value) ? [...value] : []
-  list.splice(index, 1)
-  updateFieldValue(field, list)
-}
-
-const updateListRowValue = (field: string, index: number, value: unknown, itemType?: string) => {
-  const raw = getFieldValue(field)
-  const list = Array.isArray(raw) ? [...raw] : []
-  list[index] = normalizeListValueByType(value, itemType)
-  updateFieldValue(field, list)
-}
-
-const getKeyValueRows = (field: string): KeyValueRow[] => {
-  const value = getFieldValue(field)
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return []
-  }
-  return Object.entries(value as Record<string, unknown>).map(([key, item], index) => ({
-    __rowKey: `${field}-${index}`,
-    key,
-    value: String(item ?? ''),
-  }))
-}
-
-const addKeyValueRow = (field: string) => {
-  const value = getFieldValue(field)
-  const obj =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? { ...(value as Record<string, unknown>) }
-      : {}
-
-  let idx = 1
-  let key = `key_${idx}`
-  while (Object.prototype.hasOwnProperty.call(obj, key)) {
-    idx += 1
-    key = `key_${idx}`
-  }
-
-  obj[key] = ''
-  updateFieldValue(field, obj)
-}
-
-const removeKeyValueRow = (field: string, key: string) => {
-  const value = getFieldValue(field)
-  const obj =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? { ...(value as Record<string, unknown>) }
-      : {}
-  delete obj[key]
-  updateFieldValue(field, obj)
-}
-
-const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => {
-  const value = getFieldValue(field)
-  const obj =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? { ...(value as Record<string, unknown>) }
-      : {}
-  const finalKey = newKey.trim()
-  if (!finalKey || finalKey === oldKey) {
-    return
-  }
-  obj[finalKey] = obj[oldKey]
-  delete obj[oldKey]
-  updateFieldValue(field, obj)
-}
-
-const updateKeyValueRowValue = (field: string, key: string, value: string) => {
-  const current = getFieldValue(field)
-  const obj =
-    current && typeof current === 'object' && !Array.isArray(current)
-      ? { ...(current as Record<string, unknown>) }
-      : {}
-  obj[key] = value
-  updateFieldValue(field, obj)
-}
-
-const getTableRows = (field: string): TableRow[] => {
-  const value = getFieldValue(field)
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.map((item, index) => ({
-    __rowKey: `${field}-${index}`,
-    ...(typeof item === 'object' && item ? item : {}),
-  }))
-}
-
-const getTableColumns = (field: string): TableColumn[] => {
-  const rows = getTableRows(field)
-  const keys = new Set<string>()
-
-  rows.forEach(row => {
-    Object.keys(row).forEach(key => {
-      if (key !== '__rowKey') {
-        keys.add(key)
-      }
-    })
-  })
-
-  if (keys.size === 0) {
-    keys.add('col_1')
-  }
-
-  const columns: TableColumn[] = Array.from(keys).map(key => ({
-    title: key,
-    dataIndex: key,
-    key,
-  }))
-
-  columns.push({
-    title: '操作',
-    dataIndex: 'action',
-    key: 'action',
-  })
-
-  return columns
-}
-
-const addTableRow = (field: string) => {
-  const rows = getTableRows(field).map(({ __rowKey, ...row }) => row)
-  const columns = getTableColumns(field)
-  const row: Record<string, unknown> = {}
-  columns.forEach(col => {
-    if (col.key !== 'action') {
-      row[col.key] = ''
-    }
-  })
-  rows.push(row)
-  updateFieldValue(field, rows)
-}
-
-const removeTableRow = (field: string, index: number) => {
-  const rows = getTableRows(field).map(({ __rowKey, ...row }) => row)
-  rows.splice(index, 1)
-  updateFieldValue(field, rows)
-}
-
-const addTableColumn = (field: string) => {
-  const rows = getTableRows(field).map(({ __rowKey, ...row }) => ({ ...row }))
-  const columns = getTableColumns(field)
-  let idx = 1
-  let nextKey = `col_${idx}`
-  const columnKeys = new Set(columns.filter(col => col.key !== 'action').map(col => col.key))
-  while (columnKeys.has(nextKey)) {
-    idx += 1
-    nextKey = `col_${idx}`
-  }
-  if (rows.length === 0) {
-    rows.push({ [nextKey]: '' })
-  } else {
-    rows.forEach(row => {
-      row[nextKey] = ''
-    })
-  }
-  updateFieldValue(field, rows)
-}
-
-const updateTableCellValue = (field: string, index: number, key: string, value: string) => {
-  const rows = getTableRows(field).map(({ __rowKey, ...row }) => ({ ...row }))
-  if (!rows[index]) {
-    rows[index] = {}
-  }
-  rows[index][key] = value
-  updateFieldValue(field, rows)
-}
-
-const isValidHttpUrl = (value: string) => {
-  try {
-    const parsed = new URL(value)
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return '仅支持 http 或 https 地址'
-    }
-    return ''
-  } catch {
-    return 'URL 格式无效'
-  }
-}
-
-const validateFieldValue = (fieldPath: string, field: SchemaFieldDefinition, value: unknown) => {
-  if (isButtonField(field)) {
-    return ''
-  }
-
-  if (value === undefined || value === null || value === '') {
-    return field.required ? '该字段为必填项' : ''
-  }
-
-  if (isStringField(field)) {
-    const text = String(value)
-    const minLength = toFiniteNumber(getSchemaConstraint(field, 'min_length'))
-    const maxLength = toFiniteNumber(getSchemaConstraint(field, 'max_length'))
-    const pattern = getSchemaConstraint(field, 'pattern')
-
-    if (minLength !== undefined && text.length < minLength) {
-      return `至少需要 ${minLength} 个字符`
-    }
-    if (maxLength !== undefined && text.length > maxLength) {
-      return `最多允许 ${maxLength} 个字符`
-    }
-    if (typeof pattern === 'string' && pattern) {
-      try {
-        if (!new RegExp(pattern).test(text)) {
-          return '内容不符合格式要求'
-        }
-      } catch {
-        return ''
-      }
-    }
-    if (field.format === 'url') {
-      return isValidHttpUrl(text)
-    }
-    return ''
-  }
-
-  if (isNumberField(field)) {
-    const numberValue = toFiniteNumber(value)
-    if (numberValue === undefined) {
-      return '请输入有效数字'
-    }
-    const min = getNumberMin(field)
-    const max = getNumberMax(field)
-    if (min !== undefined && numberValue < min) {
-      return `数值不能小于 ${min}`
-    }
-    if (max !== undefined && numberValue > max) {
-      return `数值不能大于 ${max}`
-    }
-    return ''
-  }
-
-  if (isOrderedMultiSelectField(field) || isMultiSelectField(field) || isListField(field)) {
-    if (!Array.isArray(value)) {
-      return '该字段需要列表值'
-    }
-    return ''
-  }
-
-  if (isJsonField(field)) {
-    if (typeof value !== 'object') {
-      return '该字段需要 JSON 对象'
-    }
-    return ''
-  }
-
-  if (field.type === 'key_value') {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return '该字段需要键值对象'
-    }
-    return ''
-  }
-
-  if (field.type === 'table') {
-    if (!Array.isArray(value)) {
-      return '该字段需要表格数组'
-    }
-    return ''
-  }
-
-  return ''
-}
-
-const collectValidationErrors = () => {
-  const errors: SchemaValidationErrorMap = {}
-  normalizedGroups.value.forEach(group => {
-    group.fields.forEach(field => {
-      const fieldPath = getFieldPath(field)
-      const error = validateFieldValue(fieldPath, field, getFieldValue(fieldPath))
-      if (error) {
-        errors[fieldPath] = error
-      }
-    })
-  })
-  return errors
-}
-
-const validate = () => {
-  const errors = collectValidationErrors()
-  validationErrors.value = errors
-  emit('validation-change', errors)
-  return {
-    valid: Object.keys(errors).length === 0,
-    errors,
-  }
-}
-
-const getFieldHelp = (field: SchemaFieldDefinition) => {
-  const fieldPath = getFieldPath(field)
-  if (validationErrors.value[fieldPath]) {
-    return validationErrors.value[fieldPath]
-  }
-  if (typeof field.help === 'string' && field.help.trim()) {
-    return field.help
-  }
-  if (
-    typeof field.description === 'string' &&
-    field.description.trim() &&
-    field.description !== getFieldLabel(field)
-  ) {
-    return field.description
-  }
-  if (Array.isArray(field.examples) && field.examples.length > 0) {
-    return `示例：${field.examples.map(item => String(item)).join('、')}`
-  }
-  return undefined
-}
-
-const getTypeLabel = (field: SchemaFieldDefinition) => {
-  if (isButtonField(field)) {
-    return '动作'
-  }
-  if (isSelectField(field)) {
-    return '枚举'
-  }
-  if (isOrderedMultiSelectField(field) || isMultiSelectField(field)) {
-    return '多选'
-  }
-  if (isSliderField(field)) {
-    return '滑动条'
-  }
-  if (isPathField(field)) {
-    return getPathKind(field) === 'folder' ? '文件夹' : '文件'
-  }
-  if (isPasswordField(field)) {
-    return '密码'
-  }
-  if (isStringField(field)) {
-    return '文本'
-  }
-  if (isNumberField(field)) {
-    return '数字'
-  }
-  if (isBooleanField(field)) {
-    return '布尔'
-  }
-  if (isListField(field)) {
-    return '列表'
-  }
-  if (field.type === 'key_value') {
-    return '键值表'
-  }
-  if (field.type === 'table') {
-    return '表格'
-  }
-  if (isJsonField(field)) {
-    return 'JSON'
-  }
-  return field.type
-}
-
+/**
+ * 监听 modelValue 外部变更（如重新加载）：重置敏感字段草稿为空串，
+ * 避免显示陈旧草稿；同时确保新增的敏感字段也有空草稿。
+ *
+ * 注意：仅在 schema 首次出现某敏感字段时初始化空草稿；
+ * 已存在的草稿**不被覆盖**，避免破坏用户正在输入的内容。
+ * 真正的 reload 清理由父组件显式调用 `resetSensitiveDrafts()` 完成。
+ */
 watch(
-  () => [props.modelValue, props.schema],
+  () => props.modelValue,
   () => {
-    normalizedGroups.value.forEach(group => {
+    const groups = normalizeSchemaGroups(props.schema, props.hideFields)
+    groups.forEach(group => {
       group.fields.forEach(field => {
-        if (isAutocompleteField(field)) {
-          syncAutocompleteDraft(getFieldPath(field), field)
+        if (isSensitiveField(field)) {
+          const path = getFieldPath(field)
+          // 仅在草稿不存在时初始化；用户正在输入时不覆盖。
+          if (!(path in sensitiveDrafts.value)) {
+            sensitiveDrafts.value[path] = ''
+          }
         }
       })
     })
-    validationErrors.value = collectValidationErrors()
-    emit('validation-change', validationErrors.value)
   },
   { deep: true, immediate: true }
 )
 
 defineExpose({
   validate,
+  /** 暴露 collectErrors 便于外部触发静默校验。 */
+  collectErrors: () => collectValidationErrors(normalizedGroups.value, currentModelValue.value),
+  /**
+   * 收集敏感字段的保存 patch（Lane 06 任务书第 2 条）：
+   * - 未触碰字段 → 省略（保持原值）。
+   * - 输入新值 → 替换。
+   * - 显式清空 → 传空串 `""`。
+   *
+   * 父组件在“保存”按钮调用此方法获取敏感字段 patch，与非敏感字段 patch 合并后送后端。
+   */
+  collectSensitiveSavePatch,
+  /**
+   * 返回可直接提交的完整表单 payload：保留非敏感字段，省略未触碰敏感字段，
+   * 仅包含显式替换或清空的敏感值。
+   */
+  buildSavePayload,
+  /**
+   * 敏感字段是否存在未保存变更。
+   * 父组件用于 `useUnsavedChangesGuard.isDirty`。
+   */
+  hasSensitiveDirty,
+  /**
+   * 保存成功 / 权威 reload 后清空所有敏感字段草稿与显式清空标志。
+   *
+   * 必须在父组件完成 reload 后调用，否则下次渲染会显示陈旧草稿。
+   */
+  resetSensitiveDrafts,
 })
 </script>
 
@@ -1350,6 +878,10 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.schema-group-readonly {
+  opacity: 0.92;
 }
 
 .schema-group-title {
@@ -1392,6 +924,37 @@ defineExpose({
   grid-column: span 12;
 }
 
+/* 插件详情页（plugin-page 容器内）：iPad 设置式双栏瀑布，取代 12 列等高行网格。
+   multi-column 让高矮卡片在各自列内独立纵向堆叠，矮卡下方不再随行高留白；
+   卡片 inline-block + width:100% + break-inside:avoid 防止跨列断裂。
+   min-width: 0px 恒真，仅表达"位于 plugin-page 容器内"这一条件本身；
+   其他 SchemaForm 使用方（无 plugin-page 祖先容器）保持上方 12 列网格不变。 */
+@container plugin-page (min-width: 0px) {
+  .schema-form-grid {
+    display: block;
+    columns: 1;
+    column-gap: var(--v6-space-3, 12px);
+    /* 列内间距由卡片 margin-bottom 提供，末尾多出的一档用负 margin 抵消，
+       保持组间节奏与原 gap 布局一致 */
+    margin-block-end: calc(-1 * var(--v6-space-3, 12px));
+  }
+
+  .schema-form-grid .schema-item {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
+    break-inside: avoid;
+    margin-bottom: var(--v6-space-3, 12px);
+  }
+}
+
+/* 宽容器（>980px）双栏；更窄时沿用上方单列堆叠，阈值切换只改列数，不引入过渡 */
+@container plugin-page (min-width: 981px) {
+  .schema-form-grid {
+    columns: 2;
+  }
+}
+
 .schema-field-head {
   margin-bottom: 8px;
 }
@@ -1426,6 +989,25 @@ defineExpose({
 .schema-path-field :deep(.ant-input) {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.schema-sensitive-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+
+.schema-sensitive-field :deep(.ant-input-password) {
+  width: 100%;
+}
+
+.schema-sensitive-field :deep(.ant-btn-link) {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .schema-slider-field {
@@ -1506,6 +1088,27 @@ defineExpose({
   line-height: 1.4;
 }
 
+.schema-form-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.schema-form-banner-error {
+  background: var(--ant-color-error-bg);
+  color: var(--ant-color-error);
+  border: 1px solid var(--ant-color-error-border);
+}
+
+.schema-form-banner-loading {
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text-secondary);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
 @media (max-width: 960px) {
   .schema-form-grid {
     grid-template-columns: 1fr;
@@ -1521,6 +1124,16 @@ defineExpose({
 
   .schema-slider-number {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schema-ordered-option {
+    transition: none;
+  }
+
+  .schema-ordered-option:not(:disabled):hover {
+    transform: none;
   }
 }
 </style>

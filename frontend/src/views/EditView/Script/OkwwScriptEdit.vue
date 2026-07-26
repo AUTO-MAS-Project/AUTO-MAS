@@ -1,35 +1,14 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditPageHeader
+    title="ok-ww 脚本配置"
+    subtitle="配置游戏托管、启动参数与日志判定"
+    type-label="ok-ww"
+    type-color="blue"
+    @back="handleCancel"
+  />
 
   <div class="script-edit-content">
-    <a-card title="ok-ww 脚本配置" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag color="blue" class="type-tag">ok-ww</a-tag>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
@@ -286,12 +265,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
@@ -670,3 +646,4 @@ onMounted(loadScript)
   }
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

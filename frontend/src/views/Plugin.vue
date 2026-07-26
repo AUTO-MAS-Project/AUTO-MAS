@@ -1,410 +1,128 @@
-﻿<template>
+<template>
   <div class="plugin-page">
-    <div class="scripts-header">
-      <div class="header-left">
-        <h1 class="page-title">插件管理</h1>
-      </div>
-      <div class="header-actions">
-        <a-space>
-          <a-button :loading="loading" @click="fetchData">刷新</a-button>
-          <a-button type="primary" @click="openAddModal">新增实例</a-button>
-          <a-button :loading="reloadingAll" @click="reloadAll">重载全部</a-button>
-        </a-space>
-      </div>
-    </div>
-
-    <a-row :gutter="12" class="main-layout">
-      <a-col flex="none" class="plugin-list-col">
-        <div class="left-panel">
-          <a-card :bordered="false" class="section-card list-card">
-            <template #title>
-              <div class="list-card-title">
-                <span>插件实例</span>
-                <a-tag>v{{ version }}</a-tag>
-                <a-button size="small" type="link" @click="createGroup">+ 新建分组</a-button>
-              </div>
-            </template>
-
-            <a-input
-              v-model:value="keyword"
-              placeholder="搜索实例ID/名称/插件"
-              allow-clear
-              class="search-box"
-            />
-
-            <div class="instance-list">
-              <a-empty v-if="filteredInstances.length === 0" description="暂无实例" />
-              <div
-                v-for="group in groupedInstances"
-                :key="group.key"
-                class="instance-group"
-                :data-group="group.key"
-              >
-                <div class="group-header">
-                  <span class="group-name">{{ group.label }}</span>
-                  <a-dropdown v-if="group.key !== ''" :trigger="['click']">
-                    <a-button size="small" type="text" class="group-menu-btn">...</a-button>
-                    <template #overlay>
-                      <a-menu @click="handleGroupMenuClick($event, group.key)">
-                        <a-menu-item key="rename">重命名分组</a-menu-item>
-                        <a-menu-item key="delete" danger>删除分组</a-menu-item>
-                      </a-menu>
-                    </template>
-                  </a-dropdown>
-                </div>
-                <draggable
-                  :model-value="group.items"
-                  item-key="id"
-                  :animation="200"
-                  :disabled="isInstanceSearchActive"
-                  ghost-class="instance-ghost"
-                  chosen-class="instance-chosen"
-                  drag-class="instance-drag"
-                  handle=".drag-handle"
-                  group="plugins"
-                  @end="(evt: any) => onDragEnd(evt, group.key)"
-                >
-                  <template #item="{ element }">
-                    <div
-                      class="instance-item"
-                      :class="{ active: selectedInstanceId === element.id }"
-                      :data-id="element.id"
-                      role="button"
-                      tabindex="0"
-                      @click="selectInstance(element.id)"
-                      @keydown.enter.prevent="selectInstance(element.id)"
-                      @keydown.space.prevent="selectInstance(element.id)"
-                    >
-                      <span class="drag-handle" title="拖拽排序" @click.stop>
-                        <span class="drag-dots" />
-                      </span>
-                      <span
-                        class="status-dot"
-                        :style="{ background: getStatusDotColor(element) }"
-                      />
-                      <span class="instance-name">
-                        {{ element.name || element.id }}
-                      </span>
-                      <a-tag v-if="element.system" color="blue" class="system-tag">系统</a-tag>
-                      <span class="instance-switch" @click.stop>
-                        <a-switch
-                          size="small"
-                          :checked="getInstanceSwitchChecked(element)"
-                          :loading="togglingInstanceId === element.id"
-                          :disabled="element.locked || togglingInstanceId === element.id"
-                          @update:checked="(val: boolean) => toggleInstanceEnabled(element, val)"
-                        />
-                      </span>
-                    </div>
-                  </template>
-                </draggable>
-              </div>
-            </div>
-          </a-card>
-        </div>
-      </a-col>
-
-      <a-col flex="1 1 0" class="plugin-detail-col">
-        <a-card :bordered="false" class="section-card detail-card">
-          <template #title>
-            <div class="detail-title">
-              <span>{{ selectedInstance ? selectedInstance.plugin : '实例配置' }}</span>
-            </div>
-          </template>
-          <template #extra>
-            <a-space v-if="selectedInstance" wrap>
-              <a-button type="primary" :loading="submitting" @click="submitEdit">
-                保存配置
-              </a-button>
-              <a-button :disabled="!isDirty" @click="resetEdit">重置改动</a-button>
-              <a-button @click="openJsonPreview">查看当前 JSON</a-button>
-              <a-button @click="reloadInstance(editForm.instanceId)">重载实例</a-button>
-              <a-button @click="reloadPlugin(editForm.plugin)">重载同插件</a-button>
-              <a-popconfirm
-                :disabled="!canUninstallSelectedPlugin || uninstallingPlugin === editForm.plugin"
-                :title="`确认卸载插件包 ${selectedPluginPackageName || editForm.plugin}？相关实例配置不会自动删除。`"
-                ok-text="卸载"
-                cancel-text="取消"
-                @confirm="uninstallPluginPackage(editForm.plugin)"
-              >
-                <a-button
-                  danger
-                  :disabled="!canUninstallSelectedPlugin"
-                  :loading="uninstallingPlugin === editForm.plugin"
-                >
-                  卸载插件
-                </a-button>
-              </a-popconfirm>
-              <a-popconfirm
-                title="确认删除该实例？"
-                :disabled="Boolean(selectedInstance?.locked)"
-                @confirm="deleteInstance(editForm.instanceId)"
-              >
-                <a-button danger :disabled="Boolean(selectedInstance?.locked)">删除实例</a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
-
-          <div class="detail-scroll" @wheel.stop>
-            <template v-if="selectedInstance">
-              <a-alert
-                v-if="isDirty"
-                type="warning"
-                show-icon
-                message="当前有未保存改动"
-                style="margin-bottom: 12px"
-              />
-
-              <a-alert
-                v-if="currentSchemaError"
-                type="error"
-                show-icon
-                :message="`Schema 加载失败：${currentSchemaError}`"
-                style="margin-bottom: 12px"
-              />
-
-              <a-alert
-                v-if="!currentSchemaError && activeSchemaEntries.length === 0"
-                type="warning"
-                show-icon
-                message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
-                style="margin-bottom: 12px"
-              />
-
-              <a-alert
-                v-if="hasSelectedPluginServiceDeclarations"
-                class="service-alert"
-                type="info"
-                show-icon
-                message="服务声明"
-              >
-                <template #description>
-                  <div class="service-declaration-list">
-                    <div
-                      v-for="row in selectedServiceDeclarationRows"
-                      :key="row.key"
-                      class="service-declaration-row"
-                    >
-                      <a-tag :color="row.color" class="service-declaration-label">
-                        {{ row.label }}
-                      </a-tag>
-                      <span class="service-declaration-value">{{ row.value }}</span>
-                    </div>
-                  </div>
-                </template>
-              </a-alert>
-
-              <a-card
-                v-if="selectedPluginActions.length > 0"
-                size="small"
-                class="plugin-action-card"
-                title="插件动作"
-              >
-                <a-space wrap>
-                  <a-button
-                    v-for="item in selectedPluginActions"
-                    :key="item.id"
-                    type="primary"
-                    :loading="pluginActionLoadingId === item.id"
-                    :disabled="Boolean(pluginActionLoadingId)"
-                    @click="triggerPluginAction(item)"
-                  >
-                    {{ item.label }}
-                  </a-button>
-                </a-space>
-              </a-card>
-
-              <a-card
-                v-if="selectedRuntimeState"
-                size="small"
-                class="runtime-observer-card"
-                title="运行态观测"
-              >
-                <a-descriptions :column="2" size="small" bordered>
-                  <a-descriptions-item label="运行状态">
-                    <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
-                      {{ getStatusLabel(selectedRuntimeState.status) }}
-                    </a-tag>
-                  </a-descriptions-item>
-                  <a-descriptions-item label="生命周期阶段">
-                    <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
-                      {{ getPhaseLabel(selectedRuntimeState.lifecycle_phase) }}
-                    </a-tag>
-                  </a-descriptions-item>
-                  <a-descriptions-item label="最近重载原因">
-                    {{ selectedRuntimeState.last_reload_reason || '-' }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="最近错误">
-                    {{ selectedRuntimeState.last_error || '-' }}
-                  </a-descriptions-item>
-                </a-descriptions>
-              </a-card>
-
-              <a-form layout="vertical">
-                <a-form-item label="实例名称">
-                  <a-input v-model:value="editForm.name" placeholder="输入实例名称" />
-                </a-form-item>
-
-                <a-card size="small" title="插件配置" class="editor-card">
-                  <template v-if="activeSchemaEntries.length > 0">
-                    <SchemaForm
-                      ref="schemaFormRef"
-                      v-model="schemaFormModel"
-                      :schema="activeSchema"
-                      layout="plugin-grid"
-                      :hide-fields="hiddenSchemaFields"
-                      :action-loading-id="pluginActionLoadingId"
-                      @trigger-action="
-                        ({ field, fieldSchema }) =>
-                          triggerSchemaButtonAction(field, fieldSchema as PluginSchemaField)
-                      "
-                      @validation-change="handleSchemaValidationChange"
-                    />
-                  </template>
-                  <template v-else>
-                    <a-form-item
-                      label="配置 JSON（Schema 不可用时可直接编辑）"
-                      style="margin-bottom: 0"
-                    >
-                      <a-textarea
-                        v-model:value="editForm.configText"
-                        :rows="12"
-                        placeholder="请输入 JSON 对象配置"
-                      />
-                    </a-form-item>
-                  </template>
-                </a-card>
-              </a-form>
-            </template>
-
-            <a-empty v-else description="请选择左侧实例进行编辑" />
-          </div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <a-modal
-      v-model:open="addModalVisible"
-      title="新增插件实例"
-      :confirm-loading="submitting"
-      width="1040px"
-      :ok-button-props="{ disabled: !addForm.plugin }"
-      @ok="submitAdd"
+    <PageHeader
+      class="plugin-page-header"
+      title="插件管理"
+      subtitle="管理插件实例、运行状态与声明式配置"
+      compact
+      transparent
     >
-      <div class="add-plugin-modal-body">
-        <a-row :gutter="12" class="add-plugin-layout">
-          <a-col :span="15" class="add-plugin-layout-col">
-            <div class="add-plugin-picker-panel">
-              <div class="add-plugin-panel-header">
-                <div>
-                  <div class="add-plugin-panel-title">选择插件</div>
-                  <div class="add-plugin-panel-hint">
-                    按插件名、服务声明或路由信息搜索，快速定位目标插件
-                  </div>
-                </div>
-                <a-tag color="blue">共 {{ discoveredPluginOptions.length }} 个</a-tag>
-              </div>
-
-              <a-input
-                v-model:value="addPluginKeyword"
-                allow-clear
-                placeholder="搜索插件名 / 服务 / 路由"
-                class="add-plugin-search"
-              />
-
-              <div class="add-plugin-picker-summary">
-                <span>筛选结果 {{ filteredDiscoveredPluginOptions.length }} 个</span>
-                <span v-if="addPluginKeyword.trim()">关键词：{{ addPluginKeyword.trim() }}</span>
-              </div>
-
-              <div class="plugin-option-grid">
-                <a-empty
-                  v-if="filteredDiscoveredPluginOptions.length === 0"
-                  :description="addPluginEmptyDescription"
-                />
-                <button
-                  v-for="item in filteredDiscoveredPluginOptions"
-                  :key="item.name"
-                  type="button"
-                  class="plugin-option-card"
-                  :class="{ active: addForm.plugin === item.name }"
-                  @click="addForm.plugin = item.name"
-                >
-                  <div class="plugin-option-card-head">
-                    <span class="plugin-option-name">{{ item.name }}</span>
-                    <a-tag v-if="item.instanceCount > 0" color="default">
-                      {{ item.instanceCount }} 实例
-                    </a-tag>
-                  </div>
-                  <div class="plugin-option-description">{{ item.description }}</div>
-                  <a-space class="plugin-option-tags" size="[0, 8]" wrap>
-                    <a-tag v-if="item.serviceCount > 0" color="green">
-                      服务 {{ item.serviceCount }}
-                    </a-tag>
-                    <a-tag v-if="item.routeCount > 0" color="geekblue">
-                      路由 {{ item.routeCount }}
-                    </a-tag>
-                    <a-tag v-if="item.schemaError" color="red">Schema 异常</a-tag>
-                  </a-space>
-                </button>
-              </div>
-            </div>
-          </a-col>
-
-          <a-col :span="9" class="add-plugin-layout-col">
-            <a-card size="small" title="实例信息" class="add-plugin-side-card">
-              <a-form layout="vertical">
-                <a-form-item label="已选插件" required>
-                  <a-input :value="addForm.plugin" readonly placeholder="请先选择左侧插件" />
-                </a-form-item>
-                <a-form-item label="实例名称">
-                  <a-input v-model:value="addForm.name" placeholder="可选" />
-                </a-form-item>
-                <a-form-item label="启用">
-                  <a-switch v-model:checked="addForm.enabled" />
-                </a-form-item>
-              </a-form>
-
-              <template v-if="selectedAddPluginOption">
-                <a-space class="add-plugin-side-tags" size="[0, 8]" wrap>
-                  <a-tag color="default">实例 {{ selectedAddPluginOption.instanceCount }}</a-tag>
-                  <a-tag v-if="selectedAddPluginOption.serviceCount > 0" color="green">
-                    服务 {{ selectedAddPluginOption.serviceCount }}
-                  </a-tag>
-                  <a-tag v-if="selectedAddPluginOption.routeCount > 0" color="geekblue">
-                    路由 {{ selectedAddPluginOption.routeCount }}
-                  </a-tag>
-                </a-space>
-
-                <a-alert
-                  v-if="selectedAddPluginOption.schemaError"
-                  class="add-plugin-schema-alert"
-                  type="warning"
-                  show-icon
-                  :message="selectedAddPluginOption.schemaError"
-                />
-
-                <div
-                  v-if="selectedAddPluginServiceRows.length > 0"
-                  class="add-plugin-service-summary"
-                >
-                  <div
-                    v-for="row in selectedAddPluginServiceRows"
-                    :key="row.key"
-                    class="service-declaration-row"
-                  >
-                    <a-tag :color="row.color" class="service-declaration-label">
-                      {{ row.label }}
-                    </a-tag>
-                    <span class="service-declaration-value">{{ row.value }}</span>
-                  </div>
-                </div>
-              </template>
-            </a-card>
-          </a-col>
-        </a-row>
+      <div class="plugin-summary" aria-label="插件实例概览">
+        <span>{{ instances.length }} 个实例</span>
+        <span aria-hidden="true">·</span>
+        <span>{{ activeInstanceCount }} 个运行中</span>
       </div>
-    </a-modal>
+    </PageHeader>
+
+    <Toolbar class="plugin-toolbar" position="both" aria-label="插件管理工具栏">
+      <span class="toolbar-hint">选择实例后可编辑配置；拖拽把手可排序或移动分组</span>
+      <template #trailing>
+        <a-input
+          v-model:value="keyword"
+          placeholder="搜索插件"
+          allow-clear
+          size="small"
+          class="toolbar-search"
+        >
+          <template #prefix>
+            <SearchOutlined />
+          </template>
+        </a-input>
+        <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
+        <a-button :loading="reloadingAll" @click="handleReloadAll">重载全部</a-button>
+        <a-button @click="openAddModal">
+          <PlusOutlined />
+          新增实例
+        </a-button>
+        <a-button type="primary" @click="openPluginMarket">
+          <DownloadOutlined />
+          获取插件
+        </a-button>
+      </template>
+    </Toolbar>
+
+    <main class="plugin-workspace">
+      <aside class="plugin-list-pane">
+        <PluginInstanceList
+          :instances="instances"
+          :ordered-instances="orderedInstances"
+          :filtered-instances="filteredInstances"
+          :runtime-states="runtimeStates"
+          :layout="pluginLayout.layout.value"
+          :selected-instance-id="selectedInstanceId"
+          :toggling-instance-id="togglingInstanceId"
+          :keyword="keyword"
+          :version="version"
+          :plugin-packages="pluginPackages"
+          :plugin-services="pluginServices"
+          :plugin-routes="pluginRoutes"
+          :schema-errors="schemaErrors"
+          @update:keyword="keyword = $event"
+          @select="selectInstance"
+          @toggle-enabled="handleToggleEnabled"
+          @drag-end="onDragEnd"
+          @create-group="createGroup"
+          @group-action="handleGroupAction"
+          @open-add-modal="openAddModal"
+          @open-plugin-market="openPluginMarket"
+          @open-plugin-dir="handleOpenPluginDir"
+          @check-update="handleCheckUpdate"
+          @uninstall-plugin="handleUninstallInstance"
+        />
+      </aside>
+
+      <section class="plugin-detail-pane">
+        <PluginInstanceDetail
+          ref="pluginInstanceDetailRef"
+          :selected-instance="selectedInstance"
+          :edit-form="editForm"
+          :is-dirty="isDirty"
+          :edit-snapshot="editSnapshot"
+          :submitting="submitting"
+          :action-loading-id="pluginActionLoadingId"
+          :uninstalling-plugin="uninstallingPlugin"
+          :active-schema="activeSchema"
+          :active-schema-entries="activeSchemaEntries"
+          :current-schema-error="currentSchemaError"
+          :hidden-schema-fields="hiddenSchemaFields"
+          :runtime-state="selectedRuntimeState"
+          :selected-plugin-service="selectedPluginService"
+          :plugin-actions="selectedPluginActions"
+          :selected-plugin-package-name="selectedPluginPackageName"
+          :can-uninstall="canUninstallSelectedPlugin"
+          @submit-edit="submitEdit"
+          @reset-edit="resetEdit"
+          @open-json-preview="openJsonPreview"
+          @reload-instance="handleReloadInstance"
+          @reload-plugin="handleReloadPlugin"
+          @uninstall-plugin="handleUninstallPlugin"
+          @delete-instance="handleDeleteInstance"
+          @trigger-action="handleTriggerAction"
+          @trigger-schema-action="handleTriggerSchemaAction"
+          @validation-change="handleSchemaValidationChange"
+          @sensitive-dirty-change="sensitiveDirty = $event"
+          @update:edit-form="Object.assign(editForm, $event)"
+          @copy-diagnostics="copyDiagnostics"
+        />
+      </section>
+    </main>
+
+    <PluginAddModal
+      :visible="addModalVisible"
+      :submitting="submitting"
+      :add-form="addForm"
+      :keyword="addPluginKeyword"
+      :discovered-plugins="discoveredPluginOptions"
+      :filtered-options="filteredDiscoveredPluginOptions"
+      :selected-add-plugin-option="selectedAddPluginOption"
+      :selected-add-plugin-service-rows="selectedAddPluginServiceRows"
+      @close="addModalVisible = false"
+      @submit-add="submitAdd"
+      @update:add-plugin="addForm.plugin = $event"
+      @update:add-name="addForm.name = $event"
+      @update:add-enabled="addForm.enabled = $event"
+      @update:keyword="addPluginKeyword = $event"
+    />
 
     <a-modal v-model:open="jsonPreviewVisible" title="当前配置 JSON" width="760px" :footer="null">
       <a-textarea :value="jsonPreviewText" :rows="18" readonly />
@@ -414,379 +132,95 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import axios from 'axios'
-import draggable from 'vuedraggable'
+import { useRouter } from 'vue-router'
 import { Input, message, Modal } from 'ant-design-vue'
-import { OpenAPI } from '@/api'
-import SchemaForm from '@/components/SchemaForm.vue'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { DownloadOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import PageHeader from '@/components/mac/PageHeader.vue'
+import Toolbar from '@/components/mac/Toolbar.vue'
+import { sanitizeErrorForLog } from '@/composables/useSensitiveFieldStrategy'
+import { usePluginData } from './plugin/composables/usePluginData'
+import { usePluginLayout } from './plugin/composables/usePluginLayout'
 import {
-  PluginWebSocketCommandError,
-  requestPluginActionWithFallback,
-} from '@/views/pluginActionTransport'
+  isBooleanSchema,
+  hasEnableSchema as checkHasEnableSchema,
+  parseConfigText,
+  setConfigObjectToText,
+  collectSchemaFieldErrors,
+  getSchemaButtonAction,
+  getFieldLabel,
+} from './plugin/composables/usePluginSchema'
+import PluginInstanceList from './plugin/components/PluginInstanceList.vue'
+import PluginInstanceDetail from './plugin/components/PluginInstanceDetail.vue'
+import PluginAddModal from './plugin/components/PluginAddModal.vue'
+import type {
+  PluginInstance,
+  PluginSchemaField,
+  PluginServiceInfo,
+  PluginActionInfo,
+  PluginsGetResponse,
+  DiscoveredPluginOption,
+  ServiceDeclarationRow,
+} from './plugin/types'
+import { SERVICE_DECLARATION_DEFS } from './plugin/types'
 
-defineOptions({
-  name: 'PluginView',
-})
+defineOptions({ name: 'PluginView' })
 
-interface PluginInstance {
-  id: string
-  plugin: string
-  enabled: boolean
-  name: string
-  config: Record<string, unknown>
-  system?: boolean
-  locked?: boolean
-  visible?: boolean
-}
+const _logger = window.electronAPI.getLogger('插件管理')
+const router = useRouter()
 
-interface PluginSchemaField {
-  type: string
-  title?: string
-  format?: string
-  default?: unknown
-  required?: boolean
-  description?: string
-  placeholder?: string
-  help?: string
-  rows?: number
-  item_type?: string
-  enum?: unknown[]
-  examples?: unknown[]
-  constraints?: Record<string, unknown>
-  action?: PluginSchemaAction
-  button?: PluginSchemaAction
-  configurable?: boolean
-}
+// ---- Composables ----
+const pluginData = usePluginData()
+const pluginLayout = usePluginLayout()
 
-interface PluginSchemaAction {
-  label?: string
-  path?: string
-  method?: string
-  payload?: unknown
-  refresh?: boolean
-}
+// ---- 解构 ----
+const {
+  loading,
+  submitting,
+  reloadingAll,
+  togglingInstanceId,
+  pluginActionLoadingId,
+  uninstallingPlugin,
+  version,
+  discoveredPlugins,
+  schemaMap,
+  schemaErrors,
+  pluginServices,
+  pluginRoutes,
+  pluginActions,
+  pluginPackages,
+  instances,
+  runtimeStates,
+  applySnapshot,
+  fetchData,
+  submitEdit: submitEditApi,
+  submitAdd: submitAddApi,
+  deleteInstance: deleteInstanceApi,
+  reloadAll: reloadAllApi,
+  reloadInstance: reloadInstanceApi,
+  reloadPlugin: reloadPluginApi,
+  uninstallPluginPackage: uninstallPluginPackageApi,
+  toggleInstanceEnabled,
+  runDeclaredPluginAction,
+  subscribe,
+  unsubscribe,
+  handlePluginSystemMessage,
+  cleanup,
+} = pluginData
 
-interface PluginPackageInfo {
-  package: string
-  version?: string | null
-  source?: string
-  path?: string | null
-}
-
-interface PluginsGetResponse {
-  code: number
-  status: string
-  message: string
-  version: number
-  discovered_plugins: string[]
-  schemas: Record<string, Record<string, PluginSchemaField>>
-  schema_errors: Record<string, string>
-  plugin_services?: Record<string, PluginServiceInfo>
-  plugin_routes?: Record<string, PluginRouteInfo[]>
-  plugin_actions?: Record<string, PluginActionInfo[]>
-  plugin_packages?: Record<string, PluginPackageInfo>
-  instances: PluginInstance[]
-  runtime_states: Record<string, PluginRuntimeState>
-}
-
-interface PluginServiceInfo {
-  provides: string[]
-  needs: string[]
-  wants: string[]
-}
-
-interface PluginRouteInfo {
-  kind: 'http' | 'websocket' | string
-  path: string
-  methods: string[]
-  plugin: string
-}
-
-interface PluginActionInfo {
-  id: string
-  label: string
-  path: string
-  method: string
-  payload?: unknown
-  plugin: string
-  refresh?: boolean
-}
-
-interface ServiceDeclarationRow {
-  key: 'provides' | 'needs' | 'wants'
-  label: string
-  color: string
-  value: string
-}
-
-interface PluginRuntimeState {
-  instance_id: string
-  plugin: string
-  status: string
-  generation: number
-  lifecycle_phase: string
-  lifecycle_updated_at?: string | null
-  reload_count: number
-  last_reload_reason?: string | null
-  last_reload_at?: string | null
-  created_at?: string | null
-  discovered_at?: string | null
-  loaded_at?: string | null
-  activated_at?: string | null
-  disposed_at?: string | null
-  unloaded_at?: string | null
-  last_error?: string | null
-  last_error_at?: string | null
-}
-
-interface PluginSystemRuntimeMessage {
-  kind: 'runtime_state'
-  event: string
-  record: PluginRuntimeState
-}
-
-interface PluginSystemSnapshotMessage extends PluginsGetResponse {
-  kind: 'snapshot'
-  reason?: string
-}
-
-interface PluginSystemHmrMessage {
-  kind: 'hmr'
-  event: string
-  plugin?: string | null
-  changed_files?: string[]
-  action: string
-  status: 'running' | 'success' | 'error' | string
-  message?: string
-}
-
-interface WsCommandResponse<T = unknown> {
-  success?: boolean
-  message?: string
-  code?: number
-  data?: T
-  request_id?: string
-}
-
-interface ListRow {
-  __rowKey: string
-  value: unknown
-}
-
-interface KeyValueRow {
-  __rowKey: string
-  key: string
-  value: string
-}
-
-interface TableRow {
-  __rowKey: string
-  [key: string]: unknown
-}
-
-interface TableColumn {
-  title: string
-  dataIndex: string
-  key: string
-}
-
-interface DiscoveredPluginOption {
-  name: string
-  instanceCount: number
-  serviceCount: number
-  routeCount: number
-  schemaError: string
-  description: string
-  searchText: string
-}
-
-interface PluginListLayoutState {
-  version: 1
-  groupOrder: string[]
-  instanceOrder: string[]
-  instanceGroups: Record<string, string>
-}
-
-const logger = window.electronAPI.getLogger('插件管理')
-const { subscribe, unsubscribe, sendRaw } = useWebSocket()
-const PLUGIN_LIST_LAYOUT_STORAGE_KEY = 'plugin-manager-list-layout-v1'
-const loading = ref(false)
-const submitting = ref(false)
-const reloadingAll = ref(false)
-const togglingInstanceId = ref('')
-const pluginActionLoadingId = ref('')
-const uninstallingPlugin = ref('')
+// ---- 本地状态 ----
 const keyword = ref('')
 const addPluginKeyword = ref('')
-
-const version = ref(1)
-const discoveredPlugins = ref<string[]>([])
-const schemaMap = ref<Record<string, Record<string, PluginSchemaField>>>({})
-const schemaErrors = ref<Record<string, string>>({})
-const pluginServices = ref<Record<string, PluginServiceInfo>>({})
-const pluginRoutes = ref<Record<string, PluginRouteInfo[]>>({})
-const pluginActions = ref<Record<string, PluginActionInfo[]>>({})
-const pluginPackages = ref<Record<string, PluginPackageInfo>>({})
-const instances = ref<PluginInstance[]>([])
-const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
-const schemaFieldErrors = ref<Record<string, string>>({})
-const schemaFormRef = ref<InstanceType<typeof SchemaForm> | null>(null)
 const selectedInstanceId = ref('')
 const editSnapshot = ref('')
-let pluginSystemSubscriptionId = ''
-let wsResponseSubscriptionId = ''
-let wsCommandCounter = 0
-const wsCommandPending = new Map<
-  string,
-  {
-    resolve: (value: any) => void
-    reject: (reason?: unknown) => void
-    timer: ReturnType<typeof setTimeout>
-  }
->()
-
+const schemaFieldErrors = ref<Record<string, string>>({})
 const addModalVisible = ref(false)
 const jsonPreviewVisible = ref(false)
+const sensitiveDirty = ref(false)
+const pluginInstanceDetailRef = ref<InstanceType<typeof PluginInstanceDetail> | null>(null)
+let pluginSystemSubscriptionId = ''
 
-const createEmptyPluginListLayout = (): PluginListLayoutState => ({
-  version: 1,
-  groupOrder: [],
-  instanceOrder: [],
-  instanceGroups: {},
-})
-
-const clonePluginListLayout = (layout: PluginListLayoutState): PluginListLayoutState => ({
-  version: 1,
-  groupOrder: [...layout.groupOrder],
-  instanceOrder: [...layout.instanceOrder],
-  instanceGroups: { ...layout.instanceGroups },
-})
-
-const normalizeNamedGroup = (value: unknown) => String(value ?? '').trim()
-
-const normalizePluginListLayout = (
-  layout: Partial<PluginListLayoutState> | null | undefined,
-  availableInstanceIds?: string[]
-): PluginListLayoutState => {
-  const normalized = createEmptyPluginListLayout()
-  const availableSet = new Set(availableInstanceIds || [])
-  const limitToAvailableInstances = Array.isArray(availableInstanceIds)
-  const seenGroups = new Set<string>()
-  const seenInstanceIds = new Set<string>()
-
-  for (const rawGroup of Array.isArray(layout?.groupOrder) ? layout.groupOrder : []) {
-    const group = normalizeNamedGroup(rawGroup)
-    if (!group || seenGroups.has(group)) {
-      continue
-    }
-    seenGroups.add(group)
-    normalized.groupOrder.push(group)
-  }
-
-  for (const rawInstanceId of Array.isArray(layout?.instanceOrder) ? layout.instanceOrder : []) {
-    const instanceId = String(rawInstanceId ?? '').trim()
-    if (!instanceId || seenInstanceIds.has(instanceId)) {
-      continue
-    }
-    if (limitToAvailableInstances && !availableSet.has(instanceId)) {
-      continue
-    }
-    seenInstanceIds.add(instanceId)
-    normalized.instanceOrder.push(instanceId)
-  }
-
-  const rawInstanceGroups =
-    layout?.instanceGroups && typeof layout.instanceGroups === 'object' ? layout.instanceGroups : {}
-
-  for (const [instanceId, rawGroup] of Object.entries(rawInstanceGroups)) {
-    if (limitToAvailableInstances && !availableSet.has(instanceId)) {
-      continue
-    }
-    const group = normalizeNamedGroup(rawGroup)
-    if (!group) {
-      continue
-    }
-    normalized.instanceGroups[instanceId] = group
-    if (!seenGroups.has(group)) {
-      seenGroups.add(group)
-      normalized.groupOrder.push(group)
-    }
-  }
-
-  for (const instanceId of availableInstanceIds || []) {
-    if (!seenInstanceIds.has(instanceId)) {
-      normalized.instanceOrder.push(instanceId)
-    }
-  }
-
-  return normalized
-}
-
-const loadPluginListLayout = (): PluginListLayoutState => {
-  try {
-    const raw = window.localStorage.getItem(PLUGIN_LIST_LAYOUT_STORAGE_KEY)
-    if (!raw) {
-      return createEmptyPluginListLayout()
-    }
-    return normalizePluginListLayout(JSON.parse(raw))
-  } catch (error) {
-    logger.warn(`读取插件列表布局失败，将回退到默认布局: ${String(error)}`)
-    return createEmptyPluginListLayout()
-  }
-}
-
-const pluginListLayout = ref<PluginListLayoutState>(loadPluginListLayout())
-
-const persistPluginListLayout = (
-  nextLayout: PluginListLayoutState,
-  availableInstanceIds?: string[]
-) => {
-  const normalized = normalizePluginListLayout(
-    nextLayout,
-    availableInstanceIds ?? instances.value.map(item => item.id)
-  )
-  pluginListLayout.value = normalized
-  try {
-    window.localStorage.setItem(PLUGIN_LIST_LAYOUT_STORAGE_KEY, JSON.stringify(normalized))
-  } catch (error) {
-    logger.warn(`保存插件列表布局失败: ${String(error)}`)
-  }
-}
-
-const updatePluginListLayout = (
-  updater: (draft: PluginListLayoutState) => void,
-  availableInstanceIds?: string[]
-) => {
-  const draft = clonePluginListLayout(pluginListLayout.value)
-  updater(draft)
-  persistPluginListLayout(draft, availableInstanceIds)
-}
-
-const syncPluginListLayoutWithInstances = (nextInstances: PluginInstance[]) => {
-  persistPluginListLayout(
-    pluginListLayout.value,
-    nextInstances.map(item => item.id)
-  )
-}
-
-const _listColumns: TableColumn[] = [
-  { title: '值', dataIndex: 'value', key: 'value' },
-  { title: '操作', dataIndex: 'action', key: 'action' },
-]
-
-const _keyValueColumns: TableColumn[] = [
-  { title: '键', dataIndex: 'key', key: 'key' },
-  { title: '值', dataIndex: 'value', key: 'value' },
-  { title: '操作', dataIndex: 'action', key: 'action' },
-]
-
-const addForm = reactive({
-  plugin: '',
-  name: '',
-  enabled: true,
-})
-
+// ---- 表单 ----
+const addForm = reactive({ plugin: '', name: '', enabled: true })
 const editForm = reactive({
   instanceId: '',
   plugin: '',
@@ -795,30 +229,33 @@ const editForm = reactive({
   configText: '{}',
 })
 
-const selectedInstance = computed(() =>
-  instances.value.find(item => item.id === selectedInstanceId.value)
+// ---- 计算属性 ----
+
+const selectedInstance = computed<PluginInstance | null>(
+  () => instances.value.find(item => item.id === selectedInstanceId.value) ?? null
 )
 
 const selectedRuntimeState = computed(() => {
-  if (!selectedInstanceId.value) {
-    return null
-  }
+  if (!selectedInstanceId.value) return null
   return runtimeStates.value[selectedInstanceId.value] || null
 })
 
+const activeInstanceCount = computed(
+  () =>
+    instances.value.filter(
+      instance => instance.enabled && runtimeStates.value[instance.id]?.status === 'active'
+    ).length
+)
+
 const selectedPluginService = computed(() => {
   const pluginName = editForm.plugin || selectedInstance.value?.plugin
-  if (!pluginName) {
-    return null
-  }
+  if (!pluginName) return null
   return pluginServices.value[pluginName] || null
 })
 
 const selectedPluginPackage = computed(() => {
   const pluginName = editForm.plugin || selectedInstance.value?.plugin
-  if (!pluginName) {
-    return null
-  }
+  if (!pluginName) return null
   return pluginPackages.value[pluginName] || null
 })
 
@@ -827,71 +264,15 @@ const canUninstallSelectedPlugin = computed(
   () => Boolean(selectedPluginPackageName.value) && !selectedInstance.value?.locked
 )
 
-const hasServiceListItems = (items?: string[]) => Array.isArray(items) && items.length > 0
-
-const serviceDeclarationDefs = [
-  { key: 'provides', label: '提供服务', color: 'green' },
-  { key: 'needs', label: '必须服务', color: 'red' },
-  { key: 'wants', label: '可选服务', color: 'gold' },
-] as const
-
-const getServiceDeclarationRows = (service?: PluginServiceInfo | null): ServiceDeclarationRow[] => {
-  if (!service) {
-    return []
-  }
-
-  return serviceDeclarationDefs
-    .map((item): ServiceDeclarationRow | null => {
-      const values = service[item.key]
-      if (!hasServiceListItems(values)) {
-        return null
-      }
-      return {
-        key: item.key,
-        label: item.label,
-        color: item.color,
-        value: values.join('、'),
-      }
-    })
-    .filter((item): item is ServiceDeclarationRow => item !== null)
-}
-
-const selectedServiceDeclarationRows = computed(() =>
-  getServiceDeclarationRows(selectedPluginService.value)
-)
-
-const hasSelectedPluginServiceDeclarations = computed(() => {
-  return selectedServiceDeclarationRows.value.length > 0
-})
-
-const selectedPluginActions = computed(() => {
-  if (!selectedInstanceId.value) {
-    return [] as PluginActionInfo[]
-  }
-  return pluginActions.value[selectedInstanceId.value] || []
-})
-
 const activeSchema = computed(() => {
   const pluginName = editForm.plugin || selectedInstance.value?.plugin
-  if (!pluginName) {
-    return {}
-  }
+  if (!pluginName) return {}
   return schemaMap.value[pluginName] || {}
 })
 
-const hasEnableSchema = (pluginName?: string) => {
-  if (!pluginName) {
-    return false
-  }
-  const schema = schemaMap.value[pluginName]
-  return Boolean(schema && schema.enable && isBooleanSchema(schema.enable))
-}
-
 const activeSchemaEntries = computed(() =>
   Object.entries(activeSchema.value).filter(([field, fieldSchema]) => {
-    if (field === 'enable' && isBooleanSchema(fieldSchema)) {
-      return false
-    }
+    if (field === 'enable' && isBooleanSchema(fieldSchema)) return false
     return true
   })
 )
@@ -904,39 +285,58 @@ const hiddenSchemaFields = computed(() => {
   return fields
 })
 
-const schemaFormModel = computed<Record<string, unknown>>({
-  get: () => {
-    try {
-      return parseConfigText(editForm.configText)
-    } catch {
-      return {}
-    }
-  },
-  set: value => {
-    setConfigObjectToText(value)
-  },
-})
-
-const handleSchemaValidationChange = (errors: Record<string, string>) => {
-  schemaFieldErrors.value = errors
-}
-
 const currentSchemaError = computed(() => {
-  if (!editForm.plugin) {
-    return ''
-  }
+  if (!editForm.plugin) return ''
   return schemaErrors.value[editForm.plugin] || ''
 })
+
+const selectedPluginActions = computed(() => {
+  if (!selectedInstanceId.value) return [] as PluginActionInfo[]
+  return pluginActions.value[selectedInstanceId.value] || []
+})
+
+const isDirty = computed(() => {
+  if (!selectedInstance.value) return false
+  if (sensitiveDirty.value) return true
+  const current = JSON.stringify({
+    instanceId: editForm.instanceId,
+    plugin: editForm.plugin,
+    name: editForm.name,
+    enabled: editForm.enabled,
+    configText: editForm.configText,
+  })
+  return current !== editSnapshot.value
+})
+
+const jsonPreviewText = computed(() => {
+  try {
+    return JSON.stringify(parseConfigText(editForm.configText), null, 2)
+  } catch {
+    return editForm.configText
+  }
+})
+
+// ---- 插件发现选项 ----
 
 const sortedDiscoveredPlugins = computed(() =>
   [...discoveredPlugins.value].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'))
 )
 
+const pluginInstanceCountMap = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const item of instances.value) {
+    counts[item.plugin] = (counts[item.plugin] || 0) + 1
+  }
+  return counts
+})
+
+const systemPluginNames = computed(
+  () => new Set(instances.value.filter(item => item.system).map(item => item.plugin))
+)
+
 const getPluginServiceCount = (pluginName: string) => {
   const service = pluginServices.value[pluginName]
-  if (!service) {
-    return 0
-  }
+  if (!service) return 0
   return ['provides', 'needs', 'wants'].reduce((total, key) => {
     const values = service[key as keyof PluginServiceInfo]
     return total + (Array.isArray(values) ? values.length : 0)
@@ -962,12 +362,22 @@ const buildPluginSearchText = (pluginName: string) => {
   return values.join(' ').toLowerCase()
 }
 
+const hasServiceListItems = (items?: string[]) => Array.isArray(items) && items.length > 0
+
+const getServiceDeclarationRows = (service?: PluginServiceInfo | null): ServiceDeclarationRow[] => {
+  if (!service) return []
+  return SERVICE_DECLARATION_DEFS.map((item): ServiceDeclarationRow | null => {
+    const values = service[item.key]
+    if (!hasServiceListItems(values)) return null
+    return { key: item.key, label: item.label, color: item.color, value: values.join('、') }
+  }).filter((item): item is ServiceDeclarationRow => item !== null)
+}
+
 const buildPluginOptionDescription = (pluginName: string) => {
   const serviceRows = getServiceDeclarationRows(pluginServices.value[pluginName] || null)
   if (serviceRows.length > 0) {
     return serviceRows.map(row => `${row.label}：${row.value}`).join(' · ')
   }
-
   const routes = pluginRoutes.value[pluginName] || []
   if (routes.length > 0) {
     return routes
@@ -975,25 +385,9 @@ const buildPluginOptionDescription = (pluginName: string) => {
       .map(route => `${route.kind.toUpperCase()} ${route.path}`)
       .join(' · ')
   }
-
-  if (schemaErrors.value[pluginName]) {
-    return schemaErrors.value[pluginName]
-  }
-
+  if (schemaErrors.value[pluginName]) return schemaErrors.value[pluginName]
   return '未声明额外服务或路由信息'
 }
-
-const pluginInstanceCountMap = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const item of instances.value) {
-    counts[item.plugin] = (counts[item.plugin] || 0) + 1
-  }
-  return counts
-})
-
-const systemPluginNames = computed(
-  () => new Set(instances.value.filter(item => item.system).map(item => item.plugin))
-)
 
 const discoveredPluginOptions = computed<DiscoveredPluginOption[]>(() =>
   sortedDiscoveredPlugins.value
@@ -1010,17 +404,13 @@ const discoveredPluginOptions = computed<DiscoveredPluginOption[]>(() =>
 )
 
 const filteredDiscoveredPluginOptions = computed(() => {
-  const keyword = addPluginKeyword.value.trim().toLowerCase()
-  if (!keyword) {
-    return discoveredPluginOptions.value
-  }
-  return discoveredPluginOptions.value.filter(item => item.searchText.includes(keyword))
+  const kw = addPluginKeyword.value.trim().toLowerCase()
+  if (!kw) return discoveredPluginOptions.value
+  return discoveredPluginOptions.value.filter(item => item.searchText.includes(kw))
 })
 
 const selectedAddPluginOption = computed(() => {
-  if (!addForm.plugin) {
-    return null
-  }
+  if (!addForm.plugin) return null
   return (
     discoveredPluginOptions.value.find(item => item.name === addForm.plugin) || {
       name: addForm.plugin,
@@ -1038,38 +428,26 @@ const selectedAddPluginServiceRows = computed(() =>
   getServiceDeclarationRows(pluginServices.value[addForm.plugin] || null)
 )
 
-const addPluginEmptyDescription = computed(() =>
-  addPluginKeyword.value.trim() ? '没有匹配的插件' : '当前没有可新增的插件'
-)
+// ---- 实例排序 ----
 
 const orderedInstances = computed(() => {
   const orderIndexMap = new Map<string, number>()
-  pluginListLayout.value.instanceOrder.forEach((instanceId, index) => {
+  pluginLayout.layout.value.instanceOrder.forEach((instanceId, index) => {
     orderIndexMap.set(instanceId, index)
   })
-
   return [...instances.value].sort((left, right) => {
     const leftIndex = orderIndexMap.get(left.id)
     const rightIndex = orderIndexMap.get(right.id)
-
-    if (leftIndex == null && rightIndex == null) {
-      return 0
-    }
-    if (leftIndex == null) {
-      return 1
-    }
-    if (rightIndex == null) {
-      return -1
-    }
+    if (leftIndex == null && rightIndex == null) return 0
+    if (leftIndex == null) return 1
+    if (rightIndex == null) return -1
     return leftIndex - rightIndex
   })
 })
 
 const filteredInstances = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
-  if (!kw) {
-    return orderedInstances.value
-  }
+  if (!kw) return orderedInstances.value
   return orderedInstances.value.filter(item => {
     return (
       item.id.toLowerCase().includes(kw) ||
@@ -1079,69 +457,7 @@ const filteredInstances = computed(() => {
   })
 })
 
-const isInstanceSearchActive = computed(() => keyword.value.trim().length > 0)
-
-interface InstanceGroup {
-  key: string
-  label: string
-  items: PluginInstance[]
-}
-
-const getInstanceGroupKey = (instanceId: string) => {
-  return pluginListLayout.value.instanceGroups[instanceId] || ''
-}
-
-const groupedInstances = computed<InstanceGroup[]>(() => {
-  const groupMap = new Map<string, PluginInstance[]>([['', []]])
-  const groupOrder: string[] = ['']
-
-  for (const group of pluginListLayout.value.groupOrder) {
-    if (groupMap.has(group)) {
-      continue
-    }
-    groupMap.set(group, [])
-    groupOrder.push(group)
-  }
-
-  for (const item of filteredInstances.value) {
-    const groupKey = getInstanceGroupKey(item.id)
-    if (!groupMap.has(groupKey)) {
-      groupMap.set(groupKey, [])
-      groupOrder.push(groupKey)
-    }
-    groupMap.get(groupKey)!.push(item)
-  }
-
-  return groupOrder
-    .filter(key => !isInstanceSearchActive.value || (groupMap.get(key)?.length ?? 0) > 0)
-    .map(key => ({
-      key,
-      label: key === '' ? '默认分组' : key,
-      items: groupMap.get(key) || [],
-    }))
-})
-
-const isDirty = computed(() => {
-  if (!selectedInstance.value) {
-    return false
-  }
-  const current = JSON.stringify({
-    instanceId: editForm.instanceId,
-    plugin: editForm.plugin,
-    name: editForm.name,
-    enabled: editForm.enabled,
-    configText: editForm.configText,
-  })
-  return current !== editSnapshot.value
-})
-
-const jsonPreviewText = computed(() => {
-  try {
-    return JSON.stringify(parseConfigText(editForm.configText), null, 2)
-  } catch {
-    return editForm.configText
-  }
-})
+// ---- 编辑快照 ----
 
 const captureEditSnapshot = () =>
   JSON.stringify({
@@ -1152,115 +468,364 @@ const captureEditSnapshot = () =>
     configText: editForm.configText,
   })
 
-const parseConfigText = (text: string): Record<string, unknown> => {
-  const parsed = JSON.parse(text)
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('配置必须是 JSON 对象')
+const setEditFromInstance = (row: PluginInstance) => {
+  pluginInstanceDetailRef.value?.resetSensitiveDrafts()
+  sensitiveDirty.value = false
+  editForm.instanceId = row.id
+  editForm.plugin = row.plugin
+  editForm.name = row.name
+  editForm.enabled = row.enabled
+  const nextConfig = { ...(row.config || {}) }
+  if (checkHasEnableSchema(row.plugin, schemaMap.value)) {
+    nextConfig.enable = row.enabled
   }
-  return parsed as Record<string, unknown>
+  editForm.configText = JSON.stringify(nextConfig, null, 2)
+  refreshSchemaFieldErrors()
+  editSnapshot.value = captureEditSnapshot()
 }
 
-const getRuntimeState = (instanceId: string) => runtimeStates.value[instanceId]
-
-const getInstanceSwitchChecked = (instance: PluginInstance) => {
-  if (!instance.enabled) {
-    return false
-  }
-
-  const runtime = getRuntimeState(instance.id)
-  if (!runtime) {
-    return true
-  }
-
-  return !['error', 'disposed', 'unloaded'].includes(runtime.status)
+const refreshSchemaFieldErrors = () => {
+  schemaFieldErrors.value = collectSchemaFieldErrors(activeSchemaEntries.value, editForm.configText)
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  active: '运行中',
-  loaded: '已加载',
-  configured: '待配置',
-  discovered: '已发现',
-  error: '异常',
-  disposed: '已销毁',
-  unloaded: '已卸载',
+const handleSchemaValidationChange = (errors: Record<string, string>) => {
+  schemaFieldErrors.value = errors
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  active: '已激活',
-  discovered: '已发现',
-  loaded: '已加载',
-  configured: '已配置',
-  on_load: '加载中',
-  on_start: '启动中',
-  on_stop: '停止中',
-  on_unload: '卸载中',
-  on_reload_prepare: '重载准备',
-  on_reload_commit: '重载提交',
-  on_reload_rollback: '重载回滚',
-  reload_failed: '重载失败',
-  disposed: '已销毁',
-  unloaded: '已卸载',
-  idle: '空闲',
+// ---- 快照应用 ----
+
+const applySnapshotWithLayout = (data: PluginsGetResponse) => {
+  const newId = applySnapshot(
+    data,
+    nextInstances => pluginLayout.syncWithInstances(nextInstances),
+    selectedInstanceId.value
+  )
+  if (newId) {
+    selectedInstanceId.value = newId
+    const target = instances.value.find(item => item.id === newId)
+    if (target) {
+      setEditFromInstance(target)
+    }
+  } else {
+    selectedInstanceId.value = ''
+  }
+  return newId
 }
 
-const getStatusLabel = (status?: string) => {
-  if (!status) {
-    return '未知'
+// ---- 选择实例 ----
+
+const applyInstanceSelection = (instanceId: string) => {
+  selectedInstanceId.value = instanceId
+  const target = instances.value.find(item => item.id === instanceId)
+  if (target) {
+    setEditFromInstance(target)
   }
-  return STATUS_LABELS[status] || status
 }
 
-const getPhaseLabel = (phase?: string) => {
-  if (!phase) {
-    return '未知'
+const selectInstance = (instanceId: string) => {
+  if (selectedInstanceId.value && instanceId !== selectedInstanceId.value && isDirty.value) {
+    Modal.confirm({
+      title: '放弃未保存改动？',
+      content: '切换插件实例会丢弃当前尚未保存的配置改动。',
+      okText: '放弃并切换',
+      cancelText: '继续编辑',
+      onOk: () => applyInstanceSelection(instanceId),
+    })
+    return
   }
-  return PHASE_LABELS[phase] || phase
+  applyInstanceSelection(instanceId)
 }
 
-const getStatusTagColor = (status?: string) => {
-  if (!status) {
-    return 'default'
+// ---- 操作 ----
+
+const handleRefresh = async () => {
+  const newId = await fetchData(applySnapshotWithLayout)
+  if (newId) {
+    selectedInstanceId.value = newId
+    const target = instances.value.find(item => item.id === newId)
+    if (target) setEditFromInstance(target)
   }
-  if (status === 'active') {
-    return 'success'
-  }
-  if (status === 'error') {
-    return 'error'
-  }
-  if (status === 'loaded') {
-    return 'processing'
-  }
-  if (status === 'disposed' || status === 'unloaded') {
-    return 'default'
-  }
-  if (status === 'configured' || status === 'discovered') {
-    return 'warning'
-  }
-  return 'default'
 }
 
-const getStatusDotColor = (instance: PluginInstance) => {
-  const runtime = getRuntimeState(instance.id)
-  if (!runtime) {
-    return 'var(--ant-color-text-quaternary)'
-  }
-  if (runtime.status === 'active') {
-    return '#52c41a'
-  }
-  if (runtime.status === 'error') {
-    return '#faad14'
-  }
-  return 'var(--ant-color-text-quaternary)'
+// ---- 插件获取 / 右键菜单处理 ----
+
+const openPluginMarket = () => {
+  void router.push('/plugins-market')
 }
+
+const handleOpenPluginDir = async (instance: PluginInstance) => {
+  const pkg = pluginPackages.value[instance.plugin]
+  const pluginPath = pkg?.path || ''
+  if (!pluginPath) {
+    message.info(`插件 ${instance.plugin} 未暴露目录路径`)
+    return
+  }
+  const result = (await window.electronAPI.showItemInFolder(pluginPath)) as unknown as {
+    success?: boolean
+    error?: string
+  }
+  if (result?.success === false) {
+    message.error(`打开插件目录失败: ${result.error || '未知错误'}`)
+  }
+}
+
+const handleCheckUpdate = (instance: PluginInstance) => {
+  message.info(`请在插件市场查看 ${instance.plugin} 的可用版本`)
+  openPluginMarket()
+}
+
+const handleUninstallInstance = (instance: PluginInstance) => {
+  if (instance.locked) {
+    message.info('系统插件不可卸载')
+    return
+  }
+  Modal.confirm({
+    title: '卸载插件包',
+    content: `确认卸载插件包 ${instance.plugin}？相关实例配置不会自动删除。`,
+    okText: '卸载',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleUninstallPlugin(instance.plugin),
+  })
+}
+
+const openAddModal = () => {
+  addForm.plugin = discoveredPluginOptions.value[0]?.name || ''
+  addForm.name = ''
+  addForm.enabled = true
+  addPluginKeyword.value = ''
+  addModalVisible.value = true
+}
+
+const submitAdd = async () => {
+  if (!addForm.plugin) {
+    message.warning('请先选择要新增的插件')
+    return
+  }
+  const newId = await submitAddApi({
+    plugin: addForm.plugin,
+    name: addForm.name || undefined,
+    enabled: addForm.enabled,
+  })
+  if (newId) {
+    addModalVisible.value = false
+    if (instances.value.some(item => item.id === newId)) {
+      selectInstance(newId)
+    } else {
+      selectedInstanceId.value = newId
+    }
+  }
+}
+
+const resetEdit = () => {
+  const target = selectedInstance.value
+  if (!target) return
+  pluginInstanceDetailRef.value?.resetSensitiveDrafts()
+  sensitiveDirty.value = false
+  setEditFromInstance(target)
+}
+
+const mergeConfigPatch = (
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> => {
+  const merged = structuredClone(base)
+  Object.entries(patch).forEach(([key, value]) => {
+    const current = merged[key]
+    if (
+      current &&
+      typeof current === 'object' &&
+      !Array.isArray(current) &&
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
+      merged[key] = mergeConfigPatch(
+        current as Record<string, unknown>,
+        value as Record<string, unknown>
+      )
+    } else {
+      merged[key] = structuredClone(value)
+    }
+  })
+  return merged
+}
+
+const validateActiveSchemaBeforeSubmit = () => {
+  const errors = pluginInstanceDetailRef.value?.validateSchema() ?? schemaFieldErrors.value
+  const [firstError] = Object.entries(errors)
+  if (!firstError) return
+
+  const [field, error] = firstError
+  throw new Error(
+    `${getFieldLabel(field, activeSchema.value[field] || { type: 'string' })}: ${error}`
+  )
+}
+
+const submitEdit = async (configPatch?: Record<string, unknown>) => {
+  let config: Record<string, unknown>
+  try {
+    config = configPatch ?? parseConfigText(editForm.configText)
+    validateActiveSchemaBeforeSubmit()
+  } catch (error) {
+    message.error(`更新失败: ${String(error)}`)
+    return
+  }
+  if (checkHasEnableSchema(editForm.plugin, schemaMap.value)) {
+    config.enable = editForm.enabled
+  }
+  const target = selectedInstance.value
+  if (!target) {
+    message.error('未选择插件实例')
+    return
+  }
+  const payload: Record<string, unknown> = { instanceId: editForm.instanceId }
+  if (editForm.name !== target.name) payload.name = editForm.name
+  if (editForm.plugin !== target.plugin) payload.plugin = editForm.plugin
+  if (editForm.enabled !== target.enabled) payload.enabled = editForm.enabled
+  const targetConfig = { ...(target.config || {}) }
+  if (checkHasEnableSchema(editForm.plugin, schemaMap.value)) {
+    targetConfig.enable = target.enabled
+  }
+  const nextConfig = mergeConfigPatch(targetConfig, config)
+  const nextConfigText = JSON.stringify(nextConfig, null, 2)
+  if (JSON.stringify(config, null, 2) !== JSON.stringify(targetConfig, null, 2)) {
+    payload.config = config
+  }
+  const success = await submitEditApi(payload, rawError =>
+    sanitizeErrorForLog(
+      sanitizeErrorForLog(rawError, nextConfig, activeSchema.value as any),
+      targetConfig,
+      activeSchema.value as any
+    )
+  )
+  if (success) {
+    instances.value = instances.value.map(item =>
+      item.id === editForm.instanceId
+        ? {
+            ...item,
+            plugin: editForm.plugin,
+            name: editForm.name,
+            enabled: editForm.enabled,
+            config: nextConfig,
+          }
+        : item
+    )
+    editForm.configText = nextConfigText
+    pluginInstanceDetailRef.value?.resetSensitiveDrafts()
+    sensitiveDirty.value = false
+    editSnapshot.value = captureEditSnapshot()
+  }
+}
+
+const handleDeleteInstance = async (instanceId: string) => {
+  const target = instances.value.find(item => item.id === instanceId)
+  if (target?.locked) {
+    message.info('系统插件不可删除')
+    return
+  }
+  const success = await deleteInstanceApi(instanceId)
+  if (success) {
+    const nextInstances = instances.value.filter(item => item.id !== instanceId)
+    instances.value = nextInstances
+    pluginLayout.syncWithInstances(nextInstances)
+    if (selectedInstanceId.value === instanceId) {
+      const nextSelectedId = nextInstances[0]?.id || ''
+      selectedInstanceId.value = nextSelectedId
+      const nextSelectedInstance = nextInstances.find(item => item.id === nextSelectedId)
+      if (nextSelectedInstance) setEditFromInstance(nextSelectedInstance)
+    }
+  }
+}
+
+const handleReloadAll = () => reloadAllApi()
+
+const handleReloadInstance = (instanceId: string) => reloadInstanceApi(instanceId)
+
+const handleReloadPlugin = (plugin: string) => reloadPluginApi(plugin)
+
+const handleUninstallPlugin = async (plugin: string) => {
+  if (selectedInstance.value?.locked) {
+    message.info('系统插件不可卸载')
+    return
+  }
+  const packageName = pluginPackages.value[plugin]?.package || ''
+  if (!packageName) {
+    message.warning('当前插件缺少安装包信息，无法卸载')
+    return
+  }
+  const success = await uninstallPluginPackageApi(plugin, packageName)
+  if (success) {
+    await handleRefresh()
+  }
+}
+
+const handleToggleEnabled = async (instance: PluginInstance, enabled: boolean) => {
+  const success = await toggleInstanceEnabled(instance, enabled)
+  if (success) {
+    instances.value = instances.value.map(item =>
+      item.id === instance.id ? { ...item, enabled } : item
+    )
+    if (selectedInstanceId.value === instance.id && !isDirty.value) {
+      editForm.enabled = enabled
+      if (checkHasEnableSchema(editForm.plugin, schemaMap.value)) {
+        try {
+          const config = parseConfigText(editForm.configText)
+          config.enable = enabled
+          editForm.configText = setConfigObjectToText(config)
+        } catch {
+          // 忽略
+        }
+      }
+      editSnapshot.value = captureEditSnapshot()
+    }
+  }
+}
+
+const handleTriggerAction = (action: PluginActionInfo) => {
+  runDeclaredPluginAction(action, '插件动作', () => handleRefresh())
+}
+
+const handleTriggerSchemaAction = (field: string, fieldSchema: PluginSchemaField) => {
+  const action = getSchemaButtonAction(field, fieldSchema, editForm.plugin)
+  if (!action) {
+    message.warning('Schema 按钮缺少 action.path 声明')
+    return
+  }
+  runDeclaredPluginAction(action, 'Schema 按钮', () => handleRefresh())
+}
+
+const openJsonPreview = () => {
+  jsonPreviewVisible.value = true
+}
+
+const copyDiagnostics = async () => {
+  const runtime = selectedRuntimeState.value
+  const parts = [
+    `时间: ${new Date().toISOString()}`,
+    `实例 ID: ${selectedInstanceId.value || '未选择'}`,
+    `插件: ${editForm.plugin || '未知'}`,
+    `运行状态: ${runtime?.status || '未知'}`,
+    `生命周期: ${runtime?.lifecycle_phase || '未知'}`,
+    `最近错误: ${runtime?.last_error || '无'}`,
+    `重载次数: ${runtime?.reload_count ?? '未知'}`,
+  ]
+  try {
+    await navigator.clipboard.writeText(parts.join('\n'))
+    message.success('诊断信息已复制到剪贴板')
+  } catch {
+    message.error('复制失败')
+  }
+}
+
+// ---- 拖拽 ----
 
 const collectRenderedInstanceOrder = () => {
   const renderedIds: string[] = []
   document.querySelectorAll('.instance-group .instance-item').forEach(itemEl => {
     const element = itemEl as HTMLElement
     const instanceId = element.dataset.id
-    if (instanceId) {
-      renderedIds.push(instanceId)
-    }
+    if (instanceId) renderedIds.push(instanceId)
   })
   return renderedIds
 }
@@ -1272,32 +837,24 @@ const buildFullInstanceOrder = (renderedIds: string[]) => {
 }
 
 const onDragEnd = (evt: any, _sourceGroup: string) => {
-  if (evt.oldIndex === evt.newIndex && evt.from === evt.to) {
-    return
-  }
-
-  if (isInstanceSearchActive.value) {
+  if (evt.oldIndex === evt.newIndex && evt.from === evt.to) return
+  if (keyword.value.trim().length > 0) {
     message.warning('搜索筛选中不支持拖拽排序，请先清空搜索条件')
     return
   }
-
   const draggedId = evt.item?.__draggable_context?.element?.id
-  if (!draggedId) {
-    return
-  }
+  if (!draggedId) return
 
-  let targetGroup = getInstanceGroupKey(draggedId)
+  let targetGroup = pluginLayout.getInstanceGroupKey(draggedId)
   if (evt.from !== evt.to && draggedId) {
     const targetGroupEl = evt.to.closest('.instance-group')
     targetGroup = targetGroupEl?.dataset?.group ?? ''
   }
 
   const renderedIds = collectRenderedInstanceOrder()
-  if (renderedIds.length === 0) {
-    return
-  }
+  if (renderedIds.length === 0) return
 
-  updatePluginListLayout(draft => {
+  pluginLayout.updateLayout(draft => {
     draft.instanceOrder = buildFullInstanceOrder(renderedIds)
     if (targetGroup) {
       draft.instanceGroups[draggedId] = targetGroup
@@ -1328,11 +885,11 @@ const createGroup = () => {
         message.warning('分组名称不能为空')
         return
       }
-      if (pluginListLayout.value.groupOrder.includes(trimmed)) {
+      if (pluginLayout.layout.value.groupOrder.includes(trimmed)) {
         message.warning(`分组 "${trimmed}" 已存在`)
         return
       }
-      updatePluginListLayout(draft => {
+      pluginLayout.updateLayout(draft => {
         draft.groupOrder.push(trimmed)
       })
       message.success(`分组 "${trimmed}" 已创建，可通过拖拽移动实例到该分组`)
@@ -1355,1289 +912,56 @@ const handleGroupAction = (action: string, groupKey: string) => {
       ]),
       onOk: async () => {
         const trimmed = (newName || '').trim()
-        if (!trimmed || trimmed === groupKey) {
-          return
-        }
-        if (pluginListLayout.value.groupOrder.includes(trimmed)) {
+        if (!trimmed || trimmed === groupKey) return
+        if (pluginLayout.layout.value.groupOrder.includes(trimmed)) {
           message.warning(`分组 "${trimmed}" 已存在`)
           return
         }
-        updatePluginListLayout(draft => {
+        pluginLayout.updateLayout(draft => {
           draft.groupOrder = draft.groupOrder.map(group => (group === groupKey ? trimmed : group))
           for (const [instanceId, group] of Object.entries(draft.instanceGroups)) {
-            if (group === groupKey) {
-              draft.instanceGroups[instanceId] = trimmed
-            }
+            if (group === groupKey) draft.instanceGroups[instanceId] = trimmed
           }
         })
         message.success(`分组已重命名为 "${trimmed}"`)
       },
     })
   } else if (action === 'delete') {
-    updatePluginListLayout(draft => {
+    pluginLayout.updateLayout(draft => {
       draft.groupOrder = draft.groupOrder.filter(group => group !== groupKey)
       for (const [instanceId, group] of Object.entries(draft.instanceGroups)) {
-        if (group === groupKey) {
-          delete draft.instanceGroups[instanceId]
-        }
+        if (group === groupKey) delete draft.instanceGroups[instanceId]
       }
     })
     message.success(`分组 "${groupKey}" 已删除，实例已移回默认分组`)
   }
 }
 
-const handleGroupMenuClick = (event: { key: string | number }, groupKey: string) => {
-  handleGroupAction(String(event.key), groupKey)
-}
-
-const getPhaseTagColor = (phase?: string) => {
-  if (!phase) {
-    return 'default'
-  }
-  if (phase === 'active') {
-    return 'green'
-  }
-  if (phase === 'reload_failed' || phase === 'on_reload_rollback') {
-    return 'red'
-  }
-  if (phase === 'on_reload_prepare' || phase === 'on_reload_commit') {
-    return 'cyan'
-  }
-  if (phase === 'on_load' || phase === 'on_start') {
-    return 'blue'
-  }
-  if (
-    phase === 'on_stop' ||
-    phase === 'on_unload' ||
-    phase === 'disposed' ||
-    phase === 'unloaded'
-  ) {
-    return 'default'
-  }
-  return 'geekblue'
-}
-
-const _formatRuntimeTime = (value?: string | null) => {
-  if (!value) {
-    return '-'
-  }
-  const ts = Date.parse(value)
-  if (Number.isNaN(ts)) {
-    return value
-  }
-  return new Date(ts).toLocaleString()
-}
-
-const getConfigObjectFromText = () => parseConfigText(editForm.configText)
-
-const setConfigObjectToText = (config: Record<string, unknown>) => {
-  editForm.configText = JSON.stringify(config, null, 2)
-}
-
-const openJsonPreview = () => {
-  jsonPreviewVisible.value = true
-}
-
-const getFieldValue = (field: string) => {
-  try {
-    const config = getConfigObjectFromText()
-    return config[field]
-  } catch {
-    return undefined
-  }
-}
-
-const _getBooleanValue = (field: string) => Boolean(getFieldValue(field))
-
-const _getNumberValue = (field: string) => {
-  const value = getFieldValue(field)
-  if (typeof value === 'number') {
-    return value
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const numberValue = Number(value)
-    return Number.isFinite(numberValue) ? numberValue : undefined
-  }
-  return undefined
-}
-
-const getSchemaConstraint = (fieldSchema: PluginSchemaField, key: string) =>
-  fieldSchema.constraints?.[key]
-
-const toFiniteNumber = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-  return undefined
-}
-
-const getFieldLabel = (field: string, fieldSchema: PluginSchemaField) =>
-  fieldSchema.title || fieldSchema.description || field
-
-const _getFieldPlaceholder = (fieldSchema: PluginSchemaField) =>
-  typeof fieldSchema.placeholder === 'string' ? fieldSchema.placeholder : undefined
-
-const _getStringMaxLength = (fieldSchema: PluginSchemaField) =>
-  toFiniteNumber(getSchemaConstraint(fieldSchema, 'max_length'))
-
-const _getTextareaRows = (fieldSchema: PluginSchemaField) => {
-  const rows = toFiniteNumber(fieldSchema.rows)
-  return rows && rows > 0 ? rows : 4
-}
-
-const _getNumberMin = (fieldSchema: PluginSchemaField) => {
-  const ge = toFiniteNumber(getSchemaConstraint(fieldSchema, 'ge'))
-  if (ge !== undefined) {
-    return ge
-  }
-  return toFiniteNumber(getSchemaConstraint(fieldSchema, 'gt'))
-}
-
-const _getNumberMax = (fieldSchema: PluginSchemaField) => {
-  const le = toFiniteNumber(getSchemaConstraint(fieldSchema, 'le'))
-  if (le !== undefined) {
-    return le
-  }
-  return toFiniteNumber(getSchemaConstraint(fieldSchema, 'lt'))
-}
-
-const _getNumberStep = (fieldSchema: PluginSchemaField) => {
-  const multipleOf = toFiniteNumber(getSchemaConstraint(fieldSchema, 'multiple_of'))
-  if (multipleOf && multipleOf > 0) {
-    return multipleOf
-  }
-  return fieldSchema.type === 'integer' || fieldSchema.type === 'int' ? 1 : undefined
-}
-
-const isPasswordSchema = (fieldSchema: PluginSchemaField) =>
-  isStringSchema(fieldSchema) && fieldSchema.format === 'password'
-
-const _isTextareaSchema = (fieldSchema: PluginSchemaField) =>
-  isStringSchema(fieldSchema) && fieldSchema.format === 'textarea'
-
-const isUrlSchema = (fieldSchema: PluginSchemaField) =>
-  isStringSchema(fieldSchema) && fieldSchema.format === 'url'
-
-const isEmailSchema = (fieldSchema: PluginSchemaField) =>
-  isStringSchema(fieldSchema) && fieldSchema.format === 'email'
-
-const isBooleanSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'boolean' || fieldSchema.type === 'bool'
-
-const isStringSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'string' || fieldSchema.type === 'str'
-
-const isNumberSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'number' ||
-  fieldSchema.type === 'integer' ||
-  fieldSchema.type === 'int' ||
-  fieldSchema.type === 'float'
-
-const isListSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'list' || fieldSchema.type.startsWith('list[')
-
-const _getListItemType = (fieldSchema: PluginSchemaField) => {
-  if (fieldSchema.item_type) {
-    return fieldSchema.item_type
-  }
-  const matched = /^list\[(.+)]$/.exec(fieldSchema.type)
-  const itemType = matched?.[1]?.trim().toLowerCase()
-  if (!itemType) {
-    return undefined
-  }
-  if (['int', 'integer', 'float', 'number'].includes(itemType)) {
-    return 'number'
-  }
-  if (['bool', 'boolean'].includes(itemType)) {
-    return 'boolean'
-  }
-  if (['str', 'string'].includes(itemType)) {
-    return 'string'
-  }
-  return undefined
-}
-
-const isEnumSchema = (fieldSchema: PluginSchemaField) =>
-  Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && !isEnumListSchema(fieldSchema)
-
-const isEnumListSchema = (fieldSchema: PluginSchemaField) =>
-  Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && isListSchema(fieldSchema)
-
-const isButtonSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'button' || fieldSchema.type === 'action'
-
-const _getEnumOptions = (fieldSchema: PluginSchemaField) =>
-  (fieldSchema.enum || []).map(item => ({
-    label: String(item),
-    value: item as never,
-  }))
-
-const _getEnumListValue = (field: string) => {
-  const value = getFieldValue(field)
-  return Array.isArray(value) ? value : []
-}
-
-const _getTypeLabel = (fieldSchema: PluginSchemaField) => {
-  if (isButtonSchema(fieldSchema)) {
-    return '按钮'
-  }
-  if (isEnumSchema(fieldSchema)) {
-    return '选项'
-  }
-  if (isEnumListSchema(fieldSchema)) {
-    return '多选'
-  }
-  if (isPasswordSchema(fieldSchema)) {
-    return '密码'
-  }
-  if (isStringSchema(fieldSchema)) {
-    return '字符串'
-  }
-  if (isNumberSchema(fieldSchema)) {
-    return '数字'
-  }
-  if (isBooleanSchema(fieldSchema)) {
-    return '布尔'
-  }
-  if (isListSchema(fieldSchema)) {
-    return '列表'
-  }
-  if (fieldSchema.type === 'key_value') {
-    return '键值对'
-  }
-  if (fieldSchema.type === 'table') {
-    return '表格'
-  }
-  return fieldSchema.type
-}
-
-const formatExampleText = (fieldSchema: PluginSchemaField) => {
-  if (!Array.isArray(fieldSchema.examples) || fieldSchema.examples.length === 0) {
-    return ''
-  }
-  return `示例：${fieldSchema.examples.map(item => String(item)).join('、')}`
-}
-
-const isIpv4Host = (host: string) => {
-  const parts = host.split('.')
-  return (
-    parts.length === 4 &&
-    parts.every(part => {
-      if (!/^\d{1,3}$/.test(part)) {
-        return false
-      }
-      const value = Number(part)
-      return value >= 0 && value <= 255
-    })
-  )
-}
-
-const isIpv6Host = (host: string) => host.includes(':')
-
-const isValidDomainHost = (host: string) => {
-  const labels = host.split('.')
-  if (labels.length < 2) {
-    return false
-  }
-  const tld = labels[labels.length - 1]
-  if (!/^[a-zA-Z]{2,}$/.test(tld)) {
-    return false
-  }
-  return labels.every(label => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label))
-}
-
-const isValidHttpUrl = (value: string) => {
-  try {
-    const parsed = new URL(value)
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return '请输入 http 或 https URL'
-    }
-    const hostname = parsed.hostname
-    if (!hostname) {
-      return '请输入有效的 URL'
-    }
-    if (hostname === 'localhost' || isIpv4Host(hostname) || isIpv6Host(hostname)) {
-      return ''
-    }
-    if (!isValidDomainHost(hostname)) {
-      return '请输入有效的域名、localhost 或 IP 地址'
-    }
-    return ''
-  } catch {
-    return '请输入有效的 URL'
-  }
-}
-
-const validateSchemaFieldValue = (
-  field: string,
-  fieldSchema: PluginSchemaField,
-  value: unknown
-) => {
-  if (isButtonSchema(fieldSchema)) {
-    return ''
-  }
-
-  if (value === undefined || value === null || value === '') {
-    if (fieldSchema.required) {
-      return '该字段为必填项'
-    }
-    return ''
-  }
-
-  if (isStringSchema(fieldSchema)) {
-    const text = String(value)
-    const minLength = toFiniteNumber(getSchemaConstraint(fieldSchema, 'min_length'))
-    const maxLength = toFiniteNumber(getSchemaConstraint(fieldSchema, 'max_length'))
-    const pattern = getSchemaConstraint(fieldSchema, 'pattern')
-
-    if (minLength !== undefined && text.length < minLength) {
-      return `至少需要 ${minLength} 个字符`
-    }
-    if (maxLength !== undefined && text.length > maxLength) {
-      return `最多允许 ${maxLength} 个字符`
-    }
-    if (typeof pattern === 'string' && pattern) {
-      try {
-        if (!new RegExp(pattern).test(text)) {
-          return '内容不符合格式要求'
-        }
-      } catch {
-        return ''
-      }
-    }
-    if (isUrlSchema(fieldSchema)) {
-      const urlError = isValidHttpUrl(text)
-      if (urlError) {
-        return urlError
-      }
-    }
-    if (isEmailSchema(fieldSchema)) {
-      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailPattern.test(text)) {
-        return '请输入有效的邮箱地址'
-      }
-    }
-  }
-
-  if (isNumberSchema(fieldSchema)) {
-    const numberValue = toFiniteNumber(value)
-    if (numberValue === undefined) {
-      return '请输入有效数字'
-    }
-    const ge = toFiniteNumber(getSchemaConstraint(fieldSchema, 'ge'))
-    const le = toFiniteNumber(getSchemaConstraint(fieldSchema, 'le'))
-    const gt = toFiniteNumber(getSchemaConstraint(fieldSchema, 'gt'))
-    const lt = toFiniteNumber(getSchemaConstraint(fieldSchema, 'lt'))
-    if (ge !== undefined && numberValue < ge) {
-      return `不能小于 ${ge}`
-    }
-    if (le !== undefined && numberValue > le) {
-      return `不能大于 ${le}`
-    }
-    if (gt !== undefined && numberValue <= gt) {
-      return `必须大于 ${gt}`
-    }
-    if (lt !== undefined && numberValue >= lt) {
-      return `必须小于 ${lt}`
-    }
-  }
-
-  return ''
-}
-
-const collectSchemaFieldErrors = () => {
-  const errors: Record<string, string> = {}
-  let config: Record<string, unknown>
-  try {
-    config = getConfigObjectFromText()
-  } catch {
-    return errors
-  }
-
-  activeSchemaEntries.value.forEach(([field, fieldSchema]) => {
-    const error = validateSchemaFieldValue(field, fieldSchema, config[field])
-    if (error) {
-      errors[field] = error
-    }
-  })
-  return errors
-}
-
-const refreshSchemaFieldErrors = () => {
-  schemaFieldErrors.value = collectSchemaFieldErrors()
-}
-
-const _getFieldHelp = (field: string, fieldSchema: PluginSchemaField) => {
-  const error = schemaFieldErrors.value[field]
-  if (error) {
-    return error
-  }
-  if (typeof fieldSchema.help === 'string' && fieldSchema.help.trim()) {
-    return fieldSchema.help
-  }
-  return formatExampleText(fieldSchema) || undefined
-}
-
-const _getFieldValidateStatus = (field: string, _fieldSchema: PluginSchemaField) =>
-  schemaFieldErrors.value[field] ? 'error' : undefined
-
-const validateActiveSchemaBeforeSubmit = () => {
-  const result = schemaFormRef.value?.validate()
-  const errors = result?.errors || schemaFieldErrors.value
-  const entries = Object.entries(errors)
-  if (entries.length === 0) {
-    return
-  }
-  const [field, error] = entries[0]
-  throw new Error(
-    `${getFieldLabel(field, activeSchema.value[field] || { type: 'string' })}: ${error}`
-  )
-}
-
-const _getJsonFieldText = (field: string) => {
-  const value = getFieldValue(field)
-  if (typeof value === 'string') {
-    return value
-  }
-  return JSON.stringify(value ?? null, null, 2)
-}
-
-const _updateJsonFieldValue = (field: string, rawValue: string) => {
-  try {
-    updateFieldValue(field, JSON.parse(rawValue))
-  } catch {
-    message.warning('JSON 格式不正确，未更新该字段')
-  }
-}
-
-const updateFieldValue = (field: string, value: unknown) => {
-  try {
-    const config = getConfigObjectFromText()
-    config[field] = value as never
-    setConfigObjectToText(config)
-    refreshSchemaFieldErrors()
-  } catch (error) {
-    message.error(`更新字段失败: ${String(error)}`)
-  }
-}
-
-const normalizeListValueByType = (value: unknown, itemType?: string) => {
-  if (itemType === 'number') {
-    if (typeof value === 'number') {
-      return value
-    }
-    const numberValue = Number(value)
-    return Number.isFinite(numberValue) ? numberValue : 0
-  }
-  if (itemType === 'boolean') {
-    return Boolean(value)
-  }
-  return String(value ?? '')
-}
-
-const _getListRows = (field: string): ListRow[] => {
-  const value = getFieldValue(field)
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.map((item, index) => ({
-    __rowKey: `${field}-${index}`,
-    value: item,
-  }))
-}
-
-const _addListRow = (field: string, itemType?: string) => {
-  const value = getFieldValue(field)
-  const list = Array.isArray(value) ? [...value] : []
-  if (itemType === 'number') {
-    list.push(0)
-  } else if (itemType === 'boolean') {
-    list.push(false)
-  } else {
-    list.push('')
-  }
-  updateFieldValue(field, list)
-}
-
-const _removeListRow = (field: string, index: number) => {
-  const value = getFieldValue(field)
-  const list = Array.isArray(value) ? [...value] : []
-  list.splice(index, 1)
-  updateFieldValue(field, list)
-}
-
-const _updateListRowValue = (field: string, index: number, value: unknown, itemType?: string) => {
-  const raw = getFieldValue(field)
-  const list = Array.isArray(raw) ? [...raw] : []
-  list[index] = normalizeListValueByType(value, itemType)
-  updateFieldValue(field, list)
-}
-
-const _getKeyValueRows = (field: string): KeyValueRow[] => {
-  const value = getFieldValue(field)
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return []
-  }
-  return Object.entries(value as Record<string, unknown>).map(([key, item], index) => ({
-    __rowKey: `${field}-${index}`,
-    key,
-    value: String(item ?? ''),
-  }))
-}
-
-const _addKeyValueRow = (field: string) => {
-  const value = getFieldValue(field)
-  const obj =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? { ...(value as Record<string, unknown>) }
-      : {}
-
-  let idx = 1
-  let key = `key_${idx}`
-  while (Object.prototype.hasOwnProperty.call(obj, key)) {
-    idx += 1
-    key = `key_${idx}`
-  }
-
-  obj[key] = ''
-  updateFieldValue(field, obj)
-}
-
-const _removeKeyValueRow = (field: string, key: string) => {
-  const value = getFieldValue(field)
-  const obj =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? { ...(value as Record<string, unknown>) }
-      : {}
-  delete obj[key]
-  updateFieldValue(field, obj)
-}
-
-const _updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => {
-  const safeKey = newKey.trim()
-  if (!safeKey || safeKey === oldKey) {
-    return
-  }
-
-  const value = getFieldValue(field)
-  const obj =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? { ...(value as Record<string, unknown>) }
-      : {}
-
-  if (Object.prototype.hasOwnProperty.call(obj, safeKey)) {
-    message.warning('键名已存在')
-    return
-  }
-
-  obj[safeKey] = obj[oldKey]
-  delete obj[oldKey]
-  updateFieldValue(field, obj)
-}
-
-const _updateKeyValueRowValue = (field: string, key: string, value: string) => {
-  const source = getFieldValue(field)
-  const obj =
-    source && typeof source === 'object' && !Array.isArray(source)
-      ? { ...(source as Record<string, unknown>) }
-      : {}
-  obj[key] = value
-  updateFieldValue(field, obj)
-}
-
-const getTableRows = (field: string): TableRow[] => {
-  const value = getFieldValue(field)
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value.map((item, index) => {
-    const row =
-      item && typeof item === 'object' && !Array.isArray(item)
-        ? { ...(item as Record<string, unknown>) }
-        : {}
-    return {
-      __rowKey: `${field}-${index}`,
-      ...row,
-    }
-  })
-}
-
-const getTableColumns = (field: string): TableColumn[] => {
-  const rows = getTableRows(field)
-  const keys = new Set<string>()
-
-  rows.forEach(row => {
-    Object.keys(row).forEach(key => {
-      if (key !== '__rowKey') {
-        keys.add(key)
-      }
-    })
-  })
-
-  if (keys.size === 0) {
-    keys.add('col_1')
-  }
-
-  const columns: TableColumn[] = Array.from(keys).map(key => ({
-    title: key,
-    dataIndex: key,
-    key,
-  }))
-
-  columns.push({
-    title: '操作',
-    dataIndex: 'action',
-    key: 'action',
-  })
-
-  return columns
-}
-
-const _addTableRow = (field: string) => {
-  const rows = getTableRows(field)
-  const columns = getTableColumns(field)
-  const row: Record<string, unknown> = {}
-
-  columns.forEach(col => {
-    if (col.key !== 'action') {
-      row[col.key] = ''
-    }
-  })
-
-  rows.push({ __rowKey: `${field}-${Date.now()}`, ...row })
-  const next = rows.map(({ __rowKey, ...rest }) => rest)
-  updateFieldValue(field, next)
-}
-
-const _removeTableRow = (field: string, index: number) => {
-  const rows = getTableRows(field)
-  rows.splice(index, 1)
-  const next = rows.map(({ __rowKey, ...rest }) => rest)
-  updateFieldValue(field, next)
-}
-
-const _addTableColumn = (field: string) => {
-  const columnName = window.prompt('请输入列名')
-  if (!columnName) {
-    return
-  }
-
-  const col = columnName.trim()
-  if (!col) {
-    return
-  }
-
-  const rows = getTableRows(field)
-  if (rows.length === 0) {
-    rows.push({
-      __rowKey: `${field}-${Date.now()}`,
-      [col]: '',
-    })
-    const first = rows.map(({ __rowKey, ...rest }) => rest)
-    updateFieldValue(field, first)
-    return
-  }
-
-  rows.forEach(row => {
-    if (!Object.prototype.hasOwnProperty.call(row, col)) {
-      row[col] = ''
-    }
-  })
-
-  const next = rows.map(({ __rowKey, ...rest }) => rest)
-  updateFieldValue(field, next)
-}
-
-const _updateTableCell = (field: string, index: number, key: string, value: string) => {
-  const rows = getTableRows(field)
-  if (!rows[index]) {
-    return
-  }
-
-  rows[index][key] = value
-  const next = rows.map(({ __rowKey, ...rest }) => rest)
-  updateFieldValue(field, next)
-}
-
-const setEditFromInstance = (row: PluginInstance) => {
-  editForm.instanceId = row.id
-  editForm.plugin = row.plugin
-  editForm.name = row.name
-  editForm.enabled = row.enabled
-  const nextConfig = { ...(row.config || {}) }
-  if (hasEnableSchema(row.plugin)) {
-    nextConfig.enable = row.enabled
-  }
-  editForm.configText = JSON.stringify(nextConfig, null, 2)
-  refreshSchemaFieldErrors()
-  editSnapshot.value = captureEditSnapshot()
-}
-
-const selectInstance = (instanceId: string) => {
-  selectedInstanceId.value = instanceId
-  const target = instances.value.find(item => item.id === instanceId)
-  if (target) {
-    setEditFromInstance(target)
-  }
-}
-
-const apiPost = async <T = any,>(url: string, payload: Record<string, unknown> = {}) => {
-  const requestUrl = `${OpenAPI.BASE}${url}`
-  const { data } = await axios.post<T>(requestUrl, payload)
-  return data
-}
-
-const requestDeclaredPluginAction = async <T = any,>(action: PluginActionInfo) => {
-  const method = (action.method || 'POST').toUpperCase()
-  const path = action.path.startsWith('/') ? action.path : `/${action.path}`
-  const requestUrl = `${OpenAPI.BASE}/plugin${path}`
-  const payload = action.payload ?? {}
-  const { data } = await axios.request<T>({
-    method,
-    url: requestUrl,
-    params: method === 'GET' ? payload : undefined,
-    data: method === 'GET' ? undefined : payload,
-  })
-  return data
-}
-
-const runDeclaredPluginAction = async (action: PluginActionInfo, sourceLabel = '插件动作') => {
-  pluginActionLoadingId.value = action.id
-  try {
-    const data = await requestDeclaredPluginAction<any>(action)
-    if (
-      data &&
-      typeof data === 'object' &&
-      'code' in data &&
-      Number((data as { code?: number }).code) !== 200
-    ) {
-      throw new Error(String((data as { message?: string }).message || '插件动作执行失败'))
-    }
-    message.success(`${action.label} 已执行`)
-    if (action.refresh) {
-      void fetchData()
-    }
-  } catch (error) {
-    message.error(`${sourceLabel}失败: ${String(error)}`)
-    logger.error(`${sourceLabel}失败: action=${action.id}, error=${String(error)}`)
-  } finally {
-    pluginActionLoadingId.value = ''
-  }
-}
-
-const triggerPluginAction = async (action: PluginActionInfo) => {
-  await runDeclaredPluginAction(action, '插件动作')
-}
-
-const getSchemaButtonActionId = (field: string) => field
-
-const getSchemaButtonAction = (
-  field: string,
-  fieldSchema: PluginSchemaField
-): PluginActionInfo | null => {
-  const action = fieldSchema.action || fieldSchema.button
-  if (!action || typeof action !== 'object') {
-    return null
-  }
-  if (typeof action.path !== 'string' || !action.path.trim()) {
-    return null
-  }
-  return {
-    id: getSchemaButtonActionId(field),
-    label: action.label || getFieldLabel(field, fieldSchema),
-    path: action.path,
-    method: action.method || 'POST',
-    payload: action.payload ?? {},
-    plugin: editForm.plugin,
-    refresh: Boolean(action.refresh),
-  }
-}
-
-const triggerSchemaButtonAction = async (field: string, fieldSchema: PluginSchemaField) => {
-  const action = getSchemaButtonAction(field, fieldSchema)
-  if (!action) {
-    message.warning('Schema 按钮缺少 action.path 声明')
-    return
-  }
-  await runDeclaredPluginAction(action, 'Schema 按钮')
-}
-
-const handleWsCommandResponse = (message: WebSocketBaseMessage) => {
-  const payload = message.data as WsCommandResponse | undefined
-  const requestId = payload?.request_id
-  if (typeof requestId !== 'string') {
-    return
-  }
-
-  const pending = wsCommandPending.get(requestId)
-  if (!pending) {
-    return
-  }
-
-  clearTimeout(pending.timer)
-  wsCommandPending.delete(requestId)
-
-  if (payload?.success) {
-    pending.resolve(payload.data)
-    return
-  }
-
-  pending.reject(
-    new PluginWebSocketCommandError(
-      payload?.message || `WebSocket command failed: ${requestId}`,
-      true
-    )
-  )
-}
-
-const ensureWsResponseSubscription = () => {
-  if (wsResponseSubscriptionId) {
-    return
-  }
-  wsResponseSubscriptionId = subscribe({ type: 'response', id: 'Client' }, handleWsCommandResponse)
-}
-
-const cleanupPendingWsCommands = () => {
-  wsCommandPending.forEach(pending => {
-    clearTimeout(pending.timer)
-    pending.reject(
-      new PluginWebSocketCommandError(
-        'Plugin websocket command cancelled after dispatch; result unknown',
-        true
+// ---- 生命周期 ----
+
+const handleWsMessage = (wsMessage: any) => {
+  const newId = handlePluginSystemMessage(
+    wsMessage,
+    (data, preferredId) => {
+      // 自定义 applySnapshot 包装
+      const resultId = applySnapshot(
+        data,
+        nextInstances => pluginLayout.syncWithInstances(nextInstances),
+        preferredId
       )
-    )
-  })
-  wsCommandPending.clear()
-}
-
-const sendPluginCommand = async <T = any,>(
-  endpoint: string,
-  params: Record<string, unknown> = {}
-) => {
-  try {
-    ensureWsResponseSubscription()
-  } catch (error) {
-    throw new PluginWebSocketCommandError(
-      `WebSocket response subscription failed before dispatch: ${String(error)}`,
-      false
-    )
-  }
-
-  return await new Promise<T>((resolve, reject) => {
-    const requestId = `plugin_${Date.now()}_${(wsCommandCounter += 1)}`
-    const timer = setTimeout(() => {
-      wsCommandPending.delete(requestId)
-      reject(
-        new PluginWebSocketCommandError(
-          `WebSocket command timeout after dispatch; result unknown: ${endpoint}`,
-          true
-        )
-      )
-    }, 10000)
-
-    wsCommandPending.set(requestId, { resolve, reject, timer })
-
-    const sent = sendRaw('command', { endpoint, params }, requestId)
-    if (!sent) {
-      clearTimeout(timer)
-      wsCommandPending.delete(requestId)
-      reject(
-        new PluginWebSocketCommandError(
-          `WebSocket unavailable before command dispatch: ${endpoint}`,
-          false
-        )
-      )
-    }
-  })
-}
-
-const requestPluginAction = async <T = any,>(
-  endpoint: string,
-  url: string,
-  payload: Record<string, unknown> = {}
-) => {
-  return await requestPluginActionWithFallback<T>({
-    endpoint,
-    sendOverWebSocket: () => sendPluginCommand<T>(endpoint, payload),
-    sendOverHttp: () => apiPost<T>(url, payload),
-    onHttpFallback: error => {
-      logger.warn(`WebSocket command fallback to HTTP: ${endpoint}, error=${String(error)}`)
+      if (resultId) {
+        selectedInstanceId.value = resultId
+        const target = instances.value.find(item => item.id === resultId)
+        if (target) setEditFromInstance(target)
+      }
+      return resultId
     },
-    onHttpReplaySuppressed: error => {
-      logger.warn(
-        `WebSocket command was dispatched; suppressing unsafe HTTP replay: ${endpoint}, error=${String(error)}`
-      )
-    },
-  })
-}
-
-const applySnapshot = (
-  data: PluginsGetResponse,
-  preferredInstanceId = selectedInstanceId.value
-) => {
-  const hadDirtyDraft = isDirty.value
-  const nextInstances = Array.isArray(data.instances) ? data.instances : []
-
-  version.value = data.version
-  discoveredPlugins.value = data.discovered_plugins || []
-  schemaMap.value = data.schemas || {}
-  schemaErrors.value = data.schema_errors || {}
-  pluginServices.value = data.plugin_services || {}
-  pluginRoutes.value = data.plugin_routes || {}
-  pluginActions.value = data.plugin_actions || {}
-  pluginPackages.value = data.plugin_packages || {}
-  instances.value = nextInstances
-  syncPluginListLayoutWithInstances(nextInstances)
-  runtimeStates.value = data.runtime_states || {}
-
-  if (nextInstances.length === 0) {
-    selectedInstanceId.value = ''
-    return
-  }
-
-  const targetId = nextInstances.some(item => item.id === preferredInstanceId)
-    ? preferredInstanceId
-    : nextInstances[0].id
-
-  selectedInstanceId.value = targetId
-  const target = nextInstances.find(item => item.id === targetId)
-  if (!target) {
-    return
-  }
-
-  if (!hadDirtyDraft || editForm.instanceId !== targetId) {
-    setEditFromInstance(target)
-  }
-}
-
-const applyRuntimeStateUpdate = (record: PluginRuntimeState) => {
-  if (!record?.instance_id) {
-    return
-  }
-
-  runtimeStates.value = {
-    ...runtimeStates.value,
-    [record.instance_id]: record,
-  }
-}
-
-const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
-  const payload = wsMessage.data as
-    | PluginSystemRuntimeMessage
-    | PluginSystemSnapshotMessage
-    | PluginSystemHmrMessage
-    | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
-
-  if (payload.kind === 'snapshot') {
-    applySnapshot(payload)
-    return
-  }
-
-  if (payload.kind === 'runtime_state') {
-    applyRuntimeStateUpdate(payload.record)
-    return
-  }
-
-  if (payload.kind === 'hmr') {
-    logger.info(
-      `Plugin HMR: plugin=${payload.plugin || '-'}, action=${payload.action}, status=${payload.status}`
-    )
-    if (payload.status === 'error') {
-      message.warning(`插件 HMR 失败: ${payload.message || payload.plugin || 'unknown'}`)
-    }
-  }
-}
-
-const fetchDataByHttp = async () => {
-  const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
-  if (data.code !== 200 || data.status !== 'success') {
-    throw new Error(data.message || '获取插件配置失败')
-  }
-  applySnapshot(data)
-}
-
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const data = await requestPluginAction<PluginsGetResponse>(
-      'plugins.get',
-      '/api/plugins/get',
-      {}
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '获取插件配置失败')
-    }
-    applySnapshot(data)
-  } catch (error) {
-    logger.warn(`Plugin fetch by websocket failed: ${String(error)}`)
-    try {
-      await fetchDataByHttp()
-    } catch (httpError) {
-      message.error(`获取失败: ${String(httpError)}`)
-      logger.error(`获取插件配置失败: ${String(httpError)}`)
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-const openAddModal = () => {
-  addForm.plugin = discoveredPluginOptions.value[0]?.name || ''
-  addForm.name = ''
-  addForm.enabled = true
-  addPluginKeyword.value = ''
-  addModalVisible.value = true
-}
-
-const submitAdd = async () => {
-  if (!addForm.plugin) {
-    message.warning('请先选择要新增的插件')
-    return
-  }
-  submitting.value = true
-  try {
-    const data = await requestPluginAction<any>('plugins.add', '/api/plugins/add', {
-      plugin: addForm.plugin,
-      name: addForm.name || undefined,
-      enabled: addForm.enabled,
-      config: {},
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '新增失败')
-    }
-    message.success('新增成功')
-    addModalVisible.value = false
-    if (data.instance?.id) {
-      if (instances.value.some(item => item.id === data.instance.id)) {
-        selectInstance(data.instance.id)
-      } else {
-        selectedInstanceId.value = data.instance.id
-      }
-    }
-  } catch (error) {
-    message.error(`新增失败: ${String(error)}`)
-  } finally {
-    submitting.value = false
-  }
-}
-
-const resetEdit = () => {
-  const target = selectedInstance.value
-  if (!target) {
-    return
-  }
-  setEditFromInstance(target)
-}
-
-const submitEdit = async () => {
-  submitting.value = true
-  try {
-    const config = parseConfigText(editForm.configText)
-    validateActiveSchemaBeforeSubmit()
-    if (hasEnableSchema(editForm.plugin)) {
-      config.enable = editForm.enabled
-      setConfigObjectToText(config)
-    }
-    const target = selectedInstance.value
-    if (!target) {
-      throw new Error('未选择插件实例')
-    }
-    const payload: Record<string, unknown> = {
-      instanceId: editForm.instanceId,
-    }
-    const nextConfigText = JSON.stringify(config, null, 2)
-    if (editForm.name !== target.name) {
-      payload.name = editForm.name
-    }
-    if (editForm.plugin !== target.plugin) {
-      payload.plugin = editForm.plugin
-    }
-    if (editForm.enabled !== target.enabled) {
-      payload.enabled = editForm.enabled
-    }
-    const targetConfig = { ...(target.config || {}) }
-    if (hasEnableSchema(editForm.plugin)) {
-      targetConfig.enable = target.enabled
-    }
-    if (nextConfigText !== JSON.stringify(targetConfig, null, 2)) {
-      payload.config = config
-    }
-    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
-      ...payload,
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '更新失败')
-    }
-    instances.value = instances.value.map(item =>
-      item.id === editForm.instanceId
-        ? {
-            ...item,
-            plugin: editForm.plugin,
-            name: editForm.name,
-            enabled: editForm.enabled,
-            config,
-          }
-        : item
-    )
-    editSnapshot.value = captureEditSnapshot()
-    message.success('更新成功')
-  } catch (error) {
-    message.error(`更新失败: ${String(error)}`)
-  } finally {
-    submitting.value = false
-  }
-}
-
-const deleteInstance = async (instanceId: string) => {
-  const target = instances.value.find(item => item.id === instanceId)
-  if (target?.locked) {
-    message.info('系统插件不可删除')
-    return
-  }
-  try {
-    const data = await requestPluginAction<any>('plugins.delete', '/api/plugins/delete', {
-      instanceId,
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '删除失败')
-    }
-    message.success('删除成功')
-    const nextInstances = instances.value.filter(item => item.id !== instanceId)
-    instances.value = nextInstances
-    syncPluginListLayoutWithInstances(nextInstances)
-    if (selectedInstanceId.value === instanceId) {
-      const nextSelectedId = nextInstances[0]?.id || ''
-      selectedInstanceId.value = nextSelectedId
-      const nextSelectedInstance = nextInstances.find(item => item.id === nextSelectedId)
-      if (nextSelectedInstance) {
-        setEditFromInstance(nextSelectedInstance)
-      }
-    }
-  } catch (error) {
-    message.error(`删除失败: ${String(error)}`)
-  }
-}
-
-const reloadAll = async () => {
-  reloadingAll.value = true
-  try {
-    const data = await requestPluginAction<any>('plugins.reload', '/api/plugins/reload', {})
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '重载失败')
-    }
-    message.success('重载全部成功')
-  } catch (error) {
-    message.error(`重载失败: ${String(error)}`)
-  } finally {
-    reloadingAll.value = false
-  }
-}
-
-const reloadInstance = async (instanceId: string) => {
-  try {
-    const data = await requestPluginAction<any>(
-      'plugins.reload_instance',
-      '/api/plugins/reload_instance',
-      { instanceId }
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '重载实例失败')
-    }
-    message.success(`实例重载成功: ${instanceId}`)
-  } catch (error) {
-    message.error(`实例重载失败: ${String(error)}`)
-  }
-}
-
-const reloadPlugin = async (plugin: string) => {
-  try {
-    const data = await requestPluginAction<any>(
-      'plugins.reload_plugin',
-      '/api/plugins/reload_plugin',
-      { plugin }
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '重载插件失败')
-    }
-    message.success(`插件重载成功: ${plugin}`)
-  } catch (error) {
-    message.error(`插件重载失败: ${String(error)}`)
-  }
-}
-
-const uninstallPluginPackage = async (plugin: string) => {
-  if (selectedInstance.value?.locked) {
-    message.info('系统插件不可卸载')
-    return
-  }
-  const packageName = pluginPackages.value[plugin]?.package || ''
-  if (!packageName) {
-    message.warning('当前插件缺少安装包信息，无法卸载')
-    return
-  }
-
-  uninstallingPlugin.value = plugin
-  try {
-    const data = await requestPluginAction<any>(
-      'plugins.uninstall_package',
-      '/api/plugins/uninstall_package',
-      { package: packageName }
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '卸载插件失败')
-    }
-    message.success(`插件包已卸载: ${packageName}`)
-    await fetchData()
-  } catch (error) {
-    message.error(`卸载插件失败: ${String(error)}`)
-  } finally {
-    uninstallingPlugin.value = ''
-  }
-}
-
-const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean) => {
-  if (instance.locked) {
-    message.info('系统插件不可禁用')
-    return
-  }
-  togglingInstanceId.value = instance.id
-  try {
-    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
-      instanceId: instance.id,
-      enabled,
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '更新启用状态失败')
-    }
-
-    instances.value = instances.value.map(item =>
-      item.id === instance.id
-        ? {
-            ...item,
-            enabled,
-          }
-        : item
-    )
-
-    if (selectedInstanceId.value === instance.id && !isDirty.value) {
-      editForm.enabled = enabled
-      if (hasEnableSchema(editForm.plugin)) {
-        updateFieldValue('enable', enabled)
-      }
-      editSnapshot.value = captureEditSnapshot()
-    }
-  } catch (error) {
-    message.error(`更新启用状态失败: ${String(error)}`)
-  } finally {
-    togglingInstanceId.value = ''
+    selectedInstanceId.value
+  )
+  if (newId) {
+    selectedInstanceId.value = newId
+    const target = instances.value.find(item => item.id === newId)
+    if (target) setEditFromInstance(target)
   }
 }
 
@@ -2648,8 +972,8 @@ watch(
 )
 
 onMounted(() => {
-  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
-  void fetchData()
+  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handleWsMessage)
+  void handleRefresh()
 })
 
 onUnmounted(() => {
@@ -2657,701 +981,114 @@ onUnmounted(() => {
     unsubscribe(pluginSystemSubscriptionId)
     pluginSystemSubscriptionId = ''
   }
-  if (wsResponseSubscriptionId) {
-    unsubscribe(wsResponseSubscriptionId)
-    wsResponseSubscriptionId = ''
-  }
-  cleanupPendingWsCommands()
+  cleanup()
 })
 </script>
 
 <style scoped>
 .plugin-page {
-  padding: 16px;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  container: plugin-page / inline-size;
   box-sizing: border-box;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--v6-color-window);
+  color: var(--v6-color-text);
 }
 
-.scripts-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+.plugin-page-header,
+.plugin-toolbar {
   flex-shrink: 0;
 }
 
-.page-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.section-card {
-  margin-bottom: 0;
-}
-
-.main-layout {
-  --plugin-instance-list-width: 350px;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  align-items: stretch;
-}
-
-.main-layout :deep(.ant-col) {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-
-.plugin-list-col {
-  flex: 0 0 var(--plugin-instance-list-width) !important;
-  width: var(--plugin-instance-list-width);
-  max-width: var(--plugin-instance-list-width);
-  min-width: var(--plugin-instance-list-width);
-}
-
-.plugin-detail-col {
-  min-width: 0;
-}
-
-.left-panel {
-  position: sticky;
-  top: 0;
-  height: 100%;
-}
-
-.list-card {
-  height: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.list-card :deep(.ant-card-body) {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.search-box {
-  margin-bottom: 10px;
-}
-
-.instance-list {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
-  padding-bottom: 28px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.instance-list::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.detail-card {
-  height: 100%;
-  min-width: 0;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.detail-card :deep(.ant-card-head) {
-  min-height: 56px;
-  padding-inline: 16px;
-}
-
-.detail-card :deep(.ant-card-head-title) {
-  padding: 12px 0;
-}
-
-.detail-card :deep(.ant-card-extra) {
-  padding: 8px 0;
-}
-
-.detail-card :deep(.ant-card-body) {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  padding: 16px;
-}
-
-.detail-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 2px;
-  padding-bottom: 28px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.detail-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.detail-scroll :deep(.ant-table-wrapper),
-.detail-scroll :deep(.ant-table-container),
-.detail-scroll :deep(.ant-table-content) {
-  max-width: 100%;
-  overflow-x: hidden !important;
-}
-
-.detail-scroll :deep(.ant-table) {
-  width: 100%;
-  table-layout: fixed;
-}
-
-.detail-scroll :deep(.ant-table-cell) {
-  white-space: normal;
-  word-break: break-word;
-}
-
-.instance-item {
+.plugin-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  background: var(
-    --app-background-panel-bg,
-    var(--app-background-card-bg, var(--ant-color-bg-container))
-  );
-  transition: all 0.2s ease;
-  outline: none;
+  gap: var(--v6-space-2);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+  white-space: nowrap;
 }
 
-.status-dot {
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.toolbar-hint {
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
 }
 
-.instance-item.active {
-  border-color: var(--ant-color-primary);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
-    color-mix(
-      in srgb,
-      var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container)))
-        72%,
-      var(--ant-color-primary-bg)
-    )
-  );
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--ant-color-primary) 12%, transparent);
+.toolbar-search {
+  width: 180px;
 }
 
-.instance-item:hover {
-  border-color: var(--ant-color-primary-hover);
-  transform: translateY(+1px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-
-.instance-item:focus-visible {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 24%, transparent);
-}
-
-.instance-name {
-  flex: 1;
-  min-width: 0;
+.toolbar-search :deep(.anticon) {
+  color: var(--v6-color-text-tertiary);
   font-size: 13px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
-.list-card-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.instance-group {
-  margin-bottom: 12px;
-}
-
-.group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 2px;
-  margin-bottom: 4px;
-}
-
-.group-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ant-color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.group-menu-btn {
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 4px;
-  color: var(--ant-color-text-tertiary);
-}
-
-/* 拖拽手柄 */
-.drag-handle {
-  flex: 0 0 14px;
-  width: 14px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  cursor: move;
-  user-select: none;
-}
-
-.drag-handle:hover .drag-dots {
-  opacity: 0.85;
-}
-
-.drag-dots {
-  width: 8px;
-  height: 14px;
-  display: block;
-  background-image: radial-gradient(currentColor 1px, transparent 1px);
-  background-size: 4px 4px;
-  background-position: 0 0;
-  opacity: 0.5;
-}
-
-/* 拖拽状态 */
-.instance-ghost {
-  opacity: 0.4;
-}
-
-.instance-chosen {
-  cursor: move !important;
-}
-
-.instance-drag {
-  transform: rotate(1deg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-}
-
-.instance-drag .drag-handle {
-  cursor: grabbing !important;
-}
-
-.instance-drag .drag-dots {
-  opacity: 1;
-}
-
-.instance-switch {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.system-tag {
-  flex: 0 0 auto;
-  margin-inline-end: 0;
-}
-
-.runtime-observer-card {
-  margin-bottom: 10px;
-}
-
-.plugin-action-card {
-  margin-bottom: 10px;
-}
-
-.service-alert {
-  margin-bottom: 10px;
-}
-
-.service-declaration-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.service-declaration-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.service-declaration-label {
-  flex: 0 0 auto;
-  margin-inline-end: 0;
-}
-
-.service-declaration-value {
-  min-width: 0;
-  word-break: break-word;
-}
-
-.detail-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.editor-card {
-  margin-bottom: 10px;
-  border-color: var(--ant-color-border-secondary);
-  background: color-mix(
-    in srgb,
-    var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container))) 96%,
-    var(--ant-color-fill-quaternary)
-  );
-}
-
-.editor-card :deep(.ant-card-head) {
-  min-height: 48px;
-  border-bottom-color: var(--ant-color-border-secondary);
-}
-
-.editor-card :deep(.ant-card-head-title) {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.editor-card :deep(.ant-card-body) {
-  padding: 16px 18px;
-}
-
-.schema-field-head {
-  margin-bottom: 8px;
-}
-
-.type-tag {
-  font-weight: 500;
-}
-
-.schema-item :deep(.ant-form-item-control-input-content) {
-  border-radius: 8px;
-}
-
-.schema-item {
-  padding: 14px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(
-    --app-background-panel-bg,
-    var(--app-background-card-bg, var(--ant-color-bg-container))
-  );
-}
-
-.schema-item :deep(.ant-form-item-label) {
-  padding-bottom: 4px;
-}
-
-.schema-item :deep(.ant-form-item-label > label) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.schema-item-boolean :deep(.ant-form-item-control-input-content) {
-  padding-top: 2px;
-}
-
-.schema-item-string :deep(.ant-form-item-control-input-content) {
-  max-width: 100%;
-}
-
-.schema-item-number :deep(.ant-form-item-control-input-content) {
-  max-width: 260px;
-}
-
-.schema-item-list :deep(.ant-form-item-control-input-content),
-.schema-item-key_value :deep(.ant-form-item-control-input-content),
-.schema-item-table :deep(.ant-form-item-control-input-content) {
-  max-width: 100%;
-}
-
-.detail-card :deep(.ant-alert) {
-  border-radius: 10px;
-  background: var(
-    --app-background-panel-bg,
-    var(--app-background-card-bg, var(--ant-color-bg-container))
-  );
-}
-
-.detail-card :deep(.ant-form-item) {
-  margin-bottom: 14px;
-}
-
-.detail-card :deep(.ant-table-wrapper) {
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.detail-card :deep(.ant-card-small > .ant-card-body) {
-  padding: 14px;
-  background: var(
-    --app-background-panel-bg,
-    var(--app-background-card-bg, var(--ant-color-bg-container))
-  );
-}
-
-.add-plugin-modal-body {
-  min-height: 0;
-}
-
-.add-plugin-modal-body :deep(.ant-input),
-.add-plugin-modal-body :deep(.ant-select-selector) {
-  border-radius: 8px;
-}
-
-.add-plugin-modal-body :deep(.ant-form-item) {
-  margin-bottom: 12px;
-}
-
-.add-plugin-modal-body :deep(.ant-modal-body) {
-  padding-top: 14px;
-}
-
-.add-plugin-layout {
-  align-items: stretch;
-}
-
-.add-plugin-layout-col {
-  display: flex;
-}
-
-.add-plugin-picker-panel,
-.add-plugin-side-card {
-  width: 100%;
-}
-
-.add-plugin-picker-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.add-plugin-panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.add-plugin-panel-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.add-plugin-panel-hint {
-  margin-top: 2px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--ant-color-text-secondary);
-}
-
-.add-plugin-search {
-  margin-bottom: 6px;
-}
-
-.add-plugin-picker-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  font-size: 11px;
-  color: var(--ant-color-text-secondary);
-}
-
-.plugin-option-grid {
+/* 无边界分栏：内容直接铺在窗体背景上，仅保留双 pane 分隔线（拒绝白框套白框） */
+.plugin-workspace {
+  --plugin-instance-list-width: 380px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  max-height: 468px;
-  overflow: auto;
-  padding-right: 2px;
-}
-
-.plugin-option-card {
-  appearance: none;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 10px;
-  padding: 11px 12px 10px;
-  text-align: left;
-  background: var(
-    --app-background-panel-bg,
-    var(--app-background-card-bg, var(--ant-color-bg-container))
-  );
-  cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
-}
-
-.plugin-option-card:hover {
-  border-color: var(--ant-color-primary-hover);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-  transform: translateY(-1px);
-}
-
-.plugin-option-card.active {
-  border-color: var(--ant-color-primary);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
-    color-mix(
-      in srgb,
-      var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container)))
-        72%,
-      var(--ant-color-primary-bg)
-    )
-  );
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--ant-color-primary) 14%, transparent);
-}
-
-.plugin-option-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.plugin-option-name {
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--ant-color-text);
-  overflow-wrap: anywhere;
-}
-
-.plugin-option-description {
+  grid-template-columns: var(--plugin-instance-list-width) minmax(0, 1fr);
   flex: 1;
-  min-height: 32px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--ant-color-text-secondary);
-  word-break: break-word;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  margin: var(--v6-space-4) var(--v6-content-padding-inline)
+    calc(var(--v6-space-6) + var(--v6-space-2));
+}
+
+.plugin-list-pane,
+.plugin-detail-pane {
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
-.plugin-option-tags {
-  margin-top: auto;
-  padding-top: 8px;
-  min-height: 26px;
-  align-items: flex-end;
-  align-content: flex-end;
+.plugin-list-pane {
+  border-right: 1px solid var(--v6-color-border);
 }
 
-.plugin-option-tags:empty {
-  display: none;
-}
-
-.plugin-option-card :deep(.ant-space-item) {
-  display: flex;
-  align-items: center;
-}
-
-.plugin-option-card :deep(.ant-space) {
-  row-gap: 6px !important;
-}
-
-.plugin-option-card :deep(.ant-space-item .ant-tag) {
-  margin-top: 0;
-}
-
-.add-plugin-side-card {
-  border-color: var(--ant-color-border-secondary);
-  border-radius: 10px;
-  background: var(--app-background-card-elevated-bg, var(--ant-color-bg-container));
-}
-
-.add-plugin-side-card :deep(.ant-card-body) {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-}
-
-.add-plugin-side-card :deep(.ant-card-head) {
-  min-height: 42px;
-}
-
-.add-plugin-side-card :deep(.ant-card-head-title) {
-  padding: 10px 0;
-  font-size: 14px;
-}
-
-.add-plugin-side-card :deep(.ant-form-item-label) {
-  padding-bottom: 4px;
-}
-
-.add-plugin-side-card :deep(.ant-form-item-label > label) {
-  font-size: 12px;
-}
-
-.add-plugin-side-tags {
-  display: flex;
-}
-
-.add-plugin-side-tags :deep(.ant-tag),
-.plugin-option-card :deep(.ant-tag) {
-  margin-inline-end: 0;
-  font-size: 11px;
-  line-height: 18px;
-  padding-inline: 7px;
-}
-
-.add-plugin-schema-alert {
-  margin-bottom: 0;
-}
-
-.add-plugin-schema-alert :deep(.ant-alert-message) {
-  font-size: 12px;
-}
-
-.add-plugin-service-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-}
-
-@media (max-width: 1200px) {
-  .plugin-option-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* .plugin-page 自身规则须由外层 app-shell 的 app-content 容器驱动
+   (@container 不能命中声明容器的元素自身) */
+@container app-content (max-width: 760px) {
+  .plugin-page {
+    overflow: auto;
   }
 }
 
-@media (max-width: 1100px) {
-  .plugin-option-grid {
+@container plugin-page (max-width: 760px) {
+  .plugin-workspace {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 38vh) minmax(360px, 1fr);
+    min-height: 680px;
+    overflow: visible;
+    margin-inline: var(--v6-space-3);
+  }
+
+  .plugin-list-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--v6-color-border);
+  }
+
+  .plugin-list-pane,
+  .plugin-detail-pane {
+    overflow: auto;
+  }
+
+  .toolbar-search {
+    width: min(220px, 48vw);
+  }
+}
+@container plugin-page (max-width: 920px) {
+  .plugin-workspace {
+    --plugin-instance-list-width: 320px;
+  }
+
+  .toolbar-hint {
+    display: none;
   }
 }
 </style>

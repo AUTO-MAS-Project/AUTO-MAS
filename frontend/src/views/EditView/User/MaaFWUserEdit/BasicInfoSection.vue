@@ -105,13 +105,21 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            size="large"
-            autocomplete="off"
-            placeholder="仅用于本地记录…"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
+          <div class="sensitive-field">
+            <a-input-password
+              :value="passwordDraft"
+              size="large"
+              autocomplete="new-password"
+              :placeholder="passwordPlaceholder"
+              @update:value="updatePasswordDraft"
+            />
+            <a-space>
+              <a-button type="primary" ghost :disabled="!passwordDraft" @click="savePassword">
+                保存新值
+              </a-button>
+              <a-button v-if="hasStoredPassword" danger @click="clearPassword">清空原值</a-button>
+            </a-space>
+          </div>
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="8">
@@ -131,6 +139,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface'
 import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWPresetInfo, MaaFWUserConfig } from '@/types/script'
@@ -144,7 +154,7 @@ type DisplayItem = {
   label?: string | null
 }
 
-defineProps<{
+const props = defineProps<{
   formData: MaaFWUserFormData
   presetOptions: MaaFWPresetInfo[]
   selectedPresetLabel: string
@@ -154,8 +164,44 @@ defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: unknown]
+  sensitiveSave: [key: 'Info.Password', intent: 'replace' | 'clear', value?: string]
+  sensitiveDirtyChange: [key: 'Info.Password', dirty: boolean]
   presetMenuClick: [event: MenuInfo]
 }>()
+
+const passwordDraft = ref('')
+const hasStoredPassword = computed(() => Boolean(props.formData.Info.Password))
+const passwordPlaceholder = computed(() =>
+  hasStoredPassword.value ? '已保存；输入新值后明确保存' : '仅用于本地记录…'
+)
+
+const updatePasswordDraft = (value: string) => {
+  passwordDraft.value = value
+  emit('sensitiveDirtyChange', 'Info.Password', Boolean(value))
+}
+
+const savePassword = () => {
+  if (!passwordDraft.value) return
+  emit('sensitiveSave', 'Info.Password', 'replace', passwordDraft.value)
+}
+
+const clearPassword = () => {
+  Modal.confirm({
+    title: '清空已保存密码？',
+    content: '清空后无法恢复，后续如需账号切换必须重新填写。',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => emit('sensitiveSave', 'Info.Password', 'clear', ''),
+  })
+}
+
+defineExpose({
+  resetPasswordDraft: () => {
+    passwordDraft.value = ''
+    emit('sensitiveDirtyChange', 'Info.Password', false)
+  },
+})
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name
 
@@ -221,5 +267,10 @@ const emitSave = (key: string, value: unknown) => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
 }
 </style>

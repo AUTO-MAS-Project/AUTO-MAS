@@ -4,7 +4,6 @@
       ref="inputRef"
       :value="draftValue"
       allow-clear
-      size="large"
       class="script-search-input"
       placeholder="搜索脚本名称、类型、用户、标签或备注"
       @update:value="handleValueUpdate"
@@ -17,7 +16,7 @@
       </template>
     </a-input>
 
-    <span class="script-search-summary" aria-live="polite">{{ summary }}</span>
+    <span v-if="modelValue" class="script-search-summary" aria-live="polite">{{ summary }}</span>
 
     <div class="script-search-navigation" aria-label="搜索结果导航">
       <a-tooltip title="上一个匹配项（Shift+Enter）">
@@ -54,30 +53,18 @@
         </template>
       </a-button>
     </a-tooltip>
-
-    <p v-if="dragDisabled" class="script-search-drag-notice">
-      <InfoCircleOutlined aria-hidden="true" />
-      搜索期间暂停拖拽排序，清除搜索后恢复
-    </p>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import {
-  CloseOutlined,
-  DownOutlined,
-  InfoCircleOutlined,
-  SearchOutlined,
-  UpOutlined,
-} from '@ant-design/icons-vue'
+import { CloseOutlined, DownOutlined, SearchOutlined, UpOutlined } from '@ant-design/icons-vue'
 import { getScriptSearchEnterDirection } from '@/views/scripts/scriptPageSearch'
 
 interface Props {
   modelValue: string
   summary: string
   matchCount: number
-  dragDisabled: boolean
 }
 
 interface Emits {
@@ -128,23 +115,20 @@ defineExpose({ focus })
 </script>
 
 <style scoped>
+/* 行内布局:嵌入工具栏 trailing 槽,与按钮同行向左横向展开,宽度由外层容器控制 */
 .script-search-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--v6-space-2);
-  position: relative;
-  margin: calc(var(--v6-space-2) * -1) 0 var(--v6-space-6);
-  padding: var(--v6-space-3) var(--v6-space-4);
-  background: var(--app-background-panel-bg, var(--v6-color-surface));
-  border: 1px solid var(--v6-color-border-subtle);
-  border-radius: var(--v6-radius-card);
-  box-shadow: var(--v6-shadow-card);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .script-search-input {
-  flex: 1;
-  min-width: 240px;
-  max-width: 720px;
+  flex: 1 1 auto;
+  min-width: 96px;
 }
 
 .script-search-summary {
@@ -160,32 +144,15 @@ defineExpose({ focus })
   flex-shrink: 0;
 }
 
-.script-search-drag-notice {
-  position: absolute;
-  top: calc(100% + var(--v6-space-1));
-  left: var(--v6-space-2);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--v6-space-1);
-  margin: 0;
-  color: var(--v6-color-text-tertiary);
-  font-size: 12px;
-}
-
-@media (max-width: 900px) {
-  .script-search-bar {
-    align-items: stretch;
-    flex-wrap: wrap;
-  }
-
-  .script-search-input {
-    max-width: none;
-  }
-
-  .script-search-drag-notice {
-    position: static;
-    flex-basis: 100%;
-    padding-left: var(--v6-space-1);
+/* 按脚本页容器宽度响应(侧栏挤压时同样生效),不用视口 @media:
+   窄容器下仅隐藏摘要的视觉呈现,保留 aria-live 播报 */
+@container scripts-page (max-width: 900px) {
+  .script-search-summary {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
 }
 </style>

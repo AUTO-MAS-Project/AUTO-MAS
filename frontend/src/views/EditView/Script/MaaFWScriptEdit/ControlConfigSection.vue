@@ -414,3 +414,4 @@ const emit = defineEmits<{
   transform: translateY(-8px);
 }
 </style>
+<style scoped src="../script-edit-surface.css"></style>

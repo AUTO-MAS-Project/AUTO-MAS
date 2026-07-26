@@ -1,120 +1,21 @@
-<template>
-  <div class="title-bar" :class="{ 'title-bar-dark': isDark }">
-    <!-- 左侧：Logo和软件名 -->
-    <div class="title-bar-left">
-      <div class="logo-section">
-        <!-- 新增虚化主题色圆形阴影 -->
-        <span class="logo-glow" aria-hidden="true"></span>
-        <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="title-logo" />
-        <span class="title-text">AUTO-MAS</span>
-        <span class="version-text">
-          {{ version }}
-          <span
-            v-if="isBootstrapping"
-            class="startup-status"
-            role="status"
-            aria-live="polite"
-            aria-label="后端启动中"
-          >
-            <LoadingOutlined aria-hidden="true" />
-            后端启动中
-          </span>
-          <span
-            v-if="downloadHint"
-            class="update-hint clickable"
-            role="button"
-            tabindex="0"
-            :aria-label="downloadHint"
-            @click="openDownloadModal"
-            @keydown.enter.prevent="openDownloadModal"
-            @keydown.space.prevent="openDownloadModal"
-          >
-            {{ downloadHint }}
-          </span>
-          <span
-            v-else-if="updateInfo?.if_need_update"
-            class="update-hint clickable"
-            role="button"
-            tabindex="0"
-            :aria-label="`检测到更新 ${updateInfo.latest_version}，请尽快更新`"
-            @click="handleAppUpdateClick"
-            @keydown.enter.prevent="handleAppUpdateClick"
-            @keydown.space.prevent="handleAppUpdateClick"
-          >
-            检测到更新 {{ updateInfo.latest_version }} 请尽快更新
-          </span>
-          <span
-            v-if="backendUpdateInfo?.if_need_update"
-            class="update-hint clickable"
-            role="button"
-            tabindex="0"
-            aria-label="检测到后端更新，点击以更新后端"
-            @click="handleBackendUpdateClick"
-            @keydown.enter.prevent="handleBackendUpdateClick"
-            @keydown.space.prevent="handleBackendUpdateClick"
-          >
-            检测到后端更新，点击以更新后端
-          </span>
-        </span>
-      </div>
-    </div>
-
-    <!-- 中间：可拖拽区域。对屏幕阅读器透明（拖动仅是鼠标交互） -->
-    <div class="title-bar-center drag-region" aria-hidden="true"></div>
-
-    <!-- 右侧：窗口控制按钮 -->
-    <div class="title-bar-right">
-      <div class="window-controls">
-        <button
-          class="control-button minimize-button"
-          title="最小化"
-          aria-label="最小化"
-          @click="minimizeWindow"
-        >
-          <MinusOutlined aria-hidden="true" />
-        </button>
-        <button
-          class="control-button maximize-button"
-          :title="isMaximized ? '还原' : '最大化'"
-          :aria-label="isMaximized ? '还原' : '最大化'"
-          @click="toggleMaximize"
-        >
-          <BorderOutlined aria-hidden="true" />
-        </button>
-        <button
-          v-if="!hideCloseButton"
-          class="control-button close-button"
-          title="关闭"
-          aria-label="关闭"
-          @click="closeWindow"
-        >
-          <CloseOutlined aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { closeApp } from '@/composables/useAppLifecycle'
-import { useTheme } from '@/composables/useTheme'
-import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
-import { useUpdateModal } from '@/composables/useUpdateChecker'
-import { useAppInitialization } from '@/composables/useAppInitialization'
-import { useUpdateDownload } from '@/composables/useUpdateDownload'
-import { useUiPreferences } from '@/composables/useUiPreferences'
-import {
-  BorderOutlined,
-  CloseOutlined,
-  LoadingOutlined,
-  MinusOutlined,
-} from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Modal } from 'ant-design-vue'
+import { closeApp } from '@/composables/useAppLifecycle'
+import { useTheme } from '@/composables/useTheme'
+import { useAppInitialization } from '@/composables/useAppInitialization'
+import { useUpdateModal } from '@/composables/useUpdateChecker'
+import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import { useUiPreferences } from '@/composables/useUiPreferences'
+import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import TitleBarStatus from './app-shell/TitleBarStatus.vue'
+import TitleBarControls from './app-shell/TitleBarControls.vue'
+import TitleBarBrand from './app-shell/TitleBarBrand.vue'
 
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
+const { isDark } = useTheme()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
@@ -125,6 +26,13 @@ const {
   progressPercent,
   open: openDownloadModal,
 } = useUpdateDownload()
+
+const isMaximized = ref(false)
+const appVersion = import.meta.env.VITE_APP_VERSION?.trim() || '开发版'
+
+const windowTitle = computed(() => {
+  return `AUTO-MAS · ${appVersion}`
+})
 
 const downloadHint = computed(() => {
   if (downloadStatus.value === 'completed') return '下载完成，点击安装'
@@ -138,7 +46,6 @@ const downloadHint = computed(() => {
   return ''
 })
 
-// 检查是否有运行中的队列任务
 const hasRunningTasks = (): boolean => {
   try {
     const saved = sessionStorage.getItem('scheduler-tabs-session')
@@ -155,20 +62,11 @@ const hasRunningTasks = (): boolean => {
   return false
 }
 
-const { isDark } = useTheme()
-const isMaximized = ref(false)
-
-// 使用 import.meta.env 或直接定义版本号，确保打包后可用
-const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
-
-// 处理版本更新点击
 const handleAppUpdateClick = () => {
   if (!updateInfo.value?.if_need_update) return
-
   showUpdateModal(updateInfo.value.update_info || {}, updateInfo.value.latest_version || '')
 }
 
-// 处理后端更新点击
 const handleBackendUpdateClick = () => {
   Modal.confirm({
     title: '重启后端以更新',
@@ -179,31 +77,20 @@ const handleBackendUpdateClick = () => {
     onOk: async () => {
       try {
         logger.info('开始更新后端')
-
-        // 1. 先关闭后端
-        logger.info('正在关闭后端...')
         const result = await window.electronAPI.stopBackend()
         if (result.success) {
           logger.info('后端已成功关闭')
         } else {
           logger.warn(`后端关闭失败: ${String(result.error)}`)
         }
-
-        // 2. 重置初始化状态
         resetInitializationStatus()
-
-        // 3. 设置强制后端更新标志（在清理 sessionStorage 之前）
         sessionStorage.setItem('forceBackendUpdate', 'true')
         logger.info('已设置强制后端更新标志')
-
-        // 4. 清理 sessionStorage 中的其他状态（保留 forceBackendUpdate）
         const forceUpdateFlag = sessionStorage.getItem('forceBackendUpdate')
         sessionStorage.clear()
         if (forceUpdateFlag) {
           sessionStorage.setItem('forceBackendUpdate', forceUpdateFlag)
         }
-
-        // 5. 跳转到初始化页面
         await router.push('/initialization')
         logger.info('已跳转到初始化页面')
       } catch (error) {
@@ -233,7 +120,6 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作：等待后端完成清理后再退出前端。
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
@@ -245,7 +131,6 @@ const doCloseWindow = async () => {
 }
 
 const closeWindow = async () => {
-  // 检查是否有运行中的队列任务
   if (hasRunningTasks()) {
     Modal.confirm({
       title: '确认关闭',
@@ -254,12 +139,9 @@ const closeWindow = async () => {
       cancelText: '取消',
       okType: 'danger',
       centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
+      onOk: () => doCloseWindow(),
     })
   } else {
-    // 没有运行中的任务，直接关闭
     await doCloseWindow()
   }
 }
@@ -282,349 +164,104 @@ onMounted(async () => {
 })
 </script>
 
+<template>
+  <div class="title-bar" :class="{ 'title-bar-dark': isDark }">
+    <TitleBarControls
+      :is-maximized="isMaximized"
+      :hide-close-button="hideCloseButton"
+      @minimize="minimizeWindow"
+      @toggle-maximize="toggleMaximize"
+      @close="closeWindow"
+    />
+
+    <div class="title-bar-brand-wrap" :title="windowTitle">
+      <TitleBarBrand :version="appVersion" />
+    </div>
+
+    <div class="title-bar-spacer drag-region" aria-hidden="true"></div>
+
+    <div class="title-bar-right" aria-label="应用状态">
+      <TitleBarStatus
+        :is-bootstrapping="isBootstrapping"
+        :download-hint="downloadHint"
+        :update-info="updateInfo"
+        :backend-update-info="backendUpdateInfo"
+        @open-download="openDownloadModal"
+        @open-app-update="handleAppUpdateClick"
+        @open-backend-update="handleBackendUpdateClick"
+      />
+    </div>
+  </div>
+</template>
+
 <style scoped>
 .title-bar {
   height: var(--v6-titlebar-height);
   background: var(--v6-color-titlebar);
-  border-bottom: 1px solid var(--v6-color-border-subtle);
+  border-bottom: 0.5px solid var(--v6-color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   user-select: none;
+  -webkit-user-select: none;
   position: relative;
-  z-index: 1000;
+  z-index: var(--v6-z-titlebar);
   overflow: hidden;
   color: var(--v6-color-text);
   font-family: var(--v6-font-sans);
-  backdrop-filter: var(--v6-backdrop-shell);
-  /* 新增：裁剪超出顶栏的发光 */
+  background: var(--v6-vibrancy-titlebar);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-app-region: drag;
 }
 
 .title-bar-dark {
-  background: var(--v6-color-titlebar);
-  border-bottom-color: var(--v6-color-border-subtle);
+  /* 保持与浅色一致走 vibrancy token（dark ≈ 0.75 透明度），
+     不再退回不透明的 --v6-color-titlebar（0.90），以符合设计毛玻璃层级。 */
+  background: var(--v6-vibrancy-titlebar);
+  border-bottom-color: var(--v6-color-border);
 }
 
-.title-bar-left {
-  display: flex;
-  align-items: center;
-  padding-left: var(--v6-space-3);
-  min-width: 64px;
+.title-bar-brand-wrap {
+  min-width: 0;
   height: 100%;
   -webkit-app-region: drag;
 }
 
-.logo-section {
-  display: flex;
-  align-items: center;
-  gap: var(--v6-space-2);
-  position: relative;
-  /* 使阴影绝对定位基准 */
-}
-
-/* 新增：主题色虚化圆形阴影 */
-.logo-glow {
-  position: absolute;
-  left: 55px;
-  /* 调整：更贴近图标 */
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 160px;
-  /* 缩小尺寸以适配 32px 高度 */
-  height: 100px;
-  pointer-events: none;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, var(--ant-color-primary) 0%, rgba(0, 0, 0, 0) 70%);
-  filter: blur(20px);
-  /* 降低模糊避免越界过多 */
-  opacity: 0.16;
-  z-index: 0;
-}
-
-.title-bar-dark .logo-glow {
-  opacity: 0.22;
-  filter: blur(20px);
-}
-
-.title-logo {
-  width: 20px;
-  height: 20px;
-  position: relative;
-  z-index: 1;
-  /* 确保在阴影上方 */
-}
-
-.title-text {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v6-color-text);
-  position: relative;
-  z-index: 1;
-}
-
-.version-text {
-  font-size: 13px;
-  font-weight: 400;
-  opacity: 0.8;
-  position: relative;
-  z-index: 1;
-  margin-left: 4px;
-  color: var(--v6-color-text-secondary);
-}
-
-.title-bar-dark .title-text {
-  color: var(--v6-color-text);
-}
-
-.title-bar-dark .version-text {
-  color: var(--v6-color-text-secondary);
-}
-
-.startup-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  color: var(--ant-color-primary);
-}
-
-.title-bar-center {
-  flex: 1;
-  height: 100%;
+.title-bar-spacer {
+  flex: 1 1 auto;
+  min-width: var(--v6-space-4);
 }
 
 .drag-region {
+  height: 100%;
   -webkit-app-region: drag;
 }
 
 .title-bar-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: min(42vw, 520px);
   height: 100%;
-}
-
-.window-controls {
-  display: flex;
-  height: 100%;
-}
-
-.control-button {
-  width: 46px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition:
-    background-color var(--v6-motion-fast) var(--v6-ease-out),
-    color var(--v6-motion-fast) var(--v6-ease-out);
-  color: var(--v6-color-text-secondary);
-  font-size: 12px;
+  margin-left: var(--v6-space-3);
+  padding-right: var(--v6-space-3);
+  overflow: hidden;
   -webkit-app-region: no-drag;
 }
 
-.title-bar-dark .control-button {
-  color: var(--v6-color-text-secondary);
-}
-
-.control-button:hover {
-  background: color-mix(in srgb, var(--v6-color-text) 7%, transparent);
-}
-
-.title-bar-dark .control-button:hover {
-  background: color-mix(in srgb, var(--v6-color-text) 9%, transparent);
-}
-
-.close-button:hover {
-  background: #e81123 !important;
-  color: #fff !important;
-}
-
-.minimize-button:hover,
-.maximize-button:hover {
-  background: color-mix(in srgb, var(--v6-color-text) 9%, transparent);
-}
-
-.title-bar-dark .minimize-button:hover,
-.title-bar-dark .maximize-button:hover {
-  background: color-mix(in srgb, var(--v6-color-text) 12%, transparent);
-}
-
-/* 可见焦点环：键盘导航时显示，使用 v6 token 保证 light/dark 一致 */
-.control-button:focus-visible {
-  outline: none;
-  box-shadow: var(--v6-focus-ring);
-}
-
-.update-hint.clickable:focus-visible {
-  outline: none;
-  box-shadow: var(--v6-focus-ring);
-  border-radius: var(--v6-radius-control);
-}
-
-.update-hint {
-  font-weight: 600;
-  margin-left: 4px;
-  cursor: help;
-  background: linear-gradient(
-    45deg,
-    #ff1744,
-    #ff5722,
-    #ff9800,
-    #ffc107,
-    #4caf50,
-    #00bcd4,
-    #2196f3,
-    #9c27b0,
-    #ff1744
-  );
-  background-size: 400% 400%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation:
-    rainbow-flow 3s ease-in-out infinite,
-    glow-pulse 2s ease-in-out infinite;
-  position: relative;
-  filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4));
-  transition: all 0.3s ease;
-  font-size: 13px;
-  line-height: 1.2;
-  padding: 2px 4px;
-  border-radius: 4px;
-}
-
-.update-hint.clickable {
-  cursor: pointer;
-  user-select: none;
-  -webkit-app-region: no-drag;
-}
-
-.update-hint.clickable:hover {
-  transform: scale(1.05);
-  filter: drop-shadow(0 0 10px rgba(255, 64, 129, 0.8));
-}
-
-.update-hint.clickable:active {
-  transform: scale(0.98);
-}
-
-.update-hint:hover {
-  transform: scale(1.02);
-  filter: drop-shadow(0 0 8px rgba(255, 64, 129, 0.7));
-  animation-duration: 3s, 2s;
-}
-
-.update-hint::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: linear-gradient(
-    45deg,
-    #ff1744,
-    #ff5722,
-    #ff9800,
-    #ffc107,
-    #4caf50,
-    #00bcd4,
-    #2196f3,
-    #9c27b0,
-    #ff1744
-  );
-  background-size: 400% 400%;
-  border-radius: 6px;
-  z-index: -1;
-  opacity: 0.12;
-  filter: blur(8px);
-  animation: rainbow-flow 4s ease-in-out infinite;
-}
-
-.update-hint::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  right: -3px;
-  bottom: -3px;
-  background: radial-gradient(circle at center, rgba(255, 64, 129, 0.08) 0%, transparent 70%);
-  border-radius: 8px;
-  z-index: -2;
-  animation: pulse-ring 4s ease-in-out infinite;
-}
-
-/* 为相邻的更新提示添加间距 */
-.update-hint + .update-hint {
-  margin-left: 12px;
-}
-
-.title-bar-dark .update-hint {
-  filter: drop-shadow(0 0 6px rgba(255, 64, 129, 0.6));
-}
-
-.title-bar-dark .update-hint::before {
-  opacity: 0.2;
-  filter: blur(10px);
-}
-
-.title-bar-dark .update-hint::after {
-  background: radial-gradient(circle at center, rgba(255, 64, 129, 0.15) 0%, transparent 70%);
-}
-
-@keyframes rainbow-flow {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
+@media (max-width: 680px) {
+  .title-bar-right {
+    max-width: 36vw;
+    margin-left: var(--v6-space-2);
+    padding-right: var(--v6-space-2);
   }
 }
 
-@keyframes glow-pulse {
-  0% {
-    filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
-    transform: scale(1);
-  }
-
-  33% {
-    filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.5)) brightness(1.08);
-    transform: scale(1.003);
-  }
-
-  66% {
-    filter: drop-shadow(0 0 5px rgba(76, 175, 80, 0.45)) brightness(1.05);
-    transform: scale(1.002);
-  }
-
-  100% {
-    filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
-    transform: scale(1);
-  }
-}
-
-@keyframes pulse-ring {
-  0% {
-    opacity: 0.08;
-    transform: scale(0.98);
-  }
-
-  50% {
-    opacity: 0.04;
-    transform: scale(1.02);
-  }
-
-  100% {
-    opacity: 0.08;
-    transform: scale(0.98);
+@media (prefers-reduced-motion: reduce) {
+  .title-bar {
+    transition: none;
   }
 }
 </style>

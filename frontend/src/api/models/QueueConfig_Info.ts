@@ -16,6 +16,10 @@ export type QueueConfig_Info = {
      */
     StartUpEnabled?: (boolean | null);
     /**
+     * 是否允许循环运行
+     */
+    CycleEnabled?: (boolean | null);
+    /**
      * 完成后操作
      */
     AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'Logoff' | null);

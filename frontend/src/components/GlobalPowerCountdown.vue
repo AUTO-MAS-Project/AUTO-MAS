@@ -7,7 +7,7 @@
     :closable="false"
     :keyboard="false"
     :mask-closable="false"
-    :mask="{ blur: true }"
+    :mask="true"
     :width="480"
     centered
     wrap-class-name="power-countdown-modal"

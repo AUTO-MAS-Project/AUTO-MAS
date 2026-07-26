@@ -12,8 +12,8 @@ export type ComboBoxItem = {
      */
     value: (string | null);
     /**
-     * 任务项支持的执行模式；非脚本项为空
+     * 任务项支持的执行模式
      */
-    supported_modes?: (Array<'AutoProxy' | 'ManualReview' | 'ScriptConfig'> | null);
+    supported_modes?: (Array<'AutoProxy' | 'ManualReview' | 'ScriptConfig' | 'CycleRun'> | null);
 };
 

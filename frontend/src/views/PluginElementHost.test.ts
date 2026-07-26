@@ -152,6 +152,29 @@ const PluginElementHost = compileSfcComponent('PluginElementHost.vue', {
       themeColors: {},
     }),
   },
+  '@/plugins/ui/pluginSecurity': {
+    validatePluginEntryUrl: (url: string) => ({
+      safe: true,
+      sanitizedUrl: /^https?:\/\//i.test(url)
+        ? url
+        : `http://localhost:36163/${url.replace(/^\/+/, '')}`,
+    }),
+  },
+  '@/plugins/ui/pluginUIManifest': {
+    isManifestVersionSupported: () => true,
+    getSupportedManifestVersion: () => '1',
+  },
+  '@/plugins/ui/PluginErrorBoundary.vue': {
+    default: {
+      name: 'PluginErrorBoundary',
+      props: ['extensionId', 'pluginName'],
+      emits: ['disable', 'retry'],
+      setup:
+        (_props: unknown, { slots }: { slots: Record<string, () => unknown> }) =>
+        () =>
+          slots.default?.(),
+    },
+  },
 })
 
 // ===== 功能性桩 DOM =====

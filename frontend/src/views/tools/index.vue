@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
@@ -7,6 +7,7 @@ import { useToolsApi } from '@/composables/useToolsApi'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
 import TabGameSign from './TabGameSign.vue'
+import PageHeader from '@/components/mac/PageHeader.vue'
 const logger = window.electronAPI.getLogger('工具')
 
 const { loading, getTools, updateTools } = useToolsApi()
@@ -71,6 +72,15 @@ const arknightsPCStatusTag = useStatusTag(
 const gameSignStatusTag = useStatusTag(
   () => toolsConfig.GameSign?.Status,
   createStatusTag('未启用', 'default')
+)
+
+const toolTabOptions = [
+  { label: '明日方舟 PC', value: 'arknightspc' },
+  { label: '游戏社区签到', value: 'gamesign' },
+]
+
+const activeStatusTag = computed(() =>
+  activeKey.value === 'gamesign' ? gameSignStatusTag.value : arknightsPCStatusTag.value
 )
 
 // 轮询定时器
@@ -190,6 +200,8 @@ const loadTools = async () => {
 const handleFieldChange = async (key: string, value: any) => {
   if (!editingConfig.ArknightsPC) return
 
+  // 保存旧值，API 失败时回滚编辑态，避免 UI 显示与后端不一致
+  const oldValue = (editingConfig.ArknightsPC as any)[key]
   try {
     // 更新编辑状态
     ;(editingConfig.ArknightsPC as any)[key] = value
@@ -204,6 +216,8 @@ const handleFieldChange = async (key: string, value: any) => {
 
     logger.info(`${key} 已保存`)
   } catch (error) {
+    // 回滚编辑态到旧值
+    ;(editingConfig.ArknightsPC as any)[key] = oldValue
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ${key} 失败: ${errorMsg}`)
   }
@@ -213,6 +227,7 @@ const handleFieldChange = async (key: string, value: any) => {
 const handleGameSignFieldChange = async (key: string, value: any) => {
   if (!editingConfig.GameSign) return
 
+  const oldValue = (editingConfig.GameSign as any)[key]
   try {
     ;(editingConfig.GameSign as any)[key] = value
     await updateTools(editingConfig)
@@ -223,6 +238,7 @@ const handleGameSignFieldChange = async (key: string, value: any) => {
 
     logger.info(`GameSign.${key} 已保存`)
   } catch (error) {
+    ;(editingConfig.GameSign as any)[key] = oldValue
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 GameSign.${key} 失败: ${errorMsg}`)
   }
@@ -302,25 +318,29 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="settings-container">
-    <div class="settings-header">
-      <h1 class="page-title">工具</h1>
+  <div class="tools-page">
+    <PageHeader title="工具" subtitle="管理辅助工具、快捷键和游戏社区签到" compact transparent />
+
+    <div class="tools-navigation">
+      <a-segmented v-model:value="activeKey" :options="toolTabOptions" block />
+      <a-tag
+        v-if="activeStatusTag"
+        :color="activeStatusTag.color"
+        class="tool-status"
+        aria-live="polite"
+      >
+        {{ activeStatusTag.text }}
+      </a-tag>
     </div>
-    <div class="settings-content">
-      <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
-        <a-tab-pane key="arknightspc">
-          <template #tab>
-            <span style="display: flex; align-items: center; gap: 8px">
-              <span>明日方舟PC端</span>
-              <a-tag
-                v-if="arknightsPCStatusTag"
-                :color="arknightsPCStatusTag.color"
-                style="margin: 0; font-size: 12px"
-              >
-                {{ arknightsPCStatusTag.text }}
-              </a-tag>
-            </span>
-          </template>
+
+    <a-spin :spinning="loading" tip="正在加载工具配置…">
+      <div class="tool-panes">
+        <section
+          v-show="activeKey === 'arknightspc'"
+          class="tool-pane"
+          role="tabpanel"
+          aria-label="明日方舟 PC"
+        >
           <TabArknightsPC
             v-if="editingConfig.ArknightsPC"
             :config="editingConfig.ArknightsPC"
@@ -331,20 +351,14 @@ onUnmounted(() => {
             :stop-record-key="stopRecordKey"
             :on-select-visible-change="handleSelectVisibleChange"
           />
-        </a-tab-pane>
-        <a-tab-pane key="gamesign">
-          <template #tab>
-            <span style="display: flex; align-items: center; gap: 8px">
-              <span>游戏社区签到</span>
-              <a-tag
-                v-if="gameSignStatusTag"
-                :color="gameSignStatusTag.color"
-                style="margin: 0; font-size: 12px"
-              >
-                {{ gameSignStatusTag.text }}
-              </a-tag>
-            </span>
-          </template>
+        </section>
+
+        <section
+          v-show="activeKey === 'gamesign'"
+          class="tool-pane"
+          role="tabpanel"
+          aria-label="游戏社区签到"
+        >
           <TabGameSign
             v-if="editingConfig.GameSign"
             :config="editingConfig.GameSign"
@@ -353,201 +367,145 @@ onUnmounted(() => {
             :on-select-visible-change="handleSelectVisibleChange"
             :on-refresh-config="refreshGameSignConfig"
           />
-        </a-tab-pane>
-      </a-tabs>
-    </div>
+        </section>
+      </div>
+    </a-spin>
   </div>
 </template>
 
 <style scoped>
-/* 统一样式，使用 :deep 作用到子组件内部 */
-.settings-container {
-  /* Allow the settings page to expand with the window width */
+.tools-page {
   width: 100%;
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
-  /* Use full viewport min-height so the page can grow and scroll */
+  min-width: 0;
+  container: tools-page / inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  gap: var(--v6-space-3);
 }
 
-.settings-header {
-  margin-bottom: 16px;
-  padding: 0 4px;
+.tools-navigation {
+  display: flex;
+  align-items: center;
+  gap: var(--v6-space-3);
+  padding: var(--v6-space-2);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-lg);
+  background: color-mix(in srgb, var(--v6-color-surface) 78%, transparent);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
-.page-title {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.settings-content {
-  background: var(--ant-color-bg-container);
-  /* Rounded on all corners for a consistent card look */
-  border-radius: 12px;
-  width: 100%;
+.tools-navigation :deep(.ant-segmented) {
   flex: 1;
-  /* allow inner scrolling and cooperate with flexbox
-     min-height:0 prevents flex children from overflowing the container */
+  min-width: 0;
+}
+
+.tool-status {
+  flex: none;
+  margin: 0;
+  border-radius: 999px;
+}
+
+.tool-panes {
+  flex: 1;
   min-height: 0;
   overflow: auto;
-  display: flex;
-  flex-direction: column;
+  padding: 1px;
 }
 
-.settings-tabs {
-  margin: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  /* ensure children with overflow:auto can scroll inside this flex item */
-  min-height: 0;
+.tool-pane {
+  width: 100%;
+  animation: tool-pane-enter var(--v6-motion-base) var(--v6-ease-out);
 }
 
-.settings-tabs :deep(.ant-tabs-nav) {
+.tool-pane :deep(.tab-content) {
+  width: 100%;
   padding: 0;
-  margin: 0;
 }
 
-.settings-tabs :deep(.ant-tabs-content-holder) {
-  flex: 1;
-  overflow: auto;
+.tool-pane :deep(.form-section) {
+  margin-bottom: var(--v6-space-3);
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: color-mix(in srgb, var(--v6-color-surface) 82%, transparent);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
-  background: transparent;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px 8px 0 0;
-  margin-right: 8px;
-}
-
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
-  background: var(--ant-color-bg-container);
-  border-bottom-color: var(--ant-color-bg-container);
-}
-
-:deep(.tab-content) {
-  padding: 24px;
-  width: 100%;
-}
-
-:deep(.form-section) {
-  margin-bottom: 32px;
-}
-
-:deep(.form-section:last-child) {
-  margin-bottom: 0;
-}
-
-:deep(.section-header) {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+.tool-pane :deep(.section-header) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
-:deep(.section-header h3) {
+.tool-pane :deep(.section-header h3) {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--v6-color-text);
 }
 
-:deep(.section-header h3::before) {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-:deep(.section-description) {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
-:deep(.form-item-vertical) {
+.tool-pane :deep(.form-item-vertical) {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 16px;
 }
 
-:deep(.form-label-wrapper) {
+.tool-pane :deep(.form-label-wrapper) {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-:deep(.form-label) {
+.tool-pane :deep(.form-label) {
   font-weight: 600;
   color: var(--ant-color-text);
   font-size: 14px;
 }
 
-:deep(.help-icon) {
-  color: #8c8c8c;
+.tool-pane :deep(.help-icon) {
+  color: var(--v6-color-text-tertiary);
   font-size: 14px;
 }
 
-/* Tab 标签中的状态标签样式 - 与脚本管理页统一 */
-.settings-tabs :deep(.ant-tabs-tab) {
-  .ant-tag {
-    font-size: 11px;
-    font-weight: 500;
-    border-radius: 4px;
-    margin: 0;
-    border: 1px solid rgba(0, 0, 0, 0.15);
+@keyframes tool-pane-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-/* Tab 内容区域滚动条样式 */
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
+@container tools-page (max-width: 720px) {
+  .tools-navigation {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-container);
-  border-radius: 4px;
+@media (prefers-reduced-motion: reduce) {
+  .tool-pane {
+    animation: none;
+  }
 }
 
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-  transition: background 0.2s ease;
+:global(:root[data-perf-mode='low']) .tool-pane {
+  animation: none;
 }
 
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
-/* 深色模式下的滚动条样式 */
-:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-elevated);
-}
-
-:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+:global(:root[data-perf-mode='low']) .tools-navigation,
+:global(:root[data-perf-mode='low']) .tool-pane :deep(.form-section) {
+  backdrop-filter: none;
 }
 </style>

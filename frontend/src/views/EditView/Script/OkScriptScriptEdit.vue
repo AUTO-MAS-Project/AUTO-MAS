@@ -1,40 +1,21 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">编辑脚本</div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditPageHeader
+    :title="projectCardTitle"
+    subtitle="配置 ok-script 项目元数据、游戏托管与运行参数"
+    :type-label="projectMetadata?.displayName || 'ok-script'"
+    type-color="blue"
+    @back="handleCancel"
+  >
+    <template #meta>
+      <a-tag v-if="projectMetadata?.adapter">
+        {{ projectMetadata.resourceName }}
+      </a-tag>
+      <a-tag v-else-if="projectMetadata" color="warning">未适配</a-tag>
+    </template>
+  </ScriptEditPageHeader>
 
   <div class="script-edit-content">
-    <a-card :title="projectCardTitle" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-space size="small">
-          <a-tag color="blue" class="type-tag">{{
-            projectMetadata?.displayName || 'ok-script'
-          }}</a-tag>
-          <a-tag v-if="projectMetadata?.adapter" class="type-tag">
-            {{ projectMetadata.resourceName }}
-          </a-tag>
-          <a-tag v-else-if="projectMetadata" color="warning" class="type-tag">未适配</a-tag>
-        </a-space>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
@@ -283,14 +264,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import axios from 'axios'
-import {
-  ArrowLeftOutlined,
-  FileOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FileOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { OpenAPI } from '@/api/core/OpenAPI'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 import {
   getOkScriptProjectProvider,
   OK_SCRIPT_PROJECT_PROVIDERS,
@@ -795,3 +772,4 @@ onMounted(loadScript)
   }
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

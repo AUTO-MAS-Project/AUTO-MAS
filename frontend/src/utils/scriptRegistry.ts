@@ -137,24 +137,37 @@ export const getScriptTypeTagColor = (type: string, themeColor?: string | null) 
   }
 }
 
+// 宿主 fallback 元数据（app/core/script_types.py LEGACY_SCRIPT_TYPE_METADATA）在插件缺席时
+// 仍会产出的 builtin:* editor_kind，前端必须接住。
+// 已删除的死键（后端与官方插件均无生产者）：
+// - builtin:maa（MAA 真实声明为 plugin:script_maa，含宿主 fallback）
+// - builtin:ok-script / builtin:okef（OkScript 真实声明为 plugin:ok_script_adapter，fallback 无此类型）
 const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
-  'builtin:maa': 'maa',
   'builtin:src': 'src',
+  // 宿主 fallback 对 MaaEnd 仍写 builtin:maaend，与插件声明 plugin:maaend_adapter 不一致，两个键都要接住
   'builtin:maaend': 'maaend',
   'builtin:m9a': 'm9a',
+  // 当前后端无生产者（MaaFW fallback 已是 plugin:automas_script_maafw），保留兼容历史注册表快照；
+  // 与 TYPE_KEY_EDITOR_SEGMENTS 的 MaaFW 兜底同段，不会产生歧义路由
   'builtin:maafw': 'maafw',
-  'builtin:ok-script': 'ok-script',
-  'builtin:okef': 'ok-script',
 }
 
+// 类型级兜底：editor_kind 未命中上表/插件表时按 type_key 落到专属编辑页
 const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
+  MAA: 'maa',
+  MaaEnd: 'maaend',
+  OkScript: 'ok-script',
   MaaFW: 'maafw',
   M9A: 'maafw',
   // ok-ww 使用专属编辑页（/edit/okww 等），与 PR #287/#288 的视觉与配置字段保持一致
   Okww: 'okww',
 }
 
+// 官方插件声明的 editor_kind（见 plugins/wheels 内各 plugin.py）→ 专属编辑页路由段
 const PLUGIN_EDITOR_SEGMENTS: Record<string, string> = {
+  'plugin:script_maa': 'maa',
+  'plugin:maaend_adapter': 'maaend',
+  'plugin:ok_script_adapter': 'ok-script',
   'plugin:automas_script_hsr': 'hsr',
 }
 

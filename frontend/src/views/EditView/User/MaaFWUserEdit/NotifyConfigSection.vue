@@ -72,14 +72,34 @@
         <Transition name="notify-expand">
           <div v-if="formData.Notify.IfServerChan" class="notify-channel-config">
             <a-form-item label="Server 酱密钥">
-              <a-input-password
-                v-model:value="formData.Notify.ServerChanKey"
-                autocomplete="off"
-                placeholder="Server 酱 SendKey…"
-                size="large"
-                :disabled="!formData.Notify.IfServerChan"
-                @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-              />
+              <div class="sensitive-field">
+                <a-input-password
+                  :value="serverChanKeyDraft"
+                  autocomplete="new-password"
+                  :placeholder="serverChanKeyPlaceholder"
+                  size="large"
+                  :disabled="!formData.Notify.IfServerChan"
+                  @update:value="updateServerChanKeyDraft"
+                />
+                <a-space>
+                  <a-button
+                    type="primary"
+                    ghost
+                    :disabled="!formData.Notify.IfServerChan || !serverChanKeyDraft"
+                    @click="saveServerChanKey"
+                  >
+                    保存新值
+                  </a-button>
+                  <a-button
+                    v-if="hasStoredServerChanKey"
+                    danger
+                    :disabled="!formData.Notify.IfServerChan"
+                    @click="clearServerChanKey"
+                  >
+                    清空原值
+                  </a-button>
+                </a-space>
+              </div>
             </a-form-item>
           </div>
         </Transition>
@@ -89,15 +109,53 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import type { MaaFWUserConfig } from '@/types/script'
 
-defineProps<{
+const props = defineProps<{
   formData: MaaFWUserConfig
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: unknown]
+  sensitiveSave: [key: 'Notify.ServerChanKey', intent: 'replace' | 'clear', value?: string]
+  sensitiveDirtyChange: [key: 'Notify.ServerChanKey', dirty: boolean]
 }>()
+
+const serverChanKeyDraft = ref('')
+const hasStoredServerChanKey = computed(() => Boolean(props.formData.Notify.ServerChanKey))
+const serverChanKeyPlaceholder = computed(() =>
+  hasStoredServerChanKey.value ? '已保存；输入新值后明确保存' : 'Server 酱 SendKey…'
+)
+
+const updateServerChanKeyDraft = (value: string) => {
+  serverChanKeyDraft.value = value
+  emit('sensitiveDirtyChange', 'Notify.ServerChanKey', Boolean(value))
+}
+
+const saveServerChanKey = () => {
+  if (!serverChanKeyDraft.value) return
+  emit('sensitiveSave', 'Notify.ServerChanKey', 'replace', serverChanKeyDraft.value)
+}
+
+const clearServerChanKey = () => {
+  Modal.confirm({
+    title: '清空 Server 酱密钥？',
+    content: '清空后 Server 酱通知将无法发送，且原值不可恢复。',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => emit('sensitiveSave', 'Notify.ServerChanKey', 'clear', ''),
+  })
+}
+
+defineExpose({
+  resetServerChanKeyDraft: () => {
+    serverChanKeyDraft.value = ''
+    emit('sensitiveDirtyChange', 'Notify.ServerChanKey', false)
+  },
+})
 
 const emitSave = (key: string, value: unknown) => {
   emit('save', key, value)
@@ -180,6 +238,11 @@ const emitSave = (key: string, value: unknown) => {
 
 .notify-channel-config :deep(.ant-form-item) {
   margin-bottom: 0;
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
 }
 
 .notify-expand-enter-active,

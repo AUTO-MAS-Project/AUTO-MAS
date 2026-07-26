@@ -1,12 +1,28 @@
 <template>
   <div class="ok-script-config-editor">
     <div class="editor-header">
-      <h3>{{ title }}</h3>
-      <a-tag v-if="hasChanges" color="warning">有未保存的更改</a-tag>
-      <a-tag v-else color="success">已保存</a-tag>
+      <div class="editor-title">
+        <h3>{{ title }}</h3>
+        <span>选择配置文件后，仅提交已修改的字段</span>
+      </div>
+      <a-space>
+        <a-tag v-if="saveError" color="error">保存失败</a-tag>
+        <a-tag v-else-if="hasChanges" color="warning">有未保存的更改</a-tag>
+        <a-tag v-else color="success">已保存</a-tag>
+        <a-button type="primary" :loading="saving" :disabled="!hasChanges" @click="saveAll(false)">
+          保存配置
+        </a-button>
+      </a-space>
     </div>
 
     <a-spin :spinning="loading" tip="加载配置中...">
+      <a-alert
+        v-if="saveError || loadError"
+        class="editor-error"
+        type="error"
+        show-icon
+        :message="saveError || loadError"
+      />
       <div v-if="unavailableReason" class="config-unavailable">
         <a-empty :description="unavailableReason">
           <a-button type="primary" @click="emit('unavailable')">返回脚本设置</a-button>
@@ -288,7 +304,10 @@ const emit = defineEmits<{
 const logger = window.electronAPI.getLogger('ok-script配置编辑')
 
 const loading = ref(false)
+const saving = ref(false)
 const unavailableReason = ref('')
+const loadError = ref('')
+const saveError = ref('')
 const configs = ref<ConfigFile[]>([])
 const selectedFilename = ref<string | null>(null)
 const changedFiles = ref(new Set<string>())
@@ -456,6 +475,7 @@ const selectConfig = (filename: string) => {
 const loadConfigs = async () => {
   if (!props.scriptId || !props.userId) return
   loading.value = true
+  loadError.value = ''
   try {
     const resp = await okScriptConfigApi.listConfigFiles(props.scriptId, props.userId)
     if (resp?.code === 200 && resp?.data) {
@@ -477,18 +497,23 @@ const loadConfigs = async () => {
       unavailableReason.value = resp?.message || '当前 ok-ww 程序不可用，请返回设置'
       configs.value = []
     } else {
-      message.error(resp?.message || '加载配置失败')
+      loadError.value = resp?.message || '加载配置失败'
+      message.error(loadError.value)
     }
   } catch (e) {
-    logger.error(`加载配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error('加载配置失败')
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    loadError.value = `加载配置失败: ${errorMsg}`
+    logger.error(loadError.value)
+    message.error(loadError.value)
   } finally {
     loading.value = false
   }
 }
 
-const saveAll = async (silent = true) => {
-  if (!hasChanges.value) return
+const saveAll = async (silent = true): Promise<boolean> => {
+  if (!hasChanges.value) return true
+  saving.value = true
+  saveError.value = ''
   try {
     const configsToUpdate: OkScriptConfigPatchMap = { ...localChanges.value }
     const resp = await okScriptConfigApi.batchUpdateConfigFiles(
@@ -515,12 +540,20 @@ const saveAll = async (silent = true) => {
       if (!silent) {
         message.success('配置已保存')
       }
+      return true
     } else {
-      message.error(resp?.message || '保存失败')
+      saveError.value = resp?.message || '保存失败'
+      message.error(saveError.value)
+      return false
     }
   } catch (e) {
-    logger.error(`保存配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error('保存配置失败')
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    saveError.value = `保存配置失败: ${errorMsg}`
+    logger.error(saveError.value)
+    message.error(saveError.value)
+    return false
+  } finally {
+    saving.value = false
   }
 }
 
@@ -539,7 +572,8 @@ watch(
   async () => {
     if (props.scriptId && props.userId) {
       if (hasChanges.value) {
-        await saveAll(true)
+        const saved = await saveAll(true)
+        if (!saved) return
       }
       selectedFilename.value = null
       changedFiles.value = new Set()
@@ -555,9 +589,9 @@ watch(
 .ok-script-config-editor {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  height: min(720px, calc(100vh - 260px));
-  min-height: 520px;
+  gap: var(--v6-space-4);
+  height: min(640px, calc(100vh - 240px));
+  min-height: 480px;
 }
 
 .ok-script-config-editor :deep(.ant-spin-nested-loading),
@@ -573,25 +607,34 @@ watch(
   flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  gap: var(--v6-space-3);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.editor-title {
+  min-width: 0;
 }
 
 .editor-header h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--v6-space-2);
 }
 
-.editor-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
+.editor-title > span {
+  display: block;
+  margin-top: var(--v6-space-1);
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-sm);
+}
+
+.editor-error {
+  margin-bottom: var(--v6-space-3);
+  border-radius: var(--v6-radius-control);
 }
 
 .editor-layout {
@@ -612,15 +655,15 @@ watch(
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  border-right: 1px solid var(--ant-color-border);
-  padding-right: 24px;
+  border-right: 1px solid var(--v6-color-border-subtle);
+  padding-right: var(--v6-space-4);
   overflow: hidden;
 }
 
 .config-groups {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--v6-space-3);
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -628,68 +671,72 @@ watch(
 .group-header {
   font-size: 13px;
   font-weight: 600;
-  color: var(--ant-color-text-secondary);
+  color: var(--v6-color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 8px 12px 4px;
+  padding: var(--v6-space-2) var(--v6-space-3) var(--v6-space-1);
 }
 
 .group-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--v6-space-1);
 }
 
 .config-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-radius: 8px;
+  padding: var(--v6-space-3);
+  border-radius: var(--v6-radius-control);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    color var(--v6-motion-fast) var(--v6-ease-out),
+    background var(--v6-motion-fast) var(--v6-ease-out),
+    border-color var(--v6-motion-fast) var(--v6-ease-out);
   border-left: 3px solid transparent;
 }
 
 .config-item:hover {
-  background-color: var(--ant-color-primary-bg-hover);
-  border-left-color: var(--ant-color-primary);
-}
-
-.config-item--active {
-  background-color: var(--ant-color-primary-bg) !important;
-  border-left-color: var(--ant-color-primary) !important;
+  background-color: var(--v6-color-info-bg);
+  border-left-color: var(--v6-color-primary);
 }
 
 .config-item--changed {
-  background-color: var(--ant-color-warning-bg);
+  background-color: var(--v6-color-warning-bg);
+}
+
+.config-item--active,
+.config-item--active.config-item--changed {
+  background-color: var(--v6-color-info-bg);
+  border-left-color: var(--v6-color-primary);
 }
 
 .config-item-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--v6-space-2);
 }
 
 .config-item-name {
   font-size: 14px;
   font-weight: 500;
-  color: var(--ant-color-text);
+  color: var(--v6-color-text);
 }
 
 .config-item-badge {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--ant-color-fill-secondary);
-  color: var(--ant-color-text-secondary);
+  background: var(--v6-color-fill-tertiary);
+  color: var(--v6-color-text-secondary);
 }
 
 .config-item-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--ant-color-warning);
+  background: var(--v6-color-warning);
   flex-shrink: 0;
 }
 
@@ -698,7 +745,7 @@ watch(
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding-left: 24px;
+  padding-left: var(--v6-space-4);
   overflow: hidden;
 }
 
@@ -706,7 +753,7 @@ watch(
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--v6-space-4);
   min-height: 0;
   overflow: hidden;
 }
@@ -716,9 +763,9 @@ watch(
   flex-shrink: 0;
   justify-content: space-between;
   align-items: flex-end;
-  gap: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  gap: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .form-title {
@@ -729,15 +776,15 @@ watch(
 
 .form-header h4 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 .form-filename {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--ant-color-text-tertiary);
+  color: var(--v6-color-text-tertiary);
   font-family: monospace;
 }
 
@@ -746,7 +793,7 @@ watch(
   flex: 0 0 260px;
   flex-direction: column;
   gap: 6px;
-  color: var(--ant-color-text-secondary);
+  color: var(--v6-color-text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -797,6 +844,30 @@ watch(
 
   .section-selector {
     flex-basis: auto;
+  }
+
+  .editor-layout {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: var(--v6-space-4);
+    overflow-y: auto;
+  }
+
+  .left-panel,
+  .right-panel {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .config-item {
+    transition: none;
   }
 }
 </style>

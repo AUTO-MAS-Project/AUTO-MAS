@@ -1,27 +1,16 @@
 <template>
   <div class="user-edit-container">
     <MaaFWUserEditHeader
+      :script-name="scriptName"
+      :script-type="scriptType"
+      :script-icon-url="scriptIconUrl"
       :save-status="saveStatus"
       :save-error-message="saveErrorMessage"
       @cancel="handleCancel"
     />
 
     <div class="user-edit-content">
-      <a-card class="config-card" :loading="loading">
-        <template #title>
-          <div class="card-title">
-            <img
-              :src="getScriptIcon(scriptType, scriptIconUrl)"
-              :alt="scriptType || 'MaaFramework'"
-              width="22"
-              height="22"
-              class="title-logo"
-              @error="event => handleScriptIconError(event, scriptType)"
-            />
-            <span>{{ scriptName || 'MaaFramework 项目' }}</span>
-          </div>
-        </template>
-
+      <a-spin :spinning="loading" class="config-shell">
         <a-form
           ref="formRef"
           :model="formData"
@@ -30,12 +19,15 @@
           class="config-form"
         >
           <BasicInfoSection
+            ref="basicInfoRef"
             :form-data="formData"
             :preset-options="presetOptions"
             :selected-preset-label="selectedPresetLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
+            @sensitive-save="handleSensitiveSave"
+            @sensitive-dirty-change="handleSensitiveDirtyChange"
             @preset-menu-click="handlePresetMenuClick"
           />
 
@@ -69,9 +61,15 @@
 
           <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
-          <NotifyConfigSection :form-data="formData" @save="handleFieldSave" />
+          <NotifyConfigSection
+            ref="notifyRef"
+            :form-data="formData"
+            @save="handleFieldSave"
+            @sensitive-save="handleSensitiveSave"
+            @sensitive-dirty-change="handleSensitiveDirtyChange"
+          />
         </a-form>
-      </a-card>
+      </a-spin>
     </div>
   </div>
 </template>
@@ -94,7 +92,6 @@ import { message, Modal } from 'ant-design-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import { useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
@@ -152,6 +149,8 @@ const registryApi = useScriptRegistryApi()
 const { loading: interfaceLoading, previewInterface } = useMaaFWApi()
 
 const formRef = ref<FormInstance>()
+const basicInfoRef = ref<InstanceType<typeof BasicInfoSection> | null>(null)
+const notifyRef = ref<InstanceType<typeof NotifyConfigSection> | null>(null)
 const pageLoading = ref(true)
 const loading = computed(() => pageLoading.value)
 const isInitializing = ref(true)
@@ -161,6 +160,7 @@ const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const saveErrorMessage = ref('')
 let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
 const pendingSave = ref<{ key: string; value: unknown } | null>(null)
+const sensitiveDirtyMap = reactive<Record<string, boolean>>({})
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
@@ -751,6 +751,58 @@ const handleFieldSave = async (key: string, value: unknown) => {
   }
 }
 
+const handleSensitiveDirtyChange = (key: string, dirty: boolean) => {
+  sensitiveDirtyMap[key] = dirty
+  if (dirty) {
+    hasUnsavedChanges.value = true
+  } else if (
+    !Object.values(sensitiveDirtyMap).some(Boolean) &&
+    !isSaving.value &&
+    saveStatus.value !== 'error'
+  ) {
+    hasUnsavedChanges.value = false
+  }
+}
+
+const handleSensitiveSave = async (
+  key: 'Info.Password' | 'Notify.ServerChanKey',
+  intent: 'replace' | 'clear',
+  value?: string
+) => {
+  if (isInitializing.value || !userId || isSaving.value) return
+
+  hasUnsavedChanges.value = true
+  setSaveStatus('saving')
+  isSaving.value = true
+  try {
+    const [group, field] = key.split('.')
+    await registryApi.updateUser(scriptId, userId, {
+      [group]: {
+        [field]: intent === 'clear' ? '' : (value ?? ''),
+      },
+    })
+    await loadUserData()
+    if (key === 'Info.Password') {
+      basicInfoRef.value?.resetPasswordDraft()
+    } else {
+      notifyRef.value?.resetServerChanKeyDraft()
+    }
+    sensitiveDirtyMap[key] = false
+    hasUnsavedChanges.value = Object.values(sensitiveDirtyMap).some(Boolean)
+    setSaveStatus('saved')
+    message.success(intent === 'clear' ? '敏感配置已清空' : '敏感配置已更新')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    sensitiveDirtyMap[key] = true
+    hasUnsavedChanges.value = true
+    setSaveStatus('error', errorMsg || '敏感配置保存失败，请重试')
+    logger.error(`敏感配置保存失败: ${key}`)
+    message.error('敏感配置保存失败，输入内容已保留')
+  } finally {
+    isSaving.value = false
+  }
+}
+
 const savePresetAndSnapshot = async () => {
   if (isInitializing.value || !userId) return
   hasUnsavedChanges.value = true
@@ -951,9 +1003,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
+  padding: var(--v6-space-8);
   min-height: 100vh;
-  background: var(--ant-color-bg-layout);
+  background: var(--v6-color-window);
 }
 
 .user-edit-content {
@@ -961,30 +1013,64 @@ onBeforeUnmount(() => {
   margin: 0 auto;
 }
 
-.config-card {
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+.config-shell {
+  display: block;
 }
 
-.config-card :deep(.ant-card-body) {
-  padding: 24px;
+.config-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--v6-space-4);
 }
 
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.config-form :deep(.form-section) {
+  min-width: 0;
+  margin: 0;
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: var(--v6-vibrancy-content);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
 }
 
-.title-logo {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
+.config-form :deep(.section-header) {
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
+}
+
+.config-form :deep(.section-header h3) {
+  color: var(--v6-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+}
+
+.config-form :deep(.section-header h3::before) {
+  display: none;
+}
+
+[data-perf-mode='low'] .config-form :deep(.form-section) {
+  background: var(--v6-color-surface);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 @media (max-width: 768px) {
   .user-edit-container {
-    padding: 16px;
+    padding: var(--v6-space-4);
+  }
+
+  .config-form :deep(.form-section) {
+    padding: var(--v6-space-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .config-form :deep(*) {
+    transition: none;
   }
 }
 </style>

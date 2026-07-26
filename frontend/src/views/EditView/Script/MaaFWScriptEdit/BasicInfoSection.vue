@@ -233,16 +233,6 @@
             </a-collapse-panel>
           </a-collapse>
           <a-empty v-else description="当前项目没有声明 Agent" />
-          <div v-if="agentEnvResult.logs.length" class="agent-env-log-box">
-            <div class="agent-env-log-header">
-              <span>准备日志</span>
-              <a-button size="small" @click="emit('copy', agentEnvResult.logs.join('\n'))">
-                <template #icon><CopyOutlined /></template>
-                复制日志
-              </a-button>
-            </div>
-            <pre>{{ agentEnvResult.logs.join('\n') }}</pre>
-          </div>
         </template>
       </a-spin>
     </div>
@@ -587,38 +577,6 @@ const emit = defineEmits<{
   overflow-wrap: anywhere;
 }
 
-.agent-env-log-box {
-  max-height: 220px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  overflow: auto;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-  font-family: var(--font-mono, Consolas, 'Courier New', monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.agent-env-log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  color: var(--ant-color-text);
-  font-family: var(--font-family, inherit);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.agent-env-log-box pre {
-  margin: 0;
-  color: var(--ant-color-text-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 768px) {
   .setup-check-item {
     flex-direction: column;
@@ -639,3 +597,4 @@ const emit = defineEmits<{
   }
 }
 </style>
+<style scoped src="../script-edit-surface.css"></style>

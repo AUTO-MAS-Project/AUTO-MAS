@@ -7,6 +7,7 @@ import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { EmulatorOperateOut } from '../models/EmulatorOperateOut';
 import type { OutBase } from '../models/OutBase';
 import type { PluginPackageIn } from '../models/PluginPackageIn';
 import type { PluginReloadInstanceIn } from '../models/PluginReloadInstanceIn';
@@ -36,12 +37,12 @@ export class ActionService {
     /**
      * 操作模拟器
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns EmulatorOperateOut Successful Response
      * @throws ApiError
      */
     public static operationEmulatorApiEmulatorOperatePost(
         requestBody: EmulatorOperateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<EmulatorOperateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/operate',

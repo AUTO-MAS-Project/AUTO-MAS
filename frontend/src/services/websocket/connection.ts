@@ -7,6 +7,7 @@ import { ref, type Ref } from 'vue'
 import { OpenAPI } from '@/api'
 import { fetchAuthenticatedWebSocketHandshake } from '@/utils/websocketAuth'
 import { dispatchMessage, subscribe, unsubscribe } from './subscriptions'
+import { WS_ID_MAIN, WS_SNAPSHOT_RESPONSE } from './types'
 import type { WSConnectionState, WSDisconnectEvent, WSEnvelope } from './types'
 
 const logger = window.electronAPI.getLogger('WebSocket连接')
@@ -118,8 +119,67 @@ export const isConnectionReplacedClose = (event: WSDisconnectEvent): boolean =>
 export const isMessageTooBigClose = (event: WSDisconnectEvent): boolean =>
   event.code === MESSAGE_TOO_BIG_CLOSE_CODE
 
+// 终止性关闭仅两种：连接被替换（4001）与消息超限（1009）。
+// 这两种关闭停止**自动**重连（进入 suspended 挂起态）以避免连接风暴，
+// 但不是不可恢复终态：用户显式发起的恢复仍可 connect({ force: true })。
+// 后端在关闭准备期 / 重启期会以 1012 (service closing) 拒绝主连接
+// （app/core/ws/manager.py、app/api/websocket.py），该场景后端随后会恢复，
+// 因此 1012 走普通退避重连等待后端回来，属预期行为。
 export const shouldReconnectAfterClose = (event: WSDisconnectEvent): boolean =>
   !isConnectionReplacedClose(event) && !isMessageTooBigClose(event)
+
+// ==================== 状态快照 ====================
+
+// 最近一次快照的 revision（诊断用）；后端重启后会从 0 重新计数
+let snapshotRevision: number | null = null
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * 消费后端状态快照（id=Main, type=snapshot.response）。
+ * 后端在每次主连接建立后通过 on_connect hook 主动推送
+ * （app/core/ws/bootstrap.py），data.states 为 type -> id -> data 的
+ * 可合并状态集合。此处将每条状态按原始 id/type 重新分发，使现有
+ * 订阅者在断线重连后自然恢复最新状态，无需各页面单独处理。
+ */
+const applySnapshot = (message: WSEnvelope): void => {
+  const { revision, states } = message.data as { revision?: unknown; states?: unknown }
+  if (!isRecord(states)) {
+    logger.warn(
+      `快照消息 states 形状异常，已忽略: ${Array.isArray(states) ? 'array' : typeof states}`
+    )
+    return
+  }
+
+  let dispatched = 0
+  let dropped = 0
+  for (const [type, statesById] of Object.entries(states)) {
+    if (!isRecord(statesById)) {
+      logger.warn(`快照条目形状异常，已跳过: type=${type}`)
+      continue
+    }
+    for (const [id, data] of Object.entries(statesById)) {
+      if (!isRecord(data)) {
+        logger.warn(`快照状态数据形状异常，已跳过: id=${id}, type=${type}`)
+        continue
+      }
+      if (dispatchMessage({ id, type, data })) {
+        dispatched++
+      } else {
+        dropped++
+      }
+    }
+  }
+
+  if (typeof revision === 'number') {
+    snapshotRevision = revision
+  }
+  logger.info(
+    `已应用状态快照: revision=${typeof revision === 'number' ? revision : '未知'}, ` +
+      `重分发 ${dispatched} 条, 无订阅者 ${dropped} 条`
+  )
+}
 
 const handleMessage = (raw: string): void => {
   let message: WSEnvelope
@@ -136,6 +196,14 @@ const handleMessage = (raw: string): void => {
     return
   }
 
+  if (message.id === WS_ID_MAIN && message.type === WS_SNAPSHOT_RESPONSE) {
+    // 快照信封本身也分发一次（供请求-响应关联或诊断订阅者观察），
+    // 无订阅者不告警；随后展开 states 逐条重分发
+    dispatchMessage(message)
+    applySnapshot(message)
+    return
+  }
+
   // 找不到订阅者的消息直接丢弃
   if (!dispatchMessage(message)) {
     logger.debug(`无订阅者，丢弃消息: id=${message.id}, type=${message.type}`)
@@ -148,7 +216,10 @@ const handleClosed = (event: WSDisconnectEvent): void => {
   if (!shouldReconnectAfterClose(event)) {
     clearReconnectTimer()
     reconnectAttempts = 0
-    state.value = 'closed'
+    // 终止性关闭只挂起自动重连，不是不可恢复终态：用户显式发起的恢复
+    // （manualReconnect / 重启后端 / 启动重试）仍可 connect({ force: true })。
+    // 只有 shutdown() 才会进入不可恢复的 'closed'。
+    state.value = 'suspended'
     if (isConnectionReplacedClose(event)) {
       logger.info('主 WebSocket 已被同进程的新连接替换，旧连接停止重连')
     } else {
@@ -211,15 +282,30 @@ const scheduleNextAttempt = (): void => {
   }, delay)
 }
 
+export interface ConnectOptions {
+  /**
+   * 用户显式发起的连接（手动重连 / 重启后端 / 启动重试）。
+   * 可越过 `suspended` 挂起守卫重新建连；但**无法**越过 shutdown() 的
+   * 不可恢复终态 `closed`。自动重连路径（退避定时器 / scheduleReconnect）
+   * 绝不传 force，以保证 1009、4001 后不会出现连接风暴。
+   */
+  force?: boolean
+}
+
 /**
  * 建立唯一主 WebSocket 连接。
  * 同时最多存在一个连接尝试；已连接时直接返回成功。
  *
+ * @param options force=true 表示用户显式发起，可从 suspended 挂起态恢复
  * @returns 连接是否成功建立（open 事件触发）
  */
-export async function connect(): Promise<boolean> {
+export async function connect(options?: ConnectOptions): Promise<boolean> {
   if (state.value === 'closed') {
     logger.warn('连接层已关闭，拒绝新的连接请求')
+    return false
+  }
+  if (state.value === 'suspended' && options?.force !== true) {
+    logger.warn('连接层已挂起（协议级终止性关闭），仅接受用户显式发起的重连')
     return false
   }
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -320,7 +406,8 @@ export async function connect(): Promise<boolean> {
  * @param delayMs 延迟毫秒数，默认使用最大退避间隔
  */
 export function scheduleReconnect(delayMs: number = RECONNECT_DELAY_MAX): void {
-  if (state.value === 'closed') return
+  // closed 为不可恢复终态；suspended 只禁止自动重连，用户显式恢复走 connect({ force: true })
+  if (state.value === 'closed' || state.value === 'suspended') return
   clearReconnectTimer()
   state.value = 'reconnecting'
   reconnectTimer = window.setTimeout(() => {
@@ -471,5 +558,6 @@ export function connectionInfo(): Record<string, unknown> {
     reconnectAttempts,
     hasReconnectTimer: reconnectTimer !== undefined,
     backendDevMode,
+    snapshotRevision,
   }
 }

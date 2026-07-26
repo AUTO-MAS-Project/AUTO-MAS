@@ -1,279 +1,304 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/general`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ isEdit ? '编辑用户' : '添加用户' }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
+  <div class="user-edit-container">
+    <div class="user-edit-header">
+      <div class="header-nav">
+        <a-breadcrumb class="breadcrumb">
+          <a-breadcrumb-item>
+            <router-link to="/scripts">脚本管理</router-link>
+          </a-breadcrumb-item>
+          <a-breadcrumb-item>{{ scriptName || '通用脚本' }}</a-breadcrumb-item>
+        </a-breadcrumb>
+        <h1>{{ isEdit ? '编辑通用用户' : '添加通用用户' }}</h1>
+        <p>基本信息、额外脚本与通知配置会在操作后即时保存</p>
+      </div>
+
+      <a-space size="small" wrap>
+        <a-button
+          v-if="!showGeneralConfigMask"
+          type="primary"
+          ghost
+          :loading="generalConfigLoading"
+          @click="handleGeneralConfig"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          通用配置
+        </a-button>
+        <a-tag v-else color="processing">正在配置</a-tag>
+        <a-button class="cancel-button" @click="handleCancel">
+          <template #icon>
+            <ArrowLeftOutlined />
+          </template>
+          返回
+        </a-button>
+      </a-space>
     </div>
 
-    <a-space size="middle">
-      <a-button
-        v-if="!showGeneralConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="generalConfigLoading"
-        @click="handleGeneralConfig"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        通用配置
-      </a-button>
-      <a-button
-        v-if="showGeneralConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        正在配置
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
-
-  <!-- 通用配置遮罩层 -->
-  <teleport to="body">
-    <div v-if="showGeneralConfigMask" class="maa-config-mask">
-      <div class="mask-content">
-        <div class="mask-icon">
-          <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
-        </div>
-        <h2 class="mask-title">正在进行通用配置</h2>
-        <p class="mask-description">
-          当前正在进行该用户的通用配置，请在配置界面完成相关设置。
-          <br />
-          配置完成后，请点击"保存配置"按钮来结束配置会话。
-        </p>
-        <div class="mask-actions">
-          <a-button
-            v-if="generalWebsocketId"
-            type="primary"
-            size="large"
-            @click="handleSaveGeneralConfig"
-          >
-            保存配置
-          </a-button>
+    <!-- 通用配置遮罩层 -->
+    <teleport to="body">
+      <div v-if="showGeneralConfigMask" class="maa-config-mask">
+        <div class="mask-content">
+          <div class="mask-icon">
+            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--v6-color-info)' }" />
+          </div>
+          <h2 class="mask-title">正在进行通用配置</h2>
+          <p class="mask-description">
+            当前正在进行该用户的通用配置，请在配置界面完成相关设置。
+            <br />
+            配置完成后，请点击“保存配置”结束配置会话。
+          </p>
+          <div class="mask-actions">
+            <a-button
+              v-if="generalWebsocketId"
+              type="primary"
+              size="large"
+              @click="handleSaveGeneralConfig"
+            >
+              保存配置
+            </a-button>
+          </div>
         </div>
       </div>
-    </div>
-  </teleport>
+    </teleport>
 
-  <div class="user-edit-content">
-    <a-card class="config-card">
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>基本信息</h3>
+    <div class="user-edit-content">
+      <a-alert
+        v-if="saveError"
+        type="error"
+        show-icon
+        closable
+        class="save-error"
+        :message="saveError"
+        @close="saveError = ''"
+      />
+      <a-spin :spinning="loading" class="config-shell">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <!-- 基本信息 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>基本信息</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item name="userName" required>
+                  <template #label>
+                    <a-tooltip title="用于识别用户的显示名称">
+                      <span class="form-label">
+                        用户名
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="formData.userName"
+                    placeholder="请输入用户名"
+                    :disabled="loading"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleFieldSave('userName', formData.userName)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item name="status">
+                  <template #label>
+                    <a-tooltip title="是否启用该用户">
+                      <span class="form-label">
+                        启用状态
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Info.Status"
+                    size="large"
+                    @change="handleFieldSave('Info.Status', formData.Info.Status)"
+                  >
+                    <a-select-option :value="true">是</a-select-option>
+                    <a-select-option :value="false">否</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item name="remainedDay">
+                  <template #label>
+                    <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                      <span class="form-label">
+                        剩余天数
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="formData.Info.RemainedDay"
+                    :min="-1"
+                    :max="9999"
+                    placeholder="-1"
+                    :disabled="loading"
+                    size="large"
+                    style="width: 100%"
+                    @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <!-- 占位列 -->
+              </a-col>
+            </a-row>
+
+            <a-form-item name="notes">
+              <template #label>
+                <a-tooltip title="为用户添加备注信息">
+                  <span class="form-label">
+                    备注
+                    <QuestionCircleOutlined class="help-icon" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-textarea
+                v-model:value="formData.Info.Notes"
+                placeholder="请输入备注信息"
+                :rows="4"
+                :disabled="loading"
+                class="modern-input"
+                @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
+              />
+            </a-form-item>
           </div>
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item name="userName" required>
-                <template #label>
-                  <a-tooltip title="用于识别用户的显示名称">
-                    <span class="form-label">
-                      用户名
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  placeholder="请输入用户名"
+
+          <!-- 额外脚本 -->
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+
+          <!-- 通知配置 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>通知配置</h3>
+            </div>
+            <a-row :gutter="24" align="middle">
+              <a-col :span="6">
+                <span style="font-weight: 500">启用通知</span>
+              </a-col>
+              <a-col :span="18">
+                <a-switch
+                  v-model:checked="formData.Notify.Enabled"
                   :disabled="loading"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('userName', formData.userName)"
+                  @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)"
                 />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item name="status">
-                <template #label>
-                  <a-tooltip title="是否启用该用户">
-                    <span class="form-label">
-                      启用状态
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.Status"
-                  size="large"
-                  @change="handleFieldSave('Info.Status', formData.Info.Status)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item name="remainedDay">
-                <template #label>
-                  <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
-                    <span class="form-label">
-                      剩余天数
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="-1"
-                  :disabled="loading"
+                <span class="switch-description">启用后将发送任务通知</span>
+              </a-col>
+            </a-row>
+
+            <!-- 发送统计 -->
+            <a-row :gutter="24" style="margin-top: 16px">
+              <a-col :span="6">
+                <span style="font-weight: 500">通知内容</span>
+              </a-col>
+              <a-col :span="18">
+                <a-checkbox
+                  v-model:checked="formData.Notify.IfSendStatistic"
+                  :disabled="loading || !formData.Notify.Enabled"
+                  @change="
+                    handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)
+                  "
+                  >统计信息
+                </a-checkbox>
+              </a-col>
+            </a-row>
+
+            <!-- 邮件通知 -->
+            <a-row :gutter="24" style="margin-top: 16px">
+              <a-col :span="6">
+                <a-checkbox
+                  v-model:checked="formData.Notify.IfSendMail"
+                  :disabled="loading || !formData.Notify.Enabled"
+                  @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)"
+                  >邮件通知
+                </a-checkbox>
+              </a-col>
+              <a-col :span="18">
+                <a-input
+                  v-model:value="formData.Notify.ToAddress"
+                  placeholder="请输入收件人邮箱地址"
+                  :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
                   size="large"
                   style="width: 100%"
-                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+                  @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)"
                 />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <!-- 占位列 -->
-            </a-col>
-          </a-row>
+              </a-col>
+            </a-row>
 
-          <a-form-item name="notes">
-            <template #label>
-              <a-tooltip title="为用户添加备注信息">
-                <span class="form-label">
-                  备注
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-textarea
-              v-model:value="formData.Info.Notes"
-              placeholder="请输入备注信息"
-              :rows="4"
-              :disabled="loading"
-              class="modern-input"
-              @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-            />
-          </a-form-item>
-        </div>
+            <!-- Server酱通知 -->
+            <a-row :gutter="24" style="margin-top: 16px">
+              <a-col :span="6">
+                <a-checkbox
+                  v-model:checked="formData.Notify.IfServerChan"
+                  :disabled="loading || !formData.Notify.Enabled"
+                  @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)"
+                  >Server酱
+                </a-checkbox>
+              </a-col>
+              <a-col :span="18">
+                <div class="sensitive-field">
+                  <a-input-password
+                    :value="serverChanKeyDraft"
+                    :placeholder="serverChanKeyPlaceholder"
+                    autocomplete="new-password"
+                    :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                    size="large"
+                    style="width: 100%"
+                    @update:value="serverChanKeyDraft = $event"
+                  />
+                  <div class="sensitive-actions">
+                    <span class="sensitive-hint">原值不会回显；留空保持原值</span>
+                    <a-space size="small">
+                      <a-button
+                        v-if="hasStoredServerChanKey"
+                        danger
+                        :disabled="loading"
+                        @click="clearServerChanKey"
+                      >
+                        清空原值
+                      </a-button>
+                      <a-button
+                        type="primary"
+                        :disabled="loading || !serverChanKeyDraft"
+                        @click="saveServerChanKey"
+                      >
+                        保存新值
+                      </a-button>
+                    </a-space>
+                  </div>
+                </div>
+              </a-col>
+            </a-row>
 
-        <!-- 额外脚本 -->
-        <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
-
-        <!-- 通知配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>通知配置</h3>
+            <!-- 自定义 Webhook 通知 -->
+            <div style="margin-top: 16px">
+              <WebhookManager
+                mode="user"
+                :script-id="scriptId"
+                :user-id="userId"
+                @change="handleWebhookChange"
+              />
+            </div>
           </div>
-          <a-row :gutter="24" align="middle">
-            <a-col :span="6">
-              <span style="font-weight: 500">启用通知</span>
-            </a-col>
-            <a-col :span="18">
-              <a-switch
-                v-model:checked="formData.Notify.Enabled"
-                :disabled="loading"
-                @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)"
-              />
-              <span class="switch-description">启用后将发送任务通知</span>
-            </a-col>
-          </a-row>
-
-          <!-- 发送统计 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <span style="font-weight: 500">通知内容</span>
-            </a-col>
-            <a-col :span="18">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >统计信息
-              </a-checkbox>
-            </a-col>
-          </a-row>
-
-          <!-- 邮件通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >邮件通知
-              </a-checkbox>
-            </a-col>
-            <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ToAddress"
-                placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                size="large"
-                style="width: 100%"
-                @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)"
-              />
-            </a-col>
-          </a-row>
-
-          <!-- Server酱通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >Server酱
-              </a-checkbox>
-            </a-col>
-            <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ServerChanKey"
-                placeholder="请输入SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                size="large"
-                style="width: 100%"
-                @blur="handleFieldSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-              />
-            </a-col>
-          </a-row>
-
-          <!-- 自定义 Webhook 通知 -->
-          <div style="margin-top: 16px">
-            <WebhookManager
-              mode="user"
-              :script-id="scriptId"
-              :user-id="userId"
-              @change="handleWebhookChange"
-            />
-          </div>
-        </div>
-      </a-form>
-    </a-card>
+        </a-form>
+      </a-spin>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
@@ -296,6 +321,12 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+const saveError = ref('')
+const serverChanKeyDraft = ref('')
+const hasStoredServerChanKey = ref(false)
+const serverChanKeyPlaceholder = computed(() =>
+  hasStoredServerChanKey.value ? '已保存；输入新值后明确保存' : '请输入 SENDKEY'
+)
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -361,6 +392,13 @@ const rules = computed(() => {
   return baseRules
 })
 
+const updateUserOrThrow = async (userData: Record<string, unknown>) => {
+  const saved = await updateUser(scriptId, userId, userData)
+  if (saved === false) {
+    throw new Error('用户配置更新未成功')
+  }
+}
+
 // 同步扁平化字段与嵌套数据
 watch(
   () => formData.Info.Name,
@@ -386,6 +424,7 @@ const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || isSaving.value || !userId) return
 
   isSaving.value = true
+  saveError.value = ''
   try {
     // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
     const parts = key.split('.')
@@ -403,13 +442,14 @@ const handleFieldSave = async (key: string, value: any) => {
       userData = { Info: { Name: value } }
     }
 
-    await updateUser(scriptId, userId, userData)
+    await updateUserOrThrow(userData)
     // 刷新数据
     await loadUserData()
     logger.info(`用户配置已保存: ${key}`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    saveError.value = `保存失败：${errorMsg}`
   } finally {
     isSaving.value = false
   }
@@ -422,17 +462,20 @@ const _saveFullUserData = async () => {
   isSaving.value = true
   try {
     formData.Info.Name = formData.userName
+    const notifyData: Partial<typeof formData.Notify> = { ...formData.Notify }
+    delete notifyData.ServerChanKey
     const userData = {
       Info: { ...formData.Info },
-      Notify: { ...formData.Notify },
+      Notify: notifyData,
       Data: { ...formData.Data },
     }
 
-    await updateUser(scriptId, userId, userData)
+    await updateUserOrThrow(userData)
     logger.info('用户配置已保存')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    saveError.value = `保存失败：${errorMsg}`
   } finally {
     isSaving.value = false
   }
@@ -505,11 +548,17 @@ const loadUserData = async () => {
 
         // 填充通用用户数据
         if (userIndex.type === 'GeneralUserConfig') {
+          hasStoredServerChanKey.value = Boolean(userData.Notify?.ServerChanKey)
           Object.assign(formData, {
             Info: { ...getDefaultGeneralUserData().Info, ...userData.Info },
-            Notify: { ...getDefaultGeneralUserData().Notify, ...userData.Notify },
+            Notify: {
+              ...getDefaultGeneralUserData().Notify,
+              ...userData.Notify,
+              ServerChanKey: '',
+            },
             Data: { ...getDefaultGeneralUserData().Data, ...userData.Data },
           })
+          serverChanKeyDraft.value = ''
         }
 
         // 同步扁平化字段 - 使用nextTick确保数据更新完成后再同步
@@ -533,6 +582,52 @@ const loadUserData = async () => {
     logger.error(`加载用户数据失败: ${errorMsg}`)
     message.error('加载用户数据失败')
   }
+}
+
+const saveServerChanKey = async () => {
+  if (!serverChanKeyDraft.value || isSaving.value || !userId) return
+  isSaving.value = true
+  saveError.value = ''
+  try {
+    await updateUserOrThrow({ Notify: { ServerChanKey: serverChanKeyDraft.value } })
+    serverChanKeyDraft.value = ''
+    hasStoredServerChanKey.value = true
+    logger.info('敏感字段已保存: Notify.ServerChanKey')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    saveError.value = `Server酱密钥保存失败：${errorMsg}`
+    logger.error(`敏感字段保存失败: Notify.ServerChanKey: ${errorMsg}`)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const clearServerChanKey = () => {
+  Modal.confirm({
+    title: '清空 Server酱密钥',
+    content: '清空后无法恢复，确定继续吗？',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      if (isSaving.value || !userId) return
+      isSaving.value = true
+      saveError.value = ''
+      try {
+        await updateUserOrThrow({ Notify: { ServerChanKey: '' } })
+        serverChanKeyDraft.value = ''
+        hasStoredServerChanKey.value = false
+        logger.info('敏感字段已清空: Notify.ServerChanKey')
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        saveError.value = `Server酱密钥清空失败：${errorMsg}`
+        logger.error(`敏感字段清空失败: Notify.ServerChanKey: ${errorMsg}`)
+        throw error
+      } finally {
+        isSaving.value = false
+      }
+    },
+  })
 }
 
 const handleGeneralConfig = async () => {
@@ -740,12 +835,20 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.user-edit-container {
+  min-height: 100vh;
+  padding: var(--v6-space-8);
+  background: var(--v6-color-window);
+}
+
 .user-edit-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
+  align-items: flex-end;
+  gap: var(--v6-space-4);
+  max-width: 1320px;
+  margin: 0 auto var(--v6-space-5);
+  padding: 0 var(--v6-space-1);
 }
 
 .header-nav {
@@ -753,139 +856,200 @@ onMounted(() => {
 }
 
 .breadcrumb {
+  margin: 0 0 var(--v6-space-2);
+  font-size: var(--v6-font-size-sm);
+}
+
+.header-nav h1 {
   margin: 0;
+  color: var(--v6-color-text);
+  font-size: var(--v6-font-size-3xl);
+  font-weight: var(--v6-font-weight-semibold);
+  line-height: var(--v6-line-height-tight);
+  letter-spacing: -0.02em;
+}
+
+.header-nav p {
+  margin: var(--v6-space-1) 0 0;
+  color: var(--v6-color-text-secondary);
+  font-size: var(--v6-font-size-base);
 }
 
 .user-edit-content {
-  max-width: 1200px;
+  max-width: 1320px;
   margin: 0 auto;
 }
 
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+.save-error {
+  margin-bottom: var(--v6-space-4);
 }
 
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
+.config-shell {
+  display: block;
 }
 
 .config-form {
+  display: block;
   max-width: none;
 }
 
 .form-section {
-  margin-bottom: 12px;
+  min-width: 0;
+  margin: 0 0 var(--v6-space-4);
+  padding: var(--v6-space-5);
+  background: var(--v6-vibrancy-content);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: blur(24px) saturate(1.18);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  break-inside: avoid;
 }
 
-.form-section:last-child {
-  margin-bottom: 0;
+/* 宽容器：iPad 设置式双栏瀑布流。卡片在两列内各自纵向堆叠、互不等高拉伸；
+   首张卡（基本信息）保持通栏。窄容器回落为上方的单列堆叠。 */
+@container app-content (min-width: 981px) {
+  .config-form {
+    columns: 2;
+    column-gap: var(--v6-space-4);
+  }
+
+  .form-section {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
+  }
+
+  .form-section:first-child {
+    display: block;
+    column-span: all;
+  }
 }
 
 .section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
+  display: none;
 }
 
 .form-label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
+  gap: var(--v6-space-2);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
+  font-size: var(--v6-font-size-base);
 }
 
 .help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-base);
   cursor: help;
-  transition: color 0.3s ease;
+  transition: color var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .help-icon:hover {
-  color: var(--ant-color-primary);
+  color: var(--v6-color-info);
 }
 
 .modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
+  border-radius: var(--v6-radius-md);
+  border: 2px solid var(--v6-color-border);
+  background: var(--v6-color-surface);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
+  border-color: color-mix(in srgb, var(--v6-color-info) 80%, #000 20%);
 }
 
 .modern-input:focus,
 .modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
 }
 
 .switch-description {
-  margin-left: 12px;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
+  margin-left: var(--v6-space-3);
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-text-secondary);
 }
 
 .cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
+  border: 1px solid var(--v6-color-border);
+  background: var(--v6-vibrancy-content);
+  color: var(--v6-color-text);
+  backdrop-filter: blur(18px) saturate(1.15);
 }
 
 .cancel-button:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
+  border-color: var(--v6-color-info);
+  color: var(--v6-color-info);
 }
 
-.save-button {
-  background: var(--ant-color-primary);
-  border-color: var(--ant-color-primary);
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
 }
 
-.save-button:hover {
-  background: var(--ant-color-primary-hover);
-  border-color: var(--ant-color-primary-hover);
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-3);
 }
 
-.float-button {
-  width: 60px;
-  height: 60px;
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
   .user-edit-header {
     flex-direction: column;
-    gap: 16px;
+    gap: var(--v6-space-4);
     align-items: stretch;
   }
 
   .user-edit-content {
     max-width: 100%;
   }
+
+  .user-edit-container {
+    padding: var(--v6-space-4);
+  }
+
+  .form-section {
+    padding: var(--v6-space-4);
+  }
+
+  .form-section :deep(.ant-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .sensitive-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+[data-perf-mode='low'] .form-section {
+  background: var(--v6-color-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* 通用/MAA 配置遮罩样式（用于全局覆盖） */
@@ -895,43 +1059,40 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, #000 45%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: var(--v6-z-modal-backdrop);
 }
 
 .mask-content {
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  padding: 24px;
+  background: var(--v6-color-surface-elevated);
+  border-radius: var(--v6-radius-md);
+  padding: var(--v6-space-6);
   max-width: 480px;
   width: 100%;
   text-align: center;
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ant-color-border);
+  box-shadow: var(--v6-shadow-elevated);
+  border: 1px solid var(--v6-color-border);
 }
 
 .mask-icon {
-  margin-bottom: 16px;
+  margin-bottom: var(--v6-space-4);
 }
 
 .mask-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-xl);
+  font-weight: var(--v6-font-weight-semibold);
+  margin: 0 0 var(--v6-space-2);
+  color: var(--v6-color-text);
 }
 
 .mask-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 24px;
-  line-height: 1.5;
+  font-size: var(--v6-font-size-base);
+  color: var(--v6-color-text-secondary);
+  margin: 0 0 var(--v6-space-6);
+  line-height: var(--v6-line-height-normal);
 }
 
 .mask-actions {

@@ -1,60 +1,62 @@
 <template>
-  <div class="page-header">
-    <div class="header-nav">
-      <a-breadcrumb>
-        <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/schema`">{{ scriptName }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>{{ isEdit ? '编辑用户' : '创建用户' }}</a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
+  <div class="user-edit-page">
+    <PageHeader
+      :title="userName || (isEdit ? '编辑用户' : '创建用户')"
+      :subtitle="scriptName ? `${scriptName} · 用户运行配置` : '用户运行配置'"
+      :bordered="false"
+      compact
+      transparent
+    >
+      <a-tag :color="getScriptTypeTagColor(scriptType, scriptThemeColor)">
+        {{ scriptDisplayName || '通用脚本' }}
+      </a-tag>
+      <template #actions>
+        <HeaderSchemaActionButton
+          v-for="action in headerSchemaActions"
+          :key="action.key"
+          :action="action"
+          :loading="actionLoadingId === action.key"
+          @click="handleFieldAction(action.key, action.field)"
+        />
+        <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
+        <a-button @click="router.push('/scripts')">返回</a-button>
+      </template>
+    </PageHeader>
 
-    <a-space size="middle">
-      <HeaderSchemaActionButton
-        v-for="action in headerSchemaActions"
-        :key="action.key"
-        :action="action"
-        :loading="actionLoadingId === action.key"
-        @click="handleFieldAction(action.key, action.field)"
-      />
-      <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
-      <a-button @click="router.push('/scripts')">返回</a-button>
-    </a-space>
-  </div>
+    <main class="user-edit-content">
+      <a-spin :spinning="loading" tip="加载用户配置中...">
+        <section class="user-edit-surface">
+          <a-alert
+            v-if="saveError"
+            class="save-error"
+            type="error"
+            show-icon
+            :message="saveError"
+          />
+          <SchemaForm
+            v-if="userSchema"
+            ref="schemaFormRef"
+            v-model="formModel"
+            :schema="userSchema"
+            :hide-fields="headerSchemaActionKeys"
+            :action-loading-id="actionLoadingId"
+            @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
+            @validation-change="errors => (fieldErrors = errors)"
+          />
+          <a-empty v-else-if="!loading" description="此脚本类型未提供用户配置表单" />
+        </section>
+      </a-spin>
+    </main>
 
-  <a-card class="config-card" :loading="loading">
-    <template #title>
-      <a-space>
-        <span>{{ userName || '用户配置' }}</span>
-        <a-tag :color="getScriptTypeTagColor(scriptType, scriptThemeColor)">
-          {{ scriptDisplayName }}
-        </a-tag>
-      </a-space>
-    </template>
-
-    <SchemaForm
-      v-if="userSchema"
-      ref="schemaFormRef"
-      v-model="formModel"
-      :schema="userSchema"
-      :hide-fields="headerSchemaActionKeys"
-      :action-loading-id="actionLoadingId"
-      @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
-      @validation-change="errors => (fieldErrors = errors)"
+    <SchemaActionSessionMask
+      :visible="sessionVisible"
+      :title="sessionTitle"
+      :description="sessionDescription"
+      :stop-label="sessionStopLabel"
+      :stopping="sessionStopping"
+      @stop="stopActiveSession()"
     />
-  </a-card>
-
-  <SchemaActionSessionMask
-    :visible="sessionVisible"
-    :title="sessionTitle"
-    :description="sessionDescription"
-    :stop-label="sessionStopLabel"
-    :stopping="sessionStopping"
-    @stop="stopActiveSession()"
-  />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -62,10 +64,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
+import PageHeader from '@/components/mac/PageHeader.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
+import {
+  buildSchemaSavePayload,
+  sanitizeErrorForLog,
+} from '@/composables/useSensitiveFieldStrategy'
 import type {
   SchemaDefinition,
   SchemaFieldDefinition,
@@ -83,6 +90,7 @@ const api = useScriptRegistryApi()
 
 const loading = ref(true)
 const saving = ref(false)
+const saveError = ref('')
 const fieldErrors = ref<SchemaValidationErrorMap>({})
 const schemaFormRef = ref<InstanceType<typeof SchemaForm> | null>(null)
 
@@ -167,15 +175,29 @@ const handleSave = async () => {
     return
   }
 
+  const schema = userSchema.value || {}
+  const payload =
+    schemaFormRef.value?.buildSavePayload() ?? buildSchemaSavePayload(formModel.value, schema, {})
   saving.value = true
+  saveError.value = ''
   try {
-    await api.updateUser(scriptId, userId.value, formModel.value)
-    userName.value = displayNameFromForm.value || userName.value
+    const updateResult: unknown = await api.updateUser(scriptId, userId.value, payload)
+    if (updateResult === false) {
+      throw new Error('用户配置保存失败')
+    }
+    schemaFormRef.value?.resetSensitiveDrafts()
+    await loadData()
     message.success('用户配置已保存')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存通用用户失败: ${errorMsg}`)
-    message.error(errorMsg)
+    const safeError = sanitizeErrorForLog(
+      sanitizeErrorForLog(errorMsg, payload, schema),
+      formModel.value,
+      schema
+    )
+    logger.error(`保存通用用户失败: ${safeError}`)
+    saveError.value = safeError
+    message.error(safeError)
   } finally {
     saving.value = false
   }
@@ -214,26 +236,46 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  gap: 16px;
+.user-edit-page {
+  min-height: 100%;
 }
 
-.header-nav {
-  min-width: 0;
+.user-edit-content {
+  width: min(100%, 1280px);
+  margin: 0 auto;
+  padding: 0 var(--v6-content-padding-inline) var(--v6-space-8);
 }
 
-.config-card {
-  border-radius: 16px;
+.user-edit-surface {
+  min-height: 240px;
+  padding: var(--v6-space-5);
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  background: var(--v6-vibrancy-material);
+  box-shadow: var(--v6-shadow-card);
+  backdrop-filter: var(--v6-backdrop-vibrancy);
+  -webkit-backdrop-filter: var(--v6-backdrop-vibrancy);
+}
+
+.save-error {
+  margin-bottom: var(--v6-space-4);
+  border-radius: var(--v6-radius-control);
+}
+
+:root[data-perf-mode='low'] .user-edit-surface {
+  background: var(--v6-color-surface);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 @media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
+  .user-edit-content {
+    padding-inline: var(--v6-space-4);
+  }
+
+  .user-edit-surface {
+    padding: var(--v6-space-4);
   }
 }
 </style>

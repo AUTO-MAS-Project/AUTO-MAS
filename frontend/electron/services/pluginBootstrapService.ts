@@ -20,8 +20,9 @@ import {
   BundledRuntimeLock,
   BundledRuntimeLockEntry,
   listBundledWheelFiles,
-  readAndVerifyBundledRuntimeLock,
+  readBundledRuntimeLockMetadata,
   resolveLockedWheelPaths,
+  verifyBundledWheelDigestsAsync,
 } from './bundledArtifactValidation'
 import { runBoundedProcess } from './boundedProcess'
 import { writeJsonFileAtomically } from './atomicJsonFile'
@@ -271,11 +272,18 @@ export class PluginBootstrapService {
         )
       }
       const checkResult = this.checkBootstrapState(declaredPackages)
-      // Validate bundled artifacts before accepting a cached bootstrap state. This
-      // keeps an unchanged manifest from masking a modified or truncated wheel.
+      // Validate the bundled wheelhouse structure before accepting a cached bootstrap
+      // state: manifest/runtime-lock contract, exact file set and per-wheel byte size.
+      // The 127-wheel content digest pass is deliberately deferred until we know an
+      // install will actually run — see the note above verifyBundledWheelDigestsAsync
+      // below. Hashing 146 MiB here would block every queued ipcMain.handle during
+      // cold start even when nothing changed.
       const findLinksDir = this.detectLocalWheelsDir()
-      const runtimeLock = findLinksDir ? readAndVerifyBundledRuntimeLock(findLinksDir) : null
+      const runtimeLock = findLinksDir ? readBundledRuntimeLockMetadata(findLinksDir) : null
       if (runtimeLock) {
+        logger.info(
+          `Using complete runtime wheelhouse for bootstrap (contract and wheel sizes verified): ${findLinksDir}`
+        )
         this.validateLockedPluginContract(runtimeLock, declaredPackages)
         const lockedTargetEntries = [...runtimeLock.plugin_runtime, ...runtimeLock.plugins]
         if (!this.hasExactLockedTargetDistributions(activePluginTargetDir, lockedTargetEntries)) {
@@ -307,6 +315,20 @@ export class PluginBootstrapService {
           warnings: state?.warnings || [],
           summary: 'Plugin bootstrap state is unchanged, skipped',
         }
+      }
+
+      // An install will run, so every wheel that uv may consume must be
+      // authenticated first. Streaming digests keep the main thread responsive
+      // while the whole wheelhouse is hashed.
+      if (findLinksDir) {
+        onProgress?.({
+          stage: 'check',
+          progress: 100,
+          message: 'Verifying bundled wheel checksums...',
+          details: { checkInfo: checkResult, operationDesc: 'sha256 (streaming)' },
+        })
+        await verifyBundledWheelDigestsAsync(findLinksDir)
+        logger.info(`Bundled wheelhouse content digests verified: ${findLinksDir}`)
       }
 
       await this.ensureUvReady()
@@ -501,9 +523,35 @@ export class PluginBootstrapService {
         JSON.stringify({
           packages: normalized,
           wheelsManifest: this.readWheelsManifestContent(),
+          // This is deliberately a lightweight trigger rather than a cached
+          // integrity result. Any normal wheel replacement changes size or
+          // mtime, invalidates the existing bootstrap state and causes the
+          // streaming SHA-256 pass to run before uv sees the wheelhouse.
+          wheelsMetadata: this.readWheelsMetadataFingerprint(),
         })
       )
       .digest('hex')
+  }
+
+  private readWheelsMetadataFingerprint(): Array<{
+    filename: string
+    size: number
+    mtimeMs: number
+  }> {
+    if (!fs.existsSync(this.wheelsDir)) {
+      return []
+    }
+
+    return listBundledWheelFiles(this.wheelsDir)
+      .sort((left, right) => left.localeCompare(right))
+      .map(filename => {
+        const stat = fs.statSync(path.join(this.wheelsDir, filename))
+        return {
+          filename,
+          size: stat.size,
+          mtimeMs: stat.mtimeMs,
+        }
+      })
   }
 
   private readWheelsManifestContent(): string {
@@ -740,8 +788,17 @@ export class PluginBootstrapService {
         throw new Error(`Locked plugin wheel is missing for ${declaredPackage.name}`)
       }
       if (!this.isVersionAllowed(lockedPlugin.version, declaredPackage)) {
+        // Lane 13 P0: 错误必须明确给出 distribution / requested / locked 三元，
+        // 让 Alpha.4 的 "Locked plugin ... violates ..." 错误再现时能一眼定位
+        // 是 pyproject pin 与 wheel/runtime-lock 哪一侧偏离。
+        const requestedDisplay =
+          declaredPackage.specifier || declaredPackage.version || declaredPackage.installSpec
         throw new Error(
-          `Locked plugin ${lockedPlugin.distribution}==${lockedPlugin.version} violates ${declaredPackage.displayLabel}`
+          `Locked plugin version mismatch: ` +
+            `distribution="${lockedPlugin.distribution}", ` +
+            `requested="${requestedDisplay}" (from pyproject [tool.auto-mas.plugin-bootstrap]), ` +
+            `locked="${lockedPlugin.version}" (from plugins/wheels/runtime-lock.json). ` +
+            `Offline bootstrap requires pyproject pin, runtime-lock and wheel filename to agree.`
         )
       }
       const entryPoints = lockedPlugin.entry_points ?? []
@@ -829,10 +886,102 @@ export class PluginBootstrapService {
       message: 'Validating locked plugin distributions and imports...',
       details: { operationDesc: 'isolated plugin entry-point import validation' },
     })
-    if (!this.hasExactLockedTargetDistributions(this.pluginTargetDir, entries)) {
-      throw new Error('Plugin target distribution/version set differs from runtime-lock scopes')
+    const targetDiff = this.describeLockedTargetMismatch(this.pluginTargetDir, entries)
+    if (targetDiff !== null) {
+      // Lane 13 P0: "部分安装后假成功" 必须给出 actual/expected 明细，便于诊断
+      // 是 wheel 漏装、版本不一致还是出现多余 dist-info。
+      throw new Error(
+        `Plugin target distribution/version set differs from runtime-lock scopes. ` + targetDiff
+      )
     }
     await this.validateLockedPluginImports(venvPython, runtimeLock)
+  }
+
+  /**
+   * Lane 13: 比对当前 plugin target 目录与 runtime-lock 期望集合，
+   * 返回 null 表示一致；返回字符串表示差异描述（用于错误信息）。
+   */
+  private describeLockedTargetMismatch(
+    targetDir: string,
+    expectedEntries: BundledRuntimeLockEntry[]
+  ): string | null {
+    const installed = new Map<string, { version: string; distInfo: string }>()
+    let readFailedReason: string | null = null
+    try {
+      for (const entry of fs.readdirSync(targetDir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !entry.name.toLowerCase().endsWith('.dist-info')) continue
+        const metadataPath = path.join(targetDir, entry.name, 'METADATA')
+        if (!fs.existsSync(metadataPath)) {
+          readFailedReason = `dist-info missing METADATA: ${entry.name}`
+          break
+        }
+        const metadata = fs.readFileSync(metadataPath, 'utf-8')
+        const name = metadata.match(/^Name:\s*(.+?)\s*$/im)?.[1]
+        const version = metadata.match(/^Version:\s*(.+?)\s*$/im)?.[1]
+        if (!name || !version) {
+          readFailedReason = `dist-info METADATA missing Name/Version: ${entry.name}`
+          break
+        }
+        const normalized = this.normalizeDistributionName(name)
+        if (installed.has(normalized)) {
+          readFailedReason = `duplicate installed distribution "${normalized}" (dist-info: ${entry.name} vs ${installed.get(normalized)!.distInfo})`
+          break
+        }
+        installed.set(normalized, { version, distInfo: entry.name })
+      }
+    } catch (error) {
+      readFailedReason = `read failure: ${error instanceof Error ? error.message : String(error)}`
+    }
+    if (readFailedReason !== null) {
+      return `Failed to read installed plugin target: ${readFailedReason}`
+    }
+
+    const expectedMap = new Map<
+      string,
+      { distribution: string; version: string; filename: string }
+    >()
+    for (const item of expectedEntries) {
+      const key = this.normalizeDistributionName(item.distribution)
+      expectedMap.set(key, {
+        distribution: item.distribution,
+        version: item.version,
+        filename: item.filename,
+      })
+    }
+
+    const missing: string[] = []
+    const versionMismatches: string[] = []
+    for (const [key, expected] of expectedMap) {
+      const actual = installed.get(key)
+      if (actual === undefined) {
+        missing.push(`${expected.distribution}==${expected.version} (wheel: ${expected.filename})`)
+      } else if (actual.version !== expected.version) {
+        versionMismatches.push(
+          `${expected.distribution}: expected "${expected.version}" (wheel: ${expected.filename}), actual "${actual.version}" (dist-info: ${actual.distInfo})`
+        )
+      }
+    }
+    const extra: string[] = []
+    for (const [key, actual] of installed) {
+      if (!expectedMap.has(key)) {
+        extra.push(`${key}==${actual.version} (dist-info: ${actual.distInfo})`)
+      }
+    }
+
+    if (missing.length === 0 && versionMismatches.length === 0 && extra.length === 0) {
+      return null
+    }
+    const parts: string[] = []
+    if (missing.length > 0) {
+      parts.push(`missing [${missing.join('; ')}]`)
+    }
+    if (versionMismatches.length > 0) {
+      parts.push(`version mismatch [${versionMismatches.join('; ')}]`)
+    }
+    if (extra.length > 0) {
+      parts.push(`unexpected [${extra.join('; ')}]`)
+    }
+    return `expected=${expectedEntries.length} distributions, actual=${installed.size} dist-info; ${parts.join('; ')}.`
   }
 
   private hasExactLockedTargetDistributions(
@@ -905,7 +1054,15 @@ export class PluginBootstrapService {
     )
   }
 
-  /** Validate the bundled wheelhouse before exposing it to uv. */
+  /**
+   * Locate the bundled wheelhouse and fail closed on a broken one.
+   *
+   * Only the manifest/runtime-lock contract, the exact file set and the per-wheel
+   * byte sizes are checked here (readdir + statSync + two small JSON parses). The
+   * 146 MiB content digest pass is the caller's job and only runs when an install
+   * is actually going to happen — see verifyBundledWheelDigestsAsync in
+   * installPackages.
+   */
   private detectLocalWheelsDir(): string | undefined {
     if (!fs.existsSync(this.wheelsDir)) {
       if (requiresBundledRuntimeLock(this.appRoot)) {
@@ -935,8 +1092,7 @@ export class PluginBootstrapService {
       return undefined
     }
 
-    readAndVerifyBundledRuntimeLock(this.wheelsDir)
-    logger.info(`Using verified complete runtime wheelhouse for bootstrap: ${this.wheelsDir}`)
+    readBundledRuntimeLockMetadata(this.wheelsDir)
     return this.wheelsDir
   }
 

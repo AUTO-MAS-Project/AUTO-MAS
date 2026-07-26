@@ -231,6 +231,42 @@ export interface ElectronAPI {
     }) => void
   ) => void
   removeBackendStatusListener?: () => void
+
+  // 启动失败错误传播
+  onStartupError: (callback: (error: StartupErrorPayload) => void) => void
+  removeStartupErrorListener: () => void
+
+  // ==================== 插件安全校验 API ====================
+
+  /** 检查 iframe sandbox 属性是否安全 */
+  pluginIsSafeIframeSandbox: (sandboxAttribute: string) => Promise<boolean>
+
+  /** 验证插件页面 URL 是否安全 */
+  pluginIsSafePluginUrl: (
+    candidateUrl: string,
+    pluginFileRoots?: string[]
+  ) => Promise<{ safe: boolean; reason?: string }>
+
+  /** 检查 HTML 内容是否包含危险脚本注入 */
+  pluginHasDangerousScriptInjection: (htmlContent: string) => Promise<boolean>
+
+  /** 综合校验插件内容安全性 */
+  pluginValidatePluginContent: (
+    htmlContent: string,
+    pluginUrl: string
+  ) => Promise<PluginContentSecurityResult>
+}
+
+export interface StartupErrorPayload {
+  type: 'startup-error'
+  errorCode: number
+  errorDescription: string
+  timestamp: number
+}
+
+export interface PluginContentSecurityResult {
+  safe: boolean
+  violations: Array<{ rule: string; detail: string }>
 }
 
 export interface PluginPageContext {

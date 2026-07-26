@@ -1,24 +1,15 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img
-              :src="getScriptIcon(formData.type, scriptIconUrl)"
-              :alt="formData.type"
-              width="20"
-              height="20"
-              class="breadcrumb-logo"
-              @error="event => handleScriptIconError(event, formData.type)"
-            />
-            项目配置
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
+  <ScriptEditPageHeader
+    :title="formData.type === 'M9A' ? 'M9A 项目配置' : 'MaaFramework 项目配置'"
+    subtitle="配置项目接口、控制方式、更新与运行策略"
+    :icon="getScriptIcon(formData.type, scriptIconUrl)"
+    :icon-alt="formData.type"
+    :type-label="formData.type"
+    type-color="geekblue"
+    @back="handleCancel"
+    @icon-error="event => handleScriptIconError(event, formData.type)"
+  >
+    <template #status>
       <Transition name="save-chip-fade">
         <span
           v-if="saveStatus !== 'idle'"
@@ -34,28 +25,11 @@
           }}</span>
         </span>
       </Transition>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </ScriptEditPageHeader>
 
   <div class="script-edit-content">
-    <a-card
-      :title="formData.type === 'M9A' ? 'M9A 项目配置' : 'MaaFramework 项目配置'"
-      :loading="pageLoading"
-      class="config-card"
-    >
-      <template #extra>
-        <a-tag color="geekblue" class="type-tag">{{ formData.type }}</a-tag>
-      </template>
-
+    <a-card :loading="pageLoading" class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <BasicInfoSection
           :maafw-config="maafwConfig"
@@ -116,7 +90,6 @@
           :is-auto-update-disabled="isAutoUpdateDisabled"
           :project-update-loading="projectUpdateLoading"
           :project-update-disabled="projectUpdateDisabled"
-          :project-update-logs="projectUpdateLogs"
           :update-source-options="updateSourceOptions"
           :update-channel-options="updateChannelOptions"
           @change="handleChange"
@@ -167,18 +140,14 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LoadingOutlined,
-} from '@ant-design/icons-vue'
+import { CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 import { useMaaFWScriptConfig } from '@/composables/useMaaFWScriptConfig'
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
+import ScriptEditPageHeader from './ScriptEditPageHeader.vue'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
@@ -194,7 +163,6 @@ const {
   rules,
   previewData,
   agentEnvResult,
-  projectUpdateLogs,
   scriptEditHint,
   scriptIconUrl,
   pageLoading,
@@ -453,3 +421,4 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+<style scoped src="./script-edit-surface.css"></style>

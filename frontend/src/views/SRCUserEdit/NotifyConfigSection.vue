@@ -64,14 +64,38 @@
         </a-checkbox>
       </a-col>
       <a-col :span="18" style="display: flex; gap: 8px">
-        <a-input
-          v-model:value="formData.Notify.ServerChanKey"
-          placeholder="请输入SENDKEY"
-          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-          size="large"
-          style="flex: 2"
-          @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-        />
+        <div class="sensitive-field">
+          <a-input-password
+            :value="serverChanKeyDraft"
+            :placeholder="serverChanKeyPlaceholder"
+            autocomplete="new-password"
+            :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+            size="large"
+            @update:value="serverChanKeyDraft = $event"
+          />
+          <div class="sensitive-actions">
+            <span class="sensitive-hint">原值不会回显；留空保持原值</span>
+            <a-space size="small">
+              <a-button
+                v-if="hasStoredServerChanKey"
+                danger
+                size="small"
+                :disabled="loading"
+                @click="clearServerChanKey"
+              >
+                清空原值
+              </a-button>
+              <a-button
+                type="primary"
+                size="small"
+                :disabled="loading || !serverChanKeyDraft"
+                @click="saveServerChanKey"
+              >
+                保存新值
+              </a-button>
+            </a-space>
+          </div>
+        </div>
       </a-col>
     </a-row>
 
@@ -88,6 +112,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 
 const logger = window.electronAPI.getLogger('SRC通知配置组件')
@@ -97,11 +123,34 @@ const props = defineProps<{
   loading: boolean
   scriptId?: string
   userId?: string
+  hasStoredServerChanKey: boolean
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  sensitiveSave: [key: 'Notify.ServerChanKey', intent: 'replace' | 'clear', value?: string]
 }>()
+
+const serverChanKeyDraft = ref('')
+const serverChanKeyPlaceholder = computed(() =>
+  props.hasStoredServerChanKey ? '已保存；输入新 SENDKEY 后明确保存' : '请输入 SENDKEY'
+)
+
+const saveServerChanKey = () => {
+  if (!serverChanKeyDraft.value) return
+  emit('sensitiveSave', 'Notify.ServerChanKey', 'replace', serverChanKeyDraft.value)
+}
+
+const clearServerChanKey = () => {
+  Modal.confirm({
+    title: '清空 Server酱密钥',
+    content: '清空后无法恢复，确定继续吗？',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => emit('sensitiveSave', 'Notify.ServerChanKey', 'clear', ''),
+  })
+}
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
@@ -112,6 +161,12 @@ const handleWebhookChange = () => {
   // Webhook 有自己的保存逻辑，这里只记录日志
   logger.info(`Webhook changed for script: ${props.scriptId}, user: ${props.userId}`)
 }
+
+defineExpose({
+  resetServerChanKeyDraft: () => {
+    serverChanKeyDraft.value = ''
+  },
+})
 </script>
 
 <style scoped>
@@ -167,5 +222,30 @@ const handleWebhookChange = () => {
 .modern-input.ant-input-focused {
   border-color: var(--ant-color-primary);
   box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.sensitive-field {
+  display: grid;
+  flex: 1;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
+}
+
+@media (max-width: 768px) {
+  .sensitive-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>

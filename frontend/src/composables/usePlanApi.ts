@@ -9,12 +9,23 @@ const logger = window.electronAPI.getLogger('计划API')
 export function usePlanApi() {
   const loading = ref(false)
 
+  const requireSuccess = <T extends { code?: number; message?: string }>(
+    response: T,
+    fallbackMessage: string
+  ): T => {
+    if (response.code !== 200) {
+      throw new Error(response.message || fallbackMessage)
+    }
+    return response
+  }
+
   // 获取所有计划
   const getPlans = async (planId?: string) => {
     loading.value = true
     try {
       const params: PlanGetIn = planId ? { planId } : {}
-      return await Service.getPlanApiPlanGetPost(params)
+      const response = await Service.getPlanApiPlanGetPost(params)
+      return requireSuccess(response, '获取计划失败')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取计划失败: ${errorMsg}`)
@@ -34,6 +45,7 @@ export function usePlanApi() {
       }
       const params: PlanCreateIn = { type }
       const response = await Service.addPlanApiPlanAddPost(params)
+      requireSuccess(response, '创建计划失败')
 
       // 播放添加计划成功音频
       const { playSound } = useAudioPlayer()
@@ -55,8 +67,8 @@ export function usePlanApi() {
     loading.value = true
     try {
       const params: PlanUpdateIn = { planId, data }
-
-      return await Service.updatePlanApiPlanUpdatePost(params)
+      const response = await Service.updatePlanApiPlanUpdatePost(params)
+      return requireSuccess(response, '更新计划失败')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新计划失败: ${errorMsg}`)
@@ -73,6 +85,7 @@ export function usePlanApi() {
     try {
       const params: PlanDeleteIn = { planId }
       const response = await Service.deletePlanApiPlanDeletePost(params)
+      requireSuccess(response, '删除计划失败')
 
       // 播放删除计划成功音频
       const { playSound } = useAudioPlayer()
@@ -95,8 +108,7 @@ export function usePlanApi() {
     try {
       const params: PlanReorderIn = { indexList }
       const response = await Service.reorderPlanApiPlanOrderPost(params)
-
-      return response
+      return requireSuccess(response, '重新排序失败')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`重新排序失败: ${errorMsg}`)

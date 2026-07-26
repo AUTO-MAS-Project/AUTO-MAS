@@ -78,7 +78,11 @@
         <a-result status="error" title="下载失败" :sub-title="failureReason">
           <template #extra>
             <div class="failed-actions">
-              <a-button type="primary" @click="retry"> 重试下载 </a-button>
+              <a-button type="primary" @click="retry">重试下载</a-button>
+              <a-button @click="copyDiagnostic">
+                <template #icon><CopyOutlined /></template>
+                复制诊断信息
+              </a-button>
               <a-button @click="reset">关闭</a-button>
             </div>
           </template>
@@ -87,12 +91,29 @@
 
       <!-- 下载成功区域 -->
       <div v-if="status === 'completed'" class="download-success-section">
-        <a-result status="success" title="下载完成" sub-title="更新包已下载完成，是否立即安装？">
+        <a-result
+          status="success"
+          title="下载完成"
+          sub-title="安装阶段将校验并解压更新包，是否立即继续？"
+        >
           <template #extra>
             <div class="success-actions">
-              <a-button type="primary" @click="install"> 立即安装 </a-button>
+              <a-button type="primary" @click="install">立即安装</a-button>
               <a-button @click="installLater">稍后安装</a-button>
             </div>
+          </template>
+        </a-result>
+      </div>
+
+      <!-- 安装准备区域：成功后后端会直接退出应用，失败会推送具体原因 -->
+      <div v-if="status === 'installing'" class="download-installing-section">
+        <a-result
+          status="info"
+          title="正在准备安装"
+          sub-title="正在校验并解压更新包。安装程序启动成功后应用会自动退出，请勿重复操作。"
+        >
+          <template #icon>
+            <a-spin :spinning="true" size="large" />
           </template>
         </a-result>
       </div>
@@ -101,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { CopyOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 
@@ -123,6 +145,7 @@ const {
   reset,
   install,
   installLater,
+  copyDiagnostic,
 } = useUpdateDownload()
 
 const confirmCancel = () => {
@@ -141,6 +164,8 @@ const confirmCancel = () => {
 const handleModalCancel = () => {
   if (status.value === 'failed') {
     reset()
+  } else if (status.value === 'completed') {
+    installLater()
   }
 }
 </script>
@@ -313,8 +338,10 @@ const handleModalCancel = () => {
   }
 }
 
+/* 下载失败、完成与安装准备区域 */
 .download-failed-section,
-.download-success-section {
+.download-success-section,
+.download-installing-section {
   text-align: center;
   padding: 20px 0;
 }
@@ -337,6 +364,7 @@ const handleModalCancel = () => {
   justify-content: center;
   gap: 16px;
   margin-top: 24px;
+  flex-wrap: wrap;
 }
 
 .failed-actions .ant-btn,
@@ -345,5 +373,11 @@ const handleModalCancel = () => {
   height: 40px;
   border-radius: 8px;
   font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none;
+  }
 }
 </style>

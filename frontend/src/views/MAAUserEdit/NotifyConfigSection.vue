@@ -69,15 +69,44 @@
           >Server酱
         </a-checkbox>
       </a-col>
-      <a-col :span="18" style="display: flex; gap: 8px">
-        <a-input
-          v-model:value="formData.Notify.ServerChanKey"
-          placeholder="请输入SENDKEY"
-          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-          size="large"
-          style="flex: 2"
-          @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-        />
+      <a-col :span="18">
+        <div class="sensitive-field">
+          <a-input-password
+            :value="serverChanKeyDraft"
+            :placeholder="serverChanKeyPlaceholder"
+            :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+            size="large"
+            autocomplete="new-password"
+            @update:value="serverChanKeyDraft = $event"
+          />
+          <div class="sensitive-actions">
+            <span class="sensitive-hint">已保存 SENDKEY 不回显，避免无意覆盖</span>
+            <a-space size="small">
+              <a-button
+                v-if="hasStoredServerChanKey"
+                size="small"
+                danger
+                :disabled="loading || !formData.Notify.IfServerChan"
+                @click="clearServerChanKey"
+              >
+                清空原值
+              </a-button>
+              <a-button
+                type="primary"
+                size="small"
+                :disabled="
+                  loading ||
+                  !formData.Notify.Enabled ||
+                  !formData.Notify.IfServerChan ||
+                  !serverChanKeyDraft
+                "
+                @click="saveServerChanKey"
+              >
+                保存新值
+              </a-button>
+            </a-space>
+          </div>
+        </div>
       </a-col>
     </a-row>
 
@@ -94,6 +123,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Modal } from 'ant-design-vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 
 const logger = window.electronAPI.getLogger('通知配置组件')
@@ -107,11 +138,41 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  sensitiveSave: [key: 'Notify.ServerChanKey', intent: 'replace' | 'clear', value?: string]
 }>()
+
+const serverChanKeyDraft = ref('')
+const hasStoredServerChanKey = computed(() => Boolean(props.formData?.Notify?.ServerChanKey))
+const serverChanKeyPlaceholder = computed(() =>
+  hasStoredServerChanKey.value ? '已保存；输入新值后明确保存' : '请输入 SENDKEY'
+)
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const saveServerChanKey = () => {
+  if (!serverChanKeyDraft.value) return
+  emit('sensitiveSave', 'Notify.ServerChanKey', 'replace', serverChanKeyDraft.value)
+}
+
+const clearServerChanKey = () => {
+  Modal.confirm({
+    title: '清空 Server 酱 SENDKEY？',
+    content: '清空后该通知渠道将无法发送消息，直到重新填写。',
+    okText: '清空',
+    cancelText: '取消',
+    okType: 'danger',
+    centered: true,
+    onOk: () => emit('sensitiveSave', 'Notify.ServerChanKey', 'clear', ''),
+  })
+}
+
+defineExpose({
+  resetServerChanKeyDraft: () => {
+    serverChanKeyDraft.value = ''
+  },
+})
 
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
@@ -122,13 +183,13 @@ const handleWebhookChange = () => {
 
 <style scoped>
 .form-section {
-  margin-bottom: 32px;
+  margin-bottom: var(--v6-space-4);
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--v6-space-4);
+  padding-bottom: var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -136,42 +197,58 @@ const handleWebhookChange = () => {
 
 .section-header h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
+  font-size: var(--v6-font-size-lg);
+  font-weight: var(--v6-font-weight-semibold);
+  color: var(--v6-color-text);
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .switch-description {
-  margin-left: 12px;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
+  margin-left: var(--v6-space-3);
+  font-size: var(--v6-font-size-sm);
+  color: var(--v6-color-text-secondary);
 }
 
 .modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
+  border-radius: var(--v6-radius-md);
+  border: 1px solid var(--v6-color-border);
+  background: var(--v6-color-surface);
+  transition: all var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
+  border-color: var(--v6-color-info);
 }
 
 .modern-input:focus,
 .modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: var(--v6-color-info);
+  box-shadow: var(--v6-shadow-focus-ring);
+}
+
+.sensitive-field {
+  display: grid;
+  gap: var(--v6-space-2);
+}
+
+.sensitive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v6-space-3);
+}
+
+.sensitive-hint {
+  color: var(--v6-color-text-tertiary);
+  font-size: var(--v6-font-size-sm);
+}
+
+@media (max-width: 768px) {
+  .sensitive-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

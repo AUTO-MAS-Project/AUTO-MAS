@@ -14,6 +14,7 @@ import {
   prepareExperimentalAlphaInstaller,
   prepareExperimentalAlphaPortable,
   sha256SumsFilename,
+  verifyPortableArchiveLayout,
   verifyArtifactEvidenceBundle,
   verifyStageEvidenceIndex,
 } from './generate-experimental-alpha-installer.mjs'
@@ -21,6 +22,7 @@ import wheelhouseProvenance from './alpha-wheelhouse-provenance.cjs'
 
 const require = createRequire(import.meta.url)
 const { experimentalAlphaIdentity } = require('./experimental-alpha-release-identity.cjs')
+const AdmZip = require('adm-zip')
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const frontendDirectory = path.resolve(scriptDirectory, '..')
 const alphaEvidenceFilenames = [
@@ -48,6 +50,10 @@ const writeRequiredFullStage = directory => {
     'resources/app.asar',
     'resources/integration-snapshot/manifest.json',
     'resources/integration-snapshot/source-provenance.json',
+    'resources/integration-snapshot/app/api/game_center.py',
+    'resources/integration-snapshot/app/models/game_center.py',
+    'resources/integration-snapshot/app/services/game_center.py',
+    'resources/integration-snapshot/app/services/game_providers.py',
     'resources/integration-snapshot/plugins/wheels/manifest.json',
     'resources/integration-snapshot/plugins/wheels/runtime-lock.json',
     'resources/integration-snapshot/plugins/wheels/package-1.0-py3-none-any.whl',
@@ -86,6 +92,23 @@ const writeRequiredFullStage = directory => {
     path.join(directory, 'resources', 'integration-snapshot', 'evidence', 'CI_GATES.json'),
     JSON.stringify({ schema: 'auto-mas.experimental-alpha.ci-gates/v1' })
   )
+}
+
+const writePortableArchive = (archivePath, { prefix = '' } = {}) => {
+  const archive = new AdmZip()
+  const addedPrefix = prefix === './' ? '' : prefix
+  archive.addFile(
+    `${addedPrefix}${experimentalAlphaIdentity.executableName}.exe`,
+    Buffer.from('executable')
+  )
+  archive.addFile(`${addedPrefix}environment/python/python.exe`, Buffer.from('python'))
+  archive.addFile(`${addedPrefix}resources/app.asar`, Buffer.from('asar'))
+  if (prefix === './') {
+    for (const entry of archive.getEntries()) {
+      entry.entryName = `./${entry.entryName}`
+    }
+  }
+  archive.writeZip(archivePath)
 }
 
 afterEach(() => {
@@ -148,7 +171,7 @@ describe('experimental Alpha release identity', () => {
     const installer = path.join(artifactDirectory, fullInstallerFilename('v6.0.0-alpha.test.1'))
     const archive = path.join(artifactDirectory, fullArchiveFilename('v6.0.0-alpha.test.1'))
     fs.writeFileSync(installer, 'installer')
-    fs.writeFileSync(archive, 'archive')
+    writePortableArchive(archive)
     const finalized = finalizeExperimentalAlphaInstaller({
       preparedManifestPath: prepared.preparedManifestPath,
     })
@@ -243,7 +266,7 @@ describe('experimental Alpha release identity', () => {
     expect(fs.existsSync(path.join(artifactDirectory, 'experimental-alpha-full.iss'))).toBe(false)
 
     const archive = path.join(artifactDirectory, fullArchiveFilename('v6.0.0-alpha.test.2'))
-    fs.writeFileSync(archive, 'archive')
+    writePortableArchive(archive)
     const finalized = finalizeExperimentalAlphaInstaller({
       preparedManifestPath: prepared.preparedManifestPath,
     })
@@ -261,6 +284,17 @@ describe('experimental Alpha release identity', () => {
     expect(sums).not.toContain('experimental-alpha-full.iss')
     expect(sums).toContain('*alpha-release-manifest.json')
     expect(sums).toContain('*evidence/EVIDENCE_INDEX.json')
+  })
+
+  it('rejects the Alpha .5 dot-directory ZIP layout and wrapper directories', () => {
+    const root = makeTemporaryDirectory()
+    const dotArchive = path.join(root, 'dot-prefix.zip')
+    writePortableArchive(dotArchive, { prefix: './' })
+    expect(() => verifyPortableArchiveLayout(dotArchive)).toThrow('must not start with ./ or .\\')
+
+    const wrappedArchive = path.join(root, 'wrapped.zip')
+    writePortableArchive(wrappedArchive, { prefix: 'AUTO-MAS/' })
+    expect(() => verifyPortableArchiveLayout(wrappedArchive)).toThrow('directly at the ZIP root')
   })
 
   it('rejects a staged wheelhouse changed after source provenance capture', () => {
@@ -366,6 +400,28 @@ describe('experimental Alpha release identity', () => {
         protectedDirectories: [],
       })
     ).toThrow('must not overlap win-unpacked')
+  })
+
+  it('refuses a stage whose #289 game-center backend is missing', () => {
+    const root = makeTemporaryDirectory()
+    const stageDirectory = path.join(root, 'win-unpacked')
+    fs.mkdirSync(stageDirectory)
+    writeRequiredFullStage(stageDirectory)
+    fs.unlinkSync(
+      path.join(stageDirectory, 'resources', 'integration-snapshot', 'app', 'api', 'game_center.py')
+    )
+
+    expect(() =>
+      prepareExperimentalAlphaPortable({
+        stageDirectory,
+        artifactDirectory: path.join(root, 'alpha-artifacts'),
+        version: 'v6.0.0-alpha.test.1',
+        wheelhouseSha256: 'a'.repeat(64),
+        environmentSha256: 'b'.repeat(64),
+        gitSha: 'c'.repeat(40),
+        protectedDirectories: [],
+      })
+    ).toThrow('resources/integration-snapshot/app/api/game_center.py')
   })
 
   it('rejects unsafe Inno values and version components', () => {

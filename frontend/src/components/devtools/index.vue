@@ -56,11 +56,17 @@ const tabs = [
   { key: 'message', title: '消息', icon: '💬', component: MessageTestPage },
 ]
 
+// `visual-preview` is used by headless design verification. Keep the
+// diagnostics available during normal development without letting the panel
+// cover the screen being compared with the design source.
+const isVisualPreview = new URLSearchParams(window.location.search).has('visual-preview')
+
 // 开发环境检测
 const isDev = ref(
-  process.env.NODE_ENV === 'development' ||
-    import.meta.env.DEV === true ||
-    window.location.hostname === 'localhost'
+  !isVisualPreview &&
+    (process.env.NODE_ENV === 'development' ||
+      import.meta.env.DEV === true ||
+      window.location.hostname === 'localhost')
 )
 
 // 面板状态
