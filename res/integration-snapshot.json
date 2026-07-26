@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "snapshot_id": "nexus-overdrive-all-plugins-v6.0.0-alpha.20260724.r8-portable-v5",
-  "version": "v6.0.0-alpha.NEXUS-OVERDRIVE.20260724.5",
-  "generated_at": "2026-07-24T07:20:00.0000000+00:00",
+  "snapshot_id": "nexus-overdrive-all-plugins-v6.0.0-alpha.20260726.r11-portable-v11",
+  "version": "v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11",
+  "generated_at": "2026-07-26T01:08:00.0000000+00:00",
   "deployment_mode": "bundled-snapshot",
   "source": {
     "official_dev_v2": "b5e87281",
@@ -20,6 +20,10 @@
   },
   "required_paths": [
     "app",
+    "app/api/game_center.py",
+    "app/models/game_center.py",
+    "app/services/game_center.py",
+    "app/services/game_providers.py",
     "plugins/auto_mas_core",
     "plugins/browser",
     "plugins/ok_script_adapter",
@@ -44,8 +48,8 @@
     "plugin_distribution_count": 23,
     "plugin_entry_point_count": 21,
     "core_distribution_version": "6.0.0a1",
-    "manifest_sha256": "5E2CE0E1F353DDB51DE61C6CAA36CEEB75B852419F87FF585EC4C566117D199A",
-    "runtime_lock_sha256": "254B697BECBDE141D32F65382C8485EFBCDBC4350A5388A9A3F94F9CF04975E5"
+    "manifest_sha256": "3DC2DCC5FB32C905B5652A2459AAE898AEB447FFABCEFA7923E85A8EB67F95D4",
+    "runtime_lock_sha256": "C997225474BD20535AD20AB93820D96634DBC4B036D44D7110BB332A95415A3F"
   },
   "update_policy": "Prefer this bundled snapshot until a newer application ships another snapshot.",
   "release_policy": {
