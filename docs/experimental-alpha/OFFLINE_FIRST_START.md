@@ -2,6 +2,13 @@
 
 > 状态：`unverified`。此文档提供手测流程，不把脚本结构检查、进程存活或单次日志视为离线可用的自动化证明。
 
+## 本候选身份（alpha.10）
+
+- 候选版本：`v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11`（snapshot_id `nexus-overdrive-all-plugins-v6.0.0-alpha.20260726.r11-portable-v11`）。
+- 包型：仅 Full 绿色免安装包；随包携带完整离线 wheelhouse、runtime-lock、integration-snapshot 与来源记录。
+- Config v2 / WS v2：Config v2 authoritative 是默认且唯一的生产配置权威源；首启在任何 plugins/core 导入前冻结 r6 原始字节快照（`config/.config-v2-original/`）并一次性迁移，之后只加载已校验的 CURRENT generation，不回退可变 legacy JSON；`off`/`shadow`/`canary` 仅用于受控回滚与诊断。WS 主链路为 `{id,type,data}` 协议并保留兼容桥。
+- 真实游戏/模拟器/Agent：`unverified`；离线首启只验证结构、端口和 UI 初始化，不验证真实设备能力。
+
 ## 适用范围
 
 仅适用于独立的 Experimental Alpha **Full** 产物及其新建测试副本。不得用于冻结 r6、稳定安装目录、正在使用的用户数据目录或 Lite 包。
@@ -37,7 +44,7 @@
 1. Alpha UI 是否出现并能完成首次初始化。
 2. bundled snapshot 是否被使用，插件是否在无网络时显示可理解的状态。
 3. 首页与基础导航是否可用，是否出现网络依赖失败或白屏。
-4. 新生成配置/日志是否位于 Alpha 测试目录，且未触及 r6。
+4. 新生成配置/日志是否位于 Alpha 测试目录，且未触及 r6；首启是否在该目录生成了 `config/.config-v2-original/` 冻结快照与已提交的 CURRENT generation。
 5. 退出后是否有残留进程、异常日志或不可恢复的配置状态。
 
 ## 结果记录

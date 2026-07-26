@@ -11,11 +11,22 @@
 - 不提供常规自动更新承诺；更新路径为 `manual-only`。
 - 仅在 Full 环境、随包 wheelhouse、runtime lock、来源记录与构建清单完整时才具备送测资格。
 
+## alpha.10 候选变更摘要
+
+本草案对应候选身份 `v6.0.0-alpha.NEXUS-OVERDRIVE.20260726.11`（snapshot_id `nexus-overdrive-all-plugins-v6.0.0-alpha.20260726.r11-portable-v11`）。相对前一候选，身份字段已在 `app/core/config.py`、`frontend/package.json`、`res/version.json` 和 `res/integration-snapshot.json` 四处同步刷新。具体便携包的版本、SHA-256 和来源记录仍以同一次构建的 `alpha-release-manifest.json` 为准。
+
+能力边界声明：
+
+- **全功能绿色免安装 Alpha**：仅 Full 便携 ZIP，随包携带完整离线 wheelhouse、runtime-lock、integration-snapshot 与来源记录；不提供安装器，不接受 Lite 包替代。
+- **Config v2 authoritative 是默认且唯一的生产配置权威源**：进程默认模式与无效环境变量回退均为 `authoritative`，正式运行链不再构造 legacy `AppConfig`/`ConfigBase` 对象图，legacy JSON-first 保存会显式失败；`off`/`shadow`/`canary`/`authoritative` 四种显式模式仅保留用于受控回滚与诊断。首启从冻结的 r6 原始字节快照（`config/.config-v2-original/`）一次性迁移，之后每次启动只加载已校验的 CURRENT generation，不回退到可变的 legacy JSON。敏感字段 DPAPI 应用绑定加密，写入为原子 generation 事务；随时可导出完整八根 r6 格式 JSON 回滚 bundle 到 `config/.config-v2-r6-rollback/` 作为退路，且不覆盖 live config 或已有 bundle。`unverified`：真机旧 profile 的首次迁移与崩溃恢复仍缺人工记录。
+- **WS v2 主链路与兼容桥并存**：WebSocket 主链路为 `{id,type,data}` 协议并保留兼容桥；不宣称旧 WS 链已完全退出。
+- **真实游戏/模拟器/Agent 未自动验证**：所有真实设备、模拟器控制、账号登录和自动化执行均标记为 `unverified`；源码调用链、interface 解析和 dry-run 不等于真实运行成功。
+
 ## 候选范围（非验收结论）
 
 本 Alpha 的候选范围包括以下集成方向。每项是否已随具体产物交付、是否可在真实环境运行，均需由该产物的测试证据确认：
 
-- Config v2 的兼容/影子运行链，以及旧配置导入与回滚边界。
+- Config v2 的 authoritative 生产运行链，以及 r6 原始快照首启迁移与 r6 回滚 bundle 导出边界。
 - REST、WebSocket 与插件前后端桥接的兼容链。
 - 官方和本地插件的随包发现、配置、生命周期与失败隔离。
 - 新版前端、插件 UI 扩展和脚本管理搜索。

@@ -1,5 +1,7 @@
 # 全插件集成矩阵
 
+> 版本一致性说明：本文各 distribution 的版本号以 `plugins/wheels/runtime-lock.json` 为唯一事实源；本文与该文件不一致时，以 runtime-lock 为准。
+
 本文记录 `integration/dev-v2-dev-all-plugins` 工作区在 2026-07-22 的源码构建契约。数据直接取自 `res/integration-snapshot.json`、各源码目录的 `pyproject.toml` 和 Git 工作区状态；它用于确定必须构建的 23 个 plugin distribution 与必须发现的 21 个 `auto_mas.plugins` entry point，不代替 wheelhouse 完成校验、隔离导入、启动或业务冒烟测试。
 
 v6 Alpha c2 已生成并通过 Electron 发布链使用的同一套严格 manifest/runtime-lock 校验器。产物级事实以 `build/w/c2/manifest.json`、`build/w/c2/runtime-lock.json` 和 `res/integration-snapshot.json` 为准；旧 r11/r12 候选只保留作审计材料。c2 已进一步通过洁净离线安装以及直接、真实路由顺序两种入口导入门禁。
@@ -37,17 +39,17 @@ v6 Alpha c2 已生成并通过 Electron 发布链使用的同一套严格 manife
 | --- | --- | --- | --- | --- | --- |
 | `OFFICIAL-DEV_V2@b5e87281`，Core 路径 modified，本地集成稿 | `auto-mas-core` `6.0.0a1` | `auto_mas.plugins` | `auto_mas_core` → `auto_mas_core.plugin:Plugin` | 系统插件 / SDK | 无 |
 | `BROWSER-DRAFT@9dd56de7`，dirty + untracked | `automas-plugin-browser` `0.1.0` | `auto_mas.plugins` | `browser` → `automas_plugin_browser.plugin:Plugin` | 普通 capability 插件；以 locked system instance 随宿主启用，但**不是 ScriptType，也不是脚本 adapter** | `auto-mas-core>=6.0.0a1`；`psutil>=7.0,<8`；`pydantic>=2.11,<3`；`selenium>=4.44,<5` |
-| `OFFICIAL-DEV_V2@b5e87281`，包路径 clean，官方基线 | `automas_plugin_okww_adapter` `0.0.1` | `auto_mas.plugins` | `okww_adapter` → `okww_adapter.plugin:Plugin` | 脚本 adapter：`Okww` | 无 |
-| `OFFICIAL-DEV_V2@b5e87281`，包路径 clean，官方基线 | `automas_plugin_ok_script_adapter` `0.1.0` | `auto_mas.plugins` | `ok_script_adapter` → `ok_script_adapter.plugin:Plugin` | 脚本 adapter：`OkScript` | 无 |
+| `OFFICIAL-DEV_V2@b5e87281`，包路径 clean，官方基线 | `automas_plugin_okww_adapter` `0.0.2` | `auto_mas.plugins` | `okww_adapter` → `okww_adapter.plugin:Plugin` | 脚本 adapter：`Okww` | 无 |
+| `OFFICIAL-DEV_V2@b5e87281`，包路径 clean，官方基线 | `automas_plugin_ok_script_adapter` `0.1.1` | `auto_mas.plugins` | `ok_script_adapter` → `ok_script_adapter.plugin:Plugin` | 脚本 adapter：`OkScript` | 无 |
 
 ## HSR（4 个 distribution / 3 个 entry point）
 
 | 来源状态 | Distribution / version | Group | Entry-point name → value | 分类 | 关键依赖范围 |
 | --- | --- | --- | --- | --- | --- |
-| `HSR@2430286c`，clean，官方 | `automas-script-hsr` `0.1.0` | `auto_mas.plugins` | `automas_script_hsr` → `automas_script_hsr.plugin:Plugin` | 脚本 adapter：`HSR`，并提供 HSR registry capability | `jinja2>=3.1`；`pydantic>=2` |
-| `HSR@2430286c`，clean，官方 | `automas-hsr-adapter-sra` `0.1.0` | `auto_mas.plugins` | `automas_hsr_adapter_sra` → `automas_hsr_adapter_sra.plugin:Plugin` | capability / HSR SRA 后端 adapter；不新增 ScriptType | `automas-script-hsr>=0.1.0,<0.2.0` |
-| `HSR@2430286c`，clean，官方 | `automas-hsr-adapter-m7a` `0.1.0` | `auto_mas.plugins` | `automas_hsr_adapter_m7a` → `automas_hsr_adapter_m7a.plugin:Plugin` | capability / HSR M7A 后端 adapter；不新增 ScriptType | `automas-script-hsr>=0.1.0,<0.2.0`；`PyYAML>=6` |
-| `HSR@2430286c`，clean，官方 | `automas-hsr` `0.1.0` | — | **无 entry point** | aggregate / 依赖集合，不是可加载插件 | `automas-script-hsr>=0.1.0,<0.2.0`；SRA/M7A adapter 均为 `>=0.1.0,<0.2.0` |
+| `HSR@2430286c`，clean，官方 | `automas-script-hsr` `0.1.5` | `auto_mas.plugins` | `automas_script_hsr` → `automas_script_hsr.plugin:Plugin` | 脚本 adapter：`HSR`，并提供 HSR registry capability | `jinja2>=3.1`；`pydantic>=2` |
+| `HSR@2430286c`，clean，官方 | `automas-hsr-adapter-sra` `0.1.5` | `auto_mas.plugins` | `automas_hsr_adapter_sra` → `automas_hsr_adapter_sra.plugin:Plugin` | capability / HSR SRA 后端 adapter；不新增 ScriptType | `automas-script-hsr>=0.1.0,<0.2.0` |
+| `HSR@2430286c`，clean，官方 | `automas-hsr-adapter-m7a` `0.1.6` | `auto_mas.plugins` | `automas_hsr_adapter_m7a` → `automas_hsr_adapter_m7a.plugin:Plugin` | capability / HSR M7A 后端 adapter；不新增 ScriptType | `automas-script-hsr>=0.1.0,<0.2.0`；`PyYAML>=6` |
+| `HSR@2430286c`，clean，官方 | `automas-hsr` `0.1.6` | — | **无 entry point** | aggregate / 依赖集合，不是可加载插件 | `automas-script-hsr>=0.1.0,<0.2.0`；SRA/M7A adapter 均为 `>=0.1.0,<0.2.0` |
 
 ## M9A（2 个 distribution / 1 个 entry point）
 
@@ -62,24 +64,24 @@ v6 Alpha c2 已生成并通过 Electron 发布链使用的同一套严格 manife
 
 | 来源状态 | Distribution / version | Group | Entry-point name → value | 分类 | 关键依赖范围 |
 | --- | --- | --- | --- | --- | --- |
-| `MAAFW@14382d87`，包路径 clean，官方已提交源码 | `automas-maafw-interface` `0.1.1` | `auto_mas.plugins` | `automas_maafw_interface` → `automas_maafw_interface.plugin:Plugin` | capability / `maafw.interface.v1` service | `json5>=0.9`；`pydantic>=2` |
-| `MAAFW@14382d87`，包路径 clean，官方已提交源码 | `automas-maafw-project-update` `0.1.0` | `auto_mas.plugins` | `automas_maafw_project_update` → `automas_maafw_project_update.plugin:Plugin` | capability / project-update service | `aiofiles>=23`；`automas-maafw-interface>=0.1.0`；`httpx>=0.27`；`packaging>=23` |
+| `MAAFW@14382d87`，包路径 clean，官方已提交源码 | `automas-maafw-interface` `0.2.0` | `auto_mas.plugins` | `automas_maafw_interface` → `automas_maafw_interface.plugin:Plugin` | capability / `maafw.interface.v1` service | `json5>=0.9`；`pydantic>=2` |
+| `MAAFW@14382d87`，包路径 clean，官方已提交源码 | `automas-maafw-project-update` `0.1.1` | `auto_mas.plugins` | `automas_maafw_project_update` → `automas_maafw_project_update.plugin:Plugin` | capability / project-update service | `aiofiles>=23`；`automas-maafw-interface>=0.1.0`；`httpx>=0.27`；`packaging>=23` |
 | `MAAFW@14382d87`，package modified，本地草稿 | `automas-maafw-agent-env` `0.1.1` | `auto_mas.plugins` | `automas_maafw_agent_env` → `automas_maafw_agent_env.plugin:Plugin` | capability / agent environment service | `automas-maafw-interface>=0.1.0`；`pydantic>=2` |
-| `MAAFW@14382d87`，package modified，本地草稿 | `automas-maafw-runner` `0.2.0` | `auto_mas.plugins` | `automas_maafw_runner` → `automas_maafw_runner.plugin:Plugin` | capability / isolated runner service | Agent Env `>=0.1.1`；Interface `>=0.1.1`；Runtime Pool `>=0.1.0`；`json5>=0.9`；`packaging>=23`；`pydantic>=2` |
+| `MAAFW@14382d87`，package modified，本地草稿 | `automas-maafw-runner` `0.3.1` | `auto_mas.plugins` | `automas_maafw_runner` → `automas_maafw_runner.plugin:Plugin` | capability / isolated runner service | Agent Env `>=0.1.1`；Interface `>=0.1.1`；Runtime Pool `>=0.1.0`；`json5>=0.9`；`packaging>=23`；`pydantic>=2` |
 | `MAAFW@14382d87`，包路径 clean，官方已提交源码 | `automas-maafw-controller-adb` `0.1.0` | `auto_mas.plugins` | `automas_maafw_controller_adb` → `automas_maafw_controller_adb.plugin:Plugin` | capability / ADB controller provider | `pydantic>=2` |
 | `MAAFW@14382d87`，包路径 clean，官方已提交源码 | `automas-maafw-controller-win32` `0.1.1` | `auto_mas.plugins` | `automas_maafw_controller_win32` → `automas_maafw_controller_win32.plugin:Plugin` | capability / Win32 controller provider | `automas-maafw-interface>=0.1.0`；`pydantic>=2` |
 | `MAAFW@14382d87`，package untracked，本地草稿 | `automas-maafw-project-store` `0.1.0` | `auto_mas.plugins` | `automas_maafw_project_store` → `automas_maafw_project_store.plugin:Plugin` | capability / versioned project-store service | `json5>=0.9` |
 | `MAAFW@14382d87`，package untracked，本地草稿 | `automas-maafw-runtime-pool` `0.1.0` | `auto_mas.plugins` | `automas_maafw_runtime_pool` → `automas_maafw_runtime_pool.plugin:Plugin` | capability / multi-version runtime-pool service | `packaging>=23` |
-| `MAAFW@14382d87`，package modified，本地草稿 | `automas-script-maafw` `0.1.5` | `auto_mas.plugins` | `automas_script_maafw` → `automas_script_maafw.plugin:Plugin` | 脚本 adapter：`MaaFW`；同时提供 `maafw.registry.v1` | Agent Env `>=0.1.0`；ADB `>=0.1.0`；Win32 `>=0.1.1`；Interface `>=0.1.1`；Project Update `>=0.1.0`；Runner `>=0.2.0`；`pydantic>=2` |
-| `MAAFW@14382d87`，package untracked，本地草稿 | `automas-script-maafw-managed` `0.1.0` | `auto_mas.plugins` | `automas_script_maafw_managed` → `automas_script_maafw_managed.plugin:Plugin` | 脚本 adapter：`MaaFWManaged` | Script MaaFW `>=0.1.5`；Runner `>=0.2.0`；Interface `>=0.1.1`；Project Update / Store / Runtime Pool 均 `>=0.1.0` |
+| `MAAFW@14382d87`，package modified，本地草稿 | `automas-script-maafw` `0.1.7` | `auto_mas.plugins` | `automas_script_maafw` → `automas_script_maafw.plugin:Plugin` | 脚本 adapter：`MaaFW`；同时提供 `maafw.registry.v1` | Agent Env `>=0.1.0`；ADB `>=0.1.0`；Win32 `>=0.1.1`；Interface `>=0.1.1`；Project Update `>=0.1.0`；Runner `>=0.2.0`；`pydantic>=2` |
+| `MAAFW@14382d87`，package untracked，本地草稿 | `automas-script-maafw-managed` `0.1.2` | `auto_mas.plugins` | `automas_script_maafw_managed` → `automas_script_maafw_managed.plugin:Plugin` | 脚本 adapter：`MaaFWManaged` | Script MaaFW `>=0.1.5`；Runner `>=0.2.0`；Interface `>=0.1.1`；Project Update / Store / Runtime Pool 均 `>=0.1.0` |
 
 ## 新增官方插件（3 个 distribution / 3 个 entry point）
 
 | 来源状态 | Distribution / version | Group | Entry-point name → value | 分类 | 关键依赖范围 |
 | --- | --- | --- | --- | --- | --- |
 | `MXU-IMPORT@a501a101`，clean，官方 | `automas-plugin-mxu-import` `0.1.0` | `auto_mas.plugins` | `mxu_import` → `automas_plugin_mxu_import.plugin:Plugin` | capability / `mxu.import.v1`，将 MXU 配置转换为 MaaFW 任务快照 | `automas-maafw-interface>=0.1.1`；`pydantic>=2` |
-| `MAAEND@2acb9ee8`，**dirty 兼容修复** | `automas_plugin_maaend_adapter` `0.0.2` | `auto_mas.plugins` | `maaend_adapter` → `maaend_adapter.plugin:Plugin` | 脚本 adapter：`MaaEnd`；运行生命周期复用 MaaFW adapter | `automas-script-maafw>=0.1.1`；`pydantic>=2` |
-| `MAA-SCRIPT@a561607b`，官方源码状态未列出改动 | `automas_script_maa` `0.0.5` | `auto_mas.plugins` | `script_MAA` → `script_maa.plugin:Plugin` | 脚本 adapter：`MAA` | `pydantic>=2.0`；`auto-mas-core>=5.2.0` |
+| `MAAEND@2acb9ee8`，**dirty 兼容修复** | `automas_plugin_maaend_adapter` `0.0.6` | `auto_mas.plugins` | `maaend_adapter` → `maaend_adapter.plugin:Plugin` | 脚本 adapter：`MaaEnd`；运行生命周期复用 MaaFW adapter | `automas-script-maafw>=0.1.1`；`pydantic>=2` |
+| `MAA-SCRIPT@a561607b`，官方源码状态未列出改动 | `automas_script_maa` `0.0.6` | `auto_mas.plugins` | `script_MAA` → `script_maa.plugin:Plugin` | 脚本 adapter：`MAA` | `pydantic>=2.0`；`auto-mas-core>=5.2.0` |
 
 ## 数量与 bootstrap 约束
 
