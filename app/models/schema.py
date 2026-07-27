@@ -810,6 +810,9 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
+    AccountSwitchMethod: Optional[Literal["MAS", "MAAEND"]] = Field(
+        default=None, description="账号切换方式"
+    )
     Mode: Optional[Literal["简洁", "详细"]] = Field(
         default=None, description="配置文件来源"
     )

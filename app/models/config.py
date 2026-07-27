@@ -755,6 +755,13 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 账号切换方式
+        self.Info_AccountSwitchMethod = ConfigItem(
+            "Info",
+            "AccountSwitchMethod",
+            "MAS",
+            OptionsValidator(["MAS", "MAAEND"]),
+        )
         ## 配置文件来源
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
