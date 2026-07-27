@@ -9,9 +9,7 @@ logs/
 
 # Virtual environments
 .venv
-.python-version
 list/
-uv.lock
 
 # IDE and editors
 .vscode/
