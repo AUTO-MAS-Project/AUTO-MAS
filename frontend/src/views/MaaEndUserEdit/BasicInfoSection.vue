@@ -52,9 +52,33 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
+              账号切换方式
+              <a-tooltip
+                title="选择账号切换的执行方式：由 MAS 切换游戏内已保存账号，或由 MAAEND 内置任务切换账号"
+              >
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-select
+            v-model:value="formData.Info.AccountSwitchMethod"
+            size="large"
+            :disabled="loading"
+            :options="accountSwitchMethodOptions"
+            @change="handleAccountSwitchMethodChange"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="12">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
               账号ID
               <a-tooltip
-                title="用于切换账号，无需切换则留空。官服输入 11 位手机号。模拟器暂不支持账号切换"
+                title="用于切换账号，官服输入手机号，两种方式均按账号末四位匹配，无需切换则留空"
               >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
@@ -74,14 +98,14 @@
           <template #label>
             <span class="form-label">
               密码
-              <a-tooltip title="用户密码，PC 端需要切换账号时必须填写，模拟器暂不支持账号切换">
+              <a-tooltip title="用户密码，仅用于存储以防遗忘，此外无任何作用">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            placeholder="请输入密码"
+            placeholder="密码仅用于存储以防遗忘，此外无任何作用"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -246,6 +270,7 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 
 const emit = defineEmits<{
   save: [key: string, value: any]
@@ -274,8 +299,25 @@ const quickConfigOptions = [
   { label: '关闭', value: false },
 ]
 
+const accountSwitchMethodOptions = [
+  { label: 'MAS 自建账号切换', value: 'MAS' },
+  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
+]
+
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
+}
+
+const handleAccountSwitchMethodChange = (value: string) => {
+  emitSave('Info.AccountSwitchMethod', value)
+
+  if (value === 'MAAEND') {
+    Modal.info({
+      title: 'MAAEND 内置账号切换',
+      content: '运行时会自动添加账号切换任务，并按账号末四位匹配，无需在 MAAEND 配置中手动添加。',
+      okText: '我知道了',
+    })
+  }
 }
 </script>
 

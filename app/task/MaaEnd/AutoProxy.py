@@ -81,11 +81,21 @@ class AutoProxyTask(TaskExecuteBase):
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
+
+        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+        if (
+            self.cur_user_config.get("Info", "AccountSwitchMethod") == "MAAEND"
+            and account_id
+        ):
+            if len(account_id) < 4 or not account_id[-4:].isdigit():
+                self.cur_user_item.status = "异常"
+                return (
+                    "MAAEND 内置账号切换需要账号末四位为数字，"
+                    "请检查账号ID或改用 MAS 自建账号切换"
+                )
 
         config_user_id = (
             "Default"
@@ -241,7 +251,9 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                         await self.game_process_manager.open_process(
                             self.script_config.get("Game", "Path"),
-                            *str(self.script_config.get("Game", "Arguments")).split(" "),
+                            *str(self.script_config.get("Game", "Arguments")).split(
+                                " "
+                            ),
                         )
                         await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                     emulator_info = None
@@ -261,19 +273,39 @@ class AutoProxyTask(TaskExecuteBase):
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
 
-            try:
-                if self.cur_user_config.get("Info", "Id") != "":
-                    await login(
-                        self.cur_user_config.get("Info", "Id"), emulator_info
+            account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+            account_switch_method = self.cur_user_config.get(
+                "Info", "AccountSwitchMethod"
+            )
+            if account_switch_method == "MAS":
+                try:
+                    if account_id:
+                        await login(account_id, emulator_info)
+                    logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
+                except RuntimeError as e:
+                    await self.handle_pre_maaend_error(
+                        "「明日方舟：终末地」登录失败", e
                     )
-                logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
-            except RuntimeError as e:
-                await self.handle_pre_maaend_error(
-                    "「明日方舟：终末地」登录失败", e
+                    continue
+                self.script_info.log = (
+                    "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」\n"
+                    "「明日方舟：终末地」登录成功"
                 )
-                continue
-
-            self.script_info.log = "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」\n「明日方舟：终末地」登录成功"
+            else:
+                if account_id:
+                    logger.info(
+                        f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
+                    )
+                    self.script_info.log = (
+                        "正在启动游戏...\n游戏启动成功\n将由 MAAEND 执行账号切换"
+                    )
+                else:
+                    logger.info(
+                        f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
+                    )
+                    self.script_info.log = (
+                        "正在启动游戏...\n游戏启动成功\n未配置账号，跳过账号切换"
+                    )
 
             await self.set_maaend(emulator_info)
 
@@ -443,9 +475,7 @@ class AutoProxyTask(TaskExecuteBase):
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
             maaend_local_config = json.loads(
-                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
-                    encoding="utf-8"
-                )
+                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
             )
 
         config_user_id = (
@@ -489,7 +519,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         instances = maaend_set.get("instances")
         if not isinstance(instances, list) or len(instances) == 0:
-            raise ValueError("MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤")
+            raise ValueError(
+                "MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤"
+            )
 
         maaend_instance = None
         for instance in instances:
@@ -514,6 +546,33 @@ class AutoProxyTask(TaskExecuteBase):
             }
         maaend_tasks = maaend_instance["tasks"]
 
+        # 运行副本中不保留手动添加的重复任务
+        maaend_tasks = [
+            task for task in maaend_tasks if task.get("taskName") != "AccountSwitch"
+        ]
+        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+        if (
+            self.cur_user_config.get("Info", "AccountSwitchMethod") == "MAAEND"
+            and account_id
+        ):
+            controller_type = str(self.script_config.get("Game", "ControllerType"))
+            maaend_tasks.insert(
+                0,
+                {
+                    "id": f"mas{self.cur_user_uid.hex[:4]}",
+                    "taskName": "AccountSwitch",
+                    "enabled": True,
+                    "enabledByController": {controller_type: True},
+                    "optionValues": {
+                        "AccountSwitchLastFourDigits": {
+                            "type": "input",
+                            "values": {"LastFourDigits": account_id[-4:]},
+                        }
+                    },
+                },
+            )
+        maaend_instance["tasks"] = maaend_tasks
+
         # 加载 i18n 配置
         settings = maaend_set["settings"]
         if settings["language"] == "system":
@@ -531,9 +590,7 @@ class AutoProxyTask(TaskExecuteBase):
                 task_definition_file.read_text(encoding="utf-8")
             )["task"][0]
             if task_definition["label"].startswith("$"):
-                locale_text = maaend_i18n_raw.get(
-                    task_definition["label"].lstrip("$")
-                )
+                locale_text = maaend_i18n_raw.get(task_definition["label"].lstrip("$"))
                 if locale_text is None:
                     raise RuntimeError("MaaEnd 文件不完整，卸载后重新安装MaaEnd")
                 maaend_i18n[task_definition["name"]] = locale_text
@@ -566,8 +623,8 @@ class AutoProxyTask(TaskExecuteBase):
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
             sanity_configured = False
-            sanity_switch_enabled = (
-                if_quick_config and self.cur_user_config.get("Task", "IfSanity")
+            sanity_switch_enabled = if_quick_config and self.cur_user_config.get(
+                "Task", "IfSanity"
             )
             target_sanity_task_exists = any(
                 task.get("taskName") == target_task_name for task in maaend_tasks
@@ -709,7 +766,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
-            )
+        )
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
     def has_maaend_local_install_file(self) -> bool:
@@ -737,7 +794,10 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = "检测到 MaaEnd 正在更新，正在等待更新进程退出"
                 if_maaend_updating = True
 
-            if if_maaend_updating and not await self.maaend_process_manager.is_running():
+            if (
+                if_maaend_updating
+                and not await self.maaend_process_manager.is_running()
+            ):
                 logger.info("MaaEnd 更新进程已退出，后台检测释放日志锁")
                 self.wait_event.set()
                 return
@@ -774,6 +834,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log or "分辨率不符合要求" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
+        elif "任务失败: AccountSwitch" in log:
+            self.cur_user_log.status = "MaaEnd 账号切换失败"
         elif (
             any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
             or not await self.maaend_process_manager.is_running()
@@ -857,7 +919,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
