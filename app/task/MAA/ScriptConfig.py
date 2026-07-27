@@ -119,25 +119,60 @@ class ScriptConfigTask(TaskExecuteBase):
         default_set = gui_set["Configurations"]["Default"]
 
         # 任务间切换方式
-        default_set["MainFunction.PostActions"] = "0"
+        default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
+        # NEW: PostActions [Flags] 枚举 None=0
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {})["PostActions"] = 0
 
         # 不直接运行任务
-        default_set["Start.StartGame"] = "True"
-        default_set["Start.RunDirectly"] = "False"
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
+        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
+        default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = False
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
+            "StartEmulator"
+        ] = False
+
+        # 关闭所有定时
+        for i in range(1, 9):
+            global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
+        # NEW: Timers.List[*].IsEnabled = false
+        if "Timers" not in gui_new_set:
+            gui_new_set["Timers"] = {}
+        if "List" not in gui_new_set["Timers"]:
+            gui_new_set["Timers"]["List"] = []
+        for timer in gui_new_set["Timers"].get("List", []):
+            if isinstance(timer, dict):
+                timer["IsEnabled"] = False
 
         # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
+        gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
+        gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
 
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
-            global_set["Start.MinimizeDirectly"] = "False"
+            global_set["Start.MinimizeDirectly"] = "False"  # OLD: 即将移除
+            # NEW:
+            gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = False
 
-        (self.maa_set_path / "gui.json").write_text(
-            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
+            json.dumps(gui_set, ensure_ascii=False, indent=4),
+            encoding="utf-8",  # OLD: 即将移除
+        )  # OLD: 即将移除
         (self.maa_set_path / "gui.new.json").write_text(
             json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )
