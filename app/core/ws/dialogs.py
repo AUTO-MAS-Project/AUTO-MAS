@@ -29,7 +29,6 @@ from pydantic import ValidationError
 
 from . import protocol
 from .dispatcher import Dispatcher
-from .manager import MainConnection
 from .publisher import Publisher
 from app.models.schema import WSEnvelope, WSDialogRequestData, WSDialogResponseData
 from app.utils.logger import get_logger
@@ -42,22 +41,19 @@ class _WSDialogs:
 
     请求与响应均使用 id=Main，通过 data.requestId 关联；
     等待无超时（与原手动审核行为一致），任务取消时随协程一并取消。
-    连接建立时重发未完成的弹窗请求，避免断连期间发起的弹窗永久丢失
-    （前端按 requestId 去重）。
+    未完成请求通过 HTTP 初始快照读取；WS 只发送创建后的实时事件，
+    不在重连时缓存或重放消息。
     """
 
     def __init__(self) -> None:
         self._pending: Dict[str, asyncio.Future] = {}
         self._requests: Dict[str, WSDialogRequestData] = {}
         Dispatcher.register(protocol.ID_MAIN, protocol.DIALOG_RESPONSE, self._on_response)
-        MainConnection.on_connect(self._resend_pending)
 
-    async def _resend_pending(self) -> None:
-        """主连接建立后重发所有未完成的弹窗请求。"""
-        for request in list(self._requests.values()):
-            await Publisher.send(
-                id=protocol.ID_MAIN, type=protocol.DIALOG_REQUEST, data=request
-            )
+    def pending_requests(self) -> List[WSDialogRequestData]:
+        """返回待处理弹窗的 HTTP 初始快照，不改变等待状态。"""
+
+        return [request.model_copy(deep=True) for request in self._requests.values()]
 
     async def ask(
         self,
@@ -88,8 +84,12 @@ class _WSDialogs:
         )
         self._pending[request_id] = future
         self._requests[request_id] = request
+        logger.info(
+            f"弹窗请求已创建: requestId={request_id}, taskId={task_id or '-'}"
+        )
 
-        # 发送失败（主连接未就绪）时不放弃：请求已登记，重连后由 _resend_pending 重发
+        # 发送失败（主连接未就绪）时仍保留请求；前端连接恢复后通过
+        # GET /api/core/dialogs/pending 获取当前待处理快照。
         await Publisher.send(id=protocol.ID_MAIN, type=protocol.DIALOG_REQUEST, data=request)
 
         try:

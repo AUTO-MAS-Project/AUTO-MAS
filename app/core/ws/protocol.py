@@ -27,9 +27,9 @@
 消息类别常量与 frontend/src/services/websocket/types.ts 保持一致。
 """
 
-from typing import Any, Dict, Optional
+from typing import Dict, Mapping, Optional
 
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
 from app.models.schema import WSEnvelope
 from app.utils.logger import get_logger
@@ -81,9 +81,7 @@ PLUGIN_RUNTIME_UPDATED = "plugin.runtime.updated"
 PLUGIN_SNAPSHOT_UPDATED = "plugin.snapshot.updated"
 PLUGIN_HMR = "plugin.hmr"
 
-# 插件市场（id=PluginMarket，request 方向为前端 → 后端）
-MARKET_SNAPSHOT_REQUEST = "market.snapshot.request"
-MARKET_SNAPSHOT_RESPONSE = "market.snapshot.response"
+# 插件市场（id=PluginMarket，初始快照使用 HTTP）
 MARKET_ERROR = "market.error"
 PLUGIN_INSTALL_REQUEST = "plugin.install.request"
 PLUGIN_INSTALL_PROGRESS = "plugin.install.progress"
@@ -98,11 +96,11 @@ EMULATOR_NOTICE = "emulator.notice"
 TOOLKIT_NOTICE = "toolkit.notice"
 
 
-def parse_envelope(raw: Any) -> Optional[WSEnvelope]:
+def parse_envelope(raw: object) -> Optional[WSEnvelope]:
     """解析入站消息为统一信封，非法消息记录后丢弃。
 
     Args:
-        raw (Any): 已反序列化的入站消息对象。
+        raw (object): 已反序列化的入站消息对象。
 
     Returns:
         Optional[WSEnvelope]: 合法时返回信封，否则返回 None。
@@ -117,15 +115,19 @@ def parse_envelope(raw: Any) -> Optional[WSEnvelope]:
         return None
 
 
-def build_message(id: str, type: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def build_message(
+    id: str,
+    type: str,
+    data: Optional[Mapping[str, JsonValue]] = None,
+) -> Dict[str, JsonValue]:
     """构造统一信封消息体。
 
     Args:
         id (str): 路由 ID。
         type (str): 消息类别。
-        data (Optional[Dict[str, Any]]): 消息数据。
+        data (Optional[Mapping[str, JsonValue]]): JSON 消息数据。
 
     Returns:
-        Dict[str, Any]: 可直接序列化发送的消息体。
+        Dict[str, JsonValue]: 可直接序列化发送的消息体。
     """
-    return WSEnvelope(id=id, type=type, data=data or {}).model_dump()
+    return WSEnvelope(id=id, type=type, data=dict(data or {})).model_dump(mode="json")

@@ -15,6 +15,7 @@ import httpx
 import importlib.metadata as importlib_metadata
 
 from app.utils.logger import get_logger
+from app.models.schema import PluginMarketItem, PluginMarketSnapshot
 
 from .pypi_site import get_pypi_site_packages_dir
 
@@ -147,7 +148,7 @@ async def collect_market_candidate_project_names(
 async def _fetch_project_metadata(
     client: httpx.AsyncClient,
     project_name: str,
-) -> dict[str, Any] | None:
+) -> PluginMarketItem | None:
     url = PYPI_PROJECT_JSON_ENDPOINT.format(project=quote(project_name, safe=""))
     try:
         response = await client.get(
@@ -186,40 +187,42 @@ async def _fetch_project_metadata(
     version = str(info.get("version") or "").strip()
     project_url = f"https://pypi.org/project/{quote(package_name, safe='')}/"
 
-    return {
-        "package": package_name,
-        "version": version,
-        "summary": summary,
-        "project_url": project_url,
-        "prefix_tag": prefix_tag,
-    }
+    return PluginMarketItem(
+        package=package_name,
+        version=version,
+        summary=summary,
+        project_url=project_url,
+        prefix_tag=prefix_tag,
+    )
 
 
-async def _fetch_market_items_from_candidates(candidates: list[str]) -> list[dict[str, Any]]:
+async def _fetch_market_items_from_candidates(
+    candidates: list[str],
+) -> list[PluginMarketItem]:
     semaphore = asyncio.Semaphore(PYPI_FETCH_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=PYPI_TIMEOUT_SECONDS, follow_redirects=True) as client:
-        async def worker(name: str) -> dict[str, Any] | None:
+        async def worker(name: str) -> PluginMarketItem | None:
             async with semaphore:
                 return await _fetch_project_metadata(client, name)
 
         results = await asyncio.gather(*(worker(name) for name in candidates), return_exceptions=True)
 
-    dedup: dict[str, dict[str, Any]] = {}
+    dedup: dict[str, PluginMarketItem] = {}
     for result in results:
         if isinstance(result, BaseException) or result is None:
             continue
-        normalized = _normalize_package_name(result["package"])
+        normalized = _normalize_package_name(result.package)
         if normalized not in dedup:
             dedup[normalized] = result
 
-    return sorted(dedup.values(), key=lambda x: _normalize_package_name(x["package"]))
+    return sorted(dedup.values(), key=lambda x: _normalize_package_name(x.package))
 
 
 async def fetch_market_snapshot(
     plugins_dir: Path | None = None,
     per_prefix_limit: int = PYPI_DEFAULT_PER_PREFIX_LIMIT,
-) -> dict[str, Any]:
+) -> PluginMarketSnapshot:
     """构建插件市场快照。"""
     limit = max(1, min(int(per_prefix_limit or PYPI_DEFAULT_PER_PREFIX_LIMIT), 300))
     candidates = await collect_market_candidate_project_names(
@@ -228,13 +231,13 @@ async def fetch_market_snapshot(
     )
     items = await _fetch_market_items_from_candidates(candidates)
     installed_names = collect_installed_distribution_names(plugins_dir=plugins_dir)
-    installed_map = _build_installed_map((item["package"] for item in items), installed_names)
+    installed_map = _build_installed_map((item.package for item in items), installed_names)
 
-    return {
-        "schema_version": 1,
-        "prefix_tags": list(PYPI_MARKET_PREFIX_TAGS),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "items": items,
-        "installed_map": installed_map,
-        "total": len(items),
-    }
+    return PluginMarketSnapshot(
+        schema_version=1,
+        prefix_tags=list(PYPI_MARKET_PREFIX_TAGS),
+        fetched_at=datetime.now(timezone.utc).isoformat(),
+        items=items,
+        installed_map=installed_map,
+        total=len(items),
+    )

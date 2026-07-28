@@ -21,9 +21,9 @@
 #   Contact: DLmaster_361@163.com
 
 
-from typing import Any, Dict, Optional, Union
+from typing import Mapping, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from .manager import MainConnection
 from .protocol import build_message
@@ -42,20 +42,24 @@ class _WSPublisher:
         self,
         id: str,
         type: str,
-        data: Optional[Union[BaseModel, Dict[str, Any]]] = None,
+        data: Optional[Union[BaseModel, Mapping[str, JsonValue]]] = None,
     ) -> bool:
         """向前端发送一条统一信封消息。
 
         Args:
             id (str): 路由 ID，标识任务、请求或业务会话。
             type (str): 消息类别，见 app/core/ws/protocol.py。
-            data (Optional[Union[BaseModel, Dict[str, Any]]]): 消息数据，
+            data (Optional[Union[BaseModel, Mapping[str, JsonValue]]]): 消息数据，
                 关键消息传入对应的 WS*Data 模型。
 
         Returns:
             bool: 发送是否成功；未连接时返回 False。
         """
-        payload = data.model_dump() if isinstance(data, BaseModel) else dict(data or {})
+        payload = (
+            data.model_dump(mode="json")
+            if isinstance(data, BaseModel)
+            else dict(data or {})
+        )
         sent = await MainConnection.send(build_message(id=id, type=type, data=payload))
         if not sent:
             logger.debug(f"主连接未就绪，消息已丢弃: id={id}, type={type}")

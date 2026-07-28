@@ -22,14 +22,14 @@
 
 
 import asyncio
-from typing import Any, Awaitable, Callable, Dict, List, Set, Tuple, Union
+from typing import Awaitable, Callable, Dict, List, Set, Tuple, Union
 
 from app.models.schema import WSEnvelope
 from app.utils.logger import get_logger
 
 logger = get_logger("WS分发器")
 
-Handler = Callable[[WSEnvelope], Union[Awaitable[Any], Any]]
+Handler = Callable[[WSEnvelope], Union[Awaitable[object], object]]
 
 
 class _WSDispatcher:
@@ -42,7 +42,8 @@ class _WSDispatcher:
 
     def __init__(self) -> None:
         self._handlers: Dict[Tuple[str, str], List[Handler]] = {}
-        self._tasks: Set[asyncio.Task] = set()
+        self._tasks: Set[asyncio.Task[object]] = set()
+        self._task_owners: Dict[asyncio.Task[object], int | None] = {}
         self._closed = False
 
     def register(self, id: str, type: str, handler: Handler) -> Callable[[], None]:
@@ -74,7 +75,7 @@ class _WSDispatcher:
         if not handlers:
             del self._handlers[key]
 
-    def dispatch(self, envelope: WSEnvelope) -> None:
+    def dispatch(self, envelope: WSEnvelope, *, owner: int | None = None) -> None:
         """分发一条入站消息给所有匹配处理器。"""
         if self._closed:
             logger.debug(f"分发器已关闭，丢弃入站消息: id={envelope.id}, type={envelope.type}")
@@ -84,7 +85,24 @@ class _WSDispatcher:
             logger.debug(f"无处理器，丢弃入站消息: id={envelope.id}, type={envelope.type}")
             return
         for handler in handlers:
-            self._invoke(handler, envelope)
+            self._invoke(handler, envelope, owner=owner)
+
+    async def cancel_owner(self, owner: int) -> None:
+        """取消并等待指定连接代次创建的全部处理器任务。"""
+
+        tasks = [
+            task
+            for task in self._tasks
+            if self._task_owners.get(task) == owner
+        ]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for task in tasks:
+            self._tasks.discard(task)
+            self._task_owners.pop(task, None)
 
     async def shutdown(self) -> None:
         """停止接收新消息，并取消、等待所有在途处理器任务。
@@ -93,17 +111,18 @@ class _WSDispatcher:
         入站消息触发的处理器与其并发执行。
         """
         self._closed = True
-        tasks = [task for task in self._tasks if not task.done()]
+        tasks = list(self._tasks)
         for task in tasks:
-            task.cancel()
-        for task in tasks:
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
+        self._task_owners.clear()
 
-    def _invoke(self, handler: Handler, envelope: WSEnvelope) -> None:
+    def _invoke(
+        self, handler: Handler, envelope: WSEnvelope, *, owner: int | None
+    ) -> None:
         """调用处理器并隔离异常，协程结果放入持有的后台任务。"""
         try:
             result = handler(envelope)
@@ -116,9 +135,11 @@ class _WSDispatcher:
 
         task = asyncio.create_task(result)
         self._tasks.add(task)
+        self._task_owners[task] = owner
 
-        def _on_done(done_task: asyncio.Task) -> None:
+        def _on_done(done_task: asyncio.Task[object]) -> None:
             self._tasks.discard(done_task)
+            self._task_owners.pop(done_task, None)
             if done_task.cancelled():
                 return
             exc = done_task.exception()

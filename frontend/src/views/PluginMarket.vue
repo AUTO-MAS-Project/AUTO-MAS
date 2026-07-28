@@ -110,52 +110,32 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { pluginMarketApi, type PluginMarketSnapshot } from '@/services/pluginMarketApi'
+import {
+  buildMarketSnapshotState,
+  PluginOperationRequestTracker,
+  SnapshotRefreshCoordinator,
+  startPluginInstall,
+} from './PluginMarket.logic'
 import {
   WS_ID_PLUGIN_MARKET,
   WS_MARKET_ERROR,
-  WS_MARKET_SNAPSHOT_REQUEST,
-  WS_MARKET_SNAPSHOT_RESPONSE,
   WS_PLUGIN_INSTALL_PROGRESS,
   WS_PLUGIN_INSTALL_REQUEST,
   WS_PLUGIN_INSTALL_RESULT,
   WS_PLUGIN_INSTALLED_SYNC,
   WS_PLUGIN_UNINSTALL_REQUEST,
   WS_PLUGIN_UNINSTALL_RESULT,
+  type WSMarketErrorData,
+  type WSPluginInstalledSyncData,
+  type WSPluginInstallProgressData,
+  type WSPluginOperationResultData,
+  type WSJsonObject,
 } from '@/services/websocket/types'
 
-interface MarketItem {
-  package: string
-  version: string
-  summary: string
-  project_url: string
-  prefix_tag: string
-}
-
-interface MarketSnapshot {
-  schema_version: number
-  prefix_tags: string[]
-  fetched_at: string
-  items: MarketItem[]
-  installed_map: Record<string, boolean>
-  total: number
-}
-
-interface PluginMarketMessageData {
-  requestId?: string
-  status?: string
-  message?: string
-  payload?: any
-}
-
-interface PluginMarketCache {
-  snapshot: MarketSnapshot
-  saved_at: string
-}
-
 const logger = window.electronAPI.getLogger('插件市场')
-const PLUGIN_MARKET_CACHE_KEY = 'auto-mas-plugin-market-cache-v1'
 
-const { state, subscribe, unsubscribe, send, request } = useWebSocket()
+const { state, subscribe, unsubscribe, send } = useWebSocket()
 
 const isConnected = computed(() => state.value === 'open')
 const wsStatus = computed(() => {
@@ -172,7 +152,7 @@ const wsStatus = computed(() => {
   }
 })
 
-const marketSnapshot = ref<MarketSnapshot | null>(null)
+const marketSnapshot = ref<PluginMarketSnapshot | null>(null)
 const installedState = ref<Record<string, boolean>>({})
 const operationLoading = ref<Record<string, boolean>>({})
 const searchKeyword = ref('')
@@ -185,6 +165,8 @@ const lastInfoType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const lastInfoMessage = ref('')
 
 const subscriptionIds: string[] = []
+let stopConnectionWatch: (() => void) | null = null
+const snapshotCoordinator = new SnapshotRefreshCoordinator<PluginMarketSnapshot>()
 
 const normalizeName = (name: string) =>
   String(name || '')
@@ -192,47 +174,17 @@ const normalizeName = (name: string) =>
     .toLowerCase()
     .replace(/-/g, '_')
 
+const operationRequests = new PluginOperationRequestTracker(normalizeName)
+
 const setInfo = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
   lastInfoType.value = type
   lastInfoMessage.value = msg
 }
 
-const applySnapshot = (snapshot: MarketSnapshot) => {
-  marketSnapshot.value = snapshot
-  const nextState: Record<string, boolean> = {}
-  Object.entries(snapshot.installed_map || {}).forEach(([pkg, installed]) => {
-    nextState[normalizeName(pkg)] = Boolean(installed)
-  })
-  installedState.value = nextState
-}
-
-const saveSnapshotCache = (snapshot: MarketSnapshot) => {
-  try {
-    const payload: PluginMarketCache = {
-      snapshot,
-      saved_at: new Date().toISOString(),
-    }
-    sessionStorage.setItem(PLUGIN_MARKET_CACHE_KEY, JSON.stringify(payload))
-  } catch (error) {
-    logger.warn(`写入插件市场缓存失败: ${String(error)}`)
-  }
-}
-
-const loadSnapshotCache = (): MarketSnapshot | null => {
-  try {
-    const raw = sessionStorage.getItem(PLUGIN_MARKET_CACHE_KEY)
-    if (!raw) {
-      return null
-    }
-    const parsed = JSON.parse(raw) as PluginMarketCache
-    if (!parsed || typeof parsed !== 'object' || !parsed.snapshot) {
-      return null
-    }
-    return parsed.snapshot
-  } catch (error) {
-    logger.warn(`读取插件市场缓存失败: ${String(error)}`)
-    return null
-  }
+const applySnapshot = (snapshot: PluginMarketSnapshot) => {
+  const nextState = buildMarketSnapshotState(snapshot, normalizeName)
+  marketSnapshot.value = nextState.snapshot
+  installedState.value = nextState.installedState
 }
 
 const updateInstalledState = (pkg: string, installed: boolean) => {
@@ -250,63 +202,40 @@ const updateInstalledState = (pkg: string, installed: boolean) => {
         [pkg]: installed,
       },
     }
-    saveSnapshotCache(marketSnapshot.value)
   }
 }
 
 const newRequestId = () => `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
-const sendPluginRequest = (type: string, payload: Record<string, unknown> = {}): boolean => {
+const sendPluginRequest = (type: string, payload: WSJsonObject = {}): string | null => {
+  const requestId = newRequestId()
   const sent = send(WS_ID_PLUGIN_MARKET, type, {
-    requestId: newRequestId(),
     ...payload,
+    requestId,
   })
   if (!sent) {
     message.warning('插件市场 WS 未连接')
+    return null
   }
-  return sent
+  return requestId
 }
 
-// 首次快照待获取标志：无缓存但主连接尚未就绪（挂载时正在重连）时置位，
-// 由连接进入 open 的 watch 自动补发，避免市场永久为空
-let pendingInitialSnapshot = false
-
-const requestSnapshot = async () => {
-  if (snapshotLoading.value) {
-    return
-  }
-  // 连接未就绪：登记待获取，连接建立后自动补发，不立即失败
-  if (!isConnected.value) {
-    pendingInitialSnapshot = true
-    setInfo('等待与后端建立连接后获取市场数据...', 'info')
-    return
-  }
-  snapshotLoading.value = true
-  try {
-    const response = await request(
-      WS_ID_PLUGIN_MARKET,
-      WS_MARKET_SNAPSHOT_REQUEST,
-      [WS_MARKET_SNAPSHOT_RESPONSE, WS_MARKET_ERROR],
-      { perPrefixLimit: 60 },
-      15000
-    )
-    if (response.type === WS_MARKET_ERROR) {
-      // 错误提示由 market.error 订阅统一展示
-      return
-    }
-    const data = response.data as PluginMarketMessageData
-    applySnapshot((data.payload || {}) as MarketSnapshot)
-    if (marketSnapshot.value) {
-      saveSnapshotCache(marketSnapshot.value)
-    }
-    setInfo('市场快照已更新', 'success')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`获取市场快照失败: ${errorMsg}`)
-    setInfo(`获取市场快照失败: ${errorMsg}`, 'error')
-  } finally {
-    snapshotLoading.value = false
-  }
+const requestSnapshot = () => {
+  snapshotCoordinator.refresh({
+    load: () => pluginMarketApi.getSnapshot(60),
+    apply: snapshot => {
+      applySnapshot(snapshot)
+      setInfo('市场快照已更新', 'success')
+    },
+    reportError: error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取市场快照失败: ${errorMsg}`)
+      setInfo(`获取市场快照失败: ${errorMsg}`, 'error')
+    },
+    setLoading: loading => {
+      snapshotLoading.value = loading
+    },
+  })
 }
 
 const isInstalled = (pkg: string) => Boolean(installedState.value[normalizeName(pkg)])
@@ -334,15 +263,12 @@ const requestInstall = (pkg: string): boolean => {
     message.warning('请先输入包名')
     return false
   }
-  if (isOperationLoading(packageName)) {
-    return false
-  }
-  markOperation(packageName, true)
-  if (!sendPluginRequest(WS_PLUGIN_INSTALL_REQUEST, { package: packageName })) {
-    markOperation(packageName, false)
-    return false
-  }
-  return true
+  return startPluginInstall(packageName, isOperationLoading, markOperation, pluginPackage => {
+    const requestId = sendPluginRequest(WS_PLUGIN_INSTALL_REQUEST, { package: pluginPackage })
+    if (!requestId) return false
+    operationRequests.begin('install', pluginPackage, requestId)
+    return true
+  })
 }
 
 const toggleInstall = (pkg: string) => {
@@ -350,12 +276,16 @@ const toggleInstall = (pkg: string) => {
     return
   }
 
-  markOperation(pkg, true)
   if (isInstalled(pkg)) {
-    if (!sendPluginRequest(WS_PLUGIN_UNINSTALL_REQUEST, { package: pkg })) {
+    markOperation(pkg, true)
+    const requestId = sendPluginRequest(WS_PLUGIN_UNINSTALL_REQUEST, { package: pkg })
+    if (!requestId) {
       markOperation(pkg, false)
+    } else {
+      operationRequests.begin('uninstall', pkg, requestId)
     }
   } else {
+    // requestInstall 负责设置安装态；提前标记会使它因 loading 而短路。
     requestInstall(pkg)
   }
 }
@@ -393,23 +323,24 @@ const goToPackage = (url: string) => {
   window.open(target, '_blank', 'noopener,noreferrer')
 }
 
-const handleInstallProgress = (data: PluginMarketMessageData) => {
-  const payload = data.payload || {}
-  const pkg = String(payload.package || '')
-  const progress = Number(payload.progress || 0)
+const handleInstallProgress = (data: WSPluginInstallProgressData) => {
+  const pkg = data.package
+  if (!operationRequests.matches('install', pkg, data.requestId)) return
+  const progress = data.progress
   if (pkg) {
     setInfo(`安装中: ${pkg} (${progress}%)`, 'info')
   }
 }
 
-const handleInstallResult = (data: PluginMarketMessageData) => {
-  const payload = data.payload || {}
-  const status = String(data.status || 'success')
-  const pkg = String(payload.package || '')
+const handleInstallResult = (data: WSPluginOperationResultData) => {
+  const status = data.status
+  const pkg = data.package
+  if (!operationRequests.finish('install', pkg, data.requestId)) return
+  snapshotCoordinator.invalidate()
   if (pkg) {
     markOperation(pkg, false)
   }
-  const ok = status !== 'error' && Boolean(payload.success)
+  const ok = status !== 'error' && data.success
   if (ok && pkg) {
     updateInstalledState(pkg, true)
   }
@@ -428,14 +359,15 @@ const handleInstallResult = (data: PluginMarketMessageData) => {
   }
 }
 
-const handleUninstallResult = (data: PluginMarketMessageData) => {
-  const payload = data.payload || {}
-  const status = String(data.status || 'success')
-  const pkg = String(payload.package || '')
+const handleUninstallResult = (data: WSPluginOperationResultData) => {
+  const status = data.status
+  const pkg = data.package
+  if (!operationRequests.finish('uninstall', pkg, data.requestId)) return
+  snapshotCoordinator.invalidate()
   if (pkg) {
     markOperation(pkg, false)
   }
-  const ok = status !== 'error' && Boolean(payload.success)
+  const ok = status !== 'error' && data.success
   if (ok && pkg) {
     updateInstalledState(pkg, false)
   }
@@ -447,18 +379,24 @@ const handleUninstallResult = (data: PluginMarketMessageData) => {
   }
 }
 
-const handleInstalledSync = (data: PluginMarketMessageData) => {
-  const payload = data.payload || {}
-  const pkg = String(payload.package || '')
+const handleInstalledSync = (data: WSPluginInstalledSyncData) => {
+  snapshotCoordinator.invalidate()
+  const pkg = data.package
   if (!pkg) {
     return
   }
-  updateInstalledState(pkg, Boolean(payload.installed))
-  markOperation(pkg, false)
+  updateInstalledState(pkg, data.installed)
 }
 
-const handleMarketError = (data: PluginMarketMessageData) => {
-  snapshotLoading.value = false
+const handleMarketError = (data: WSMarketErrorData) => {
+  const pending = operationRequests.finishByRequestId(data.requestId)
+  if (data.requestId && !pending) return
+  if (pending) {
+    markOperation(pending.package, false)
+    if (pending.operation === 'install' && pending.package === pendingManualPackage.value) {
+      pendingManualPackage.value = ''
+    }
+  }
   const msg = data.message || '插件通道发生错误'
   setInfo(msg, 'error')
   message.error(msg)
@@ -478,10 +416,11 @@ const filteredItems = computed(() => {
     return []
   }
   const keyword = searchKeyword.value.trim().toLowerCase()
+  const items = snapshot.items ?? []
   if (!keyword) {
-    return snapshot.items
+    return items
   }
-  return snapshot.items.filter(item => {
+  return items.filter(item => {
     return (
       String(item.package || '')
         .toLowerCase()
@@ -496,45 +435,35 @@ const filteredItems = computed(() => {
 onMounted(() => {
   subscriptionIds.push(
     subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_INSTALL_PROGRESS }, msg =>
-      handleInstallProgress(msg.data as PluginMarketMessageData)
+      handleInstallProgress(msg.data)
     ),
     subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_INSTALL_RESULT }, msg =>
-      handleInstallResult(msg.data as PluginMarketMessageData)
+      handleInstallResult(msg.data)
     ),
     subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_UNINSTALL_RESULT }, msg =>
-      handleUninstallResult(msg.data as PluginMarketMessageData)
+      handleUninstallResult(msg.data)
     ),
     subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_INSTALLED_SYNC }, msg =>
-      handleInstalledSync(msg.data as PluginMarketMessageData)
+      handleInstalledSync(msg.data)
     ),
     subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_MARKET_ERROR }, msg =>
-      handleMarketError(msg.data as PluginMarketMessageData)
+      handleMarketError(msg.data)
     )
   )
 
-  const cachedSnapshot = loadSnapshotCache()
-  if (cachedSnapshot) {
-    applySnapshot(cachedSnapshot)
-    setInfo('已加载本地缓存，点击“刷新快照”可获取最新市场数据', 'info')
-  } else {
-    void requestSnapshot()
-  }
+  // 先注册实时订阅，再经 HTTP 获取初始快照，避免 HTTP 请求期间漏掉后续事件。
+  stopConnectionWatch = watch(state, (nextState, previousState) => {
+    if (nextState === 'open' && previousState !== 'open') requestSnapshot()
+  })
+  requestSnapshot()
 })
 
-// 主连接（重）建立后补发首次快照请求
-watch(
-  () => state.value,
-  status => {
-    if (status === 'open' && pendingInitialSnapshot) {
-      pendingInitialSnapshot = false
-      void requestSnapshot()
-    }
-  }
-)
-
 onUnmounted(() => {
+  operationRequests.clear()
   subscriptionIds.forEach(id => unsubscribe(id))
   subscriptionIds.length = 0
+  stopConnectionWatch?.()
+  stopConnectionWatch = null
 })
 </script>
 

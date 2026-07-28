@@ -5,6 +5,8 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { connectionState, onConnected } from '@/services/websocket/connection'
+import { realtimeSnapshotApi, type TaskRuntimeSnapshotItem } from '@/services/realtimeSnapshotApi'
 import {
   WS_ID_MAIN,
   WS_ID_TASK_MANAGER,
@@ -14,10 +16,12 @@ import {
   WS_TASK_INFO_UPDATED,
   WS_TASK_LOG_UPDATED,
   WS_TASK_NOTICE,
-  type WSPowerSignData,
   type WSTaskCompletedData,
   type WSTaskCreatedData,
+  type WSTaskInfoUpdatedData,
+  type WSTaskLogUpdatedData,
   type WSTaskNoticeData,
+  type WSTaskScriptInfoData,
 } from '@/services/websocket/types'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
@@ -203,6 +207,10 @@ let _watchInitialized = false
 // 常驻订阅注册标志 - 与 _initialized 分开，允许在进入应用前（甚至初始化向导阶段）
 // 就注册 task.created，避免启动队列任务的创建通知因订阅晚于连接而丢失
 let _residentSubscribed = false
+let _residentSubscriptionIds: string[] = []
+let _disposeRuntimeSnapshotListener: (() => void) | null = null
+let _runtimeSnapshotGeneration = 0
+let _taskRuntimeMutationSequence = 0
 
 export function useSchedulerLogic() {
   // WebSocket 实例
@@ -210,6 +218,7 @@ export function useSchedulerLogic() {
 
   // 新任务创建通知处理（常驻订阅 id=TaskManager, type=task.created）
   const handleTaskCreated = (data: WSTaskCreatedData) => {
+    _taskRuntimeMutationSequence++
     logger.info(
       `收到新任务通知: 任务ID=${data.taskId}, 队列ID=${data.queueId}, 任务名称=${data.taskName}, 任务类型=${data.taskType}`
     )
@@ -217,7 +226,8 @@ export function useSchedulerLogic() {
       data.taskId,
       data.queueId ?? undefined,
       data.taskName ?? undefined,
-      data.taskType ?? undefined
+      data.taskType ?? undefined,
+      true
     )
   }
 
@@ -225,8 +235,19 @@ export function useSchedulerLogic() {
     taskId: string,
     queueId?: string,
     taskName?: string,
-    taskType?: string
+    taskType?: string,
+    notifyUser: boolean = true
   ) => {
+    const existing = schedulerTabs.value.find(tab => tab.taskId === taskId)
+    if (existing) {
+      existing.status = '运行'
+      if (queueId) existing.selectedTaskId = queueId
+      if (taskName) existing.runningTaskLabel = taskName
+      if (taskType) existing.runningModeLabel = taskType
+      subscribeToTask(existing)
+      return existing
+    }
+
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
@@ -244,9 +265,10 @@ export function useSchedulerLogic() {
     subscribeToTask(newTab)
 
     logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
-    message.success(`已自动创建调度台: ${newTab.title}`)
+    if (notifyUser) message.success(`已自动创建调度台: ${newTab.title}`)
 
     saveTabsToStorage(schedulerTabs.value)
+    return newTab
   }
 
   // 计算属性
@@ -318,7 +340,7 @@ export function useSchedulerLogic() {
     taskLabel,
     modeLabel,
   }: StartedTaskTracking) => {
-    const existingTab = schedulerTabs.value.find(tab => tab.websocketId === taskId)
+    const existingTab = schedulerTabs.value.find(tab => tab.taskId === taskId)
     if (existingTab) {
       activeSchedulerTab.value = existingTab.key
       subscribeToTask(existingTab)
@@ -328,7 +350,7 @@ export function useSchedulerLogic() {
     const tab = addSchedulerTab({
       title: taskLabel,
       status: '运行',
-      websocketId: taskId,
+      taskId,
       selectedTaskId,
     })
     tab.selectedMode = selectedMode
@@ -529,6 +551,7 @@ export function useSchedulerLogic() {
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
 
       if (response.code === 200) {
+        _taskRuntimeMutationSequence++
         tab.status = '运行'
         tab.taskId = response.taskId
 
@@ -603,30 +626,30 @@ export function useSchedulerLogic() {
     const taskId = tab.taskId
     tab.subscriptionIds = [
       ws.subscribe({ id: taskId, type: WS_TASK_INFO_UPDATED }, wsMessage =>
-        handleTaskInfoUpdated(tab, wsMessage.data as { task_info?: any[] })
+        handleTaskInfoUpdated(tab, wsMessage.data)
       ),
       ws.subscribe({ id: taskId, type: WS_TASK_LOG_UPDATED }, wsMessage =>
-        handleTaskLogUpdated(tab, wsMessage.data as { log?: string })
+        handleTaskLogUpdated(tab, wsMessage.data)
       ),
-      ws.subscribe({ id: taskId, type: WS_TASK_NOTICE }, wsMessage => {
-        void handleTaskNotice(wsMessage.data as unknown as WSTaskNoticeData)
-      }),
-      ws.subscribe({ id: taskId, type: WS_TASK_COMPLETED }, wsMessage => {
-        void handleTaskCompleted(tab, wsMessage.data as unknown as WSTaskCompletedData)
-      }),
+      ws.subscribe({ id: taskId, type: WS_TASK_NOTICE }, wsMessage =>
+        handleTaskNotice(wsMessage.data)
+      ),
+      ws.subscribe({ id: taskId, type: WS_TASK_COMPLETED }, wsMessage =>
+        handleTaskCompleted(tab, wsMessage.data)
+      ),
     ]
     logger.info(`新建WebSocket订阅: key=${tab.key}, taskId=${taskId}`)
   }
 
-  const buildTaskInfoSignature = (taskInfo: any[] | undefined) => {
+  const buildTaskInfoSignature = (taskInfo: WSTaskScriptInfoData[] | undefined) => {
     if (!Array.isArray(taskInfo)) return ''
 
     return taskInfo
       .map((task, index) => {
         const users = Array.isArray(task.userList)
-          ? task.userList.map((user: any) => `${user.name || ''}:${user.status || ''}`).join(',')
+          ? task.userList.map(user => `${user.name || ''}:${user.status || ''}`).join(',')
           : ''
-        return `${task.script_id || index}:${task.name || ''}:${task.status || ''}[${users}]`
+        return `${index}:${task.name || ''}:${task.status || ''}[${users}]`
       })
       .join('|')
   }
@@ -660,7 +683,7 @@ export function useSchedulerLogic() {
     pendingLogUpdates.set(tab.key, timer)
   }
 
-  const applyTaskInfoSnapshot = (tab: SchedulerTab, data: { task_info?: any[] }): boolean => {
+  const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
     if (!data.task_info || !Array.isArray(data.task_info)) {
       logger.debug('没有task_info数据，保持现有overviewData')
       return false
@@ -672,26 +695,30 @@ export function useSchedulerLogic() {
     }
 
     try {
-      tab.overviewData = (data.task_info as any[]).map((s, index) => ({
+      tab.overviewData = data.task_info.map((s, index) => ({
         script_id: s.script_id || `script_${index}`,
         name: s.name || '未知脚本',
         status: s.status || '等待',
-        user_list: s.userList ? [...s.userList] : [],
+        user_list: (s.userList ?? []).map((user, userIndex) => ({
+          user_id: user.user_id || `user_${index}_${userIndex}`,
+          name: user.name,
+          status: user.status,
+        })),
       }))
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
       logger.warn(`维护 overviewData 快照时出现问题: ${errorMsg}`)
     }
 
-    const newTaskQueue = data.task_info.map((item: any) => ({
+    const newTaskQueue = data.task_info.map(item => ({
       name: item.name || '未知任务',
       status: item.status || '等待',
     }))
 
     const newUserQueue: QueueItem[] = []
-    data.task_info.forEach((taskItem: any) => {
+    data.task_info.forEach(taskItem => {
       if (taskItem.userList && Array.isArray(taskItem.userList)) {
-        taskItem.userList.forEach((user: any) => {
+        taskItem.userList.forEach(user => {
           if (user.status === '运行') {
             newUserQueue.push({
               name: `${taskItem.name}-${user.name}`,
@@ -707,7 +734,7 @@ export function useSchedulerLogic() {
     return true
   }
 
-  const handleTaskInfoUpdated = (tab: SchedulerTab, data: { task_info?: any[] }) => {
+  const handleTaskInfoUpdated = (tab: SchedulerTab, data: WSTaskInfoUpdatedData) => {
     // 添加消息去重机制
     const taskInfoSignature = buildTaskInfoSignature(data.task_info)
     const messageKey = `${tab.key}_${taskInfoSignature}`
@@ -731,16 +758,18 @@ export function useSchedulerLogic() {
       tab.lastMessageTime = currentTime
     }
 
+    _taskRuntimeMutationSequence++
     applyTaskInfoSnapshot(tab, data)
     // 移除可能导致递归更新的 saveTabsToStorage 调用
     // saveTabsToStorage(schedulerTabs.value)
   }
 
-  const handleTaskLogUpdated = (tab: SchedulerTab, data: { log?: string }) => {
+  const handleTaskLogUpdated = (tab: SchedulerTab, data: WSTaskLogUpdatedData) => {
     // 直接显示完整日志内容，覆盖上次显示的内容
     if (typeof data.log !== 'string' || !data.log) return
     const newContent = data.log
     if (tab.lastLogContent !== newContent) {
+      _taskRuntimeMutationSequence++
       scheduleLogContentUpdate(tab, newContent)
       logger.debug(
         `更新日志内容: ${JSON.stringify({
@@ -825,6 +854,7 @@ export function useSchedulerLogic() {
   }
 
   const handleTaskCompleted = async (tab: SchedulerTab, data: WSTaskCompletedData) => {
+    _taskRuntimeMutationSequence++
     // 收到任务完成消息才将任务标记为结束状态
     // 这确保了调度台状态与实际任务执行状态严格同步
     logger.info('收到任务完成消息，设置任务状态为结束')
@@ -846,13 +876,6 @@ export function useSchedulerLogic() {
     tab.status = '结束'
     logger.info(`已更新tab.status为结束，当前tab状态: ${JSON.stringify(tab.status)}`)
 
-    // 强制触发Vue响应式更新
-    const tabIndex = schedulerTabs.value.findIndex(t => t.key === tab.key)
-    if (tabIndex !== -1) {
-      const updatedTab: SchedulerTab = { ...tab }
-      schedulerTabs.value.splice(tabIndex, 1, updatedTab)
-    }
-
     logger.info(`任务完成，清理订阅与任务ID: key=${tab.key}, taskId=${tab.taskId}`)
     try {
       unsubscribeTab(tab)
@@ -861,6 +884,13 @@ export function useSchedulerLogic() {
       logger.warn(`清理订阅时发生错误: ${errorMsg}`)
     }
     tab.taskId = null
+
+    // 清理完成后再替换响应式对象，避免数组中保留旧的任务ID和订阅ID
+    const tabIndex = schedulerTabs.value.findIndex(t => t.key === tab.key)
+    if (tabIndex !== -1) {
+      const updatedTab: SchedulerTab = { ...tab }
+      schedulerTabs.value.splice(tabIndex, 1, updatedTab)
+    }
 
     // 播放任务完成音频
     const { playSound } = useAudioPlayer()
@@ -1028,6 +1058,83 @@ export function useSchedulerLogic() {
     getPowerState()
   }
 
+  const taskModeFromSnapshot = (mode: string): TaskCreateIn.mode => {
+    switch (mode) {
+      case TaskCreateIn.mode.MANUAL_REVIEW:
+        return TaskCreateIn.mode.MANUAL_REVIEW
+      case TaskCreateIn.mode.SCRIPT_CONFIG:
+        return TaskCreateIn.mode.SCRIPT_CONFIG
+      case TaskCreateIn.mode.AUTO_PROXY:
+      default:
+        return TaskCreateIn.mode.AUTO_PROXY
+    }
+  }
+
+  const applyRuntimeTaskSnapshot = (item: TaskRuntimeSnapshotItem): void => {
+    const selectedTaskId = item.queueId ?? item.scriptId ?? item.userId ?? undefined
+    const tab = createSchedulerTabForTask(
+      item.taskId,
+      selectedTaskId,
+      selectedTaskId,
+      item.mode,
+      false
+    )
+    tab.status = '运行'
+    tab.selectedMode = taskModeFromSnapshot(item.mode)
+    tab.runningModeLabel = item.mode
+
+    const taskInfo: WSTaskScriptInfoData[] = (item.task_info ?? []).map(script => ({
+      script_id: script.script_id,
+      name: script.name,
+      status: script.status,
+      userList: (script.userList ?? []).map(user => ({
+        user_id: user.user_id,
+        name: user.name,
+        status: user.status,
+      })),
+    }))
+    applyTaskInfoSnapshot(tab, { task_info: taskInfo })
+    if (typeof item.log === 'string') {
+      scheduleLogContentUpdate(tab, item.log, true)
+    }
+    subscribeToTask(tab)
+  }
+
+  /** 读取运行任务 HTTP 初始快照，并与当前调度标签协调。 */
+  const refreshRuntimeSnapshot = async (): Promise<void> => {
+    const generation = ++_runtimeSnapshotGeneration
+    const mutationSequence = _taskRuntimeMutationSequence
+    try {
+      const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
+      if (generation !== _runtimeSnapshotGeneration) return
+
+      // 任一任务 WS 增量或本地 start 在请求期间发生时，当前响应已过时；
+      // 重新取一次权威快照，避免回滚刚创建/结束的任务及最新 info/log。
+      if (mutationSequence !== _taskRuntimeMutationSequence) {
+        void refreshRuntimeSnapshot()
+        return
+      }
+
+      const activeTaskIds = new Set((snapshot.tasks ?? []).map(item => item.taskId))
+      for (const item of snapshot.tasks ?? []) applyRuntimeTaskSnapshot(item)
+
+      for (const tab of schedulerTabs.value) {
+        if (tab.status !== '运行' || !tab.taskId || activeTaskIds.has(tab.taskId)) continue
+        logger.info(`HTTP 快照确认任务已结束: key=${tab.key}, taskId=${tab.taskId}`)
+        unsubscribeTab(tab)
+        tab.status = '结束'
+        tab.taskId = null
+        tab.logMode = 'browse'
+      }
+
+      schedulerTabs.value = [...schedulerTabs.value]
+      saveTabsToStorage(schedulerTabs.value)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`读取运行任务 HTTP 快照失败: ${errorMsg}`)
+    }
+  }
+
   // 注册调度中心常驻订阅（幂等）。必须在任何主连接建立前调用，
   // 因协议无缓存无重放：启动队列在连接就绪约 10 秒后创建任务并发 task.created，
   // 若订阅晚于连接建立（如初始化向导停留期间），该通知将永久丢失。
@@ -1036,13 +1143,29 @@ export function useSchedulerLogic() {
     _residentSubscribed = true
 
     // keep-alive 下路由切换不取消，应用关闭时随进程释放
-    ws.subscribe({ id: WS_ID_TASK_MANAGER, type: WS_TASK_CREATED }, wsMessage =>
-      handleTaskCreated(wsMessage.data as unknown as WSTaskCreatedData)
-    )
-    ws.subscribe({ id: WS_ID_MAIN, type: WS_POWER_SIGN_UPDATED }, wsMessage =>
-      updatePowerActionDisplay((wsMessage.data as unknown as WSPowerSignData).signal)
-    )
+    _residentSubscriptionIds = [
+      ws.subscribe({ id: WS_ID_TASK_MANAGER, type: WS_TASK_CREATED }, wsMessage =>
+        handleTaskCreated(wsMessage.data)
+      ),
+      ws.subscribe({ id: WS_ID_MAIN, type: WS_POWER_SIGN_UPDATED }, wsMessage =>
+        updatePowerActionDisplay(wsMessage.data.signal)
+      ),
+    ]
+    _disposeRuntimeSnapshotListener = onConnected(refreshRuntimeSnapshot)
+    if (connectionState().value === 'open') void refreshRuntimeSnapshot()
     logger.info('已注册调度中心常驻订阅 (task.created / power.sign.updated)')
+  }
+
+  const disposeResidentSubscriptions = () => {
+    _runtimeSnapshotGeneration++
+    _disposeRuntimeSnapshotListener?.()
+    _disposeRuntimeSnapshotListener = null
+    for (const subscriptionId of _residentSubscriptionIds.splice(0)) {
+      ws.unsubscribe(subscriptionId)
+    }
+    schedulerTabs.value.forEach(tab => unsubscribeTab(tab))
+    _residentSubscribed = false
+    logger.info('已释放调度中心常驻订阅')
   }
 
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
@@ -1184,6 +1307,8 @@ export function useSchedulerLogic() {
     // 初始化与清理
     initialize,
     registerResidentSubscriptions,
+    disposeResidentSubscriptions,
+    refreshRuntimeSnapshot,
     loadTaskOptions,
     getPowerState,
     cleanup,
@@ -1202,4 +1327,9 @@ export function useSchedulerLogic() {
  */
 export function bootstrapSchedulerSubscriptions() {
   useSchedulerLogic().registerResidentSubscriptions()
+}
+
+/** 应用最终退出时释放调度中心常驻与任务订阅。 */
+export function disposeSchedulerSubscriptions() {
+  useSchedulerLogic().disposeResidentSubscriptions()
 }

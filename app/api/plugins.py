@@ -1,21 +1,22 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-import asyncio
 import mimetypes
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from app.plugins import PluginConfigStore, PluginManager
 from app.plugins.frontend_extensions import build_page_snapshot, load_frontend_asset
+from app.plugins.market import fetch_market_snapshot
 from app.plugins.realtime import publish_plugin_snapshot
 from app.plugins.server import plugin_server
 from app.api.ws_command import ws_command
-from app.models.schema import OutBase
+from app.models.schema import OutBase, PluginMarketSnapshot
+from app.runtime_tasks import RuntimeTasks
 from app.utils import get_logger
 
 
@@ -186,6 +187,30 @@ class PluginFrontendBackgroundOut(OutBase):
     fit: str = Field(default="cover", description="背景填充方式")
 
 
+@router.get(
+    "/market/snapshot",
+    tags=["Get"],
+    summary="获取插件市场初始快照",
+    response_model=PluginMarketSnapshot,
+    status_code=200,
+)
+async def get_plugin_market_snapshot(
+    per_prefix_limit: int = Query(
+        default=60,
+        ge=1,
+        le=200,
+        description="每个支持前缀最多扫描的 PyPI 项目数",
+    ),
+) -> PluginMarketSnapshot:
+    """通过 HTTP 返回页面初始快照；WS 仅承载后续实时操作事件。"""
+
+    snapshot = await fetch_market_snapshot(
+        plugins_dir=Path.cwd() / "plugins",
+        per_prefix_limit=per_prefix_limit,
+    )
+    return PluginMarketSnapshot.model_validate(snapshot)
+
+
 BACKGROUND_SERVICE_NAME = "frontend_background"
 BACKGROUND_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
@@ -278,7 +303,9 @@ def _schedule_update_reload(instance_id: str) -> None:
                     f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
                 )
 
-    asyncio.create_task(_runner())
+    RuntimeTasks.spawn(
+        _runner(), name=f"plugin-reload-instance:{instance_id}"
+    )
 
 
 def _schedule_enabled_runtime_update(instance_id: str, enabled: bool) -> None:
@@ -301,7 +328,9 @@ def _schedule_enabled_runtime_update(instance_id: str, enabled: bool) -> None:
                     f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
                 )
 
-    asyncio.create_task(_runner())
+    RuntimeTasks.spawn(
+        _runner(), name=f"plugin-enabled-update:{instance_id}"
+    )
 
 
 def _schedule_update_snapshot(instance_id: str, reason: str = "api.plugins.update") -> None:
@@ -317,7 +346,9 @@ def _schedule_update_snapshot(instance_id: str, reason: str = "api.plugins.updat
                 f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
             )
 
-    asyncio.create_task(_runner())
+    RuntimeTasks.spawn(
+        _runner(), name=f"plugin-snapshot-update:{instance_id}"
+    )
 
 
 def _need_discover_for_update(data: PluginUpdateIn) -> bool:
@@ -895,11 +926,12 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
             else:
                 _schedule_update_reload(data.instanceId)
         else:
-            asyncio.create_task(
+            RuntimeTasks.spawn(
                 publish_plugin_snapshot(
                     reason="api.plugins.update",
                     message=f"已更新插件实例: {data.instanceId}",
-                )
+                ),
+                name=f"plugin-snapshot-update:{data.instanceId}",
             )
 
         return OutBase()

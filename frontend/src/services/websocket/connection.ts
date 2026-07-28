@@ -6,7 +6,13 @@
 import { ref, type Ref } from 'vue'
 import { OpenAPI } from '@/api'
 import { dispatchMessage, subscribe, unsubscribe } from './subscriptions'
-import type { WSConnectionState, WSDisconnectEvent, WSEnvelope } from './types'
+import type {
+  WSConnectionState,
+  WSDataForType,
+  WSDisconnectEvent,
+  WSEnvelope,
+  WSJsonObject,
+} from './types'
 
 const logger = window.electronAPI.getLogger('WebSocket连接')
 
@@ -28,18 +34,22 @@ const state: Ref<WSConnectionState> = ref('idle')
 
 let socket: WebSocket | null = null
 let connectPromise: Promise<boolean> | null = null
+let connectAttemptToken: symbol | null = null
 let reconnectTimer: number | undefined
 let reconnectAttempts = 0
+let automaticReconnectEnabled = true
 // 连接代次：每次 shutdown 递增，使协商期间在途的连接尝试恢复后失效，
-// 避免旧协程创建的连接把已终止的连接层复活
+// 避免旧异步尝试创建的连接把已终止或已被立即重连替换的连接层复活
 let connectGeneration = 0
 let backendDevMode = import.meta.env.DEV === true || window.location.hostname === 'localhost'
 let websocketUrl = 'ws://localhost:36163/api/core/ws'
 
 type DisconnectListener = (event: WSDisconnectEvent) => void
 type CycleFailureListener = () => void
+type ConnectedListener = () => void | Promise<void>
 const disconnectListeners: DisconnectListener[] = []
 const cycleFailureListeners: CycleFailureListener[] = []
+const connectedListeners: ConnectedListener[] = []
 
 // ==================== 地址协商 ====================
 
@@ -137,14 +147,33 @@ const clearReconnectTimer = (): void => {
 }
 
 const handleMessage = (raw: string): void => {
-  let message: WSEnvelope
+  let message: WSEnvelope<WSJsonObject>
   try {
-    const parsed = JSON.parse(raw) as Partial<WSEnvelope>
-    if (typeof parsed?.id !== 'string' || typeof parsed?.type !== 'string') {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      logger.warn(`入站消息不是 JSON 对象，已丢弃: ${raw.slice(0, 200)}`)
+      return
+    }
+    const envelope = parsed as Partial<WSEnvelope<unknown>>
+    if (
+      typeof envelope.id !== 'string' ||
+      !envelope.id.trim() ||
+      typeof envelope.type !== 'string' ||
+      !envelope.type.trim()
+    ) {
       logger.warn(`入站消息缺少 id/type，已丢弃: ${raw.slice(0, 200)}`)
       return
     }
-    message = { id: parsed.id, type: parsed.type, data: parsed.data ?? {} }
+    const data = envelope.data ?? {}
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      logger.warn(`入站消息 data 不是 JSON 对象，已丢弃: ${raw.slice(0, 200)}`)
+      return
+    }
+    message = {
+      id: envelope.id.trim(),
+      type: envelope.type.trim(),
+      data: data as WSJsonObject,
+    }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.warn(`解析 WebSocket 消息失败: ${errorMsg}`)
@@ -171,13 +200,18 @@ const handleClosed = (event: WSDisconnectEvent): void => {
   }
 
   // 断开事件可能触发生命周期协调器进入关闭流程（state 变为 closed）
-  if ((state.value as WSConnectionState) !== 'closed') {
+  if (
+    (state.value as WSConnectionState) !== 'closed' &&
+    automaticReconnectEnabled &&
+    !connectPromise
+  ) {
     scheduleNextAttempt()
   }
 }
 
 const scheduleNextAttempt = (): void => {
   clearReconnectTimer()
+  if (state.value === 'closed' || !automaticReconnectEnabled) return
 
   if (reconnectAttempts >= RECONNECT_CYCLE_ATTEMPTS) {
     // 一轮重连失败：清零计数并交由生命周期协调器决策（重启后端 / 延迟下一轮）
@@ -201,8 +235,24 @@ const scheduleNextAttempt = (): void => {
   )
   logger.info(`第 ${reconnectAttempts} 次重连尝试，延迟 ${delay}ms`)
   reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = undefined
+    if (!automaticReconnectEnabled || state.value === 'closed') return
     void connect()
   }, delay)
+}
+
+const notifyConnected = (): void => {
+  for (const listener of [...connectedListeners]) {
+    try {
+      void Promise.resolve(listener()).catch(error => {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`连接成功监听器错误: ${errorMsg}`)
+      })
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`连接成功监听器错误: ${errorMsg}`)
+    }
+  }
 }
 
 /**
@@ -223,13 +273,33 @@ export async function connect(): Promise<boolean> {
     return connectPromise
   }
 
+  automaticReconnectEnabled = true
   clearReconnectTimer()
   if (state.value !== 'reconnecting') {
     state.value = 'connecting'
   }
 
   const myGeneration = connectGeneration
-  connectPromise = (async (): Promise<boolean> => {
+  const attemptToken = Symbol('ws-connect-attempt')
+  connectAttemptToken = attemptToken
+  const clearOwnedAttempt = (): void => {
+    if (connectAttemptToken !== attemptToken) return
+    connectAttemptToken = null
+    connectPromise = null
+    // onclose 会在本次单飞行 Promise 尚未清理时进入 handleClosed，
+    // 因此把失败后的续排兜底放在所有权释放之后；已有计时器时不重复安排。
+    if (
+      state.value === 'reconnecting' &&
+      automaticReconnectEnabled &&
+      socket === null &&
+      reconnectTimer === undefined &&
+      myGeneration === connectGeneration
+    ) {
+      scheduleNextAttempt()
+    }
+  }
+
+  const attemptPromise = (async (): Promise<boolean> => {
     try {
       await negotiateWebSocketUrl()
 
@@ -237,35 +307,37 @@ export async function connect(): Promise<boolean> {
       // 不创建新连接，避免复活已终止的连接层
       if (myGeneration !== connectGeneration || state.value === 'closed') {
         logger.info('连接协商完成时连接层已关闭，放弃本次尝试')
-        connectPromise = null
         return false
       }
 
       return await new Promise<boolean>(resolve => {
         let settled = false
+        const settle = (connected: boolean): void => {
+          if (settled) return
+          settled = true
+          resolve(connected)
+        }
         logger.info(`创建 WebSocket 连接: ${websocketUrl}`)
         const ws = new WebSocket(websocketUrl)
         socket = ws
 
         ws.onopen = () => {
-          // 代次失效（onopen 前发生了 shutdown）：关闭这个刚建立的连接，不复活状态
-          if (myGeneration !== connectGeneration) {
+          // 代次失效（onopen 前发生了 shutdown/reconnectNow）：
+          // 关闭这个刚建立的连接，不复活状态。
+          if (myGeneration !== connectGeneration || state.value === 'closed' || socket !== ws) {
             try {
               ws.close(1000, '连接层已关闭')
             } catch {
               // 忽略
             }
+            settle(false)
             return
           }
-          if (socket !== ws) return
           logger.info('WebSocket 连接已建立')
           state.value = 'open'
           reconnectAttempts = 0
-          if (!settled) {
-            settled = true
-            connectPromise = null
-            resolve(true)
-          }
+          settle(true)
+          notifyConnected()
         }
 
         ws.onmessage = event => {
@@ -281,11 +353,7 @@ export async function connect(): Promise<boolean> {
         ws.onclose = event => {
           // 无论是否已被 shutdown 置换，都要 settle 本次连接尝试，
           // 避免等待方（connectWithRetry/重启流程）永久挂起
-          if (!settled) {
-            settled = true
-            connectPromise = null
-            resolve(false)
-          }
+          settle(false)
           if (socket !== ws) return
           socket = null
           logger.info(`WebSocket 连接关闭: code=${event.code}, reason="${event.reason}"`)
@@ -296,16 +364,20 @@ export async function connect(): Promise<boolean> {
       // 协商或构造异常：清空单飞行状态并按失败尝试进入重连，避免连接层永久卡死
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`建立 WebSocket 连接异常: ${errorMsg}`)
-      connectPromise = null
-      if ((state.value as WSConnectionState) !== 'closed') {
+      if (
+        (state.value as WSConnectionState) !== 'closed' &&
+        automaticReconnectEnabled &&
+        myGeneration === connectGeneration
+      ) {
         state.value = 'reconnecting'
         scheduleNextAttempt()
       }
       return false
     }
-  })()
+  })().finally(clearOwnedAttempt)
+  connectPromise = attemptPromise
 
-  return connectPromise
+  return attemptPromise
 }
 
 /**
@@ -315,17 +387,49 @@ export async function connect(): Promise<boolean> {
  */
 export function scheduleReconnect(delayMs: number = RECONNECT_DELAY_MAX): void {
   if (state.value === 'closed') return
+  automaticReconnectEnabled = true
   clearReconnectTimer()
   state.value = 'reconnecting'
   reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = undefined
+    if (!automaticReconnectEnabled || state.value === 'closed') return
     void connect()
   }, delayMs)
 }
 
 /** 停止自动重连（保持当前连接不变） */
 export function stopReconnect(): void {
+  automaticReconnectEnabled = false
   clearReconnectTimer()
   reconnectAttempts = 0
+}
+
+/**
+ * 立即替换当前连接并建立一个新连接。
+ * 用于系统恢复或后端重启完成后的显式恢复；旧连接/旧协商代次不能覆盖新连接状态。
+ */
+export async function reconnectNow(reason: string = '立即重连'): Promise<boolean> {
+  if (state.value === 'closed') return false
+
+  automaticReconnectEnabled = true
+  connectGeneration++
+  clearReconnectTimer()
+  reconnectAttempts = 0
+  connectPromise = null
+  connectAttemptToken = null
+  state.value = 'reconnecting'
+
+  const previousSocket = socket
+  socket = null
+  if (previousSocket && previousSocket.readyState !== WebSocket.CLOSED) {
+    try {
+      previousSocket.close(1000, reason.slice(0, 120))
+    } catch {
+      // 旧连接可能已在关闭中；新连接仍可继续建立。
+    }
+  }
+
+  return connect()
 }
 
 /**
@@ -334,11 +438,13 @@ export function stopReconnect(): void {
  */
 export function shutdown(reason: string = '应用关闭'): void {
   state.value = 'closed'
+  automaticReconnectEnabled = false
   // 递增代次使协商中的在途连接尝试恢复后自行失效
   connectGeneration++
   clearReconnectTimer()
   reconnectAttempts = 0
   connectPromise = null
+  connectAttemptToken = null
   const ws = socket
   socket = null
   if (ws && ws.readyState !== WebSocket.CLOSED) {
@@ -357,14 +463,22 @@ export function shutdown(reason: string = '应用关闭'): void {
  *
  * @returns 是否发送成功；未连接时返回 false
  */
-export function send(id: string, type: string, data?: Record<string, unknown>): boolean {
+export function send<TType extends string>(
+  id: string,
+  type: TType,
+  data?: WSDataForType<TType>
+): boolean {
+  if (!id.trim() || !type.trim()) {
+    logger.warn('WebSocket 消息 id/type 不能为空')
+    return false
+  }
   const ws = socket
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     logger.warn(`WebSocket 未连接，无法发送消息: id=${id}, type=${type}`)
     return false
   }
   try {
-    ws.send(JSON.stringify({ id, type, data: data ?? {} }))
+    ws.send(JSON.stringify({ id: id.trim(), type: type.trim(), data: data ?? {} }))
     return true
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -388,8 +502,8 @@ let requestCounter = 0
 export function request(
   id: string,
   requestType: string,
-  responseTypes: string[],
-  data?: Record<string, unknown>,
+  responseTypes: readonly string[],
+  data?: WSJsonObject,
   timeoutMs: number = 10000
 ): Promise<WSEnvelope> {
   const requestId = `req_${Date.now()}_${++requestCounter}`
@@ -411,7 +525,7 @@ export function request(
     for (const responseType of responseTypes) {
       subscriptionIds.push(
         subscribe({ id, type: responseType }, message => {
-          const responseId = (message.data as { requestId?: string }).requestId
+          const responseId = message.data.requestId
           if (responseId !== requestId) return
           cleanup()
           resolve(message)
@@ -447,6 +561,21 @@ export function onDisconnected(listener: DisconnectListener): () => void {
   }
 }
 
+/**
+ * 注册成功连接监听。每次连接进入 open 时调用一次，可用于读取 HTTP 权威快照。
+ * 返回幂等释放函数；不会重放注册前的连接事件。
+ */
+export function onConnected(listener: ConnectedListener): () => void {
+  connectedListeners.push(listener)
+  let disposed = false
+  return () => {
+    if (disposed) return
+    disposed = true
+    const index = connectedListeners.indexOf(listener)
+    if (index >= 0) connectedListeners.splice(index, 1)
+  }
+}
+
 /** 注册一轮重连失败监听（生命周期协调器决定重启后端或延迟下一轮） */
 export function onReconnectCycleFailed(listener: CycleFailureListener): () => void {
   cycleFailureListeners.push(listener)
@@ -464,6 +593,7 @@ export function connectionInfo(): Record<string, unknown> {
     readyState: socket?.readyState ?? null,
     reconnectAttempts,
     hasReconnectTimer: reconnectTimer !== undefined,
+    automaticReconnectEnabled,
     backendDevMode,
   }
 }

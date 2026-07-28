@@ -470,8 +470,6 @@ import {
   WS_PLUGIN_SNAPSHOT_UPDATED,
   WS_TASK_COMPLETED,
   WS_TASK_NOTICE,
-  type WSTaskCompletedData,
-  type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
@@ -531,9 +529,29 @@ const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
+interface ActiveConfigConnection {
+  subscriptionIds: string[]
+  taskId: string
+  timeoutId?: number
+}
+
 // WebSocket连接管理
-const activeConnections = ref<Map<string, { subscriptionIds: string[]; taskId: string }>>(new Map()) // scriptId -> { subscriptionIds, taskId }
+const activeConnections = ref<Map<string, ActiveConfigConnection>>(new Map())
 let pluginSystemSubscriptionId: string | null = null
+
+const releaseActiveConnection = (scriptId: string): boolean => {
+  const connection = activeConnections.value.get(scriptId)
+  if (!connection) return false
+
+  for (const subscriptionId of connection.subscriptionIds) {
+    unsubscribe(subscriptionId)
+  }
+  if (connection.timeoutId !== undefined) {
+    window.clearTimeout(connection.timeoutId)
+  }
+  activeConnections.value.delete(scriptId)
+  return true
+}
 
 const getMaaFWProjectLabel = (script: Script) => {
   const config = script.config as Partial<MaaFWScriptConfig> | undefined
@@ -599,6 +617,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (pluginSystemSubscriptionId) unsubscribe(pluginSystemSubscriptionId)
+  for (const scriptId of [...activeConnections.value.keys()]) {
+    releaseActiveConnection(scriptId)
+  }
 })
 
 const loadScripts = async () => {
@@ -961,7 +982,7 @@ const handleStartSRCConfig = async (script: Script) => {
       const subscriptionIds = [
         // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
-          const data = wsMessage.data as unknown as WSTaskNoticeData
+          const data = wsMessage.data
           if (data.level === 'error') {
             const errorMsg = data.message
             logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
@@ -970,7 +991,7 @@ const handleStartSRCConfig = async (script: Script) => {
         }),
         // 处理任务结束消息
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
-          const data = wsMessage.data as unknown as WSTaskCompletedData
+          const data = wsMessage.data
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
           const result = data.result
@@ -978,41 +999,31 @@ const handleStartSRCConfig = async (script: Script) => {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接
-          for (const subscriptionId of subscriptionIds) {
-            unsubscribe(subscriptionId)
-          }
-          activeConnections.value.delete(script.id)
+          releaseActiveConnection(script.id)
           showSRCConfigMask.value = false
           currentConfigScript.value = null
         }),
       ]
 
       // 记录连接和subscriptionIds
-      activeConnections.value.set(script.id, {
+      const connection: ActiveConfigConnection = {
         subscriptionIds,
         taskId: response.taskId,
-      })
+      }
+      activeConnections.value.set(script.id, connection)
       message.success(`已启动 ${script.name} 的SRC配置`)
 
       // 设置自动断开连接的定时器（30分钟后）
-      setTimeout(
+      connection.timeoutId = window.setTimeout(
         () => {
-          if (activeConnections.value.has(script.id)) {
-            const connection = activeConnections.value.get(script.id)
-            if (connection) {
-              for (const subscriptionId of connection.subscriptionIds) {
-                unsubscribe(subscriptionId)
-              }
-            }
-            activeConnections.value.delete(script.id)
-            // 超时时隐藏遮罩
-            showSRCConfigMask.value = false
-            currentConfigScript.value = null
-            message.info(`${script.name} 配置会话已超时断开`)
-          }
+          if (!releaseActiveConnection(script.id)) return
+          // 超时时隐藏遮罩
+          showSRCConfigMask.value = false
+          currentConfigScript.value = null
+          message.info(`${script.name} 配置会话已超时断开`)
         },
         30 * 60 * 1000
-      ) // 30分钟
+      )
     } else {
       message.error(response.message || '启动SRC配置失败')
     }
@@ -1037,11 +1048,7 @@ const handleSaveSRCConfig = async (script: Script) => {
     })
 
     if (response.code === 200) {
-      // 取消订阅
-      for (const subscriptionId of connection.subscriptionIds) {
-        unsubscribe(subscriptionId)
-      }
-      activeConnections.value.delete(script.id)
+      releaseActiveConnection(script.id)
 
       // 隐藏遮罩
       showSRCConfigMask.value = false
@@ -1080,7 +1087,7 @@ const handleStartMaaEndConfig = async (script: Script) => {
 
       const subscriptionIds = [
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
-          const data = wsMessage.data as unknown as WSTaskNoticeData
+          const data = wsMessage.data
           if (data.level === 'error') {
             const errorMsg = data.message
             logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
@@ -1088,35 +1095,25 @@ const handleStartMaaEndConfig = async (script: Script) => {
           }
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-          for (const subscriptionId of subscriptionIds) {
-            unsubscribe(subscriptionId)
-          }
-          activeConnections.value.delete(script.id)
+          releaseActiveConnection(script.id)
           showMaaEndConfigMask.value = false
           currentConfigScript.value = null
         }),
       ]
 
-      activeConnections.value.set(script.id, {
+      const connection: ActiveConfigConnection = {
         subscriptionIds,
         taskId: response.taskId,
-      })
+      }
+      activeConnections.value.set(script.id, connection)
       message.success(`已启动 ${script.name} 的 MaaEnd 配置`)
 
-      setTimeout(
+      connection.timeoutId = window.setTimeout(
         () => {
-          if (activeConnections.value.has(script.id)) {
-            const connection = activeConnections.value.get(script.id)
-            if (connection) {
-              for (const subscriptionId of connection.subscriptionIds) {
-                unsubscribe(subscriptionId)
-              }
-            }
-            activeConnections.value.delete(script.id)
-            showMaaEndConfigMask.value = false
-            currentConfigScript.value = null
-            message.info(`${script.name} 配置会话已超时断开`)
-          }
+          if (!releaseActiveConnection(script.id)) return
+          showMaaEndConfigMask.value = false
+          currentConfigScript.value = null
+          message.info(`${script.name} 配置会话已超时断开`)
         },
         30 * 60 * 1000
       )
@@ -1143,10 +1140,7 @@ const handleSaveMaaEndConfig = async (script: Script) => {
     })
 
     if (response.code === 200) {
-      for (const subscriptionId of connection.subscriptionIds) {
-        unsubscribe(subscriptionId)
-      }
-      activeConnections.value.delete(script.id)
+      releaseActiveConnection(script.id)
       showMaaEndConfigMask.value = false
       currentConfigScript.value = null
       message.success(`${script.name} 的配置已保存`)

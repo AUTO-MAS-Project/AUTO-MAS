@@ -13,6 +13,8 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
+  onSystemResume?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: () => void) => () => void
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
@@ -225,8 +227,8 @@ export interface PluginPageContext {
 export interface PluginAPI {
   call: (path: string, payload?: unknown) => Promise<unknown>
   subscribe: (
-    topic: string,
-    handler: (message: { id?: string; type: string; data?: unknown }) => void
+    key: { id: string; type: string },
+    handler: (message: { id: string; type: string; data: unknown }) => void
   ) => () => void
   getPageContext: () => PluginPageContext | null
 }

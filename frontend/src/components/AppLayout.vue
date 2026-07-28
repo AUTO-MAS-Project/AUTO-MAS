@@ -89,12 +89,16 @@ import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WSEnvelope } from '../composables/useWebSocket.ts'
 import { useAppInitialization } from '../composables/useAppInitialization.ts'
+import { connectionState, onConnected } from '../services/websocket/connection.ts'
+import { AppLayoutSnapshotCoordinator } from './appLayoutSnapshotCoordinator'
 import {
   WS_ID_PLUGIN_SYSTEM,
   WS_PLUGIN_HMR,
   WS_PLUGIN_SNAPSHOT_UPDATED,
+  type WSPluginHmrData,
+  type WSPluginSnapshotUpdatedData,
 } from '../services/websocket/types.ts'
-import { OpenAPI } from '@/api'
+import { Service, type PluginsGetOut } from '@/api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
   normalizePageDeclarations,
@@ -122,6 +126,7 @@ const { isBootstrapping } = useAppInitialization()
 
 let pluginSystemSubscriptionIds: string[] = []
 let stopBootstrapWatch: WatchStopHandle | undefined
+let disposePluginSnapshotRefresh: (() => void) | null = null
 let hmrOverlayTimer: number | undefined
 let backgroundServiceSignature = ''
 let hasBackgroundServiceSnapshot = false
@@ -143,11 +148,14 @@ onMounted(() => {
     ),
     subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_HMR }, handlePluginHmrMessage),
   ]
+  disposePluginSnapshotRefresh = onConnected(() => {
+    if (!isBootstrapping.value) void pluginSnapshotCoordinator.refreshFresh()
+  })
   syncDeclaredPageRoutes(router, declaredPages.value)
 
   const loadBackendState = () => {
     void loadBackground()
-    void fetchInitialPluginSnapshot()
+    if (connectionState().value === 'open') void pluginSnapshotCoordinator.refreshFresh()
   }
 
   if (isBootstrapping.value) {
@@ -169,6 +177,9 @@ onUnmounted(() => {
     unsubscribe(subscriptionId)
   }
   pluginSystemSubscriptionIds = []
+  disposePluginSnapshotRefresh?.()
+  disposePluginSnapshotRefresh = null
+  pluginSnapshotCoordinator.invalidate()
   if (hmrOverlayTimer !== undefined) {
     window.clearTimeout(hmrOverlayTimer)
     hmrOverlayTimer = undefined
@@ -187,60 +198,13 @@ const isDevelopment = computed(() => {
   )
 })
 
-interface PluginSystemHmrMessage {
-  plugin?: string | null
-  changed_files?: string[]
-  action?: string
-  status?: string
-}
-
-interface PluginSystemSnapshotMessage {
-  code?: number
-  status?: string
-  message?: string
-  pages?: PageDeclaration[]
-  instances?: Array<{
-    id?: string
-    plugin?: string
-    enabled?: boolean
-    config?: Record<string, unknown>
-  }>
-  plugin_services?: Record<string, { provides?: string[] }>
-}
-
 const applyPageDeclarations = (rawPages: unknown) => {
   const pages = normalizePageDeclarations(rawPages)
   declaredPages.value = sortPageDeclarations(pages)
   syncDeclaredPageRoutes(router, declaredPages.value)
 }
 
-const toBackendUrl = (path: string) => {
-  const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-const fetchInitialPluginSnapshot = async () => {
-  try {
-    const response = await fetch(toBackendUrl('/api/plugins/get'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    })
-    const payload = (await response.json()) as PluginSystemSnapshotMessage
-    if (!response.ok || (payload.code !== undefined && payload.code !== 200)) {
-      throw new Error(payload.message || `HTTP ${response.status}`)
-    }
-    if (Array.isArray(payload.pages)) {
-      applyPageDeclarations(payload.pages)
-      refreshBackgroundFromSnapshotIfNeeded(payload)
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    logger.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
-  }
-}
-
-const getBackgroundProviderPlugins = (payload: PluginSystemSnapshotMessage) => {
+const getBackgroundProviderPlugins = (payload: PluginsGetOut) => {
   const services = payload.plugin_services || {}
   return new Set(
     Object.entries(services)
@@ -252,7 +216,7 @@ const getBackgroundProviderPlugins = (payload: PluginSystemSnapshotMessage) => {
   )
 }
 
-const buildBackgroundServiceSignature = (payload: PluginSystemSnapshotMessage) => {
+const buildBackgroundServiceSignature = (payload: PluginsGetOut) => {
   const providers = getBackgroundProviderPlugins(payload)
   if (providers.size === 0) {
     return ''
@@ -272,7 +236,7 @@ const buildBackgroundServiceSignature = (payload: PluginSystemSnapshotMessage) =
   )
 }
 
-const refreshBackgroundFromSnapshotIfNeeded = (payload: PluginSystemSnapshotMessage) => {
+const refreshBackgroundFromSnapshotIfNeeded = (payload: PluginsGetOut) => {
   const nextSignature = buildBackgroundServiceSignature(payload)
   if (!hasBackgroundServiceSnapshot) {
     hasBackgroundServiceSnapshot = true
@@ -287,6 +251,25 @@ const refreshBackgroundFromSnapshotIfNeeded = (payload: PluginSystemSnapshotMess
   backgroundServiceSignature = nextSignature
   void loadBackground()
 }
+
+const pluginSnapshotCoordinator = new AppLayoutSnapshotCoordinator<PluginsGetOut>({
+  load: async () => {
+    const payload = await Service.getPluginsApiPluginsGetPost()
+    if (payload.code !== undefined && payload.code !== 200) {
+      throw new Error(payload.message || `插件快照返回错误: ${payload.code}`)
+    }
+    return payload
+  },
+  apply: payload => {
+    if (!Array.isArray(payload.pages)) return
+    applyPageDeclarations(payload.pages)
+    refreshBackgroundFromSnapshotIfNeeded(payload)
+  },
+  reportError: error => {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
+  },
+})
 
 const showHmrOverlay = (text: string, autoHideMs?: number) => {
   hmrOverlayText.value = text
@@ -326,24 +309,14 @@ const refreshPluginFrontend = () => {
   }, 80)
 }
 
-const handlePluginSnapshotMessage = (message: WSEnvelope) => {
-  const payload = message.data as PluginSystemSnapshotMessage | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
-
-  if (Array.isArray(payload.pages)) {
-    applyPageDeclarations(payload.pages)
-    refreshBackgroundFromSnapshotIfNeeded(payload)
-  }
+const handlePluginSnapshotMessage = (message: WSEnvelope<WSPluginSnapshotUpdatedData>) => {
+  pluginSnapshotCoordinator.applyMutation(message.data)
 }
 
-const handlePluginHmrMessage = (message: WSEnvelope) => {
-  const hmrPayload = message.data as PluginSystemHmrMessage | undefined
-  if (!hmrPayload || typeof hmrPayload !== 'object') {
-    return
-  }
-
+const handlePluginHmrMessage = (message: WSEnvelope<WSPluginHmrData>) => {
+  // HMR 是本地插件状态变更；即使完整 snapshot.updated 尚未到达，也不能再应用旧 HTTP。
+  pluginSnapshotCoordinator.invalidate()
+  const hmrPayload = message.data
   if (hmrPayload.status === 'running') {
     showHmrOverlay('正在重载插件界面')
   } else if (hmrPayload.status === 'success' || hmrPayload.status === 'error') {

@@ -13,6 +13,7 @@ import { MirrorService } from './mirrorService'
 
 import { getLogger } from './logger'
 const logger = getLogger('后端服务')
+const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 
 // ==================== 类型定义 ====================
 
@@ -36,6 +37,11 @@ export interface BackendStartResult {
   logs?: string
 }
 
+export interface BackendStopResult {
+  success: boolean
+  error?: string
+}
+
 export type BackendStatusCallback = (status: BackendStatus) => void
 
 // ==================== 后端服务管理类 ====================
@@ -49,9 +55,16 @@ export class BackendService {
   private startupStdout = ''
   private startupStderr = ''
   private isCapturingStartupLogs = false
+  // 进程变更统一进入同一串行队列；同类重复调用共享在途 Promise。
+  // restart 在一个队列单元内直接调用内部 stop/start，避免公共方法二次入队造成自锁。
+  private operationTail: Promise<void> = Promise.resolve()
+  private startFlight: Promise<BackendStartResult> | null = null
+  private stopFlight: Promise<BackendStopResult> | null = null
+  private restartFlight: Promise<BackendStartResult> | null = null
+  private forceStopFlight: Promise<BackendStopResult> | null = null
+  private forceStopRequested = false
+  private lastKnownBackendDevMode: boolean | null = null
 
-  // ---- 预热相关 ----
-  private _isPrewarming = false
   private readonly startupHealthPath = '/api/core/health'
 
   constructor(appRoot: string, mirrorService: MirrorService) {
@@ -59,12 +72,36 @@ export class BackendService {
     this.mirrorService = mirrorService
   }
 
+  private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operationTail.then(operation, operation)
+    this.operationTail = result.then(
+      () => undefined,
+      () => undefined
+    )
+    return result
+  }
+
   /**
    * 启动后端服务
    * 注意：只负责启动后端进程，不处理WebSocket连接
    * WebSocket连接应该由前端的useWebSocket模块处理
    */
-  async startBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+  startBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+    if (this.startFlight) return this.startFlight
+    const operation = this.enqueueOperation(() => this.startBackendInternal(options))
+    this.startFlight = operation
+    void operation.then(
+      () => {
+        if (this.startFlight === operation) this.startFlight = null
+      },
+      () => {
+        if (this.startFlight === operation) this.startFlight = null
+      }
+    )
+    return operation
+  }
+
+  private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
     // 检查是否已经在运行
     if (this.isTrackedProcessRunning()) {
       logger.info('后端服务已在运行，等待健康检查')
@@ -83,6 +120,9 @@ export class BackendService {
       const shouldStartNewBackend = await this.prepareUntrackedBackendForStart()
       if (!shouldStartNewBackend) {
         return { success: true }
+      }
+      if (this.forceStopRequested) {
+        throw new Error('强制停止已请求，取消启动后端')
       }
 
       const venvPythonExe = path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
@@ -145,12 +185,33 @@ export class BackendService {
       const startupLogs = this.formatStartupLogs()
       logger.error(`后端服务启动失败: ${errorMsg}`)
 
-      // 清理进程
-      if (this.backendProcess) {
-        this.backendProcess.kill()
+      // force-stop 已在同一队列中等待时，由它唯一负责 scoped taskkill；
+      // start 此处不能先清理一次，否则会对同一组 PID 重复执行强杀。
+      if (this.forceStopRequested) {
+        this.resetStartupLogs()
+        return { success: false, error: errorMsg, logs: startupLogs }
       }
 
-      this.resetTrackedProcess()
+      // 启动失败后必须等待 scoped taskkill 确认退出；仅发送 kill 信号就清引用，
+      // 会让旧 child 的延迟 exit 事件干扰下一次 start。
+      const failedProcess = this.backendProcess
+      if (failedProcess) {
+        try {
+          await killAllRelatedProcesses(this.appRoot)
+          if (this.backendProcess === failedProcess) {
+            this.resetTrackedProcess()
+          } else {
+            this.resetStartupLogs()
+          }
+        } catch (cleanupError) {
+          const cleanupMessage =
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          logger.error(`启动失败后的后端清理未确认完成: ${cleanupMessage}`)
+          this.resetStartupLogs()
+        }
+      } else {
+        this.resetStartupLogs()
+      }
 
       return { success: false, error: errorMsg, logs: startupLogs }
     }
@@ -169,6 +230,9 @@ export class BackendService {
       }
 
       const meta = (await metaResponse.json()) as { devMode?: boolean }
+      if (typeof meta.devMode === 'boolean') {
+        this.lastKnownBackendDevMode = meta.devMode
+      }
       if (meta.devMode) {
         logger.info('检测到开发模式旧后端，复用现有后端进程')
         return false
@@ -201,6 +265,29 @@ export class BackendService {
     return true
   }
 
+  /**
+   * 读取后端权威开发模式；暂时不可达时回退最近一次成功结果。
+   */
+  async getBackendDevMode(): Promise<boolean | null> {
+    const apiEndpoint = this.mirrorService.getApiEndpoint('local')
+    const metaUrl = `${apiEndpoint}/api/core/ws_meta`
+
+    try {
+      const response = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
+      if (!response.ok) return this.lastKnownBackendDevMode
+
+      const meta = (await response.json()) as { devMode?: boolean }
+      if (typeof meta.devMode !== 'boolean') return this.lastKnownBackendDevMode
+
+      this.lastKnownBackendDevMode = meta.devMode
+      return meta.devMode
+    } catch (error) {
+      const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      logger.debug(`读取后端开发模式失败，使用最近结果: ${errorMsg}`)
+      return this.lastKnownBackendDevMode
+    }
+  }
+
   private async fetchWithTimeout(
     url: string,
     init: RequestInit,
@@ -221,15 +308,16 @@ export class BackendService {
 
   private async waitForBackendUnavailable(metaUrl: string, timeoutMs: number): Promise<boolean> {
     const startedAt = Date.now()
+    let unavailableCount = 0
 
     while (Date.now() - startedAt < timeoutMs) {
       try {
-        const response = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
-        if (!response.ok) {
-          return true
-        }
+        await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
+        // 任意 HTTP 响应都证明监听端仍可达，包括启动或关闭过程中的非 2xx。
+        unavailableCount = 0
       } catch {
-        return true
+        unavailableCount += 1
+        if (unavailableCount >= BACKEND_UNAVAILABLE_CONFIRMATIONS) return true
       }
       await new Promise(resolve => setTimeout(resolve, 500))
     }
@@ -240,9 +328,25 @@ export class BackendService {
    * 停止后端服务
    * 通过调用 /api/core/close 接口优雅关闭后端
    */
-  async stopBackend(): Promise<{ success: boolean; error?: string }> {
+  stopBackend(): Promise<BackendStopResult> {
+    if (this.stopFlight) return this.stopFlight
+    const operation = this.enqueueOperation(() => this.stopBackendInternal())
+    this.stopFlight = operation
+    void operation.then(
+      () => {
+        if (this.stopFlight === operation) this.stopFlight = null
+      },
+      () => {
+        if (this.stopFlight === operation) this.stopFlight = null
+      }
+    )
+    return operation
+  }
+
+  private async stopBackendInternal(): Promise<BackendStopResult> {
     const pid = this.backendProcess?.pid
     const hasTrackedProcess = this.isTrackedProcessRunning()
+    let metaUrl: string | null = null
 
     if (hasTrackedProcess) {
       logger.info(`停止后端服务，PID: ${pid}`)
@@ -255,21 +359,21 @@ export class BackendService {
     try {
       // 从 MirrorService 获取 API 端点
       const apiEndpoint = this.mirrorService.getApiEndpoint('local')
+      metaUrl = `${apiEndpoint}/api/core/ws_meta`
       const apiUrl = `${apiEndpoint}/api/core/close`
 
       logger.info(`尝试通过 ${apiUrl} 接口关闭后端`)
-      const controller = new AbortController()
-      const apiTimeout = setTimeout(() => controller.abort(), 5000) // 增加到5秒
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await this.fetchWithTimeout(
+        apiUrl,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          redirect: 'follow',
         },
-        signal: controller.signal,
-        redirect: 'follow', // 允许重定向
-      })
-      clearTimeout(apiTimeout)
+        5000
+      )
 
       if (response.ok) {
         logger.info('API 关闭请求发送成功，等待后端退出')
@@ -277,59 +381,91 @@ export class BackendService {
       } else {
         logger.warn(`API 关闭请求返回错误: ${response.status}`)
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       // API 调用失败（可能后端已经崩溃或网络不可达）
       const errorMsg = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
       logger.warn(`API 关闭请求失败: ${errorMsg}`)
 
       // 检查具体错误类型
-      if (e?.cause?.code === 'ECONNREFUSED') {
+      const cause =
+        e instanceof Error
+          ? (e as Error & { cause?: { code?: string; message?: string } }).cause
+          : undefined
+      if (cause?.code === 'ECONNREFUSED') {
         logger.warn('连接被拒绝，后端可能未运行或已关闭')
       } else if (e instanceof Error && e.name === 'AbortError') {
         logger.warn('API 请求超时，后端可能无响应')
-      } else if (e?.cause) {
-        logger.warn(`底层错误: ${e.cause.code || e.cause.message || e.cause}`)
+      } else if (cause) {
+        logger.warn(`底层错误: ${cause.code || cause.message || String(cause)}`)
       }
     }
 
     // 如果没有追踪到进程
     if (!hasTrackedProcess) {
-      if (apiSuccess) {
-        // API 成功，等待一段时间让后端退出
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        logger.info('后端服务应该已经关闭')
+      if (apiSuccess && metaUrl) {
+        const closed = await this.waitForBackendUnavailable(metaUrl, 5000)
+        if (closed) {
+          logger.info('已确认未追踪后端退出')
+          return { success: true }
+        }
+        logger.warn('API 已响应，但未追踪后端仍可访问，转入强制清理')
       } else {
-        // API 失败，尝试强制清理
-        logger.info('API 调用失败，尝试强制清理相关进程')
-        await killAllRelatedProcesses()
+        logger.info('API 调用失败，转入强制清理相关进程')
       }
-      return { success: true }
+      try {
+        await killAllRelatedProcesses(this.appRoot)
+        return { success: true }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        return { success: false, error: errorMsg }
+      }
     }
 
     // 第二步：等待进程自行退出，或超时后强制结束
+    const trackedProcess = this.backendProcess
     return new Promise(resolve => {
+      let settled = false
+      let timeout: NodeJS.Timeout | null = null
+      const finish = (result: BackendStopResult): void => {
+        if (settled) return
+        settled = true
+        if (timeout) clearTimeout(timeout)
+        resolve(result)
+      }
+
       // 设置超时强制结束（5秒，给后端足够时间清理）
-      const timeout = setTimeout(async () => {
-        logger.warn('等待后端退出超时，强制清理所有相关进程')
-        await killAllRelatedProcesses()
-        this.backendProcess = null
-        this.startTime = null
-        resolve({ success: true })
-      }, 2000)
+      timeout = setTimeout(() => {
+        void (async () => {
+          logger.warn('等待后端退出超时，强制清理所有相关进程')
+          try {
+            await killAllRelatedProcesses(this.appRoot)
+            if (this.backendProcess === trackedProcess) {
+              this.backendProcess = null
+              this.startTime = null
+              this.notifyStatusChange()
+            }
+            finish({ success: true })
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.error(`等待退出超时后的强制清理失败: ${errorMsg}`)
+            finish({ success: false, error: errorMsg })
+          }
+        })()
+      }, 5000)
 
       // 监听进程退出
-      if (this.backendProcess) {
-        this.backendProcess.once('exit', (code, signal) => {
-          clearTimeout(timeout)
+      if (trackedProcess) {
+        trackedProcess.once('exit', (code, signal) => {
           logger.info(`后端服务已退出，code: ${code}, signal: ${signal}`)
-          this.backendProcess = null
-          this.startTime = null
-          this.notifyStatusChange()
-          resolve({ success: true })
+          if (this.backendProcess === trackedProcess) {
+            this.backendProcess = null
+            this.startTime = null
+            this.notifyStatusChange()
+          }
+          finish({ success: true })
         })
       } else {
-        clearTimeout(timeout)
-        resolve({ success: true })
+        finish({ success: true })
       }
     })
   }
@@ -337,120 +473,83 @@ export class BackendService {
   /**
    * 重启后端服务
    */
-  async restartBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
-    logger.info('重启后端服务')
-
-    // 先停止
-    const stopResult = await this.stopBackend()
-    if (!stopResult.success) {
-      return stopResult
-    }
-
-    // 等待一小段时间
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    // 再启动
-    return await this.startBackend(options)
+  restartBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+    if (this.restartFlight) return this.restartFlight
+    const operation = this.enqueueOperation(async () => {
+      if (this.forceStopRequested) {
+        return { success: false, error: '强制停止已请求，取消后端重启' }
+      }
+      logger.info('重启后端服务')
+      const stopResult = await this.stopBackendInternal()
+      if (!stopResult.success) return stopResult
+      if (this.forceStopRequested) {
+        return { success: false, error: '强制停止已请求，取消后端重启' }
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      if (this.forceStopRequested) {
+        return { success: false, error: '强制停止已请求，取消后端重启' }
+      }
+      return this.startBackendInternal(options)
+    })
+    this.restartFlight = operation
+    void operation.then(
+      () => {
+        if (this.restartFlight === operation) this.restartFlight = null
+      },
+      () => {
+        if (this.restartFlight === operation) this.restartFlight = null
+      }
+    )
+    return operation
   }
 
   /**
-   * 预热后端：spawn 进程但不等待就绪，让 Python 与前端渲染并行启动。
-   * 后续 startBackend() 调用会识别预热进程并等待其就绪。
+   * 强制结束相关进程。与 start/stop/restart 共用串行队列，保证 taskkill
+   * 永远不会和后端重启并发执行。
+   */
+  forceStopBackend(): Promise<BackendStopResult> {
+    this.forceStopRequested = true
+    if (this.forceStopFlight) return this.forceStopFlight
+    const operation = this.enqueueOperation(async () => {
+      logger.warn('强制结束后端相关进程')
+      try {
+        await killAllRelatedProcesses(this.appRoot)
+        this.backendProcess = null
+        this.startTime = null
+        this.notifyStatusChange()
+        return { success: true }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`强制结束后端相关进程失败: ${errorMsg}`)
+        return { success: false, error: errorMsg }
+      }
+    })
+    this.forceStopFlight = operation
+    void operation.then(
+      () => {
+        if (this.forceStopFlight === operation) {
+          this.forceStopFlight = null
+          this.forceStopRequested = false
+        }
+      },
+      () => {
+        if (this.forceStopFlight === operation) {
+          this.forceStopFlight = null
+          this.forceStopRequested = false
+        }
+      }
+    )
+    return operation
+  }
+
+  /**
+   * 尽早把启动提交给统一串行队列。调用方不会等待本 Promise，后续正式启动
+   * 会复用同一个 startFlight，避免预热与 stop/restart/force-stop 并发修改进程。
    */
   async prewarmBackend(options?: BackendStartOptions): Promise<void> {
-    if (this.isTrackedProcessRunning()) {
-      logger.info('预热跳过：后端进程已存在')
-      return
-    }
-    if (this._isPrewarming) {
-      logger.info('预热跳过：已在预热中')
-      return
-    }
-
-    this._isPrewarming = true
-    this.resetStartupLogs()
-
-    try {
-      const shouldStartNewBackend = await this.prepareUntrackedBackendForStart()
-      if (!shouldStartNewBackend) {
-        this._isPrewarming = false
-        return
-      }
-
-      const venvPythonExe = path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
-      const pythonExe = options?.pythonPath || venvPythonExe
-      const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
-      const cwd = options?.cwd || this.appRoot
-      const uvDir = path.join(this.appRoot, 'environment', 'python', 'Scripts')
-      const processPath = process.env.PATH || process.env.Path || ''
-      const processPathExt = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD'
-
-      if (!fs.existsSync(pythonExe)) {
-        throw new Error(`预热失败：Python 不存在: ${pythonExe}`)
-      }
-      if (!fs.existsSync(mainPy)) {
-        throw new Error(`预热失败：main.py 不存在: ${mainPy}`)
-      }
-
-      logger.info(`预热后端: Python=${pythonExe}, Main=${mainPy}, CWD=${cwd}`)
-
-      this.isCapturingStartupLogs = true
-      this.startTime = new Date()
-
-      this.backendProcess = spawn(pythonExe, [mainPy], {
-        cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          PATH: `${uvDir}${path.delimiter}${processPath}`,
-          Path: `${uvDir}${path.delimiter}${processPath}`,
-          PATHEXT: processPathExt,
-          PYTHONIOENCODING: 'utf-8',
-          AUTO_MAS_UV_EXE: path.join(uvDir, 'uv.exe'),
-          AUTO_MAS_ENABLE_MCP: '0',
-        },
-      })
-
-      this.backendProcess.stdout?.setEncoding('utf8')
-      this.backendProcess.stderr?.setEncoding('utf8')
-      this.backendProcess.stdout?.on('data', (data: string) => {
-        this.captureStartupOutput('stdout', data)
-      })
-      this.backendProcess.stderr?.on('data', (data: string) => {
-        this.captureStartupOutput('stderr', data)
-      })
-
-      this.backendProcess.once('exit', (code, signal) => {
-        logger.info(`预热后端进程退出，code: ${code}, signal: ${signal}`)
-        this.resetTrackedProcess()
-      })
-
-      this.backendProcess.once('error', error => {
-        logger.error(`预热后端进程错误: ${error}`)
-        this.resetTrackedProcess()
-      })
-
-      this.notifyStatusChange()
-      void this.waitUntilReady(options?.timeout || 60000)
-        .then(() => {
-          logger.info('预热后端健康检查通过')
-          this._isPrewarming = false
-          this.resetStartupLogs()
-          this.notifyStatusChange()
-        })
-        .catch(error => {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.error(`预热后端健康检查失败: ${errorMsg}`)
-          if (this.backendProcess) {
-            this.backendProcess.kill()
-          }
-          this.resetTrackedProcess()
-        })
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`预热后端失败: ${errorMsg}`)
-      this.resetTrackedProcess()
-    }
+    logger.info('预热后端：提前提交启动任务')
+    const result = await this.startBackend(options)
+    if (!result.success) throw new Error(result.error || '后端预热失败')
   }
 
   async waitUntilReady(timeoutMs: number = 60000): Promise<void> {
@@ -458,6 +557,9 @@ export class BackendService {
     const startedAt = Date.now()
 
     while (Date.now() - startedAt < timeoutMs) {
+      if (this.forceStopRequested) {
+        throw new Error('强制停止已请求，取消等待后端启动')
+      }
       if (this.backendProcess && !this.isTrackedProcessRunning()) {
         throw new Error('后端进程已退出')
       }
@@ -474,6 +576,9 @@ export class BackendService {
         // 后端尚未监听，继续等待。
       }
 
+      if (this.forceStopRequested) {
+        throw new Error('强制停止已请求，取消等待后端启动')
+      }
       await new Promise(resolve => setTimeout(resolve, 100))
     }
 
@@ -505,28 +610,31 @@ export class BackendService {
    */
   private setupProcessListeners(): void {
     if (!this.backendProcess) return
+    const process = this.backendProcess
 
-    this.backendProcess.stdout?.setEncoding('utf8')
-    this.backendProcess.stderr?.setEncoding('utf8')
+    process.stdout?.setEncoding('utf8')
+    process.stderr?.setEncoding('utf8')
 
-    this.backendProcess.stdout?.on('data', data => {
+    process.stdout?.on('data', data => {
       this.captureStartupOutput('stdout', data)
     })
 
-    this.backendProcess.stderr?.on('data', data => {
+    process.stderr?.on('data', data => {
       this.captureStartupOutput('stderr', data)
     })
 
-    this.backendProcess.once('exit', (code, signal) => {
+    process.once('exit', (code, signal) => {
       logger.info(`后端进程退出，code: ${code}, signal: ${signal}`)
-      this.backendProcess = null
-      this.startTime = null
-      this.notifyStatusChange()
+      if (this.backendProcess === process) {
+        this.backendProcess = null
+        this.startTime = null
+        this.notifyStatusChange()
+      }
     })
 
-    this.backendProcess.once('error', error => {
+    process.once('error', error => {
       logger.error(`后端进程错误: ${error}`)
-      this.resetTrackedProcess()
+      if (this.backendProcess === process) this.notifyStatusChange()
     })
   }
 
@@ -541,7 +649,6 @@ export class BackendService {
   private resetTrackedProcess(): void {
     this.backendProcess = null
     this.startTime = null
-    this._isPrewarming = false
     this.resetStartupLogs()
     this.notifyStatusChange()
   }
