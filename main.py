@@ -257,7 +257,9 @@ def main():
             from app.core.task_manager import TaskManager
             from app.core.timer import MainTimer
             from app.core.ws import Dispatcher, MainConnection
-            from app.services import Matomo, System
+            from app.plugins.realtime import shutdown_plugin_realtime_tasks
+            from app.runtime_tasks import RuntimeTasks
+            from app.services import Matomo, System, Updater
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -266,6 +268,7 @@ def main():
                     await background_task
 
             # 停止 WS 分发与连接后台任务，避免插件 teardown 期间仍处理入站消息
+            await MainConnection.begin_shutdown()
             await Dispatcher.shutdown()
             await MainConnection.cancel_hook_tasks()
 
@@ -276,9 +279,15 @@ def main():
             if hmr_service is not None:
                 await hmr_service.stop()
 
-            await TaskManager.stop_task("ALL")
-            await PluginManager.stop()
             await MainTimer.stop()
+            await TaskManager.stop_task("ALL")
+            # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
+            await Updater.cancel_download(notify=False)
+            await RuntimeTasks.shutdown()
+            await shutdown_plugin_realtime_tasks()
+            await PluginManager.stop()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 

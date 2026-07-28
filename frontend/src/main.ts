@@ -13,6 +13,8 @@ import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 import { installPluginAPI } from '@/plugin/pluginAPI'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { prefetchInitializationDecision } from '@/utils/initializationDecision'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
+import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
 void prefetchInitializationDecision()
 
@@ -37,6 +39,8 @@ if (
 
 dayjs.locale('zh-cn')
 installPluginAPI()
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 if (window.electronAPI?.getApiEndpoint) {
   window.electronAPI

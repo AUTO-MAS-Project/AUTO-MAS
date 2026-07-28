@@ -419,12 +419,16 @@ import draggable from 'vuedraggable'
 import { Input, message, Modal } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
 import SchemaForm from '@/components/SchemaForm.vue'
+import { AppLayoutSnapshotCoordinator } from '@/components/appLayoutSnapshotCoordinator'
 import { useWebSocket, type WSEnvelope } from '@/composables/useWebSocket'
+import { onConnected } from '@/services/websocket/connection'
 import {
   WS_ID_PLUGIN_SYSTEM,
   WS_PLUGIN_HMR,
   WS_PLUGIN_RUNTIME_UPDATED,
   WS_PLUGIN_SNAPSHOT_UPDATED,
+  type WSPluginHmrData,
+  type WSPluginRuntimeUpdatedData,
 } from '@/services/websocket/types'
 
 defineOptions({
@@ -542,22 +546,27 @@ interface PluginRuntimeState {
   last_error_at?: string | null
 }
 
-interface PluginSystemRuntimeMessage {
-  event: string
-  record: PluginRuntimeState
-}
-
 interface PluginSystemSnapshotMessage extends PluginsGetResponse {
   reason?: string
 }
 
-interface PluginSystemHmrMessage {
-  event: string
-  plugin?: string | null
-  changed_files?: string[]
-  action: string
-  status: 'running' | 'success' | 'error' | string
-  message?: string
+const isPluginSystemSnapshotMessage = (value: unknown): value is PluginSystemSnapshotMessage => {
+  if (typeof value !== 'object' || value === null) return false
+  const payload = value as Record<string, unknown>
+  return (
+    typeof payload.code === 'number' &&
+    typeof payload.status === 'string' &&
+    typeof payload.message === 'string' &&
+    typeof payload.version === 'number' &&
+    Array.isArray(payload.discovered_plugins) &&
+    typeof payload.schemas === 'object' &&
+    payload.schemas !== null &&
+    typeof payload.schema_errors === 'object' &&
+    payload.schema_errors !== null &&
+    Array.isArray(payload.instances) &&
+    typeof payload.runtime_states === 'object' &&
+    payload.runtime_states !== null
+  )
 }
 
 interface ListRow {
@@ -601,6 +610,7 @@ interface PluginListLayoutState {
 
 const logger = window.electronAPI.getLogger('插件管理')
 const { subscribe, unsubscribe } = useWebSocket()
+let disposePluginSnapshotRefresh: (() => void) | null = null
 const PLUGIN_LIST_LAYOUT_STORAGE_KEY = 'plugin-manager-list-layout-v1'
 const loading = ref(false)
 const submitting = ref(false)
@@ -2206,26 +2216,18 @@ const applyRuntimeStateUpdate = (record: PluginRuntimeState) => {
 }
 
 const handlePluginSnapshotMessage = (wsMessage: WSEnvelope) => {
-  const payload = wsMessage.data as unknown as PluginSystemSnapshotMessage | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
-  applySnapshot(payload)
+  const payload = wsMessage.data
+  if (!isPluginSystemSnapshotMessage(payload)) return
+  pluginSnapshotCoordinator.applyMutation(payload)
 }
 
-const handlePluginRuntimeMessage = (wsMessage: WSEnvelope) => {
-  const payload = wsMessage.data as unknown as PluginSystemRuntimeMessage | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
+const handlePluginRuntimeMessage = (wsMessage: WSEnvelope<WSPluginRuntimeUpdatedData>) => {
+  const payload = wsMessage.data
   applyRuntimeStateUpdate(payload.record)
 }
 
-const handlePluginHmrMessage = (wsMessage: WSEnvelope) => {
-  const payload = wsMessage.data as unknown as PluginSystemHmrMessage | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
+const handlePluginHmrMessage = (wsMessage: WSEnvelope<WSPluginHmrData>) => {
+  const payload = wsMessage.data
   logger.info(
     `Plugin HMR: plugin=${payload.plugin || '-'}, action=${payload.action}, status=${payload.status}`
   )
@@ -2234,30 +2236,40 @@ const handlePluginHmrMessage = (wsMessage: WSEnvelope) => {
   }
 }
 
-const fetchDataByHttp = async () => {
+const fetchDataByHttp = async (): Promise<PluginsGetResponse> => {
   const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
   if (data.code !== 200 || data.status !== 'success') {
     throw new Error(data.message || '获取插件配置失败')
   }
-  applySnapshot(data)
+  return data
 }
 
-const fetchData = async () => {
-  loading.value = true
+const loadPluginSnapshot = async (): Promise<PluginsGetResponse> => {
   try {
     const data = await requestPluginAction<PluginsGetResponse>('/api/plugins/get', {})
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '获取插件配置失败')
     }
-    applySnapshot(data)
+    return data
   } catch (error) {
     logger.warn(`Plugin fetch by websocket failed: ${String(error)}`)
-    try {
-      await fetchDataByHttp()
-    } catch (httpError) {
-      message.error(`获取失败: ${String(httpError)}`)
-      logger.error(`获取插件配置失败: ${String(httpError)}`)
-    }
+    return fetchDataByHttp()
+  }
+}
+
+const pluginSnapshotCoordinator = new AppLayoutSnapshotCoordinator<PluginsGetResponse>({
+  load: loadPluginSnapshot,
+  apply: data => applySnapshot(data),
+  reportError: error => {
+    message.error(`获取失败: ${String(error)}`)
+    logger.error(`获取插件配置失败: ${String(error)}`)
+  },
+})
+
+const fetchData = async () => {
+  loading.value = true
+  try {
+    await pluginSnapshotCoordinator.refreshFresh()
   } finally {
     loading.value = false
   }
@@ -2523,14 +2535,18 @@ onMounted(() => {
     ),
     subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_HMR }, handlePluginHmrMessage),
   ]
+  disposePluginSnapshotRefresh = onConnected(fetchData)
   void fetchData()
 })
 
 onUnmounted(() => {
+  pluginSnapshotCoordinator.invalidate()
   for (const subscriptionId of pluginSystemSubscriptionIds) {
     unsubscribe(subscriptionId)
   }
   pluginSystemSubscriptionIds = []
+  disposePluginSnapshotRefresh?.()
+  disposePluginSnapshotRefresh = null
 })
 </script>
 

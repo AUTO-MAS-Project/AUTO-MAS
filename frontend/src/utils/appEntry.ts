@@ -1,7 +1,7 @@
 // appEntry.ts - 统一的应用进入逻辑
 import router from '@/router'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
-import { bootstrapSchedulerSubscriptions } from '@/views/scheduler/useSchedulerLogic'
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
@@ -56,8 +56,8 @@ export async function enterApp(
   logger.info(`${reason}：开始进入应用流程，尝试建立WebSocket连接...`)
 
   // 先注册应用级常驻订阅与调度中心常驻订阅，再建立连接，保证生命周期与任务创建消息不丢失
+  bootstrapRealtimeResidents()
   initializeAppLifecycle()
-  bootstrapSchedulerSubscriptions()
 
   let wsConnected = false
 
@@ -110,8 +110,8 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   logger.info(`${reason}：跳过初始化流程开始`)
   logger.info(`${reason}：尝试建立WebSocket连接...`)
 
+  bootstrapRealtimeResidents()
   initializeAppLifecycle()
-  bootstrapSchedulerSubscriptions()
 
   try {
     const wsConnected = await connectWithRetry()

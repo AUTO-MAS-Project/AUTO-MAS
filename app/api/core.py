@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from app.core import Config, TaskManager
 from app.core.lifecycle import ShutdownCoordinator
-from app.core.ws import MainConnection, Publisher, protocol
+from app.core.ws import Dialogs, MainConnection, Publisher, protocol
 from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
@@ -94,6 +94,18 @@ async def get_ws_meta() -> WebSocketMetaOut:
     )
 
 
+@router.get(
+    "/dialogs/pending",
+    summary="获取待处理弹窗初始快照",
+    response_model=list[WSDialogRequestData],
+    status_code=200,
+)
+async def get_pending_dialogs() -> list[WSDialogRequestData]:
+    """返回当前未完成弹窗；WS 只承载后续请求与响应事件。"""
+
+    return Dialogs.pending_requests()
+
+
 # 主连接建立后触发启动时调度队列
 MainConnection.on_connect(TaskManager.start_startup_queue)
 
@@ -115,10 +127,17 @@ async def _shutdown_backend() -> None:
     # 开发模式：后端保持存活以复用（插件/定时器等服务不拆除），
     # 只做轻量任务清理后即通知前端可退出
     if is_backend_dev_mode():
-        with suppress(Exception):
+        try:
             await TaskManager.stop_task("ALL")
-        with suppress(RuntimeError):
-            await System.cancel_power_task()
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
+        except Exception as error:
+            logger.error(
+                "开发模式轻量清理失败，取消发送退出信号: "
+                f"{type(error).__name__}: {error}",
+                exc_info=True,
+            )
+            return
         await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
         logger.warning("后端开发模式下忽略退出请求，仅完成任务清理")
         return

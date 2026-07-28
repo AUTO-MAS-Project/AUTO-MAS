@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue, field_validator
 from typing import Any, Dict, List, Union, Optional, Literal
 
 
@@ -1950,6 +1950,29 @@ class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
 
 
+class PluginMarketItem(BaseModel):
+    """插件市场中的一个 PyPI 项目。"""
+
+    package: str = Field(..., description="PyPI 包名")
+    version: str = Field(default="", description="最新版本")
+    summary: str = Field(default="", description="项目简介")
+    project_url: str = Field(..., description="PyPI 项目页")
+    prefix_tag: str = Field(..., description="匹配到的 AUTO-MAS 包名前缀")
+
+
+class PluginMarketSnapshot(BaseModel):
+    """插件市场 HTTP 初始快照。"""
+
+    schema_version: Literal[1] = Field(default=1, description="快照结构版本")
+    prefix_tags: List[str] = Field(default_factory=list, description="支持的包名前缀")
+    fetched_at: str = Field(..., description="UTC ISO-8601 拉取时间")
+    items: List[PluginMarketItem] = Field(default_factory=list, description="市场项目")
+    installed_map: Dict[str, bool] = Field(
+        default_factory=dict, description="包名到本地安装状态的映射"
+    )
+    total: int = Field(ge=0, description="项目总数")
+
+
 class WSEnvelope(BaseModel):
     """主 WebSocket 统一消息信封, 前后端均按 id + type 路由"""
 
@@ -1961,9 +1984,19 @@ class WSEnvelope(BaseModel):
         ...,
         description="消息类别, 点分小写命名, 如 task.info.updated、backend.shutdown.ready",
     )
-    data: Dict[str, Any] = Field(
+    data: Dict[str, JsonValue] = Field(
         default_factory=dict, description="消息数据, 关键消息使用对应的 WS*Data 模型构造"
     )
+
+    @field_validator("id", "type")
+    @classmethod
+    def validate_route_field(cls, value: str) -> str:
+        """路由字段必须为非空字符串，并统一去除首尾空白。"""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("WebSocket 路由 id/type 不能为空")
+        return normalized
 
 
 class WSTaskNoticeData(BaseModel):
@@ -1973,11 +2006,69 @@ class WSTaskNoticeData(BaseModel):
     message: str = Field(..., description="提示内容")
 
 
+class WSTaskUserInfoData(BaseModel):
+    """任务快照中的用户状态。"""
+
+    user_id: str = Field(..., description="用户 ID")
+    name: str = Field(..., description="用户名称")
+    status: str = Field(..., description="用户执行状态")
+
+
+class WSTaskScriptInfoData(BaseModel):
+    """任务快照中的脚本状态。"""
+
+    script_id: str = Field(..., description="脚本 ID")
+    name: str = Field(..., description="脚本名称")
+    status: str = Field(..., description="脚本执行状态")
+    userList: List[WSTaskUserInfoData] = Field(
+        default_factory=list, description="脚本下的用户状态"
+    )
+
+
+class WSTaskInfoUpdatedData(BaseModel):
+    """任务信息全量快照 (type=task.info.updated)。"""
+
+    task_info: List[WSTaskScriptInfoData] = Field(
+        default_factory=list, description="任务脚本与用户状态"
+    )
+
+
+class WSTaskLogUpdatedData(BaseModel):
+    """任务当前日志 (type=task.log.updated)。"""
+
+    log: str = Field(default="", description="当前脚本日志")
+
+
+class TaskRuntimeSnapshotItem(BaseModel):
+    """一个运行中任务的 HTTP 初始快照。"""
+
+    taskId: str = Field(..., description="任务 ID")
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+        ..., description="任务模式"
+    )
+    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
+    stopping: bool = Field(default=False, description="任务是否正在停止")
+    task_info: List[WSTaskScriptInfoData] = Field(
+        default_factory=list, description="任务脚本与用户状态"
+    )
+    log: str = Field(default="", description="当前脚本日志")
+
+
+class TaskRuntimeSnapshot(BaseModel):
+    """运行中任务 HTTP 初始快照。"""
+
+    tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
+
+
 class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
     result: str = Field(..., description="任务结果描述")
-    task_info: List[Dict[str, Any]] = Field(..., description="任务信息全量快照")
+    task_info: List[WSTaskScriptInfoData] = Field(
+        ..., description="任务信息全量快照"
+    )
 
 
 class WSTaskCreatedData(BaseModel):
@@ -1994,6 +2085,14 @@ class WSPowerCountdownData(BaseModel):
 
     operation: str = Field(..., description="待执行的电源操作")
     remaining: int = Field(..., description="剩余秒数")
+
+
+class PowerCountdownSnapshot(BaseModel):
+    """当前电源倒计时 HTTP 初始快照。"""
+
+    active: bool = Field(default=False, description="是否正在倒计时")
+    operation: Optional[str] = Field(default=None, description="待执行电源操作")
+    remaining: int = Field(default=0, ge=0, description="剩余秒数")
 
 
 class WSPowerSignData(BaseModel):
@@ -2026,6 +2125,86 @@ class WSUpdateProgressData(BaseModel):
     file_size: int = Field(..., description="文件总字节数")
     speed: float = Field(..., description="下载速度 (B/s)")
     source: str = Field(..., description="下载源")
+
+
+class WSUpdateCompletedData(BaseModel):
+    """更新下载完成数据 (id=Update, type=update.completed)。"""
+
+    file: str = Field(..., description="已下载更新包路径")
+
+
+class WSUpdateFailedData(BaseModel):
+    """更新下载失败数据 (id=Update, type=update.failed)。"""
+
+    message: str = Field(..., description="失败原因")
+
+
+class UpdateDownloadSnapshot(BaseModel):
+    """更新下载 HTTP 初始快照。"""
+
+    status: Literal[
+        "idle",
+        "downloading",
+        "switchingSource",
+        "completed",
+        "failed",
+        "cancelled",
+    ] = Field(default="idle")
+    version: Optional[str] = Field(default=None, description="当前下载版本")
+    source: Optional[str] = Field(default=None, description="当前下载源")
+    downloaded_size: int = Field(default=0, ge=0)
+    file_size: int = Field(default=0, ge=0)
+    speed: float = Field(default=0, ge=0)
+    file: Optional[str] = Field(default=None, description="完成后的更新包路径")
+    message: Optional[str] = Field(default=None, description="失败或状态说明")
+
+
+class WSPluginPackageRequestData(BaseModel):
+    """插件市场安装、卸载或状态查询请求。"""
+
+    requestId: Optional[str] = Field(default=None, description="会话内请求关联 ID")
+    package: str = Field(default="", description="PyPI 包名")
+
+
+class WSPluginInstallProgressData(BaseModel):
+    """插件安装进度事件。"""
+
+    requestId: Optional[str] = Field(default=None, description="会话内请求关联 ID")
+    status: Literal["success", "error"] = Field(default="success")
+    message: str = Field(default="")
+    package: str = Field(..., description="PyPI 包名")
+    progress: int = Field(ge=0, le=100, description="安装进度百分比")
+    stage: Literal["queued", "installing", "completed"] = Field(
+        ..., description="安装阶段"
+    )
+
+
+class WSPluginOperationResultData(BaseModel):
+    """插件安装或卸载结果事件。"""
+
+    requestId: Optional[str] = Field(default=None, description="会话内请求关联 ID")
+    status: Literal["success", "error"] = Field(default="success")
+    message: str = Field(default="")
+    package: str = Field(..., description="PyPI 包名")
+    success: bool = Field(..., description="操作是否成功")
+
+
+class WSPluginInstalledSyncData(BaseModel):
+    """插件本地安装状态同步事件。"""
+
+    requestId: Optional[str] = Field(default=None, description="会话内请求关联 ID")
+    status: Literal["success", "error"] = Field(default="success")
+    message: str = Field(default="")
+    package: str = Field(..., description="PyPI 包名")
+    installed: bool = Field(..., description="当前是否已安装")
+
+
+class WSMarketErrorData(BaseModel):
+    """插件市场 WS 实时操作错误。"""
+
+    requestId: Optional[str] = Field(default=None, description="会话内请求关联 ID")
+    status: Literal["error"] = Field(default="error")
+    message: str = Field(..., description="错误原因")
 
 
 class PowerIn(BaseModel):

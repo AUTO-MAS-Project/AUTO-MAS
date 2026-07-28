@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import { connectionState, onConnected } from '@/services/websocket/connection'
 import {
   WS_ID_UPDATE,
   WS_UPDATE_CANCELLED,
@@ -11,7 +12,7 @@ import {
   type WSUpdateProgressData,
 } from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
-import { updateDownloadApi } from '@/services/updateDownloadApi'
+import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
@@ -38,6 +39,9 @@ const latestVersion = ref('')
 const updateData = ref<Record<string, string[]>>({})
 
 let subscriptionIds: string[] = []
+let disposeConnectedListener: (() => void) | null = null
+let snapshotGeneration = 0
+let mutationGeneration = 0
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
 
@@ -104,12 +108,12 @@ const ensureSubscription = () => {
   if (subscriptionIds.length > 0) return
   subscriptionIds = [
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_PROGRESS }, wsMessage =>
-      receiveProgress(wsMessage.data as unknown as UpdateDownloadProgress)
+      receiveProgress(wsMessage.data)
     ),
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_CANCELLED }, () => receiveCancelled()),
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_COMPLETED }, () => receiveCompleted()),
     subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_FAILED }, wsMessage =>
-      receiveFailed(String((wsMessage.data as { message?: string }).message || '下载失败'))
+      receiveFailed(wsMessage.data.message || '下载失败')
     ),
   ]
   logger.debug(`WebSocket 订阅已创建: ${subscriptionIds.join(', ')}`)
@@ -142,7 +146,6 @@ const clearSubscription = () => {
 
 const resetState = () => {
   stopRuntimeMonitoring()
-  clearSubscription()
   status.value = 'idle'
   source.value = ''
   downloadedSize.value = 0
@@ -152,7 +155,32 @@ const resetState = () => {
   lowSpeedDetector.reset()
 }
 
+// 任何 WS 状态变更都比已发出的 HTTP 快照更新，使旧响应在返回时失效。
+const invalidateSnapshot = (): number => {
+  snapshotGeneration++
+  mutationGeneration++
+  return mutationGeneration
+}
+
+// 每个操作捕获自己的代次；较新的 WS/本地状态变更发生后，迟到的 HTTP 结果不得回滚它。
+const isCurrentOperation = (generation: number): boolean => generation === mutationGeneration
+
+const getActionErrorMessage = (error: unknown, fallback: string): string => {
+  if (typeof error === 'object' && error !== null && 'body' in error) {
+    const body = (error as { body?: unknown }).body
+    if (typeof body === 'object' && body !== null && 'message' in body) {
+      const bodyMessage = (body as { message?: unknown }).message
+      if (typeof bodyMessage === 'string' && bodyMessage.trim()) return bodyMessage
+    }
+  }
+  if (error instanceof Error && error.message.trim()) return error.message
+  return fallback
+}
+
 const receiveProgress = (data: UpdateDownloadProgress) => {
+  invalidateSnapshot()
+  // WS progress 是较 HTTP action response 更新的权威状态；它也会令在途 action token 失效。
+  status.value = 'downloading'
   downloadedSize.value = data.downloaded_size || 0
   fileSize.value = data.file_size || 0
   speed.value = data.speed || 0
@@ -173,12 +201,14 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
 }
 
 const receiveCancelled = () => {
+  invalidateSnapshot()
   logger.info('下载已取消')
   resetState()
   modalVisible.value = false
 }
 
 const receiveCompleted = () => {
+  invalidateSnapshot()
   logger.info('下载完成')
   stopRuntimeMonitoring()
   status.value = 'completed'
@@ -186,6 +216,7 @@ const receiveCompleted = () => {
 }
 
 const receiveFailed = (reason: string) => {
+  invalidateSnapshot()
   logger.error(`下载失败: ${reason}`)
   stopRuntimeMonitoring()
   status.value = 'failed'
@@ -193,49 +224,126 @@ const receiveFailed = (reason: string) => {
   speed.value = 0
 }
 
+const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {
+  source.value = snapshot.source ?? ''
+  downloadedSize.value = snapshot.downloaded_size ?? 0
+  fileSize.value = snapshot.file_size ?? 0
+  speed.value = snapshot.speed ?? 0
+  if (snapshot.version) latestVersion.value = snapshot.version
+  failureReason.value = snapshot.message ?? ''
+
+  switch (snapshot.status) {
+    case 'downloading':
+      status.value = 'downloading'
+      modalVisible.value = true
+      startRuntimeMonitoring()
+      break
+    case 'switchingSource':
+      status.value = 'switchingSource'
+      modalVisible.value = true
+      startRuntimeMonitoring()
+      break
+    case 'completed':
+      stopRuntimeMonitoring()
+      status.value = 'completed'
+      speed.value = 0
+      modalVisible.value = true
+      break
+    case 'failed':
+      stopRuntimeMonitoring()
+      status.value = 'failed'
+      speed.value = 0
+      failureReason.value = snapshot.message ?? '下载失败'
+      modalVisible.value = true
+      break
+    case 'cancelled':
+    case 'idle':
+    default:
+      resetState()
+      modalVisible.value = false
+      break
+  }
+}
+
+export async function refreshUpdateDownloadSnapshot(): Promise<void> {
+  const generation = ++snapshotGeneration
+  try {
+    const snapshot = await updateDownloadApi.status()
+    if (generation !== snapshotGeneration) return
+    applyDownloadSnapshot(snapshot)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取更新下载 HTTP 快照失败: ${errorMessage}`)
+  }
+}
+
+/** 在主连接建立前注册更新下载常驻订阅；幂等。 */
+export function bootstrapUpdateDownloadSubscriptions(): void {
+  ensureSubscription()
+  if (!disposeConnectedListener) {
+    disposeConnectedListener = onConnected(refreshUpdateDownloadSnapshot)
+  }
+  if (connectionState().value === 'open') void refreshUpdateDownloadSnapshot()
+}
+
+/** 应用最终退出时释放更新下载常驻资源；幂等。 */
+export function disposeUpdateDownloadSubscriptions(): void {
+  invalidateSnapshot()
+  disposeConnectedListener?.()
+  disposeConnectedListener = null
+  clearSubscription()
+  stopRuntimeMonitoring()
+}
+
 const start = async (version: string, data: Record<string, string[]>) => {
   logger.info(`开始下载: ${version}`)
+  const operationGeneration = invalidateSnapshot()
   resetState()
   latestVersion.value = version
   updateData.value = data
 
   ensureSubscription()
+  status.value = 'downloading'
+  modalVisible.value = true
+  startRuntimeMonitoring()
 
   try {
     const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
+    if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
-      status.value = 'failed'
-      failureReason.value = response.message || '下载请求失败'
+      receiveFailed(response.message || '下载请求失败')
       return
     }
-    status.value = 'downloading'
-    modalVisible.value = true
-    startRuntimeMonitoring()
+    invalidateSnapshot()
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
+    if (!isCurrentOperation(operationGeneration)) return
+    const errorMessage = getActionErrorMessage(error, '网络请求失败，请检查网络连接')
     logger.error(`启动下载失败: ${errorMessage}`)
-    status.value = 'failed'
-    failureReason.value = '网络请求失败，请检查网络连接'
+    receiveFailed(errorMessage)
   }
 }
 const cancel = async () => {
   if (status.value !== 'downloading') return
 
+  const operationGeneration = invalidateSnapshot()
   status.value = 'cancelling'
   try {
     const response = await updateDownloadApi.cancel()
+    if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
       message.success('下载已取消')
-      resetState()
-      modalVisible.value = false
+      receiveCancelled()
     } else {
       message.error(response.message || '取消下载失败')
+      invalidateSnapshot()
       status.value = 'downloading'
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
+    if (!isCurrentOperation(operationGeneration)) return
+    const errorMessage = getActionErrorMessage(error, '取消下载失败')
     logger.error(`取消下载失败: ${errorMessage}`)
-    message.error('取消下载失败')
+    message.error(errorMessage)
+    invalidateSnapshot()
     status.value = 'downloading'
   }
 }
@@ -253,27 +361,28 @@ const open = () => {
 const switchToCnb = async () => {
   if (status.value !== 'downloading') return
 
+  const operationGeneration = invalidateSnapshot()
   status.value = 'switchingSource'
   try {
     const response = await updateDownloadApi.switchToCnb()
+    if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
+      invalidateSnapshot()
       source.value = 'CNB'
       status.value = 'downloading'
       lowSpeedDetector.reset()
       startRuntimeMonitoring()
     } else {
-      message.error(response.message || '切换下载源失败')
-      stopRuntimeMonitoring()
-      status.value = 'failed'
-      failureReason.value = response.message || '切换下载源失败'
+      const failureMessage = response.message || '切换下载源失败'
+      message.error(failureMessage)
+      receiveFailed(failureMessage)
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
+    if (!isCurrentOperation(operationGeneration)) return
+    const errorMessage = getActionErrorMessage(error, '切换下载源失败')
     logger.error(`切换下载源失败: ${errorMessage}`)
-    message.error('切换下载源失败')
-    stopRuntimeMonitoring()
-    status.value = 'failed'
-    failureReason.value = errorMessage
+    message.error(errorMessage)
+    receiveFailed(errorMessage)
   }
 }
 
@@ -303,6 +412,7 @@ const installLater = () => {
 }
 
 const reset = () => {
+  invalidateSnapshot()
   resetState()
   modalVisible.value = false
 }
@@ -332,6 +442,9 @@ export function useUpdateDownload() {
     install,
     installLater,
     reset,
+    bootstrapUpdateDownloadSubscriptions,
+    refreshUpdateDownloadSnapshot,
+    disposeUpdateDownloadSubscriptions,
     receiveProgress,
     receiveCancelled,
     receiveCompleted,

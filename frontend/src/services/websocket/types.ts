@@ -1,10 +1,17 @@
 // WebSocket 统一消息协议类型
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
+import type { PluginsGetOut } from '@/api/models/PluginsGetOut'
+
 // ==================== 信封 ====================
 
+export type WSJsonValue = string | number | boolean | null | WSJsonValue[] | WSJsonObject
+export interface WSJsonObject {
+  [key: string]: WSJsonValue
+}
+
 /** 主 WebSocket 统一消息信封，前后端均按 id + type 路由 */
-export interface WSEnvelope<T = Record<string, unknown>> {
+export interface WSEnvelope<T = WSJsonObject> {
   /** 路由ID，标识任务、请求或业务会话，如 Main、TaskManager、任务UUID */
   id: string
   /** 消息类别，点分小写命名，如 task.info.updated、backend.shutdown.ready */
@@ -54,9 +61,7 @@ export const WS_PLUGIN_RUNTIME_UPDATED = 'plugin.runtime.updated'
 export const WS_PLUGIN_SNAPSHOT_UPDATED = 'plugin.snapshot.updated'
 export const WS_PLUGIN_HMR = 'plugin.hmr'
 
-// 插件市场（id=PluginMarket）
-export const WS_MARKET_SNAPSHOT_REQUEST = 'market.snapshot.request'
-export const WS_MARKET_SNAPSHOT_RESPONSE = 'market.snapshot.response'
+// 插件市场（id=PluginMarket，初始快照使用 HTTP）
 export const WS_MARKET_ERROR = 'market.error'
 export const WS_PLUGIN_INSTALL_REQUEST = 'plugin.install.request'
 export const WS_PLUGIN_INSTALL_PROGRESS = 'plugin.install.progress'
@@ -74,10 +79,33 @@ export interface WSTaskNoticeData {
   message: string
 }
 
+export interface WSTaskUserInfoData {
+  user_id: string
+  name: string
+  status: string
+}
+
+export interface WSTaskScriptInfoData {
+  script_id: string
+  name: string
+  status: string
+  userList: WSTaskUserInfoData[]
+}
+
+/** 任务信息快照 (type=task.info.updated) */
+export interface WSTaskInfoUpdatedData {
+  task_info: WSTaskScriptInfoData[]
+}
+
+/** 当前任务日志 (type=task.log.updated) */
+export interface WSTaskLogUpdatedData {
+  log: string
+}
+
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
   result: string
-  task_info: Record<string, unknown>[]
+  task_info: WSTaskScriptInfoData[]
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -122,19 +150,141 @@ export interface WSUpdateProgressData {
   source: string
 }
 
+export interface WSUpdateCompletedData {
+  file: string
+}
+
+export interface WSUpdateFailedData {
+  message: string
+}
+
+export interface WSPluginRuntimeStateData {
+  instance_id: string
+  plugin: string
+  status: string
+  generation: number
+  lifecycle_phase: string
+  lifecycle_updated_at?: string | null
+  reload_count: number
+  last_reload_reason?: string | null
+  last_reload_at?: string | null
+  created_at?: string | null
+  discovered_at?: string | null
+  loaded_at?: string | null
+  activated_at?: string | null
+  disposed_at?: string | null
+  unloaded_at?: string | null
+  last_error?: string | null
+  last_error_at?: string | null
+}
+
+export interface WSPluginRuntimeUpdatedData {
+  event: string
+  record: WSPluginRuntimeStateData
+}
+
+export type WSPluginSnapshotUpdatedData = PluginsGetOut & {
+  reason?: string
+}
+
+export interface WSPluginHmrData {
+  event: string
+  plugin?: string | null
+  changed_files: string[]
+  action: string
+  status: string
+  message: string
+}
+
+export interface WSPluginPackageRequestData {
+  requestId?: string | null
+  package: string
+}
+
+export interface WSPluginInstallProgressData {
+  requestId?: string | null
+  status: 'success' | 'error'
+  message: string
+  package: string
+  progress: number
+  stage: 'queued' | 'installing' | 'completed'
+}
+
+export interface WSPluginOperationResultData {
+  requestId?: string | null
+  status: 'success' | 'error'
+  message: string
+  package: string
+  success: boolean
+}
+
+export interface WSPluginInstalledSyncData {
+  requestId?: string | null
+  status: 'success' | 'error'
+  message: string
+  package: string
+  installed: boolean
+}
+
+export interface WSMarketErrorData {
+  requestId?: string | null
+  status: 'error'
+  message: string
+}
+
+export type WSEmptyData = Record<string, never>
+
+/** 已知关键消息的 type → data 映射。动态插件消息回退到 WSJsonObject。 */
+export interface WSMessageDataMap {
+  [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
+  [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
+  [WS_TASK_NOTICE]: WSTaskNoticeData
+  [WS_TASK_COMPLETED]: WSTaskCompletedData
+  [WS_TASK_CREATED]: WSTaskCreatedData
+  [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
+  [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
+  [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData
+  [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
+  [WS_POWER_SIGN_UPDATED]: WSPowerSignData
+  [WS_DIALOG_REQUEST]: WSDialogRequestData
+  [WS_DIALOG_RESPONSE]: WSDialogResponseData
+  [WS_UPDATE_PROGRESS]: WSUpdateProgressData
+  [WS_UPDATE_COMPLETED]: WSUpdateCompletedData
+  [WS_UPDATE_FAILED]: WSUpdateFailedData
+  [WS_UPDATE_CANCELLED]: WSEmptyData
+  [WS_PLUGIN_RUNTIME_UPDATED]: WSPluginRuntimeUpdatedData
+  [WS_PLUGIN_SNAPSHOT_UPDATED]: WSPluginSnapshotUpdatedData
+  [WS_PLUGIN_HMR]: WSPluginHmrData
+  [WS_PLUGIN_INSTALL_REQUEST]: WSPluginPackageRequestData
+  [WS_PLUGIN_INSTALL_PROGRESS]: WSPluginInstallProgressData
+  [WS_PLUGIN_INSTALL_RESULT]: WSPluginOperationResultData
+  [WS_PLUGIN_UNINSTALL_REQUEST]: WSPluginPackageRequestData
+  [WS_PLUGIN_UNINSTALL_RESULT]: WSPluginOperationResultData
+  [WS_PLUGIN_INSTALLED_REQUEST]: WSPluginPackageRequestData
+  [WS_PLUGIN_INSTALLED_SYNC]: WSPluginInstalledSyncData
+  [WS_MARKET_ERROR]: WSMarketErrorData
+}
+
+export type WSKnownMessageType = keyof WSMessageDataMap
+export type WSDataForType<TType extends string> = TType extends WSKnownMessageType
+  ? WSMessageDataMap[TType]
+  : WSJsonObject
+
 // ==================== 连接层类型 ====================
 
 /** 连接状态机 */
 export type WSConnectionState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed'
 
-/** 订阅键：按 id + type 精确路由；type 省略时表示该 id 的全部消息（仅供插件 SDK 兼容） */
-export interface WSSubscriptionKey {
+/** 订阅键：只允许按 id + type 精确路由。 */
+export interface WSSubscriptionKey<TType extends string = string> {
   id: string
-  type?: string
+  type: TType
 }
 
 /** 订阅处理器 */
-export type WSMessageHandler = (message: WSEnvelope) => void
+export type WSMessageHandler<TData = WSJsonObject> = (
+  message: WSEnvelope<TData>
+) => void | Promise<void>
 
 /** 断开事件（通知生命周期协调器） */
 export interface WSDisconnectEvent {

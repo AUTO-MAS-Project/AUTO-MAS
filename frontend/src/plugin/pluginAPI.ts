@@ -1,5 +1,10 @@
 import { OpenAPI } from '@/api'
-import { subscribe, unsubscribe, type WSEnvelope } from '@/composables/useWebSocket'
+import {
+  subscribe,
+  unsubscribe,
+  type WSEnvelope,
+  type WSSubscriptionKey,
+} from '@/composables/useWebSocket'
 import { getPluginPageContext } from './pluginPageContext'
 
 const logger = window.electronAPI.getLogger('插件前端 API')
@@ -48,14 +53,21 @@ export function installPluginAPI(): void {
       }
       return data
     },
-    subscribe: (topic: string, handler: (message: WSEnvelope) => void) => {
-      const normalizedTopic = String(topic || '').trim()
-      if (!normalizedTopic) {
-        throw new Error('插件订阅主题不能为空')
+    subscribe: (key: WSSubscriptionKey, handler: (message: WSEnvelope) => void) => {
+      const normalizedKey = {
+        id: String(key?.id || '').trim(),
+        type: String(key?.type || '').trim(),
       }
-      // 插件 SDK 兼容：按 id 订阅该主题下的全部消息类别
-      const subscriptionId = subscribe({ id: normalizedTopic }, handler)
-      return () => unsubscribe(subscriptionId)
+      if (!normalizedKey.id || !normalizedKey.type) {
+        throw new Error('插件订阅必须包含非空 id 和 type')
+      }
+      const subscriptionId = subscribe(normalizedKey, handler)
+      let active = true
+      return () => {
+        if (!active) return
+        active = false
+        unsubscribe(subscriptionId)
+      }
     },
     getPageContext: () => getPluginPageContext(),
   }

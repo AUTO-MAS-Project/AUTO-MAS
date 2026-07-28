@@ -87,10 +87,12 @@ import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import PluginJsonConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useWebSocket, type WSEnvelope } from '@/composables/useWebSocket'
+import { onConnected } from '@/services/websocket/connection'
 import {
   WS_ID_PLUGIN_SYSTEM,
   WS_PLUGIN_HMR,
   WS_PLUGIN_SNAPSHOT_UPDATED,
+  type WSPluginHmrData,
 } from '@/services/websocket/types'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type {
@@ -136,12 +138,7 @@ const formModel = ref<Record<string, any>>({})
 const headerSchemaActions = computed(() => collectHeaderSchemaActions(userSchema.value))
 const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
 let pluginSystemSubscriptionIds: string[] = []
-
-interface PluginSystemHmrMessage {
-  plugin?: string | null
-  status: 'running' | 'success' | 'error' | string
-  message?: string
-}
+let disposePluginSnapshotRefresh: (() => void) | null = null
 
 interface PluginConfigEditorDeclaration {
   endpointPrefix: string
@@ -325,12 +322,8 @@ const refreshImportedInfrastructure = async () => {
   formModel.value = nextFormModel
 }
 
-const handlePluginHmrMessage = (wsMessage: WSEnvelope) => {
-  const payload = wsMessage.data as unknown as PluginSystemHmrMessage | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
-
+const handlePluginHmrMessage = (wsMessage: WSEnvelope<WSPluginHmrData>) => {
+  const payload = wsMessage.data
   if (payload.status === 'error' && isCurrentPluginEvent(payload.plugin)) {
     message.warning(payload.message || `plugin hmr failed: ${payload.plugin || 'unknown'}`)
   }
@@ -398,11 +391,12 @@ const handleSave = async () => {
 
 onMounted(() => {
   pluginSystemSubscriptionIds = [
-    subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED }, () => {
-      void refreshSchemaFromPluginSystem()
-    }),
+    subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED }, () =>
+      refreshSchemaFromPluginSystem()
+    ),
     subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_HMR }, handlePluginHmrMessage),
   ]
+  disposePluginSnapshotRefresh = onConnected(refreshSchemaFromPluginSystem)
   void loadData()
 })
 
@@ -411,6 +405,8 @@ onUnmounted(() => {
     unsubscribe(subscriptionId)
   }
   pluginSystemSubscriptionIds = []
+  disposePluginSnapshotRefresh?.()
+  disposePluginSnapshotRefresh = null
 })
 </script>
 

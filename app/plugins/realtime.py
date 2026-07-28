@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
+
+from pydantic import JsonValue
 
 from app.utils import get_logger
 from app.plugins.frontend_extensions import build_page_snapshot
@@ -12,8 +15,11 @@ PLUGIN_SYSTEM_WS_ID = "PluginSystem"
 
 logger = get_logger("PluginRealtime")
 
+_background_tasks: set[asyncio.Task[None]] = set()
+_closing = False
 
-def _serialize_record(record: Any) -> Dict[str, Any]:
+
+def _serialize_record(record: object) -> Dict[str, JsonValue]:
     return {
         "instance_id": str(getattr(record, "instance_id", "") or ""),
         "plugin": str(getattr(record, "plugin_name", "") or ""),
@@ -38,7 +44,9 @@ def _serialize_record(record: Any) -> Dict[str, Any]:
     }
 
 
-async def send_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
+async def send_plugin_system_message(
+    message_type: str, data: Dict[str, JsonValue]
+) -> None:
     """向前端推送插件系统实时消息 (id=PluginSystem, type 见 app/core/ws/protocol.py)"""
     try:
         from app.core.ws import Publisher
@@ -54,16 +62,41 @@ async def send_plugin_system_message(message_type: str, data: Dict[str, Any]) ->
         )
 
 
-def schedule_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
+def _spawn_owned(coroutine: Coroutine[object, object, None]) -> None:
+    """创建由插件实时模块持有的任务，并集中记录异常。"""
+
+    if _closing:
+        coroutine.close()
+        return
+
+    task = asyncio.create_task(coroutine)
+    _background_tasks.add(task)
+
+    def _on_done(done_task: asyncio.Task[None]) -> None:
+        _background_tasks.discard(done_task)
+        if done_task.cancelled():
+            return
+        exc = done_task.exception()
+        if exc is not None:
+            logger.warning(
+                f"plugin realtime task failed: {type(exc).__name__}: {exc}"
+            )
+
+    task.add_done_callback(_on_done)
+
+
+def schedule_plugin_system_message(
+    message_type: str, data: Dict[str, JsonValue]
+) -> None:
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return
 
-    loop.create_task(send_plugin_system_message(message_type, data))
+    _spawn_owned(send_plugin_system_message(message_type, data))
 
 
-def publish_runtime_record(record: Any, *, event: str) -> None:
+def publish_runtime_record(record: object, *, event: str) -> None:
     payload = {
         "event": event,
         "record": _serialize_record(record),
@@ -71,7 +104,9 @@ def publish_runtime_record(record: Any, *, event: str) -> None:
     schedule_plugin_system_message("plugin.runtime.updated", payload)
 
 
-async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> Dict[str, Any]:
+async def build_plugin_snapshot(
+    *, discovered: Dict[str, object] | None = None
+) -> Dict[str, JsonValue]:
     from .config_store import PluginConfigStore
     from .manager import PluginManager
 
@@ -85,10 +120,10 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         auto_create_missing=False,
     )
 
-    schemas: Dict[str, Dict[str, Any]] = {}
+    schemas: Dict[str, Dict[str, JsonValue]] = {}
     schema_errors: Dict[str, str] = {}
-    plugin_services: Dict[str, Dict[str, Any]] = {}
-    plugin_packages: Dict[str, Dict[str, Any]] = {}
+    plugin_services: Dict[str, Dict[str, JsonValue]] = {}
+    plugin_packages: Dict[str, Dict[str, JsonValue]] = {}
     for plugin_name, plugin_source in discovered.items():
         try:
             schemas[plugin_name] = config_store.load_schema(plugin_name)
@@ -124,7 +159,7 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
                 "wants": [],
             }
 
-    runtime_states: Dict[str, Dict[str, Any]] = {}
+    runtime_states: Dict[str, Dict[str, JsonValue]] = {}
     for instance_id, record in getattr(PluginManager.loader, "records", {}).items():
         runtime_states[str(instance_id)] = _serialize_record(record)
 
@@ -184,7 +219,7 @@ async def publish_plugin_snapshot(
     *,
     reason: str,
     message: str | None = None,
-    discovered: Dict[str, Any] | None = None,
+    discovered: Dict[str, object] | None = None,
 ) -> None:
     snapshot = await build_plugin_snapshot(discovered=discovered)
     snapshot["reason"] = reason
@@ -197,13 +232,29 @@ def schedule_plugin_snapshot(
     *,
     reason: str,
     message: str | None = None,
-    discovered: Dict[str, Any] | None = None,
+    discovered: Dict[str, object] | None = None,
 ) -> None:
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return
 
-    loop.create_task(
+    _spawn_owned(
         publish_plugin_snapshot(reason=reason, message=message, discovered=discovered)
     )
+
+
+async def shutdown_plugin_realtime_tasks() -> None:
+    """取消并等待插件实时模块拥有的全部后台任务，幂等。"""
+
+    global _closing
+    _closing = True
+    tasks = [task for task in _background_tasks if not task.done()]
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    _background_tasks.clear()
