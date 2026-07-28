@@ -31,6 +31,7 @@ from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -358,3 +359,32 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
 
     logger.success(f"终末地账号切换成功: {masked_id}")
     return True
+
+
+def replace_account_switch_task(
+    tasks: list[dict[str, Any]],
+    account_id: str,
+    controller_type: str,
+    task_id: str,
+) -> None:
+    """按当前账号设置唯一的 MaaEnd 切号任务。"""
+
+    tasks[:] = [task for task in tasks if task.get("taskName") != "AccountSwitch"]
+    if not account_id:
+        return
+
+    tasks.insert(
+        0,
+        {
+            "id": task_id,
+            "taskName": "AccountSwitch",
+            "enabled": True,
+            "enabledByController": {controller_type: True},
+            "optionValues": {
+                "AccountSwitchLastFourDigits": {
+                    "type": "input",
+                    "values": {"LastFourDigits": account_id[-4:]},
+                }
+            },
+        },
+    )

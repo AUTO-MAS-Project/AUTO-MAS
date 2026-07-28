@@ -1016,6 +1016,13 @@ class MaaEndConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
+        ## 账号切换方式
+        self.Run_AccountSwitchMethod = ConfigItem(
+            "Run",
+            "AccountSwitchMethod",
+            "MAS",
+            OptionsValidator(["MAS", "MAAEND"]),
+        )
 
         ## Game ------------------------------------------------------------
         ## 控制器类型

@@ -6,7 +6,6 @@ import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post } from '../models/Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
-import type { Body_update_okww_config_api_scripts_okww_configs_update_post } from '../models/Body_update_okww_config_api_scripts_okww_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
@@ -42,6 +41,10 @@ import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { PowerOut } from '../models/PowerOut';
+import type { QrCheckIn } from '../models/QrCheckIn';
+import type { QrCheckOut } from '../models/QrCheckOut';
+import type { QrCreateOut } from '../models/QrCreateOut';
+import type { QrSaveIn } from '../models/QrSaveIn';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -771,35 +774,6 @@ export class Service {
                 'script_id': scriptId,
                 'user_id': userId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新 OK-WW 配置文件
-     * 更新 OK-WW 配置文件
-     *
-     * Args:
-     * script_id: OK-WW 脚本 ID
-     * user_id: 用户 ID
-     * filename: 配置文件名（如 DailyTask.json）
-     * data: 要更新的配置数据
-     *
-     * Returns:
-     * dict: 操作结果
-     * @param requestBody
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static updateOkwwConfigApiScriptsOkwwConfigsUpdatePost(
-        requestBody: Body_update_okww_config_api_scripts_okww_configs_update_post,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/okww/configs/update',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -1551,7 +1525,7 @@ export class Service {
     }
     /**
      * 查询工具配置
-     * 查询工具配置
+     * 获取工具设置
      * @returns ToolsGetOut Successful Response
      * @throws ApiError
      */
@@ -1918,6 +1892,56 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns QrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 轮询状态，确认后 cookies 直接从响应头获取
+     * @param requestBody
+     * @returns QrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignMiyousheQrCheckPost(
+        requestBody: QrCheckIn,
+    ): CancelablePromise<QrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 cookie 到账号配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignMiyousheQrSavePost(
+        requestBody: QrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

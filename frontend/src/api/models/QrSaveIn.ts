@@ -2,10 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type OkwwUserConfig_Task = {
+export type QrSaveIn = {
     /**
-     * 启动后执行第 N 个任务（-t N，从 1 开始）
+     * MAS 账号组 UUID
      */
-    TaskIndex?: (number | null);
+    account_uid: string;
+    cookie: string;
 };
 
