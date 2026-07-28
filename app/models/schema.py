@@ -929,6 +929,9 @@ class MaaEndConfig_Run(BaseModel):
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    AccountSwitchMethod: Optional[Literal["MAS", "MAAEND"]] = Field(
+        default=None, description="账号切换方式"
+    )
 
 
 class MaaEndConfig_Game(BaseModel):
