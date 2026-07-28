@@ -28,6 +28,8 @@ from pathlib import Path
 from datetime import datetime
 
 from app.core import Config, EmulatorManager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import M9AConfig, M9AUserConfig
@@ -211,10 +213,10 @@ class M9AManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -342,10 +344,12 @@ class M9AManager(TaskExecuteBase):
                 await push_notification("代理结果", title, result, None)
             except Exception as e:
                 logger.exception(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
             # 延迟 2 秒再推版本更新，避免与代理结果通知在同一毫秒内连发，
@@ -456,8 +460,8 @@ class M9AManager(TaskExecuteBase):
 
         self.script_info.status = "异常"
         logger.exception(f"M9A任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"M9A任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"M9A任务出现异常: {e}"),
         )

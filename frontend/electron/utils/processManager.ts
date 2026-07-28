@@ -11,17 +11,28 @@ export interface ProcessInfo {
   commandLine: string
 }
 
+const normalizeWindowsPath = (value: string): string => value.replace(/\//g, '\\').toLowerCase()
+
+const processPathMarkers = (appRoot: string): string[] => {
+  const root = path.resolve(appRoot)
+  return [
+    path.join(root, 'main.py'),
+    path.join(root, '.venv', 'Scripts', 'python.exe'),
+    path.join(root, 'environment', 'python', 'python.exe'),
+  ].map(normalizeWindowsPath)
+}
+
 /**
  * 获取所有相关的进程信息
  */
-export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
-  return new Promise(resolve => {
+export async function getRelatedProcesses(appRoot: string = getAppRoot()): Promise<ProcessInfo[]> {
+  return new Promise((resolve, reject) => {
     if (process.platform !== 'win32') {
       resolve([])
       return
     }
 
-    const _appRoot = getAppRoot().replace(/\\/g, '\\\\')
+    const pathMarkers = processPathMarkers(appRoot)
 
     // 使用 PowerShell 获取进程信息
     const psCommand = `
@@ -37,7 +48,7 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
       (error, stdout, _stderr) => {
         if (error) {
           logger.error(`获取进程信息失败: ${error}`)
-          resolve([])
+          reject(new Error(`获取进程信息失败: ${error.message}`))
           return
         }
 
@@ -55,22 +66,24 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
             parsed = [parsed]
           }
 
-          const pythonExePath = path.join(getAppRoot(), 'environment', 'python', 'python.exe')
-
           for (const proc of parsed) {
             const pid = proc.ProcessId || 0
             const name = proc.Name || ''
             const commandLine = proc.CommandLine || ''
+            const normalizedCommandLine = normalizeWindowsPath(commandLine)
 
-            if (
-              pid > 0 &&
-              (commandLine.includes(pythonExePath) || commandLine.includes('main.py'))
-            ) {
+            if (pid > 0 && pathMarkers.some(marker => normalizedCommandLine.includes(marker))) {
               processes.push({ pid, name, commandLine })
             }
           }
         } catch (parseError) {
           logger.error(`解析进程信息失败: ${parseError}`)
+          reject(
+            new Error(
+              `解析进程信息失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+            )
+          )
+          return
         }
 
         resolve(processes)
@@ -104,10 +117,10 @@ export async function killProcess(pid: number): Promise<boolean> {
 /**
  * 强制结束所有相关进程
  */
-export async function killAllRelatedProcesses(): Promise<void> {
+export async function killAllRelatedProcesses(appRoot: string = getAppRoot()): Promise<void> {
   logger.info('开始清理所有相关进程...')
 
-  const processes = await getRelatedProcesses()
+  const processes = await getRelatedProcesses(appRoot)
   logger.info(`找到 ${processes.length} 个相关进程:`)
 
   for (const proc of processes) {
@@ -117,8 +130,24 @@ export async function killAllRelatedProcesses(): Promise<void> {
   }
 
   // 并行结束所有进程
-  const killPromises = processes.map(proc => killProcess(proc.pid))
-  await Promise.all(killPromises)
+  const killResults = await Promise.all(processes.map(proc => killProcess(proc.pid)))
+  const signalFailures = processes.filter((_, index) => !killResults[index])
+  if (signalFailures.length > 0) {
+    logger.warn(`有 ${signalFailures.length} 个 taskkill 命令失败，继续核对实际进程状态`)
+  }
+
+  const exitResults = await Promise.all(processes.map(proc => waitForProcessExit(proc.pid, 5000)))
+  const unconfirmedPids = processes.filter((_, index) => !exitResults[index]).map(proc => proc.pid)
+  const remainingProcesses = await getRelatedProcesses(appRoot)
+  const remainingPids = remainingProcesses.map(proc => proc.pid)
+  if (unconfirmedPids.length > 0 && remainingPids.length === 0) {
+    logger.warn(
+      `PID ${unconfirmedPids.join(', ')} 仍存在，但已不匹配 AUTO-MAS 后端身份，按 PID 复用处理`
+    )
+  }
+  if (remainingPids.length > 0) {
+    throw new Error(`无法确认相关进程已退出: PID ${remainingPids.join(', ')}`)
+  }
 
   logger.info('进程清理完成')
 }
@@ -131,13 +160,20 @@ export async function waitForProcessExit(pid: number, timeoutMs: number = 5000):
     const startTime = Date.now()
 
     const checkProcess = () => {
-      if (Date.now() - startTime > timeoutMs) {
+      if (Date.now() - startTime >= timeoutMs) {
         resolve(false)
         return
       }
 
-      exec(`tasklist /fi "PID eq ${pid}"`, (error, stdout) => {
-        if (error || !stdout.includes(pid.toString())) {
+      exec(`tasklist /fi "PID eq ${pid}" /fo csv /nh`, (error, stdout) => {
+        if (error) {
+          logger.warn(`核对进程 ${pid} 状态失败: ${error.message}`)
+          setTimeout(checkProcess, 100)
+          return
+        }
+
+        const exists = stdout.split(/\r?\n/).some(line => line.includes(`","${pid}","`))
+        if (!exists) {
           resolve(true)
         } else {
           setTimeout(checkProcess, 100)

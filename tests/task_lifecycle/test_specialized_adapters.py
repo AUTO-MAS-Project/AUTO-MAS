@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from app.api.dispatch import router as dispatch_router
 from app.api.scripts2 import router as scripts_router
 from app.core.task_manager import TaskManager
+from app.core.ws import protocol
 
 from .conftest import SpecializedLifecycleHarness
 
@@ -29,7 +30,7 @@ def _specialized_app() -> FastAPI:
 async def _create_script_and_user(
     client: httpx.AsyncClient,
     harness: SpecializedLifecycleHarness,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     script_response = await client.post(
         "/api/scripts2/add",
         json={"type": harness.adapter_type},
@@ -60,7 +61,7 @@ async def _create_script_and_user(
     )
     assert get_response.status_code == 200
     assert get_response.json()["records"][0]["user_count"] == 1
-    return script_id, user_record["name"]
+    return script_id, user_record["id"], user_record["name"]
 
 
 async def _start_task(client: httpx.AsyncClient, script_id: str) -> str:
@@ -79,8 +80,7 @@ async def _wait_for_accomplish(
 ) -> dict[str, Any]:
     accomplish = await harness.collector.wait_for(
         lambda message: message.get("id") == task_id
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     task_uuid = uuid.UUID(task_id)
     async with asyncio.timeout(2.0):
@@ -101,8 +101,8 @@ def _error_message(
             message
             for message in harness.collector.messages
             if message.get("id") == task_id
-            and message.get("type") == "Info"
-            and "Error" in message.get("data", {})
+            and message.get("type") == protocol.TASK_NOTICE
+            and message.get("data", {}).get("level") == "error"
         ),
         None,
     )
@@ -119,7 +119,7 @@ async def test_specialized_adapter_task_completes(
     harness = specialized_lifecycle_harness
     transport = httpx.ASGITransport(app=_specialized_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        script_id, user_name = await _create_script_and_user(client, harness)
+        script_id, user_id, user_name = await _create_script_and_user(client, harness)
         task_id = await _start_task(client, script_id)
         async with asyncio.timeout(2.0):
             await harness.control.started.wait()
@@ -127,8 +127,11 @@ async def test_specialized_adapter_task_completes(
 
     accomplish = await _wait_for_accomplish(harness, task_id)
     final_script = accomplish["data"]["task_info"][0]
+    assert final_script["script_id"] == script_id
     assert final_script["status"] == "完成"
-    assert final_script["userList"] == [{"name": user_name, "status": "完成"}]
+    assert final_script["userList"] == [
+        {"user_id": user_id, "name": user_name, "status": "完成"}
+    ]
     assert _error_message(harness, task_id) is None
     assert harness.control.finalized.is_set()
 
@@ -145,7 +148,7 @@ async def test_specialized_adapter_task_failure_returns_error(
     harness.control.behavior = "fail"
     transport = httpx.ASGITransport(app=_specialized_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        script_id, user_name = await _create_script_and_user(client, harness)
+        script_id, user_id, user_name = await _create_script_and_user(client, harness)
         task_id = await _start_task(client, script_id)
         async with asyncio.timeout(2.0):
             await harness.control.started.wait()
@@ -155,9 +158,11 @@ async def test_specialized_adapter_task_failure_returns_error(
     final_script = accomplish["data"]["task_info"][0]
     error = _error_message(harness, task_id)
     assert final_script["status"] == "异常"
-    assert final_script["userList"] == [{"name": user_name, "status": "失败"}]
+    assert final_script["userList"] == [
+        {"user_id": user_id, "name": user_name, "status": "失败"}
+    ]
     assert error is not None
-    assert error["data"]["Error"] == f"模拟 {harness.adapter_type} 任务失败"
+    assert error["data"]["message"] == f"模拟 {harness.adapter_type} 任务失败"
     assert harness.control.finalized.is_set()
 
 
@@ -173,7 +178,7 @@ async def test_specialized_adapter_running_task_can_be_stopped(
     harness.control.behavior = "block"
     transport = httpx.ASGITransport(app=_specialized_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        script_id, user_name = await _create_script_and_user(client, harness)
+        script_id, user_id, user_name = await _create_script_and_user(client, harness)
         task_id = await _start_task(client, script_id)
         async with asyncio.timeout(2.0):
             await harness.control.started.wait()
@@ -187,7 +192,9 @@ async def test_specialized_adapter_running_task_can_be_stopped(
     accomplish = await _wait_for_accomplish(harness, task_id)
     final_script = accomplish["data"]["task_info"][0]
     assert final_script["status"] == "取消"
-    assert final_script["userList"] == [{"name": user_name, "status": "取消"}]
+    assert final_script["userList"] == [
+        {"user_id": user_id, "name": user_name, "status": "取消"}
+    ]
     assert not harness.control.release.is_set()
     assert harness.control.finalized.is_set()
 
@@ -204,17 +211,19 @@ async def test_specialized_adapter_runtime_exception_ends_abnormally(
     harness.control.behavior = "crash"
     transport = httpx.ASGITransport(app=_specialized_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        script_id, user_name = await _create_script_and_user(client, harness)
+        script_id, user_id, user_name = await _create_script_and_user(client, harness)
         task_id = await _start_task(client, script_id)
 
     accomplish = await _wait_for_accomplish(harness, task_id)
     final_script = accomplish["data"]["task_info"][0]
     error = _error_message(harness, task_id)
     assert final_script["status"] == "异常"
-    assert final_script["userList"] == [{"name": user_name, "status": "异常"}]
+    assert final_script["userList"] == [
+        {"user_id": user_id, "name": user_name, "status": "异常"}
+    ]
     assert isinstance(harness.control.crash_error, RuntimeError)
     assert error is not None
-    assert error["data"]["Error"] == (
+    assert error["data"]["message"] == (
         f"RuntimeError: 模拟 {harness.adapter_type} 运行时异常"
     )
     assert harness.control.crashed.is_set()

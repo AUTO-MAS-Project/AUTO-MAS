@@ -436,7 +436,8 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { WS_ID_PLUGIN_SYSTEM, WS_PLUGIN_SNAPSHOT_UPDATED } from '@/services/websocket/types'
 import {
   useHSRPluginApi,
   type HSREngine,
@@ -484,9 +485,7 @@ const isSaving = ref(false)
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 let pluginSystemSubscriptionId: string | null = null
 
-const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as { kind?: string } | undefined
-  if (payload?.kind !== 'snapshot') return
+const handlePluginSystemMessage = () => {
   void hsrPluginApi
     .getCapabilities(scriptId)
     .then(snapshot => (capabilitySnapshot.value = snapshot))
@@ -729,7 +728,10 @@ const clearPath = async (key: string) => {
 }
 
 onMounted(async () => {
-  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
+  pluginSystemSubscriptionId = subscribe(
+    { id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED },
+    handlePluginSystemMessage
+  )
   pageLoading.value = true
   try {
     const scriptDetail = await getScript(scriptId)

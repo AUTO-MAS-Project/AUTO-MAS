@@ -21,7 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .broadcast import Broadcast
+# 先完整初始化基础工具模块，避免 app.utils.emulator 与 app.models.config
+# 之间既有循环导入在 config 初始化路径上被触发（原先由 broadcast 模块顺带完成）
+import app.utils  # noqa: F401
+
 from .config import Config
 from .emulator_manager import EmulatorManager
 from .page_registry import (
@@ -49,7 +52,6 @@ def __getattr__(name: str):
 
 
 __all__ = [
-    "Broadcast",
     "Config",
     "MainTimer",
     "TaskManager",

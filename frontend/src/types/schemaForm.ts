@@ -12,9 +12,6 @@ export interface SchemaActionSessionDefinition {
   timeout_ms?: number
   timeout_auto_stop?: boolean
   timeout_message?: string
-  completion_type?: string
-  completion_field?: string
-  error_field?: string
 }
 
 export interface SchemaActionFilePickerDefinition {

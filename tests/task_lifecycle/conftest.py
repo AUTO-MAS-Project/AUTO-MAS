@@ -9,6 +9,7 @@ from typing import Any, Literal
 from unittest.mock import AsyncMock
 
 import pytest_asyncio
+from pydantic import BaseModel
 
 from app.core import task_manager as task_manager_module
 from app.core.config import AppConfig
@@ -18,7 +19,9 @@ from app.core.script_types import (
     script_type_registry,
 )
 from app.core.task_manager import TaskManager
+from app.core.ws import protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.plugins.manager import PluginManager
 
@@ -33,9 +36,13 @@ class MessageCollector:
         self.messages: list[dict[str, Any]] = []
         self.changed = asyncio.Event()
 
-    async def __call__(self, id: str, type: str, data: dict[str, Any]) -> None:
-        self.messages.append({"id": str(id), "type": type, "data": data})
+    async def __call__(self, id: str, type: str, data: Any = None) -> bool:
+        payload = data.model_dump(mode="json") if isinstance(data, BaseModel) else data
+        self.messages.append(
+            {"id": str(id), "type": type, "data": dict(payload or {})}
+        )
         self.changed.set()
+        return True
 
     async def wait_for(
         self,
@@ -114,10 +121,13 @@ class ControllableManager(TaskExecuteBase):
             for user in self.script_info.user_list:
                 user.status = "失败"
             if self.config is not None and self.script_info.task_info is not None:
-                await self.config.send_websocket_message(
+                await task_manager_module.Publisher.send(
                     id=self.script_info.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"模拟 {self.adapter_type} 任务失败"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"模拟 {self.adapter_type} 任务失败",
+                    ),
                 )
         else:
             self.script_info.status = "完成"
@@ -137,10 +147,13 @@ class ControllableManager(TaskExecuteBase):
             user.status = "异常"
         self.script_info.log += f"\n[测试] {type(error).__name__}: {error}"
         if self.config is not None and self.script_info.task_info is not None:
-            await self.config.send_websocket_message(
+            await task_manager_module.Publisher.send(
                 id=self.script_info.task_info.task_id,
-                type="Info",
-                data={"Error": f"{type(error).__name__}: {error}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"{type(error).__name__}: {error}",
+                ),
             )
 
 
@@ -219,10 +232,10 @@ async def lifecycle_harness(monkeypatch) -> AsyncIterator[LifecycleHarness]:
         ScriptConfig={script_uuid: script_config},
         QueueConfig={},
         power_sign="NoAction",
-        send_websocket_message=collector,
         get_script_record_capability=get_capability,
     )
     monkeypatch.setattr(task_manager_module, "Config", config)
+    monkeypatch.setattr(task_manager_module.Publisher, "send", collector)
     monkeypatch.setattr(PluginManager, "emit_async", AsyncMock())
 
     from app.api import dispatch as dispatch_module
@@ -303,8 +316,8 @@ async def specialized_lifecycle_harness(
             adapter_type=adapter_type,
         )
 
-        config.send_websocket_message = collector
         monkeypatch.setattr(task_manager_module, "Config", config)
+        monkeypatch.setattr(task_manager_module.Publisher, "send", collector)
         monkeypatch.setattr(PluginManager, "emit_async", AsyncMock())
 
         from app.api import dispatch as dispatch_module

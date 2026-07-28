@@ -29,7 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.services import Notify
 from ..common.report import OkScriptReportHandler
 from app.utils import get_logger
@@ -374,10 +375,10 @@ class OkefDailySummaryReportHandler(OkScriptReportHandler):
         )
 
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=runtime.task_info.task_id,
-                type="Info",
-                data={"Warning": message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="warning", message=message),
             )
 
         with suppress(Exception):
