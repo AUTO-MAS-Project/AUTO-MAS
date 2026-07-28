@@ -68,10 +68,8 @@ list/
 /plugins/**/*.egg-info/
 /app/core/plugins/_generated/
 
-# Local test sources are not included in this branch
-/tests/
-**/test_*.py
-**/*_test.py
+# Test artifacts
+/test-results/
 **/*.test.ts
 **/*.test.tsx
 **/*.spec.ts
