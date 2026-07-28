@@ -37,7 +37,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
-from .tools import login, push_notification
+from .tools import login, push_notification, replace_account_switch_task
 from app.task.general.tools import execute_script_task
 
 logger = get_logger("MaaEnd 自动代理")
@@ -87,7 +87,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
         if (
-            self.cur_user_config.get("Info", "AccountSwitchMethod") == "MAAEND"
+            self.script_config.get("Run", "AccountSwitchMethod") == "MAAEND"
             and account_id
         ):
             if len(account_id) < 4 or not account_id[-4:].isdigit():
@@ -274,8 +274,8 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
             account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-            account_switch_method = self.cur_user_config.get(
-                "Info", "AccountSwitchMethod"
+            account_switch_method = self.script_config.get(
+                "Run", "AccountSwitchMethod"
             )
             if account_switch_method == "MAS":
                 try:
@@ -546,32 +546,14 @@ class AutoProxyTask(TaskExecuteBase):
             }
         maaend_tasks = maaend_instance["tasks"]
 
-        # 运行副本中不保留手动添加的重复任务
-        maaend_tasks = [
-            task for task in maaend_tasks if task.get("taskName") != "AccountSwitch"
-        ]
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        if (
-            self.cur_user_config.get("Info", "AccountSwitchMethod") == "MAAEND"
-            and account_id
-        ):
-            controller_type = str(self.script_config.get("Game", "ControllerType"))
-            maaend_tasks.insert(
-                0,
-                {
-                    "id": f"mas{self.cur_user_uid.hex[:4]}",
-                    "taskName": "AccountSwitch",
-                    "enabled": True,
-                    "enabledByController": {controller_type: True},
-                    "optionValues": {
-                        "AccountSwitchLastFourDigits": {
-                            "type": "input",
-                            "values": {"LastFourDigits": account_id[-4:]},
-                        }
-                    },
-                },
-            )
-        maaend_instance["tasks"] = maaend_tasks
+        account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
+        replace_account_switch_task(
+            tasks=maaend_tasks,
+            account_id=(account_id if account_switch_method == "MAAEND" else ""),
+            controller_type=str(self.script_config.get("Game", "ControllerType")),
+            task_id=f"mas{self.cur_user_uid.hex[:4]}",
+        )
 
         # 加载 i18n 配置
         settings = maaend_set["settings"]
