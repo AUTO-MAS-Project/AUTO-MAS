@@ -7,10 +7,20 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { app } from 'electron'
 import { spawn } from 'child_process'
+import { createHash } from 'crypto'
 import AdmZip = require('adm-zip')
 import { MirrorService } from './mirrorService'
-import { SmartDownloader, ProgressCallback } from './downloadService'
+import { SmartDownloader, DownloadProgress, ProgressCallback } from './downloadService'
 import { MirrorRotationService, NetworkOperationCallback } from './mirrorRotationService'
+import {
+  createUvChecksumUrls,
+  createUvMirrors,
+  UV_ARCHIVE_NAME,
+  UV_FALLBACK_SHA256,
+  UV_FALLBACK_VERSION,
+  UV_GITHUB_LATEST_API_URL,
+  UV_LATEST_METADATA_URL,
+} from './uvDistribution'
 
 import { getLogger } from './logger'
 const logger = getLogger('环境服务')
@@ -147,10 +157,7 @@ abstract class BaseEnvironmentInstaller {
           stage: 'download',
           progress: progress.progress,
           message: `下载中... ${progress.progress.toFixed(1)}%`,
-          details: {
-            downloadSpeed: progress.speed,
-            downloadSize: progress.downloadedSize,
-          },
+          details: this.getDownloadProgressDetails(progress),
         })
       }, selectedMirror)
 
@@ -188,6 +195,13 @@ abstract class BaseEnvironmentInstaller {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`环境安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
+    }
+  }
+
+  protected getDownloadProgressDetails(progress: DownloadProgress): InstallProgress['details'] {
+    return {
+      downloadSpeed: progress.speed,
+      downloadSize: progress.downloadedSize,
     }
   }
 
@@ -384,6 +398,15 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
 export class UvInstaller extends BaseEnvironmentInstaller {
   private readonly pythonPath: string
   private readonly uvExe: string
+  private uvVersion = UV_FALLBACK_VERSION
+  private uvArchiveSha256 = UV_FALLBACK_SHA256
+  private currentMirrorName = ''
+  private currentMirrorIndex = 0
+  private currentMirrorTotal = 0
+
+  private get uvArchivePath(): string {
+    return path.join(this.appRoot, 'temp', `uv-${this.uvVersion}-${UV_ARCHIVE_NAME}`)
+  }
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
@@ -411,9 +434,9 @@ export class UvInstaller extends BaseEnvironmentInstaller {
     }
   }
 
-  private getUvVersion(): Promise<string> {
+  private getUvVersion(executablePath: string = this.uvExe): Promise<string> {
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.uvExe, ['--version'], { stdio: 'pipe' })
+      const proc = spawn(executablePath, ['--version'], { stdio: 'pipe' })
 
       let output = ''
       proc.stdout?.on('data', data => {
@@ -435,18 +458,118 @@ export class UvInstaller extends BaseEnvironmentInstaller {
     })
   }
 
+  protected getDownloadProgressDetails(progress: DownloadProgress): InstallProgress['details'] {
+    return {
+      ...super.getDownloadProgressDetails(progress),
+      currentMirror: this.currentMirrorName,
+      mirrorProgress:
+        this.currentMirrorTotal > 0
+          ? { current: this.currentMirrorIndex, total: this.currentMirrorTotal }
+          : undefined,
+      operationDesc: this.currentMirrorName
+        ? `正在从 ${this.currentMirrorName} 下载 uv ${this.uvVersion}`
+        : undefined,
+    }
+  }
+
   protected async downloadPackage(
     onProgress?: ProgressCallback,
-    _selectedMirror?: string
+    selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
-    logger.info('=== 准备安装 uv ===')
-    onProgress?.({
-      progress: 100,
-      speed: 0,
-      downloadedSize: 0,
-      totalSize: 0,
-    })
-    return { success: true }
+    await this.resolveUvRelease()
+
+    logger.info(`=== 下载 uv ${this.uvVersion} ===`)
+
+    const allMirrors = createUvMirrors(this.uvVersion)
+    const mirrors = selectedMirror
+      ? allMirrors.filter(mirror => mirror.key === selectedMirror || mirror.name === selectedMirror)
+      : allMirrors
+
+    if (mirrors.length === 0) {
+      return {
+        success: false,
+        error: selectedMirror
+          ? `未找到指定的 uv 下载源: ${selectedMirror}`
+          : '没有可用的 uv 下载源',
+      }
+    }
+
+    const tempDir = path.dirname(this.uvArchivePath)
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
+    }
+
+    this.currentMirrorTotal = mirrors.length
+    const failures: string[] = []
+
+    for (let index = 0; index < mirrors.length; index++) {
+      const mirror = mirrors[index]
+      this.currentMirrorName = mirror.name
+      this.currentMirrorIndex = index + 1
+
+      if (fs.existsSync(this.uvArchivePath)) {
+        fs.unlinkSync(this.uvArchivePath)
+      }
+
+      logger.info(`尝试 uv 下载源 [${index + 1}/${mirrors.length}]: ${mirror.name}`)
+      onProgress?.({
+        progress: 0.1,
+        speed: 0,
+        downloadedSize: 0,
+        totalSize: 0,
+      })
+
+      const result = await this.downloader.download(mirror.url, this.uvArchivePath, progress => {
+        onProgress?.({
+          ...progress,
+          progress: Math.min(progress.progress * 0.9, 90),
+        })
+      })
+
+      if (!result.success) {
+        const reason = result.error || '下载失败'
+        failures.push(`${mirror.name}: ${reason}`)
+        logger.warn(`uv 下载源 ${mirror.name} 失败: ${reason}`)
+        continue
+      }
+
+      try {
+        const archiveSize = fs.statSync(this.uvArchivePath).size
+        onProgress?.({
+          progress: 95,
+          speed: 0,
+          downloadedSize: archiveSize,
+          totalSize: archiveSize,
+        })
+
+        const actualSha256 = await this.calculateSha256(this.uvArchivePath)
+        if (actualSha256 !== this.uvArchiveSha256) {
+          throw new Error(`SHA256 不匹配，实际值: ${actualSha256}`)
+        }
+
+        onProgress?.({
+          progress: 99,
+          speed: 0,
+          downloadedSize: archiveSize,
+          totalSize: archiveSize,
+        })
+        logger.info(`uv 下载完成并通过 SHA256 校验，使用来源: ${mirror.name}`)
+        return { success: true }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        failures.push(`${mirror.name}: ${errorMsg}`)
+        logger.warn(`uv 下载源 ${mirror.name} 校验失败: ${errorMsg}`)
+      }
+    }
+
+    if (fs.existsSync(this.uvArchivePath)) {
+      fs.unlinkSync(this.uvArchivePath)
+    }
+
+    return {
+      success: false,
+      error: `所有 uv 下载源均失败：${failures.join('；')}`,
+    }
   }
 
   protected async installEnvironment(
@@ -456,89 +579,195 @@ export class UvInstaller extends BaseEnvironmentInstaller {
     logger.info('=== 安装 uv ===')
 
     const scriptsDir = path.join(this.pythonPath, 'Scripts')
+    const stageDir = path.join(
+      this.appRoot,
+      'temp',
+      `uv-stage-${process.pid}-${Date.now().toString(36)}`
+    )
 
     try {
       if (!fs.existsSync(scriptsDir)) {
         fs.mkdirSync(scriptsDir, { recursive: true })
       }
+      fs.mkdirSync(stageDir, { recursive: true })
 
-      onProgress?.(20, '正在运行 uv 官方安装脚本...')
-      await this.runUvInstallScript(scriptsDir, progress => {
-        onProgress?.(progress, '正在安装 uv...')
-      })
+      onProgress?.(20, '正在解压 uv...')
+      const zip = new AdmZip(this.uvArchivePath)
+      const binaryNames = ['uv.exe', 'uvx.exe', 'uvw.exe']
+      const extractedBinaries: string[] = []
+
+      for (const binaryName of binaryNames) {
+        const entry = zip
+          .getEntries()
+          .find(
+            item =>
+              !item.isDirectory &&
+              path.basename(item.entryName).toLowerCase() === binaryName.toLowerCase()
+          )
+
+        if (!entry) {
+          if (binaryName === 'uv.exe') {
+            throw new Error('uv ZIP 中未找到 uv.exe')
+          }
+          continue
+        }
+
+        const stagedPath = path.join(stageDir, binaryName)
+        fs.writeFileSync(stagedPath, entry.getData())
+        extractedBinaries.push(binaryName)
+      }
+
+      const stagedUvExe = path.join(stageDir, 'uv.exe')
+      onProgress?.(55, '正在验证 uv 版本...')
+      const stagedVersion = await this.getUvVersion(stagedUvExe)
+      if (!stagedVersion.startsWith(`uv ${this.uvVersion}`)) {
+        throw new Error(`uv 版本不匹配，期望 ${this.uvVersion}，实际 ${stagedVersion}`)
+      }
+
+      onProgress?.(75, '正在部署 uv...')
+      for (const binaryName of extractedBinaries) {
+        fs.copyFileSync(path.join(stageDir, binaryName), path.join(scriptsDir, binaryName))
+      }
 
       onProgress?.(90, '验证 uv 安装...')
       const check = await this.checkEnvironment()
-      if (!check.canRun) {
-        throw new Error('uv 安装后无法运行')
+      if (!check.canRun || !check.version?.startsWith(`uv ${this.uvVersion}`)) {
+        throw new Error(`uv 安装后验证失败: ${check.error || check.version || '无法运行'}`)
       }
 
       onProgress?.(100, 'uv 安装完成')
-      logger.info('uv 安装完成')
+      logger.info(`uv ${this.uvVersion} 安装完成，来源: ${this.currentMirrorName}`)
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`uv 安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
+    } finally {
+      if (fs.existsSync(stageDir)) {
+        fs.rmSync(stageDir, { recursive: true, force: true })
+      }
+      if (fs.existsSync(this.uvArchivePath)) {
+        fs.unlinkSync(this.uvArchivePath)
+      }
     }
   }
 
-  private runUvInstallScript(
-    installDir: string,
-    onProgress?: (progress: number) => void
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const script = [
-        "$ErrorActionPreference = 'Stop'",
-        `$env:UV_INSTALL_DIR = ${this.quotePowerShellString(installDir)}`,
-        'irm https://astral.sh/uv/install.ps1 | iex',
-      ].join('; ')
+  private async resolveUvRelease(): Promise<void> {
+    try {
+      const metadata = JSON.parse(await this.fetchUvText(UV_LATEST_METADATA_URL)) as {
+        tag?: unknown
+      }
+      const version = this.normalizeUvVersion(metadata.tag)
+      const sha256 = await this.resolveUvChecksum(version)
 
-      const proc = spawn(
-        'powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
-        {
-          cwd: this.appRoot,
-          stdio: 'pipe',
-        }
-      )
+      this.uvVersion = version
+      this.uvArchiveSha256 = sha256
+      logger.info(`已从 uv-custom 元数据解析最新 uv: ${version}`)
+      return
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`uv-custom 最新版本元数据不可用: ${errorMsg}`)
+    }
 
-      let output = ''
+    try {
+      const release = JSON.parse(await this.fetchUvText(UV_GITHUB_LATEST_API_URL)) as {
+        tag_name?: unknown
+        assets?: Array<{ name?: unknown; digest?: unknown }>
+      }
+      const version = this.normalizeUvVersion(release.tag_name)
+      const asset = release.assets?.find(item => item.name === UV_ARCHIVE_NAME)
+      const digest =
+        typeof asset?.digest === 'string'
+          ? asset.digest.match(/^sha256:([a-f0-9]{64})$/i)?.[1]?.toLowerCase()
+          : undefined
+      const sha256 = digest || (await this.resolveUvChecksum(version))
 
-      proc.stdout?.on('data', data => {
-        const text = data.toString().trim()
-        output += text
-        logger.info(`uv 安装输出: ${text}`)
+      this.uvVersion = version
+      this.uvArchiveSha256 = sha256
+      logger.info(`已从 GitHub API 解析最新 uv: ${version}`)
+      return
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`GitHub 最新版本元数据不可用: ${errorMsg}`)
+    }
 
-        if (text.includes('downloading')) {
-          onProgress?.(40)
-        } else if (text.includes('installing')) {
-          onProgress?.(70)
-        } else if (text.includes('everything')) {
-          onProgress?.(85)
-        }
-      })
-
-      proc.stderr?.on('data', data => {
-        const text = data.toString().trim()
-        output += text
-        logger.warn(`uv 安装输出: ${text}`)
-      })
-
-      proc.on('close', code => {
-        if (code === 0 && fs.existsSync(this.uvExe)) {
-          resolve()
-          return
-        }
-        reject(new Error(`uv 安装脚本失败，退出码: ${code}, output: ${output}`))
-      })
-
-      proc.on('error', reject)
-    })
+    this.uvVersion = UV_FALLBACK_VERSION
+    this.uvArchiveSha256 = UV_FALLBACK_SHA256
+    logger.warn(`无法解析 uv 最新版本，回退到已验证版本 ${UV_FALLBACK_VERSION}`)
   }
 
-  private quotePowerShellString(value: string): string {
-    return `'${value.replace(/'/g, "''")}'`
+  private async resolveUvChecksum(version: string): Promise<string> {
+    const failures: string[] = []
+
+    for (const url of createUvChecksumUrls(version)) {
+      try {
+        const checksum = await this.fetchUvText(url)
+        const match = checksum.trim().match(/^([a-f0-9]{64})\s+\*?(.+?)\s*$/i)
+
+        if (!match || path.basename(match[2]) !== UV_ARCHIVE_NAME) {
+          throw new Error('checksum 格式无效')
+        }
+
+        logger.info(`已获取 uv ${version} SHA256: ${url}`)
+        return match[1].toLowerCase()
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        failures.push(`${url}: ${errorMsg}`)
+      }
+    }
+
+    throw new Error(`所有 uv checksum 来源均失败：${failures.join('；')}`)
+  }
+
+  private normalizeUvVersion(value: unknown): string {
+    if (typeof value !== 'string') {
+      throw new Error('版本号不存在')
+    }
+
+    const version = value.trim().replace(/^v/, '')
+    if (!/^\d+\.\d+\.\d+$/.test(version)) {
+      throw new Error(`版本号格式无效: ${value}`)
+    }
+
+    return version
+  }
+
+  private async fetchUvText(url: string): Promise<string> {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': 'AUTO-MAS',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const contentLength = Number(response.headers.get('content-length') || '0')
+    if (contentLength > 1024 * 1024) {
+      throw new Error('响应内容过大')
+    }
+
+    const text = await response.text()
+    if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) {
+      throw new Error('响应内容过大')
+    }
+
+    return text
+  }
+
+  private calculateSha256(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = createHash('sha256')
+      const stream = fs.createReadStream(filePath)
+
+      stream.on('data', chunk => hash.update(chunk))
+      stream.on('end', () => resolve(hash.digest('hex')))
+      stream.on('error', reject)
+    })
   }
 }
 
