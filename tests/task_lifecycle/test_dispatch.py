@@ -57,6 +57,66 @@ async def test_dispatch_start_completes_with_websocket_envelope(
     assert accomplish["data"]["task_info"][0]["userList"][0]["status"] == "完成"
 
 
+async def test_dispatch_start_reports_failed_task(
+    lifecycle_harness: LifecycleHarness,
+) -> None:
+    lifecycle_harness.control.behavior = "fail"
+    transport = httpx.ASGITransport(app=_dispatch_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/dispatch/start",
+            json={"mode": "AutoProxy", "taskId": lifecycle_harness.script_id},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 200
+    task_id = response.json()["taskId"]
+
+    async with asyncio.timeout(2.0):
+        await lifecycle_harness.control.started.wait()
+    lifecycle_harness.control.release.set()
+    accomplish = await lifecycle_harness.collector.wait_for(
+        lambda message: message.get("id") == task_id
+        and message.get("type") == "Signal"
+        and "Accomplish" in message.get("data", {})
+    )
+    await _wait_until_cleaned(uuid.UUID(task_id))
+
+    final_script = accomplish["data"]["task_info"][0]
+    assert final_script["status"] == "异常"
+    assert final_script["userList"][0]["status"] == "失败"
+    assert lifecycle_harness.control.finalized.is_set()
+
+
+async def test_dispatch_start_reports_runtime_crash(
+    lifecycle_harness: LifecycleHarness,
+) -> None:
+    lifecycle_harness.control.behavior = "crash"
+    transport = httpx.ASGITransport(app=_dispatch_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/dispatch/start",
+            json={"mode": "AutoProxy", "taskId": lifecycle_harness.script_id},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 200
+    task_id = response.json()["taskId"]
+
+    accomplish = await lifecycle_harness.collector.wait_for(
+        lambda message: message.get("id") == task_id
+        and message.get("type") == "Signal"
+        and "Accomplish" in message.get("data", {})
+    )
+    await _wait_until_cleaned(uuid.UUID(task_id))
+
+    final_script = accomplish["data"]["task_info"][0]
+    assert final_script["status"] == "异常"
+    assert lifecycle_harness.control.crashed.is_set()
+    assert lifecycle_harness.control.finalized.is_set()
+    assert isinstance(lifecycle_harness.control.crash_error, RuntimeError)
+
+
 async def test_dispatch_stop_cancels_running_task(
     lifecycle_harness: LifecycleHarness,
 ) -> None:
@@ -88,3 +148,5 @@ async def test_dispatch_stop_cancels_running_task(
     final_script = accomplish["data"]["task_info"][0]
     assert final_script["status"] == "取消"
     assert final_script["userList"][0]["status"] == "取消"
+    await _wait_until_cleaned(uuid.UUID(task_id))
+    assert lifecycle_harness.control.finalized.is_set()

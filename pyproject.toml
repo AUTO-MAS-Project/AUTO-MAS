@@ -94,5 +94,5 @@ python_files = ["test_*.py"]
 asyncio_mode = "strict"
 markers = [
     "integration: tests multiple backend components together",
-    "e2e: tests a workflow through public transport boundaries",
+    "e2e: tests a workflow through the public HTTP boundary",
 ]

@@ -70,9 +70,5 @@ list/
 
 # Test artifacts
 /test-results/
-**/*.test.ts
-**/*.test.tsx
-**/*.spec.ts
-**/*.spec.tsx
 
 res/docs/ok-series-common-script-report.md

@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-name: 后端自动化测试
+name: 自动化测试
 
 on:
   pull_request:
@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  backend:
     name: Windows / Python 3.12
     runs-on: windows-latest
     timeout-minutes: 20
@@ -59,3 +59,34 @@ jobs:
           path: test-results/
           if-no-files-found: error
           retention-days: 14
+
+  frontend:
+    name: Linux / Node.js 20
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: 启用 Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+
+      - name: 安装前端依赖
+        run: yarn install --immutable
+
+      - name: 运行前端测试
+        run: yarn test
