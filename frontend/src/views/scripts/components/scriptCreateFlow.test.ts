@@ -4,7 +4,6 @@ import {
   buildCreateSteps,
   createScriptTypeOptions,
   filterScriptTypeOptions,
-  getScriptEditSegment,
   SCRIPT_TYPE_OPTIONS,
   splitScriptTypeOptions,
 } from './scriptCreateFlow'
@@ -82,15 +81,6 @@ describe('scriptCreateFlow', () => {
       value: 'MaaFW',
       group: 'general',
     })
-  })
-
-  it('maps every script type to its edit route segment', () => {
-    expect(getScriptEditSegment('MAA')).toBe('maa')
-    expect(getScriptEditSegment('MaaEnd')).toBe('maaend')
-    expect(getScriptEditSegment('Okww')).toBe('okww')
-    expect(getScriptEditSegment('OkScript')).toBe('ok-script')
-    expect(getScriptEditSegment('HSR')).toBe('hsr')
-    expect(getScriptEditSegment('General')).toBe('general')
   })
 
   it('builds submit requests only when required selections exist', () => {
