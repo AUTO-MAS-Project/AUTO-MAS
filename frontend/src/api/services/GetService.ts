@@ -427,7 +427,7 @@ export class GetService {
     }
     /**
      * 查询工具配置
-     * 查询工具配置
+     * 获取工具设置
      * @returns ToolsGetOut Successful Response
      * @throws ApiError
      */
