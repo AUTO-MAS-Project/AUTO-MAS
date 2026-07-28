@@ -136,6 +136,7 @@ export interface MaaEndScriptConfig {
     RunTimeLimit: number
     ProxyTimesLimit: number
     RunTimesLimit: number
+    AccountSwitchMethod: 'MAS' | 'MAAEND'
   }
   Game: {
     ControllerType: 'Win32-Front' | 'ADB' | null

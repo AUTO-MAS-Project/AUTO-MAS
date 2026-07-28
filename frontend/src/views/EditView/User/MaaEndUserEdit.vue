@@ -132,7 +132,6 @@ const getDefaultMaaEndUserData = () => ({
     Status: true,
     Id: '',
     Password: '',
-    AccountSwitchMethod: 'MAS',
     Mode: '简洁',
     IfQuickConfig: true,
     SanityMode: 'Fixed',

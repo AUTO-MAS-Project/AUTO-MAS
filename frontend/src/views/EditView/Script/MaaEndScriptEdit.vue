@@ -339,7 +339,27 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    账号切换方式
+                    <a-tooltip
+                      title="选择由 MAS 切换游戏内已保存账号，或由 MAAEND 内置任务按账号末四位切换"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  :options="accountSwitchMethodOptions"
+                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -361,7 +381,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -381,7 +401,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -463,6 +483,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
+    AccountSwitchMethod: 'MAS',
   },
   Game: {
     ControllerType: 'Win32-Front',
@@ -488,6 +509,11 @@ const controllerOptions = [
 const booleanOptions = [
   { label: '是', value: true },
   { label: '否', value: false },
+]
+
+const accountSwitchMethodOptions = [
+  { label: 'MAS 自建账号切换', value: 'MAS' },
+  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
 ]
 
 const emulatorLoading = ref(false)
