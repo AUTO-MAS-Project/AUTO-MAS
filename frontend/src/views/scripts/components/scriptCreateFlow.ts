@@ -5,6 +5,7 @@ import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import m9aIcon from '@/assets/M9A.png'
+import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 
@@ -87,6 +88,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: okwwIcon,
   },
   {
+    value: 'OkNte',
+    title: 'ok-nte 脚本',
+    description: '异环 OK-NTE 自动化脚本',
+    keywords: ['oknte', 'ok-nte', '异环', 'ok-script'],
+    group: 'specialized',
+    icon: okNteIcon,
+  },
+  {
     value: 'HSR',
     title: 'HSR 脚本',
     description: '三月七 / SRA 双脚本适配',
@@ -125,6 +134,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   MaaEnd: 'maaend',
   M9A: 'm9a',
   Okww: 'okww',
+  OkNte: 'oknte',
   HSR: 'hsr',
   General: 'general',
 }
