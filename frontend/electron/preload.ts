@@ -19,6 +19,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowFocus: () => ipcRenderer.invoke('window-focus'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
+  onSystemResume: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('system-resumed', listener)
+    return () => ipcRenderer.removeListener('system-resumed', listener)
+  },
+  onAppCloseRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('app-close-requested', listener)
+    return () => ipcRenderer.removeListener('app-close-requested', listener)
+  },
 
   // 进程管理
   getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),

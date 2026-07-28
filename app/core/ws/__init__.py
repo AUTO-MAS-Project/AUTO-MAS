@@ -1,5 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -20,34 +21,25 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
-from copy import deepcopy
-from typing import Set
+"""主 WebSocket 子系统
 
-from app.utils import get_logger
+- MainConnection: 唯一主连接的持有与收发
+- Dispatcher: 按 id + type 分发前端消息
+- Publisher: 业务模块统一出站接口
+- Dialogs: 应用内弹窗请求-响应关联
+- protocol: 消息类别常量与信封解析
+"""
 
+from . import protocol
+from .manager import MainConnection
+from .dispatcher import Dispatcher
+from .publisher import Publisher
+from .dialogs import Dialogs
 
-logger = get_logger("消息广播")
-
-
-class _Broadcast:
-
-    def __init__(self):
-        self.__subscribers: Set[asyncio.Queue] = set()
-
-    async def subscribe(self, queue: asyncio.Queue):
-        """订阅者注册"""
-        self.__subscribers.add(queue)
-
-    async def unsubscribe(self, queue: asyncio.Queue):
-        """取消订阅"""
-        self.__subscribers.remove(queue)
-
-    async def put(self, item):
-        """向所有订阅者广播消息"""
-        logger.debug(f"向所有订阅者广播消息: {item}")
-        for subscriber in self.__subscribers:
-            await subscriber.put(deepcopy(item))
-
-
-Broadcast = _Broadcast()
+__all__ = [
+    "protocol",
+    "MainConnection",
+    "Dispatcher",
+    "Publisher",
+    "Dialogs",
+]

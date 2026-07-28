@@ -1,161 +1,149 @@
-# WebSocket 管理器快速上手
+# WebSocket 子系统快速上手
 
-这份文档面向二次开发者，目标是用最少代码通过 `ws_client_manager` 创建并管理：
+本文档描述 AUTO-MAS 重构后的 WebSocket 架构（issue #295）。
 
-- 正向连接（后端主动连外部 WS 服务）
-- 反向连接（外部客户端连入后端 WS 路由）
+## 总体结构
 
-管理器入口位于：`app.utils.websocket.ws_client_manager`
+前后端之间只保留**一条主 WebSocket 连接**（`/api/core/ws`），任务、调度器、插件、更新、弹窗、电源操作等全部业务消息统一走该连接。后端另有独立的**出站客户端**用于连接外部第三方进程（如 Koishi），与主连接分层管理，互不混用状态。
 
----
-
-## 1. 正向连接：openws
-
-适用场景：你知道目标服务器地址，需要后端主动发起连接。
-
-```python
-from app.utils.websocket import ws_client_manager
-
-async def open_outbound_ws():
-    client = await ws_client_manager.openws(
-        name="MyOutbound",                 # 客户端唯一名称
-        url="ws://127.0.0.1:5140/ws",     # 目标 WS 地址
-        ping_interval=15.0,
-        ping_timeout=30.0,
-        reconnect_interval=5.0,
-        max_reconnect_attempts=-1,          # -1 表示无限重连
-    )
-
-    # 可选：发送认证
-    await ws_client_manager.send_auth(
-        name="MyOutbound",
-        token="your-token",
-        auth_type="auth",
-    )
-
-    # 可选：发送业务消息
-    await ws_client_manager.send_message(
-        "MyOutbound",
-        {"id": "Client", "type": "command", "data": {"hello": "world"}},
-    )
-
-    return client
+```
+前端 (Electron/Vue)                       后端 (FastAPI)
+┌─────────────────────────┐              ┌──────────────────────────────┐
+│ services/websocket      │   唯一主连接  │ app/core/ws                  │
+│  ├ connection.ts 连接层  │◄───────────►│  ├ manager.py MainConnection │
+│  └ subscriptions.ts 订阅 │              │  ├ dispatcher.py Dispatcher  │
+│ composables/            │              │  ├ publisher.py Publisher    │
+│  ├ useWebSocket.ts 门面  │              │  ├ dialogs.py Dialogs        │
+│  └ useAppLifecycle.ts    │              │  └ protocol.py 消息类别常量   │
+│    生命周期协调器          │              │ app/utils/websocket.py       │
+└─────────────────────────┘              │   出站客户端 (Koishi/插件)  ───┼──► 第三方进程
+                                         └──────────────────────────────┘
 ```
 
----
+## 统一消息信封
 
-## 2. 反向连接：openwsr
+所有主连接消息使用统一信封，前后端均按 `id + type` 路由：
 
-### 声明式动态反向通道（推荐）
+```json
+{
+  "id": "task-or-request-id",
+  "type": "task.info.updated",
+  "data": {}
+}
+```
 
-现在后端提供统一动态入口：`/api/ws/{channel_name}`。
+- `id` 标识任务、请求或业务会话（如 `Main`、`TaskManager`、任务 UUID）
+- `type` 标识消息类别，点分小写命名
+- 请求与响应使用相同 `id`，通过 `data.requestId` 关联（如弹窗、插件市场）
+- Python 模型见 `app/models/schema.py`（`WSEnvelope` 与 `WS*Data`），TypeScript 类型见 `frontend/src/services/websocket/types.ts`，两侧保持一致
 
-你只需要先声明通道，客户端连接到对应路径后，路由会自动调用 `openwsr` 接管：
+## 消息类别总览
+
+| id | 后端 → 前端 | 前端 → 后端 |
+|---|---|---|
+| `<taskId>` | `task.info.updated` / `task.log.updated` / `task.notice` / `task.completed` | — |
+| `TaskManager` | `task.created` | — |
+| `Main` | `backend.shutdown.ready` / `frontend.close.requested` / `power.countdown.updated` / `power.countdown.cancelled` / `power.sign.updated` / `dialog.request` | `dialog.response` |
+| `Update` | `update.progress` / `update.completed` / `update.failed` / `update.cancelled` | — |
+| `PluginSystem` | `plugin.runtime.updated` / `plugin.snapshot.updated` / `plugin.hmr` | — |
+| `PluginMarket` | `market.snapshot.response` / `plugin.install.progress` / `plugin.install.result` / `plugin.uninstall.result` / `plugin.installed.sync` / `market.error` | `market.snapshot.request` / `plugin.install.request` / `plugin.uninstall.request` / `plugin.installed.request` |
+
+完整常量定义：`app/core/ws/protocol.py`。
+
+## 后端用法
+
+### 发送消息（业务模块统一入口）
 
 ```python
-from app.utils.websocket import ws_client_manager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 
-# 启动阶段执行一次
-ws_client_manager.register_reverse_channel(
-    name="123123",
-    ping_interval=15.0,
-    ping_timeout=30.0,
-    auth_token="optional-token",
+await Publisher.send(
+    id=task_id,
+    type=protocol.TASK_NOTICE,
+    data=WSTaskNoticeData(level="error", message="任务出现异常"),
 )
 ```
 
-然后让外部客户端连接：
+主连接未就绪时消息**直接丢弃**（记录低级别日志），不缓存、不重放。关键消息请使用 `WS*Data` 模型构造，避免无边界字典。
 
-- `ws://<host>:<port>/api/ws/123123`
-
-注意：
-
-- 只有已声明通道会被放行；未声明会被拒绝。
-- `wsdev` 也已改为同样的声明式写法，入口为 `/api/ws/wsdev`。
-
-如果你需要在业务代码里拿到该通道对应的会话实例，可直接等待：
+### 处理前端消息
 
 ```python
-session = await ws_client_manager.wait_for_reverse_session("123123", timeout=10)
+from app.core.ws import Dispatcher, protocol
 
-# session 可直接发送消息
-await session.send_json({"id": "Client", "type": "command", "data": {"ok": True}})
+def handle(envelope):  # 同步或异步均可
+    ...
+
+unregister = Dispatcher.register(protocol.ID_PLUGIN_MARKET, protocol.MARKET_SNAPSHOT_REQUEST, handle)
 ```
 
----
+未找到处理器的消息记录 debug 日志后丢弃。
 
-## 3. 常用管理操作
+### 应用内弹窗（请求-响应）
 
 ```python
-# 是否存在
-ws_client_manager.has_client("MyOutbound")
+from app.core.ws import Dialogs
 
-# 读取统一会话对象（正向/反向都可）
-session = ws_client_manager.get_session("MyOutbound")
-
-# 列出所有连接状态
-clients = ws_client_manager.list_clients()
-
-# 断开连接
-await ws_client_manager.disconnect_client("MyOutbound")
-
-# 删除客户端（系统客户端不可删除）
-await ws_client_manager.remove_client("MyOutbound")
+choice = await Dialogs.ask(
+    title="操作提示",
+    message="模拟器启动失败, 是否重试？",
+    options=["是", "否"],
+    task_id=task_id,
+)  # 用户选择第一个选项时返回 True，等待无超时
 ```
 
----
+### 心跳
 
-## 3.1 WS 管理器方法总览
+主连接心跳依赖 WebSocket **协议层** ping/pong，由 uvicorn 配置（`main.py` 中 `ws_ping_interval=20, ws_ping_timeout=20`）。不存在应用层业务心跳消息。
 
-以下为 `WSClientManager` 当前公共方法，按功能分组：
+### 出站客户端（第三方进程）
 
-- 反向通道声明：
-- `register_reverse_channel(name, ping_interval=15.0, ping_timeout=30.0, auth_token=None, on_message=None, on_connect=None, on_disconnect=None, overwrite=True)`
-- `unregister_reverse_channel(name)`
-- `is_reverse_channel_registered(name)`
-- `get_reverse_channel_config(name)`
-- `list_reverse_channels()`
-- 会话等待与查询：
-- `wait_for_reverse_session(name, timeout=None)`
-- `get_client(name)`
-- `get_session(name)`
-- `has_client(name)`
-- `is_system_client(name)`
-- `list_clients()`
-- 正向/反向连接控制：
-- `create_client(name, url, ping_interval=15.0, ping_timeout=30.0, reconnect_interval=5.0, max_reconnect_attempts=-1)`
-- `openws(name, url, ping_interval=15.0, ping_timeout=30.0, reconnect_interval=5.0, max_reconnect_attempts=-1)`
-- `openwsr(name, websocket, ping_interval=15.0, ping_timeout=30.0, auth_token=None, on_message=None, on_connect=None, on_disconnect=None)`
-- `connect_client(name)`
-- `disconnect_client(name)`
-- `remove_client(name)`
-- 消息相关：
-- `send_message(name, message)`
-- `send_auth(name, token, auth_type="auth", extra_data=None)`
-- `get_message_history(name=None)`
-- `clear_message_history(name=None)`
-- 调试连接维护：
-- `add_debug_connection(ws)`
-- `remove_debug_connection(ws)`
-- 其他工具：
-- `http_to_ws_url(http_url)`
-- `init_system_client_koishi()`
-- `update_system_client_koishi()`
+`app/utils/websocket.py` 的 `ws_client_manager` 管理后端作为客户端的出站连接（Koishi 通知、插件 `ctx.server.open_ws`）。心跳同样使用协议层 ping/pong；`type=="command"` 的入站消息经显式注册的强类型命令表（`app/api/ws_command.py`）执行，命令执行器在 `main.py` 启动时注入。
 
----
+## 前端用法
 
-## 4. 最佳实践
+### 订阅与发送
 
-- `name` 保持全局唯一，建议使用业务前缀（如 `Order-WS`、`Notify-WS`）。
-- 尽量通过 `ws_client_manager.send_message/send_auth` 统一发送，便于历史记录与调试页联动。
-- 反向路由中优先使用 `session.wait_closed()`，避免函数提前返回导致生命周期不一致。
-- 系统保留名称（如 `Main`、`Koishi`）不要用于普通业务连接。
+```ts
+import { subscribe, unsubscribe, send } from '@/composables/useWebSocket'
+import { WS_TASK_NOTICE, type WSTaskNoticeData } from '@/services/websocket/types'
 
----
+const subscriptionId = subscribe({ id: taskId, type: WS_TASK_NOTICE }, message => {
+  const data = message.data as unknown as WSTaskNoticeData
+  // ...
+})
+unsubscribe(subscriptionId) // 幂等
+```
 
-## 5. 与现有代码对照
+- 同一 `id + type` 可多次订阅，按订阅顺序调用；单个 handler 异常不影响其他订阅者
+- 找不到订阅者的消息直接丢弃，无缓存、无重放；后订阅者不会收到订阅前的消息
+- 页面初始数据通过 HTTP API 获取快照，WS 只用于后续增量更新
 
-你可以直接参考这两个实现：
+### 请求-响应
 
-- 主反向连接入口：`app/api/core.py` 中 `/api/core/ws`
-- 管理器实现：`app/utils/websocket.py` 中 `WSClientManager.openws/openwsr`
+```ts
+import { request } from '@/composables/useWebSocket'
+
+const response = await request(
+  WS_ID_PLUGIN_MARKET,
+  WS_MARKET_SNAPSHOT_REQUEST,
+  [WS_MARKET_SNAPSHOT_RESPONSE, WS_MARKET_ERROR],
+  {},
+  15000
+)
+```
+
+### 生命周期协调器
+
+`@/composables/useAppLifecycle` 持有应用级常驻订阅与后端进程恢复决策：
+
+- 常驻订阅：`backend.shutdown.ready`、`frontend.close.requested`、`power.countdown.updated/cancelled`、`dialog.request`，在建立连接前注册，重连不重复注册，页面切换不取消
+- `closeApp()`：退出并关闭后端 —— POST `/api/core/close` → 等待 `backend.shutdown.ready`（10 秒超时）→ 等待后端进程退出 → 超时才 taskkill → 关闭前端；关闭流程期间禁止自动重连与自动重启
+- 异常断开：连接层一轮重连（5 次退避）失败后，由协调器查询后端进程状态 —— 进程已死则自动重启后端（上限 3 次，超限弹窗提示重启应用），进程存活则延迟继续重连
+
+## 连接状态
+
+前端连接层状态机：`idle` → `connecting` → `open` ⇄ `reconnecting`，`closed` 为退出流程终态。同时最多存在一个连接尝试和一个重连计时器，连接成功后退避状态清零。
+
+后端第二条主连接接入时，**新连接替换旧连接**（旧连接被关闭），避免休眠恢复后残留死连接阻塞重连。

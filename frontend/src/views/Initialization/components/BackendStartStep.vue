@@ -73,7 +73,8 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { connectAfterBackendStart } from '@/composables/useWebSocket'
+import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 const logger = window.electronAPI.getLogger('后端启动步骤')
 
@@ -173,7 +174,12 @@ async function startBackend() {
     statusMessage.value = '正在建立WebSocket连接...'
     progress.value = 40
 
-    const connected = await connectAfterBackendStart()
+    // 连接建立前注册常驻订阅：向导阶段停留超过启动队列延迟时，
+    // task.created 与生命周期消息不会因订阅晚于连接而丢失
+    bootstrapRealtimeResidents()
+    initializeAppLifecycle()
+
+    const connected = await connectWithRetry()
 
     if (!connected) {
       logger.warn('WebSocket连接建立失败')

@@ -13,6 +13,8 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
+  onSystemResume?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: () => void) => () => void
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
@@ -169,8 +171,6 @@ export interface ElectronAPI {
     isRunning: boolean
     pid?: number
     startTime?: Date
-    wsConnected: boolean
-    lastPingTime?: Date
     error?: string
   }>
   backendWaitReady: () => Promise<{ ready: boolean; reason?: string }>
@@ -208,8 +208,6 @@ export interface ElectronAPI {
       isRunning: boolean
       pid?: number
       startTime?: Date
-      wsConnected: boolean
-      lastPingTime?: Date
       error?: string
     }) => void
   ) => void
@@ -229,8 +227,8 @@ export interface PluginPageContext {
 export interface PluginAPI {
   call: (path: string, payload?: unknown) => Promise<unknown>
   subscribe: (
-    topic: string,
-    handler: (message: { id?: string; type: string; data?: unknown }) => void
+    key: { id: string; type: string },
+    handler: (message: { id: string; type: string; data: unknown }) => void
   ) => () => void
   getPageContext: () => PluginPageContext | null
 }
@@ -240,10 +238,8 @@ declare global {
     electronAPI: ElectronAPI
     pluginAPI: PluginAPI
     __AUTO_MAS_PLUGIN_VUE__?: typeof import('vue')
-    __debugShowQuestion?: (data: unknown) => void
     wsDebug?: string
     debugScheduler?: typeof import('@/utils/scheduler-debug').debugScheduler
-    testWebSocketConnection?: typeof import('@/utils/scheduler-debug').testWebSocketConnection
   }
 
   interface Performance {
