@@ -41,7 +41,7 @@ const logger = window.electronAPI.getLogger('初始化流程')
 // ==================== 步骤定义 ====================
 const steps = [
   { key: 'python', title: 'Python 安装', canSkip: false },
-  { key: 'pip', title: 'Pip 安装', canSkip: false },
+  { key: 'pip', title: 'uv 安装', canSkip: false },
   { key: 'git', title: 'Git 安装', canSkip: false },
   { key: 'repository', title: '源码拉取', canSkip: true },
   { key: 'dependency', title: '依赖安装', canSkip: true },
@@ -569,9 +569,9 @@ async function loadMirrorConfigs() {
     await api.initMirrors()
 
     // 并行获取所有镜像源配置
-    const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
+    const [pythonMirrors, uvMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
       api.getMirrors('python'),      // Python 安装包
-      api.getMirrors('get_pip'),     // get-pip.py 脚本
+      api.getMirrors('uv'),          // uv 可执行文件
       api.getMirrors('git'),         // Git 安装包
       api.getMirrors('repo'),        // Git 仓库
       api.getMirrors('pip_mirror'),  // PyPI 镜像源
@@ -589,14 +589,14 @@ async function loadMirrorConfigs() {
 
     // 设置各步骤的镜像源配置
     stepStates.value.python.mirrors = pythonMirrors.map(convertMirror)
-    stepStates.value.pip.mirrors = getPipMirrors.map(convertMirror)
+    stepStates.value.pip.mirrors = uvMirrors.map(convertMirror)
     stepStates.value.git.mirrors = gitMirrors.map(convertMirror)
     stepStates.value.repository.mirrors = repoMirrors.map(convertMirror)
     stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
 
     logger.info('镜像源配置加载完成')
     logger.info(`Python 镜像源: ${stepStates.value.python.mirrors.map(m => m.name)}`)
-    logger.info(`Pip 镜像源: ${stepStates.value.pip.mirrors.map(m => m.name)}`)
+    logger.info(`uv 镜像源: ${stepStates.value.pip.mirrors.map(m => m.name)}`)
     logger.info(`Git 镜像源: ${stepStates.value.git.mirrors.map(m => m.name)}`)
     logger.info(`Repository 镜像源: ${stepStates.value.repository.mirrors.map(m => m.name)}`)
     logger.info(`Dependency 镜像源: ${stepStates.value.dependency.mirrors.map(m => m.name)}`)
