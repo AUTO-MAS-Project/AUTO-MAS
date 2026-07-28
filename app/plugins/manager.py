@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict
 import uuid
 
 from app.utils import get_logger
+from app.runtime_tasks import RuntimeTasks
 
 from .event_bus import EventBus
 from .config_store import PluginConfigStore
@@ -63,7 +64,6 @@ class _PluginManager:
 
     def __init__(self) -> None:
         self.started = False
-        schedule_plugin_snapshot(reason="manager.stop")
         self.events = EventBus()
         self.config_store = PluginConfigStore()
         self.plugins_dir = Path.cwd() / "plugins"
@@ -1076,7 +1076,10 @@ class _PluginManager:
         await self.loader.load_instances(instances)
         await self._sync_script_types_and_migrate_legacy_configs(discovered=discovered)
         if not fast_startup:
-            asyncio.create_task(self._repair_invalid_instances_after_start(discovered))
+            RuntimeTasks.spawn(
+                self._repair_invalid_instances_after_start(discovered),
+                name="plugin-repair-invalid-instances",
+            )
         self.started = True
         schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
         logger.info("插件系统启动完成")

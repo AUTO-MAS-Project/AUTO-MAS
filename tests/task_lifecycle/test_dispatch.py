@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from app.api.dispatch import router as dispatch_router
 from app.core.task_manager import TaskManager
+from app.core.ws import protocol
 
 from .conftest import LifecycleHarness
 
@@ -47,8 +48,7 @@ async def test_dispatch_start_completes_with_websocket_envelope(
     lifecycle_harness.control.release.set()
     accomplish = await lifecycle_harness.collector.wait_for(
         lambda message: message.get("id") == task_id
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     await _wait_until_cleaned(uuid.UUID(task_id))
 
@@ -77,8 +77,7 @@ async def test_dispatch_start_reports_failed_task(
     lifecycle_harness.control.release.set()
     accomplish = await lifecycle_harness.collector.wait_for(
         lambda message: message.get("id") == task_id
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     await _wait_until_cleaned(uuid.UUID(task_id))
 
@@ -105,8 +104,7 @@ async def test_dispatch_start_reports_runtime_crash(
 
     accomplish = await lifecycle_harness.collector.wait_for(
         lambda message: message.get("id") == task_id
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     await _wait_until_cleaned(uuid.UUID(task_id))
 
@@ -142,8 +140,7 @@ async def test_dispatch_stop_cancels_running_task(
     assert stop_response.json()["code"] == 200
     accomplish = await lifecycle_harness.collector.wait_for(
         lambda message: message.get("id") == task_id
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     final_script = accomplish["data"]["task_info"][0]
     assert final_script["status"] == "取消"

@@ -423,7 +423,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { WS_ID_PLUGIN_SYSTEM, WS_PLUGIN_SNAPSHOT_UPDATED } from '@/services/websocket/types'
 import {
   useHSRPluginApi,
   type HSREngine,
@@ -492,9 +493,7 @@ const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 let pluginSystemSubscriptionId: string | null = null
 
-const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as { kind?: string } | undefined
-  if (payload?.kind !== 'snapshot') return
+const handlePluginSystemMessage = () => {
   void hsrPluginApi
     .getCapabilities(scriptId)
     .then(async snapshot => {
@@ -831,7 +830,10 @@ const handleFieldSave = async (key: string, value: unknown) => {
 const handleCancel = () => router.push('/scripts')
 
 onMounted(async () => {
-  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
+  pluginSystemSubscriptionId = subscribe(
+    { id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED },
+    handlePluginSystemMessage
+  )
   if (!scriptId) {
     message.error('缺少脚本ID参数')
     handleCancel()

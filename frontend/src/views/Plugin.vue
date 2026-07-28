@@ -419,7 +419,17 @@ import draggable from 'vuedraggable'
 import { Input, message, Modal } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
 import SchemaForm from '@/components/SchemaForm.vue'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { AppLayoutSnapshotCoordinator } from '@/components/appLayoutSnapshotCoordinator'
+import { useWebSocket, type WSEnvelope } from '@/composables/useWebSocket'
+import { onConnected } from '@/services/websocket/connection'
+import {
+  WS_ID_PLUGIN_SYSTEM,
+  WS_PLUGIN_HMR,
+  WS_PLUGIN_RUNTIME_UPDATED,
+  WS_PLUGIN_SNAPSHOT_UPDATED,
+  type WSPluginHmrData,
+  type WSPluginRuntimeUpdatedData,
+} from '@/services/websocket/types'
 
 defineOptions({
   name: 'PluginView',
@@ -536,33 +546,27 @@ interface PluginRuntimeState {
   last_error_at?: string | null
 }
 
-interface PluginSystemRuntimeMessage {
-  kind: 'runtime_state'
-  event: string
-  record: PluginRuntimeState
-}
-
 interface PluginSystemSnapshotMessage extends PluginsGetResponse {
-  kind: 'snapshot'
   reason?: string
 }
 
-interface PluginSystemHmrMessage {
-  kind: 'hmr'
-  event: string
-  plugin?: string | null
-  changed_files?: string[]
-  action: string
-  status: 'running' | 'success' | 'error' | string
-  message?: string
-}
-
-interface WsCommandResponse<T = unknown> {
-  success?: boolean
-  message?: string
-  code?: number
-  data?: T
-  request_id?: string
+const isPluginSystemSnapshotMessage = (value: unknown): value is PluginSystemSnapshotMessage => {
+  if (typeof value !== 'object' || value === null) return false
+  const payload = value as Record<string, unknown>
+  return (
+    typeof payload.code === 'number' &&
+    typeof payload.status === 'string' &&
+    typeof payload.message === 'string' &&
+    typeof payload.version === 'number' &&
+    Array.isArray(payload.discovered_plugins) &&
+    typeof payload.schemas === 'object' &&
+    payload.schemas !== null &&
+    typeof payload.schema_errors === 'object' &&
+    payload.schema_errors !== null &&
+    Array.isArray(payload.instances) &&
+    typeof payload.runtime_states === 'object' &&
+    payload.runtime_states !== null
+  )
 }
 
 interface ListRow {
@@ -605,7 +609,8 @@ interface PluginListLayoutState {
 }
 
 const logger = window.electronAPI.getLogger('插件管理')
-const { subscribe, unsubscribe, sendRaw } = useWebSocket()
+const { subscribe, unsubscribe } = useWebSocket()
+let disposePluginSnapshotRefresh: (() => void) | null = null
 const PLUGIN_LIST_LAYOUT_STORAGE_KEY = 'plugin-manager-list-layout-v1'
 const loading = ref(false)
 const submitting = ref(false)
@@ -630,17 +635,7 @@ const schemaFieldErrors = ref<Record<string, string>>({})
 const schemaFormRef = ref<InstanceType<typeof SchemaForm> | null>(null)
 const selectedInstanceId = ref('')
 const editSnapshot = ref('')
-let pluginSystemSubscriptionId = ''
-let wsResponseSubscriptionId = ''
-let wsCommandCounter = 0
-const wsCommandPending = new Map<
-  string,
-  {
-    resolve: (value: any) => void
-    reject: (reason?: unknown) => void
-    timer: ReturnType<typeof setTimeout>
-  }
->()
+let pluginSystemSubscriptionIds: string[] = []
 
 const addModalVisible = ref(false)
 const jsonPreviewVisible = ref(false)
@@ -2163,79 +2158,11 @@ const triggerSchemaButtonAction = async (field: string, fieldSchema: PluginSchem
   await runDeclaredPluginAction(action, 'Schema 按钮')
 }
 
-const handleWsCommandResponse = (message: WebSocketBaseMessage) => {
-  const payload = message.data as WsCommandResponse | undefined
-  const requestId = payload?.request_id
-  if (typeof requestId !== 'string') {
-    return
-  }
-
-  const pending = wsCommandPending.get(requestId)
-  if (!pending) {
-    return
-  }
-
-  clearTimeout(pending.timer)
-  wsCommandPending.delete(requestId)
-
-  if (payload?.success) {
-    pending.resolve(payload.data)
-    return
-  }
-
-  pending.reject(new Error(payload?.message || `WebSocket command failed: ${requestId}`))
-}
-
-const ensureWsResponseSubscription = () => {
-  if (wsResponseSubscriptionId) {
-    return
-  }
-  wsResponseSubscriptionId = subscribe({ type: 'response', id: 'Client' }, handleWsCommandResponse)
-}
-
-const cleanupPendingWsCommands = () => {
-  wsCommandPending.forEach(pending => {
-    clearTimeout(pending.timer)
-    pending.reject(new Error('Plugin websocket command cancelled'))
-  })
-  wsCommandPending.clear()
-}
-
-const sendPluginCommand = async <T = any,>(
-  endpoint: string,
-  params: Record<string, unknown> = {}
-) => {
-  ensureWsResponseSubscription()
-
-  return await new Promise<T>((resolve, reject) => {
-    const requestId = `plugin_${Date.now()}_${(wsCommandCounter += 1)}`
-    const timer = setTimeout(() => {
-      wsCommandPending.delete(requestId)
-      reject(new Error(`WebSocket command timeout: ${endpoint}`))
-    }, 10000)
-
-    wsCommandPending.set(requestId, { resolve, reject, timer })
-
-    const sent = sendRaw('command', { endpoint, params }, requestId)
-    if (!sent) {
-      clearTimeout(timer)
-      wsCommandPending.delete(requestId)
-      reject(new Error(`WebSocket unavailable for command: ${endpoint}`))
-    }
-  })
-}
-
 const requestPluginAction = async <T = any,>(
-  endpoint: string,
   url: string,
   payload: Record<string, unknown> = {}
 ) => {
-  try {
-    return await sendPluginCommand<T>(endpoint, payload)
-  } catch (error) {
-    logger.warn(`WebSocket command fallback to HTTP: ${endpoint}, error=${String(error)}`)
-    return await apiPost<T>(url, payload)
-  }
+  return await apiPost<T>(url, payload)
 }
 
 const applySnapshot = (
@@ -2288,64 +2215,61 @@ const applyRuntimeStateUpdate = (record: PluginRuntimeState) => {
   }
 }
 
-const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
-  const payload = wsMessage.data as
-    | PluginSystemRuntimeMessage
-    | PluginSystemSnapshotMessage
-    | PluginSystemHmrMessage
-    | undefined
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
+const handlePluginSnapshotMessage = (wsMessage: WSEnvelope) => {
+  const payload = wsMessage.data
+  if (!isPluginSystemSnapshotMessage(payload)) return
+  pluginSnapshotCoordinator.applyMutation(payload)
+}
 
-  if (payload.kind === 'snapshot') {
-    applySnapshot(payload)
-    return
-  }
+const handlePluginRuntimeMessage = (wsMessage: WSEnvelope<WSPluginRuntimeUpdatedData>) => {
+  const payload = wsMessage.data
+  applyRuntimeStateUpdate(payload.record)
+}
 
-  if (payload.kind === 'runtime_state') {
-    applyRuntimeStateUpdate(payload.record)
-    return
-  }
-
-  if (payload.kind === 'hmr') {
-    logger.info(
-      `Plugin HMR: plugin=${payload.plugin || '-'}, action=${payload.action}, status=${payload.status}`
-    )
-    if (payload.status === 'error') {
-      message.warning(`插件 HMR 失败: ${payload.message || payload.plugin || 'unknown'}`)
-    }
+const handlePluginHmrMessage = (wsMessage: WSEnvelope<WSPluginHmrData>) => {
+  const payload = wsMessage.data
+  logger.info(
+    `Plugin HMR: plugin=${payload.plugin || '-'}, action=${payload.action}, status=${payload.status}`
+  )
+  if (payload.status === 'error') {
+    message.warning(`插件 HMR 失败: ${payload.message || payload.plugin || 'unknown'}`)
   }
 }
 
-const fetchDataByHttp = async () => {
+const fetchDataByHttp = async (): Promise<PluginsGetResponse> => {
   const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
   if (data.code !== 200 || data.status !== 'success') {
     throw new Error(data.message || '获取插件配置失败')
   }
-  applySnapshot(data)
+  return data
 }
+
+const loadPluginSnapshot = async (): Promise<PluginsGetResponse> => {
+  try {
+    const data = await requestPluginAction<PluginsGetResponse>('/api/plugins/get', {})
+    if (data.code !== 200 || data.status !== 'success') {
+      throw new Error(data.message || '获取插件配置失败')
+    }
+    return data
+  } catch (error) {
+    logger.warn(`Plugin fetch by websocket failed: ${String(error)}`)
+    return fetchDataByHttp()
+  }
+}
+
+const pluginSnapshotCoordinator = new AppLayoutSnapshotCoordinator<PluginsGetResponse>({
+  load: loadPluginSnapshot,
+  apply: data => applySnapshot(data),
+  reportError: error => {
+    message.error(`获取失败: ${String(error)}`)
+    logger.error(`获取插件配置失败: ${String(error)}`)
+  },
+})
 
 const fetchData = async () => {
   loading.value = true
   try {
-    const data = await requestPluginAction<PluginsGetResponse>(
-      'plugins.get',
-      '/api/plugins/get',
-      {}
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '获取插件配置失败')
-    }
-    applySnapshot(data)
-  } catch (error) {
-    logger.warn(`Plugin fetch by websocket failed: ${String(error)}`)
-    try {
-      await fetchDataByHttp()
-    } catch (httpError) {
-      message.error(`获取失败: ${String(httpError)}`)
-      logger.error(`获取插件配置失败: ${String(httpError)}`)
-    }
+    await pluginSnapshotCoordinator.refreshFresh()
   } finally {
     loading.value = false
   }
@@ -2366,7 +2290,7 @@ const submitAdd = async () => {
   }
   submitting.value = true
   try {
-    const data = await requestPluginAction<any>('plugins.add', '/api/plugins/add', {
+    const data = await requestPluginAction<any>('/api/plugins/add', {
       plugin: addForm.plugin,
       name: addForm.name || undefined,
       enabled: addForm.enabled,
@@ -2432,7 +2356,7 @@ const submitEdit = async () => {
     if (nextConfigText !== JSON.stringify(targetConfig, null, 2)) {
       payload.config = config
     }
-    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
+    const data = await requestPluginAction<any>('/api/plugins/update', {
       ...payload,
     })
     if (data.code !== 200 || data.status !== 'success') {
@@ -2465,7 +2389,7 @@ const deleteInstance = async (instanceId: string) => {
     return
   }
   try {
-    const data = await requestPluginAction<any>('plugins.delete', '/api/plugins/delete', {
+    const data = await requestPluginAction<any>('/api/plugins/delete', {
       instanceId,
     })
     if (data.code !== 200 || data.status !== 'success') {
@@ -2491,7 +2415,7 @@ const deleteInstance = async (instanceId: string) => {
 const reloadAll = async () => {
   reloadingAll.value = true
   try {
-    const data = await requestPluginAction<any>('plugins.reload', '/api/plugins/reload', {})
+    const data = await requestPluginAction<any>('/api/plugins/reload', {})
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载失败')
     }
@@ -2505,11 +2429,7 @@ const reloadAll = async () => {
 
 const reloadInstance = async (instanceId: string) => {
   try {
-    const data = await requestPluginAction<any>(
-      'plugins.reload_instance',
-      '/api/plugins/reload_instance',
-      { instanceId }
-    )
+    const data = await requestPluginAction<any>('/api/plugins/reload_instance', { instanceId })
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载实例失败')
     }
@@ -2521,11 +2441,7 @@ const reloadInstance = async (instanceId: string) => {
 
 const reloadPlugin = async (plugin: string) => {
   try {
-    const data = await requestPluginAction<any>(
-      'plugins.reload_plugin',
-      '/api/plugins/reload_plugin',
-      { plugin }
-    )
+    const data = await requestPluginAction<any>('/api/plugins/reload_plugin', { plugin })
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载插件失败')
     }
@@ -2548,11 +2464,9 @@ const uninstallPluginPackage = async (plugin: string) => {
 
   uninstallingPlugin.value = plugin
   try {
-    const data = await requestPluginAction<any>(
-      'plugins.uninstall_package',
-      '/api/plugins/uninstall_package',
-      { package: packageName }
-    )
+    const data = await requestPluginAction<any>('/api/plugins/uninstall_package', {
+      package: packageName,
+    })
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '卸载插件失败')
     }
@@ -2572,7 +2486,7 @@ const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean)
   }
   togglingInstanceId.value = instance.id
   try {
-    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
+    const data = await requestPluginAction<any>('/api/plugins/update', {
       instanceId: instance.id,
       enabled,
     })
@@ -2610,20 +2524,29 @@ watch(
 )
 
 onMounted(() => {
-  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
+  pluginSystemSubscriptionIds = [
+    subscribe(
+      { id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED },
+      handlePluginSnapshotMessage
+    ),
+    subscribe(
+      { id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_RUNTIME_UPDATED },
+      handlePluginRuntimeMessage
+    ),
+    subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_HMR }, handlePluginHmrMessage),
+  ]
+  disposePluginSnapshotRefresh = onConnected(fetchData)
   void fetchData()
 })
 
 onUnmounted(() => {
-  if (pluginSystemSubscriptionId) {
-    unsubscribe(pluginSystemSubscriptionId)
-    pluginSystemSubscriptionId = ''
+  pluginSnapshotCoordinator.invalidate()
+  for (const subscriptionId of pluginSystemSubscriptionIds) {
+    unsubscribe(subscriptionId)
   }
-  if (wsResponseSubscriptionId) {
-    unsubscribe(wsResponseSubscriptionId)
-    wsResponseSubscriptionId = ''
-  }
-  cleanupPendingWsCommands()
+  pluginSystemSubscriptionIds = []
+  disposePluginSnapshotRefresh?.()
+  disposePluginSnapshotRefresh = null
 })
 </script>
 

@@ -467,9 +467,8 @@ class DevPluginHMR:
         message: str,
     ) -> None:
         await send_plugin_system_message(
-            "Update",
+            "plugin.hmr",
             {
-                "kind": "hmr",
                 "event": event,
                 "plugin": plugin,
                 "changed_files": changed_files,

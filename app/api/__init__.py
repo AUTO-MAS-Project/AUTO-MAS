@@ -39,7 +39,6 @@ if TYPE_CHECKING:
     from .setting import router as setting_router
     from .update import router as update_router
     from .ocr import router as ocr_router
-    from .websocket import router as ws_router
     from .plugins import router as plugins_router
     from .plugin_gateway import router as plugin_gateway_router
     from .scripts2 import router as scripts2_router
@@ -61,7 +60,6 @@ _ROUTER_MODULES: dict[str, str] = {
     "setting_router": ".setting",
     "update_router": ".update",
     "ocr_router": ".ocr",
-    "ws_router": ".websocket",
     "plugins_router": ".plugins",
     "plugin_gateway_router": ".plugin_gateway",
     "scripts2_router": ".scripts2",
@@ -81,8 +79,6 @@ def __getattr__(name: str):
         except ImportError:
             return None
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
     "core_router",
     "info_router",
@@ -98,7 +94,6 @@ __all__ = [
     "setting_router",
     "update_router",
     "ocr_router",
-    "ws_router",
     "plugins_router",
     "plugin_gateway_router",
     "qr_login_router",

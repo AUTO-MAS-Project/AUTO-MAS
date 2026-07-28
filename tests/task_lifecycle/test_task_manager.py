@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from app.core.task_manager import TaskManager
+from app.core.ws import protocol
 from app.models.task import UserItem
 
 from .conftest import LifecycleHarness
@@ -18,7 +19,7 @@ def _task_statuses(messages: list[dict[str, Any]]) -> list[str]:
     statuses: list[str] = []
     for message in messages:
         task_info = message.get("data", {}).get("task_info")
-        if message.get("type") == "Update" and task_info:
+        if message.get("type") == protocol.TASK_INFO_UPDATED and task_info:
             statuses.append(task_info[0]["status"])
     return statuses
 
@@ -27,7 +28,7 @@ def _user_statuses(messages: list[dict[str, Any]]) -> list[str]:
     statuses: list[str] = []
     for message in messages:
         task_info = message.get("data", {}).get("task_info")
-        if message.get("type") == "Update" and task_info:
+        if message.get("type") == protocol.TASK_INFO_UPDATED and task_info:
             statuses.append(task_info[0]["userList"][0]["status"])
     return statuses
 
@@ -56,8 +57,7 @@ async def _complete_task(harness: LifecycleHarness) -> tuple[Any, dict[str, Any]
 
     accomplish = await harness.collector.wait_for(
         lambda message: message.get("id") == str(task_id)
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     async with asyncio.timeout(2.0):
         await handler.accomplish.wait()
@@ -80,9 +80,13 @@ async def test_task_completes_with_ordered_statuses(
         _user_statuses(task_messages), ["等待", "运行中", "完成"]
     )
     assert accomplish["data"]["task_info"][0]["status"] == "完成"
-    assert sum(message["type"] == "Signal" for message in task_messages) == 1
+    assert (
+        sum(message["type"] == protocol.TASK_COMPLETED for message in task_messages)
+        == 1
+    )
     assert not any(
-        message["type"] == "Info" and "Error" in message["data"]
+        message["type"] == protocol.TASK_NOTICE
+        and message["data"].get("level") == "error"
         for message in task_messages
     )
     assert lifecycle_harness.control.finalized.is_set()
@@ -116,8 +120,7 @@ async def test_task_crash_runs_crash_handler_and_finalizer(
 
     accomplish = await lifecycle_harness.collector.wait_for(
         lambda message: message.get("id") == str(task_id)
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     async with asyncio.timeout(2.0):
         await handler.accomplish.wait()
@@ -150,8 +153,7 @@ async def test_running_task_can_be_cancelled(
     await TaskManager.stop_task(str(task_id))
     accomplish = await lifecycle_harness.collector.wait_for(
         lambda message: message.get("id") == str(task_id)
-        and message.get("type") == "Signal"
-        and "Accomplish" in message.get("data", {})
+        and message.get("type") == protocol.TASK_COMPLETED
     )
     await _wait_until_cleaned(task_id)
 

@@ -41,7 +41,6 @@ export const PAGE_COMPONENTS: Record<string, RouteRecordRaw['component']> = {
   Settings: () => import('../views/setting/index.vue'),
   TestRouter: () => import('../views/TestRouter.vue'),
   OCRdev: () => import('../views/OCRdev.vue'),
-  WSdev: () => import('../views/WSdev.vue'),
   OverlayMaskDev: () => import('../views/OverlayMaskDev.vue'),
 }
 
@@ -59,7 +58,6 @@ const BUILTIN_ROUTE_NAMES: Record<string, string> = {
   settings: 'Settings',
   'test-router': 'TestRouter',
   'ocr-dev': 'OCRdev',
-  'ws-dev': 'WSdev',
   'overlay-mask-dev': 'OverlayMaskDev',
 }
 
@@ -110,7 +108,6 @@ export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
   hostPage('settings', '/settings', '设置', 'settings', 'Settings', 'bottom', 30),
   hostPage('test-router', '/TestRouter', '测试路由', 'dev', 'TestRouter', 'dev', 10, true),
   hostPage('ocr-dev', '/OCRdev', 'OCR 测试', 'dev', 'OCRdev', 'dev', 20, true),
-  hostPage('ws-dev', '/WSdev', 'WebSocket 测试', 'api', 'WSdev', 'dev', 30, true),
   hostPage(
     'overlay-mask-dev',
     '/OverlayMaskDev',

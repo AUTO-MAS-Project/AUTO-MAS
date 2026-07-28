@@ -85,8 +85,8 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  websocketId: string | null
-  subscriptionId?: string | null
+  taskId: string | null
+  subscriptionIds?: string[]
   taskQueue: QueueItem[]
   userQueue: QueueItem[]
   logs: LogEntry[]
@@ -102,12 +102,4 @@ export interface SchedulerTab {
   runningModeLabel?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
-}
-
-export interface TaskMessage {
-  title: string
-  content: string
-  needInput: boolean
-  messageId?: string
-  taskId?: string
 }

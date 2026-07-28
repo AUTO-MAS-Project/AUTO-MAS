@@ -319,7 +319,7 @@ USER_GROUPS = (
                         "response_task_id_key": "taskId",
                         "stop_path": "/api/dispatch/stop",
                         "stop_method": "POST",
-                        "stop_payload": {"taskId": "{{session.websocketId}}"},
+                        "stop_payload": {"taskId": "{{session.taskId}}"},
                         "overlay_title": "正在进行通用配置",
                         "overlay_description": (
                             "当前正在进行该用户的通用配置，请在配置界面完成相关设置。\n"

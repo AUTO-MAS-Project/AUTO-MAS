@@ -31,7 +31,6 @@ import uvicorn
 import sqlite3
 import truststore
 from pathlib import Path
-from fastapi import WebSocket
 from collections import defaultdict
 from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
@@ -52,7 +51,6 @@ from app.models.config import (
     GameSignAccountGroup,
     MaaFWConfig,
 )
-from app.models.schema import WebSocketMessage
 from app.models.script_api import ScriptRecord, ScriptTypeDescriptor, ScriptUserRecord
 from app.utils.constants import (
     UTC4,
@@ -108,8 +106,6 @@ class AppConfig(GlobalConfig):
         self._repo_initialized = False
 
         self.server: Optional[uvicorn.Server] = None
-        self.websocket: Optional[WebSocket] = None
-        self._websocket_missing_logged = False
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -522,33 +518,6 @@ class AppConfig(GlobalConfig):
             cur.close()
             db.close()
             logger.success("数据文件版本更新完成")
-
-    async def send_json(self, data: dict) -> None:
-        """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
-            self._log_websocket_missing_once()
-            return
-        await Config.websocket.send_json(data)
-
-    async def send_websocket_message(
-        self,
-        id: str,
-        type: Literal["Update", "Message", "Info", "Signal"],
-        data: Dict[str, Any],
-    ) -> None:
-        """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            self._log_websocket_missing_once()
-            return
-        await Config.websocket.send_json(
-            WebSocketMessage(id=id, type=type, data=data).model_dump()
-        )
-
-    def _log_websocket_missing_once(self) -> None:
-        if self._websocket_missing_logged:
-            return
-        self._websocket_missing_logged = True
-        logger.debug("WebSocket 未连接")
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""

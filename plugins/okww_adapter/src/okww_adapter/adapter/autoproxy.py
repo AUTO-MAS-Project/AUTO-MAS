@@ -27,6 +27,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.services import Notify, System
@@ -306,10 +308,12 @@ class AutoProxyTask(TaskExecuteBase):
                     await self._push_dispatch_log(f"游戏启动失败: {e}")
                     self.cur_user_log.status = f"游戏启动失败: {e}"
                     self.cur_user_log.content = [f"游戏启动失败: {e}"]
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"游戏启动失败: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error", message=f"游戏启动失败: {e}"
+                        ),
                     )
                     await self.kill_managed_process(
                         kill_game=self._game_management_enabled()
@@ -520,10 +524,12 @@ class AutoProxyTask(TaskExecuteBase):
         logger.exception(f"OK-WW 自动代理任务出现异常: {e}")
         if hasattr(self, "wait_event"):
             self.wait_event.set()
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-WW 自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-WW 自动代理任务出现异常: {e}"
+            ),
         )
         await self.kill_managed_process(
             kill_game=self._game_management_enabled()

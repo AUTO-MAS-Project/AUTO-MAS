@@ -5,7 +5,9 @@ import uuid
 from contextlib import suppress
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.ConfigBase import ConfigBase, MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.services import Notify
@@ -39,10 +41,10 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
             if result != "Pass":
                 if self.inner.cur_user_item.status == "等待":
                     self.inner.cur_user_item.status = "异常"
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.inner.task_info.task_id,
-                    type="Info",
-                    data={"Error": result},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=result),
                 )
                 return
             await self.inner.main_task()
