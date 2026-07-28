@@ -24,7 +24,9 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.ConfigBase import ConfigBase, MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.task.general.tools import execute_script_task
@@ -566,10 +568,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.script_info.log = status
         await self._push_dispatch_log(f"本次运行失败：{status}")
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": status},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=status),
             )
 
         config_session = self._require_config_session()
@@ -820,10 +822,13 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 await self.report_handler.stop(self)
         logger.exception(f"{display_name} 自动代理任务出现异常: {e}")
         try:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"{display_name} 自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"{display_name} 自动代理任务出现异常: {e}",
+                ),
             )
         except Exception as send_error:
             logger.exception(f"发送 {display_name} 异常通知失败: {send_error}")

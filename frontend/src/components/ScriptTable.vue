@@ -317,7 +317,7 @@ import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/u
 
 interface Props {
   scripts: Script[]
-  activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>

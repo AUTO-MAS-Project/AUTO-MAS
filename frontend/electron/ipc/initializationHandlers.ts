@@ -5,27 +5,24 @@
 
 import { ipcMain, BrowserWindow } from 'electron'
 import { getAppRoot } from '../services/environmentService'
-import { InitializationService, BackendService } from '../services'
+import { InitializationService, type BackendService } from '../services'
 import { getLogger } from '../services/logger'
 
 const logger = getLogger('初始化处理器')
 
 // 全局实例
 let initService: InitializationService | null = null
-let backendService: BackendService | null = null
+let initializationHandlersRegistered = false
 
 /**
  * 获取或创建初始化服务实例
  */
-function getInitService(targetBranch: string = 'dev'): InitializationService {
+function getInitService(targetBranch?: string): InitializationService {
   const appRoot = getAppRoot()
 
   if (!initService) {
-    initService = new InitializationService(appRoot, targetBranch)
-    if (backendService) {
-      initService.setBackendService(backendService)
-    }
-  } else {
+    initService = new InitializationService(appRoot, targetBranch ?? 'dev')
+  } else if (targetBranch !== undefined) {
     initService.setTargetBranch(targetBranch)
   }
 
@@ -36,15 +33,7 @@ function getInitService(targetBranch: string = 'dev'): InitializationService {
  * 获取后端服务实例
  */
 export function getBackendService(): BackendService {
-  if (!backendService) {
-    const appRoot = getAppRoot()
-    const initService = getInitService()
-    const mirrorService = initService.getMirrorService()
-    backendService = new BackendService(appRoot, mirrorService)
-    initService.setBackendService(backendService)
-  }
-
-  return backendService
+  return getInitService().getBackendService()
 }
 
 /**
@@ -59,6 +48,12 @@ export async function prewarmBackend(): Promise<void> {
  * 注册所有初始化相关的 IPC 处理器
  */
 export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
+  if (initializationHandlersRegistered) {
+    logger.info('初始化 IPC 处理器已注册，跳过重复注册')
+    return
+  }
+  initializationHandlersRegistered = true
+
   // ==================== 镜像源初始化 ====================
 
   ipcMain.handle('init-mirrors', async () => {
@@ -240,8 +235,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       }, startBackend)
 
       if (result.success) {
-        // 保存后端服务实例
-        backendService = initService.getBackendService()
+        const backendService = initService.getBackendService()
 
         // 设置状态回调
         backendService.setStatusCallback(status => {
@@ -349,11 +343,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   ipcMain.handle('cleanup', async () => {
     logger.info('清理初始化资源')
 
-    if (backendService) {
-      await backendService.cleanup()
-      backendService = null
-    }
-
+    await initService?.getBackendService().cleanup()
     initService = null
 
     logger.info('资源清理完成')
@@ -368,11 +358,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 export async function cleanupInitializationResources() {
   logger.info('清理初始化资源')
 
-  if (backendService) {
-    await backendService.cleanup()
-    backendService = null
-  }
-
+  await initService?.getBackendService().cleanup()
   initService = null
 
   logger.info('初始化资源清理完成')

@@ -101,7 +101,7 @@ class UpdateHandlerSwitchTest(unittest.IsolatedAsyncioTestCase):
             new_callable=AsyncMock,
             side_effect=RuntimeError("save failed"),
         ), patch(
-            "app.services.update.Config.send_websocket_message",
+            "app.services.update.Publisher.send",
             new_callable=AsyncMock,
         ):
             with self.assertRaisesRegex(RuntimeError, "save failed"):

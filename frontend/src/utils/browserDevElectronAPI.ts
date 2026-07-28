@@ -61,7 +61,7 @@ const browserDevElectronAPI = {
   fileExists: async () => false,
   readFile: async () => '',
   getAppPath: async () => '',
-  backendStatus: async () => ({ isRunning: true, wsConnected: false }),
+  backendStatus: async () => ({ isRunning: true }),
 } as unknown as ElectronAPI
 
 if (import.meta.env.DEV && !window.electronAPI) {

@@ -146,7 +146,8 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
         )
 
     async def finalize(self, runtime: ScriptAdapterRuntime) -> None:
-        from app.core.config import Config
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSTaskNoticeData
         from app.services.notification import Notify
         from .tools.notify import push_notification
 
@@ -220,10 +221,12 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
                 await push_notification("代理结果", title, result, None)
             except Exception as error:
                 logger.exception(f"推送代理结果时出现异常: {error}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=runtime.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {error}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {error}"
+                    ),
                 )
 
         script_config_path: Path | None = runtime.extra.get("script_config_path")
@@ -409,7 +412,7 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
                         "stop_path": "/api/dispatch/stop",
                         "stop_method": "POST",
                         "stop_payload": {
-                            "taskId": "{{session.websocketId}}",
+                            "taskId": "{{session.taskId}}",
                         },
                         "overlay_title": "正在进行通用配置",
                         "overlay_description": (
@@ -434,12 +437,15 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
         return schema
 
     async def on_crash(self, runtime: ScriptAdapterRuntime, error: Exception) -> None:
-        from app.core.config import Config
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSTaskNoticeData
 
         runtime.script_info.status = "异常"
         logger.exception(f"通用脚本任务出现异常: {error}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=runtime.task_info.task_id,
-            type="Info",
-            data={"Error": f"通用脚本任务出现异常: {error}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"通用脚本任务出现异常: {error}"
+            ),
         )

@@ -21,18 +21,21 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
 import asyncio
-from typing import Any
+import os
+from contextlib import suppress
+from typing import Optional
+
 from fastapi import APIRouter, Request, WebSocket
 from pydantic import BaseModel, Field
 
-from app.core import Config, Broadcast, TaskManager
+from app.core import Config, TaskManager
+from app.core.lifecycle import ShutdownCoordinator
+from app.core.ws import Dialogs, MainConnection, Publisher, protocol
 from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
 from app.utils import get_logger
-from app.utils.websocket import ws_client_manager
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -91,35 +94,67 @@ async def get_ws_meta() -> WebSocketMetaOut:
     )
 
 
+@router.get(
+    "/dialogs/pending",
+    summary="获取待处理弹窗初始快照",
+    response_model=list[WSDialogRequestData],
+    status_code=200,
+)
+async def get_pending_dialogs() -> list[WSDialogRequestData]:
+    """返回当前未完成弹窗；WS 只承载后续请求与响应事件。"""
+
+    return Dialogs.pending_requests()
+
+
+# 主连接建立后触发启动时调度队列
+MainConnection.on_connect(TaskManager.start_startup_queue)
+
+
 @router.websocket("/ws")
 async def connect_websocket(websocket: WebSocket):
+    """主 WebSocket 端点，接入后整体交给 MainConnection 管理。"""
 
-    if Config.websocket is not None:
-        await websocket.close(code=1000, reason="已有连接")
+    await MainConnection.serve(websocket)
+
+
+# 关闭流程任务由模块持有，重复 /close 请求不重复触发
+_shutdown_task: Optional[asyncio.Task] = None
+
+
+async def _shutdown_backend() -> None:
+    """后端正常关闭收尾：完成完整清理后再通知前端可退出，最后置退出标志。"""
+
+    # 开发模式：后端保持存活以复用（插件/定时器等服务不拆除），
+    # 只做轻量任务清理后即通知前端可退出
+    if is_backend_dev_mode():
+        try:
+            await TaskManager.stop_task("ALL")
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
+        except Exception as error:
+            logger.error(
+                "开发模式轻量清理失败，取消发送退出信号: "
+                f"{type(error).__name__}: {error}",
+                exc_info=True,
+            )
+            return
+        await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
+        logger.warning("后端开发模式下忽略退出请求，仅完成任务清理")
         return
 
-    await websocket.accept()
-    Config.websocket = None
+    # 执行完整 teardown（任务/插件/定时器/遥测等），失败则不发送完成信号，
+    # 避免前端在清理未完成时就认为可以退出
+    try:
+        await ShutdownCoordinator.run_teardown()
+    except Exception as e:
+        logger.error(f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True)
+        return
 
-    async def on_message(data: dict[str, Any]):
-        await Broadcast.put(data)
+    # 清理完成后通过主 WS 通知前端可以退出
+    await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
 
-    async def on_disconnect():
-        Config.websocket = None
-
-    session = await ws_client_manager.openwsr(
-        name=ws_client_manager.MAIN_CLIENT_NAME,
-        websocket=websocket,
-        ping_interval=15.0,
-        ping_timeout=30.0,
-        on_message=on_message,
-        on_disconnect=on_disconnect,
-    )
-
-    Config.websocket = session
-    asyncio.create_task(TaskManager.start_startup_queue())
-    await session.wait_closed()
-    logger.warning("主 WebSocket 已断开，等待前端重新连接")
+    if Config.server is not None:
+        Config.server.should_exit = True
 
 
 @ws_command("core.close")
@@ -130,17 +165,21 @@ async def connect_websocket(websocket: WebSocket):
     status_code=200,
 )
 async def close() -> OutBase:
-    """关闭后端程序"""
+    """关闭后端程序：启动清理流程，完成后经主 WS 发送 backend.shutdown.ready"""
 
-    try:
-        if Config.websocket is not None:
-            await Config.websocket.close(code=1000, reason="正常关闭")
-        if is_backend_dev_mode():
-            logger.warning("后端开发模式下忽略 /api/core/close 的 KillSelf 请求")
-            return OutBase(message="开发模式下已忽略关闭请求")
-        await System.set_power("KillSelf", from_frontend=True)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    global _shutdown_task
+
+    if _shutdown_task is not None and not _shutdown_task.done():
+        return OutBase(message="关闭流程已在进行中")
+
+    _shutdown_task = asyncio.create_task(_shutdown_backend())
+
+    def _on_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(f"关闭流程异常: {type(exc).__name__}: {exc}")
+
+    _shutdown_task.add_done_callback(_on_done)
     return OutBase()

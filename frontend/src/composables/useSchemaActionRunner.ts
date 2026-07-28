@@ -2,7 +2,13 @@ import axios from 'axios'
 import { computed, onUnmounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import type {
   SchemaActionDefinition,
   SchemaActionSessionDefinition,
@@ -18,8 +24,8 @@ type ActiveSession = {
   action: SchemaActionDefinition
   session: SchemaActionSessionDefinition
   context: ActionContext
-  subscriptionId: string | null
-  websocketId: string
+  subscriptionIds: string[]
+  taskId: string
   timeoutId: number | null
 }
 
@@ -137,8 +143,8 @@ export const useSchemaActionRunner = (options?: {
     if (current.timeoutId) {
       window.clearTimeout(current.timeoutId)
     }
-    if (current.subscriptionId) {
-      unsubscribe(current.subscriptionId)
+    for (const subscriptionId of current.subscriptionIds) {
+      unsubscribe(subscriptionId)
     }
 
     activeSession.value = null
@@ -157,54 +163,30 @@ export const useSchemaActionRunner = (options?: {
     response: any
   ) => {
     const responseTaskIdKey = session.response_task_id_key || 'taskId'
-    const websocketIdRaw = response?.[responseTaskIdKey]
-    const websocketId = typeof websocketIdRaw === 'string' ? websocketIdRaw : ''
-    if (!websocketId) {
+    const taskIdRaw = response?.[responseTaskIdKey]
+    const taskId = typeof taskIdRaw === 'string' ? taskIdRaw : ''
+    if (!taskId) {
       throw new Error(`会话动作缺少 ${responseTaskIdKey} 返回值`)
     }
 
     const sessionContext = {
       ...context,
       session: {
-        websocketId,
+        taskId,
       },
     }
 
-    const completionType = session.completion_type || 'Signal'
-    const completionField = session.completion_field || 'Accomplish'
-    const errorField = session.error_field || 'Error'
-
-    const subscriptionId = subscribe(
-      { id: websocketId },
-      async (wsMessage: WebSocketBaseMessage) => {
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          message.error(`会话连接失败: ${errorMsg}`)
-          logger.error(`会话连接失败: ${errorMsg}`)
-          await cleanupSession(false)
-          return
+    const subscriptionIds = [
+      subscribe({ id: taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(String(data.message || '会话执行失败'))
         }
-
-        if (
-          wsMessage.type === 'Info' &&
-          wsMessage.data &&
-          typeof wsMessage.data === 'object' &&
-          errorField in wsMessage.data
-        ) {
-          message.error(
-            String((wsMessage.data as Record<string, unknown>)[errorField] || '会话执行失败')
-          )
-          return
-        }
-
-        if (
-          wsMessage.type === completionType &&
-          wsMessage.data &&
-          typeof wsMessage.data === 'object' &&
-          completionField in wsMessage.data
-        ) {
-          const result = String((wsMessage.data as Record<string, unknown>)[completionField] || '')
+      }),
+      subscribe({ id: taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+        void (async () => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
+          const result = String(data.result || '')
           if (result && !result.includes('异常') && !result.includes('错误')) {
             const successText = resolveTemplateValue(
               session.success_message || `${action.label || '配置动作'}已完成`,
@@ -213,9 +195,9 @@ export const useSchemaActionRunner = (options?: {
             message.success(String(successText))
           }
           await cleanupSession(Boolean(action.refresh))
-        }
-      }
-    )
+        })()
+      }),
+    ]
 
     let timeoutId: number | null = null
     const timeoutMs = Number(session.timeout_ms || 0)
@@ -235,8 +217,8 @@ export const useSchemaActionRunner = (options?: {
       action,
       session,
       context: sessionContext,
-      subscriptionId,
-      websocketId,
+      subscriptionIds,
+      taskId,
       timeoutId,
     }
   }

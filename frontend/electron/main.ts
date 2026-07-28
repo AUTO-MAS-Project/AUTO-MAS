@@ -1,4 +1,4 @@
-﻿import { exec, spawn } from 'child_process'
+﻿import { spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -7,6 +7,7 @@ import {
   Menu,
   nativeImage,
   nativeTheme,
+  powerMonitor,
   screen,
   shell,
   Tray,
@@ -18,10 +19,15 @@ import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
-  cleanupInitializationResources,
+  getBackendService,
+  prewarmBackend,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
-import { prewarmBackend } from './ipc/initializationHandlers'
+import {
+  canElectronExitImmediately,
+  canRequestRendererClose,
+  markForceQuitFailed,
+} from './quitCoordinationState'
 
 import { getLogger, initializeLogger } from './services/logger'
 import AdmZip = require('adm-zip')
@@ -31,30 +37,19 @@ initializeLogger()
 
 const logger = getLogger('主进程')
 
-// 强制清理相关进程的函数
-async function forceKillRelatedProcesses(): Promise<void> {
-  try {
-    const { killAllRelatedProcesses } = await import('./utils/processManager')
-    await killAllRelatedProcesses()
-    logger.info('所有相关进程已清理')
-  } catch (error) {
-    logger.error(`清理进程时出错: ${error}`)
+let forceKillPromise: Promise<void> | null = null
 
-    // 备用清理方法
-    if (process.platform === 'win32') {
-      return new Promise(resolve => {
-        // 使用更简单的命令强制结束相关进程
-        exec(`taskkill /f /im python.exe`, error => {
-          if (error) {
-            logger.warn(`备用清理方法失败: ${error.message}`)
-          } else {
-            logger.info('备用清理方法执行成功')
-          }
-          resolve()
-        })
-      })
-    }
-  }
+// 强制清理也通过唯一 BackendService 队列执行，避免与 start/stop/restart 并发。
+async function forceKillRelatedProcesses(): Promise<void> {
+  if (forceKillPromise) return forceKillPromise
+  forceKillPromise = (async () => {
+    const result = await getBackendService().forceStopBackend()
+    if (!result.success) throw new Error(result.error || '未知错误')
+    logger.info('所有相关进程已清理')
+  })().finally(() => {
+    forceKillPromise = null
+  })
+  return forceKillPromise
 }
 
 // 检查是否以管理员权限运行
@@ -101,32 +96,15 @@ function restartAsAdmin(): void {
 }
 
 let tray: Tray | null = null
-let isQuitting = false
+let coordinatedQuit = false
+let forceQuitInProgress = false
+let quitRequestInFlight = false
+let relaunchAfterQuit = false
+let quitFallbackTimer: NodeJS.Timeout | null = null
+const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
-
-const HEARTBEAT_LOG_KEYWORD_RE = /(\bping\b|\bpong\b|heartbeat|心跳)/i
-
-function shouldDropHeartbeatProcessLog(
-  level: string,
-  moduleName: string,
-  message: string
-): boolean {
-  const isProd = app.isPackaged && process.env.NODE_ENV !== 'development'
-  if (!isProd) {
-    return false
-  }
-  if (!['debug', 'info'].includes(level)) {
-    return false
-  }
-  if (!HEARTBEAT_LOG_KEYWORD_RE.test(message)) {
-    return false
-  }
-
-  // 仅过滤心跳过程日志，避免影响其他模块的普通业务日志。
-  return moduleName.includes('WebSocket') || moduleName.includes('WS')
-}
 
 // 配置接口
 interface AppConfig {
@@ -270,8 +248,7 @@ function createTray() {
     {
       label: '退出',
       click: () => {
-        isQuitting = true
-        app.quit()
+        requestRendererClose('托盘退出')
       },
     },
   ])
@@ -379,6 +356,93 @@ function centerBoundsInWorkArea(bounds: Rectangle, workArea: Rectangle): Rectang
 function parseConfigInteger(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value?.trim() ?? '', 10)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function clearQuitFallback(): void {
+  if (quitFallbackTimer) {
+    clearTimeout(quitFallbackTimer)
+    quitFallbackTimer = null
+  }
+}
+
+function finishCoordinatedQuit(): void {
+  if (coordinatedQuit) return
+  coordinatedQuit = true
+  quitRequestInFlight = false
+  clearQuitFallback()
+  if (saveWindowStateTimeout) {
+    clearTimeout(saveWindowStateTimeout)
+    saveWindowStateTimeout = null
+  }
+  destroyTray()
+  if (relaunchAfterQuit) app.relaunch()
+  app.quit()
+}
+
+async function shouldPreserveBackendForDevMode(): Promise<boolean> {
+  const backendDevMode = await getBackendService().getBackendDevMode()
+  if (backendDevMode !== null) return backendDevMode
+  return Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
+}
+
+async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
+  if (forceQuitInProgress || coordinatedQuit) return
+  forceQuitInProgress = true
+  clearQuitFallback()
+  logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
+
+  // Electron 开发进程可能复用由开发者单独启动的后端；renderer 失联时也不能误杀。
+  if (await shouldPreserveBackendForDevMode()) {
+    logger.info('开发模式最终兜底：保留后端，仅关闭 Electron 前端')
+    finishCoordinatedQuit()
+    return
+  }
+
+  try {
+    await forceKillRelatedProcesses()
+    // forceStopBackend 只有在 scoped taskkill 已复查全部 PID 后才返回 success。
+    finishCoordinatedQuit()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`最终强制清理失败: ${errorMsg}`)
+    const retryableState = markForceQuitFailed({
+      coordinatedQuit,
+      forceQuitInProgress,
+      quitRequestInFlight,
+    })
+    forceQuitInProgress = retryableState.forceQuitInProgress
+    quitRequestInFlight = retryableState.quitRequestInFlight
+    dialog.showErrorBox(
+      'AUTO-MAS 无法安全退出',
+      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
+    )
+    if ((!mainWindow || mainWindow.isDestroyed()) && app.isReady()) {
+      try {
+        createWindow()
+      } catch (windowError) {
+        const windowErrorMsg =
+          windowError instanceof Error ? windowError.message : String(windowError)
+        logger.error(`强制清理失败后重建窗口失败: ${windowErrorMsg}`)
+      }
+    }
+  }
+}
+
+function requestRendererClose(reason: string): void {
+  if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
+    return
+  const win = mainWindow
+  if (!win || win.isDestroyed()) {
+    void forceQuitAfterRendererTimeout(`${reason}（renderer 不可用）`)
+    return
+  }
+
+  quitRequestInFlight = true
+  logger.info(`请求 renderer 执行协调退出: ${reason}`)
+  win.webContents.send('app-close-requested')
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
+  }, RENDERER_QUIT_FALLBACK_MS)
 }
 
 function createWindow() {
@@ -597,34 +661,43 @@ function createWindow() {
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
     const currentConfig = loadConfig()
+    const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
-    if (!isQuitting && currentConfig.UI.IfToTray) {
+    if (!canElectronExitImmediately(quitState)) {
       event.preventDefault()
-      win.hide()
-      win.setSkipTaskbar(true)
-      updateTrayVisibility(currentConfig)
-      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
-    } else {
-      // 立即保存窗口状态，不使用防抖
-      if (!win.isDestroyed()) {
-        try {
-          const config = loadConfig()
-          const isMinimized = win.isMinimized()
-          const bounds = isMinimized ? win.getNormalBounds() : win.getBounds()
-          const isMaximized =
-            !win.isVisible() || isMinimized ? restoreToMaximized : win.isMaximized()
+      if (forceQuitInProgress) {
+        logger.warn('强制清理仍在进行，暂不允许窗口提前关闭')
+        return
+      }
+      if (currentConfig.UI.IfToTray && !quitRequestInFlight) {
+        win.hide()
+        win.setSkipTaskbar(true)
+        updateTrayVisibility(currentConfig)
+        logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      } else {
+        requestRendererClose('窗口关闭')
+      }
+      return
+    }
 
-          if (!isMaximized) {
-            config.UI.size = `${bounds.width},${bounds.height}`
-            config.UI.location = `${bounds.x},${bounds.y}`
-          }
-          config.UI.maximized = isMaximized
+    // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态。
+    if (!win.isDestroyed()) {
+      try {
+        const config = loadConfig()
+        const isMinimized = win.isMinimized()
+        const bounds = isMinimized ? win.getNormalBounds() : win.getBounds()
+        const isMaximized = !win.isVisible() || isMinimized ? restoreToMaximized : win.isMaximized()
 
-          saveConfig(config)
-          logger.info('窗口状态已保存')
-        } catch {
-          logger.error('保存窗口状态失败')
+        if (!isMaximized) {
+          config.UI.size = `${bounds.width},${bounds.height}`
+          config.UI.location = `${bounds.x},${bounds.y}`
         }
+        config.UI.maximized = isMaximized
+
+        saveConfig(config)
+        logger.info('窗口状态已保存')
+      } catch {
+        logger.error('保存窗口状态失败')
       }
     }
   })
@@ -636,19 +709,6 @@ function createWindow() {
     screen.removeListener('display-removed', handleDisplayConfigurationChanged)
     // 置空模块级引用
     mainWindow = null
-
-    // 如果是正在退出，立即执行进程清理
-    if (isQuitting) {
-      logger.info('窗口关闭，执行最终清理')
-      setTimeout(async () => {
-        try {
-          await forceKillRelatedProcesses()
-        } catch {
-          logger.error('最终清理失败')
-        }
-        process.exit(0)
-      }, 100)
-    }
   })
 
   win.on('minimize', () => {
@@ -803,10 +863,6 @@ ipcMain.handle(
         .map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
         .join(' ')
 
-      if (shouldDropHeartbeatProcessLog(level, moduleName, message)) {
-        return
-      }
-
       switch (level) {
         case 'debug':
           rendererLogger.debug(message)
@@ -955,10 +1011,7 @@ ipcMain.handle('window-maximize', () => {
 })
 
 ipcMain.handle('window-close', () => {
-  if (mainWindow) {
-    isQuitting = true
-    mainWindow.close()
-  }
+  requestRendererClose('renderer 请求关闭窗口')
 })
 
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
@@ -980,15 +1033,13 @@ ipcMain.handle('window-focus', () => {
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
-  isQuitting = true
-  app.relaunch()
-  app.exit(0)
+  relaunchAfterQuit = true
+  requestRendererClose('应用重启')
 })
 
-// 添加强制退出处理器
+// renderer 仅在后端优雅关闭或 10 秒兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
-  isQuitting = true
-  app.quit()
+  finishCoordinatedQuit()
 })
 
 // 添加进程管理相关的 IPC 处理器
@@ -1394,86 +1445,16 @@ app.on('second-instance', () => {
   }
 })
 
-app.on('before-quit', async event => {
-  // 只处理一次，避免多重触发
-  if (!isQuitting) {
-    event.preventDefault()
-    isQuitting = true
-
-    logger.info('应用准备退出')
-
-    // 清理定时器
-    if (saveWindowStateTimeout) {
-      clearTimeout(saveWindowStateTimeout)
-      saveWindowStateTimeout = null
-    }
-
-    // 清理托盘
-    destroyTray()
-
-    // 清理初始化资源
-    try {
-      await cleanupInitializationResources()
-      logger.info('初始化资源清理完成')
-    } catch {
-      logger.error('资源清理失败')
-    }
-
-    // 立即开始强制清理，不等待优雅关闭
-    logger.info('开始强制清理所有相关进程')
-
-    try {
-      // 并行执行多种清理方法
-      const cleanupPromises = [
-        // 方法1: 使用我们的进程管理器
-        forceKillRelatedProcesses(),
-
-        // 方法2: 直接使用 taskkill 和 PowerShell 命令
-        new Promise<void>(resolve => {
-          if (process.platform === 'win32') {
-            const appRoot = getAppRoot()
-            const escapedAppRoot = appRoot.replace(/\\/g, '\\\\')
-            const commands = [
-              `taskkill /f /im python.exe`,
-              // 使用 PowerShell 代替 wmic
-              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${escapedAppRoot}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-            ]
-
-            let completed = 0
-            commands.forEach(cmd => {
-              exec(cmd, () => {
-                completed++
-                if (completed === commands.length) {
-                  resolve()
-                }
-              })
-            })
-
-            // 2秒超时
-            setTimeout(resolve, 2000)
-          } else {
-            resolve()
-          }
-        }),
-      ]
-
-      // 最多等待3秒
-      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
-      await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
-
-      logger.info('进程清理完成')
-    } catch {
-      logger.error('进程清理时出错')
-    }
-
-    logger.info('应用强制退出')
-
-    // 使用 process.exit 而不是 app.exit，更加强制
-    setTimeout(() => {
-      process.exit(0)
-    }, 500)
+app.on('before-quit', event => {
+  if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
+    return
   }
+  event.preventDefault()
+  if (forceQuitInProgress) {
+    logger.warn('强制清理仍在进行，暂不允许 Electron 提前退出')
+    return
+  }
+  requestRendererClose('Electron before-quit')
 })
 
 app.whenReady().then(async () => {
@@ -1495,14 +1476,23 @@ app.whenReady().then(async () => {
     logger.info('应用以管理员权限运行')
   }
 
+  powerMonitor.on('resume', () => {
+    logger.info('主进程检测到系统恢复，通知 renderer 检查后端连接')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('system-resumed')
+    }
+  })
+
   createWindow()
 })
 
-app.on('window-all-closed', async () => {
+app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    isQuitting = true
-
-    app.quit()
+    if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
+      app.quit()
+    } else if (!forceQuitInProgress) {
+      void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
+    }
   }
 })
 
