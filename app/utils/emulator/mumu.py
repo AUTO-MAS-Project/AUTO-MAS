@@ -84,6 +84,22 @@ class MumuManager(DeviceBase):
 
         if_close_mumu_nx = await self.find_mumu_nx_window() is None
 
+        # 启动实例前关闭 MuMu 应用保活
+        result = await ProcessRunner.run_process(
+            self.emulator_path,
+            "setting",
+            "-v",
+            idx,
+            "-k",
+            "app_keptlive",
+            "-val",
+            "false",
+            timeout=self.config.get("Info", "MaxWaitTime"),
+            if_merge_std=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"设置 app_keptlive 失败: {result.stdout}")
+
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "control",
