@@ -30,6 +30,7 @@ import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
 import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
+import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
@@ -224,6 +225,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/combox/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 库存保持物品可选项
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotItemsApiScriptsMaaDepotItemsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/items',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
