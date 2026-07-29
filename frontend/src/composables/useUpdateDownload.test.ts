@@ -78,7 +78,7 @@ describe('useUpdateDownload', () => {
     expect(download.status.value).toBe('downloading')
   })
 
-  it('closes the modal after cancellation succeeds', async () => {
+  it('closes the modal and keeps resident subscriptions after cancellation', async () => {
     const download = await loadDownload()
     await download.start('v9.9.9', {})
 
@@ -86,7 +86,7 @@ describe('useUpdateDownload', () => {
 
     expect(download.status.value).toBe('idle')
     expect(download.modalVisible.value).toBe(false)
-    expect(unsubscribe).toHaveBeenCalledWith('update-subscription-1')
+    expect(unsubscribe).not.toHaveBeenCalled()
   })
 
   it('keeps the current download when cancellation fails', async () => {
@@ -125,7 +125,7 @@ describe('useUpdateDownload', () => {
     expect(download.modalVisible.value).toBe(true)
   })
 
-  it('clears failed state when the user closes the failed modal', async () => {
+  it('clears failed state and keeps resident subscriptions when the modal closes', async () => {
     const download = await loadDownload()
     await download.start('v9.9.9', {})
     download.receiveFailed('下载失败')
@@ -134,7 +134,7 @@ describe('useUpdateDownload', () => {
 
     expect(download.status.value).toBe('idle')
     expect(download.modalVisible.value).toBe(false)
-    expect(unsubscribe).toHaveBeenCalledWith('update-subscription-1')
+    expect(unsubscribe).not.toHaveBeenCalled()
   })
 
   it('moves to failed after the download timeout', async () => {

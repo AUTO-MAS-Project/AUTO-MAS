@@ -85,7 +85,10 @@ class UpdateHandlerSwitchTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(switched)
         handler.cancel_download.assert_awaited_once_with(notify=False)
         set_config.assert_awaited_once_with("Update", "Source", "CNB")
-        handler._start_download_task.assert_called_once_with()
+        handler._start_download_task.assert_called_once()
+        restart_job = handler._start_download_task.call_args.kwargs["job"]
+        self.assertEqual(restart_job.source, "GitHub")
+        self.assertIsNone(restart_job.version)
 
     async def test_switch_to_cnb_does_not_restart_when_config_save_fails(self):
         handler = _UpdateHandler()

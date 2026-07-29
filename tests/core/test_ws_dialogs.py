@@ -74,29 +74,32 @@ class WSDialogsTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(Dialogs._pending), 0)
             self.assertEqual(len(Dialogs._requests), 0)
 
-    async def test_resend_pending_republishes_open_requests(self):
+    async def test_pending_requests_returns_deep_copy_snapshot(self):
         with patch("app.core.ws.dialogs.Publisher.send", new_callable=AsyncMock) as send:
-            ask_task = asyncio.create_task(Dialogs.ask(title="操作提示", message="重连后重发？"))
+            ask_task = asyncio.create_task(Dialogs.ask(title="操作提示", message="等待处理？"))
             await asyncio.sleep(0.01)
-            self.assertEqual(len(Dialogs._requests), 1)
-            send.reset_mock()
 
-            # 模拟重连：主连接建立回调重发未完成请求
-            await Dialogs._resend_pending()
+            snapshot = Dialogs.pending_requests()
+            self.assertEqual(len(snapshot), 1)
+            self.assertEqual(snapshot[0].title, "操作提示")
+            self.assertEqual(snapshot[0].options, ["是", "否"])
 
+            snapshot[0].title = "已修改"
+            snapshot[0].options[0] = "确认"
+            current = Dialogs.pending_requests()
+            self.assertEqual(current[0].title, "操作提示")
+            self.assertEqual(current[0].options, ["是", "否"])
             send.assert_awaited_once()
-            self.assertEqual(send.await_args.kwargs["type"], protocol.DIALOG_REQUEST)
 
-            request_id = next(iter(Dialogs._requests))
             Dialogs._on_response(
                 WSEnvelope(
                     id=protocol.ID_MAIN,
                     type=protocol.DIALOG_RESPONSE,
-                    data={"requestId": request_id, "choice": True},
+                    data={"requestId": current[0].requestId, "choice": True},
                 )
             )
             self.assertTrue(await asyncio.wait_for(ask_task, timeout=1))
-            self.assertEqual(len(Dialogs._requests), 0)
+            self.assertEqual(Dialogs.pending_requests(), [])
 
 
 if __name__ == "__main__":
