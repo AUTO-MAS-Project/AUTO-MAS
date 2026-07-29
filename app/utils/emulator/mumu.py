@@ -266,7 +266,11 @@ class MumuManager(DeviceBase):
                             f"MuMu 应用检查或补启动异常，将继续运行: "
                             f"{idx} - {package_name} - {e}"
                         )
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(
+                        30
+                        if self.config.get("Info", "MaxWaitTime") > 60
+                        else 3
+                    )
                 else:
                     await asyncio.sleep(3)
                 return (await self.getInfo(idx))[idx]
