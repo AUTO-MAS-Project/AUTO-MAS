@@ -20,14 +20,41 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
+from collections.abc import Awaitable, Callable
+from html import escape
+
 from app.core import Config
 from app.services import Notify
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏签到通知")
 
+NOTIFICATION_SEND_ATTEMPTS = 2
+NOTIFICATION_RETRY_DELAY_SECONDS = 1
 
-async def push_game_sign_notification(results: list[dict]) -> None:
+
+async def _send_notification_channel(
+    channel_name: str,
+    send: Callable[[], Awaitable[bool | None]],
+) -> bool:
+    """发送单个通知渠道，失败时重试一次。"""
+    for attempt in range(1, NOTIFICATION_SEND_ATTEMPTS + 1):
+        try:
+            result = await send()
+            if result is False:
+                raise RuntimeError("通知渠道返回失败状态")
+            return True
+        except Exception as e:
+            if attempt < NOTIFICATION_SEND_ATTEMPTS:
+                logger.warning(f"{channel_name}通知发送失败，将重试: {e}")
+                await asyncio.sleep(NOTIFICATION_RETRY_DELAY_SECONDS)
+            else:
+                logger.warning(f"{channel_name}通知重试后仍失败: {e}")
+    return False
+
+
+async def push_game_sign_notification(results: list[dict]) -> list[str]:
     """推送游戏签到结果通知
 
     遵循 Skland-Sign-In 通知格式风格：
@@ -40,27 +67,29 @@ async def push_game_sign_notification(results: list[dict]) -> None:
 
     Args:
         results: 签到结果列表
+
+    Returns:
+        重试后仍发送失败的通知渠道。
     """
     if not results:
-        return
+        return []
 
     title = "📅 游戏社区签到"
 
-    # 按别名分组（别名 = account 中 '/' 前的部分）
-    grouped: dict[str, list[dict]] = {}
+    # 按账号 UID 和别名分组，避免同名账号合并
+    grouped: dict[tuple[str, str], list[dict]] = {}
     for item in results:
-        account = item.get("account", "未知")
+        account = str(item.get("account", "未知"))
         alias = account.split("/")[0] if "/" in account else account
-        if alias not in grouped:
-            grouped[alias] = []
-        grouped[alias].append(item)
+        account_uid = str(item.get("account_uid", ""))
+        grouped.setdefault((account_uid, alias), []).append(item)
 
     # 构建纯文本消息
     lines = []
     success_count = 0
     fail_count = 0
 
-    for alias, items in grouped.items():
+    for (_, alias), items in grouped.items():
         lines.append(f"No.{alias}:")
         for item in items:
             game = item.get("game", "未知")
@@ -87,14 +116,14 @@ async def push_game_sign_notification(results: list[dict]) -> None:
 
     # 构建 HTML 版本（用于邮件）
     html_lines = []
-    for alias, items in grouped.items():
-        html_lines.append(f'<p><strong>No.{alias}:</strong></p>')
+    for (_, alias), items in grouped.items():
+        html_lines.append(f'<p><strong>No.{escape(alias)}:</strong></p>')
         html_lines.append('<ul>')
         for item in items:
-            game = item.get("game", "未知")
+            game = escape(str(item.get("game", "未知")))
             status = item.get("status", "失败")
-            reward = item.get("reward", "")
-            reason = item.get("reason", "")
+            reward = escape(str(item.get("reward", "")))
+            reason = escape(str(item.get("reason", "")))
 
             if status == "成功":
                 reward_text = f" ({reward})" if reward else ""
@@ -123,46 +152,77 @@ async def push_game_sign_notification(results: list[dict]) -> None:
     )
     html_lines.append("<p>AUTO-MAS 敬上</p>")
     html_content = "".join(html_lines)
+    failed_channels: list[str] = []
 
     # 分发到所有已启用的渠道
-    try:
-        # 系统通知
-        await Notify.push_plyer(title, plain_text, title, 5)
-    except Exception as e:
-        logger.warning(f"推送系统通知失败: {e}")
+    if not await _send_notification_channel(
+        "系统",
+        lambda: Notify.push_plyer(
+            title=title,
+            message=plain_text,
+            ticker=title,
+            t=5,
+        ),
+    ):
+        failed_channels.append("系统")
 
-    try:
-        # 邮件通知
-        if Config.get("Notify", "IfSendMail"):
-            to_address = Config.get("Notify", "ToAddress")
-            if to_address:
-                await Notify.send_mail("网页", title, html_content, to_address)
-    except Exception as e:
-        logger.warning(f"推送邮件通知失败: {e}")
+    # 邮件通知
+    if Config.get("Notify", "IfSendMail"):
+        to_address = Config.get("Notify", "ToAddress")
+        if not to_address:
+            logger.warning("邮件通知已启用，但未配置收件地址")
+            failed_channels.append("邮件")
+        elif not await _send_notification_channel(
+            "邮件",
+            lambda: Notify.send_mail(
+                mode="网页",
+                title=title,
+                content=html_content,
+                to_address=to_address,
+            ),
+        ):
+            failed_channels.append("邮件")
 
-    try:
-        # Server酱通知
-        if Config.get("Notify", "IfServerChan"):
-            send_key = Config.get("Notify", "ServerChanKey")
-            if send_key:
-                await Notify.ServerChanPush(title, plain_text, send_key)
-    except Exception as e:
-        logger.warning(f"推送Server酱通知失败: {e}")
+    # Server酱通知
+    if Config.get("Notify", "IfServerChan"):
+        send_key = Config.get("Notify", "ServerChanKey")
+        if not send_key:
+            logger.warning("Server酱通知已启用，但未配置 SendKey")
+            failed_channels.append("Server酱")
+        elif not await _send_notification_channel(
+            "Server酱",
+            lambda: Notify.ServerChanPush(
+                title=title,
+                content=plain_text,
+                send_key=send_key,
+            ),
+        ):
+            failed_channels.append("Server酱")
 
+    # Webhook 通知
     try:
-        # Webhook 通知
         for uid, webhook in Config.Notify_CustomWebhooks.items():
             if webhook.get("Info", "Enabled"):
-                try:
-                    await Notify.WebhookPush(title, plain_text, webhook)
-                except Exception as e:
-                    logger.warning(f"推送 Webhook {uid} 通知失败: {e}")
+                channel_name = f"Webhook {uid}"
+                if not await _send_notification_channel(
+                    channel_name,
+                    lambda webhook=webhook: Notify.WebhookPush(
+                        title=title,
+                        content=plain_text,
+                        webhook=webhook,
+                    ),
+                ):
+                    failed_channels.append(channel_name)
     except Exception as e:
-        logger.warning(f"推送Webhook通知失败: {e}")
+        logger.warning(f"读取 Webhook 通知配置失败: {e}")
+        failed_channels.append("Webhook")
 
-    try:
-        # Koishi 通知
-        if Config.get("Notify", "IfKoishiSupport"):
-            await Notify.send_koishi(plain_text)
-    except Exception as e:
-        logger.warning(f"推送Koishi通知失败: {e}")
+    # Koishi 通知
+    if Config.get(
+        "Notify", "IfKoishiSupport"
+    ) and not await _send_notification_channel(
+        "Koishi", lambda: Notify.send_koishi(plain_text)
+    ):
+        failed_channels.append("Koishi")
+
+    return failed_channels
