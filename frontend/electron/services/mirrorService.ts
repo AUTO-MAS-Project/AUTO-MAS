@@ -7,7 +7,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as https from 'https'
 import * as http from 'http'
-import { createUvMirrors } from './uvDistribution'
 
 // 导入日志服务
 import { getLogger } from './logger'
@@ -109,7 +108,29 @@ const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
       description: '官方源，在中国大陆连通性不佳',
     },
   ],
-  uv: createUvMirrors(),
+  uv: [
+    {
+      key: 'autonas',
+      name: 'AUTO-MAS 自建源',
+      url: 'https://download.auto-mas.top/d/AUTO-MAS/Environment/uv.exe',
+      type: 'mirror',
+      description: 'AUTO-MAS 自建下载站，国内访问速度快',
+    },
+    {
+      key: 'ghproxy',
+      name: 'gh-proxy 镜像',
+      url: 'https://gh-proxy.com/https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip',
+      type: 'mirror',
+      description: 'GitHub CDN 镜像，适合国内用户',
+    },
+    {
+      key: 'official',
+      name: 'GitHub 官方',
+      url: 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip',
+      type: 'official',
+      description: 'GitHub 官方源，在中国大陆连通性不佳',
+    },
+  ],
   git: [
     {
       key: 'autonas',
@@ -430,10 +451,6 @@ export class MirrorService {
    * 获取指定类型的镜像源列表
    */
   getMirrors(type: keyof MirrorConfig): MirrorSource[] {
-    if (type === 'uv') {
-      return createUvMirrors()
-    }
-
     return this.mirrorConfig[type] || []
   }
 
