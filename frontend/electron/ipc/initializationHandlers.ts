@@ -86,11 +86,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return result
   })
 
-  // ==================== uv 安装（保留 IPC 名称以兼容现有前端协议） ====================
+  // ==================== Pip 安装 ====================
 
   ipcMain.handle('install-pip', async (event, selectedMirror?: string) => {
     if (selectedMirror) {
-      logger.info(`使用指定镜像源安装 uv: ${selectedMirror}`)
+      logger.info(`使用指定镜像源安装Pip: ${selectedMirror}`)
     }
     const appRoot = getAppRoot()
     const initService = getInitService()
@@ -104,7 +104,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     }, selectedMirror)
 
     if (!result.success) {
-      logger.error(`uv 安装失败: ${result.error}`)
+      logger.error(`Pip安装失败: ${result.error}`)
     }
 
     return result

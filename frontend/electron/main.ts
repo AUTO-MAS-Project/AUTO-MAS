@@ -16,10 +16,7 @@ import {
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import {
-  registerInitializationHandlers,
-  cleanupInitializationResources,
-} from './ipc/initializationHandlers'
+import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -1032,9 +1029,9 @@ ipcMain.handle('check-critical-files', async () => {
     const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
     const pythonExists = fs.existsSync(pythonPath)
 
-    // 检查 uv；保留 pipExists 字段名以兼容现有诊断接口。
-    const uvPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'uv.exe')
-    const pipExists = fs.existsSync(uvPath)
+    // 检查pip（通常与Python一起安装）
+    const pipPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'pip.exe')
+    const pipExists = fs.existsSync(pipPath)
 
     // 检查Git可执行文件
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
