@@ -98,10 +98,11 @@ describe('websocket subscriptions', () => {
     expect(logger.warn).toHaveBeenCalled()
   })
 
-  it('supports id-scoped subscriptions for the plugin SDK', async () => {
+  it('supports exact message subscriptions for the plugin SDK', async () => {
     const { subscribe, dispatchMessage } = await loadSubscriptions()
     const handler = vi.fn()
-    subscribe({ id: 'PluginSystem' }, handler)
+    subscribe({ id: 'PluginSystem', type: 'plugin.runtime.updated' }, handler)
+    subscribe({ id: 'PluginSystem', type: 'plugin.hmr' }, handler)
 
     dispatchMessage(envelope('PluginSystem', 'plugin.runtime.updated'))
     dispatchMessage(envelope('PluginSystem', 'plugin.hmr'))

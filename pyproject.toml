@@ -40,6 +40,10 @@ dependencies = [
 dev = [
     "auto-mas-core",
 ]
+test = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+]
 plugins = [
     "auto-mas-core",
     "automas_plugin_ok_script_adapter",
@@ -83,3 +87,12 @@ exclude = [
 "auto-mas-core" = { workspace = true }
 "automas_plugin_ok_script_adapter" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "plugins/ok_script_adapter/tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "strict"
+markers = [
+    "integration: tests multiple backend components together",
+    "e2e: tests a workflow through the public HTTP boundary",
+]

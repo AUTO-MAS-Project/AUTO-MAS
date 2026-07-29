@@ -68,14 +68,8 @@ list/
 /plugins/**/*.egg-info/
 /app/core/plugins/_generated/
 
-# Local test sources are not included in this branch
-/tests/
-**/test_*.py
-**/*_test.py
-**/*.test.ts
-**/*.test.tsx
-**/*.spec.ts
-**/*.spec.tsx
+# Test artifacts
+/test-results/
 
 res/docs/ok-series-common-script-report.md
 
