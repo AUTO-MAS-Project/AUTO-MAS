@@ -1,4 +1,5 @@
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
+import type { HomeLayoutConfig } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('配置管理')
 
@@ -11,6 +12,9 @@ export interface FrontendConfig {
   selectedGitMirror: string
   selectedPythonMirror: string
   selectedPipMirror: string
+
+  // 首页布局
+  homeLayout?: HomeLayoutConfig
 }
 
 const DEFAULT_CONFIG: FrontendConfig = {
