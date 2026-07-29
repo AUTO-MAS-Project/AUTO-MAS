@@ -705,6 +705,7 @@ async def _do_sign(
                 refreshed = True
 
             if refreshed:
+                cookies = parsed.copy()
                 await asyncio.sleep(random.uniform(1.0, 3.0))
                 continue
 

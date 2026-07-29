@@ -533,11 +533,7 @@ async def skland_sign_in(
                 try:
                     rsp = await do_sign_for_endfield(cred, sign_token, role)
                     if rsp.get("code") != 0:
-                        message = rsp.get("message", "")
-                        if (
-                            "请勿重复签到" in message
-                            or "Please do not sign in again!" in message
-                        ):
+                        if is_skland_already_signed(rsp):
                             result["重复"].append(character_name)
                             logger.info(f"{character_name} 重复签到")
                         else:
