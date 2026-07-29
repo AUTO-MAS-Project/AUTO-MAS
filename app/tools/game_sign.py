@@ -32,6 +32,39 @@ from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
 
+_game_sign_lock = asyncio.Lock()
+
+
+class GameSignInProgressError(RuntimeError):
+    """游戏社区签到已在执行。"""
+
+
+def _all_enabled_platforms_signed(
+    results: list[dict],
+    *,
+    account_uid: str,
+    enabled_platforms: list[str],
+) -> bool:
+    """判断账号的全部已配置平台结果是否均已完成。"""
+
+    if not enabled_platforms:
+        return False
+
+    for platform in enabled_platforms:
+        platform_results = [
+            result
+            for result in results
+            if result.get("account_uid") == account_uid
+            and result.get("platform") == platform
+        ]
+        if not platform_results or any(
+            result.get("status") not in ("成功", "已签到")
+            for result in platform_results
+        ):
+            return False
+
+    return True
+
 
 async def _check_system_time() -> bool:
     """校准系统时间，避免因时间偏差导致签到失败
@@ -59,6 +92,15 @@ async def _check_system_time() -> bool:
 
 
 async def run_all_sign_in(force: bool = False) -> list[dict]:
+    """串行执行游戏社区签到，避免重复签到和重复通知。"""
+    if _game_sign_lock.locked():
+        raise GameSignInProgressError("游戏社区签到正在执行，请稍后重试")
+
+    async with _game_sign_lock:
+        return await _run_all_sign_in(force=force)
+
+
+async def _run_all_sign_in(force: bool = False) -> list[dict]:
     """执行所有已配置平台的签到
 
     遍历所有账号组，对每个账号组中有配置的平台执行签到
@@ -217,18 +259,16 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                     "reason": str(e),
                 })
 
-        # 所有已配置平台均完成后，才标记该用户今日已签到
-        signed_platforms = {
-            r.get("platform")
-            for r in results
-            if r.get("account_uid") == account_uid
-            and r.get("status") in ("成功", "已签到")
-        }
-        if enabled_platforms and set(enabled_platforms).issubset(signed_platforms):
+        # 每个已配置平台的全部角色或游戏均完成后，才标记该用户今日已签到
+        if _all_enabled_platforms_signed(
+            results,
+            account_uid=account_uid,
+            enabled_platforms=enabled_platforms,
+        ):
             try:
                 await account.set("GameSignAccount", "LastSignDate", today)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
 
     if not results:
         logger.info("没有配置任何签到平台")
@@ -279,7 +319,7 @@ def merge_sign_results(existing: dict, formatted: dict, replace: bool = False) -
 def format_sign_results(results: list[dict]) -> dict:
     """将签到结果格式化为前端可展示的结构
 
-    按平台分组，平台内按别名去重
+    按平台分组，平台内按账号 UID 聚合
 
     Returns:
         {platform: [{account_alias, account_uid, games: [{game, status, reward, reason}]}]}
@@ -288,22 +328,23 @@ def format_sign_results(results: list[dict]) -> dict:
 
     for item in results:
         platform = item.get("platform", "未知")
-        account = item.get("account", "未知")
-        account_uid = item.get("account_uid", "")
+        account = str(item.get("account", "未知"))
+        account_uid = str(item.get("account_uid", ""))
         # 别名 = account 中 '/' 前的部分
         alias = account.split("/")[0] if "/" in account else account
+        group_key = account_uid or f"alias:{alias}"
 
         if platform not in platforms:
             platforms[platform] = {}
 
-        if alias not in platforms[platform]:
-            platforms[platform][alias] = {
+        if group_key not in platforms[platform]:
+            platforms[platform][group_key] = {
                 "account_alias": alias,
                 "account_uid": account_uid,
                 "games": [],
             }
 
-        platforms[platform][alias]["games"].append({
+        platforms[platform][group_key]["games"].append({
             "game": item.get("game", "未知"),
             "status": item.get("status", "失败"),
             "reward": item.get("reward", ""),

@@ -100,11 +100,6 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
     try:
         data = {"GameSignAccount": {"MiyousheToken": body.cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
-        result = Config.ToolsConfig._game_sign_result_data
-        for platform in list(result.keys()):
-            result[platform] = [g for g in result[platform] if g.get("account_uid") != body.account_uid]
-            if not result[platform]:
-                del result[platform]
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase(message="米游社 Token 已保存")

@@ -213,6 +213,8 @@ const handleFieldChange = async (key: string, value: any) => {
 const handleGameSignFieldChange = async (key: string, value: any) => {
   if (!editingConfig.GameSign) return
 
+  const previousValue = toolsConfig.GameSign ? (toolsConfig.GameSign as any)[key] : undefined
+
   try {
     ;(editingConfig.GameSign as any)[key] = value
     await updateTools(editingConfig)
@@ -223,8 +225,10 @@ const handleGameSignFieldChange = async (key: string, value: any) => {
 
     logger.info(`GameSign.${key} 已保存`)
   } catch (error) {
+    ;(editingConfig.GameSign as any)[key] = previousValue
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 GameSign.${key} 失败: ${errorMsg}`)
+    throw error
   }
 }
 

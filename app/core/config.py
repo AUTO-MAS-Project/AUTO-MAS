@@ -2459,12 +2459,16 @@ class AppConfig(GlobalConfig):
 
     # ==================== 游戏签到账号组 CRUD ====================
 
-    async def get_game_sign_accounts(self) -> Dict[str, Any]:
+    async def get_game_sign_accounts(
+        self, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
         """获取所有游戏签到账号组"""
 
         logger.debug("获取所有游戏签到账号组")
 
-        return await self.ToolsConfig.GameSign_Accounts.toDict()
+        return await self.ToolsConfig.GameSign_Accounts.toDict(
+            if_decrypt=if_decrypt
+        )
 
     async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
         """添加游戏签到账号组"""
@@ -2476,13 +2480,30 @@ class AppConfig(GlobalConfig):
         )
         return uid, config
 
-    async def get_game_sign_account(self, account_id: str) -> Dict[str, Any]:
+    async def get_game_sign_account(
+        self, account_id: str, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
         """获取游戏签到账号组详情"""
 
         logger.debug(f"获取游戏签到账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
-        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict()
+        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
+            if_decrypt=if_decrypt
+        )
+
+    def _clear_game_sign_account_results(self, account_id: str) -> None:
+        """清除指定游戏签到账号的内存结果。"""
+
+        result = self.ToolsConfig._game_sign_result_data
+        for platform in list(result):
+            result[platform] = [
+                group
+                for group in result[platform]
+                if group.get("account_uid") != account_id
+            ]
+            if not result[platform]:
+                del result[platform]
 
     async def update_game_sign_account(
         self, account_id: str, data: Dict[str, Dict[str, Any]]
@@ -2493,9 +2514,22 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        credential_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
+        credential_changed = False
+
         for group, items in data.items():
             for name, value in items.items():
+                if (
+                    group == "GameSignAccount"
+                    and name in credential_fields
+                    and account.get(group, name) != value
+                ):
+                    credential_changed = True
                 await account.set(group, name, value)
+
+        if credential_changed:
+            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+            self._clear_game_sign_account_results(account_id)
 
     async def delete_game_sign_account(self, account_id: str) -> None:
         """删除游戏签到账号组"""
@@ -2504,6 +2538,7 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
+        self._clear_game_sign_account_results(account_id)
 
     async def reorder_game_sign_accounts(self, order: list[str]) -> None:
         """调整游戏签到账号组顺序"""
