@@ -213,6 +213,117 @@
               </div>
             </a-card>
           </section>
+
+          <template v-else-if="moduleKey === 'arknights'">
+            <div v-if="error" class="error-message">
+              <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
+            </div>
+
+            <a-card
+              v-if="activityData.length"
+              title="明日方舟活动信息"
+              class="arknights-card"
+              :loading="loading"
+            >
+              <div v-if="currentActivity && !loading" class="activity-info">
+                <div class="activity-header">
+                  <div class="activity-left">
+                    <div class="activity-title">{{ currentActivity.Tip }}</div>
+                    <div class="activity-end-time">
+                      <ClockCircleOutlined class="time-icon" />
+                      <span class="time-label">结束时间：</span>
+                      <span class="time-value">{{
+                        formatTime(currentActivity.UtcExpireTime)
+                      }}</span>
+                    </div>
+                  </div>
+
+                  <div class="activity-right">
+                    <a-statistic-countdown
+                      v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
+                      title=""
+                      :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                      format="活动已结束"
+                      :value-style="{
+                        color: 'var(--ant-color-error)',
+                        fontWeight: '600',
+                        fontSize: '18px',
+                      }"
+                      @finish="onCountdownFinish"
+                    />
+                    <a-statistic-countdown
+                      v-else
+                      title="当期活动剩余时间"
+                      :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                      :format="
+                        getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'
+                          ? 'D 天 H 时 m 分 ss 秒'
+                          : 'D 天 H 时 m 分'
+                      "
+                      :value-style="{
+                        color:
+                          getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'
+                            ? 'var(--ant-color-warning)'
+                            : 'var(--ant-color-text)',
+                        fontWeight: '600',
+                        fontSize: '18px',
+                      }"
+                      @finish="onCountdownFinish"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div class="activity-list">
+                <div v-for="item in activityData" :key="item.Value" class="activity-item">
+                  <div class="stage-info">
+                    <div class="stage-name">{{ item.Display }}</div>
+                  </div>
+                  <div class="drop-info">
+                    <div class="drop-image">
+                      <img
+                        v-if="getMaterialImage(item.Drop)"
+                        :src="getMaterialImage(item.Drop)"
+                        :alt="item.DropName"
+                        @error="handleImageError"
+                      />
+                    </div>
+                    <div class="drop-details">
+                      <div class="drop-name">{{ item.DropName }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </a-card>
+
+            <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
+              <div v-if="resourceData.length" class="resource-list">
+                <div v-for="item in resourceData" :key="item.Value" class="resource-item">
+                  <div class="stage-info">
+                    <div class="stage-name">{{ item.Display }}</div>
+                  </div>
+                  <div class="drop-info">
+                    <div class="drop-image">
+                      <img
+                        v-if="getMaterialImage(item.Drop)"
+                        :src="getMaterialImage(item.Drop)"
+                        :alt="item.DropName"
+                        @error="handleImageError"
+                      />
+                    </div>
+                    <div class="drop-details">
+                      <div class="drop-name">{{ item.DropName }}</div>
+                      <div class="drop-tip">{{ item.Activity.Tip }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="!loading" class="empty-state">
+                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+              </div>
+            </a-card>
+          </template>
         </section>
       </template>
     </div>
@@ -228,6 +339,7 @@ import {
   BellOutlined,
   CalendarOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
   ControlOutlined,
   DatabaseOutlined,
   EditOutlined,
@@ -238,13 +350,12 @@ import {
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import BlurReveal from '@/components/inspira/BlurReveal.vue'
 import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
-import type { ComboBoxItem } from '@/api'
+import { OpenAPI, type ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import { navigateTo } from '@/router'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
@@ -254,6 +365,30 @@ defineOptions({
 
 const logger = window.electronAPI.getLogger('首页')
 
+interface ActivityInfo {
+  Tip: string
+  StageName: string
+  UtcStartTime: string
+  UtcExpireTime: string
+  TimeZone: number
+}
+
+interface ActivityItem {
+  Display: string
+  Value: string
+  Drop: string
+  DropName: string
+  Activity: ActivityInfo
+}
+
+interface ResourceItem {
+  Display: string
+  Value: string
+  Drop: string
+  DropName: string
+  Activity: Pick<ActivityInfo, 'Tip' | 'StageName'>
+}
+
 interface ProxyInfo {
   LastProxyDate: string
   ProxyTimes: number
@@ -262,10 +397,14 @@ interface ProxyInfo {
 }
 
 interface ApiResponse {
+  Stage: {
+    Activity: ActivityItem[]
+    Resource: ResourceItem[]
+  }
   Proxy: Record<string, ProxyInfo>
 }
 
-type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy'
+type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy' | 'arknights'
 type HomeModuleDirection = 'up' | 'down'
 
 interface HomeLayoutConfig {
@@ -274,12 +413,19 @@ interface HomeLayoutConfig {
 }
 
 const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
-const defaultHomeModuleOrder: HomeModuleKey[] = ['command', 'quick', 'satellite', 'proxy']
+const defaultHomeModuleOrder: HomeModuleKey[] = [
+  'command',
+  'quick',
+  'satellite',
+  'proxy',
+  'arknights',
+]
 const moduleTitleMap: Record<HomeModuleKey, string> = {
   command: '快速开始',
   quick: '常用入口',
   satellite: '卫星环绕',
   proxy: '代理状态',
+  arknights: '明日方舟活动信息',
 }
 
 const quickActions = [
@@ -348,9 +494,12 @@ const pickHomeGreeting = () => {
 const loading = ref(false)
 const schedulerTasksLoading = ref(false)
 const startingHomeTask = ref(false)
+const error = ref('')
 const layoutEditing = ref(false)
 const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
 const hiddenHomeModules = ref<HomeModuleKey[]>([])
+const activityData = ref<ActivityItem[]>([])
+const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
 const schedulerTaskOptions = ref<ComboBoxItem[]>(mockSchedulerTasks)
 const selectedHomeTaskId = ref<string | null>(mockSchedulerTasks[0]?.value ?? null)
@@ -363,6 +512,8 @@ const { isBootstrapping } = useAppInitialization()
 const { playSound } = useAudioPlayer()
 const { trackStartedTask } = useSchedulerLogic()
 const commandTitle = ref(pickHomeGreeting())
+
+const currentActivity = computed(() => activityData.value[0]?.Activity ?? null)
 
 const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
   return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
@@ -482,6 +633,46 @@ const formatProxyDisplay = (dateStr: string) => {
   return formatBackendDateTime(dateStr)
 }
 
+const formatTime = (timeString: string) => {
+  const date = new Date(timeString)
+  if (Number.isNaN(date.getTime())) {
+    return timeString
+  }
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const getCountdownValue = (expireTime: string) => {
+  const timestamp = new Date(expireTime).getTime()
+  return Number.isNaN(timestamp) ? Date.now() : timestamp
+}
+
+const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
+  const remaining = getCountdownValue(expireTime) - Date.now()
+  if (remaining <= 0) return 'ended'
+  if (remaining <= 2 * 24 * 60 * 60 * 1000) return 'warning'
+  return 'normal'
+}
+
+const onCountdownFinish = () => {
+  message.warning('活动已结束')
+  fetchOverviewData()
+}
+
+const getMaterialImage = (dropName: string) => {
+  return dropName ? `${OpenAPI.BASE}/api/res/materials/${dropName}.png` : ''
+}
+
+const handleImageError = (event: Event) => {
+  const image = event.target as HTMLImageElement
+  image.style.display = 'none'
+}
+
 const fetchSchedulerTaskOptions = async (options?: { quiet?: boolean }) => {
   schedulerTasksLoading.value = true
 
@@ -564,21 +755,28 @@ const startHomeTask = async () => {
 
 const fetchOverviewData = async () => {
   loading.value = true
+  error.value = ''
 
   try {
     const response = await Service.getOverviewApiInfoGetOverviewPost()
 
     if (response.code === 200) {
       const data = response.data as ApiResponse
+      if (data.Stage) {
+        activityData.value = data.Stage.Activity || []
+        resourceData.value = data.Stage.Resource || []
+      }
       if (data.Proxy) {
         proxyData.value = data.Proxy
       }
     } else {
-      logger.warn(`获取首页概览失败: ${response.message || '获取数据失败'}`)
+      error.value = response.message || '获取数据失败'
+      logger.warn(`获取首页概览失败: ${error.value}`)
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
     logger.error(`获取首页概览失败: ${errorMsg}`)
+    error.value = '网络请求失败，请检查连接'
   } finally {
     loading.value = false
   }
@@ -777,7 +975,9 @@ onMounted(() => {
 
 .command-card,
 .shortcut-card,
-.proxy-card {
+.proxy-card,
+.arknights-card,
+.resource-card {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
@@ -791,7 +991,9 @@ onMounted(() => {
 }
 
 .shortcut-card :deep(.ant-card-head-title),
-.proxy-card :deep(.ant-card-head-title) {
+.proxy-card :deep(.ant-card-head-title),
+.arknights-card :deep(.ant-card-head-title),
+.resource-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
 }
@@ -968,6 +1170,148 @@ onMounted(() => {
   width: 100%;
 }
 
+.resource-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.activity-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.resource-item,
+.activity-item {
+  min-height: 82px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.resource-item:hover,
+.activity-item:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.error-message {
+  margin-bottom: 16px;
+}
+
+.activity-info {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+}
+
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.activity-left {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.activity-right {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.activity-title {
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.activity-end-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.time-icon,
+.time-label {
+  color: var(--ant-color-text-secondary);
+}
+
+.time-value {
+  color: var(--ant-color-text);
+  font-weight: 500;
+}
+
+.stage-info {
+  min-width: 50px;
+  max-width: 80px;
+  margin-right: 16px;
+  flex: 1;
+  text-align: center;
+}
+
+.stage-name {
+  color: var(--ant-color-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.drop-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex: 2;
+}
+
+.drop-image {
+  width: 48px;
+  height: 48px;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.drop-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.drop-details {
+  min-width: 70px;
+  flex: 1;
+}
+
+.drop-name {
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.drop-tip {
+  margin-top: 2px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
 .empty-state {
   text-align: center;
   padding: 40px 0;
@@ -1056,6 +1400,11 @@ onMounted(() => {
   .overview-grid {
     grid-template-columns: 1fr;
   }
+
+  .activity-list,
+  .resource-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 800px) {
@@ -1077,7 +1426,9 @@ onMounted(() => {
     font-size: 24px;
   }
 
-  .quick-actions {
+  .quick-actions,
+  .activity-list,
+  .resource-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1092,6 +1443,14 @@ onMounted(() => {
   .quick-action:nth-child(n + 3) {
     border-top: 1px solid var(--ant-color-border-secondary);
   }
+
+  .activity-header {
+    flex-direction: column;
+  }
+
+  .activity-right {
+    text-align: left;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1099,7 +1458,9 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .quick-actions {
+  .quick-actions,
+  .activity-list,
+  .resource-list {
     grid-template-columns: 1fr;
   }
 
