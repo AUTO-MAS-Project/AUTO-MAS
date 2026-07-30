@@ -31,6 +31,8 @@ from .script_types import script_type_registry
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.models.schema import (
+    ScriptDispatchState,
+    ScriptDispatchStateSnapshot,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     WSTaskCompletedData,
@@ -44,6 +46,43 @@ from app.utils import get_logger
 
 
 logger = get_logger("业务调度")
+
+_WAITING_SCRIPT_STATUSES = {"等待", "等待中"}
+_RUNNING_SCRIPT_STATUSES = {"运行", "运行中"}
+_FAILED_SCRIPT_STATUS = "异常"
+
+
+def _resolve_type_key_for_script(script_id: str) -> str | None:
+    """解析脚本实例所属的类型键，兼容插件宿主配置和遗留配置。"""
+    from app.models.plugin_script_config import PluginScriptConfig
+    from .script_types import build_legacy_fallback_provider_by_script_config
+
+    try:
+        script_uid = uuid.UUID(script_id)
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    if script_uid not in Config.ScriptConfig:
+        return None
+
+    script_config = Config.ScriptConfig[script_uid]
+    if isinstance(script_config, PluginScriptConfig):
+        type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+        return type_key or None
+
+    try:
+        provider = script_type_registry.get_by_script_config(script_config)
+    except KeyError:
+        provider = build_legacy_fallback_provider_by_script_config(script_config)
+
+    return provider.type_key if provider is not None else None
+
+
+def _script_item_has_failed(script_item: ScriptItem) -> bool:
+    """判断当前脚本项或其任一用户是否处于异常状态。"""
+    return script_item.status == _FAILED_SCRIPT_STATUS or any(
+        user.status == _FAILED_SCRIPT_STATUS for user in script_item.user_list
+    )
 
 
 def _resolve_queue_name(queue_id: str | None) -> str | None:
@@ -169,12 +208,40 @@ class TaskInfo(TaskItem):
 
 class Task(TaskExecuteBase):
 
-    def __init__(self, task_info: TaskInfo):
+    def __init__(self, task_info: TaskInfo, state_manager: "_TaskManager"):
         super().__init__()
         self.task_info = task_info
+        self._state_manager = state_manager
+        self._script_type_keys: dict[str, str] = {}
+        self._current_script_type_key: str | None = None
+        self._current_task_item: TaskExecuteBase | None = None
+        self._current_script_running = False
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
+
+    def resolve_script_type_key(self, script_id: str) -> str | None:
+        """解析并缓存任务内脚本的类型键。"""
+        if script_id in self._script_type_keys:
+            return self._script_type_keys[script_id]
+
+        type_key = _resolve_type_key_for_script(script_id)
+        if type_key is not None:
+            self._script_type_keys[script_id] = type_key
+        return type_key
+
+    @property
+    def is_current_script_running(self) -> bool:
+        """当前脚本是否仍处于真实执行窗口。"""
+        return self._current_script_running
+
+    @property
+    def current_execution_failed(self) -> bool:
+        """当前子执行器是否已经捕获到异常。"""
+        return bool(
+            self._current_task_item is not None
+            and self._current_task_item.execution_failed
+        )
 
     def _resolve_script_provider(self, script_uid: uuid.UUID):
         """解析脚本对应的 provider，兼容插件脚本。"""
@@ -289,6 +356,9 @@ class Task(TaskExecuteBase):
             else [self.task_info.script_id]
         )
 
+        for script_id in script_ids:
+            self.resolve_script_type_key(script_id)
+
         self.task_info.script_list = [
             ScriptItem(
                 script_id=script_id,
@@ -341,16 +411,24 @@ class Task(TaskExecuteBase):
                 continue
 
             current_script_uid = uuid.UUID(script_item.script_id)
+            current_type_key = self.resolve_script_type_key(script_item.script_id)
+            self._current_script_type_key = current_type_key
+            self._current_task_item = None
+            self._current_script_running = False
 
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
+                self._state_manager.mark_script_type_failed(current_type_key)
+                error_text = f"任务 {script_item.name} 对应脚本已被删除"
+                self._exit_result = "error"
+                self._exit_error = error_text
                 logger.info(f"跳过任务: {current_script_uid}, 对应脚本已被删除")
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"任务 {script_item.name} 对应脚本已被删除",
+                        message=error_text,
                     ),
                 )
                 continue
@@ -358,20 +436,33 @@ class Task(TaskExecuteBase):
             try:
                 provider = self._resolve_script_provider(current_script_uid)
             except KeyError:
-                logger.error(
-                    f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
+                script_item.status = "异常"
+                self._state_manager.mark_script_type_failed(current_type_key)
+                error_text = (
+                    "不支持的脚本类型: "
+                    f"{type(Config.ScriptConfig[current_script_uid]).__name__}"
                 )
+                self._exit_result = "error"
+                self._exit_error = error_text
+                logger.error(error_text)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message="脚本类型不支持"),
+                    data=WSTaskNoticeData(level="error", message=error_text),
                 )
                 continue
+
+            current_type_key = provider.type_key
+            self._script_type_keys[script_item.script_id] = current_type_key
+            self._current_script_type_key = current_type_key
 
             capability = await Config.get_script_record_capability(current_script_uid)
             if not capability.available:
                 script_item.status = "异常"
+                self._state_manager.mark_script_type_failed(current_type_key)
                 reason = capability.unavailable_reason or "脚本当前不可用"
+                self._exit_result = "error"
+                self._exit_error = reason
                 logger.error(f"脚本类型 {provider.type_key} 当前不可用: {reason}")
                 await Publisher.send(
                     id=self.task_info.task_id,
@@ -382,15 +473,19 @@ class Task(TaskExecuteBase):
 
             if self.task_info.mode not in (capability.supported_modes or ()):
                 script_item.status = "异常"
-                logger.error(
+                self._state_manager.mark_script_type_failed(current_type_key)
+                error_text = (
                     f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
                 )
+                self._exit_result = "error"
+                self._exit_error = error_text
+                logger.error(error_text)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}",
+                        message=error_text,
                     ),
                 )
                 continue
@@ -408,7 +503,9 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
+            self._state_manager.mark_script_type_started(current_type_key)
             script_item.status = "运行"
+            self._current_script_running = True
             logger.info(f"任务开始: {current_script_uid}")
             script_event_data = self._build_script_event_data()
             await PluginEventFactory.emit_script_event_async(
@@ -423,13 +520,17 @@ class Task(TaskExecuteBase):
             )
 
             task_item = provider.create_manager(script_item)
+            self._current_task_item = task_item
 
             try:
                 await self.spawn(task_item)
             except asyncio.CancelledError:
+                self._current_script_running = False
+                self._current_task_item = None
                 error_text = "CancelledError: 任务执行被取消"
-                self._exit_result = "cancelled"
-                self._exit_error = error_text
+                if self._exit_result != "error":
+                    self._exit_result = "cancelled"
+                    self._exit_error = error_text
                 await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_CANCELLED,
                     source="core.task_manager",
@@ -456,6 +557,10 @@ class Task(TaskExecuteBase):
                 )
                 raise
             except Exception as e:
+                script_item.status = "异常"
+                self._current_script_running = False
+                self._current_task_item = None
+                self._state_manager.mark_script_type_failed(current_type_key)
                 error_text = f"{type(e).__name__}: {e}"
                 self._exit_result = "error"
                 self._exit_error = error_text
@@ -485,16 +590,30 @@ class Task(TaskExecuteBase):
                 )
                 raise
             else:
+                self._current_script_running = False
+                execution_error = task_item.execution_error
+                script_failed = (
+                    execution_error is not None or _script_item_has_failed(script_item)
+                )
+                self._current_task_item = None
+                if script_failed and script_item.status == "完成":
+                    script_item.status = _FAILED_SCRIPT_STATUS
                 result_event = (
                     PluginEventNames.SCRIPT_SUCCESS
-                    if script_item.status == "完成"
+                    if script_item.status == "完成" and not script_failed
                     else PluginEventNames.SCRIPT_ERROR
                 )
                 result_error = None
                 if result_event == PluginEventNames.SCRIPT_ERROR:
-                    result_error = "脚本状态未完成"
+                    result_error = (
+                        f"{type(execution_error).__name__}: {execution_error}"
+                        if execution_error is not None
+                        else "脚本状态未完成"
+                    )
                     self._exit_result = "error"
                     self._exit_error = result_error
+                    if script_item.status != "跳过":
+                        self._state_manager.mark_script_type_failed(current_type_key)
 
                 await PluginEventFactory.emit_script_event_async(
                     event=result_event,
@@ -531,6 +650,8 @@ class Task(TaskExecuteBase):
             data=WSTaskCompletedData(
                 result=self.task_info.result,
                 task_info=self.task_info.asdict,
+                outcome=self._exit_result,
+                error=self._exit_error,
             ),
         )
 
@@ -560,6 +681,13 @@ class Task(TaskExecuteBase):
             self._exit_result = "error"
             self._exit_error = f"{type(e).__name__}: {e}"
 
+        if self._current_script_running:
+            if 0 <= self.task_info.current_index < len(self.task_info.script_list):
+                self.task_info.script_list[self.task_info.current_index].status = "异常"
+            self._current_script_running = False
+            self._current_task_item = None
+            self._state_manager.mark_script_type_failed(self._current_script_type_key)
+
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,
@@ -579,11 +707,22 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        self._recent_failed_types: set[str] = set()
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
         self._stop_all_lock = asyncio.Lock()
         self._stopping_all = False
         self._startup_queue_started = False
         self._startup_queue_running = False
+
+    def mark_script_type_started(self, type_key: str | None) -> None:
+        """同类型脚本真正开始运行时清除历史失败锁存。"""
+        if type_key:
+            self._recent_failed_types.discard(type_key)
+
+    def mark_script_type_failed(self, type_key: str | None) -> None:
+        """锁存类型失败终态；锁存没有 TTL，仅由下次同类型运行清除。"""
+        if type_key:
+            self._recent_failed_types.add(type_key)
 
     @staticmethod
     def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
@@ -639,6 +778,76 @@ class _TaskManager:
                 )
             )
         return TaskRuntimeSnapshot(tasks=tasks)
+
+    def get_script_states_snapshot(self) -> ScriptDispatchStateSnapshot:
+        """返回保存队列和活动任务按脚本类型聚合后的状态。"""
+        states: dict[str, ScriptDispatchState] = {}
+
+        def get_state(type_key: str) -> ScriptDispatchState:
+            return states.setdefault(type_key, ScriptDispatchState())
+
+        for script_uid in Config.ScriptConfig:
+            type_key = _resolve_type_key_for_script(str(script_uid))
+            if type_key is not None:
+                get_state(type_key)
+
+        for type_key in self._recent_failed_types:
+            get_state(type_key).recentFailed = True
+
+        for queue in Config.QueueConfig.values():
+            for queue_item in queue.QueueItem.values():
+                script_id = str(queue_item.get("Info", "ScriptId") or "")
+                if script_id == "-":
+                    continue
+                type_key = _resolve_type_key_for_script(script_id)
+                if type_key is not None:
+                    get_state(type_key).queued = True
+
+        for task_uid, task_info in self.task_info.items():
+            task_handler = self.task_handler.get(task_uid)
+
+            if not task_info.script_list:
+                if task_info.script_id is None:
+                    continue
+                type_key = (
+                    task_handler.resolve_script_type_key(task_info.script_id)
+                    if task_handler is not None
+                    else _resolve_type_key_for_script(task_info.script_id)
+                )
+                if type_key is not None:
+                    get_state(type_key).queued = True
+                continue
+
+            for index, script_item in enumerate(task_info.script_list):
+                type_key = (
+                    task_handler.resolve_script_type_key(script_item.script_id)
+                    if task_handler is not None
+                    else _resolve_type_key_for_script(script_item.script_id)
+                )
+                if type_key is None:
+                    continue
+
+                state = get_state(type_key)
+                if script_item.status in _WAITING_SCRIPT_STATUSES:
+                    state.queued = True
+
+                is_current = index == task_info.current_index
+                has_failed = _script_item_has_failed(script_item) or bool(
+                    is_current
+                    and task_handler is not None
+                    and task_handler.current_execution_failed
+                )
+                is_running = is_current and (
+                    task_handler.is_current_script_running
+                    if task_handler is not None
+                    else script_item.status in _RUNNING_SCRIPT_STATUSES
+                )
+                if is_running:
+                    state.running = True
+                if is_running and has_failed:
+                    state.activeFailed = True
+
+        return ScriptDispatchStateSnapshot(states=states)
 
     def _schedule_clean_task(self, task_uid: uuid.UUID) -> None:
         """创建并持有任务收尾协程，结束后统一移出集合。"""
@@ -729,7 +938,7 @@ class _TaskManager:
             user_id=str(user_uid) if user_uid else None,
             resume_from_script_id=resume_from_script_id,
         )
-        task_handler = Task(task_info)
+        task_handler = Task(task_info, self)
 
         if new_task_info:
             await Publisher.send(
