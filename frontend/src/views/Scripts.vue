@@ -297,7 +297,9 @@
                                 ? 'ok-nte脚本'
                                 : script.type === 'HSR'
                                   ? 'HSR脚本'
-                                  : '通用脚本'
+                                  : script.type === 'Simple'
+                                    ? '简易脚本'
+                                    : '通用脚本'
                   }}
                 </span>
                 <span class="script-users">
@@ -632,6 +634,7 @@ const currentMaaEndConfigUser = ref<User | null>(null)
 const scriptEditPathMap: Record<ScriptType, string> = {
   MAA: 'maa',
   General: 'general',
+  Simple: 'simple',
   Okww: 'okww',
   OkNte: 'oknte',
   SRC: 'src',
@@ -1030,6 +1033,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/oknte`)
   } else if (script.type === 'HSR') {
     router.push(`/scripts/${script.id}/users/add/hsr`)
+  } else if (script.type === 'Simple') {
+    router.push(`/scripts/${script.id}/users/add/simple`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -1054,6 +1059,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
     } else if (script.type === 'HSR') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
+    } else if (script.type === 'Simple') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/simple`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }

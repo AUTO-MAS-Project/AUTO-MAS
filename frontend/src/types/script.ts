@@ -19,7 +19,16 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
+export type ScriptType =
+  | 'MAA'
+  | 'General'
+  | 'Simple'
+  | 'Okww'
+  | 'OkNte'
+  | 'SRC'
+  | 'MaaEnd'
+  | 'M9A'
+  | 'HSR'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
@@ -95,6 +104,30 @@ export interface GeneralScriptConfig {
       instances: any[]
     }
   }
+}
+
+export interface SimpleScriptConfig {
+  Info: {
+    Name: string
+    RootPath: string
+  }
+  Script: {
+    ScriptPath: string
+    Arguments: string
+    IfTrackProcess: boolean
+    TrackProcessName: string
+    TrackProcessExe: string
+    TrackProcessCmdline: string
+    LogPath: string
+    LogPathFormat: string
+    LogTimeStart: number
+    LogTimeEnd: number
+    LogTimeFormat: string
+    SuccessLog: string
+    ErrorLog: string
+  }
+  Game: GeneralScriptConfig['Game']
+  Run: GeneralScriptConfig['Run']
 }
 
 // SRC脚本配置
@@ -209,6 +242,7 @@ export interface Script {
   config:
     | MaaConfig
     | GeneralConfig
+    | SimpleScriptConfig
     | OkwwConfig
     | OkNteConfig
     | SrcConfig
@@ -308,6 +342,7 @@ export interface AddScriptResponse {
   data:
     | MAAScriptConfig
     | GeneralScriptConfig
+    | SimpleScriptConfig
     | OkwwScriptConfig
     | OkNteScriptConfig
     | SRCScriptConfig
@@ -322,6 +357,7 @@ export interface ScriptIndexItem {
   type:
     | 'MaaConfig'
     | 'GeneralConfig'
+    | 'SimpleConfig'
     | 'OkwwConfig'
     | 'OkNteConfig'
     | 'SrcConfig'
@@ -340,6 +376,7 @@ export interface GetScriptsResponse {
     string,
     | MAAScriptConfig
     | GeneralScriptConfig
+    | SimpleScriptConfig
     | OkwwScriptConfig
     | OkNteScriptConfig
     | SRCScriptConfig
@@ -357,6 +394,7 @@ export interface ScriptDetail {
   config:
     | MaaConfig
     | GeneralConfig
+    | SimpleScriptConfig
     | OkwwConfig
     | OkNteConfig
     | SrcConfig

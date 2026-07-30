@@ -11,12 +11,14 @@ import {
 describe('scriptCreateFlow', () => {
   it('starts with script type and adds the config step only for General scripts', () => {
     expect(buildCreateSteps({ type: 'General' }).map(step => step.key)).toEqual(['type', 'config'])
+    expect(buildCreateSteps({ type: 'Simple' }).map(step => step.key)).toEqual(['type'])
     expect(buildCreateSteps({ type: 'M9A' }).map(step => step.key)).toEqual(['type'])
   })
 
   it('registers every supported script type', () => {
     expect(SCRIPT_TYPE_OPTIONS.map(option => option.value)).toEqual([
       'General',
+      'Simple',
       'MAA',
       'SRC',
       'MaaEnd',
@@ -36,10 +38,10 @@ describe('scriptCreateFlow', () => {
     ])
   })
 
-  it('separates specialized adapters from the General option', () => {
+  it('separates specialized adapters from the General group', () => {
     const sections = splitScriptTypeOptions(SCRIPT_TYPE_OPTIONS)
     expect(sections.specialized.map(item => item.value)).not.toContain('General')
-    expect(sections.general.map(item => item.value)).toEqual(['General'])
+    expect(sections.general.map(item => item.value)).toEqual(['General', 'Simple'])
   })
 
   it('maps every script type to its edit route segment', () => {
@@ -49,6 +51,7 @@ describe('scriptCreateFlow', () => {
     expect(getScriptEditSegment('OkNte')).toBe('oknte')
     expect(getScriptEditSegment('HSR')).toBe('hsr')
     expect(getScriptEditSegment('General')).toBe('general')
+    expect(getScriptEditSegment('Simple')).toBe('simple')
   })
 
   it('builds submit requests only when required selections exist', () => {
@@ -59,6 +62,14 @@ describe('scriptCreateFlow', () => {
         template: null,
       })
     ).toEqual({ kind: 'new', type: 'SRC' })
+
+    expect(
+      buildCreateRequest({
+        type: 'Simple',
+        configMode: 'template',
+        template: null,
+      })
+    ).toEqual({ kind: 'new', type: 'Simple' })
 
     expect(
       buildCreateRequest({

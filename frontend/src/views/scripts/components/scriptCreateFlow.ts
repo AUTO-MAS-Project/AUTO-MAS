@@ -48,6 +48,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: generalIcon,
   },
   {
+    value: 'Simple',
+    title: '简易脚本',
+    description: '仅接管程序启动、进程与可选日志监控',
+    keywords: ['simple', '简易', '进程', '启动'],
+    group: 'general',
+    icon: generalIcon,
+  },
+  {
     value: 'MAA',
     title: 'MAA 脚本',
     description: '明日方舟自动化与多账号日常代理',
@@ -137,6 +145,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   OkNte: 'oknte',
   HSR: 'hsr',
   General: 'general',
+  Simple: 'simple',
 }
 
 export const getScriptEditSegment = (type: ScriptType) => EDIT_SEGMENT_BY_TYPE[type]

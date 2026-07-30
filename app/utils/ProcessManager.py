@@ -227,6 +227,7 @@ class ProcessManager:
         *args: str,
         cwd: Path | None = None,
         target_process: ProcessInfo | None = None,
+        ignored_target_pids: set[int] | None = None,
         stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
@@ -239,6 +240,7 @@ class ProcessManager:
             *args (str): 传递给可执行文件的参数
             cwd (Path | None): 可选的工作目录, 默认为可执行文件所在目录
             target_process (ProcessInfo | None): 期望目标进程信息, 用于跟踪主进程及其子进程, 默认为 None 表示跟踪直接启动的子进程
+            ignored_target_pids (set[int] | None): 查找目标进程时忽略的进程 ID
             stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
@@ -271,7 +273,9 @@ class ProcessManager:
         if target_process is not None:
 
             await self.search_process(
-                target_process, datetime.now() + timedelta(seconds=60)
+                target_process,
+                datetime.now() + timedelta(seconds=60),
+                ignored_pids=ignored_target_pids,
             )
 
     async def open_protocol(
@@ -300,13 +304,19 @@ class ProcessManager:
         )
 
     async def search_process(
-        self, target_process: ProcessInfo, search_end_time: datetime
+        self,
+        target_process: ProcessInfo,
+        search_end_time: datetime,
+        ignored_pids: set[int] | None = None,
     ) -> None:
         """查找目标进程"""
 
+        ignored_pids = ignored_pids or set()
         while datetime.now() < search_end_time:
             for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
                 try:
+                    if proc.pid in ignored_pids:
+                        continue
                     if match_process(proc, target_process):
                         self.target_process = proc
                         return
@@ -315,6 +325,15 @@ class ProcessManager:
             await asyncio.sleep(0.1)
         else:
             raise RuntimeError("未能在限定时间内找到目标进程")
+
+    async def wait(self) -> int | None:
+        """等待当前追踪的进程退出并返回退出码"""
+
+        if self.target_process is not None:
+            return await asyncio.to_thread(self.target_process.wait)
+        if self.process is not None:
+            return await self.process.wait()
+        return None
 
     async def is_running(self) -> bool:
         """检查当前管理的进程是否仍在运行"""

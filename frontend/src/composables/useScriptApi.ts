@@ -23,6 +23,7 @@ const logger = window.electronAPI.getLogger('脚本API')
 type ScriptListConfig =
   | MaaConfig
   | GeneralConfig
+  | import('@/types/script').SimpleScriptConfig
   | OkwwConfig
   | OkNteConfig
   | SrcConfig
@@ -41,10 +42,13 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
   General: ScriptCreateIn.type.GENERAL,
+  Simple: 'Simple' as ScriptCreateIn.type,
 }
 
 const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   MaaConfig: 'MAA',
+  GeneralConfig: 'General',
+  SimpleConfig: 'Simple',
   SrcConfig: 'SRC',
   OkwwConfig: 'Okww',
   OkNteConfig: 'OkNte',
@@ -541,7 +545,11 @@ export function useScriptApi() {
                             : false,
                       },
                     }
-                  } else if (userIndex.type === 'GeneralUserConfig' && userData) {
+                  } else if (
+                    (userIndex.type === 'GeneralUserConfig' ||
+                      String(userIndex.type) === 'SimpleUserConfig') &&
+                    userData
+                  ) {
                     const generalUserData = userData as any
                     return {
                       id: userIndex.uid,

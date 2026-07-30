@@ -40,6 +40,7 @@ import json
 
 from app.models.config import (
     GeneralConfig,
+    SimpleConfig,
     MaaConfig,
     SrcConfig,
     M9AConfig,
@@ -56,6 +57,7 @@ from app.models.config import (
     M9AUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
+    SimpleUserConfig,
     OkwwUserConfig,
     OkNteUserConfig,
     GlobalConfig,
@@ -546,13 +548,14 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"],
+        script: Literal["MAA", "SRC", "General", "Simple", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"],
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
         MaaConfig
         | SrcConfig
         | GeneralConfig
+        | SimpleConfig
         | MaaEndConfig
         | M9AConfig
         | OkwwConfig
@@ -840,6 +843,7 @@ class AppConfig(GlobalConfig):
         MaaUserConfig
         | SrcUserConfig
         | GeneralUserConfig
+        | SimpleUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
         | OkwwUserConfig
@@ -859,6 +863,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
+        elif isinstance(script_config, SimpleConfig):
+            uid, config = await script_config.UserData.add(SimpleUserConfig)
         elif isinstance(script_config, OkwwConfig):
             uid, config = await script_config.UserData.add(OkwwUserConfig)
         elif isinstance(script_config, OkNteConfig):
@@ -1107,7 +1113,7 @@ class AppConfig(GlobalConfig):
                             f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
                     script_list.append(script)
-            elif isinstance(script, GeneralConfig):
+            elif isinstance(script, (GeneralConfig, SimpleConfig)):
                 if script.get("Game", "Type") == "Emulator" and script.get(
                     "Game", "EmulatorId"
                 ) == str(emulator_id):
@@ -1120,7 +1126,7 @@ class AppConfig(GlobalConfig):
         for script in script_list:
             if isinstance(script, MaaConfig):
                 await script.set("Emulator", "Id", "-")
-            elif isinstance(script, GeneralConfig):
+            elif isinstance(script, (GeneralConfig, SimpleConfig)):
                 await script.set("Game", "EmulatorId", "-")
 
         await self.EmulatorConfig.remove(emulator_uid)

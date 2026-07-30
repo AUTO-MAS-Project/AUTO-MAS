@@ -69,6 +69,12 @@ const routes = [
     meta: { title: '编辑通用脚本' },
   },
   {
+    path: '/scripts/:id/edit/simple',
+    name: 'SimpleScriptEdit',
+    component: () => import('../views/EditView/Script/SimpleScriptEdit.vue'),
+    meta: { title: '编辑简易脚本' },
+  },
+  {
     path: '/scripts/:id/edit/okww',
     name: 'OkwwScriptEdit',
     component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
@@ -151,6 +157,18 @@ const routes = [
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/simple',
+    name: 'SimpleUserAdd',
+    component: () => import('../views/EditView/User/SimpleUserEdit.vue'),
+    meta: { title: '添加简易脚本用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/simple',
+    name: 'SimpleUserEdit',
+    component: () => import('../views/EditView/User/SimpleUserEdit.vue'),
+    meta: { title: '编辑简易脚本用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/okww',

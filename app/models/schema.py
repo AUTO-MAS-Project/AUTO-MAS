@@ -398,6 +398,7 @@ class ScriptIndexItem(BaseModel):
     type: Literal[
         "MaaConfig",
         "GeneralConfig",
+        "SimpleConfig",
         "OkwwConfig",
         "OkNteConfig",
         "SrcConfig",
@@ -414,6 +415,7 @@ class UserIndexItem(BaseModel):
     type: Literal[
         "MaaUserConfig",
         "GeneralUserConfig",
+        "SimpleUserConfig",
         "OkwwUserConfig",
         "OkNteUserConfig",
         "SrcUserConfig",
@@ -586,6 +588,30 @@ class GeneralUserConfig(BaseModel):
     )
 
 
+class SimpleUserConfig_Info(GeneralUserConfig_Info):
+    """简易脚本用户信息"""
+
+
+class SimpleUserConfig_Data(GeneralUserConfig_Data):
+    """简易脚本用户数据"""
+
+
+class SimpleUserConfig_Notify(GeneralUserConfig_Notify):
+    """简易脚本用户通知"""
+
+
+class SimpleUserConfig(BaseModel):
+    Info: Optional[SimpleUserConfig_Info] = Field(
+        default=None, description="用户信息"
+    )
+    Data: Optional[SimpleUserConfig_Data] = Field(
+        default=None, description="用户数据"
+    )
+    Notify: Optional[SimpleUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
 class OkwwUserConfig_Task(BaseModel):
     TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
 
@@ -726,6 +752,51 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+
+
+class SimpleConfig_Info(GeneralConfig_Info):
+    """简易脚本基础信息"""
+
+
+class SimpleConfig_Script(BaseModel):
+    ScriptPath: Optional[str] = Field(default=None, description="脚本可执行文件路径")
+    Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
+    IfTrackProcess: Optional[bool] = Field(
+        default=None, description="是否追踪脚本子进程"
+    )
+    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
+    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
+    TrackProcessCmdline: Optional[str] = Field(
+        default=None, description="追踪进程启动命令行参数"
+    )
+    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
+    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
+    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
+    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
+    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
+    SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
+    ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+
+
+class SimpleConfig_Game(GeneralConfig_Game):
+    """简易脚本游戏配置"""
+
+
+class SimpleConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="单次运行总时长限制，0 表示不限制"
+    )
+
+
+class SimpleConfig(BaseModel):
+    Info: Optional[SimpleConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[SimpleConfig_Script] = Field(
+        default=None, description="脚本配置"
+    )
+    Game: Optional[SimpleConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[SimpleConfig_Run] = Field(default=None, description="运行配置")
 
 
 class OkwwConfig_Info(GeneralConfig_Info):
@@ -1506,8 +1577,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "HSR"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
+    type: Literal["MAA", "SRC", "General", "Simple", "Okww", "OkNte", "MaaEnd", "M9A", "HSR"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, 简易脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1520,6 +1591,7 @@ class ScriptCreateOut(OutBase):
         MaaConfig,
         SrcConfig,
         GeneralConfig,
+        SimpleConfig,
         OkwwConfig,
         OkNteConfig,
         MaaEndConfig,
@@ -1544,6 +1616,7 @@ class ScriptGetOut(OutBase):
             MaaConfig,
             SrcConfig,
             GeneralConfig,
+            SimpleConfig,
             OkwwConfig,
             OkNteConfig,
             MaaEndConfig,
@@ -1561,6 +1634,7 @@ class ScriptUpdateIn(BaseModel):
         MaaConfig,
         SrcConfig,
         GeneralConfig,
+        SimpleConfig,
         OkwwConfig,
         OkNteConfig,
         MaaEndConfig,
@@ -1620,6 +1694,7 @@ class UserGetOut(OutBase):
             MaaUserConfig,
             SrcUserConfig,
             GeneralUserConfig,
+            SimpleUserConfig,
             OkwwUserConfig,
             OkNteUserConfig,
             MaaEndUserConfig,
@@ -1635,6 +1710,7 @@ class UserCreateOut(OutBase):
         MaaUserConfig,
         SrcUserConfig,
         GeneralUserConfig,
+        SimpleUserConfig,
         OkwwUserConfig,
         OkNteUserConfig,
         MaaEndUserConfig,
@@ -1651,6 +1727,7 @@ class UserUpdateIn(UserInBase):
         MaaUserConfig,
         SrcUserConfig,
         GeneralUserConfig,
+        SimpleUserConfig,
         OkwwUserConfig,
         OkNteUserConfig,
         MaaEndUserConfig,

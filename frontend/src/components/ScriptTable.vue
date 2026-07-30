@@ -223,6 +223,7 @@
                         <div
                           v-if="
                             script.type === 'General' ||
+                            script.type === 'Simple' ||
                             script.type === 'Okww' ||
                             script.type === 'OkNte'
                           "
@@ -573,6 +574,7 @@ const handleToggleUserStatus = (user: User) => {
 }
 
 const getScriptTypeLabel = (type: Script['type']) => {
+  if (type === 'Simple') return '简易脚本'
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
   return type

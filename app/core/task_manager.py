@@ -29,6 +29,7 @@ from .config import (
     MaaConfig,
     SrcConfig,
     GeneralConfig,
+    SimpleConfig,
     MaaEndConfig,
     M9AConfig,
     OkwwConfig,
@@ -42,6 +43,7 @@ from app.task import (
     MaaManager,
     SrcManager,
     GeneralManager,
+    SimpleManager,
     MaaEndManager,
     M9AManager,
     OkwwManager,
@@ -176,6 +178,8 @@ class Task(TaskExecuteBase):
                 task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], SimpleConfig):
+                task_item = SimpleManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
                 task_item = OkwwManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], OkNteConfig):

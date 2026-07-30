@@ -40,6 +40,7 @@ TYPE_BOOK = {
     "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
+    "SimpleConfig": "简易脚本",
     "OkwwConfig": "ok-ww",
     "OkNteConfig": "OK-NTE",
     "M9AConfig": "M9A",
