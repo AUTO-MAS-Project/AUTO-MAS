@@ -393,6 +393,7 @@ class ScriptTypeRegistry:
                 icon="SRC",
                 editor_kind="builtin:src",
                 is_builtin=True,
+                metadata={"create_group": "specialized"},
             ),
             ScriptTypeProvider(
                 type_key="MaaEnd",
@@ -404,6 +405,7 @@ class ScriptTypeRegistry:
                 icon="MaaEnd",
                 editor_kind="builtin:maaend",
                 is_builtin=True,
+                metadata={"create_group": "specialized"},
             ),
             ScriptAdapterDefinition(
                 type_key="General",
@@ -517,6 +519,8 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
             if provider.metadata.get("create_group") in {"general", "specialized"}
             else "specialized"
         ),
+        "create_group_declared": provider.metadata.get("create_group")
+        in {"general", "specialized"},
         "docs_url": provider.docs_url,
         "editor_kind": provider.editor_kind,
         "supported_modes": list(provider.supported_modes),
