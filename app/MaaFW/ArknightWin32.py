@@ -29,7 +29,6 @@ import asyncio
 import win32gui
 import pyautogui
 import pygetwindow
-from loguru import logger
 from pynput import keyboard
 
 from maa.tasker import Tasker

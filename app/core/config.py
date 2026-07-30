@@ -42,19 +42,28 @@ from app.models.config import (
     GeneralConfig,
     MaaConfig,
     SrcConfig,
+    M9AConfig,
     MaaEndConfig,
+    OkwwConfig,
+    OkNteConfig,
+    HSRConfig,
+    HSRUserConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
     SrcUserConfig,
+    M9AUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
+    OkwwUserConfig,
+    OkNteUserConfig,
     GlobalConfig,
     CLASS_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
+    GameSignAccountGroup,
 )
 from app.models.schema import WebSocketMessage
 from app.utils.constants import (
@@ -81,7 +90,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.2.0"
+    VERSION = "v5.4.0-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -127,8 +136,10 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        self._stage_refreshing = False
 
         truststore.inject_into_ssl()
 
@@ -143,6 +154,16 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+
+        # 游戏签到：连接账号组 MultipleConfig
+        await self.ToolsConfig.GameSign_Accounts.connect(
+            self.config_path / "GameSignAccounts.json"
+        )
+
+        # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
+        last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
+        if last_sign_date != datetime.now().strftime("%Y-%m-%d"):
+            await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
         from app.services import System
 
@@ -525,9 +546,19 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"],
         script_id: str | None = None,
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig]:
+    ) -> tuple[
+        uuid.UUID,
+        MaaConfig
+        | SrcConfig
+        | GeneralConfig
+        | MaaEndConfig
+        | M9AConfig
+        | OkwwConfig
+        | OkNteConfig
+        | HSRConfig,
+    ]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -733,7 +764,7 @@ class AppConfig(GlobalConfig):
 
         files = {
             "file": (
-                f"{config_name}&&{author}&&{description}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
+                f"{config_name}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
                 json.dumps(temp, ensure_ascii=False),
                 "application/json",
             )
@@ -804,10 +835,16 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(
-        self, script_id: str
-    ) -> tuple[
-        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
+    async def add_user(self, script_id: str) -> tuple[
+        uuid.UUID,
+        MaaUserConfig
+        | SrcUserConfig
+        | GeneralUserConfig
+        | MaaEndUserConfig
+        | M9AUserConfig
+        | OkwwUserConfig
+        | OkNteUserConfig
+        | HSRUserConfig,
     ]:
         """添加用户配置"""
 
@@ -822,8 +859,16 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
+        elif isinstance(script_config, OkwwConfig):
+            uid, config = await script_config.UserData.add(OkwwUserConfig)
+        elif isinstance(script_config, OkNteConfig):
+            uid, config = await script_config.UserData.add(OkNteUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
+        elif isinstance(script_config, M9AConfig):
+            uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, HSRConfig):
+            uid, config = await script_config.UserData.add(HSRUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -846,6 +891,29 @@ class AppConfig(GlobalConfig):
                     .UserData[user_uid]
                     .set(group, name, value)
                 )
+
+    async def import_script_config_file(
+        self, script_id: str, user_id: Optional[str]
+    ) -> None:
+        """从目标脚本目录导入配置文件"""
+
+        logger.info(f"{script_id} - {user_id or 'Default'} 导入脚本配置文件")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError("当前脚本类型暂不支持导入配置文件")
+
+        source_config_dir = Path(script_config.get("Info", "Path")) / "config"
+        if not (source_config_dir / "mxu-MaaEnd.json").exists():
+            raise FileNotFoundError(
+                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
+            )
+
+        config_owner = user_id or "Default"
+        target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
+        shutil.rmtree(target_config_dir, ignore_errors=True)
+        target_config_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
@@ -1264,6 +1332,98 @@ class AppConfig(GlobalConfig):
 
         logger.success("工具设置更新成功")
 
+    # ==================== 游戏签到账号组 CRUD ====================
+
+    async def get_game_sign_accounts(
+        self, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
+        """获取所有游戏签到账号组"""
+
+        logger.debug("获取所有游戏签到账号组")
+
+        return await self.ToolsConfig.GameSign_Accounts.toDict(
+            if_decrypt=if_decrypt
+        )
+
+    async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
+        """添加游戏签到账号组"""
+
+        logger.info("添加游戏签到账号组")
+
+        uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+            GameSignAccountGroup
+        )
+        return uid, config
+
+    async def get_game_sign_account(
+        self, account_id: str, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
+        """获取游戏签到账号组详情"""
+
+        logger.debug(f"获取游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
+            if_decrypt=if_decrypt
+        )
+
+    def _clear_game_sign_account_results(self, account_id: str) -> None:
+        """清除指定游戏签到账号的内存结果。"""
+
+        result = self.ToolsConfig._game_sign_result_data
+        for platform in list(result):
+            result[platform] = [
+                group
+                for group in result[platform]
+                if group.get("account_uid") != account_id
+            ]
+            if not result[platform]:
+                del result[platform]
+
+    async def update_game_sign_account(
+        self, account_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新游戏签到账号组配置"""
+
+        logger.info(f"更新游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        credential_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
+        credential_changed = False
+
+        for group, items in data.items():
+            for name, value in items.items():
+                if (
+                    group == "GameSignAccount"
+                    and name in credential_fields
+                    and account.get(group, name) != value
+                ):
+                    credential_changed = True
+                await account.set(group, name, value)
+
+        if credential_changed:
+            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+            self._clear_game_sign_account_results(account_id)
+
+    async def delete_game_sign_account(self, account_id: str) -> None:
+        """删除游戏签到账号组"""
+
+        logger.info(f"删除游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
+        self._clear_game_sign_account_results(account_id)
+
+    async def reorder_game_sign_accounts(self, order: list[str]) -> None:
+        """调整游戏签到账号组顺序"""
+
+        logger.info("调整游戏签到账号组顺序")
+
+        await self.ToolsConfig.GameSign_Accounts.setOrder(
+            [uuid.UUID(_) for _ in order]
+        )
+
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
@@ -1461,12 +1621,8 @@ class AppConfig(GlobalConfig):
     ):
         """获取关卡信息"""
 
-        if json.loads(self.get("Data", "Stage")) != {}:
-            task = asyncio.create_task(self.get_stage())
-            self.temp_task.append(task)
-            task.add_done_callback(lambda t: self.temp_task.remove(t))
-        else:
-            await self.get_stage()
+        # get_stage 会立即返回缓存，网络刷新在后台进行
+        await self.get_stage()
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
@@ -1533,13 +1689,32 @@ class AppConfig(GlobalConfig):
         return overview
 
     async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
-        """更新活动关卡信息"""
+        """更新活动关卡信息。网络检查在后台执行，立即返回本地缓存。"""
 
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
+
+        if not self._stage_refreshing:
+            self._stage_refreshing = True
+            task = asyncio.create_task(self._refresh_stage())
+            self.temp_task.append(task)
+
+            def _done(t: asyncio.Task) -> None:
+                self._stage_refreshing = False
+                if t in self.temp_task:
+                    self.temp_task.remove(t)
+
+            task.add_done_callback(_done)
+        else:
+            logger.info("活动关卡信息更新任务已在进行中")
+
+        return json.loads(self.get("Data", "Stage"))
+
+    async def _refresh_stage(self) -> None:
+        """从远端刷新活动关卡信息（仅后台调用）。"""
 
         logger.info("开始获取活动关卡信息")
         try:
@@ -1586,8 +1761,6 @@ class AppConfig(GlobalConfig):
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
-
-        return json.loads(self.get("Data", "Stage"))
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
@@ -1654,6 +1827,9 @@ class AppConfig(GlobalConfig):
         """获取模拟器多开实例下拉框信息"""
 
         logger.info("开始获取模拟器下拉框信息")
+
+        if emulator_id == "-":
+            return []
 
         if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Info", "Type") == "general":
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
@@ -2130,6 +2306,30 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
+    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
+        """
+        保存 HSR 专项日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param hsr_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
+        )
+
+        data: Dict[str, str] = {"hsr_result": hsr_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
         合并指定数据统计信息文件
@@ -2142,6 +2342,19 @@ class AppConfig(GlobalConfig):
         """
 
         data: Dict[str, Any] = {"index": {}}
+        hsr_success_results = {
+            "HSR 任务结束",
+            "HSR 用户任务完成",
+            "HSR 失败任务补跑完成",
+            "HSR 本轮无需执行，已跳过",
+        }
+
+        def is_success_result(result_key: str, result_value: Any) -> bool:
+            if result_value == "Success!":
+                return True
+            if result_key == "hsr_result" and result_value in hsr_success_results:
+                return True
+            return False
 
         for json_file in statistic_path_list:
             try:
@@ -2189,6 +2402,7 @@ class AppConfig(GlobalConfig):
                     "maaend_result",
                     "src_result",
                     "general_result",
+                    "hsr_result",
                 ]:
                     actual_date = (
                         datetime.strptime(
@@ -2199,7 +2413,9 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    if single_data[key] != "Success!":
+                    success = is_success_result(key, single_data[key])
+
+                    if not success:
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
@@ -2208,9 +2424,7 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": (
-                            "DONE" if single_data[key] == "Success!" else "ERROR"
-                        ),
+                        "status": "DONE" if success else "ERROR",
                         "jsonFile": str(json_file),
                     }
 

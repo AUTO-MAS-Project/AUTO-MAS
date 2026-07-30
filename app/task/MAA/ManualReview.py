@@ -37,6 +37,18 @@ from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, MAA_STARTUP_BASE, ARKNIGHTS_PACKAGE_NAME
 from .tools import agree_bilibili
 
+# OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
+# 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
+_MAA_CLIENT_TYPE_TO_INT = {
+    "Official": 0,
+    "Bilibili": 1,
+    "YoStarEN": 2,
+    "YoStarJP": 3,
+    "YoStarKR": 4,
+    "txwy": 5,
+}
+
+
 logger = get_logger("MAA 人工排查")
 
 
@@ -229,7 +241,7 @@ class ManualReviewTask(TaskExecuteBase):
                     "message_id": uid,
                     "type": "Question",
                     "title": "操作提示",
-                    "message": "请检查用户代理情况, 该用户是否正确完成代理任务？",
+                    "message": f"请检查用户代理情况, 「{self.cur_user_item.name}」是否正确完成代理任务？",
                     "options": ["是", "否"],
                 },
             )
@@ -300,32 +312,79 @@ class ManualReviewTask(TaskExecuteBase):
 
         # 关闭所有定时
         for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"
+            global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
+        # NEW: Timers.List[*].IsEnabled = false
+        if "Timers" not in gui_new_set:
+            gui_new_set["Timers"] = {}
+        if "List" not in gui_new_set["Timers"]:
+            gui_new_set["Timers"]["List"] = []
+        for timer in gui_new_set["Timers"].get("List", []):
+            if isinstance(timer, dict):
+                timer["IsEnabled"] = False
 
         # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
-            default_set["Connect.Address"] = emulator_info.adb_address
+            default_set["Connect.Address"] = emulator_info.adb_address  # OLD: 即将移除
+            gui_new_set.setdefault("Configurations", {}).setdefault(
+                "Default", {}
+            ).setdefault("Gui", {}).setdefault("ConnectSettings", {})[
+                "Address"
+            ] = emulator_info.adb_address
 
         # 任务间切换方式
-        default_set["MainFunction.PostActions"] = "8"
+        default_set["MainFunction.PostActions"] = "8"  # OLD: 即将移除
+        # NEW: PostActions [Flags] 枚举整数 ExitSelf=8
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {})["PostActions"] = 8
 
         # 直接运行任务
-        default_set["Start.StartGame"] = "True"
-        default_set["Start.RunDirectly"] = "True"
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
+        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
+        default_set["Start.RunDirectly"] = "True"  # OLD: 即将移除
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
+            "StartEmulator"
+        ] = False
 
         # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
+        gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
+        gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
 
         # 静默模式相关配置
-        global_set["GUI.UseTray"] = "True"
-        global_set["GUI.MinimizeToTray"] = "True"
-        global_set["Start.MinimizeDirectly"] = "True"
+        global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
+        global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
+        global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Gui", {})["UseTray"] = True
+        gui_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
+        gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
 
         # 服务器与账号切换
-        default_set["Start.ClientType"] = self.cur_user_config.get("Info", "Server")
+        default_set["Start.ClientType"] = self.cur_user_config.get(
+            "Info", "Server"
+        )  # OLD: 即将移除
+        # NEW: ClientType 枚举整数 (Official=0, Bilibili=1, ...)
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})[
+            "ClientType"
+        ] = _MAA_CLIENT_TYPE_TO_INT.get(
+            self.cur_user_config.get("Info", "Server"), 0
+        )
         startup = MAA_STARTUP_BASE.copy()
         if self.cur_user_config.get("Info", "Server") == "Official":
             startup["AccountName"] = (
@@ -339,9 +398,10 @@ class ManualReviewTask(TaskExecuteBase):
         # 导出任务配置
         gui_new_set["Configurations"]["Default"]["TaskQueue"] = [startup]
 
-        (self.maa_set_path / "gui.json").write_text(
-            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
+            json.dumps(gui_set, ensure_ascii=False, indent=4),
+            encoding="utf-8",  # OLD: 即将移除
+        )  # OLD: 即将移除
         (self.maa_set_path / "gui.new.json").write_text(
             json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )

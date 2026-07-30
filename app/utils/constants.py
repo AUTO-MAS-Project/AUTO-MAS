@@ -29,7 +29,6 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
 UTC4 = timezone(timedelta(hours=4))
 """东4区时区对象"""
 
@@ -41,6 +40,11 @@ TYPE_BOOK = {
     "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
+    "OkwwConfig": "ok-ww",
+    "OkNteConfig": "OK-NTE",
+    "M9AConfig": "M9A",
+    "M9AUserConfig": "M9A",
+    "HSRConfig": "HSR",
 }
 """配置类型映射表"""
 
@@ -175,7 +179,15 @@ MAA_REMAIN_FIGHT_BASE = {
 }
 """MAA剩余理智作战基础配置"""
 
-MAAEND_STAGE_BOOK = {
+MAAEND_SANITY_TASK_LABELS = {
+    "OperatorProgression": "干员养成",
+    "WeaponProgression": "武器养成",
+    "CrisisDrills": "危境预演",
+    "Essence": "基质刷取",
+}
+"""MaaEnd理智任务类型展示文案"""
+
+MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "OperatorEXP": "干员经验",
     "Promotions": "干员进阶",
     "T-Creds": "钱币收集",
@@ -187,88 +199,198 @@ MAAEND_STAGE_BOOK = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
+    "VFTheHub": "枢纽区",
+    "VFOriginiumSciencePark": "源石研究园",
+    "VFOriginLodespring": "矿脉源区",
+    "VFPowerPlateau": "供能高地",
+    "WLWulingCity": "武陵城区",
+    "WLQingboStockade": "清波寨",
+    "WLMarkerStone": "首墩",
 }
-"""MAAEnd任务关卡中文映射表"""
+"""MaaEnd理智任务详细选项展示文案"""
+
+MAAEND_SANITY_TASK_TYPES = (
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "Essence",
+)
+"""MaaEnd理智任务类型列表"""
+
+MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
+    "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
+    "WeaponProgression": ("WeaponEXP", "WeaponTune"),
+    "CrisisDrills": (
+        "AdvancedProgression1",
+        "AdvancedProgression2",
+        "AdvancedProgression3",
+        "AdvancedProgression4",
+        "AdvancedProgression5",
+    ),
+}
+"""MaaEnd协议空间任务选项列表"""
+
+MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
+    "VFTheHub",
+    "VFOriginiumSciencePark",
+    "VFOriginLodespring",
+    "VFPowerPlateau",
+    "WLWulingCity",
+    "WLQingboStockade",
+    "WLMarkerStone",
+)
+"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
-
-MAAEND_KILLPROC_TASK = {
-    "id": "jobstop",
-    "taskName": "__MXU_KILLPROC__",
-    "enabled": True,
-    "optionValues": {
-        "__MXU_KILLPROC_SELF_OPTION__": {"type": "switch", "value": True},
-        "__MXU_KILLPROC_NAME_OPTION__": {
-            "type": "input",
-            "values": {"process_name": ""},
-        },
+MAAEND_TASK_GROUPS = {
+    "Sanity": {
+        "label": "理智作战",
+        "tasks": (
+            ("Sanity", "理智任务"),
+            ("AutoUseSpMedication", "应急理智加强剂"),
+        ),
+    },
+    "Infrastructure": {
+        "label": "基建任务",
+        "tasks": (
+            ("DijiangRewards", "基建任务"),
+            ("DeliveryJobs", "转交委托"),
+            ("SellProduct", "售卖产品"),
+            ("AutoStockpile", "自动囤货"),
+            ("AutoStockStaple", "购买稳定物资"),
+        ),
+    },
+    "Credit": {
+        "label": "信用收支",
+        "tasks": (
+            ("VisitFriends", "拜访好友"),
+            ("CreditShoppingN2", "信用点购物"),
+            ("SeizeEntrustTask", "抢委托"),
+        ),
+    },
+    "Frontend": {
+        "label": "前台任务",
+        "tasks": (
+            ("AutoEcoFarm", "生态农场"),
+            ("AutoSell", "售卖弹性物资"),
+            ("EnvironmentMonitoring", "环境监测"),
+            ("AutoCollect", "自动采集"),
+        ),
+    },
+    "Rewards": {
+        "label": "奖励领取",
+        "tasks": (
+            ("DailyRewards", "日常奖励领取"),
+            ("ResourceRecycleStation", "资源回收站"),
+        ),
     },
 }
-"""MAAEnd任务完成后退出任务配置"""
+"""MaaEnd任务分组"""
+
+MAAEND_TASKS = tuple(
+    task_name
+    for group in MAAEND_TASK_GROUPS.values()
+    for task_name, _ in group["tasks"]
+)
+"""MaaEnd托管任务列表"""
+
+MAAEND_CONTROLLER_TASKS = {"Win32-Front": MAAEND_TASKS}
+"""MaaEnd控制器支持的托管任务列表"""
+
+MAAEND_SANITY_TASK_DEFAULTS = {
+    "SanityTaskType": "OperatorProgression",
+    "OperatorProgression": "OperatorEXP",
+    "WeaponProgression": "WeaponEXP",
+    "CrisisDrills": "AdvancedProgression1",
+    "RewardsSetOption": "RewardsSetA",
+    "AutoEssenceSpecifiedLocation": "VFTheHub",
+}
+"""MaaEnd理智任务字段默认值"""
+
+MAAEND_SANITY_TASK_FIELDS = (
+    "SanityTaskType",
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "RewardsSetOption",
+    "AutoEssenceSpecifiedLocation",
+)
+"""MaaEnd理智任务字段列表"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",
         "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
-        "registry_paths": [
-            r"SOFTWARE\NetEase\MuMu Player 12",
-            r"SOFTWARE\NetEase\MuMuPlayer-12.0",
-            r"SOFTWARE\NetEase\MuMu\nx_main",  # mumu5
+        # DisplayName 子串匹配；避免裸 "MuMu" 以防误匹配 MuMuPlugin 等。
+        "registry_display_keywords": [
+            "MuMu Player",
+            "MuMuPlayer",
+            "Netease MuMu",
+            "MuMu模拟器",
+            "YXArkNights",
+            "YXReverse1999",
         ],
-        "default_paths": [
-            r"C:\Program Files\Netease\MuMu Player 12",
-            r"C:\Program Files (x86)\Netease\MuMu Player 12",
-            r"C:\Program Files\Netease\MuMu\nx_main",
-            r"C:\Program Files (x86)\Netease\MuMu\nx_main",
-            r"D:\Program Files\Netease\MuMu Player 12",
-            r"D:\Program Files (x86)\Netease\MuMu Player 12",
-            r"D:\Program Files\Netease\MuMu\nx_main",
-            r"D:\Program Files (x86)\Netease\MuMu\nx_main",
-            (Path.home() / "AppData/Local/MuMu Player 12").as_posix(),
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "ldplayer": {
         "name": "雷电模拟器",
         "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
-        "registry_paths": [r"SOFTWARE\ChangZhi", r"SOFTWARE\leidian\ldplayer"],
-        "default_paths": [
-            r"C:\LDPlayer\LDPlayer4.0",
-            r"C:\Program Files\LDPlayer",
-            r"D:\LDPlayer\LDPlayer4.0",
-            r"D:\Program Files\LDPlayer",
+        # 关键词用完整产品名/英文，避免单字「雷电」误匹配。
+        "registry_display_keywords": [
+            "LDPlayer",
+            "雷电模拟器",
+            "leidian",
+            "XuanZhi LDPlayer",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "nox": {
         "name": "夜神模拟器",
-        "executables": ["Nox.exe", "NoxVMHandle.exe"],
-        "registry_paths": [r"SOFTWARE\BigNox\VirtualBox"],
-        "default_paths": [
-            r"C:\Program Files\Nox\bin",
-            r"C:\Program Files (x86)\Nox\bin",
-            r"D:\Program Files\Nox\bin",
-            r"D:\Program Files (x86)\Nox\bin",
+        # executables[0] 为多开管理器；卸载项常见旁路为 Nox.exe（同 bin 目录）
+        "executables": ["MultiPlayerManager.exe", "Nox.exe", "NoxVMHandle.exe"],
+        "registry_display_keywords": [
+            "NoxPlayer",
+            "Nox APP Player",
+            "BigNox",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "memu": {
         "name": "逍遥模拟器",
-        "executables": ["MEmu.exe", "MemuManager.exe"],
-        "registry_paths": [r"SOFTWARE\Microvirt\MEmu"],
-        "default_paths": [
-            r"C:\Program Files\Microvirt\MEmu",
-            r"D:\Program Files\Microvirt\MEmu",
+        "executables": ["MEmuConsole.exe", "MEmu.exe", "MemuManager.exe"],
+        "registry_display_keywords": [
+            "MEmu",
+            "Microvirt",
+            "逍遥",
+            "逍遥模拟器",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "bluestacks": {
         "name": "BlueStacks",
-        "executables": ["BlueStacks.exe", "HD-Player.exe"],
-        "registry_paths": [r"SOFTWARE\BlueStacks", r"SOFTWARE\BlueStacks_nxt"],
-        "default_paths": [
-            r"C:\Program Files\BlueStacks",
-            r"C:\Program Files\BlueStacks_nxt",
-            r"D:\Program Files\BlueStacks",
-            r"D:\Program Files\BlueStacks_nxt",
+        # executables[0] 为多开管理器；卸载项/快捷方式常见旁路为 HD-Player.exe
+        "executables": [
+            "HD-MultiInstanceManager.exe",
+            "HD-Player.exe",
+            "BlueStacks.exe",
+        ],
+        "registry_display_keywords": [
+            "BlueStacks",
+            "BlueStacks_nxt",
+            "BlueStacks X",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
 }
@@ -383,74 +505,81 @@ RESOURCE_STAGE_DROP_INFO = {
 """常规资源关掉落信息"""
 
 MATERIALS_MAP = {
-    "4001": "龙门币",
+    "3141": "源石碎片",
+    "3003": "赤金",
     "4006": "采购凭证",
-    "2004": "高级作战记录",
-    "2003": "中级作战记录",
-    "2002": "初级作战记录",
-    "2001": "基础作战记录",
-    "3303": "技巧概要·卷3",
-    "3302": "技巧概要·卷2",
     "3301": "技巧概要·卷1",
-    "30165": "重相位对映体",
-    "30155": "烧结核凝晶",
-    "30145": "晶体电子单元",
-    "30135": "D32钢",
-    "30125": "双极纳米片",
-    "30115": "聚合剂",
-    "31094": "手性屈光体",
-    "31093": "类凝结核",
-    "31084": "环烃预制体",
-    "31083": "环烃聚质",
-    "31074": "固化纤维板",
-    "31073": "褐素纤维",
-    "31064": "转质盐聚块",
-    "31063": "转质盐组",
-    "31054": "切削原液",
-    "31053": "化合切削液",
-    "31044": "精炼溶剂",
-    "31043": "半自然溶剂",
-    "31034": "晶体电路",
-    "31033": "晶体元件",
-    "31024": "炽合金块",
-    "31023": "炽合金",
-    "31014": "聚合凝胶",
-    "31013": "凝胶",
-    "30074": "白马醇",
-    "30073": "扭转醇",
-    "30084": "三水锰矿",
-    "30083": "轻锰矿",
-    "30094": "五水研磨石",
-    "30093": "研磨石",
-    "30104": "RMA70-24",
-    "30103": "RMA70-12",
-    "30014": "提纯源岩",
-    "30013": "固源岩组",
-    "30012": "固源岩",
-    "30011": "源岩",
-    "30064": "改量装置",
-    "30063": "全新装置",
-    "30062": "装置",
-    "30061": "破损装置",
-    "30034": "聚酸酯块",
-    "30033": "聚酸酯组",
-    "30032": "聚酸酯",
-    "30031": "酯原料",
-    "30024": "糖聚块",
-    "30023": "糖组",
-    "30022": "糖",
-    "30021": "代糖",
-    "30044": "异铁块",
-    "30043": "异铁组",
-    "30042": "异铁",
-    "30041": "异铁碎片",
-    "30054": "酮阵列",
-    "30053": "酮凝集组",
-    "30052": "酮凝集",
+    "3302": "技巧概要·卷2",
+    "3303": "技巧概要·卷3",
     "30051": "双酮",
-    "3114": "碳素组",
-    "3113": "碳素",
+    "30052": "酮凝集",
+    "30053": "酮凝集组",
+    "30054": "酮阵列",
+    "30041": "异铁碎片",
+    "30042": "异铁",
+    "30043": "异铁组",
+    "30044": "异铁块",
+    "30021": "代糖",
+    "30022": "糖",
+    "30023": "糖组",
+    "30024": "糖聚块",
+    "30031": "酯原料",
+    "30032": "聚酸酯",
+    "30033": "聚酸酯组",
+    "30034": "聚酸酯块",
+    "30061": "破损装置",
+    "30062": "装置",
+    "30063": "全新装置",
+    "30064": "改量装置",
+    "30011": "源岩",
+    "30012": "固源岩",
+    "30013": "固源岩组",
+    "30014": "提纯源岩",
+    "30103": "RMA70-12",
+    "30104": "RMA70-24",
+    "30093": "研磨石",
+    "30094": "五水研磨石",
+    "30083": "轻锰矿",
+    "30084": "三水锰矿",
+    "30073": "扭转醇",
+    "30074": "白马醇",
+    "31013": "凝胶",
+    "31014": "聚合凝胶",
+    "31023": "炽合金",
+    "31024": "炽合金块",
+    "31033": "晶体元件",
+    "31034": "晶体电路",
+    "31043": "半自然溶剂",
+    "31044": "精炼溶剂",
+    "31053": "化合切削液",
+    "31054": "切削原液",
+    "31063": "转质盐组",
+    "31064": "转质盐聚块",
+    "31073": "褐素纤维",
+    "31074": "固化纤维板",
+    "31083": "环烃聚质",
+    "31084": "环烃预制体",
+    "31093": "类凝结核",
+    "31094": "手性屈光体",
+    "31103": "液化高能气体",
+    "31104": "液化醚吸聚体",
+    "31113": "电极单元",
+    "31114": "聚能动力单元",
+    "30115": "聚合剂",
+    "30125": "双极纳米片",
+    "30135": "D32钢",
+    "30145": "晶体电子单元",
+    "30155": "烧结核凝晶",
+    "30165": "重相位对映体",
+    "3105": "龙骨",
+    "3401": "家具零件",
+    "3131": "基础加固建材",
+    "3132": "进阶加固建材",
+    "3133": "高级加固建材",
     "3112": "碳",
+    "3113": "碳素",
+    "3114": "碳素组",
+    "32001": "芯片助剂",
     "3213": "先锋双芯片",
     "3223": "近卫双芯片",
     "3233": "重装双芯片",
@@ -510,6 +639,7 @@ STARRAIL_STAGE_BOOK = {
     "Calyx_Golden_Memories_Jarilo_VI": "材料：角色经验（回忆之蕾 雅利洛-Ⅵ）",
     "Calyx_Golden_Aether_Jarilo_VI": "材料：武器经验（以太之蕾 雅利洛-Ⅵ）",
     "Calyx_Golden_Treasures_Jarilo_VI": "材料：信用点（藏珍之蕾 雅利洛-Ⅵ）",
+    "Calyx_Crimson_Destruction_Amphoreus_InkfordHermitage": "行迹材料：毁灭（渡画泉隐）",
     "Calyx_Crimson_Destruction_Herta_StorageZone": "行迹材料：毁灭（收容舱段）",
     "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape": "行迹材料：毁灭（鳞渊境）",
     "Calyx_Crimson_Preservation_Herta_SupplyZone": "行迹材料：存护（支援舱段）",
@@ -525,6 +655,8 @@ STARRAIL_STAGE_BOOK = {
     "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape": "行迹材料：同谐（白日梦酒店-梦境）",
     "Calyx_Crimson_Nihility_Jarilo_GreatMine": "行迹材料：虚无（大矿区）",
     "Calyx_Crimson_Nihility_Luofu_AlchemyCommission": "行迹材料：虚无（丹鼎司）",
+    "Calyx_Crimson_Nihility_Amphoreus_SacredTracewoodGroveofDivineInsight": "行迹材料：虚无（「辉痕圣林」神悟树庭）",
+    "Calyx_Crimson_Erudition_Amphoreus_SeafeldTVTower": "行迹材料：智识（海原电视塔）",
     "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos": "行迹材料：记忆（纷争荒墟悬锋城）",
     "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern": "行迹材料：欢愉（世界尽头酒馆）",
     "Stagnant_Shadow_Quanta": "晋阶材料：量子（银狼 / 希儿 / 青雀）",
@@ -554,7 +686,9 @@ STARRAIL_STAGE_BOOK = {
     "Stagnant_Shadow_Cinders": "晋阶材料：风（刻律德菈）",
     "Stagnant_Shadow_Sirens": "晋阶材料：冰（长夜月 / 昔涟）",
     "Stagnant_Shadow_Ashes": "晋阶材料：火（大丽花 / 火花）",
-    "Stagnant_Shadow_Soundburst": "-",
+    "Stagnant_Shadow_Soundburst": "晋阶材料：雷（狂雷扫弦）",
+    "Stagnant_Shadow_Devour": "晋阶材料：量子（嗤笑丑面）",
+    "Cavern_of_Corrosion_Path_of_Insight": "遗器：领航员 & 名冶（观火之径）",
     "Cavern_of_Corrosion_Path_of_Possession": "遗器：魔法少女 & 卜者（魔占之径）",
     "Cavern_of_Corrosion_Path_of_Hidden_Salvation": "遗器：救世主 & 隐士（隐救之径）",
     "Cavern_of_Corrosion_Path_of_Thundersurge": "遗器：烈阳 & 船长（雳涌之径）",
@@ -574,10 +708,11 @@ STARRAIL_STAGE_BOOK = {
     "Echo_of_War_Glance_of_Twilight": "晨昏的回眸（翁法罗斯）",
     "Echo_of_War_Inner_Beast_Battlefield": "心兽的战场（仙舟「罗浮」）",
     "Echo_of_War_Salutations_of_Ashen_Dreams": "尘梦的赞礼（匹诺康尼）",
-    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧魇（空间站「黑塔」）",
+    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧靥（空间站「黑塔」）",
     "Echo_of_War_Divine_Seed": "不死的神实（仙舟「罗浮」）",
     "Echo_of_War_End_of_the_Eternal_Freeze": "寒潮的落幕（雅利洛-Ⅵ）",
     "Echo_of_War_Destruction_Beginning": "毁灭的开端（空间站「黑塔」）",
+    "Divergent_Universe_Gilded_Reminiscence": "饰品：朋克洛德 & 千星（鎏金追忆）",
     "Divergent_Universe_Within_the_West_Wind": "饰品：翁法罗斯 & 天国（西风丛中）",
     "Divergent_Universe_Moonlit_Blood": "饰品：妖精 & 沉醉（月下朱殷）",
     "Divergent_Universe_Unceasing_Strife": "饰品：拾骨地 & 巨树（纷争不休）",
@@ -613,6 +748,7 @@ POWER_SIGN_MAP = {
     "Hibernate": "休眠",
     "Sleep": "睡眠",
     "KillSelf": "退出程序",
+    "Logoff": "注销此账户",
 }
 """电源操作类型索引表"""
 
@@ -862,9 +998,30 @@ TASK_MODE_ZH = {
 }
 """任务模式中文映射表"""
 
+APPDATA_PATH = Path(os.getenv("APPDATA") or "")
+"""APPDATA路径"""
+
+FORBIDDEN_PATH_PREFIXES: tuple[Path, ...] = tuple(
+    Path(env_value).resolve()
+    for key in ("SystemRoot",)
+    for env_value in [os.environ.get(key, r"C:\Windows")]
+    if env_value and Path(env_value).is_dir()
+)
+"""禁止作为配置路径的前缀目录（自身、子目录或父目录均非法，如系统目录；校验时另含当前工作目录）"""
+
+FORBIDDEN_PATH_EXACT: tuple[Path, ...] = tuple(
+    Path(env_value).resolve()
+    for key in ("ProgramFiles", "ProgramFiles(x86)")
+    for env_value in [os.environ.get(key, "")]
+    if env_value and Path(env_value).is_dir()
+)
+"""禁止精确匹配的目录根（仅根目录非法，子目录如软件配置路径仍允许）"""
+
 EMULATOR_SPLASH_ADS_PATH_BOOK = {
-    "mumu": Path(os.getenv("APPDATA") or "")
-    / "Netease/MuMuPlayer-12.0/data/startupImage",
-    "ldplayer": Path(os.getenv("APPDATA") or "") / "leidian9/cache",
+    "mumu": [
+        APPDATA_PATH / "Netease/MuMuPlayer-12.0/data/startupImage",
+        APPDATA_PATH / "Netease/MuMuPlayer/data/startupImage",
+    ],
+    "ldplayer": [APPDATA_PATH / "leidian9/cache"],
 }
 """模拟器启动时广告路径"""

@@ -1,5 +1,18 @@
 ﻿import { exec, spawn } from 'child_process'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  screen,
+  shell,
+  Tray,
+  type Display,
+  type Rectangle,
+} from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
@@ -25,9 +38,6 @@ async function forceKillRelatedProcesses(): Promise<void> {
 
     // 备用清理方法
     if (process.platform === 'win32') {
-      const appRoot = getAppRoot()
-      const pythonExePath = path.join(appRoot, 'environment', 'python', 'python.exe')
-
       return new Promise(resolve => {
         // 使用更简单的命令强制结束相关进程
         exec(`taskkill /f /im python.exe`, error => {
@@ -90,12 +100,14 @@ let tray: Tray | null = null
 let isQuitting = false
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
+const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
 interface AppConfig {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
+    IfHideCloseButton: boolean
     location: string
     maximized: boolean
     size: string
@@ -116,6 +128,7 @@ const defaultConfig: AppConfig = {
   UI: {
     IfShowTray: false,
     IfToTray: false,
+    IfHideCloseButton: false,
     location: '100,100',
     maximized: false,
     size: '1600,1000',
@@ -140,7 +153,7 @@ function loadConfig(): AppConfig {
       const config = JSON.parse(configData)
       return { ...defaultConfig, ...config }
     }
-  } catch (error) {
+  } catch {
     logger.error('加载配置失败')
   }
   return defaultConfig
@@ -158,7 +171,7 @@ function saveConfig(config: AppConfig) {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
-  } catch (error) {
+  } catch {
     logger.error('保存配置失败')
   }
 }
@@ -194,7 +207,7 @@ function createTray() {
       logger.warn('无法加载托盘图标，使用默认图标')
       trayIcon = nativeImage.createEmpty()
     }
-  } catch (error) {
+  } catch {
     logger.error('加载托盘图标失败')
     trayIcon = nativeImage.createEmpty()
   }
@@ -306,40 +319,100 @@ function updateTrayVisibility(config: AppConfig) {
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 
+const TITLE_BAR_HEIGHT = 32
+const RECOVERY_DRAG_HANDLE_WIDTH = 64
+
+function findDisplayWithUsableTitleBar(bounds: Rectangle): Display | undefined {
+  const handleWidth = Math.min(RECOVERY_DRAG_HANDLE_WIDTH, bounds.width)
+  const handleHeight = Math.min(TITLE_BAR_HEIGHT, bounds.height)
+
+  return screen.getAllDisplays().find(display => {
+    const workArea = display.workArea
+
+    return (
+      bounds.x >= workArea.x &&
+      bounds.y >= workArea.y &&
+      bounds.x + handleWidth <= workArea.x + workArea.width &&
+      bounds.y + handleHeight <= workArea.y + workArea.height
+    )
+  })
+}
+
+function centerBoundsInWorkArea(bounds: Rectangle, workArea: Rectangle): Rectangle {
+  const width = Math.min(bounds.width, workArea.width)
+  const height = Math.min(bounds.height, workArea.height)
+
+  return {
+    x: workArea.x + Math.floor((workArea.width - width) / 2),
+    y: workArea.y + Math.floor((workArea.height - height) / 2),
+    width,
+    height,
+  }
+}
+
+function parseConfigInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value?.trim() ?? '', 10)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 function createWindow() {
   logger.info('开始创建主窗口')
 
   const config = loadConfig()
 
   // 解析配置
-  const [cfgW, cfgH] = config.UI.size.split(',').map((s: string) => parseInt(s.trim(), 10) || 1600)
-  const [cfgX, cfgY] = config.UI.location
-    .split(',')
-    .map((s: string) => parseInt(s.trim(), 10) || 100)
+  const [rawW, rawH] = (config.UI.size ?? defaultConfig.UI.size).split(',')
+  const [rawX, rawY] = (config.UI.location ?? defaultConfig.UI.location).split(',')
+  const parsedW = parseConfigInteger(rawW, 1600)
+  const parsedH = parseConfigInteger(rawH, 1000)
+  const cfgW = parsedW > 0 ? parsedW : 1600
+  const cfgH = parsedH > 0 ? parsedH : 1000
+  const cfgX = parseConfigInteger(rawX, 100)
+  const cfgY = parseConfigInteger(rawY, 100)
 
-  // 以目标位置选最近显示器
-  const targetDisplay = screen.getDisplayNearestPoint({ x: cfgX, y: cfgY })
+  const savedBounds = { x: cfgX, y: cfgY, width: cfgW, height: cfgH }
+  const savedDisplay = findDisplayWithUsableTitleBar(savedBounds)
+  const targetDisplay = savedDisplay ?? screen.getPrimaryDisplay()
   const sf = targetDisplay.scaleFactor
 
+  const { width: waW, height: waH } = targetDisplay.workArea
+
   // 逻辑最小尺寸（DIP）
-  const minDipW = Math.floor(1600 / sf)
-  const minDipH = Math.floor(900 / sf)
+  const minDipW = Math.min(Math.floor(960 / sf), waW)
+  const minDipH = Math.min(Math.floor(900 / sf), waH)
 
   // 初始窗口逻辑尺寸（DIP）
   let initW = Math.max(cfgW, minDipW)
   let initH = Math.max(cfgH, minDipH)
 
   // 不超过工作区
-  const { width: waW, height: waH } = targetDisplay.workAreaSize
   initW = Math.min(initW, waW)
   initH = Math.min(initH, waH)
 
+  const candidateBounds = { x: cfgX, y: cfgY, width: initW, height: initH }
+  const candidateDisplay = findDisplayWithUsableTitleBar(candidateBounds)
+  const initialBounds = candidateDisplay
+    ? candidateBounds
+    : centerBoundsInWorkArea(candidateBounds, screen.getPrimaryDisplay().workArea)
+  const boundsWereAdjusted =
+    initialBounds.x !== savedBounds.x ||
+    initialBounds.y !== savedBounds.y ||
+    initialBounds.width !== savedBounds.width ||
+    initialBounds.height !== savedBounds.height
+
+  if (boundsWereAdjusted) {
+    config.UI.size = `${initialBounds.width},${initialBounds.height}`
+    config.UI.location = `${initialBounds.x},${initialBounds.y}`
+    saveConfig(config)
+    logger.warn('保存的窗口边界已调整到当前显示器的可见区域')
+  }
+
   // 关键：用局部常量 win，全程用它，类型不为 null
   const win = new BrowserWindow({
-    x: cfgX,
-    y: cfgY,
-    width: initW,
-    height: initH,
+    x: initialBounds.x,
+    y: initialBounds.y,
+    width: initialBounds.width,
+    height: initialBounds.height,
     minWidth: minDipW,
     minHeight: minDipH,
     useContentSize: true,
@@ -360,10 +433,24 @@ function createWindow() {
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
 
+  // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
+  let restoreToMaximized = Boolean(config.UI.maximized)
+  win.on('maximize', () => {
+    restoreToMaximized = true
+  })
+  win.on('unmaximize', () => {
+    restoreToMaximized = false
+  })
+  win.on('restore', () => {
+    if (restoreToMaximized && !win.isMaximized()) {
+      win.maximize()
+    }
+  })
+
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
-    // 根据配置决定是否显示窗口
-    if (!config.Start.IfMinimizeDirectly) {
+    // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
+    if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
       logger.info('页面加载完成，窗口已显示')
     }
@@ -372,32 +459,71 @@ function createWindow() {
   // 根据显示器动态更新最小尺寸/边界
   const recomputeMinSize = () => {
     // 这里用 win，不会是 null
-    const bounds = win.getBounds()
+    const isMinimized = win.isMinimized()
+    const bounds = isMinimized ? win.getNormalBounds() : win.getBounds()
     const disp = screen.getDisplayMatching(bounds)
     const s = disp.scaleFactor
-    const w = Math.floor(1600 / s)
-    const h = Math.floor(900 / s)
+    const w = Math.min(Math.floor(960 / s), disp.workArea.width)
+    const h = Math.min(Math.floor(900 / s), disp.workArea.height)
 
     const [curMinW, curMinH] = win.getMinimumSize()
     if (w !== curMinW || h !== curMinH) {
       win.setMinimumSize(w, h)
+    }
 
-      if (win.isMaximized()) return
+    if (win.isMaximized() || isMinimized) return
 
-      const { width: wW, height: wH } = disp.workAreaSize
-      const newBounds = { ...bounds }
-      if (newBounds.width > wW) newBounds.width = wW
-      if (newBounds.height > wH) newBounds.height = wH
-      if (newBounds.width < w) newBounds.width = w
-      if (newBounds.height < h) newBounds.height = h
+    const { width: wW, height: wH } = disp.workArea
+    const newBounds = { ...bounds }
+    if (newBounds.width > wW) newBounds.width = wW
+    if (newBounds.height > wH) newBounds.height = wH
+    if (newBounds.width < w) newBounds.width = w
+    if (newBounds.height < h) newBounds.height = h
+
+    if (newBounds.width !== bounds.width || newBounds.height !== bounds.height) {
       win.setBounds(newBounds)
     }
+  }
+
+  const ensureWindowIsVisible = () => {
+    if (win.isDestroyed()) return
+
+    const wasMinimized = win.isMinimized()
+    const wasVisible = win.isVisible()
+    const wasMaximized = win.isMaximized() || (!wasVisible && restoreToMaximized)
+    const bounds = wasMaximized || wasMinimized ? win.getNormalBounds() : win.getBounds()
+    if (findDisplayWithUsableTitleBar(bounds)) return
+
+    const safeBounds = centerBoundsInWorkArea(bounds, screen.getPrimaryDisplay().workArea)
+
+    if (!wasMinimized && wasMaximized) win.unmaximize()
+    win.setBounds(safeBounds)
+    if (!wasMinimized && wasMaximized) {
+      if (wasVisible) {
+        win.maximize()
+      } else {
+        restoreToMaximized = true
+      }
+    }
+
+    const currentConfig = loadConfig()
+    currentConfig.UI.size = `${safeBounds.width},${safeBounds.height}`
+    currentConfig.UI.location = `${safeBounds.x},${safeBounds.y}`
+    currentConfig.UI.maximized = wasMaximized
+    saveConfig(currentConfig)
+    logger.warn('显示器布局发生变化，窗口已恢复到主显示器中央')
+  }
+
+  const handleDisplayConfigurationChanged = () => {
+    ensureWindowIsVisible()
+    recomputeMinSize()
   }
 
   // 监听显示器变化/窗口移动
   win.on('moved', recomputeMinSize)
   win.on('resized', recomputeMinSize)
-  screen.on('display-metrics-changed', recomputeMinSize)
+  screen.on('display-metrics-changed', handleDisplayConfigurationChanged)
+  screen.on('display-removed', handleDisplayConfigurationChanged)
 
   // 最大化配置
   if (config.UI.maximized) {
@@ -430,8 +556,10 @@ function createWindow() {
       if (!win.isDestroyed()) {
         try {
           const config = loadConfig()
-          const bounds = win.getBounds()
-          const isMaximized = win.isMaximized()
+          const isMinimized = win.isMinimized()
+          const bounds = isMinimized ? win.getNormalBounds() : win.getBounds()
+          const isMaximized =
+            !win.isVisible() || isMinimized ? restoreToMaximized : win.isMaximized()
 
           if (!isMaximized) {
             config.UI.size = `${bounds.width},${bounds.height}`
@@ -441,7 +569,7 @@ function createWindow() {
 
           saveConfig(config)
           logger.info('窗口状态已保存')
-        } catch (error) {
+        } catch {
           logger.error('保存窗口状态失败')
         }
       }
@@ -451,7 +579,8 @@ function createWindow() {
   win.on('closed', () => {
     logger.info('主窗口已关闭')
     // 清理监听（可选）
-    screen.removeListener('display-metrics-changed', recomputeMinSize)
+    screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
+    screen.removeListener('display-removed', handleDisplayConfigurationChanged)
     // 置空模块级引用
     mainWindow = null
 
@@ -461,7 +590,7 @@ function createWindow() {
       setTimeout(async () => {
         try {
           await forceKillRelatedProcesses()
-        } catch (e) {
+        } catch {
           logger.error('最终清理失败')
         }
         process.exit(0)
@@ -480,6 +609,9 @@ function createWindow() {
   })
 
   win.on('show', () => {
+    if (restoreToMaximized && !win.isMaximized() && !win.isMinimized()) {
+      win.maximize()
+    }
     const currentConfig = loadConfig()
     win.setSkipTaskbar(false)
     updateTrayVisibility(currentConfig)
@@ -504,8 +636,10 @@ function createWindow() {
       if (win && !win.isDestroyed()) {
         try {
           const config = loadConfig()
-          const bounds = win.getBounds()
-          const isMaximized = win.isMaximized()
+          const isMinimized = win.isMinimized()
+          const bounds = isMinimized ? win.getNormalBounds() : win.getBounds()
+          const isMaximized =
+            !win.isVisible() || isMinimized ? restoreToMaximized : win.isMaximized()
 
           if (!isMaximized) {
             config.UI.size = `${bounds.width},${bounds.height}`
@@ -515,7 +649,7 @@ function createWindow() {
 
           saveConfig(config)
           logger.info('窗口状态已自动保存')
-        } catch (error) {
+        } catch {
           logger.error('保存窗口状态失败')
         }
       }
@@ -547,8 +681,8 @@ function createWindow() {
     // 根据配置初始化托盘
     updateTrayVisibility(currentConfig)
 
-    // 处理启动后直接最小化（只在初次启动时执行）
-    if (isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
+    // 处理启动后直接最小化（仅开机自启动时执行）
+    if (isAutoStart && isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
       if (currentConfig.UI.IfToTray) {
         win.hide()
         win.setSkipTaskbar(true)
@@ -805,7 +939,7 @@ ipcMain.handle('get-related-processes', async () => {
   try {
     const { getRelatedProcesses } = await import('./utils/processManager')
     return await getRelatedProcesses()
-  } catch (error) {
+  } catch {
     logger.error('获取进程信息失败')
     return []
   }
@@ -916,7 +1050,7 @@ ipcMain.handle('check-critical-files', async () => {
 
     logger.info('关键文件检查结果')
     return result
-  } catch (error) {
+  } catch {
     logger.error('检查关键文件失败')
     return {
       pythonExists: false,
@@ -946,7 +1080,7 @@ ipcMain.handle('get-theme-info', async () => {
         const config = JSON.parse(configData)
         themeMode = config.themeMode || 'system'
         themeColor = config.themeColor || 'blue'
-      } catch (error) {
+      } catch {
         logger.warn('读取主题配置失败，使用默认值')
       }
     }
@@ -984,7 +1118,7 @@ ipcMain.handle('get-theme-info', async () => {
       isDark: actualTheme === 'dark',
       primaryColor: themeColors[themeColor] || themeColors.blue,
     }
-  } catch (error) {
+  } catch {
     logger.error('获取主题信息失败')
     return {
       themeMode: 'system',
@@ -1001,7 +1135,7 @@ ipcMain.handle('get-theme-info', async () => {
 ipcMain.handle('get-app-path', async (_event, name: any) => {
   try {
     return app.getPath(name)
-  } catch (error) {
+  } catch {
     logger.error(`获取路径 ${name} 失败`)
     return ''
   }
@@ -1021,7 +1155,7 @@ ipcMain.handle('get-theme', async () => {
         const configData = fs.readFileSync(configPath, 'utf8')
         const config = JSON.parse(configData)
         themeMode = config.themeMode || 'system'
-      } catch (error) {
+      } catch {
         logger.warn('读取主题配置失败，使用默认值')
       }
     }
@@ -1036,7 +1170,7 @@ ipcMain.handle('get-theme', async () => {
     }
 
     return actualTheme
-  } catch (error) {
+  } catch {
     logger.error('获取对话框主题失败')
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   }
@@ -1138,7 +1272,7 @@ ipcMain.handle('load-config', async () => {
     }
 
     return null
-  } catch (error) {
+  } catch {
     logger.error('加载配置文件失败')
     return null
   }
@@ -1237,7 +1371,7 @@ app.on('before-quit', async event => {
     try {
       await cleanupInitializationResources()
       logger.info('初始化资源清理完成')
-    } catch (e) {
+    } catch {
       logger.error('资源清理失败')
     }
 
@@ -1285,7 +1419,7 @@ app.on('before-quit', async event => {
       await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
 
       logger.info('进程清理完成')
-    } catch (e) {
+    } catch {
       logger.error('进程清理时出错')
     }
 

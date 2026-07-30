@@ -19,10 +19,13 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import asyncio
-from pathlib import Path
+import json
+import shutil
+import tempfile
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Broadcast, Config
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -30,9 +33,10 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import decode_bytes, get_logger, ProcessManager, is_process_running
 from app.utils.constants import UTC4
-from .tools import login
+from .ScriptConfig import normalize_maaend_config
+from .tools import login, replace_account_switch_task
 
 logger = get_logger("MaaEnd 人工检查")
 
@@ -60,24 +64,33 @@ class ManualReviewTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        config_user_id = (
+            "Default"
+            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            else self.cur_user_uid
+        )
+        self.maaend_config_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
+        )
         self.check_result = "-"
 
     async def check(self) -> str:
 
-        if (
-            self.cur_user_config.get("Info", "Mode") == "详细"
-            and not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists()
-        ):
-            self.cur_user_item.status = "异常"
-            return (
-                "未找到用户的 MaaEnd 配置文件, 请先在用户配置页完成「MaaEnd 配置」步骤"
-            )
-
         if self.emulator_manager is not None:
             return "暂不支持使用模拟器进行人工排查"
+
+        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+        if (
+            self.script_config.get("Run", "AccountSwitchMethod") == "MAAEND"
+            and account_id
+        ):
+            if len(account_id) < 4 or not account_id[-4:].isdigit():
+                self.cur_user_item.status = "异常"
+                return "MAAEND 内置账号切换需要账号末四位为数字"
+            if not (self.maaend_config_path / "mxu-MaaEnd.json").exists():
+                self.cur_user_item.status = "异常"
+                return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
         return "Pass"
 
@@ -85,9 +98,12 @@ class ManualReviewTask(TaskExecuteBase):
 
         if self.emulator_manager is None:
             self.game_process_manager = ProcessManager()
+        self.maaend_process_manager = ProcessManager()
+        maaend_root_path = Path(self.script_config.get("Info", "Path"))
+        self.maaend_exe_path = maaend_root_path / "MaaEnd.exe"
+        self.maaend_set_path = maaend_root_path / "config"
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
-        self.wait_event = asyncio.Event()
 
         self.run_book = {"SignIn": False, "PassCheck": False}
 
@@ -121,15 +137,25 @@ class ManualReviewTask(TaskExecuteBase):
             try:
                 self.script_info.log = "正在启动游戏..."
                 if self.emulator_manager is None:
-                    logger.info(
-                        f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
-                    )
-                    await self.game_process_manager.open_process(
-                        self.script_config.get("Game", "Path"),
-                        *str(self.script_config.get("Game", "Arguments")).split(" "),
-                    )
+                    if is_process_running("Endfield.exe"):
+                        logger.info(
+                            "检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                        )
+                        self.script_info.log = "检测到游戏已在运行，跳过启动游戏"
+                    else:
+                        logger.info(
+                            f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
+                        )
+                        await self.game_process_manager.open_process(
+                            self.script_config.get("Game", "Path"),
+                            *str(self.script_config.get("Game", "Arguments")).split(
+                                " "
+                            ),
+                        )
+                        await asyncio.sleep(
+                            self.script_config.get("Game", "WaitTime")
+                        )
                     emulator_info = None
-                    await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                 else:
                     logger.info(
                         f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
@@ -163,19 +189,26 @@ class ManualReviewTask(TaskExecuteBase):
                     break
                 continue
 
-            self.script_info.log = (
-                "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
-            )
-            if self.cur_user_config.get("Info", "Id") == "" or await login(
-                self.cur_user_config.get("Info", "Id"),
-                self.cur_user_config.get("Info", "Password"),
-                emulator_info,
-            ):
+            account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+            account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
+            self.script_info.log = "正在启动游戏...\n游戏启动成功"
+            try:
+                if account_id and account_switch_method == "MAS":
+                    self.script_info.log += "\n正在由 MAS 切换账号..."
+                    await login(account_id, emulator_info)
+                elif account_id:
+                    self.script_info.log += "\n正在由 MAAEND 切换账号..."
+                    await self._run_maaend_account_switch(account_id)
+                else:
+                    logger.info(
+                        f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
+                    )
+                self.script_info.log += "\n账号切换完成"
                 self.run_book["SignIn"] = True
                 break
-            else:
+            except Exception as e:
                 logger.error(
-                    f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败"
+                    f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败: {e}"
                 )
                 self.script_info.log = "正在启动模拟器\n模拟器已启动，正在登录「明日方舟：终末地」...\n「明日方舟：终末地」登录失败\n正在中止相关程序"
 
@@ -189,7 +222,7 @@ class ManualReviewTask(TaskExecuteBase):
                         "message_id": uid,
                         "type": "Question",
                         "title": "操作提示",
-                        "message": "未能正确登录到「崩坏·星穹铁道」, 是否重试？",
+                        "message": "未能正确登录到「明日方舟：终末地」, 是否重试？",
                         "options": ["是", "否"],
                     },
                 )
@@ -214,13 +247,114 @@ class ManualReviewTask(TaskExecuteBase):
                     "message_id": uid,
                     "type": "Question",
                     "title": "操作提示",
-                    "message": "请检查用户代理情况, 该用户是否正确完成代理任务？",
+                    "message": f"请检查用户代理情况, 「{self.cur_user_item.name}」是否正确完成代理任务？",
                     "options": ["是", "否"],
                 },
             )
             result = await self._wait_for_user_response(uid)
             if result.get("data", {}).get("choice", False):
                 self.run_book["PassCheck"] = True
+
+    async def _run_maaend_account_switch(self, account_id: str) -> None:
+        """临时运行一个 MaaEnd 账号切换任务。"""
+
+        await self.maaend_process_manager.kill()
+        await System.kill_process(self.maaend_exe_path)
+
+        with tempfile.TemporaryDirectory(prefix="auto-mas-maaend-login-") as temp_dir:
+            backup_config_path = Path(temp_dir) / "config"
+            had_local_config = self.maaend_set_path.exists()
+            if had_local_config:
+                shutil.copytree(self.maaend_set_path, backup_config_path)
+
+            try:
+                shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+                shutil.copytree(self.maaend_config_path, self.maaend_set_path)
+                config_path = self.maaend_set_path / "mxu-MaaEnd.json"
+                maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
+
+                local_config = None
+                backup_file = backup_config_path / "mxu-MaaEnd.json"
+                if backup_file.exists():
+                    local_config = json.loads(backup_file.read_text(encoding="utf-8"))
+                for field in ("version", "interfaceTaskSnapshot"):
+                    maaend_set.pop(field, None)
+                    if local_config is not None and field in local_config:
+                        maaend_set[field] = local_config[field]
+
+                settings = maaend_set.get("settings")
+                if isinstance(settings, dict):
+                    settings.pop("welcomeShownHash", None)
+                if local_config is not None:
+                    local_settings = local_config.get("settings")
+                    if (
+                        isinstance(local_settings, dict)
+                        and "welcomeShownHash" in local_settings
+                    ):
+                        maaend_set.setdefault("settings", {})["welcomeShownHash"] = (
+                            local_settings["welcomeShownHash"]
+                        )
+
+                maaend_set = normalize_maaend_config(
+                    maaend_set=maaend_set,
+                    controller_type=str(
+                        self.script_config.get("Game", "ControllerType")
+                    ),
+                    template_set=local_config,
+                )
+                maaend_instance = maaend_set["instances"][0]
+                maaend_instance["tasks"] = []
+                replace_account_switch_task(
+                    tasks=maaend_instance["tasks"],
+                    account_id=account_id,
+                    controller_type=str(
+                        self.script_config.get("Game", "ControllerType")
+                    ),
+                    task_id=f"mas{self.cur_user_uid.hex[:4]}",
+                )
+                instance_name = str(maaend_instance.get("name") or "AUTO-MAS")
+                config_path.write_text(
+                    json.dumps(maaend_set, ensure_ascii=False, indent=4),
+                    encoding="utf-8",
+                )
+
+                await self.maaend_process_manager.open_process(
+                    self.maaend_exe_path,
+                    "--autostart",
+                    "--instance",
+                    instance_name,
+                    "--quit-after-run",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                process = self.maaend_process_manager.main_process
+                if not isinstance(process, asyncio.subprocess.Process):
+                    raise RuntimeError("未能启动 MAAEND 账号切换进程")
+
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=self.script_config.get("Run", "RunTimeLimit") * 60,
+                    )
+                except asyncio.TimeoutError as e:
+                    raise RuntimeError("MAAEND 账号切换超时") from e
+
+                log = "\n".join(
+                    content
+                    for content in (decode_bytes(stdout), decode_bytes(stderr))
+                    if content
+                )
+                self.script_info.log = log
+                if "任务失败: AccountSwitch" in log:
+                    raise RuntimeError("MAAEND 账号切换失败")
+                if "任务完成: AccountSwitch" not in log:
+                    raise RuntimeError("MAAEND 账号切换进程异常退出")
+            finally:
+                await self.maaend_process_manager.kill()
+                await System.kill_process(self.maaend_exe_path)
+                shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+                if had_local_config:
+                    shutil.copytree(backup_config_path, self.maaend_set_path)
 
     async def _wait_for_user_response(self, message_id: str):
         """等待用户交互响应"""
@@ -237,6 +371,11 @@ class ManualReviewTask(TaskExecuteBase):
     async def kill_managed_process(self) -> None:
         """中止关联进程"""
 
+        try:
+            await self.maaend_process_manager.kill()
+            await System.kill_process(self.maaend_exe_path)
+        except Exception as e:
+            logger.exception(f"关闭 MaaEnd 失败: {e}")
         try:
             if self.emulator_manager is None:
                 await self.game_process_manager.kill()

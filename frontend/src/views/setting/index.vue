@@ -6,6 +6,7 @@ import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('设置')
@@ -19,6 +20,7 @@ import TabOthers from './TabOthers.vue'
 
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
+const { syncUiPreferences } = useUiPreferences()
 const {
   restartPolling,
   updateVisible,
@@ -29,7 +31,7 @@ const {
 
 // 活动标签
 const activeKey = ref('basic')
-const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
+const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
@@ -103,11 +105,12 @@ const loadSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+    syncUiPreferences(data.UI)
 
     // 同步配置到 Electron 主进程
     try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
+      if (window.electronAPI?.syncBackendConfig) {
+        await window.electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
@@ -144,11 +147,12 @@ const refreshSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+    syncUiPreferences(data.UI)
 
     // 同步所有配置到 Electron
     try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
+      if (window.electronAPI?.syncBackendConfig) {
+        await window.electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
@@ -177,8 +181,8 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   // 处理托盘相关配置（需要额外的实时更新调用）
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
-      if ((window as any).electronAPI?.updateTraySettings) {
-        await (window as any).electronAPI.updateTraySettings({ [key]: value })
+      if (window.electronAPI?.updateTraySettings) {
+        await window.electronAPI.updateTraySettings({ [key]: value })
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -208,7 +212,7 @@ const handleThemeColorChange = (value: SelectValue) => {
 }
 
 // 其他操作
-const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
+const openDevTools = () => window.electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
@@ -282,19 +286,19 @@ onMounted(() => {
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
           <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate" />
+            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
           <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
             :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
         </a-tab-pane>
-        <a-tab-pane key="advanced" tab="高级设置">
+        <a-tab-pane key="advanced" tab="日志管理">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="关于">
-          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
+          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" :settings="settings"
+            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
+            :handle-setting-change="handleSettingChange" :check-update="checkUpdate" />
         </a-tab-pane>
       </a-tabs>
     </div>

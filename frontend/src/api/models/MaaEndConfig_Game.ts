@@ -6,7 +6,7 @@ export type MaaEndConfig_Game = {
     /**
      * 控制器类型
      */
-    ControllerType?: ('Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' | null);
+    ControllerType?: ('Win32-Front' | 'ADB' | null);
     /**
      * 终末地客户端路径
      */

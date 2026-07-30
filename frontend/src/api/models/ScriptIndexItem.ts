@@ -19,8 +19,12 @@ export namespace ScriptIndexItem {
     export enum type {
         MAA_CONFIG = 'MaaConfig',
         GENERAL_CONFIG = 'GeneralConfig',
+        OKWW_CONFIG = 'OkwwConfig',
+        OK_NTE_CONFIG = 'OkNteConfig',
         SRC_CONFIG = 'SrcConfig',
         MAA_END_CONFIG = 'MaaEndConfig',
+        M9ACONFIG = 'M9AConfig',
+        HSRCONFIG = 'HSRConfig',
     }
 }
 

@@ -9,6 +9,7 @@ export interface ElectronAPI {
   windowMinimize: () => Promise<void>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  appRestart: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
@@ -26,7 +27,6 @@ export interface ElectronAPI {
   }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<any>
-  installPip: () => Promise<any>
   downloadGit: () => Promise<any>
   installDependencies: (mirror?: string) => Promise<any>
   cloneBackend: (repoUrl?: string) => Promise<any>
@@ -81,7 +81,12 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{ success: boolean; path?: string; sourceDir?: string; error?: string }>
+  exportLogs: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
 
   // 获取模块化日志器（使用主进程配置）
@@ -99,6 +104,7 @@ export interface ElectronAPI {
   // 文件系统操作
   openFile: (filePath: string) => Promise<void>
   showItemInFolder: (filePath: string) => Promise<void>
+  fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
 
   // 主题信息获取

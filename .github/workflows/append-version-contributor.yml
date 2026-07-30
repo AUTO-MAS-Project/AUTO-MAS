@@ -1,0 +1,101 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+name: 记录版本贡献者
+
+on:
+  pull_request_target:
+    branches: [dev]
+    types: [closed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-contributors-dev
+  cancel-in-progress: false
+
+jobs:
+  append-contributor:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出 dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: 获取 PR 提交
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "pull/${PR_NUMBER}/head:refs/remotes/origin/pr-${PR_NUMBER}"
+
+      - name: 标记更新条目贡献者
+        id: append
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_URL: ${{ github.event.pull_request.user.html_url }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          def load_version(ref: str) -> dict:
+              content = subprocess.check_output(
+                  ["git", "show", f"{ref}:res/version.json"],
+                  text=True,
+                  encoding="utf-8",
+              )
+              return json.loads(content)
+
+          path = Path("res/version.json")
+          current = json.loads(path.read_text(encoding="utf-8"))
+          base = load_version(os.environ["PR_BASE_SHA"])
+          head = load_version(f"origin/pr-{os.environ['PR_NUMBER']}")
+          suffix = f" by [@{os.environ['PR_AUTHOR']}]({os.environ['PR_AUTHOR_URL']})"
+          additions: set[tuple[str, str, str]] = set()
+
+          for version, info in head.get("version_info", {}).items():
+              base_info = base.get("version_info", {}).get(version, {})
+              for category, items in info.items():
+                  if not isinstance(items, list):
+                      continue
+                  base_items = set(base_info.get(category, []))
+                  additions.update(
+                      (version, category, item)
+                      for item in items
+                      if isinstance(item, str) and item not in base_items
+                  )
+
+          changed = False
+          for version, category, item in additions:
+              items = current.get("version_info", {}).get(version, {}).get(category, [])
+              if item in items and suffix not in item:
+                  items[items.index(item)] = f"{item}{suffix}"
+                  changed = True
+
+          if changed:
+              path.write_text(
+                  json.dumps(current, ensure_ascii=False, indent=4) + "\n",
+                  encoding="utf-8",
+              )
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"changed={str(changed).lower()}\n")
+          PY
+
+      - name: 提交贡献者信息
+        if: steps.append.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add res/version.json
+          git commit -m "chore(version): mark PR entry contributors"
+          git pull --rebase origin dev
+          git push origin HEAD:dev

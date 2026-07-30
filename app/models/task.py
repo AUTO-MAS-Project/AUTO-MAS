@@ -116,6 +116,7 @@ class TaskItem(ABC):
     user_id: str | None  # 执行的用户ID
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
+    resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)

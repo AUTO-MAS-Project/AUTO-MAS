@@ -70,10 +70,11 @@
 <script setup lang="ts">
 import { ClearOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
+import type { HistorySearchIn } from '@/api'
 import { timePresets } from '../useHistoryLogic.ts'
 
 interface Props {
-  mode: string
+  mode: HistorySearchIn.mode
   startDate: string
   endDate: string
   currentPreset: string
@@ -83,7 +84,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  (e: 'update:mode', value: string): void
+  (e: 'update:mode', value: HistorySearchIn.mode): void
   (e: 'update:startDate', value: string): void
   (e: 'update:endDate', value: string): void
   (e: 'quick-select', preset: (typeof timePresets)[0]): void
@@ -115,7 +116,7 @@ watch(
   }
 )
 
-const handleModeChange = (val: string) => {
+const handleModeChange = (val: HistorySearchIn.mode) => {
   emit('update:mode', val)
 }
 

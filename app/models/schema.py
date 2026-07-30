@@ -107,6 +107,9 @@ class EmulatorConfig_Info(BaseModel):
     Path: Optional[str] = Field(default=None, description="模拟器路径")
     BossKey: Optional[str] = Field(default=None, description="老板键快捷键配置")
     MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间（秒）")
+    ForceKillOnClose: Optional[bool] = Field(
+        default=None, description="关闭 MuMu 时强力清理残留进程"
+    )
 
 
 class EmulatorConfig(BaseModel):
@@ -128,9 +131,76 @@ class ToolsConfig_ArknightsPC(BaseModel):
     Status: str | None = Field(default=None, description="工具状态 Tag")
 
 
+class ToolsConfig_GameSign(BaseModel):
+    Enabled: bool | None = Field(default=None, description="是否启用游戏签到")
+    NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
+    WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
+    WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
+    RunOnStartup: bool | None = Field(default=None, description="启动时运行")
+    ScheduledRun: bool | None = Field(default=None, description="定时运行")
+    AutoStart: bool | None = Field(default=None, description="是否立即开始")
+    LastSignDate: str | None = Field(default=None, description="上次签到日期")
+    ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
+    Status: str | None = Field(default=None, description="签到状态标签")
+    Result: str | None = Field(default=None, description="签到结果 JSON")
+
+
+class GameSignAccountGroupConfig(BaseModel):
+    """游戏签到账号组配置"""
+
+    Name: str | None = Field(default=None, description="账号组名称")
+    Enabled: bool | None = Field(default=None, description="是否启用")
+    MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
+    KuroToken: str | None = Field(default=None, description="库街区登录凭证")
+    SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
+
+
+class GameSignAccountCreateOut(OutBase):
+    """游戏签到账号组创建响应"""
+
+    accountId: str = Field(default="", description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(
+        default_factory=GameSignAccountGroupConfig, description="账号组配置"
+    )
+
+
+class GameSignAccountGetIn(BaseModel):
+    """游戏签到账号组查询请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountsListOut(OutBase):
+    """游戏签到账号组列表响应"""
+
+    data: Dict[str, Any] = Field(default_factory=dict, description="账号组列表")
+
+
+class GameSignAccountUpdateIn(BaseModel):
+    """游戏签到账号组更新请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(..., description="账号组配置")
+
+
+class GameSignAccountDeleteIn(BaseModel):
+    """游戏签到账号组删除请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountReorderIn(BaseModel):
+    """游戏签到账号组排序请求"""
+
+    order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
 class ToolsConfig(BaseModel):
     ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
         default=None, description="明日方舟PC工具配置"
+    )
+    GameSign: ToolsConfig_GameSign | None = Field(
+        default=None, description="游戏社区签到配置"
     )
 
 
@@ -189,6 +259,9 @@ class GlobalConfig_Start(BaseModel):
 class GlobalConfig_UI(BaseModel):
     IfShowTray: Optional[bool] = Field(default=None, description="是否常态显示托盘图标")
     IfToTray: Optional[bool] = Field(default=None, description="是否最小化到托盘")
+    IfHideCloseButton: Optional[bool] = Field(
+        default=None, description="是否隐藏主窗口关闭按钮"
+    )
 
 
 class GlobalConfig_Notify(BaseModel):
@@ -311,6 +384,7 @@ class QueueConfig_Info(BaseModel):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
 
@@ -321,7 +395,16 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"] = Field(
+    type: Literal[
+        "MaaConfig",
+        "GeneralConfig",
+        "OkwwConfig",
+        "OkNteConfig",
+        "SrcConfig",
+        "MaaEndConfig",
+        "M9AConfig",
+        "HSRConfig",
+    ] = Field(
         ..., description="配置类型"
     )
 
@@ -329,7 +412,14 @@ class ScriptIndexItem(BaseModel):
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal[
-        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"
+        "MaaUserConfig",
+        "GeneralUserConfig",
+        "OkwwUserConfig",
+        "OkNteUserConfig",
+        "SrcUserConfig",
+        "MaaEndUserConfig",
+        "M9AUserConfig",
+        "HSRUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -360,6 +450,14 @@ class MaaUserConfig_Info(BaseModel):
     InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
     InfrastIndex: Optional[str] = Field(default=None, description="基建方案索引")
     Password: Optional[str] = Field(default=None, description="密码")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     MedicineNumb: Optional[int] = Field(default=None, description="吃理智药数量")
     SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
@@ -488,6 +586,81 @@ class GeneralUserConfig(BaseModel):
     )
 
 
+class OkwwUserConfig_Task(BaseModel):
+    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
+
+
+class OkwwUserConfig_Info(GeneralUserConfig_Info):
+    """OK-WW 用户信息（复用通用字段）"""
+
+    Id: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="用户配置模式（OK-WW 固定为详细模式）"
+    )
+    Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
+
+
+class OkwwUserConfig_Data(GeneralUserConfig_Data):
+    """OK-WW 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+    LastTaskIndex: Optional[int] = Field(
+        default=None, description="上次运行的 ok-ww 任务序号（-t N）"
+    )
+
+
+class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
+    """OK-WW 用户通知（复用通用字段）"""
+
+
+class OkwwUserConfig(BaseModel):
+    Info: Optional[OkwwUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[OkwwUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[OkwwUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[OkwwUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
+class OkNteUserConfig_Task(BaseModel):
+    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
+    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
+
+
+class OkNteUserConfig_Info(GeneralUserConfig_Info):
+    """OK-NTE 用户信息（复用通用字段）"""
+
+    Id: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="用户配置模式（简洁/详细）"
+    )
+    Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
+
+
+class OkNteUserConfig_Data(GeneralUserConfig_Data):
+    """OK-NTE 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+    LastTaskIndex: Optional[int] = Field(
+        default=None, description="上次运行的 ok-nte 任务序号（-t N）"
+    )
+
+
+class OkNteUserConfig_Notify(GeneralUserConfig_Notify):
+    """OK-NTE 用户通知（复用通用字段）"""
+
+
+class OkNteUserConfig(BaseModel):
+    Info: Optional[OkNteUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[OkNteUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[OkNteUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[OkNteUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -555,16 +728,103 @@ class GeneralConfig(BaseModel):
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
+class OkwwConfig_Info(GeneralConfig_Info):
+    """OK-WW 脚本基础信息（复用通用字段）"""
+
+
+class OkwwConfig_Script(BaseModel):
+    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
+
+
+class OkwwConfig_Game(BaseModel):
+    """OK-WW 游戏配置（复用通用字段）"""
+
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
+    )
+    LaunchBeforeTask: Optional[bool] = Field(
+        default=None, description="任务开始前是否由 MAS 启动游戏"
+    )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
+
+
+class OkwwConfig_Run(GeneralConfig_Run):
+    """OK-WW 运行配置（复用通用字段）"""
+
+
+class OkwwConfig(BaseModel):
+    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
+    Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
+
+
+class OkNteConfig_Info(GeneralConfig_Info):
+    """OK-NTE 脚本基础信息（复用通用字段）"""
+
+
+class OkNteConfig_Script(GeneralConfig_Script):
+    """OK-NTE 脚本配置（复用通用字段）"""
+
+
+class OkNteConfig_Game(BaseModel):
+    """OK-NTE 游戏配置"""
+
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
+    )
+    Type: Optional[Literal["Client", "URL"]] = Field(
+        default=None, description="类型: PC端, URL协议"
+    )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    URL: Optional[str] = Field(default=None, description="自定义协议URL")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
+    IfForceClose: Optional[bool] = Field(
+        default=None, description="是否强制关闭游戏进程"
+    )
+    LaunchBeforeTask: Optional[bool] = Field(
+        default=None, description="任务开始前是否由 MAS 启动游戏"
+    )
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭游戏"
+    )
+
+
+class OkNteConfig_Run(GeneralConfig_Run):
+    """OK-NTE 运行配置（复用通用字段）"""
+
+
+class OkNteConfig(BaseModel):
+    Info: Optional[OkNteConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[OkNteConfig_Script] = Field(default=None, description="脚本配置")
+    Game: Optional[OkNteConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[OkNteConfig_Run] = Field(default=None, description="运行配置")
+
+
 class MaaEndUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="配置模式"
+        default=None, description="配置文件来源"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
+    SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
     SklandToken: Optional[str] = Field(default=None, description="SklandToken")
@@ -572,9 +832,9 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    ProtocolSpaceTab: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-    ] = Field(default=None, description="协议空间选项卡")
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(default=None, description="理智任务类型")
     OperatorProgression: Optional[
         Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
     ] = Field(default=None, description="干员养成任务")
@@ -591,7 +851,40 @@ class MaaEndUserConfig_Task(BaseModel):
         ]
     ] = Field(default=None, description="危境预演任务")
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
-        default=None, description="奖励套组选项"
+        default=None, description="奖励组选项"
+    )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+            "WLMarkerStone",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
+    IfSanity: Optional[bool] = Field(default=None, description="理智任务")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="应急理智加强剂"
+    )
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="基建任务")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
+    IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="环境监测"
+    )
+    IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="资源回收站"
     )
 
 
@@ -606,9 +899,20 @@ class MaaEndUserConfig_Notify(BaseModel):
     ServerChanKey: Optional[str] = Field(default=None, description="Server酱密钥")
 
 
+class MaaEndUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
+        default=None, description="上次代理状态"
+    )
+    LastSklandDate: Optional[str] = Field(default=None, description="上次森空岛签到日期")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+
+
 class MaaEndUserConfig(BaseModel):
     Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
     Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[MaaEndUserConfig_Data] = Field(default=None, description="运行数据")
     Notify: Optional[MaaEndUserConfig_Notify] = Field(
         default=None, description="通知配置"
     )
@@ -625,15 +929,18 @@ class MaaEndConfig_Run(BaseModel):
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    AccountSwitchMethod: Optional[Literal["MAS", "MAAEND"]] = Field(
+        default=None, description="账号切换方式"
+    )
 
 
 class MaaEndConfig_Game(BaseModel):
-    ControllerType: Optional[
-        Literal["Win32-Window", "Win32-Window-Background", "Win32-Front", "ADB"]
-    ] = Field(default=None, description="控制器类型")
+    ControllerType: Optional[Literal["Win32-Front", "ADB"]] = Field(
+        default=None, description="控制器类型"
+    )
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
-    WaitTime: Optional[int] = Field(default=None, description="游戏等待时间")
+    WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
@@ -665,6 +972,14 @@ class SrcUserConfig_Info(BaseModel):
         ]
     ] = Field(default=None, description="游戏服务器")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
@@ -842,6 +1157,293 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+class HSRConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="HSR 脚本名称")
+    M7APath: Optional[str] = Field(default=None, description="M7A 路径")
+    SRAPath: Optional[str] = Field(default=None, description="SRA 路径")
+
+
+class HSRConfig_Game(BaseModel):
+    Path: Optional[str] = Field(default=None, description="游戏路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
+
+
+class HSRConfig_Run(BaseModel):
+    RunTimesLimit: Optional[int] = Field(default=None, description="失败任务最大尝试次数")
+    DailyTimeLimit: Optional[int] = Field(default=None, description="日常任务超时限制（分钟）")
+    WeeklyTimeLimit: Optional[int] = Field(default=None, description="周常任务超时限制（分钟）")
+    MonthlyTimeLimit: Optional[int] = Field(default=None, description="月常任务超时限制（分钟）")
+    LowPerformanceMode: Optional[bool] = Field(default=None, description="低性能兼容模式（仅三月七差分宇宙）")
+
+
+class HSRConfig_TaskMapping(BaseModel):
+    Daily: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="日常模块执行脚本"
+    )
+    ReceiveRewards: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="领取奖励模块执行脚本"
+    )
+    DivergentUniverse: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="差分宇宙模块执行脚本"
+    )
+    CurrencyWars: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="货币战争模块执行脚本"
+    )
+
+
+class HSRConfig(BaseModel):
+    Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
+    Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[HSRConfig_Run] = Field(default=None, description="运行配置")
+    TaskMapping: Optional[HSRConfig_TaskMapping] = Field(
+        default=None, description="模块脚本分配"
+    )
+
+
+class HSRUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    Id: Optional[str] = Field(default=None, description="用户ID（账号）")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Server: Optional[Literal["CN-Official"]] = Field(
+        default=None, description="游戏服务器"
+    )
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签列表")
+
+
+class HSRUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+    # 历战余响
+    EchoOfWarCompletedThisWeek: Optional[bool] = Field(
+        default=None, description="本周是否已完成历战余响"
+    )
+    EchoOfWarLastResetWeek: Optional[str] = Field(
+        default=None, description="历战余响上次重置 ISO 周（形如 2025-W23）"
+    )
+    EchoOfWarLastCompletionDate: Optional[str] = Field(
+        default=None, description="历战余响最近一次完成日期"
+    )
+    # 周常（差分宇宙/货币战争）
+    WeeklyLastCompletionDate: Optional[str] = Field(
+        default=None, description="周常最近一次完成日期"
+    )
+    WeeklyCompletedThisWeek: Optional[bool] = Field(
+        default=None, description="本周是否已完成周常"
+    )
+    WeeklyLastResetWeek: Optional[str] = Field(
+        default=None, description="周常上次重置 ISO 周（形如 2025-W23）"
+    )
+    # HSR 三深渊月度（每月一次）
+    AbyssCompletedThisMonth: Optional[bool] = Field(
+        default=None, description="本月是否已完成三深渊"
+    )
+    AbyssLastResetMonth: Optional[str] = Field(
+        default=None, description="三深渊上次重置自然月（形如 2025-06）"
+    )
+    AbyssLastCompletionDate: Optional[str] = Field(
+        default=None, description="三深渊最近一次完成日期"
+    )
+
+
+class HSRUserConfig_TaskSwitch(BaseModel):
+    Daily: Optional[bool] = Field(default=None, description="日常模块开关")
+    ReceiveRewards: Optional[bool] = Field(default=None, description="领取奖励模块开关")
+    DivergentUniverse: Optional[bool] = Field(
+        default=None, description="差分宇宙模块开关"
+    )
+    CurrencyWars: Optional[bool] = Field(
+        default=None, description="货币战争模块开关"
+    )
+    ForgottenHall: Optional[bool] = Field(
+        default=None, description="三深渊模块开关"
+    )
+
+
+class HSRUserConfig_Stage(BaseModel):
+    Channel: Optional[
+        Literal["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]
+    ] = Field(
+        default=None, description="体力关卡通道"
+    )
+    ScriptStage: Optional[str] = Field(
+        default=None, description="主刷关卡脚本原生字段 JSON"
+    )
+    ScriptEchoOfWar: Optional[str] = Field(
+        default=None, description="历战余响脚本原生字段 JSON"
+    )
+
+
+class HSRUserConfig_TaskOpt(BaseModel):
+    # 历战余响开始刷的星期
+    EchoOfWarWeekday: Optional[
+        Literal["Monday", "Tuesday", "Wednesday", "Thursday",
+                "Friday", "Saturday", "Sunday"]
+    ] = Field(
+        default=None, description="历战余响开始刷的星期（周一 ~ 周日）"
+    )
+
+
+class HSRUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class HSRUserConfig_Abyss(BaseModel):
+    """三深渊配置快照"""
+    Snapshots: Optional[str] = Field(
+        default=None, description="三深渊快照集合（JSON，from M7A config.yaml）"
+    )
+
+
+class HSRUserConfig(BaseModel):
+    Info: Optional[HSRUserConfig_Info] = Field(default=None, description="基础信息")
+    Data: Optional[HSRUserConfig_Data] = Field(default=None, description="用户数据")
+    TaskSwitch: Optional[HSRUserConfig_TaskSwitch] = Field(
+        default=None, description="模块执行开关"
+    )
+    Stage: Optional[HSRUserConfig_Stage] = Field(default=None, description="关卡配置")
+    TaskOpt: Optional[HSRUserConfig_TaskOpt] = Field(
+        default=None, description="模块执行参数"
+    )
+    Notify: Optional[HSRUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+    Abyss: Optional[HSRUserConfig_Abyss] = Field(
+        default=None, description="三深渊配置"
+    )
+
+
+class HSRDynamicStageM7A(BaseModel):
+    instanceType: Optional[str] = Field(default=None, description="M7A 副本类型")
+    instanceName: Optional[str] = Field(default=None, description="M7A 副本名称")
+
+
+class HSRDynamicStageSRA(BaseModel):
+    id: Optional[str] = Field(default=None, description="SRA 体力任务 ID")
+    level: Optional[int] = Field(default=None, description="SRA 体力任务层级")
+
+
+class HSRDynamicStageOption(BaseModel):
+    label: str = Field(..., description="副本展示名称")
+    detail: Optional[str] = Field(default=None, description="副本说明")
+    value: str = Field(..., description="副本选项值")
+    categoryKey: str = Field(..., description="副本分类键")
+    categoryLabel: str = Field(..., description="副本分类名称")
+    cost: Optional[int] = Field(default=None, description="单次体力消耗")
+    maxCount: Optional[int] = Field(default=None, description="最大执行次数")
+    m7a: Optional[HSRDynamicStageM7A] = Field(default=None, description="M7A 原生字段")
+    sra: Optional[HSRDynamicStageSRA] = Field(default=None, description="SRA 原生字段")
+
+
+class HSRDynamicStageCategory(BaseModel):
+    categoryKey: str = Field(..., description="副本分类键")
+    categoryLabel: str = Field(..., description="副本分类名称")
+    cost: Optional[int] = Field(default=None, description="单次体力消耗")
+    maxCount: Optional[int] = Field(default=None, description="最大执行次数")
+    options: List[HSRDynamicStageOption] = Field(
+        default_factory=list, description="副本选项列表"
+    )
+
+
+class HSRStageOptionsData(BaseModel):
+    engine: Literal["M7A", "SRA"] = Field(..., description="体力副本执行脚本")
+    source: Optional[str] = Field(default=None, description="选项来源文件或目录")
+    categories: List[HSRDynamicStageCategory] = Field(
+        default_factory=list, description="体力副本分类列表"
+    )
+
+
+class HSRStageOptionsOut(OutBase):
+    data: Optional[HSRStageOptionsData] = Field(
+        default=None, description="HSR 体力副本动态选项"
+    )
+
+
+class M9AUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
+    Account: Optional[str] = Field(default=None, description="账号信息（用于切换账号，仅官服生效）")
+
+
+class M9AUserConfig_Task(BaseModel):
+    AvailableTasks: Optional[Union[str, List]] = Field(default=None, description="可用任务列表 JSON 数组字符串或数组")
+    Queue: Optional[Union[str, List]] = Field(default=None, description="运行任务队列 JSON 数组字符串或数组")
+
+class M9AUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    LastPsychubeDate: Optional[str] = Field(default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD")
+    LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
+    LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+
+
+class M9AUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class M9AUserConfig(BaseModel):
+    Info: Optional[M9AUserConfig_Info] = Field(default=None, description="基础信息")
+    Task: Optional[M9AUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[M9AUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[M9AUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
+class M9AConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="M9A 脚本名称")
+    Path: Optional[str] = Field(default=None, description="M9A 路径")
+
+
+class M9AConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器 ID")
+    Index: Optional[str] = Field(default=None, description="模拟器索引")
+
+
+class M9AConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
+    RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
+    IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
+    IfPsychubeDailyOnce: Optional[bool] = Field(default=None, description="每日心相每日只执行一次")
+    IfSleepDreamMonthlyOnce: Optional[bool] = Field(default=None, description="深眠浅梦每月只执行一次")
+
+
+class M9AConfig(BaseModel):
+    Info: Optional[M9AConfig_Info] = Field(default=None, description="脚本基础信息")
+    Emulator: Optional[M9AConfig_Emulator] = Field(default=None, description="模拟器配置")
+    Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
+
+
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal["MaaPlanConfig"] = Field(..., description="配置类型")
@@ -907,8 +1509,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "MaaEnd"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本"
+    type: Literal["MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "HSR"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -917,7 +1519,16 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkNteConfig,
+        MaaEndConfig,
+        M9AConfig,
+        HSRConfig,
+    ] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -930,14 +1541,35 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]] = Field(
+    data: Dict[
+        str,
+        Union[
+            MaaConfig,
+            SrcConfig,
+            GeneralConfig,
+            OkwwConfig,
+            OkNteConfig,
+            MaaEndConfig,
+            M9AConfig,
+            HSRConfig,
+        ],
+    ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkNteConfig,
+        MaaEndConfig,
+        M9AConfig,
+        HSRConfig,
+    ] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -971,6 +1603,12 @@ class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
 
+class ScriptConfigImportIn(UserInBase):
+    userId: Optional[str] = Field(
+        default=None, description="用户ID, 未携带时导入到脚本级配置文件"
+    )
+
+
 class UserGetIn(UserInBase):
     userId: Optional[str] = Field(
         default=None, description="用户ID, 未携带时表示获取所有用户数据"
@@ -980,20 +1618,48 @@ class UserGetIn(UserInBase):
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
     data: Dict[
-        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig]
+        str,
+        Union[
+            MaaUserConfig,
+            SrcUserConfig,
+            GeneralUserConfig,
+            OkwwUserConfig,
+            OkNteUserConfig,
+            MaaEndUserConfig,
+            M9AUserConfig,
+            HSRUserConfig,
+        ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        OkNteUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+        HSRUserConfig,
+    ] = (
         Field(..., description="用户配置数据")
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        OkNteUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+        HSRUserConfig,
+    ] = (
         Field(..., description="用户更新数据")
     )
 
@@ -1009,6 +1675,39 @@ class UserReorderIn(UserInBase):
 class UserSetIn(UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
+class AbyssSnapshotImportItem(BaseModel):
+    """单个三深渊快照的导入结果摘要"""
+
+    snapshotKey: str = Field(
+        ...,
+        description="深渊快照键: ForgottenHall / PureFiction / Apocalyptic",
+    )
+    success: bool = Field(..., description="是否成功从 M7A config.yaml 读取并写入")
+    level: Optional[List[Optional[int]]] = Field(
+        default=None, description="关卡范围（[min, max]），缺失时为 None"
+    )
+    teamKeys: List[str] = Field(
+        default_factory=list, description="快照中包含的队伍字段，如 team1/team2/team3"
+    )
+    error: Optional[str] = Field(default=None, description="错误描述（导入失败时）")
+
+
+class AbyssSnapshotImportOut(OutBase):
+    """从 M7A config.yaml 导入三深渊快照的结果"""
+    m7aConfigPath: str = Field(..., description="读取的 M7A config.yaml 路径")
+    items: List[AbyssSnapshotImportItem] = Field(
+        default_factory=list, description="三个深渊的导入结果摘要"
+    )
+    updatedUserData: HSRUserConfig = Field(
+        ..., description="更新后的完整 HSR 用户配置（前端可用来同步 formData）"
+    )
+
+
+class UserImportAbyssSnapshotIn(UserInBase):
+    """用户请求从 M7A 导入三深渊快照"""
+    userId: str = Field(..., description="用户ID")
 
 
 class EmulatorGetIn(BaseModel):
@@ -1272,6 +1971,10 @@ class TaskCreateIn(DispatchIn):
     mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
         ..., description="任务模式"
     )
+    resumeFromScriptId: str | None = Field(
+        default=None,
+        description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
+    )
 
 
 class TaskCreateOut(OutBase):
@@ -1296,6 +1999,7 @@ class PowerIn(BaseModel):
         "Hibernate",
         "Sleep",
         "KillSelf",
+        "Logoff",
     ] = Field(..., description="电源操作信号")
 
 
@@ -1308,6 +2012,7 @@ class PowerOut(OutBase):
         "Hibernate",
         "Sleep",
         "KillSelf",
+        "Logoff",
     ] = Field(..., description="电源操作信号")
 
 

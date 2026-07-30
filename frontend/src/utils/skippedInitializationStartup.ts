@@ -15,7 +15,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
   beginBootstrap()
 
   startupPromise = (async () => {
-    const api = window.electronAPI as any
+    const api = window.electronAPI
 
     try {
       if (!import.meta.env.DEV) {

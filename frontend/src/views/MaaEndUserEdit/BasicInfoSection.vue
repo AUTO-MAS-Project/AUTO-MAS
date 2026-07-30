@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-mutating-props -->
 <template>
   <div class="form-section">
     <div class="section-header">
@@ -16,8 +15,14 @@
               </a-tooltip>
             </span>
           </template>
-          <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
-            class="modern-input" @blur="emitSave('userName', formData.userName)" />
+          <a-input
+            v-model:value="formData.userName"
+            placeholder="请输入用户名"
+            :disabled="loading"
+            size="large"
+            class="modern-input"
+            @blur="emitSave('userName', formData.userName)"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -30,8 +35,11 @@
               </a-tooltip>
             </span>
           </template>
-          <a-select v-model:value="formData.Info.Status" size="large"
-            @change="emitSave('Info.Status', formData.Info.Status)">
+          <a-select
+            v-model:value="formData.Info.Status"
+            size="large"
+            @change="emitSave('Info.Status', formData.Info.Status)"
+          >
             <a-select-option :value="true">是</a-select-option>
             <a-select-option :value="false">否</a-select-option>
           </a-select>
@@ -45,13 +53,20 @@
           <template #label>
             <span class="form-label">
               账号ID
-              <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号。模拟器暂不支持账号切换">
+              <a-tooltip
+                title="用于切换账号，官服输入手机号，两种方式均按账号末四位匹配，无需切换则留空"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-input v-model:value="formData.Info.Id" placeholder="请输入账号ID" :disabled="loading" size="large"
-            @blur="emitSave('Info.Id', formData.Info.Id)" />
+          <a-input
+            v-model:value="formData.Info.Id"
+            placeholder="请输入账号ID"
+            :disabled="loading"
+            size="large"
+            @blur="emitSave('Info.Id', formData.Info.Id)"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -59,35 +74,108 @@
           <template #label>
             <span class="form-label">
               密码
-              <a-tooltip title="用户密码，PC 端需要切换账号时必须填写，模拟器暂不支持账号切换">
+              <a-tooltip title="用户密码，仅用于存储以防遗忘，此外无任何作用">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-input-password v-model:value="formData.Info.Password" placeholder="请输入密码" :disabled="loading" size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)" />
+          <a-input-password
+            v-model:value="formData.Info.Password"
+            placeholder="密码仅用于存储以防遗忘，此外无任何作用"
+            :disabled="loading"
+            size="large"
+            @blur="emitSave('Info.Password', formData.Info.Password)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :span="8">
+      <a-col :span="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
-              用户配置模式
-              <a-tooltip title="简洁模式下沿用脚本全局配置，详细模式下沿用用户自定义配置">
+              配置文件来源
+              <a-tooltip title="脚本使用全局配置文件，用户使用当前用户的配置文件">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-select v-model:value="formData.Info.Mode" size="large" :options="[
-            { label: '简洁', value: '简洁' },
-            { label: '详细', value: '详细' },
-          ]" @change="emitSave('Info.Mode', formData.Info.Mode)" />
+          <div class="config-source-control">
+            <a-select
+              v-model:value="formData.Info.Mode"
+              size="large"
+              :options="modeOptions"
+              :disabled="loading"
+              @change="emitSave('Info.Mode', formData.Info.Mode)"
+            />
+            <a-button
+              v-if="formData.Info.Mode === '简洁'"
+              type="default"
+              size="large"
+              :disabled="loading || showConfigMask"
+              @click="$emit('scriptConfig')"
+            >
+              <template #icon>
+                <EditOutlined />
+              </template>
+              编辑脚本设定
+            </a-button>
+            <a-button
+              v-else
+              type="primary"
+              ghost
+              size="large"
+              :loading="configLoading"
+              :disabled="loading || showConfigMask"
+              @click="$emit('configure')"
+            >
+              <template #icon>
+                <SettingOutlined />
+              </template>
+              {{ showConfigMask ? '正在配置' : '配置' }}
+            </a-button>
+            <a-button
+              v-if="formData.Info.Mode !== '简洁'"
+              type="default"
+              size="large"
+              :loading="importLoading"
+              :disabled="loading || showConfigMask"
+              @click="$emit('importConfig')"
+            >
+              <template #icon>
+                <ImportOutlined />
+              </template>
+              导入
+            </a-button>
+          </div>
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="12">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
+              接管具体任务配置
+              <a-tooltip
+                title="开启后运行前会用本页高频配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置"
+              >
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-select
+            v-model:value="formData.Info.IfQuickConfig"
+            size="large"
+            :disabled="loading || presetSupported === false"
+            :options="quickConfigOptions"
+            @change="emitSave('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -97,11 +185,17 @@
               </a-tooltip>
             </span>
           </template>
-          <a-select v-model:value="formData.Info.Resource" placeholder="请选择资源" :disabled="loading" size="large"
-            :options="resourceOptions" @change="emitSave('Info.Resource', formData.Info.Resource)" />
+          <a-select
+            v-model:value="formData.Info.Resource"
+            placeholder="请选择资源"
+            :disabled="loading"
+            size="large"
+            :options="resourceOptions"
+            @change="emitSave('Info.Resource', formData.Info.Resource)"
+          />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :span="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -111,8 +205,15 @@
               </a-tooltip>
             </span>
           </template>
-          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" :disabled="loading"
-            size="large" style="width: 100%" @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
+          <a-input-number
+            v-model:value="formData.Info.RemainedDay"
+            :min="-1"
+            :max="9999"
+            :disabled="loading"
+            size="large"
+            style="width: 100%"
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -126,24 +227,51 @@
           </a-tooltip>
         </span>
       </template>
-      <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注" :rows="4" :disabled="loading"
-        class="modern-input" @blur="emitSave('Info.Notes', formData.Info.Notes)" />
+      <a-textarea
+        v-model:value="formData.Info.Notes"
+        placeholder="请输入备注"
+        :rows="4"
+        :disabled="loading"
+        class="modern-input"
+        @blur="emitSave('Info.Notes', formData.Info.Notes)"
+      />
     </a-form-item>
   </div>
 </template>
 
 <script setup lang="ts">
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  EditOutlined,
+  ImportOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
+const emit = defineEmits<{
+  save: [key: string, value: any]
+  configure: []
+  importConfig: []
+  scriptConfig: []
+}>()
 
 defineProps<{
   formData: any
   loading: boolean
   resourceOptions: Array<{ label: string; value: string }>
+  presetSupported?: boolean
+  configLoading?: boolean
+  importLoading?: boolean
+  showConfigMask?: boolean
 }>()
 
-const emit = defineEmits<{
-  save: [key: string, value: any]
-}>()
+const modeOptions = [
+  { label: '脚本', value: '简洁' },
+  { label: '用户', value: '详细' },
+]
+
+const quickConfigOptions = [
+  { label: '启用', value: true },
+  { label: '关闭', value: false },
+]
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
@@ -153,6 +281,15 @@ const emitSave = (key: string, value: any) => {
 <style scoped>
 .form-section {
   margin-bottom: 32px;
+}
+
+.config-source-control {
+  display: flex;
+  gap: 8px;
+}
+
+.config-source-control :deep(.ant-select) {
+  flex: 1;
 }
 
 .section-header {

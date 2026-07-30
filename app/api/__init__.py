@@ -35,6 +35,12 @@ from .update import router as update_router
 from .ocr import router as ocr_router
 from .ws_debug import router as ws_debug_router
 
+# 可选补丁：米游社扫码登录（可安全删除以下 2 行及 app/api/qr_login.py）
+try:
+    from .qr_login import router as qr_login_router
+except ImportError:
+    qr_login_router = None
+
 __all__ = [
     "core_router",
     "info_router",
@@ -49,4 +55,5 @@ __all__ = [
     "update_router",
     "ocr_router",
     "ws_debug_router",
+    "qr_login_router",
 ]

@@ -65,7 +65,7 @@
             "确认登出[EndFieldPC]"
         ]
     },
-    "其他账号登录[EndFieldPC]": {
+    "切换账号-账号密码切换[EndFieldPC]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -82,11 +82,13 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "密码登录[EndFieldPC]"
+        ],
+        "on_error": [
+            "其他账号登录兜底[EndFieldPC]"
         ]
     },
     "密码登录[EndFieldPC]": {
@@ -106,11 +108,13 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "点击账号框[EndFieldPC]"
+        ],
+        "on_error": [
+            "密码登录兜底[EndFieldPC]"
         ]
     },
     "点击账号框[EndFieldPC]": {
@@ -131,8 +135,7 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "禁用日志-账号[EndFieldPC]"
@@ -167,8 +170,7 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "禁用日志-密码[EndFieldPC]"
@@ -197,48 +199,48 @@
                 ],
                 "template": [
                     "EndFieldPC/未同意复选框-720p.png",
-                    "EndFieldPC/未同意复选框-1080p.png"
+                    "EndFieldPC/未同意复选框-1080p.png",
+                    "EndFieldPC/未同意复选框-1440p.png",
+                    "EndFieldPC/未同意复选框-2160p.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "已同意协议[EndFieldPC]"
+        ],
+        "on_error": [
+            "同意协议兜底[EndFieldPC]"
         ]
     },
     "已同意协议[EndFieldPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "roi": [
-                    350,
-                    360,
-                    300,
-                    110
-                ],
+                "roi": "同意协议[EndFieldPC]",
                 "template": [
                     "EndFieldPC/已同意复选框-720p.png",
-                    "EndFieldPC/已同意复选框-1080p.png"
+                    "EndFieldPC/已同意复选框-1080p.png",
+                    "EndFieldPC/已同意复选框-1440p.png",
+                    "EndFieldPC/已同意复选框-2160p.png"
                 ]
             }
         },
         "next": [
-            "登录-[EndFieldPC]"
+            "登录[EndFieldPC]"
         ]
     },
-    "切换账号[EndFieldPC]": {
+    "切换账号-调出登录框[EndFieldPC]": {
         "timeout": 600000,
         "next": [
             "登出[EndFieldPC]",
-            "检查账号[EndFieldPC]",
-            "登录下拉框展开[EndFieldPC]",
             "识别加载未完成[EndFieldPC]"
         ]
     },
     "登录下拉框展开[EndFieldPC]": {
+        "max_hit": 10,
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -250,19 +252,21 @@
                 ],
                 "template": [
                     "EndFieldPC/登录下拉框展开-720p.png",
-                    "EndFieldPC/登录下拉框展开-1080p.png"
-                ],
-                "threshold": [
-                    0.85
+                    "EndFieldPC/登录下拉框展开-1080p.png",
+                    "EndFieldPC/登录下拉框展开-1440p.png",
+                    "EndFieldPC/登录下拉框展开-2160p.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
+        "timeout": 5000,
         "next": [
-            "登录下拉框折叠[EndFieldPC]"
+            "识别登录下拉框[EndFieldPC]"
+        ],
+        "on_error": [
+            "切换账号-展开下拉框[EndFieldPC]"
         ]
     },
     "选中账号[EndFieldPC]": {
@@ -270,12 +274,6 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "roi": [
-                    350,
-                    360,
-                    580,
-                    0
-                ],
                 "expected": [
                     "账号-正则"
                 ],
@@ -283,42 +281,17 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 5000,
         "next": [
-            "检查账号[EndFieldPC]"
+            "验证账号[EndFieldPC]"
         ],
         "on_error": [
-            "中间节点[EndFieldPC]"
+            "切换账号-下拉框切换[EndFieldPC]"
         ]
     },
-    "登录下拉框折叠[EndFieldPC]": {
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "roi": [
-                    640,
-                    260,
-                    300,
-                    150
-                ],
-                "template": [
-                    "EndFieldPC/登录下拉框折叠-720p.png",
-                    "EndFieldPC/登录下拉框折叠-1080p.png"
-                ]
-            }
-        },
-        "action": {
-            "type": "Click",
-            "param": {}
-        },
-        "next": [
-            "其他账号登录[EndFieldPC]"
-        ]
-    },
-    "登录-[EndFieldPC]": {
+    "登录[EndFieldPC]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -335,13 +308,9 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
-        "timeout": 60000,
-        "next": [
-            "识别加载完成[EndFieldPC]"
-        ]
+        "post_delay": 3000
     },
     "识别加载完成[EndFieldPC]": {
         "recognition": {
@@ -377,7 +346,7 @@
             }
         },
         "next": [
-            "登录-[EndFieldPC]"
+            "登录[EndFieldPC]"
         ]
     },
     "识别加载未完成[EndFieldPC]": {
@@ -409,8 +378,12 @@
                 ]
             }
         },
+        "post_delay": 5000,
         "next": [
-            "切换账号[EndFieldPC]"
+            "识别登录表单[EndFieldPC]"
+        ],
+        "on_error": [
+            "切换账号-调出登录框[EndFieldPC]"
         ]
     },
     "登出[EndFieldPC]": {
@@ -430,15 +403,14 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 5000,
         "next": [
             "识别登出[EndFieldPC]"
         ],
         "on_error": [
-            "切换账号[EndFieldPC]"
+            "切换账号-调出登录框[EndFieldPC]"
         ]
     },
     "确认登出[EndFieldPC]": {
@@ -459,22 +431,118 @@
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "post_delay": 5000,
         "timeout": 5000,
         "next": [
-            "检查账号[EndFieldPC]",
-            "登录下拉框展开[EndFieldPC]"
+            "识别登录表单[EndFieldPC]"
         ],
         "on_error": [
             "识别登出[EndFieldPC]"
         ]
     },
-    "中间节点[EndFieldPC]": {
+    "识别登录表单[EndFieldPC]": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "CheckForm"
+            }
+        }
+    },
+    "切换账号-验证账号[EndFieldPC]": {
+        "timeout": 5000,
+        "next": [
+            "检查账号[EndFieldPC]"
+        ]
+    },
+    "识别登录下拉框[EndFieldPC]": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "CheckComboxBox"
+            }
+        }
+    },
+    "切换账号-展开下拉框[EndFieldPC]": {
+        "next": [
+            "登录下拉框展开[EndFieldPC]"
+        ]
+    },
+    "验证登录表单[EndFieldPC]": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "CheckForm"
+            }
+        },
+        "inverse": true,
+        "timeout": 600000,
+        "next": [
+            "识别加载完成[EndFieldPC]"
+        ]
+    },
+    "仅检查账号[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [
+                    350,
+                    260,
+                    580,
+                    160
+                ],
+                "expected": [
+                    "账号-正则"
+                ],
+                "model": "zh_cn"
+            }
+        }
+    },
+    "切换账号-检查账号[EndFieldPC]": {
+        "timeout": 5000,
+        "next": [
+            "仅检查账号[EndFieldPC]"
+        ]
+    },
+    "账号切换-等待加载完成[EndFieldPC]": {
+        "timeout": 5000,
+        "next": [
+            "验证登录表单[EndFieldPC]"
+        ]
+    },
+    "验证账号[EndFieldPC]": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "CheckAccount",
+                "custom_recognition_param": {
+                    "id": "账号-正则"
+                }
+            }
+        }
+    },
+    "切换账号-下拉框切换[EndFieldPC]": {
         "next": [
             "选中账号[EndFieldPC]"
+        ]
+    },
+    "同意协议兜底[EndFieldPC]": {
+        "max_hit": 10,
+        "next": [
+            "同意协议[EndFieldPC]"
+        ]
+    },
+    "其他账号登录兜底[EndFieldPC]": {
+        "max_hit": 10,
+        "next": [
+            "切换账号-账号密码切换[EndFieldPC]"
+        ]
+    },
+    "密码登录兜底[EndFieldPC]": {
+        "max_hit": 10,
+        "next": [
+            "密码登录[EndFieldPC]"
         ]
     }
 }
