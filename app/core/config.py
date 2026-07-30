@@ -2150,21 +2150,10 @@ class AppConfig(GlobalConfig):
         """
 
         matrix_statistics: Dict[str, str] = {}
-        matched_matrix_skills: Dict[str, str] = {}
+        pending_statistics: Dict[str, str] = {}
         current_matrix_skill = ""
-
-        def append_summary_statistics(summary_lines: List[str]) -> None:
-            for i in range(0, len(summary_lines) - 2, 3):
-                weapon_name = summary_lines[i]
-                skill_name = summary_lines[i + 1]
-                count_text = summary_lines[i + 2]
-
-                if not count_text.isdigit() or int(count_text) <= 0:
-                    continue
-
-                matrix_statistics[
-                    matched_matrix_skills.get(weapon_name, skill_name)
-                ] = weapon_name
+        has_matrix_flow = False
+        locked_count = 0
 
         for log_line in logs:
             skill_match = re.search(r"OCR到技能：(.+)", log_line)
@@ -2174,53 +2163,38 @@ class AppConfig(GlobalConfig):
 
             weapon_match = re.search(r"匹配到武器：(.+)", log_line)
             if weapon_match and current_matrix_skill:
-                matched_matrix_skills[weapon_match.group(1).strip()] = (
-                    current_matrix_skill
+                pending_statistics[current_matrix_skill] = (
+                    weapon_match.group(1).strip()
                 )
                 current_matrix_skill = ""
-
-        summary_started = False
-        summary_lines: List[str] = []
-        for log_line in logs:
-            if "战利品摘要：" in log_line:
-                if summary_started:
-                    append_summary_statistics(summary_lines)
-                summary_started = True
-                summary_lines = []
                 continue
 
-            if not summary_started:
+            completed_match = re.search(
+                r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
+                log_line,
+            )
+            if completed_match is None:
                 continue
 
-            if "任务完成:" in log_line or "🎉" in log_line:
-                append_summary_statistics(summary_lines)
-                summary_started = False
-                summary_lines = []
-                continue
+            has_matrix_flow = True
+            current_locked_count = int(completed_match.group(1))
+            locked_count += current_locked_count
+            if current_locked_count > 0:
+                matched_items = list(pending_statistics.items())[
+                    -current_locked_count:
+                ]
+                matrix_statistics.update(matched_items)
 
-            content = re.sub(r"^\[[^\]]+\]\s*", "", log_line).strip()
-            if not content or content == "武器技能组合锁定数量":
-                continue
+            pending_statistics = {}
+            current_matrix_skill = ""
 
-            summary_lines.append(content)
-
-        if summary_started:
-            append_summary_statistics(summary_lines)
-
-        has_matrix_flow = any("战利品摘要：" in log_line for log_line in logs)
         if not has_matrix_flow:
             return None, False
 
-        last_locked_count: Optional[int] = None
-        for log_line in logs:
-            match = re.search(r"确认锁定物品：(\d+)", log_line)
-            if match is not None:
-                last_locked_count = int(match.group(1))
-
-        if not matrix_statistics and last_locked_count == 0:
+        if locked_count == 0:
             return {}, True
 
-        return matrix_statistics, True
+        return (matrix_statistics or None), True
 
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str

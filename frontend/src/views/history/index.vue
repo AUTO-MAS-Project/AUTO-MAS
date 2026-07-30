@@ -140,7 +140,7 @@ type HistoryDataWithMatrix = HistoryData & {
 }
 
 const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
-  return (data as HistoryDataWithMatrix | null)?.matrix_statistics || null
+  return (data as HistoryDataWithMatrix | null)?.matrix_statistics ?? null
 }
 
 const handleModeUpdate = (mode: string) => {
