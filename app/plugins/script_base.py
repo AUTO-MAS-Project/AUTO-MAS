@@ -9,7 +9,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, Literal, TYPE_CHECKING
 
 
 from pydantic import BaseModel
@@ -589,6 +589,7 @@ def register_script_type(
     supported_modes: tuple[str, ...] = ("AutoProxy", "ScriptConfig"),
     icon: str | None = None,
     docs_url: str | None = None,
+    create_group: Literal["general", "specialized"] | None = None,
     exe_path_key: str = "Info.Path",
     log_time_range: tuple[int, int] = (0, 19),
     log_time_format: str = "%Y-%m-%d %H:%M:%S",
@@ -602,6 +603,7 @@ def register_script_type(
     2. 创建 ``LifecycleHookRegistry`` + ``LogPipeline``，填充发现的钩子和处理器
     3. 创建 ``ScriptTypeProvider``（使用 ``PluginSchemaManager`` 生成 schema）
     4. 调用 ``script_type_registry.register(provider, owner=instance_id)``
+    5. ``create_group`` 可显式声明创建页分组；未声明时宿主回退到专项分组
     """
     from app.core.script_types import ScriptTypeProvider, script_type_registry, build_config_schema
     from app.task.plugin_adapter import create_plugin_manager_factory
@@ -655,6 +657,7 @@ def register_script_type(
         docs_url=docs_url,
         editor_kind=f"plugin:{type_key}",
         is_builtin=False,
+        metadata={"create_group": create_group} if create_group is not None else {},
     )
 
     script_type_registry.register(provider, owner=ctx.instance_id)
