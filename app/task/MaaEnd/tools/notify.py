@@ -84,7 +84,7 @@ async def push_notification(
             f"{'\n'.join(matrix_lines)}"
         )
 
-        template = Config.notify_env.get_template("general_statistics.html")
+        template = Config.notify_env.get_template("MaaEnd_statistics.html")
         message_html = template.render(message)
         serverchan_message = message_text.replace("\n", "\n\n")
 
