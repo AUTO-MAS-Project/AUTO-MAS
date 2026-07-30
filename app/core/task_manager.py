@@ -430,18 +430,6 @@ class Task(TaskExecuteBase):
                 error_text = "CancelledError: 任务执行被取消"
                 self._exit_result = "cancelled"
                 self._exit_error = error_text
-                script_item.status = "取消"
-                terminal_user_statuses = {
-                    "完成",
-                    "部分完成",
-                    "异常",
-                    "失败",
-                    "跳过",
-                    "取消",
-                }
-                for user in script_item.user_list:
-                    if user.status not in terminal_user_statuses:
-                        user.status = "取消"
                 await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_CANCELLED,
                     source="core.task_manager",

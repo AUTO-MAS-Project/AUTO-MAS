@@ -519,7 +519,7 @@ class AutoProxyDelegateTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(result, "Pass")
             self.assertIsNone(task.provider)
             with patch(
-                "ok_script_adapter.adapter.autoproxy.Publisher.send",
+                "ok_script_adapter.adapter.autoproxy.Config.send_websocket_message",
                 new=AsyncMock(),
             ):
                 await task.on_crash(RuntimeError("check failed"))
