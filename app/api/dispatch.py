@@ -44,6 +44,19 @@ async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
 
 
 @router.get(
+    "/script-states-snapshot",
+    tags=["Get"],
+    summary="获取按脚本类型聚合的调度状态",
+    response_model=ScriptDispatchStateSnapshot,
+    status_code=200,
+)
+async def get_script_states_snapshot() -> ScriptDispatchStateSnapshot:
+    """返回脚本类型的排队、运行和失败状态。"""
+
+    return TaskManager.get_script_states_snapshot()
+
+
+@router.get(
     "/power/countdown-snapshot",
     tags=["Get"],
     summary="获取电源倒计时初始快照",

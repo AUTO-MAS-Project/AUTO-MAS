@@ -207,6 +207,10 @@ class TaskItem(ABC):
 class TaskExecuteBase(ABC):
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
+    _execution_error: Exception | None = field(default=None, init=False, repr=False)
+    _parent_executor: "TaskExecuteBase | None" = field(
+        default=None, init=False, repr=False
+    )
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
 
     @abstractmethod
@@ -218,23 +222,60 @@ class TaskExecuteBase(ABC):
 
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
         self._task_group = parent_tg
+        self._execution_error = None
         try:
             await self.main_task()
         except Exception as e:
+            self._record_execution_error(e)
             await self.on_crash(e)
         finally:
             self._task_group = None
             try:
                 await asyncio.shield(self.final_task())
             except Exception as e:
+                self._record_execution_error(e)
                 await self.on_crash(e)
             finally:
                 self.accomplish.set()
 
+    @property
+    def execution_failed(self) -> bool:
+        """本次执行的主任务、子任务或收尾任务是否抛出过异常。"""
+        return self._execution_error is not None
+
+    @property
+    def execution_error(self) -> Exception | None:
+        """返回本次执行链捕获到的首个异常，供上层生成诊断信息。"""
+        return self._execution_error
+
+    def _record_execution_error(self, error: Exception) -> None:
+        """记录首个执行异常，并沿嵌套执行器向上传播。"""
+        if self._execution_error is None:
+            self._execution_error = error
+
+        if self._parent_executor is not None:
+            self._parent_executor._record_execution_error(self._execution_error)
+
     def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
         if self._task_group is None:
             raise RuntimeError("子任务必须在主任务中启动")
-        return self._task_group.create_task(child._execute_task(self._task_group))
+
+        task_group = self._task_group
+        child._parent_executor = self
+
+        async def _run_child() -> None:
+            try:
+                await child._execute_task(task_group)
+            finally:
+                if child._execution_error is not None:
+                    self._record_execution_error(child._execution_error)
+                child._parent_executor = None
+
+        try:
+            return task_group.create_task(_run_child())
+        except Exception:
+            child._parent_executor = None
+            raise
 
     def execute(self):
         if self.task is not None and not self.task.done():
