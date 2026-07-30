@@ -19,8 +19,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .login import login
+from .login import login, replace_account_switch_task
 from .notify import push_notification
 
 
-__all__ = ["login", "push_notification"]
+__all__ = ["login", "push_notification", "replace_account_switch_task"]

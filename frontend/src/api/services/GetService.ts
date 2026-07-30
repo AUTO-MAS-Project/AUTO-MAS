@@ -309,7 +309,7 @@ export class GetService {
     }
     /**
      * 搜索已安装的模拟器
-     * 自动搜索系统中已安装的模拟器
+     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
      * @returns EmulatorSearchOut Successful Response
      * @throws ApiError
      */
@@ -427,7 +427,7 @@ export class GetService {
     }
     /**
      * 查询工具配置
-     * 查询工具配置
+     * 获取工具设置
      * @returns ToolsGetOut Successful Response
      * @throws ApiError
      */

@@ -11,5 +11,8 @@ export type GlobalConfig_UI = {
      * 是否最小化到托盘
      */
     IfToTray?: (boolean | null);
+    /**
+     * 是否隐藏主窗口关闭按钮
+     */
+    IfHideCloseButton?: (boolean | null);
 };
-

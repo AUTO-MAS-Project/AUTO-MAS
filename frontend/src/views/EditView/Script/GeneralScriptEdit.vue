@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
+            <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -307,12 +307,15 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="指示实时生成日志文件名的格式，日志文件名固定时留空">
-                    <span class="form-label">
-                      日志文件名格式
+                  <span class="form-label">
+                    日志文件名格式
+                    <a-tooltip title="指示实时生成日志文件名的格式（strptime 格式），文件名固定时留空">
                       <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                    </a-tooltip>
+                    <a-tooltip title="针对 mxu 按日期+自增序号命名的日志：末尾加 ****** 启用mxu日志前缀匹配（如 %Y-%m-%d******）">
+                      <QuestionCircleOutlined class="help-icon" style="margin-left: 2px;" />
+                    </a-tooltip>
+                  </span>
                 </template>
                 <a-input v-model:value="generalConfig.Script.LogPathFormat" placeholder="日志文件名格式，文件名固定时留空" size="large"
                   class="modern-input" @blur="
@@ -676,10 +679,10 @@ import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
-import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service, type ComboBoxItem } from '../../../api'
-import type { ScriptUploadIn } from '../../../api'
+import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '@/api'
+import type { ScriptUploadIn } from '@/api'
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,
@@ -1491,7 +1494,7 @@ const selectRootPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       // 保存当前根目录，用于比较
       const oldRootPath = generalConfig.Info.RootPath
@@ -1571,7 +1574,7 @@ const selectGamePath = async () => {
       return
     }
 
-    const paths = await (window.electronAPI as any).selectFile([
+    const paths = await window.electronAPI.selectFile([
       { name: '可执行文件', extensions: ['exe'] },
       { name: '所有文件', extensions: ['*'] },
     ])
@@ -1595,7 +1598,7 @@ const selectScriptPath = async () => {
       return
     }
 
-    const paths = await (window.electronAPI as any).selectFile([
+    const paths = await window.electronAPI.selectFile([
       { name: '可执行文件', extensions: ['exe', 'bat'] },
       { name: '所有文件', extensions: ['*'] },
     ])
@@ -1626,7 +1629,7 @@ const selectTrackProcessExe = async () => {
       return
     }
 
-    const paths = await (window.electronAPI as any).selectFile([
+    const paths = await window.electronAPI.selectFile([
       { name: '可执行文件', extensions: ['exe'] },
       { name: '所有文件', extensions: ['*'] },
     ])
@@ -1667,11 +1670,11 @@ const selectConfigPath = async () => {
     // 根据配置文件类型选择不同的选择方式
     if (generalConfig.Script.ConfigPathMode === 'Folder') {
       // 选择文件夹
-      selectedPath = await (window.electronAPI as any).selectFolder()
-      selectedPath = selectedPath || undefined
+      const folderPath = await window.electronAPI.selectFolder()
+      selectedPath = folderPath || undefined
     } else {
       // 选择文件（默认行为）
-      const paths = await (window.electronAPI as any).selectFile([
+      const paths = await window.electronAPI.selectFile([
         { name: '配置文件', extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'] },
         { name: 'JSON 文件', extensions: ['json'] },
         { name: 'YAML 文件', extensions: ['yaml', 'yml'] },
@@ -1710,7 +1713,7 @@ const selectLogPath = async () => {
       return
     }
 
-    const paths = await (window.electronAPI as any).selectFile()
+    const paths = await window.electronAPI.selectFile()
     if (paths && paths.length > 0) {
       const path = paths[0]
       // 验证路径是否在根目录下

@@ -39,7 +39,7 @@ export function parseStringToUTCDate(dateString: string, sourceTimezone: number)
 export function getCurrentTimeInTimezone(timezoneOffset: number): Date {
   const now = new Date()
   // 加上时区偏移量
-  const timezoneTime = now.getTime() + (timezoneOffset * 60 * 60 * 1000)
+  const timezoneTime = now.getTime() + timezoneOffset * 60 * 60 * 1000
   return new Date(timezoneTime)
 }
 
@@ -50,7 +50,7 @@ export function getCurrentTimeInTimezone(timezoneOffset: number): Date {
  * @returns {string} 返回格式为YYYY-MM-DD的日期字符串
  */
 export function formatDateToTimezoneString(date: Date, timezoneOffset: number): string {
-  const timezoneTime = date.getTime() + (timezoneOffset * 60 * 60 * 1000)
+  const timezoneTime = date.getTime() + timezoneOffset * 60 * 60 * 1000
   const timezoneDate = new Date(timezoneTime)
 
   const year = timezoneDate.getUTCFullYear()
@@ -67,7 +67,7 @@ export function formatDateToTimezoneString(date: Date, timezoneOffset: number): 
  */
 export function getTodayInTimezone(timezoneOffset: number): Date {
   const now = new Date()
-  const timezoneTime = now.getTime() + (timezoneOffset * 60 * 60 * 1000)
+  const timezoneTime = now.getTime() + timezoneOffset * 60 * 60 * 1000
   const timezoneDate = new Date(timezoneTime)
 
   // 获取时区日期的年月日（使用UTC方法避免本地时区影响）
@@ -77,7 +77,7 @@ export function getTodayInTimezone(timezoneOffset: number): Date {
 
   // 创建该日期在指定时区的00:00:00时刻，然后转换为UTC
   const timezoneStartOfDay = Date.UTC(year, month, day)
-  const utcStartOfDay = timezoneStartOfDay - (timezoneOffset * 60 * 60 * 1000)
+  const utcStartOfDay = timezoneStartOfDay - timezoneOffset * 60 * 60 * 1000
 
   return new Date(utcStartOfDay)
 }
@@ -89,7 +89,7 @@ export function getTodayInTimezone(timezoneOffset: number): Date {
  */
 export function getWeekStartInTimezone(timezoneOffset: number): Date {
   const now = new Date()
-  const timezoneTime = now.getTime() + (timezoneOffset * 60 * 60 * 1000)
+  const timezoneTime = now.getTime() + timezoneOffset * 60 * 60 * 1000
   const timezoneDate = new Date(timezoneTime)
 
   // 获取时区中的当前日期（使用UTC方法避免本地时区影响）
@@ -103,10 +103,10 @@ export function getWeekStartInTimezone(timezoneOffset: number): Date {
 
   // 创建本周一的UTC日期，然后转换为指定时区的起始时刻
   const mondayUTC = Date.UTC(year, month, day + diff)
-  const mondayInTimezone = mondayUTC - (timezoneOffset * 60 * 60 * 1000)
+  const mondayInTimezone = mondayUTC - timezoneOffset * 60 * 60 * 1000
 
   return new Date(mondayInTimezone)
-}/**
+} /**
  * 获取指定时区今天是星期几
  * @param {number} timezoneOffset 时区偏移量（小时）
  * @returns {number} 返回数字的星期几 (0-6, 0表示星期日)
@@ -147,11 +147,7 @@ export function isDateInRange(
  * @param {number} dateTimezone 日期字符串的时区
  * @returns {boolean} 是否相等
  */
-export function isDateEqual(
-  dateString: string,
-  targetDate: Date,
-  dateTimezone: number
-): boolean {
+export function isDateEqual(dateString: string, targetDate: Date, dateTimezone: number): boolean {
   if (!dateString) return false
 
   try {

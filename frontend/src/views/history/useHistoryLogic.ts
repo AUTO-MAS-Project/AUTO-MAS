@@ -3,7 +3,7 @@ import { Service } from '@/api/services/Service'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 const logger = window.electronAPI.getLogger('历史记录')
 
@@ -73,6 +73,9 @@ export function useHistoryLogic() {
   const activeKeys = ref<string[]>([])
   const currentPreset = ref('week')
 
+  // 卸载守卫：防止组件卸载后 async 回调写入响应式状态
+  let isMounted = true
+
   // 日志高亮
   const { registerLogLanguage, editorTheme, editorConfig, setEditorConfig } = useLogHighlight()
 
@@ -111,6 +114,8 @@ export function useHistoryLogic() {
         end_date: searchForm.endDate,
       })
 
+      if (!isMounted) return
+
       if (response.code === 200) {
         historyData.value = Object.entries(response.data)
           .map(([date, users]) => ({ date, users }))
@@ -120,16 +125,18 @@ export function useHistoryLogic() {
         const { playSound } = useAudioPlayer()
         await playSound('history_query')
 
+        if (!isMounted) return
         message.success('搜索完成')
       } else {
         message.error(response.message || '搜索失败')
       }
     } catch (error) {
+      if (!isMounted) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`搜索历史记录失败: ${errorMsg}`)
       message.error('搜索历史记录失败')
     } finally {
-      searchLoading.value = false
+      if (isMounted) searchLoading.value = false
     }
   }
 
@@ -184,6 +191,8 @@ export function useHistoryLogic() {
       detailLoading.value = true
       const response = await Service.getHistoryDataApiHistoryDataPost({ jsonPath: jsonFile })
 
+      if (!isMounted) return
+
       if (response.code === 200) {
         currentDetail.value = response.data
       } else {
@@ -191,12 +200,13 @@ export function useHistoryLogic() {
         currentDetail.value = null
       }
     } catch (error) {
+      if (!isMounted) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取历史记录详情失败: ${errorMsg}`)
       message.error('获取历史记录详情失败')
       currentDetail.value = null
     } finally {
-      detailLoading.value = false
+      if (isMounted) detailLoading.value = false
     }
   }
 
@@ -209,8 +219,8 @@ export function useHistoryLogic() {
 
     try {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-      if (window.electronAPI && (window.electronAPI as any).openFile) {
-        await (window.electronAPI as any).openFile(logFilePath)
+      if (window.electronAPI && window.electronAPI.openFile) {
+        await window.electronAPI.openFile(logFilePath)
         message.success('日志文件已打开')
       } else {
         message.error('当前环境不支持打开文件功能')
@@ -231,8 +241,8 @@ export function useHistoryLogic() {
 
     try {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-      if (window.electronAPI && (window.electronAPI as any).showItemInFolder) {
-        await (window.electronAPI as any).showItemInFolder(logFilePath)
+      if (window.electronAPI && window.electronAPI.showItemInFolder) {
+        await window.electronAPI.showItemInFolder(logFilePath)
         message.success('日志文件目录已打开')
       } else {
         message.error('当前环境不支持打开目录功能')
@@ -270,6 +280,10 @@ export function useHistoryLogic() {
   // 页面加载时自动搜索
   onMounted(() => {
     handleSearch()
+  })
+
+  onUnmounted(() => {
+    isMounted = false
   })
 
   return {

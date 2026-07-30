@@ -18,7 +18,7 @@
 
     <div class="records-container">
       <div v-if="records.length === 0" class="empty-records">
-        <img src="../../../assets/NoData.png" alt="无数据" class="empty-image" />
+        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
         <span class="empty-text">暂无记录</span>
       </div>
 
