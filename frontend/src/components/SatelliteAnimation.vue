@@ -175,6 +175,10 @@ function createGlowTexture(): THREE.CanvasTexture {
 async function loadImageToCanvas(url: string): Promise<HTMLCanvasElement> {
   return new Promise(resolve => {
     const img = new Image()
+    const imageUrl = new URL(url, window.location.href)
+    if (imageUrl.origin !== window.location.origin) {
+      img.crossOrigin = 'anonymous'
+    }
     let settled = false
     const finish = (canvas: HTMLCanvasElement) => {
       if (settled) return
