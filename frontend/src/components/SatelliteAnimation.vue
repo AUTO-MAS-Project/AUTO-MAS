@@ -68,7 +68,7 @@ let centerGlowSprite: THREE.Sprite | null = null
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 
 const { isDark } = useTheme()
-const { statuses: satelliteStatuses } = useSatelliteStatus()
+const { statuses: satelliteStatuses, refresh: refreshSatelliteStatus } = useSatelliteStatus()
 
 onUnmounted(() => {
   isUnmounted = true
@@ -653,6 +653,7 @@ watch(satelliteStatuses, updateSatelliteStates)
 
 onMounted(async () => {
   isUnmounted = false
+  void refreshSatelliteStatus()
   try {
     await initScene()
   } catch (e) {

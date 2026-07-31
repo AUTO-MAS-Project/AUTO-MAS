@@ -8,9 +8,10 @@ export interface SatelliteModuleStatus {
 }
 
 export function useSatelliteStatus() {
-  const { scriptStatusesByType } = useTaskRuntimeState()
+  const { scriptStatusesByType, refresh } = useTaskRuntimeState()
 
   return {
     statuses: computed(() => new Map<string, SatelliteModuleStatus>(scriptStatusesByType.value)),
+    refresh,
   }
 }
