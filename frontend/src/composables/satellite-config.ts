@@ -14,7 +14,8 @@ const iconModules = import.meta.glob<{ default: string }>('@/assets/satellite-ic
   query: 'url',
 })
 
-const builtinIconFiles: Record<string, string> = {
+// 仅为尚未声明 icon_url 的旧内置类型保留；插件图标始终使用注册表资源。
+const legacyBuiltinIconFiles: Record<string, string> = {
   MAA: 'MAA.png',
   SRC: 'SRC.png',
   MaaEnd: 'MaaEnd.png',
@@ -37,7 +38,7 @@ function getDeclaredIconUrl(descriptor: ScriptTypeDescriptor): string {
     }
     return iconUrl
   }
-  return getLocalIconUrl(builtinIconFiles[descriptor.type_key] ?? '')
+  return getLocalIconUrl(legacyBuiltinIconFiles[descriptor.type_key] ?? '')
 }
 
 export async function getSatelliteModules(): Promise<SatelliteModule[]> {
