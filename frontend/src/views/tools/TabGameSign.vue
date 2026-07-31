@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import QRCode from 'qrcode'
 import draggable from 'vuedraggable'
 import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
 import { Service } from '@/api'
@@ -25,13 +26,16 @@ const {
 } = defineProps<{
   config: ToolsConfig_GameSign
   disabled?: boolean
-  onFieldChange?: (key: string, value: any) => void
+  /* eslint-disable no-unused-vars -- Callback parameter names document the prop contract. */
+  onFieldChange?: (key: string, value: any) => void | Promise<void>
   onSelectVisibleChange?: (visible: boolean) => void
+  /* eslint-enable no-unused-vars */
   onRefreshConfig?: () => Promise<void>
 }>()
 
 const logger = window.electronAPI.getLogger('游戏签到')
 const signLoading = ref(false)
+const notifySaving = ref(false)
 
 // ==================== 账号管理 ====================
 
@@ -139,12 +143,15 @@ const onDragEnd = async (evt: any) => {
   isDragging.value = true
   try {
     const order = accounts.value.map(a => a.uid)
-    await Service.reorderGameSignAccountsApiToolsSignAccountReorderPost({ order })
+    const response = await Service.reorderGameSignAccountsApiToolsSignAccountReorderPost({ order })
+    if (response.code !== 200) {
+      throw new Error(response.message || '排序保存失败')
+    }
     logger.info('用户排序已保存')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`排序保存失败: ${errorMsg}`)
-    message.error('排序保存失败')
+    message.error(`排序保存失败：${errorMsg}`)
     await loadAccounts()
   } finally {
     isDragging.value = false
@@ -184,7 +191,7 @@ const qrLoading = ref(false)
 const qrStatus = ref<'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'error'>(
   'idle'
 )
-const qrUrl = ref('')
+const qrCodeDataUrl = ref('')
 const qrStatusText = ref('')
 const qrTicket = ref('')
 const qrDevice = ref('')
@@ -205,9 +212,11 @@ const qrFetch = async (path: string, body?: any) => {
 }
 
 const startQrLogin = async () => {
+  stopQrPoll()
   qrLoading.value = true
   qrStatus.value = 'loading'
   qrStatusText.value = '正在生成二维码...'
+  qrCodeDataUrl.value = ''
   qrModalVisible.value = true
 
   try {
@@ -217,7 +226,14 @@ const startQrLogin = async () => {
       qrStatusText.value = data.message || '创建二维码失败'
       return
     }
-    qrUrl.value = data.qr_url
+    if (!data.qr_url) {
+      throw new Error('创建二维码失败：服务端响应缺少登录地址')
+    }
+    qrCodeDataUrl.value = await QRCode.toDataURL(data.qr_url, {
+      width: 240,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    })
     qrTicket.value = data.ticket
     qrDevice.value = data.device
     qrStatus.value = 'waiting'
@@ -319,7 +335,7 @@ const closeQrModal = () => {
   stopQrPoll()
   qrModalVisible.value = false
   qrStatus.value = 'idle'
-  qrUrl.value = ''
+  qrCodeDataUrl.value = ''
 }
 
 onBeforeUnmount(() => {
@@ -484,8 +500,25 @@ const handleTimeChange = (key: string, dayjsValue: any) => {
 
 // ==================== 通用变更处理 ====================
 
-const handleChange = (key: string, value: any) => {
-  if (onFieldChange) onFieldChange(key, value)
+const handleChange = async (key: string, value: any) => {
+  if (!onFieldChange) return
+
+  try {
+    await onFieldChange(key, value)
+  } catch {
+    // updateTools 已显示错误，父组件负责回滚配置
+  }
+}
+
+const handleNotifyEnabledChange = async (value: boolean) => {
+  if (!onFieldChange) return
+
+  notifySaving.value = true
+  try {
+    await handleChange('NotifyEnabled', value)
+  } finally {
+    notifySaving.value = false
+  }
 }
 
 // ==================== 手动签到 ====================
@@ -498,7 +531,11 @@ const handleManualSign = async () => {
       throw new Error(response.message || '签到失败')
     }
     logger.info('游戏签到完成')
-    message.success('签到完成')
+    if (response.status === 'warning') {
+      message.warning(response.message || '签到完成，但部分通知发送失败')
+    } else {
+      message.success(response.message || '签到完成')
+    }
     // 立即刷新签到结果（不等父组件轮询）
     if (onRefreshConfig) await onRefreshConfig()
     await loadAccounts()
@@ -544,7 +581,7 @@ onMounted(() => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="config.Enabled"
+              :value="config.Enabled"
               size="large"
               style="width: 100%"
               :disabled="disabled"
@@ -565,11 +602,12 @@ onMounted(() => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="config.NotifyEnabled"
+              :value="config.NotifyEnabled"
               size="large"
               style="width: 100%"
-              :disabled="disabled"
-              @change="handleChange('NotifyEnabled', $event)"
+              :disabled="disabled || notifySaving"
+              :loading="notifySaving"
+              @change="handleNotifyEnabledChange"
               @dropdown-visible-change="onSelectVisibleChange"
             >
               <a-select-option :value="true">启用</a-select-option>
@@ -839,12 +877,8 @@ onMounted(() => {
     >
       <div class="qr-login-container">
         <!-- 二维码 -->
-        <div v-if="qrUrl && qrStatus !== 'error'" class="qr-code-wrapper">
-          <img
-            :src="`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrUrl)}`"
-            alt="扫码登录"
-            class="qr-code-img"
-          />
+        <div v-if="qrCodeDataUrl && qrStatus !== 'error'" class="qr-code-wrapper">
+          <img :src="qrCodeDataUrl" alt="扫码登录" class="qr-code-img" />
         </div>
 
         <!-- 加载中 -->

@@ -23,6 +23,8 @@
 
 from fastapi import APIRouter, Body
 from datetime import datetime
+from typing import Any
+
 from app.core import Config
 from app.models.schema import (
     ToolsGetOut,
@@ -39,6 +41,40 @@ from app.models.schema import (
 )
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
+
+GAME_SIGN_CREDENTIAL_FIELDS = {
+    "MiyousheToken",
+    "KuroToken",
+    "SklandToken",
+}
+GAME_SIGN_CREDENTIAL_REDACTION = "******"
+
+
+def _redact_game_sign_account(data: dict[str, Any]) -> dict[str, Any]:
+    """将账号配置中的凭据替换为仅表示已配置的占位符。"""
+
+    redacted = dict(data)
+    account_data = redacted.get("GameSignAccount")
+    if isinstance(account_data, dict):
+        redacted["GameSignAccount"] = _redact_game_sign_account(account_data)
+        return redacted
+
+    for field in GAME_SIGN_CREDENTIAL_FIELDS:
+        redacted[field] = (
+            GAME_SIGN_CREDENTIAL_REDACTION if redacted.get(field) else ""
+        )
+    return redacted
+
+
+def _redact_game_sign_accounts(data: dict[str, Any]) -> dict[str, Any]:
+    """脱敏 MultipleConfig 结构中的全部游戏签到账号。"""
+
+    return {
+        key: _redact_game_sign_account(value)
+        if key != "instances" and isinstance(value, dict)
+        else value
+        for key, value in data.items()
+    }
 
 
 @router.post(
@@ -95,8 +131,12 @@ async def manual_game_sign() -> OutBase:
     """手动触发游戏社区签到"""
 
     try:
-        from app.tools.game_sign import run_all_sign_in, format_sign_results
-        from app.tools.game_sign import merge_sign_results
+        from app.tools.game_sign import (
+            GameSignInProgressError,
+            format_sign_results,
+            merge_sign_results,
+            run_all_sign_in,
+        )
 
         results = await run_all_sign_in(force=True)
 
@@ -120,11 +160,23 @@ async def manual_game_sign() -> OutBase:
         # 清除计划时间
         await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
+        if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+            from app.tools.game_sign_notify import push_game_sign_notification
+
+            failed_channels = await push_game_sign_notification(results)
+            if failed_channels:
+                return OutBase(
+                    status="warning",
+                    message=f"签到完成，但部分通知发送失败：{'、'.join(failed_channels)}",
+                )
+
+    except GameSignInProgressError as e:
+        return OutBase(code=409, status="error", message=str(e))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    return OutBase()
+    return OutBase(message="签到完成")
 
 
 # ==================== 游戏签到账号组 CRUD ====================
@@ -141,7 +193,8 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
     """获取所有游戏签到账号组"""
 
     try:
-        data = await Config.get_game_sign_accounts()
+        raw = await Config.get_game_sign_accounts(if_decrypt=False)
+        data = _redact_game_sign_accounts(raw)
     except Exception as e:
         return GameSignAccountsListOut(
             code=500,
@@ -165,9 +218,9 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
     try:
         uid, config = await Config.add_game_sign_account()
         # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
-        raw = await config.toDict()
+        raw = await config.toDict(if_decrypt=False)
         flat = raw.get("GameSignAccount", raw)
-        data = GameSignAccountGroupConfig(**flat)
+        data = GameSignAccountGroupConfig(**_redact_game_sign_account(flat))
         # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
         return GameSignAccountCreateOut(
@@ -193,10 +246,14 @@ async def get_game_sign_account(
     """获取游戏签到账号组详情"""
 
     try:
-        raw = await Config.get_game_sign_account(account.accountId)
+        raw = await Config.get_game_sign_account(
+            account.accountId, if_decrypt=False
+        )
         # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
         flat = raw.get("GameSignAccount", raw)
-        account_data = GameSignAccountGroupConfig(**flat)
+        account_data = GameSignAccountGroupConfig(
+            **_redact_game_sign_account(flat)
+        )
     except Exception as e:
         return GameSignAccountCreateOut(
             code=500,
@@ -223,20 +280,12 @@ async def update_game_sign_account(
     try:
         # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
         flat_data = account.data.model_dump(exclude_unset=True)
+        for field in GAME_SIGN_CREDENTIAL_FIELDS:
+            if flat_data.get(field) == GAME_SIGN_CREDENTIAL_REDACTION:
+                flat_data.pop(field)
+
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
-        # Token 变更后只清空该账号的签到结果
-        token_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
-        if token_fields & set(flat_data.keys()):
-            result = Config.ToolsConfig._game_sign_result_data
-            account_uid = str(account.accountId)
-            for platform in list(result.keys()):
-                result[platform] = [
-                    group for group in result[platform]
-                    if group.get("account_uid") != account_uid
-                ]
-                if not result[platform]:
-                    del result[platform]
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -258,16 +307,6 @@ async def delete_game_sign_account(
 
     try:
         await Config.delete_game_sign_account(account.accountId)
-        # 删除账号后清理该用户的签到结果
-        account_uid = str(account.accountId)
-        result = Config.ToolsConfig._game_sign_result_data
-        for platform in list(result.keys()):
-            result[platform] = [
-                group for group in result[platform]
-                if group.get("account_uid") != account_uid
-            ]
-            if not result[platform]:
-                del result[platform]
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

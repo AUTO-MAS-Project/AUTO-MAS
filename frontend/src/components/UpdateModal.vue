@@ -97,11 +97,7 @@ function updateInfoToMarkdown(info: unknown, version?: string, header = '更新�
   }
   lines.push('') // 空行
 
-  // 希望按这个顺序展示；其余未知键追加在后
-  const preferredOrder = ['修复BUG', '程序优化', '新增功能']
-  const keys = Array.from(new Set([...preferredOrder, ...Object.keys(obj)]))
-
-  for (const key of keys) {
+  for (const key of Object.keys(obj)) {
     const val = obj[key]
     if (Array.isArray(val) && val.length > 0) {
       lines.push(`#### ${key}`)

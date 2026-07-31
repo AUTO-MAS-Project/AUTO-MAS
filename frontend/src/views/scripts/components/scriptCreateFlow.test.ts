@@ -14,13 +14,25 @@ describe('scriptCreateFlow', () => {
     expect(buildCreateSteps({ type: 'M9A' }).map(step => step.key)).toEqual(['type'])
   })
 
-  it('places General before specialized adapters', () => {
-    expect(SCRIPT_TYPE_OPTIONS[0].value).toBe('General')
+  it('registers every supported script type', () => {
+    expect(SCRIPT_TYPE_OPTIONS.map(option => option.value)).toEqual([
+      'General',
+      'MAA',
+      'SRC',
+      'MaaEnd',
+      'M9A',
+      'Okww',
+      'OkNte',
+      'HSR',
+    ])
   })
 
   it('filters script types by aliases and group', () => {
     expect(filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, '1999').map(item => item.value)).toEqual([
       'M9A',
+    ])
+    expect(filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, '异环').map(item => item.value)).toEqual([
+      'OkNte',
     ])
   })
 
@@ -34,6 +46,7 @@ describe('scriptCreateFlow', () => {
     expect(getScriptEditSegment('MAA')).toBe('maa')
     expect(getScriptEditSegment('MaaEnd')).toBe('maaend')
     expect(getScriptEditSegment('Okww')).toBe('okww')
+    expect(getScriptEditSegment('OkNte')).toBe('oknte')
     expect(getScriptEditSegment('HSR')).toBe('hsr')
     expect(getScriptEditSegment('General')).toBe('general')
   })
