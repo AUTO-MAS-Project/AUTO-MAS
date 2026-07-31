@@ -2062,29 +2062,6 @@ class TaskRuntimeSnapshot(BaseModel):
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
 
 
-class ScriptDispatchState(BaseModel):
-    """一个脚本类型的聚合调度状态。"""
-
-    queued: bool = Field(default=False, description="该类型是否存在排队脚本")
-    running: bool = Field(default=False, description="该类型是否存在运行中脚本")
-    activeFailed: bool = Field(
-        default=False, description="该类型正在执行的脚本是否已出现异常"
-    )
-    recentFailed: bool = Field(
-        default=False,
-        description="该类型是否锁存失败终态，直到同类型脚本再次开始运行",
-    )
-
-
-class ScriptDispatchStateSnapshot(BaseModel):
-    """按脚本类型聚合的调度状态 HTTP 快照。"""
-
-    states: Dict[str, ScriptDispatchState] = Field(
-        default_factory=dict,
-        description="脚本类型键到聚合调度状态的映射",
-    )
-
-
 class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
@@ -2092,10 +2069,6 @@ class WSTaskCompletedData(BaseModel):
     task_info: List[WSTaskScriptInfoData] = Field(
         ..., description="任务信息全量快照"
     )
-    outcome: Literal["success", "error", "cancelled"] = Field(
-        ..., description="任务机器可读终态"
-    )
-    error: Optional[str] = Field(default=None, description="任务失败或取消原因")
 
 
 class WSTaskCreatedData(BaseModel):

@@ -186,16 +186,13 @@ export const useSchemaActionRunner = (options?: {
       subscribe({ id: taskId, type: WS_TASK_COMPLETED }, wsMessage => {
         void (async () => {
           const data = wsMessage.data as unknown as WSTaskCompletedData
-          if (data.outcome === 'success') {
+          const result = String(data.result || '')
+          if (result && !result.includes('异常') && !result.includes('错误')) {
             const successText = resolveTemplateValue(
               session.success_message || `${action.label || '配置动作'}已完成`,
               sessionContext
             )
             message.success(String(successText))
-          } else if (data.outcome === 'error') {
-            message.error(`${action.label || '配置动作'}执行失败，请查看日志`)
-          } else {
-            message.info(`${action.label || '配置动作'}已取消`)
           }
           await cleanupSession(Boolean(action.refresh))
         })()
