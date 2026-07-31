@@ -54,7 +54,11 @@ async def login(
 
     if id == "":
         logger.info("未输入账号，将跳过账号切换，等待游戏加载")
-        pipeline_override = {}
+        pipeline_override = {
+            "等待加载完成[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            }
+        }
     elif (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
         pipeline_override = {
@@ -145,7 +149,7 @@ async def login(
             tasker.post_task(
                 (
                     "切换账号[StarRailEmulator]"
-                    if pipeline_override
+                    if id
                     else "等待加载完成[StarRailEmulator]"
                 ),
                 pipeline_override,
