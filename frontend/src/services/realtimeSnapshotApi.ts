@@ -27,6 +27,7 @@ export interface TaskRuntimeSnapshotItem {
 
 export interface TaskRuntimeSnapshot {
   tasks: TaskRuntimeSnapshotItem[]
+  scheduledScripts: WSTaskScriptIdentityData[]
 }
 
 const get = <T>(url: string) => request<T>(OpenAPI, { method: 'GET', url })

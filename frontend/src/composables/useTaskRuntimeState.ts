@@ -55,6 +55,7 @@ export type TaskRuntimeEvent =
 type TaskRuntimeListener = (event: TaskRuntimeEvent) => void | Promise<void>
 
 const taskStates = ref(new Map<string, TaskRuntimeState>())
+const scheduledScriptTypes = ref(new Set<string>())
 const lastTerminalFailureByType = ref(new Map<string, boolean>())
 const listeners = new Set<TaskRuntimeListener>()
 const taskSubscriptionIds = new Map<string, string[]>()
@@ -221,6 +222,10 @@ export async function refreshTaskRuntimeSnapshot(): Promise<void> {
     const activeStates: TaskRuntimeState[] = []
     const removedTaskIds: string[] = []
 
+    scheduledScriptTypes.value = new Set(
+      (snapshot.scheduledScripts ?? []).map(script => script.scriptType)
+    )
+
     for (const item of snapshot.tasks ?? []) {
       const state = stateFromSnapshot(item, next.get(item.taskId))
       next.set(item.taskId, state)
@@ -290,6 +295,10 @@ const updateLastTerminalFailures = (task: TaskRuntimeState): void => {
 const scriptStatusesByType = computed(() => {
   const statuses = new Map<string, ScriptRuntimeStatus>()
 
+  for (const scriptType of scheduledScriptTypes.value) {
+    getOrCreateScriptStatus(statuses, scriptType).queued = true
+  }
+
   for (const task of taskStates.value.values()) {
     if (task.mode === 'ScriptConfig' || task.phase === 'completed') continue
 
@@ -356,6 +365,7 @@ export function disposeTaskRuntimeState(): void {
     completedStateCleanupTimer = null
   }
   taskStates.value = new Map()
+  scheduledScriptTypes.value = new Set()
   lastTerminalFailureByType.value = new Map()
   bootstrapped = false
 }

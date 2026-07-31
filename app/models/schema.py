@@ -2067,9 +2067,12 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
 
 class TaskRuntimeSnapshot(BaseModel):
-    """运行中任务 HTTP 初始快照。"""
+    """任务运行与定时队列 HTTP 初始快照。"""
 
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
+    scheduledScripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="已启用定时队列关联的脚本静态标识"
+    )
 
 
 class WSTaskCompletedData(BaseModel):

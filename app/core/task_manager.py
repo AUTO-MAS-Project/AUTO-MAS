@@ -623,6 +623,31 @@ class _TaskManager:
             and script_id != "-"
         ]
 
+    def _scheduled_script_identities(self) -> list[WSTaskScriptIdentityData]:
+        """返回存在有效定时配置的队列脚本身份。"""
+
+        identities: dict[uuid.UUID, WSTaskScriptIdentityData] = {}
+        for queue_id, queue in Config.QueueConfig.items():
+            if not queue.get("Info", "TimeEnabled"):
+                continue
+            if not any(
+                time_set.get("Info", "Enabled")
+                and time_set.get("Info", "Days")
+                for time_set in queue.TimeSet.values()
+            ):
+                continue
+
+            for script_id in self._queue_script_ids(queue_id):
+                identities.setdefault(
+                    script_id,
+                    WSTaskScriptIdentityData(
+                        scriptId=str(script_id),
+                        scriptType=_resolve_script_provider(script_id).type_key,
+                    ),
+                )
+
+        return list(identities.values())
+
     async def _validate_task_capabilities(
         self,
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
@@ -643,7 +668,7 @@ class _TaskManager:
                 raise RuntimeError(f"脚本 {script_name} 不支持任务模式 {mode}")
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
-        """返回当前运行任务的 HTTP 初始快照。"""
+        """返回任务运行状态与定时队列的 HTTP 初始快照。"""
 
         tasks: list[TaskRuntimeSnapshotItem] = []
         for task_uid, task_info in list(self.task_info.items()):
@@ -664,7 +689,10 @@ class _TaskManager:
                     log=log,
                 )
             )
-        return TaskRuntimeSnapshot(tasks=tasks)
+        return TaskRuntimeSnapshot(
+            tasks=tasks,
+            scheduledScripts=self._scheduled_script_identities(),
+        )
 
     def _schedule_clean_task(self, task_uid: uuid.UUID) -> None:
         """创建并持有任务收尾协程，结束后统一移出集合。"""
