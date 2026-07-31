@@ -1,6 +1,11 @@
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { request } from '@/api/core/request'
-import type { WSDialogRequestData, WSTaskScriptInfoData } from '@/services/websocket/types'
+import type {
+  WSDialogRequestData,
+  WSTaskMode,
+  WSTaskScriptIdentityData,
+  WSTaskScriptInfoData,
+} from '@/services/websocket/types'
 
 export interface PowerCountdownSnapshot {
   active: boolean
@@ -8,15 +13,14 @@ export interface PowerCountdownSnapshot {
   remaining: number
 }
 
-export type TaskRuntimeMode = 'AutoProxy' | 'ManualReview' | 'ScriptConfig'
-
 export interface TaskRuntimeSnapshotItem {
   taskId: string
-  mode: TaskRuntimeMode
+  mode: WSTaskMode
   queueId: string | null
   scriptId: string | null
   userId: string | null
   stopping: boolean
+  scripts: WSTaskScriptIdentityData[]
   task_info: WSTaskScriptInfoData[]
   log: string
 }

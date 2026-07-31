@@ -7,6 +7,10 @@ import {
   registerResidentResource,
 } from '@/services/websocket/residentResources'
 import {
+  bootstrapTaskRuntimeState,
+  disposeTaskRuntimeState,
+} from '@/composables/useTaskRuntimeState'
+import {
   bootstrapSchedulerSubscriptions,
   disposeSchedulerSubscriptions,
 } from '@/views/scheduler/useSchedulerLogic'
@@ -20,6 +24,10 @@ let registered = false
  */
 export function bootstrapRealtimeResidents(): void {
   if (!registered) {
+    registerResidentResource('task-runtime', {
+      bootstrap: bootstrapTaskRuntimeState,
+      dispose: disposeTaskRuntimeState,
+    })
     registerResidentResource('scheduler', {
       bootstrap: bootstrapSchedulerSubscriptions,
       dispose: disposeSchedulerSubscriptions,

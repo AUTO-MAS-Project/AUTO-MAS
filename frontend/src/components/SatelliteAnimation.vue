@@ -7,13 +7,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
-import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
-import {
-  getSatelliteModuleStatuses,
-  type SatelliteModuleStatus,
-} from '@/composables/useSatelliteStatus'
-import type { ScriptType } from '@/types/script'
+import { centerIconUrl, getSatelliteModules } from '@/composables/satellite-config'
+import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import { Service } from '@/api'
 import * as THREE from 'three'
 
@@ -40,7 +35,6 @@ const CONFIG = {
   glowSizeMultiplier: 3.5,
   activityGlowZOffset: -5,
   errorGlowZOffset: -3,
-  statusUpdateInterval: 10000,
 }
 
 const container = ref<HTMLDivElement | null>(null)
@@ -64,18 +58,17 @@ let orbitLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null 
 let centerCard: CardMesh | null = null
 
 interface SatelliteState {
-  type: ScriptType
+  type: string
   activityGlowSprite: THREE.Sprite | null
   errorGlowSprite: THREE.Sprite | null
   status: SatelliteModuleStatus
 }
 let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
-let updateInterval: ReturnType<typeof setInterval> | null = null
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 
 const { isDark } = useTheme()
-const { getScripts } = useScriptRegistryApi()
+const { statuses: satelliteStatuses } = useSatelliteStatus()
 
 onUnmounted(() => {
   isUnmounted = true
@@ -87,11 +80,6 @@ onUnmounted(() => {
   if (appearAnimationFrameId !== null) {
     cancelAnimationFrame(appearAnimationFrameId)
     appearAnimationFrameId = null
-  }
-
-  if (updateInterval) {
-    clearInterval(updateInterval)
-    updateInterval = null
   }
 
   disposeSceneResources(orbitScene)
@@ -338,17 +326,13 @@ async function initScene(): Promise<void> {
 async function initSceneInternal(): Promise<void> {
   if (!container.value) return
 
-  let userScripts: Awaited<ReturnType<typeof getScripts>> = []
+  let enabledModules: Awaited<ReturnType<typeof getSatelliteModules>> = []
   try {
-    userScripts = await getScripts()
+    enabledModules = await getSatelliteModules()
   } catch (err) {
-    logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
+    logger.warn(`获取卫星模块失败，按空集合处理: ${String(err)}`)
   }
 
-  const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
-  const enabledModules = satelliteModules.filter(
-    m => m.enabled && userScriptTypes.has(m.scriptType)
-  )
   const numSatellites = enabledModules.length
 
   if (numSatellites === 0) {
@@ -480,7 +464,7 @@ async function initSceneInternal(): Promise<void> {
       status: {
         queued: false,
         running: false,
-        errorVisible: false,
+        lastFailed: false,
       },
     })
   }
@@ -578,9 +562,7 @@ function animate(): void {
       )
 
       const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
-      if (state.status.errorVisible) {
-        state.activityGlowSprite.material.opacity = 0
-      } else if (state.status.running) {
+      if (state.status.running) {
         const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
         const pulseFactor = 1 + breathe * 0.12
         state.activityGlowSprite.material.color.setHex(0x6ce08a)
@@ -602,17 +584,11 @@ function animate(): void {
         sat.position.z + CONFIG.errorGlowZOffset
       )
 
-      if (state.status.errorVisible) {
-        const faintPulse = state.status.running
-          ? 0.5 + 0.5 * Math.sin(time * 0.003)
-          : 0.5 + 0.5 * Math.sin(time * 0.0016)
+      if (!state.status.running && !state.status.queued && state.status.lastFailed) {
         const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08
-        const pulseFactor = state.status.running ? 1 + faintPulse * 0.12 : 1 + faintPulse * 0.04
-        state.errorGlowSprite.material.color.setHex(state.status.running ? 0xffc247 : 0xff5a5f)
-        state.errorGlowSprite.material.opacity = state.status.running
-          ? 0.4 + faintPulse * 0.32
-          : 0.42
-        state.errorGlowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
+        state.errorGlowSprite.material.color.setHex(0xff5a5f)
+        state.errorGlowSprite.material.opacity = 0.42
+        state.errorGlowSprite.scale.set(baseScale, baseScale, 1)
       } else {
         state.errorGlowSprite.material.opacity = 0
       }
@@ -663,21 +639,17 @@ watch(isDark, () => {
   updateAllThemeColors()
 })
 
-async function updateSatelliteStates() {
-  try {
-    const statusByType = await getSatelliteModuleStatuses()
-
-    satelliteStates.forEach(state => {
-      state.status = statusByType.get(state.type) ?? {
-        queued: false,
-        running: false,
-        errorVisible: false,
-      }
-    })
-  } catch (error) {
-    logger.error(`更新状态失败: ${String(error)}`)
-  }
+function updateSatelliteStates(statusByType: ReadonlyMap<string, SatelliteModuleStatus>) {
+  satelliteStates.forEach(state => {
+    state.status = statusByType.get(state.type) ?? {
+      queued: false,
+      running: false,
+      lastFailed: false,
+    }
+  })
 }
+
+watch(satelliteStatuses, updateSatelliteStates)
 
 onMounted(async () => {
   isUnmounted = false
@@ -689,8 +661,7 @@ onMounted(async () => {
   animate()
   window.addEventListener('resize', handleResize)
 
-  updateSatelliteStates()
-  updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
+  updateSatelliteStates(satelliteStatuses.value)
 
   // 检查更新状态
   const version = import.meta.env.VITE_APP_VERSION || '1.0.0'

@@ -92,6 +92,13 @@ export interface WSTaskScriptInfoData {
   userList: WSTaskUserInfoData[]
 }
 
+export type WSTaskMode = 'AutoProxy' | 'ManualReview' | 'ScriptConfig'
+
+export interface WSTaskScriptIdentityData {
+  scriptId: string
+  scriptType: string
+}
+
 /** 任务信息快照 (type=task.info.updated) */
 export interface WSTaskInfoUpdatedData {
   task_info: WSTaskScriptInfoData[]
@@ -105,12 +112,16 @@ export interface WSTaskLogUpdatedData {
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
   result: string
+  outcome: 'success' | 'error' | 'cancelled'
+  error?: string | null
   task_info: WSTaskScriptInfoData[]
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
   taskId: string
+  mode: WSTaskMode
+  scripts: WSTaskScriptIdentityData[]
   queueId?: string | null
   taskName?: string | null
   taskType?: string | null

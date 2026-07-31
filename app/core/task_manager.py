@@ -38,6 +38,7 @@ from app.models.schema import (
     WSTaskInfoUpdatedData,
     WSTaskLogUpdatedData,
     WSTaskNoticeData,
+    WSTaskScriptIdentityData,
     WSPowerSignData,
 )
 from app.utils import get_logger
@@ -76,6 +77,27 @@ def _resolve_final_script(task_info: TaskItem) -> ScriptItem | None:
     if task_info.script_list:
         return task_info.script_list[-1]
     return None
+
+
+def _resolve_script_provider(script_uid: uuid.UUID):
+    """解析脚本对应的 provider，兼容插件脚本。"""
+    from app.models.plugin_script_config import PluginScriptConfig
+    from .script_types import build_legacy_fallback_provider_by_script_config
+
+    script_config = Config.ScriptConfig[script_uid]
+
+    if isinstance(script_config, PluginScriptConfig):
+        type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+        if type_key:
+            return script_type_registry.get(type_key)
+
+    try:
+        return script_type_registry.get_by_script_config(script_config)
+    except KeyError:
+        provider = build_legacy_fallback_provider_by_script_config(script_config)
+        if provider is not None:
+            return provider
+        raise
 
 
 class TaskInfo(TaskItem):
@@ -169,34 +191,35 @@ class TaskInfo(TaskItem):
 
 class Task(TaskExecuteBase):
 
-    def __init__(self, task_info: TaskInfo):
+    def __init__(
+        self,
+        task_info: TaskInfo,
+        script_identities: list[WSTaskScriptIdentityData],
+    ):
         super().__init__()
         self.task_info = task_info
+        self.script_identities = script_identities
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
 
     def _resolve_script_provider(self, script_uid: uuid.UUID):
         """解析脚本对应的 provider，兼容插件脚本。"""
-        from app.models.plugin_script_config import PluginScriptConfig
-        from .script_types import (
-            build_legacy_fallback_provider_by_script_config,
-        )
+        return _resolve_script_provider(script_uid)
 
-        script_config = Config.ScriptConfig[script_uid]
+    def _record_error(self, error: str) -> None:
+        """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
+        if self._exit_result == "success":
+            self._exit_result = "error"
+            self._exit_error = error
 
-        if isinstance(script_config, PluginScriptConfig):
-            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
-            if type_key:
-                return script_type_registry.get(type_key)
-
-        try:
-            return script_type_registry.get_by_script_config(script_config)
-        except KeyError:
-            provider = build_legacy_fallback_provider_by_script_config(script_config)
-            if provider is not None:
-                return provider
-            raise
+    def cancel(self) -> bool:
+        """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        cancelled = super().cancel()
+        if cancelled and self._exit_result == "success":
+            self._exit_result = "cancelled"
+            self._exit_error = "任务执行被取消"
+        return cancelled
 
     def _build_script_event_data(self) -> Dict[str, str | None]:
         """附加到 script.* 事件的任务上下文。"""
@@ -276,18 +299,8 @@ class Task(TaskExecuteBase):
 
     async def prepare(self):
 
-        # 初始化任务列表
-        script_ids = (
-            [
-                queue_item.get("Info", "ScriptId")
-                for queue_item in Config.QueueConfig[
-                    uuid.UUID(self.task_info.queue_id)
-                ].QueueItem.values()
-                if queue_item.get("Info", "ScriptId") != "-"
-            ]
-            if self.task_info.script_id is None
-            else [self.task_info.script_id]
-        )
+        # 使用创建任务时冻结的脚本标识，确保执行内容与 task.created/快照一致
+        script_ids = [identity.scriptId for identity in self.script_identities]
 
         self.task_info.script_list = [
             ScriptItem(
@@ -344,6 +357,7 @@ class Task(TaskExecuteBase):
 
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
+                self._record_error(f"脚本 {current_script_uid} 已被删除")
                 logger.info(f"跳过任务: {current_script_uid}, 对应脚本已被删除")
                 await Publisher.send(
                     id=self.task_info.task_id,
@@ -358,6 +372,10 @@ class Task(TaskExecuteBase):
             try:
                 provider = self._resolve_script_provider(current_script_uid)
             except KeyError:
+                script_item.status = "异常"
+                self._record_error(
+                    f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
+                )
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
                 )
@@ -372,6 +390,7 @@ class Task(TaskExecuteBase):
             if not capability.available:
                 script_item.status = "异常"
                 reason = capability.unavailable_reason or "脚本当前不可用"
+                self._record_error(reason)
                 logger.error(f"脚本类型 {provider.type_key} 当前不可用: {reason}")
                 await Publisher.send(
                     id=self.task_info.task_id,
@@ -382,6 +401,9 @@ class Task(TaskExecuteBase):
 
             if self.task_info.mode not in (capability.supported_modes or ()):
                 script_item.status = "异常"
+                self._record_error(
+                    f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
+                )
                 logger.error(
                     f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
                 )
@@ -428,8 +450,9 @@ class Task(TaskExecuteBase):
                 await self.spawn(task_item)
             except asyncio.CancelledError:
                 error_text = "CancelledError: 任务执行被取消"
-                self._exit_result = "cancelled"
-                self._exit_error = error_text
+                if self._exit_result == "success":
+                    self._exit_result = "cancelled"
+                    self._exit_error = error_text
                 await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_CANCELLED,
                     source="core.task_manager",
@@ -530,6 +553,8 @@ class Task(TaskExecuteBase):
             type=protocol.TASK_COMPLETED,
             data=WSTaskCompletedData(
                 result=self.task_info.result,
+                outcome=self._exit_result,
+                error=self._exit_error,
                 task_info=self.task_info.asdict,
             ),
         )
@@ -634,6 +659,7 @@ class _TaskManager:
                     scriptId=task_info.script_id,
                     userId=task_info.user_id,
                     stopping=bool(handler and handler.is_closing),
+                    scripts=handler.script_identities if handler else [],
                     task_info=task_info.asdict,
                     log=log,
                 )
@@ -714,6 +740,13 @@ class _TaskManager:
             else [script_uid] if script_uid is not None else []
         )
         await self._validate_task_capabilities(mode, target_script_ids)
+        script_identities = [
+            WSTaskScriptIdentityData(
+                scriptId=str(script_id),
+                scriptType=_resolve_script_provider(script_id).type_key,
+            )
+            for script_id in target_script_ids
+        ]
 
         if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
             raise RuntimeError(
@@ -729,19 +762,20 @@ class _TaskManager:
             user_id=str(user_uid) if user_uid else None,
             resume_from_script_id=resume_from_script_id,
         )
-        task_handler = Task(task_info)
+        task_handler = Task(task_info, script_identities)
 
-        if new_task_info:
-            await Publisher.send(
-                id=protocol.ID_TASK_MANAGER,
-                type=protocol.TASK_CREATED,
-                data=WSTaskCreatedData(
-                    taskId=str(task_uid),
-                    queueId=new_task_info.get("queueId"),
-                    taskName=new_task_info.get("taskName"),
-                    taskType=new_task_info.get("taskType"),
-                ),
-            )
+        await Publisher.send(
+            id=protocol.ID_TASK_MANAGER,
+            type=protocol.TASK_CREATED,
+            data=WSTaskCreatedData(
+                taskId=str(task_uid),
+                mode=mode,
+                scripts=script_identities,
+                queueId=str(queue_id) if queue_id else None,
+                taskName=new_task_info.get("taskName") if new_task_info else None,
+                taskType=new_task_info.get("taskType") if new_task_info else None,
+            ),
+        )
         self.task_info[task_uid] = task_info
         self.task_handler[task_uid] = task_handler
         try:
