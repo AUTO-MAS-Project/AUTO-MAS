@@ -2039,6 +2039,13 @@ class WSTaskLogUpdatedData(BaseModel):
     log: str = Field(default="", description="当前脚本日志")
 
 
+class WSTaskScriptIdentityData(BaseModel):
+    """任务关联的脚本静态标识。"""
+
+    scriptId: str = Field(..., description="脚本 ID")
+    scriptType: str = Field(..., description="脚本类型键")
+
+
 class TaskRuntimeSnapshotItem(BaseModel):
     """一个运行中任务的 HTTP 初始快照。"""
 
@@ -2050,6 +2057,9 @@ class TaskRuntimeSnapshotItem(BaseModel):
     scriptId: Optional[str] = Field(default=None, description="脚本 ID")
     userId: Optional[str] = Field(default=None, description="用户 ID")
     stopping: bool = Field(default=False, description="任务是否正在停止")
+    scripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="任务关联的脚本静态标识"
+    )
     task_info: List[WSTaskScriptInfoData] = Field(
         default_factory=list, description="任务脚本与用户状态"
     )
@@ -2057,15 +2067,22 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
 
 class TaskRuntimeSnapshot(BaseModel):
-    """运行中任务 HTTP 初始快照。"""
+    """任务运行与定时队列 HTTP 初始快照。"""
 
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
+    scheduledScripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="已启用定时队列关联的脚本静态标识"
+    )
 
 
 class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
     result: str = Field(..., description="任务结果描述")
+    outcome: Literal["success", "error", "cancelled"] = Field(
+        ..., description="机器可读的任务结果"
+    )
+    error: Optional[str] = Field(default=None, description="任务错误信息")
     task_info: List[WSTaskScriptInfoData] = Field(
         ..., description="任务信息全量快照"
     )
@@ -2075,6 +2092,12 @@ class WSTaskCreatedData(BaseModel):
     """新任务创建通知数据 (id=TaskManager, type=task.created)"""
 
     taskId: str = Field(..., description="新任务ID")
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+        ..., description="任务模式"
+    )
+    scripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="任务关联的脚本静态标识"
+    )
     queueId: Optional[str] = Field(default=None, description="所属调度队列ID")
     taskName: Optional[str] = Field(default=None, description="任务名称")
     taskType: Optional[str] = Field(default=None, description="任务类型")
