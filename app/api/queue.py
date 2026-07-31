@@ -20,14 +20,135 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""调度队列 API：请求/响应字段基于 ``QueueEntry`` 等，直接操作 ``Config.queues``。"""
+
+from __future__ import annotations
+
+from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
 
-from app.core import Config
-from app.models.schema import *
 from app.api.ws_command import ws_command
+from app.config import CollectionOrderItem
+from app.config.errors import ConfigAggregateError
+from app.core import Config
+from app.models.config import QueueEntry, QueueItemEntry, TimeSetEntry
+from app.models.schema import OutBase
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
+
+
+# ==================== 字段（基于 ConfigEntry） ====================
+
+
+class QueueCreateOut(OutBase):
+    queueId: str = Field(default="", description="新队列 ID")
+    data: QueueEntry = Field(default_factory=QueueEntry, description="队列配置")
+
+
+class QueueGetIn(BaseModel):
+    queueId: Optional[str] = Field(
+        default=None, description="队列 ID；缺省返回全部"
+    )
+
+
+class QueueGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(
+        default_factory=list, description="队列顺序"
+    )
+    data: dict[str, QueueEntry] = Field(
+        default_factory=dict, description="队列数据，key 为 uid"
+    )
+
+
+class QueueUpdateIn(BaseModel):
+    queueId: str = Field(..., description="队列 ID")
+    data: QueueEntry = Field(..., description="队列补丁（Wire 形状）")
+
+
+class QueueDeleteIn(BaseModel):
+    queueId: str = Field(..., description="队列 ID")
+
+
+class QueueReorderIn(BaseModel):
+    indexList: list[str] = Field(..., description="按新顺序排列的队列 UID 列表")
+
+
+class QueueSetInBase(BaseModel):
+    queueId: str = Field(..., description="所属队列 ID")
+
+
+class TimeSetGetIn(QueueSetInBase):
+    timeSetId: Optional[str] = Field(
+        default=None, description="定时项 ID；缺省返回全部"
+    )
+
+
+class TimeSetGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(
+        default_factory=list, description="定时项顺序"
+    )
+    data: dict[str, TimeSetEntry] = Field(
+        default_factory=dict, description="定时项数据，key 为 uid"
+    )
+
+
+class TimeSetCreateOut(OutBase):
+    timeSetId: str = Field(default="", description="新定时项 ID")
+    data: TimeSetEntry = Field(default_factory=TimeSetEntry, description="定时项配置")
+
+
+class TimeSetUpdateIn(QueueSetInBase):
+    timeSetId: str = Field(..., description="定时项 ID")
+    data: TimeSetEntry = Field(..., description="定时项补丁（Wire 形状）")
+
+
+class TimeSetDeleteIn(QueueSetInBase):
+    timeSetId: str = Field(..., description="定时项 ID")
+
+
+class TimeSetReorderIn(QueueSetInBase):
+    indexList: list[str] = Field(..., description="按新顺序排列的定时项 UID 列表")
+
+
+class QueueItemGetIn(QueueSetInBase):
+    queueItemId: Optional[str] = Field(
+        default=None, description="队列项 ID；缺省返回全部"
+    )
+
+
+class QueueItemGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(
+        default_factory=list, description="队列项顺序"
+    )
+    data: dict[str, QueueItemEntry] = Field(
+        default_factory=dict, description="队列项数据，key 为 uid"
+    )
+
+
+class QueueItemCreateOut(OutBase):
+    queueItemId: str = Field(default="", description="新队列项 ID")
+    data: QueueItemEntry = Field(
+        default_factory=QueueItemEntry, description="队列项配置"
+    )
+
+
+class QueueItemUpdateIn(QueueSetInBase):
+    queueItemId: str = Field(..., description="队列项 ID")
+    data: QueueItemEntry = Field(..., description="队列项补丁（Wire 形状）")
+
+
+class QueueItemDeleteIn(QueueSetInBase):
+    queueItemId: str = Field(..., description="队列项 ID")
+
+
+class QueueItemReorderIn(QueueSetInBase):
+    indexList: list[str] = Field(..., description="按新顺序排列的队列项 UID 列表")
+
+
+# ==================== 队列 ====================
 
 
 @ws_command("queue.add")
@@ -39,19 +160,19 @@ router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
     status_code=200,
 )
 async def add_queue() -> QueueCreateOut:
-
     try:
-        uid, config = await Config.add_queue()
-        data = QueueConfig(**(await config.toDict()))
+        col = Config.queues
+        uid = col.add(QueueEntry)
+        await col.commit()
+        return QueueCreateOut(queueId=str(uid), data=col[uid])
     except Exception as e:
         return QueueCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             queueId="",
-            data=QueueConfig(**{}),
+            data=QueueEntry(),
         )
-    return QueueCreateOut(queueId=str(uid), data=data)
 
 
 @ws_command("queue.get", params=QueueGetIn)
@@ -62,21 +183,25 @@ async def add_queue() -> QueueCreateOut:
     response_model=QueueGetOut,
     status_code=200,
 )
-async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
-
+async def get_queues(body: QueueGetIn = Body(...)) -> QueueGetOut:
     try:
-        index, config = await Config.get_queue(queue.queueId)
-        index = [QueueIndexItem(**_) for _ in index]
-        data = {uid: QueueConfig(**cfg) for uid, cfg in config.items()}
+        col = Config.queues
+        uids = [UUID(body.queueId)] if body.queueId else list(col.keys())
+        return QueueGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
+                for uid in uids
+            ],
+            data={str(uid): col[uid] for uid in uids},
+        )
     except Exception as e:
         return QueueGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            index=[],
+            order=[],
             data={},
         )
-    return QueueGetOut(index=index, data=data)
 
 
 @router.post(
@@ -86,12 +211,11 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
-
+async def update_queue(body: QueueUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_queue(
-            queue.queueId, queue.data.model_dump(exclude_unset=True)
-        )
+        await Config.queues[UUID(body.queueId)].update(body.data)
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -106,10 +230,11 @@ async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
-
+async def delete_queue(body: QueueDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_queue(queue.queueId)
+        col = Config.queues
+        col.remove(body.queueId)
+        await col.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -124,15 +249,19 @@ async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
-
+async def reorder_queue(body: QueueReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_queue(script.indexList)
+        col = Config.queues
+        col.set_order(list(map(UUID, body.indexList)))
+        await col.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+# ==================== 定时项 ====================
 
 
 @router.post(
@@ -142,21 +271,25 @@ async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
     response_model=TimeSetGetOut,
     status_code=200,
 )
-async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
-
+async def get_time_set(body: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
     try:
-        index, data = await Config.get_time_set(time.queueId, time.timeSetId)
-        index = [TimeSetIndexItem(**_) for _ in index]
-        data = {uid: TimeSet(**cfg) for uid, cfg in data.items()}
+        col = Config.queues[UUID(body.queueId)].time_sets
+        uids = [UUID(body.timeSetId)] if body.timeSetId else list(col.keys())
+        return TimeSetGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
+                for uid in uids
+            ],
+            data={str(uid): col[uid] for uid in uids},
+        )
     except Exception as e:
         return TimeSetGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            index=[],
+            order=[],
             data={},
         )
-    return TimeSetGetOut(index=index, data=data)
 
 
 @router.post(
@@ -166,11 +299,20 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
     response_model=TimeSetCreateOut,
     status_code=200,
 )
-async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
-
-    uid, config = await Config.add_time_set(time.queueId)
-    data = TimeSet(**(await config.toDict()))
-    return TimeSetCreateOut(timeSetId=str(uid), data=data)
+async def add_time_set(body: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
+    try:
+        col = Config.queues[UUID(body.queueId)].time_sets
+        uid = col.add(TimeSetEntry)
+        await col.commit()
+        return TimeSetCreateOut(timeSetId=str(uid), data=col[uid])
+    except Exception as e:
+        return TimeSetCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            timeSetId="",
+            data=TimeSetEntry(),
+        )
 
 
 @router.post(
@@ -180,12 +322,13 @@ async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
-
+async def update_time_set(body: TimeSetUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_time_set(
-            time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
+        await Config.queues[UUID(body.queueId)].time_sets[UUID(body.timeSetId)].update(
+            body.data
         )
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -200,10 +343,11 @@ async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
-
+async def delete_time_set(body: TimeSetDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_time_set(time.queueId, time.timeSetId)
+        col = Config.queues[UUID(body.queueId)].time_sets
+        col.remove(body.timeSetId)
+        await col.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -218,15 +362,19 @@ async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
-
+async def reorder_time_set(body: TimeSetReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_time_set(time.queueId, time.indexList)
+        col = Config.queues[UUID(body.queueId)].time_sets
+        col.set_order(list(map(UUID, body.indexList)))
+        await col.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+# ==================== 队列项 ====================
 
 
 @router.post(
@@ -236,21 +384,25 @@ async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
     response_model=QueueItemGetOut,
     status_code=200,
 )
-async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
-
+async def get_item(body: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
     try:
-        index, data = await Config.get_queue_item(item.queueId, item.queueItemId)
-        index = [QueueItemIndexItem(**_) for _ in index]
-        data = {uid: QueueItem(**cfg) for uid, cfg in data.items()}
+        col = Config.queues[UUID(body.queueId)].items
+        uids = [UUID(body.queueItemId)] if body.queueItemId else list(col.keys())
+        return QueueItemGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
+                for uid in uids
+            ],
+            data={str(uid): col[uid] for uid in uids},
+        )
     except Exception as e:
         return QueueItemGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            index=[],
+            order=[],
             data={},
         )
-    return QueueItemGetOut(index=index, data=data)
 
 
 @router.post(
@@ -260,11 +412,20 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
     response_model=QueueItemCreateOut,
     status_code=200,
 )
-async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
-
-    uid, config = await Config.add_queue_item(item.queueId)
-    data = QueueItem(**(await config.toDict()))
-    return QueueItemCreateOut(queueItemId=str(uid), data=data)
+async def add_item(body: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
+    try:
+        col = Config.queues[UUID(body.queueId)].items
+        uid = col.add(QueueItemEntry)
+        await col.commit()
+        return QueueItemCreateOut(queueItemId=str(uid), data=col[uid])
+    except Exception as e:
+        return QueueItemCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            queueItemId="",
+            data=QueueItemEntry(),
+        )
 
 
 @router.post(
@@ -274,12 +435,13 @@ async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
-
+async def update_item(body: QueueItemUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_queue_item(
-            item.queueId, item.queueItemId, item.data.model_dump(exclude_unset=True)
+        await Config.queues[UUID(body.queueId)].items[UUID(body.queueItemId)].update(
+            body.data
         )
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -294,10 +456,11 @@ async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
-
+async def delete_item(body: QueueItemDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_queue_item(item.queueId, item.queueItemId)
+        col = Config.queues[UUID(body.queueId)].items
+        col.remove(body.queueItemId)
+        await col.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -312,10 +475,11 @@ async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def reorder_item(item: QueueItemReorderIn = Body(...)) -> OutBase:
-
+async def reorder_item(body: QueueItemReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_queue_item(item.queueId, item.indexList)
+        col = Config.queues[UUID(body.queueId)].items
+        col.set_order(list(map(UUID, body.indexList)))
+        await col.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

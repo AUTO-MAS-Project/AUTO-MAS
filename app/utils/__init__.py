@@ -24,6 +24,7 @@
 from .constants import *
 from .logger import get_logger
 from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
+from .io import read_toml, write_toml
 
 _LAZY_EXPORTS = {
     "ImageUtils": (".ImageUtils", "ImageUtils"),
@@ -65,4 +66,6 @@ __all__ = [
     "dpapi_encrypt",
     "dpapi_decrypt",
     "sanitize_log_message",
+    "read_toml",
+    "write_toml",
 ]

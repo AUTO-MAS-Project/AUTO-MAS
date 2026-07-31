@@ -45,7 +45,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 9. For finite variants, prefer a small dict/registry mapping instead of many near-identical branches.
 10. Keep frequently edited task-configuration logic visible in the owning flow with a short comment instead of hiding it behind one-off helpers.
 11. Do not copy another script/domain's special-case logs, timeout exemptions, ignore lists, or workaround branches into a new module until that behavior is confirmed locally.
-12. If a new capability is used only once, default to an inline block or local helper; split into `builder`, `loader`, or extra services only after real reuse or boundary pressure appears.
+12. If a new capability is used only once, keep it inline at the call site — do not invent a helper, `builder`, or `loader`. Prefer light duplication over a one-call wrapper. Extract only when the same non-trivial logic is reused in multiple places and extraction clearly reduces maintenance cost.
 13. Trust existing validators, config containers, and task bases when they already guarantee an invariant; do not add a second layer of fallback or correction.
 14. For new Python-heavy flows, keep signatures and call sites compatible with at least basic static type checking.
 15. Prefer deleting redundant imports, waits, and wrappers over preserving "explicit" but noisy scaffolding.
@@ -67,7 +67,7 @@ Protect these comments especially:
 
 ## Avoid
 1. Do not introduce framework-heavy abstractions or generic factories unless the surrounding module already uses them.
-2. Do not hide the main workflow inside too many helper layers.
+2. Do not hide the main workflow inside too many helper layers; do not add thin wrappers that only forward to another local function.
 3. Do not switch comment or logging language inconsistently inside a file.
 4. Do not turn a small fix into a broad refactor for stylistic purity.
 5. Do not confuse "explicit" with "verbose".

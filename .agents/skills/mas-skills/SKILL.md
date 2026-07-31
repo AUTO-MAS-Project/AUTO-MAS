@@ -52,6 +52,7 @@ Apply these constraints before selecting or combining sub-skills.
 6. For frontend work, load `mas-frontend-standards`; for UI or user-facing component behavior, also load `mas-frontend-ui`.
 7. When local patterns and generalized guidance differ, prefer concrete maintainer review comments and fold them back into the selected sub-skills.
 8. Before creating any commit, run `yarn format` and then `yarn lint` from `frontend`. Review and include the formatter changes; do not commit while either command fails.
+9. **减少调用层级，能内联就内联（强制）**：仅使用一次的逻辑禁止抽函数/方法；禁止为一两行逻辑或「单次调用再包一层」的薄 helper（如 `_update_x` 只转调 `_apply_x`）。优先在调用点写清楚；允许为可读性做轻量重复。仅当同一非平凡逻辑在多处复用、且抽出后显著降低维护成本时才抽函数。函数过长时用功能块注释分段，不要为分段再抽一层。
 
 ## Routing Rules
 Choose sub-skills by task intent.
@@ -115,3 +116,4 @@ When using this hub:
 6. Relevant project rules were considered for API, config, script task, frontend task, and contribution-style changes.
 7. Contribution-process details were not duplicated from the docs site except as links or brief reminders.
 8. Before every commit, `yarn format` and `yarn lint` passed from the `frontend` directory, and formatter changes were reviewed before staging.
+9. No single-use helpers or thin forwarder wrappers were introduced; call sites stay readable without extra indirection.

@@ -19,11 +19,12 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 1. Keep a function focused on one decision unit or one orchestration step.
 2. Split when a function mixes domain decision and integration IO.
 3. Split when one function serves unrelated call paths.
-4. Keep thin wrappers thin; move real logic only when it creates real reuse.
-5. Do not extract a helper for logic that is easier to understand inline at the call site.
-6. For frequently edited task-configuration code, keep the mutation block in the owning orchestration function with a short purpose comment and blank lines around it.
-7. Do not split one linear task flow into `builder`/`loader` helpers unless the split removes real duplication or clarifies a true boundary.
-8. In AUTO-MAS task flows, keep config import/export, log monitoring, and end-state judgment as explicit orchestration steps; do not hide product-critical run criteria behind vague wrappers.
+4. **单次使用禁止封装**：逻辑只在一处调用时写在调用点，不要抽 `_helper` / `_apply_*` / `_update_*`。
+5. **禁止薄转发层**：不要写只转调另一个本地函数的包装（减少调用层级）；能内联就内联，允许轻量重复。
+6. 仅当同一非平凡逻辑多处复用、抽出后显著降低维护成本时才抽函数；函数过长用功能块注释分段，不为分段再抽一层。
+7. For frequently edited task-configuration code, keep the mutation block in the owning orchestration function with a short purpose comment and blank lines around it.
+8. Do not split one linear task flow into `builder`/`loader` helpers unless the split removes real duplication or clarifies a true boundary.
+9. In AUTO-MAS task flows, keep config import/export, log monitoring, and end-state judgment as explicit orchestration steps; do not hide product-critical run criteria behind vague wrappers.
 
 ## Signatures And Returns
 1. Use explicit named parameters for business-critical options.

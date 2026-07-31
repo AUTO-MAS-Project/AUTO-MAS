@@ -27,6 +27,7 @@ import app.utils  # noqa: F401
 
 from .config import Config
 from .emulator_manager import EmulatorManager
+from .history import HistoryStore, history_store
 from .page_registry import (
     PageDeclaration,
     PageFacade,
@@ -53,6 +54,8 @@ def __getattr__(name: str):
 
 __all__ = [
     "Config",
+    "HistoryStore",
+    "history_store",
     "MainTimer",
     "TaskManager",
     "EmulatorManager",

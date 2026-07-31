@@ -203,7 +203,9 @@ def main():
                     logger.info("MCP 服务未启用，跳过路由挂载")
 
                 await Config.get_stage()
-                await Config.clean_old_history()
+                from app.core.history import history_store
+
+                history_store.clean()
 
                 # ArknightWin32 导入链含 pyautogui/cv2/numpy (约 700ms 重 CPU)，
                 # 放入线程导入，避免阻塞事件循环影响 API 响应

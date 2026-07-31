@@ -34,6 +34,8 @@ dependencies = [
     "fastapi-mcp==0.4.0",
     "json5==0.14.0",
     "watchdog==6.0.0",
+    "blinker==1.9.0",
+    "tomli-w==1.2.0",
 ]
 
 [dependency-groups]

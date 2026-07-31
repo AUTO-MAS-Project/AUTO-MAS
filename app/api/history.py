@@ -20,15 +20,65 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""历史记录 API：直接调用 ``history_store``。"""
 
-from datetime import datetime
-from pathlib import Path
+from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, Optional
+
 from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
 
-from app.core import Config
-from app.models.schema import *
+from app.core.history import history_store
+from app.models.schema import OutBase
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
+
+
+class HistoryIndexItem(BaseModel):
+    date: str = Field(..., description="日期")
+    status: Literal["DONE", "ERROR"] = Field(..., description="状态")
+    jsonFile: str = Field(..., description="对应JSON文件")
+
+
+class HistoryData(BaseModel):
+    index: Optional[List[HistoryIndexItem]] = Field(
+        default=None, description="历史记录索引列表"
+    )
+    data: Dict[str, Any] = Field(
+        default_factory=dict, description="合并后的统计数据（2/3 层数字树）"
+    )
+    error_info: Optional[Dict[str, str]] = Field(
+        default=None, description="报错信息, key为时间戳, value为错误描述"
+    )
+    log_content: Optional[str] = Field(
+        default=None, description="日志内容, 仅在提取单条历史记录数据时返回"
+    )
+    status: Optional[str] = Field(default=None, description="单条记录状态")
+    message: Optional[str] = Field(default=None, description="单条记录消息")
+    type_key: Optional[str] = Field(default=None, description="脚本类型键")
+    username: Optional[str] = Field(default=None, description="用户名")
+
+
+class HistorySearchIn(BaseModel):
+    mode: Literal["DAILY", "WEEKLY", "MONTHLY"] = Field(..., description="合并模式")
+    start_date: str = Field(..., description="开始日期, 格式YYYY-MM-DD")
+    end_date: str = Field(..., description="结束日期, 格式YYYY-MM-DD")
+
+
+class HistorySearchOut(OutBase):
+    data: Dict[str, Dict[str, HistoryData]] = Field(
+        default_factory=dict,
+        description="历史记录索引, 格式为 { '日期': { '用户名': HistoryData } }",
+    )
+
+
+class HistoryDataGetIn(BaseModel):
+    jsonPath: str = Field(..., description="需要提取数据的历史记录JSON文件")
+
+
+class HistoryDataGetOut(OutBase):
+    data: HistoryData = Field(default_factory=HistoryData, description="历史记录数据")
 
 
 @router.post(
@@ -39,22 +89,19 @@ router = APIRouter(prefix="/api/history", tags=["历史记录"])
     status_code=200,
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut:
-
     try:
-        data = await Config.search_history(
-            history.mode,
-            datetime.strptime(history.start_date, "%Y-%m-%d").date(),
-            datetime.strptime(history.end_date, "%Y-%m-%d").date(),
+        raw = history_store.search(
+            start_date=history.start_date,
+            end_date=history.end_date,
+            mode=history.mode,
         )
-        for date, users in data.items():
-            for user, records in users.items():
-                record = await Config.merge_statistic_info(records)
-                # 安全检查：确保 index 字段存在
-                if "index" not in record:
-                    record["index"] = []
-                record["index"] = [HistoryIndexItem(**_) for _ in record["index"]]
-                record = HistoryData(**record)
-                data[date][user] = record
+        data = {
+            date_key: {
+                username: HistoryData.model_validate(info)
+                for username, info in users.items()
+            }
+            for date_key, users in raw.items()
+        }
     except Exception as e:
         return HistorySearchOut(
             code=500,
@@ -73,18 +120,14 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     status_code=200,
 )
 async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryDataGetOut:
-
     try:
-        path = Path(history.jsonPath)
-        data = await Config.merge_statistic_info([path])
-        data.pop("index", None)
-        data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
-        data = HistoryData(**data)
+        detail = history_store.get_detail(history.jsonPath)
+        data = HistoryData.model_validate(detail)
     except Exception as e:
         return HistoryDataGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data=HistoryData(**{}),
+            data=HistoryData(),
         )
     return HistoryDataGetOut(data=data)
