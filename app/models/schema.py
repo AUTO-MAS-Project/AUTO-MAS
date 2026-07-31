@@ -769,13 +769,6 @@ class SimpleConfig_Script(BaseModel):
     TrackProcessCmdline: Optional[str] = Field(
         default=None, description="追踪进程启动命令行参数"
     )
-    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
-    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
-    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
-    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
-    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
-    SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
-    ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
 
 
 class SimpleConfig_Game(GeneralConfig_Game):

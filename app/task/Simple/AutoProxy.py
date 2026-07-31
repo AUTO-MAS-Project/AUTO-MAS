@@ -18,10 +18,8 @@
 
 
 import asyncio
-import re
 import shlex
 import uuid
-from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -35,58 +33,16 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task, push_notification
 from app.utils import (
-    LogMonitor,
     ProcessInfo,
     ProcessManager,
     get_logger,
     is_process_running,
-    strptime,
 )
 from app.utils.ProcessManager import match_process
 from app.utils.constants import UTC4
 
 
 logger = get_logger("简易脚本自动代理")
-
-_PREFIX_SENTINEL = "******"
-_STRPTIME_DIRECTIVES: dict[str, str] = {
-    "%Y": r"\d{4}",
-    "%y": r"\d{2}",
-    "%m": r"\d{1,2}",
-    "%d": r"\d{1,2}",
-    "%H": r"\d{1,2}",
-    "%I": r"\d{1,2}",
-    "%M": r"\d{1,2}",
-    "%S": r"\d{1,2}",
-    "%f": r"\d+",
-    "%j": r"\d{1,3}",
-    "%U": r"\d{1,2}",
-    "%W": r"\d{1,2}",
-    "%w": r"\d",
-    "%A": r"\w+",
-    "%a": r"\w+",
-    "%B": r"\w+",
-    "%b": r"\w+",
-    "%p": r"[APap][Mm]",
-    "%%": r"%",
-}
-
-
-def _format_to_prefix_regex(fmt: str) -> re.Pattern[str]:
-    """将 strptime 格式转换为文件名前缀正则"""
-
-    parts: list[str] = []
-    index = 0
-    while index < len(fmt):
-        if fmt[index] == "%" and index + 1 < len(fmt):
-            directive = fmt[index : index + 2]
-            if directive in _STRPTIME_DIRECTIVES:
-                parts.append(_STRPTIME_DIRECTIVES[directive])
-                index += 2
-                continue
-        parts.append(re.escape(fmt[index]))
-        index += 1
-    return re.compile("^" + "".join(parts))
 
 
 def _matching_process_ids(target: ProcessInfo) -> set[int]:
@@ -124,40 +80,14 @@ class SimpleAutoProxyTask(TaskExecuteBase):
         self.cur_user_config: SimpleUserConfig = self.user_config[self.cur_user_uid]
 
         self.process_manager = ProcessManager()
-        self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.run_start_time = datetime.now()
-        self.log_start_time = datetime.now()
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
         self.script_arguments = shlex.split(
             self.script_config.get("Script", "Arguments")
         )
         self.target_process_info = self._build_target_process_info()
         self.ignored_target_pids: set[int] = set()
-        self.log_path = Path(self.script_config.get("Script", "LogPath"))
-        self.log_enabled = bool(self.script_config.get("Script", "LogPath"))
-        self.log_format = self.script_config.get("Script", "LogPathFormat")
-        self.log_use_prefix = bool(self.log_format) and self.log_format.endswith(
-            _PREFIX_SENTINEL
-        )
-        self.success_logs = [
-            item.strip()
-            for item in self.script_config.get("Script", "SuccessLog").split("|")
-            if item.strip()
-        ]
-        self.error_logs = [
-            item.strip()
-            for item in self.script_config.get("Script", "ErrorLog").split("|")
-            if item.strip()
-        ]
-        self.log_monitor = LogMonitor(
-            (
-                self.script_config.get("Script", "LogTimeStart") - 1,
-                self.script_config.get("Script", "LogTimeEnd"),
-            ),
-            self.script_config.get("Script", "LogTimeFormat"),
-            self.check_log,
-        )
         self.cur_user_log = LogRecord()
         self.run_book = False
         self.check_result = "-"
@@ -228,8 +158,7 @@ class SimpleAutoProxyTask(TaskExecuteBase):
                 f"{attempt + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
             )
             self.run_start_time = datetime.now()
-            self.log_start_time = self.run_start_time
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
+            self.cur_user_item.log_record[self.run_start_time] = self.cur_user_log = (
                 LogRecord()
             )
 
@@ -244,9 +173,8 @@ class SimpleAutoProxyTask(TaskExecuteBase):
                 await self._start_script()
                 await self._wait_for_run_result()
             except Exception as e:
-                await self._record_run_error("启动或监控脚本失败", e)
+                await self._record_run_error("启动或监控进程失败", e)
             finally:
-                await self.log_monitor.stop()
                 await self._cleanup_managed_processes()
 
             if self.cur_user_log.status == "Success!":
@@ -317,7 +245,6 @@ class SimpleAutoProxyTask(TaskExecuteBase):
             if self.target_process_info is not None
             else set()
         )
-        self.wait_event.clear()
         self.script_info.log = "正在启动简易脚本"
         logger.info(f"运行脚本任务: {self.script_path}, 参数: {self.script_arguments}")
         await self.process_manager.open_process(
@@ -327,161 +254,46 @@ class SimpleAutoProxyTask(TaskExecuteBase):
             ignored_target_pids=self.ignored_target_pids,
         )
 
-        if self.log_enabled:
-            target_log_path = await self._wait_for_log_file()
-            await self.log_monitor.start_monitor_file(
-                target_log_path,
-                self.log_start_time,
-            )
-
-    async def _wait_for_log_file(self) -> Path:
-        """按 General 文件名规则等待本次运行的日志文件"""
-
-        self.script_info.log = "正在等待脚本日志文件生成"
-        deadline = asyncio.get_running_loop().time() + 60
-
-        if self.log_use_prefix:
-            prefix_format = self.log_format[: -len(_PREFIX_SENTINEL)]
-            pattern = _format_to_prefix_regex(prefix_format)
-            target_suffix: int | None = None
-
-            while asyncio.get_running_loop().time() < deadline:
-                current_suffix = 0
-                current_file: Path | None = None
-                if self.log_path.parent.exists():
-                    for log_file in self.log_path.parent.iterdir():
-                        if not log_file.is_file():
-                            continue
-                        match = pattern.match(log_file.name)
-                        if not match:
-                            continue
-                        try:
-                            file_time = strptime(
-                                match.group(0), prefix_format, self.log_start_time
-                            )
-                        except ValueError:
-                            continue
-                        if file_time.date() != self.log_start_time.date():
-                            continue
-                        tail = log_file.name[match.end() :]
-                        number_match = re.search(r"(\d+)\s*$", tail.rsplit(".", 1)[0])
-                        suffix = int(number_match.group(1)) if number_match else 0
-                        if suffix > current_suffix:
-                            current_suffix = suffix
-                            current_file = log_file
-
-                if target_suffix is None:
-                    target_suffix = current_suffix + 1
-                if current_suffix >= target_suffix and current_file is not None:
-                    logger.success(f"成功定位到日志文件: {current_file}")
-                    return current_file
-                await asyncio.sleep(1)
-
-            raise RuntimeError("未找到日志文件")
-
-        if not self.log_format:
-            while asyncio.get_running_loop().time() < deadline:
-                if self.log_path.is_file():
-                    return self.log_path
-                await asyncio.sleep(1)
-            raise RuntimeError("未找到日志文件")
-
-        log_format = self.log_format
-        with suppress(ValueError):
-            datetime.strptime(self.log_path.stem, log_format)
-            log_format = f"{log_format}{self.log_path.suffix}"
-
-        while asyncio.get_running_loop().time() < deadline:
-            if self.log_path.parent.exists():
-                for log_file in self.log_path.parent.iterdir():
-                    if not log_file.is_file():
-                        continue
-                    with suppress(ValueError):
-                        if (
-                            strptime(log_file.name, log_format, self.log_start_time)
-                            >= self.log_start_time
-                        ):
-                            logger.success(f"成功定位到日志文件: {log_file}")
-                            return log_file
-            await asyncio.sleep(1)
-
-        raise RuntimeError("未找到日志文件")
-
     async def _wait_for_run_result(self) -> None:
-        """等待日志判定或进程退出，并统一应用总时长限制"""
-
-        process_wait_task = asyncio.create_task(self.process_manager.wait())
-        wait_tasks: set[asyncio.Task] = {process_wait_task}
-        log_wait_task: asyncio.Task | None = None
-        if self.log_enabled:
-            log_wait_task = asyncio.create_task(self.wait_event.wait())
-            wait_tasks.add(log_wait_task)
+        """等待进程退出，并应用单次总时长限制"""
 
         run_time_limit = self.script_config.get("Run", "RunTimeLimit")
         timeout = run_time_limit * 60 if run_time_limit > 0 else None
         elapsed = (datetime.now() - self.run_start_time).total_seconds()
         remaining_timeout = max(0, timeout - elapsed) if timeout is not None else None
 
-        done, pending = await asyncio.wait(
-            wait_tasks,
-            timeout=remaining_timeout,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
-
-        if not done:
-            self.cur_user_log.status = "脚本进程超时"
-            return
-
-        if log_wait_task is not None and log_wait_task in done:
-            return
-
-        return_code = process_wait_task.result()
-        if self.log_enabled:
-            await self.check_log(self.log_monitor.log_contents, datetime.now())
-            return
-
-        self.cur_user_log.content = []
-        self.cur_user_log.status = (
-            "Success!"
-            if return_code in (0, None)
-            else f"脚本进程异常退出: {return_code}"
-        )
-
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """根据日志关键字和进程状态判断任务结果"""
-
-        del latest_time
-        log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
-
-        for success_sign in self.success_logs:
-            if success_sign in log:
-                self.cur_user_log.status = "Success!"
-                break
-        else:
-            for error_sign in self.error_logs:
-                if error_sign in log:
-                    self.cur_user_log.status = f"异常日志: {error_sign}"
-                    break
+        try:
+            if remaining_timeout is None:
+                return_code = await self.process_manager.wait()
             else:
-                if await self.process_manager.is_running():
-                    self.cur_user_log.status = "简易脚本正常运行中"
-                elif self.success_logs:
-                    self.cur_user_log.status = "脚本在完成任务前退出"
-                else:
-                    self.cur_user_log.status = "Success!"
+                return_code = await asyncio.wait_for(
+                    self.process_manager.wait(),
+                    timeout=remaining_timeout,
+                )
+        except asyncio.TimeoutError:
+            self.cur_user_log.status = "脚本进程超时"
+            self.cur_user_log.content = ["脚本进程运行超时"]
+            self.script_info.log = self.cur_user_log.content[0]
+            return
 
-        if self.cur_user_log.status != "简易脚本正常运行中":
-            logger.info(f"简易脚本任务结果: {self.cur_user_log.status}")
-            self.wait_event.set()
+        if return_code == 0:
+            result = "脚本进程正常退出，退出码: 0"
+            self.cur_user_log.status = "Success!"
+        elif return_code is None:
+            result = "目标进程已退出，未获取到退出码"
+            self.cur_user_log.status = "Success!"
+        else:
+            result = f"脚本进程异常退出，退出码: {return_code}"
+            self.cur_user_log.status = f"脚本进程异常退出: {return_code}"
+
+        self.cur_user_log.content = [result]
+        self.script_info.log = result
+        logger.info(f"简易脚本任务结果: {result}")
 
     async def _record_run_error(
         self, error_message: str, error: Exception | None = None
     ) -> None:
-        """记录启动或监控阶段错误"""
+        """记录启动或进程监控阶段错误"""
 
         if error is None:
             logger.error(f"用户 {self.cur_user_uid} - {error_message}")
@@ -490,7 +302,7 @@ class SimpleAutoProxyTask(TaskExecuteBase):
             logger.exception(f"用户 {self.cur_user_uid} - {error_message}: {error}")
             message = f"{error_message}: {error}"
 
-        self.cur_user_log.content = [f"{message}, 无日志记录"]
+        self.cur_user_log.content = [message]
         self.cur_user_log.status = error_message
         await Config.send_websocket_message(
             id=self.task_info.task_id,
@@ -526,9 +338,8 @@ class SimpleAutoProxyTask(TaskExecuteBase):
             logger.exception(f"关闭游戏/模拟器失败: {e}")
 
     async def final_task(self) -> None:
-        """保存日志、统计与用户执行状态"""
+        """保存运行结果、统计与用户执行状态"""
 
-        await self.log_monitor.stop()
         await self._cleanup_managed_processes()
 
         if self.check_result != "Pass":
@@ -548,10 +359,8 @@ class SimpleAutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if log_item.status == "简易脚本正常运行中":
-                log_item.status = "任务被用户手动中止"
             if not log_item.content:
-                log_item.content = ["未捕获到日志内容"]
+                log_item.content = ["未记录到进程结果"]
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
 
@@ -613,10 +422,6 @@ class SimpleAutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         logger.exception(f"简易脚本自动代理任务出现异常: {e}")
 
-        try:
-            await self.log_monitor.stop()
-        except Exception as stop_error:
-            logger.exception(f"停止日志监控失败: {stop_error}")
         try:
             await self._cleanup_managed_processes()
         except Exception as cleanup_error:

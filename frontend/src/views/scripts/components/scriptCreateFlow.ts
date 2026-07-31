@@ -50,8 +50,8 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
     value: 'Simple',
     title: '简易脚本',
-    description: '仅接管程序启动、进程与可选日志监控',
-    keywords: ['simple', '简易', '进程', '启动'],
+    description: '仅接管程序启动、进程退出与超时兜底的简易模式',
+    keywords: ['simple', '简易', '进程', '启动', '超时'],
     group: 'general',
     icon: generalIcon,
   },

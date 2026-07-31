@@ -118,13 +118,6 @@ export interface SimpleScriptConfig {
     TrackProcessName: string
     TrackProcessExe: string
     TrackProcessCmdline: string
-    LogPath: string
-    LogPathFormat: string
-    LogTimeStart: number
-    LogTimeEnd: number
-    LogTimeFormat: string
-    SuccessLog: string
-    ErrorLog: string
   }
   Game: GeneralScriptConfig['Game']
   Run: GeneralScriptConfig['Run']

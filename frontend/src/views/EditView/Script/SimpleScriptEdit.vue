@@ -131,99 +131,6 @@
           </a-form-item>
         </a-card>
 
-        <a-card title="日志监控（可选）" class="config-card">
-          <a-alert
-            type="info"
-            show-icon
-            message="未填写日志路径时，将回落到仅监控进程并根据退出码判断结果。"
-            class="section-alert"
-          />
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item label="日志路径">
-                <a-input-group compact>
-                  <a-input
-                    v-model:value="config.Script.LogPath"
-                    style="width: calc(100% - 112px)"
-                    placeholder="留空表示不监控日志文件"
-                    @blur="saveField('Script', 'LogPath', config.Script.LogPath)"
-                  />
-                  <a-button style="width: 112px" @click="selectFile('LogPath')">
-                    <template #icon><FileOutlined /></template>
-                    选择
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="日志文件名格式">
-                <a-input
-                  v-model:value="config.Script.LogPathFormat"
-                  :disabled="!config.Script.LogPath"
-                  placeholder="固定文件名时留空"
-                  @blur="saveField('Script', 'LogPathFormat', config.Script.LogPathFormat)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="6">
-              <a-form-item label="时间戳开始位置">
-                <a-input-number
-                  v-model:value="config.Script.LogTimeStart"
-                  :min="1"
-                  :disabled="!config.Script.LogPath"
-                  style="width: 100%"
-                  @change="saveField('Script', 'LogTimeStart', config.Script.LogTimeStart)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item label="时间戳结束位置">
-                <a-input-number
-                  v-model:value="config.Script.LogTimeEnd"
-                  :min="1"
-                  :disabled="!config.Script.LogPath"
-                  style="width: 100%"
-                  @change="saveField('Script', 'LogTimeEnd', config.Script.LogTimeEnd)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="日志时间戳格式">
-                <a-input
-                  v-model:value="config.Script.LogTimeFormat"
-                  :disabled="!config.Script.LogPath"
-                  placeholder="%Y-%m-%d %H:%M:%S"
-                  @blur="saveField('Script', 'LogTimeFormat', config.Script.LogTimeFormat)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item label="成功日志">
-                <a-input
-                  v-model:value="config.Script.SuccessLog"
-                  :disabled="!config.Script.LogPath"
-                  placeholder="多个关键字使用 | 分隔"
-                  @blur="saveField('Script', 'SuccessLog', config.Script.SuccessLog)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="错误日志">
-                <a-input
-                  v-model:value="config.Script.ErrorLog"
-                  :disabled="!config.Script.LogPath"
-                  placeholder="多个关键字使用 | 分隔"
-                  @blur="saveField('Script', 'ErrorLog', config.Script.ErrorLog)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </a-card>
-
         <a-card title="游戏与模拟器" class="config-card">
           <a-row :gutter="24" align="middle">
             <a-col :span="6">
@@ -436,13 +343,6 @@ const config = reactive({
     TrackProcessName: '',
     TrackProcessExe: '',
     TrackProcessCmdline: '',
-    LogPath: '',
-    LogPathFormat: '',
-    LogTimeStart: 1,
-    LogTimeEnd: 1,
-    LogTimeFormat: '%Y-%m-%d %H:%M:%S',
-    SuccessLog: '',
-    ErrorLog: '',
   },
   Game: {
     Enabled: false,
@@ -508,7 +408,7 @@ const selectFolder = async (field: 'RootPath') => {
   await saveField('Info', field, path)
 }
 
-const selectFile = async (field: 'ScriptPath' | 'TrackProcessExe' | 'LogPath' | 'GamePath') => {
+const selectFile = async (field: 'ScriptPath' | 'TrackProcessExe' | 'GamePath') => {
   const paths = await window.electronAPI.selectFile([{ name: '所有文件', extensions: ['*'] }])
   const path = paths?.[0]
   if (!path) return
@@ -582,10 +482,6 @@ onMounted(loadScript)
 .config-card {
   margin-bottom: 20px;
   border-radius: 12px;
-}
-
-.section-alert {
-  margin-bottom: 20px;
 }
 
 .switch-description,

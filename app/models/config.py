@@ -2755,28 +2755,6 @@ class SimpleConfig(ConfigBase):
         self.Script_TrackProcessCmdline = ConfigItem(
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
-        ## 日志路径
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
-        ## 日志路径格式
-        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
-        ## 日志时间戳开始位置
-        self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
-        )
-        ## 日志时间戳结束位置
-        self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
-        )
-        ## 日志时间格式
-        self.Script_LogTimeFormat = ConfigItem(
-            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
-        )
-        ## 成功日志匹配
-        self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
-        ## 错误日志匹配
-        self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
