@@ -38,6 +38,9 @@ class _MainTimer:
 
     def __init__(self):
         self.started = False
+        self.second_timer: asyncio.Task[None] | None = None
+        self.hour_timer: asyncio.Task[None] | None = None
+        self.game_sign_task: asyncio.Task[None] | None = None
 
     async def start(self):
         """启动定时器"""
@@ -54,12 +57,19 @@ class _MainTimer:
     async def stop(self):
         """停止定时器"""
 
-        self.second_timer.cancel()
-        self.hour_timer.cancel()
-        try:
-            await self.second_timer
-            await self.hour_timer
-        except asyncio.CancelledError:
+        tasks = [
+            task
+            for task in (
+                self.second_timer,
+                self.hour_timer,
+                self.game_sign_task,
+            )
+            if task is not None and not task.done()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
             logger.info("主业务定时器已关闭")
 
     async def second_task(self):
@@ -73,7 +83,7 @@ class _MainTimer:
             if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
                 await ArknightWin32Toolkit.scheduled_task()
 
-            await self.check_game_sign()
+            self._schedule_game_sign_check()
 
             await asyncio.sleep(1)
 
@@ -139,9 +149,52 @@ class _MainTimer:
                     await queue.set("Data", "LastTimedStart", curtime)
 
                     # 定时任务触发游戏签到
-                    await self.try_game_sign_for_task()
+                    self.schedule_game_sign_for_task()
 
-    async def check_game_sign(self) -> None:
+    def _schedule_game_sign_check(self) -> None:
+        """派发签到检查，不阻塞每秒调度循环。"""
+
+        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+            return
+
+        check_time = datetime.now()
+        if check_time.second != 0:
+            return
+
+        if self.game_sign_task is not None and not self.game_sign_task.done():
+            return
+
+        task = asyncio.create_task(self.check_game_sign(check_time=check_time))
+        self.game_sign_task = task
+        task.add_done_callback(self._on_game_sign_check_done)
+
+    def schedule_game_sign_for_task(self) -> None:
+        """派发任务生命周期签到，并与定时签到共享任务守卫。"""
+
+        if self.game_sign_task is not None and not self.game_sign_task.done():
+            logger.debug("游戏社区签到后台任务正在执行，跳过重复派发")
+            return
+
+        task = asyncio.create_task(self.try_game_sign_for_task())
+        self.game_sign_task = task
+        task.add_done_callback(self._on_game_sign_check_done)
+
+    def _on_game_sign_check_done(self, task: asyncio.Task[None]) -> None:
+        """清理签到任务并记录未处理异常。"""
+
+        if self.game_sign_task is task:
+            self.game_sign_task = None
+        if task.cancelled():
+            return
+
+        try:
+            task.result()
+        except Exception as e:
+            logger.error("游戏社区签到后台任务异常", exc_info=e)
+
+    async def check_game_sign(
+        self, *, check_time: datetime | None = None
+    ) -> None:
         """检查并执行游戏社区签到
 
         启用签到 + 时间窗口内随机时刻执行，窗口外补签。
@@ -151,11 +204,10 @@ class _MainTimer:
         if not Config.ToolsConfig.get("GameSign", "Enabled"):
             return
 
-        # 节流：非整分钟跳过，避免每秒都执行
-        if datetime.now().second != 0:
+        now = check_time or datetime.now()
+        if now.second != 0:
             return
 
-        now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
         # 检查是否所有启用的用户今日都已签到
@@ -215,8 +267,12 @@ class _MainTimer:
 
     async def _execute_game_sign(self) -> None:
         """执行游戏签到并处理结果"""
-        from app.tools.game_sign import run_all_sign_in, format_sign_results
-        from app.tools.game_sign import merge_sign_results
+        from app.tools.game_sign import (
+            GameSignInProgressError,
+            format_sign_results,
+            merge_sign_results,
+            run_all_sign_in,
+        )
 
         today = datetime.now().strftime("%Y-%m-%d")
 
@@ -255,8 +311,15 @@ class _MainTimer:
             # 如果启用通知，发送签到结果
             if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
                 from app.tools.game_sign_notify import push_game_sign_notification
-                await push_game_sign_notification(results)
 
+                failed_channels = await push_game_sign_notification(results)
+                if failed_channels:
+                    logger.warning(
+                        f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
+                    )
+
+        except GameSignInProgressError:
+            logger.info("游戏社区签到正在执行，跳过本次触发")
         except Exception as e:
             logger.error(f"游戏社区签到执行失败: {e}")
             # 保留已有结果，不覆盖为错误信息
@@ -283,7 +346,12 @@ class _MainTimer:
         if all_signed:
             return
 
-        from app.tools.game_sign import run_all_sign_in, format_sign_results, merge_sign_results
+        from app.tools.game_sign import (
+            GameSignInProgressError,
+            format_sign_results,
+            merge_sign_results,
+            run_all_sign_in,
+        )
 
         try:
             results = await run_all_sign_in(force=False)
@@ -310,8 +378,15 @@ class _MainTimer:
 
             if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
                 from app.tools.game_sign_notify import push_game_sign_notification
-                await push_game_sign_notification(results)
 
+                failed_channels = await push_game_sign_notification(results)
+                if failed_channels:
+                    logger.warning(
+                        f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
+                    )
+
+        except GameSignInProgressError:
+            logger.info("游戏社区签到正在执行，跳过本次触发")
         except Exception as e:
             logger.error(f"任务触发的游戏签到失败: {e}")
 
