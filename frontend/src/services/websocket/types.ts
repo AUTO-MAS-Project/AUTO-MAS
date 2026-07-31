@@ -106,8 +106,6 @@ export interface WSTaskLogUpdatedData {
 export interface WSTaskCompletedData {
   result: string
   task_info: WSTaskScriptInfoData[]
-  outcome: 'success' | 'error' | 'cancelled'
-  error?: string | null
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */

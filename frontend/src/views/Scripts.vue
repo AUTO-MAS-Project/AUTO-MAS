@@ -993,13 +993,10 @@ const handleStartSRCConfig = async (script: Script) => {
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
           const data = wsMessage.data
           logger.info(`脚本 ${script.name} 配置任务已结束`)
-          if (data.outcome === 'success') {
+          // 根据结果显示不同消息
+          const result = data.result
+          if (result && !result.includes('异常') && !result.includes('错误')) {
             message.success(`${script.name} 配置已完成`)
-          } else if (data.outcome === 'error') {
-            logger.error(`脚本 ${script.name} 配置失败: ${data.error || '任务执行异常'}`)
-            message.error(`${script.name} 配置失败，请查看日志`)
-          } else {
-            message.info(`${script.name} 配置已取消`)
           }
           // 清理连接
           releaseActiveConnection(script.id)

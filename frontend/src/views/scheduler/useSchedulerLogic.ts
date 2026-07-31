@@ -892,17 +892,11 @@ export function useSchedulerLogic() {
       schedulerTabs.value.splice(tabIndex, 1, updatedTab)
     }
 
+    // 播放任务完成音频
     const { playSound } = useAudioPlayer()
-    if (data.outcome === 'error') {
-      logger.error(`任务执行异常：${data.error || '未提供错误详情'}`)
-      await playSound('exception_occurred')
-      message.error('任务执行异常，请查看任务结果与日志')
-    } else if (data.outcome === 'cancelled') {
-      message.info('任务已取消')
-    } else {
-      await playSound('task_completed')
-      message.success('任务完成')
-    }
+    await playSound('task_completed')
+
+    message.success('任务完成')
     saveTabsToStorage(schedulerTabs.value)
 
     // 触发Vue的响应式更新
