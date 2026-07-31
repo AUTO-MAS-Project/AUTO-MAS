@@ -24,6 +24,7 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.core.history import history_store
 from app.plugins import PluginManager
 
 
@@ -273,7 +274,7 @@ async def get_web_config() -> InfoOut:
 async def get_overview() -> InfoOut:
     try:
         stage = await Config.get_stage_info("Info")
-        proxy = await Config.get_proxy_overview()
+        proxy = history_store.get_overview()
     except Exception as e:
         return InfoOut(
             code=500,

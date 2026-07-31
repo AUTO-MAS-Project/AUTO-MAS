@@ -98,8 +98,21 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
 @router.post("/save", summary="保存 cookie 到账号配置", response_model=OutBase)
 async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
     try:
-        data = {"GameSignAccount": {"MiyousheToken": body.cookie}}
-        await Config.update_game_sign_account(body.account_uid, data)
+        from uuid import UUID
+
+        from app.models.config import GameSignAccount
+
+        account = Config.tools.accounts[UUID(body.account_uid)]
+        await account.update(
+            GameSignAccount.model_validate(
+                {
+                    "info": {
+                        "miyoushe_token": body.cookie,
+                        "last_sign_date": "2000-01-01",
+                    }
+                }
+            )
+        )
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase(message="米游社 Token 已保存")
