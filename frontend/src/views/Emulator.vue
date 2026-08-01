@@ -193,7 +193,7 @@ const buildEditingData = (configData: any): EmulatorInfo => ({
   path: configData?.Info?.Path || '',
   max_wait_time: configData?.Info?.MaxWaitTime || 300,
   boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
-  force_kill_on_close: configData?.Info?.ForceKillOnClose !== false,
+  force_kill_on_close: configData?.Info?.ForceKillOnClose === true,
 })
 
 // 获取当前模拟器的编辑数据
