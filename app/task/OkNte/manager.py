@@ -19,6 +19,7 @@
 import uuid
 import shutil
 from contextlib import suppress
+from datetime import datetime
 
 from pathlib import Path
 
@@ -26,8 +27,11 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.services import Notify
 from app.utils import get_logger, ProcessManager
+from app.utils.constants import TASK_MODE_ZH
 
+from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 
@@ -58,6 +62,7 @@ class OkNteManager(TaskExecuteBase):
         self.game_manager: ProcessManager | None = None
         self.had_original_script_config = False
         self.crashed = False
+        self.begin_time = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -101,6 +106,8 @@ class OkNteManager(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         script_uid = uuid.UUID(self.script_info.script_id)
         await Config.ScriptConfig[script_uid].lock()
         script_config = Config.ScriptConfig[script_uid]
@@ -255,6 +262,44 @@ class OkNteManager(TaskExecuteBase):
                 self.script_info.status = "异常"
             else:
                 self.script_info.status = "完成"
+
+            if self.task_info.mode == "AutoProxy":
+                error_user = [
+                    u.name for u in self.script_info.user_list if u.status == "异常"
+                ]
+                over_user = [
+                    u.name for u in self.script_info.user_list if u.status == "完成"
+                ]
+                wait_user = [
+                    u.name for u in self.script_info.user_list if u.status == "等待"
+                ]
+
+                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                result = {
+                    "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
+                    "script_name": self.script_info.name or "空白",
+                    "start_time": self.begin_time,
+                    "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "completed_count": len(over_user),
+                    "uncompleted_count": len(error_user) + len(wait_user),
+                    "result": self.script_info.result,
+                }
+
+                await Notify.push_plyer(
+                    title.replace("报告", "已完成！"),
+                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                    10,
+                )
+                try:
+                    await push_notification("代理结果", title, result, None)
+                except Exception as e:
+                    logger.exception(f"推送代理结果时出现异常: {e}")
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                    )
         finally:
             if script_cfg.is_locked:
                 with suppress(Exception):
