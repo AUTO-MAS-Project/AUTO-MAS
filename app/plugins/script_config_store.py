@@ -57,7 +57,12 @@ class ScriptConfigStore:
 
     async def load_script_model(self) -> Any:
         raw_payload = await self._read_script_storage_payload(if_decrypt=False)
-        return await build_config_model(self.provider, raw_payload, "script")
+        return await build_config_model(
+            self.provider,
+            raw_payload,
+            "script",
+            from_storage=True,
+        )
 
     async def load_user_model(
         self,
@@ -65,7 +70,12 @@ class ScriptConfigStore:
     ) -> Any:
         uid = self._normalize_uid(user_uid)
         raw_payload = await self._read_user_storage_payload(uid, if_decrypt=False)
-        return await build_config_model(self.provider, raw_payload, "user")
+        return await build_config_model(
+            self.provider,
+            raw_payload,
+            "user",
+            from_storage=True,
+        )
 
     async def load_user_models(self) -> list[tuple[str, Any]]:
         result: list[tuple[str, Any]] = []
