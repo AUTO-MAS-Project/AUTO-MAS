@@ -94,9 +94,11 @@ onMounted(async () => {
       <WebSocketMessageListener />
     </template>
 
+    <!-- 后端启动遮罩 -->
+    <BackendStartupOverlay :visible="isBootstrapping" />
+
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
-    <BackendStartupOverlay :visible="isBootstrapping" />
   </ConfigProvider>
 </template>
 

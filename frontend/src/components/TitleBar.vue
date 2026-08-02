@@ -9,6 +9,10 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
+          <span v-if="isBootstrapping" class="startup-status">
+            <LoadingOutlined />
+            后端启动中
+          </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
           </span>
@@ -60,21 +64,26 @@
 </template>
 
 <script setup lang="ts">
-import { useAppClosing } from '@/composables/useAppClosing'
+import { closeApp } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useUiPreferences } from '@/composables/useUiPreferences'
-import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import {
+  BorderOutlined,
+  CloseOutlined,
+  LoadingOutlined,
+  MinusOutlined,
+} from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
-const { resetInitializationStatus } = useAppInitialization()
+const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 
@@ -115,7 +124,6 @@ const hasRunningTasks = (): boolean => {
 }
 
 const { isDark } = useTheme()
-const { showClosingOverlay } = useAppClosing()
 const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
@@ -193,17 +201,11 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作
+// 执行实际的关闭操作：交给生命周期协调器执行"退出并关闭后端"流程
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-
-    // 显示关闭遮罩
-    showClosingOverlay()
-
-    // 直接关闭窗口，后台清理由主进程处理
-    logger.info('正在退出应用...')
-    await window.electronAPI?.appQuit()
+    await closeApp()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
@@ -340,6 +342,14 @@ onMounted(async () => {
 
 .title-bar-dark .version-text {
   color: #ffffff;
+}
+
+.startup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  color: var(--ant-color-primary);
 }
 
 .title-bar-center {

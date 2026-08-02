@@ -372,7 +372,6 @@ const handleDelete = async (uuid: string) => {
       emulatorId: uuid,
     })
     if (response.code === 200) {
-
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
         const currentIndex = emulatorIndex.value.findIndex(e => e.uid === uuid)
@@ -824,7 +823,13 @@ const handleBossKeyInputChange = (uuid: string) => {
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
           <a-empty />
           <a-space direction="horizontal" :size="16">
-            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
+            <a-button
+              type="primary"
+              size="large"
+              :icon="h(SearchOutlined)"
+              :loading="searching"
+              @click="handleSearch"
+            >
               自动搜索模拟器
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
@@ -834,8 +839,14 @@ const handleBossKeyInputChange = (uuid: string) => {
         </div>
 
         <!-- Tab 模式：有模拟器时显示 Tabs -->
-        <a-tabs v-else v-model:active-key="activeKey" type="editable-card" hide-add class="emulator-tabs"
-          @change="onTabChange">
+        <a-tabs
+          v-else
+          v-model:active-key="activeKey"
+          type="editable-card"
+          hide-add
+          class="emulator-tabs"
+          @change="onTabChange"
+        >
           <!-- 每个模拟器一个 Tab -->
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
@@ -852,8 +863,12 @@ const handleBossKeyInputChange = (uuid: string) => {
                   <h3>模拟器配置</h3>
                   <div class="section-actions">
                     <a-spin v-if="savingMap.get(element.uid)" size="small" />
-                    <a-popconfirm title="确定要删除此模拟器配置吗？" ok-text="确定" cancel-text="取消"
-                      @confirm="handleDelete(element.uid)">
+                    <a-popconfirm
+                      title="确定要删除此模拟器配置吗？"
+                      ok-text="确定"
+                      cancel-text="取消"
+                      @confirm="handleDelete(element.uid)"
+                    >
                       <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
                         删除
                       </a-button>
@@ -865,11 +880,16 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <div class="config-form">
                   <a-descriptions :column="2" bordered size="small">
                     <a-descriptions-item label="模拟器名称">
-                      <a-input v-model:value="getEditingData(element.uid).name" placeholder="输入模拟器名称" size="small"
-                        :bordered="false" @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
+                      <a-input
+                        v-model:value="getEditingData(element.uid).name"
+                        placeholder="输入模拟器名称"
+                        size="small"
+                        :bordered="false"
+                        @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
                         @blur="
                           handleSaveChange(element.uid, 'name', getEditingData(element.uid).name)
-                          " />
+                        "
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -878,16 +898,29 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-select v-model:value="getEditingData(element.uid).type" placeholder="选择模拟器类型"
-                        :options="emulatorTypeOptions" size="small" :bordered="false" style="width: 100%"
-                        @change="handleSaveChange(element.uid, 'type', $event)" />
+                      <a-select
+                        v-model:value="getEditingData(element.uid).type"
+                        placeholder="选择模拟器类型"
+                        :options="emulatorTypeOptions"
+                        size="small"
+                        :bordered="false"
+                        style="width: 100%"
+                        @change="handleSaveChange(element.uid, 'type', $event)"
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item label="模拟器路径" :span="2">
-                      <a-input v-model:value="getEditingData(element.uid).path" placeholder="请点击文件夹图标选择模拟器路径"
-                        size="small" :bordered="false" readonly>
+                      <a-input
+                        v-model:value="getEditingData(element.uid).path"
+                        placeholder="请点击文件夹图标选择模拟器路径"
+                        size="small"
+                        :bordered="false"
+                        readonly
+                      >
                         <template #suffix>
-                          <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
-                            @click="selectEmulatorPath(element.uid)" />
+                          <FolderOpenOutlined
+                            style="cursor: pointer; color: #1890ff"
+                            @click="selectEmulatorPath(element.uid)"
+                          />
                         </template>
                       </a-input>
                     </a-descriptions-item>
@@ -898,9 +931,24 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
-                        size="small" :bordered="false" style="width: 100%" :min="10" :max="9999" :step="5" suffix="秒"
-                        @blur="handleSaveChange(element.uid, 'max_wait_time', getEditingData(element.uid).max_wait_time)" />
+                      <a-input-number
+                        v-model:value="getEditingData(element.uid).max_wait_time"
+                        placeholder="输入最大等待时间"
+                        size="small"
+                        :bordered="false"
+                        style="width: 100%"
+                        :min="10"
+                        :max="9999"
+                        :step="5"
+                        suffix="秒"
+                        @blur="
+                          handleSaveChange(
+                            element.uid,
+                            'max_wait_time',
+                            getEditingData(element.uid).max_wait_time
+                          )
+                        "
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -909,19 +957,37 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-input v-if="getEditingData(element.uid).type !== 'mumu'"
-                        v-model:value="bossKeyInputMap[element.uid]" :placeholder="recordingBossKeyMap.get(element.uid)
-                          ? '请按下快捷键组合...'
-                          : '输入格式如 Ctrl+Q，按回车添加'
-                          " size="small" :bordered="false" :disabled="recordingBossKeyMap.get(element.uid)"
-                        @press-enter="handleSetBossKey(element.uid)" @blur="handleSetBossKey(element.uid)"
-                        @input="handleBossKeyInputChange(element.uid)">
+                      <a-input
+                        v-if="getEditingData(element.uid).type !== 'mumu'"
+                        v-model:value="bossKeyInputMap[element.uid]"
+                        :placeholder="
+                          recordingBossKeyMap.get(element.uid)
+                            ? '请按下快捷键组合...'
+                            : '输入格式如 Ctrl+Q，按回车添加'
+                        "
+                        size="small"
+                        :bordered="false"
+                        :disabled="recordingBossKeyMap.get(element.uid)"
+                        @press-enter="handleSetBossKey(element.uid)"
+                        @blur="handleSetBossKey(element.uid)"
+                        @input="handleBossKeyInputChange(element.uid)"
+                      >
                         <template #suffix>
-                          <a-button v-if="!recordingBossKeyMap.get(element.uid)" type="default" size="small"
-                            @click="startRecordBossKey(element.uid)">
+                          <a-button
+                            v-if="!recordingBossKeyMap.get(element.uid)"
+                            type="default"
+                            size="small"
+                            @click="startRecordBossKey(element.uid)"
+                          >
                             录制
                           </a-button>
-                          <a-button v-else type="primary" danger size="small" @click="stopRecordBossKey(element.uid)">
+                          <a-button
+                            v-else
+                            type="primary"
+                            danger
+                            size="small"
+                            @click="stopRecordBossKey(element.uid)"
+                          >
                             取消录制
                           </a-button>
                         </template>
@@ -955,14 +1021,21 @@ const handleBossKeyInputChange = (uuid: string) => {
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
-                  <div v-if="
-                    !devicesData[element.uid] ||
-                    Object.keys(devicesData[element.uid]).length === 0
-                  " class="empty-devices">
+                  <div
+                    v-if="
+                      !devicesData[element.uid] ||
+                      Object.keys(devicesData[element.uid]).length === 0
+                    "
+                    class="empty-devices"
+                  >
                     <a-empty description="暂无设备信息">
                       <template #extra>
-                        <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
-                          @click="startEmulator(element.uid, '0')">
+                        <a-button
+                          type="primary"
+                          size="small"
+                          :icon="h(PlayCircleOutlined)"
+                          @click="startEmulator(element.uid, '0')"
+                        >
                           启动模拟器
                         </a-button>
                       </template>
@@ -970,12 +1043,15 @@ const handleBossKeyInputChange = (uuid: string) => {
                   </div>
 
                   <div v-else class="devices-grid">
-                    <a-table :data-source="Object.entries(devicesData[element.uid]).map(([index, device]) => ({
-                      key: index,
-                      index,
-                      ...device,
-                    }))
-                      " :columns="[
+                    <a-table
+                      :data-source="
+                        Object.entries(devicesData[element.uid]).map(([index, device]) => ({
+                          key: index,
+                          index,
+                          ...device,
+                        }))
+                      "
+                      :columns="[
                         {
                           title: '设备',
                           dataIndex: 'index',
@@ -997,7 +1073,11 @@ const handleBossKeyInputChange = (uuid: string) => {
                           ellipsis: true,
                         },
                         { title: '操作', key: 'action', width: 160 },
-                      ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
+                      ]"
+                      :pagination="false"
+                      size="small"
+                      :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }"
+                    >
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
                           <a-tag :color="getDeviceStatusInfo(record.status).color" size="small">
@@ -1006,19 +1086,30 @@ const handleBossKeyInputChange = (uuid: string) => {
                         </template>
                         <template v-else-if="column.key === 'action'">
                           <a-space :size="4">
-                            <a-button :icon="h(EyeOutlined)" :disabled="record.status !== 0"
+                            <a-button
+                              :icon="h(EyeOutlined)"
+                              :disabled="record.status !== 0"
                               :loading="showingDevices.has(`${element.uid}-${record.index}`)"
-                              @click="showEmulator(element.uid, String(record.index))">
+                              @click="showEmulator(element.uid, String(record.index))"
+                            >
                               显示
                             </a-button>
-                            <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
+                            <a-button
+                              v-if="canStartDevice(record.status)"
+                              type="primary"
+                              :icon="h(PlayCircleOutlined)"
                               :loading="startingDevices.has(`${element.uid}-${record.index}`)"
-                              @click="startEmulator(element.uid, String(record.index))">
+                              @click="startEmulator(element.uid, String(record.index))"
+                            >
                               启动
                             </a-button>
-                            <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
+                            <a-button
+                              v-else-if="canStopDevice(record.status)"
+                              danger
+                              :icon="h(StopOutlined)"
                               :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
-                              @click="stopEmulator(element.uid, String(record.index))">
+                              @click="stopEmulator(element.uid, String(record.index))"
+                            >
                               关闭
                             </a-button>
                             <a-button v-else disabled>
@@ -1038,10 +1129,21 @@ const handleBossKeyInputChange = (uuid: string) => {
           <template #rightExtra>
             <div class="tab-extra-actions">
               <a-space :size="8">
-                <a-button type="default" size="middle" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch()">
+                <a-button
+                  type="default"
+                  size="middle"
+                  :icon="h(SearchOutlined)"
+                  :loading="searching"
+                  @click="handleSearch()"
+                >
                   自动搜索模拟器
                 </a-button>
-                <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
+                <a-button
+                  type="primary"
+                  size="middle"
+                  :icon="h(PlusOutlined)"
+                  @click="handleAddWithSwitch"
+                >
                   手动添加多开器
                 </a-button>
               </a-space>
@@ -1081,7 +1183,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--ant-color-bg-layout);
+  background: transparent;
 }
 
 .page-header {
@@ -1136,7 +1238,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -1147,7 +1249,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: transparent;
 }
 
 .emulator-tabs :deep(.ant-tabs-nav) {
@@ -1186,7 +1288,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 /* 配置区域 */
 .config-section {
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
@@ -1237,21 +1339,21 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .config-form :deep(.ant-input-borderless:hover),
 .config-form :deep(.ant-input-number-borderless:hover) {
-  background: var(--bg-color-elevated);
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated));
 }
 
 .config-form :deep(.ant-input-borderless:focus),
 .config-form :deep(.ant-input-number-borderless:focus) {
-  background: var(--bg-color-elevated);
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated));
   box-shadow: none;
 }
 
 .config-form :deep(.ant-select-borderless:hover .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated)) !important;
 }
 
 .config-form :deep(.ant-select-focused.ant-select-borderless .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated)) !important;
   box-shadow: none !important;
 }
 
@@ -1351,7 +1453,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .devices-grid :deep(.ant-table-thead > tr > th) {
   padding: 8px 12px;
-  background: var(--bg-color-container);
+  background: var(--app-background-card-bg, var(--bg-color-container));
   font-weight: 500;
   position: sticky;
   top: 0;
@@ -1363,7 +1465,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .devices-grid :deep(.ant-table-tbody > tr:hover > td) {
-  background: var(--bg-color-elevated);
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated));
 }
 
 /* 老板键列表 */
@@ -1398,12 +1500,12 @@ html.dark {
 
 html.dark .config-section,
 html.dark .devices-section {
-  background: #1a1a1a;
+  background: var(--app-background-card-bg, #1a1a1a);
 }
 
 html.dark .page-content {
-  background: #0a0a0a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  background: transparent;
+  box-shadow: none;
 }
 
 /* 响应式 - 移动端适配 */

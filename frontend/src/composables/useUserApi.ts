@@ -2,7 +2,6 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
 import type {
-  AbyssSnapshotImportOut,
   UserInBase,
   UserCreateOut,
   UserUpdateIn,
@@ -189,35 +188,6 @@ export function useUserApi() {
     }
   }
 
-  const importM7aAbyssSnapshot = async (
-    scriptId: string,
-    userId: string
-  ): Promise<AbyssSnapshotImportOut | null> => {
-    loading.value = true
-    error.value = null
-    try {
-      const body = { scriptId, userId }
-      const response =
-        await Service.importM7AAbyssSnapshotApiScriptsUserImportM7AAbyssSnapshotPost(body)
-      logger.debug(`导入 M7A 三深渊快照响应: ${JSON.stringify(response)}`)
-      if (response?.code !== 200) {
-        const errorMsg = response?.message || '导入三深渊快照失败'
-        message.error(errorMsg)
-        throw new Error(errorMsg)
-      }
-      return response
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '导入三深渊快照失败'
-      error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
-      return null
-    } finally {
-      loading.value = false
-    }
-  }
-
   return {
     loading,
     error,
@@ -226,6 +196,5 @@ export function useUserApi() {
     updateUser,
     deleteUser,
     reorderUser,
-    importM7aAbyssSnapshot,
   }
 }

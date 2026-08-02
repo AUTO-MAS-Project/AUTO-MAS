@@ -35,6 +35,22 @@ from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")
 
+_CONFIG_GUARD_DELAY_SECONDS = 3.0
+_INSTANCE_LOCKS: dict[
+    tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock
+] = {}
+_INSTANCE_CONFIG_SNAPSHOTS: dict[tuple[str, str], bytes] = {}
+
+
+def _format_ldplayer_failure(action: str, result) -> str:
+    """格式化 LDPlayer dnconsole 命令失败信息，包含 returncode（十六进制）、stdout、stderr。"""
+    parts = [f"雷电模拟器 {action} 失败: returncode={result.returncode} (0x{result.returncode & 0xFFFFFFFF:08X})"]
+    if result.stdout:
+        parts.append(f"stdout={result.stdout.strip()!r}")
+    if result.stderr:
+        parts.append(f"stderr={result.stderr.strip()!r}")
+    return ", ".join(parts)
+
 
 class LDPlayerDevice(BaseModel):
     idx: int
@@ -67,7 +83,106 @@ class LDManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    def _get_instance_key(self, idx: str) -> tuple[str, str]:
+        return str(self.emulator_path.resolve()).casefold(), str(idx)
+
+    def _get_instance_lock(self, idx: str) -> asyncio.Lock:
+        instance_key = self._get_instance_key(idx)
+        lock_key = (asyncio.get_running_loop(), *instance_key)
+        return _INSTANCE_LOCKS.setdefault(lock_key, asyncio.Lock())
+
+    def _get_instance_config_path(self, idx: str) -> Path | None:
+        idx_text = str(idx)
+        if not idx_text.isdecimal():
+            logger.warning(f"无法保护雷电模拟器配置，实例索引无效: {idx}")
+            return None
+        return (
+            self.emulator_path.parent
+            / "vms"
+            / "config"
+            / f"leidian{idx_text}.config"
+        )
+
+    @staticmethod
+    def _is_config_guard_enabled() -> bool:
+        try:
+            from app.core import Config
+
+            return bool(Config.get("Function", "IfBlockAd"))
+        except Exception as e:
+            logger.warning(f"读取雷电模拟器配置保护开关失败: {e}")
+            return False
+
+    async def _capture_instance_config(self, idx: str) -> None:
+        instance_key = self._get_instance_key(idx)
+        if not self._is_config_guard_enabled():
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            return
+
+        if instance_key in _INSTANCE_CONFIG_SNAPSHOTS:
+            return
+
+        config_path = self._get_instance_config_path(idx)
+        if config_path is None:
+            return
+
+        try:
+            snapshot = await asyncio.to_thread(config_path.read_bytes)
+        except Exception as e:
+            logger.warning(f"读取雷电模拟器 {idx} 配置快照失败: {e}")
+            return
+
+        _INSTANCE_CONFIG_SNAPSHOTS[instance_key] = snapshot
+        logger.info(f"已保存雷电模拟器 {idx} 启动前配置快照")
+
+    async def _verify_and_restore_instance_config(self, idx: str) -> None:
+        instance_key = self._get_instance_key(idx)
+        snapshot = _INSTANCE_CONFIG_SNAPSHOTS.get(instance_key)
+        if snapshot is None:
+            return
+
+        if not self._is_config_guard_enabled():
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            return
+
+        logger.info(
+            f"雷电模拟器 {idx} 已关闭，等待 "
+            f"{_CONFIG_GUARD_DELAY_SECONDS:g} 秒后校验配置"
+        )
+        await asyncio.sleep(_CONFIG_GUARD_DELAY_SECONDS)
+
+        config_path = self._get_instance_config_path(idx)
+        if config_path is None:
+            return
+
+        try:
+            current = await asyncio.to_thread(config_path.read_bytes)
+        except FileNotFoundError:
+            logger.warning(f"关闭后未找到雷电模拟器 {idx} 配置，将尝试恢复快照")
+            current = None
+        except Exception as e:
+            logger.warning(f"校验雷电模拟器 {idx} 配置失败: {e}")
+            return
+
+        if current == snapshot:
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            logger.info(f"雷电模拟器 {idx} 配置校验通过")
+            return
+
+        try:
+            await asyncio.to_thread(config_path.write_bytes, snapshot)
+        except Exception as e:
+            logger.warning(f"恢复雷电模拟器 {idx} 配置失败: {e}")
+            return
+
+        _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+        logger.warning(f"雷电模拟器 {idx} 配置发生变化，已恢复启动前快照")
+
     async def open(self, idx: str, package_name="") -> DeviceInfo:
+        async with self._get_instance_lock(idx):
+            return await self._open_locked(idx, package_name)
+
+    async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
@@ -85,19 +200,24 @@ class LDManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "launch",
-            "--index",
-            idx,
-            *(["--packagename", f'"{package_name}"'] if package_name else []),
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
+        await self._capture_instance_config(idx)
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "launch",
+                "--index",
+                idx,
+                *(["--packagename", f'"{package_name}"'] if package_name else []),
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 launch 超时（{self.config.get('Info', 'MaxWaitTime')}s）")
         # 参考命令 dnconsole.exe launch --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(_format_ldplayer_failure("launch", result))
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
@@ -124,35 +244,53 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
-        status = await self.getStatus(idx)
-        if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
-            logger.warning(f"设备{idx}未在线，当前状态: {status}")
-            return status
+        async with self._get_instance_lock(idx):
+            return await self._close_locked(idx)
 
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "quit",
-            "--index",
-            idx,
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
+    async def _close_locked(self, idx: str) -> DeviceStatus:
+        status = await self.getStatus(idx)
+        if status not in [
+            DeviceStatus.ONLINE,
+            DeviceStatus.STARTING,
+            DeviceStatus.ERROR,
+            DeviceStatus.UNKNOWN,
+        ]:
+            logger.warning(f"设备{idx}未在线，当前状态: {status}")
+            if status == DeviceStatus.OFFLINE:
+                await self._verify_and_restore_instance_config(idx)
+            return status
+        if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+            logger.warning(f"设备{idx}状态无法确认，仍尝试发送雷电关闭命令")
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "quit",
+                "--index",
+                idx,
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 quit 超时（{self.config.get('Info', 'MaxWaitTime')}s）")
         # 参考命令 dnconsole.exe quit --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(_format_ldplayer_failure("quit", result))
         t = datetime.now()
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
+                await self._verify_and_restore_instance_config(idx)
                 return DeviceStatus.OFFLINE
             await asyncio.sleep(0.1)
 
         else:
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+                logger.warning(f"雷电模拟器 {idx} 关闭命令已发送，但状态无法确认: {status}")
+                return status
             raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
 
     async def getStatus(
@@ -185,15 +323,10 @@ class LDManager(DeviceBase):
 
         for idx, info in data.items():
             status = await self.getStatus(idx, info)
-            adb_port = await self.get_adb_ports(info.vbox_pid)
             result[idx] = DeviceInfo(
                 title=info.title,
                 status=status,
-                adb_address=(
-                    f"127.0.0.1:{adb_port}"
-                    if adb_port != 0
-                    else f"emulator-{5554 + int(idx) * 2}"
-                ),
+                adb_address=f"emulator-{5554 + int(idx) * 2}",
             )
 
         return result
@@ -232,15 +365,18 @@ class LDManager(DeviceBase):
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
 
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "list2",
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "list2",
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 list2 超时（{self.config.get('Info', 'MaxWaitTime')}s）")
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(_format_ldplayer_failure("list2", result))
         emulators: dict[str, LDPlayerDevice] = {}
         data = result.stdout.strip()
 

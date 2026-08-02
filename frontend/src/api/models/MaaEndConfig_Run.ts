@@ -15,9 +15,5 @@ export type MaaEndConfig_Run = {
      * 重试次数限制
      */
     RunTimesLimit?: (number | null);
-    /**
-     * 账号切换方式
-     */
-    AccountSwitchMethod?: ('MAS' | 'MAAEND' | null);
 };
 

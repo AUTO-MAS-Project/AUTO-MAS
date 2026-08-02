@@ -5,6 +5,7 @@
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanDeleteIn } from '../models/PlanDeleteIn';
+import type { PluginDeleteIn } from '../models/PluginDeleteIn';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
@@ -15,6 +16,25 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class DeleteService {
+    /**
+     * 删除模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteEmulatorApiEmulatorDeletePost(
+        requestBody: EmulatorDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 删除脚本
      * @param requestBody
@@ -65,44 +85,6 @@ export class DeleteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除计划表
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deletePlanApiPlanDeletePost(
-        requestBody: PlanDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deleteEmulatorApiEmulatorDeletePost(
-        requestBody: EmulatorDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -168,6 +150,25 @@ export class DeleteService {
         });
     }
     /**
+     * 删除计划表
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deletePlanApiPlanDeletePost(
+        requestBody: PlanDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 删除webhook项
      * @param requestBody
      * @returns OutBase Successful Response
@@ -179,6 +180,25 @@ export class DeleteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deletePluginInstanceApiPluginsDeletePost(
+        requestBody: PluginDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

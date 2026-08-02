@@ -20,12 +20,10 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-import json
 import random
 from datetime import datetime, timedelta
 
 from app.services import Matomo
-from app.MaaFW import ArknightWin32Toolkit
 from app.utils import get_logger
 from .config import Config
 from .task_manager import TaskManager
@@ -57,20 +55,26 @@ class _MainTimer:
     async def stop(self):
         """停止定时器"""
 
-        tasks = [
-            task
-            for task in (
-                self.second_timer,
-                self.hour_timer,
-                self.game_sign_task,
-            )
-            if task is not None and not task.done()
-        ]
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if not self.started:
+            return
+
+        try:
+            tasks = [
+                task
+                for task in (
+                    self.second_timer,
+                    self.hour_timer,
+                    self.game_sign_task,
+                )
+                if task is not None and not task.done()
+            ]
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
             logger.info("主业务定时器已关闭")
+        finally:
+            self.started = False
 
     async def second_task(self):
         """每秒定期任务"""
@@ -81,6 +85,8 @@ class _MainTimer:
             await self.timed_start()
 
             if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+                from app.MaaFW import ArknightWin32Toolkit
+
                 await ArknightWin32Toolkit.scheduled_task()
 
             self._schedule_game_sign_check()
@@ -137,15 +143,19 @@ class _MainTimer:
                     and curtime[11:16] == time_set.get("Info", "Time")
                 ):
                     logger.info(f"定时唤起任务：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "定时代理",
-                        },
-                    )
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "定时代理",
+                            },
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"定时队列 {uid} 无法创建任务：{error}")
+                        continue
                     await queue.set("Data", "LastTimedStart", curtime)
 
                     # 定时任务触发游戏签到

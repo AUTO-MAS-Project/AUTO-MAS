@@ -3,12 +3,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
 
-const {
-  settings,
-  historyRetentionOptions,
-  voiceTypeOptions,
-  handleSettingChange,
-} = defineProps<{
+const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange } = defineProps<{
   settings: GlobalConfig
   historyRetentionOptions: { label: string; value: number }[]
   voiceTypeOptions: { label: string; value: string }[]
@@ -30,8 +25,12 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Start?.IfSelfStart" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)">
+            <a-select
+              :value="settings.Start?.IfSelfStart"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -45,9 +44,14 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Start?.IfMinimizeDirectly" size="large" style="width: 100%" @change="
-              (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
-            ">
+            <a-select
+              :value="settings.Start?.IfMinimizeDirectly"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
+              "
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -69,22 +73,33 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.HistoryRetentionTime" :options="historyRetentionOptions" size="large"
-              style="width: 100%" @change="
+            <a-select
+              :value="settings.Function?.HistoryRetentionTime"
+              :options="historyRetentionOptions"
+              size="large"
+              style="width: 100%"
+              @change="
                 (value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)
-              " />
+              "
+            />
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">静默模式</span>
-              <a-tooltip title="启用后将各代理窗口置于后台运行，减少对前台的干扰。反馈问题、故障排查时，请关闭此功能以便检查相关窗口情况。">
+              <a-tooltip
+                title="启用后将各代理窗口置于后台运行，减少对前台的干扰。反馈问题、故障排查时，请关闭此功能以便检查相关窗口情况。"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfSilence" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)">
+            <a-select
+              :value="settings.Function?.IfSilence"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -98,8 +113,12 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfAllowSleep" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)">
+            <a-select
+              :value="settings.Function?.IfAllowSleep"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -119,16 +138,28 @@ const {
                     </p>
                     <ul style="margin: 8px 0; padding-left: 16px">
                       <li>
-                        <a href="https://www.bilibili.com/protocal/licence.html" class="tooltip-link"
-                          @click="handleExternalLink">《哔哩哔哩弹幕网用户使用协议》</a>
+                        <a
+                          href="https://www.bilibili.com/protocal/licence.html"
+                          class="tooltip-link"
+                          @click="handleExternalLink"
+                          >《哔哩哔哩弹幕网用户使用协议》</a
+                        >
                       </li>
                       <li>
-                        <a href="https://www.bilibili.com/blackboard/privacy-pc.html" class="tooltip-link"
-                          @click="handleExternalLink">《哔哩哔哩隐私政策》</a>
+                        <a
+                          href="https://www.bilibili.com/blackboard/privacy-pc.html"
+                          class="tooltip-link"
+                          @click="handleExternalLink"
+                          >《哔哩哔哩隐私政策》</a
+                        >
                       </li>
                       <li>
-                        <a href="https://game.bilibili.com/yhxy" class="tooltip-link"
-                          @click="handleExternalLink">《哔哩哔哩游戏中心用户协议》</a>
+                        <a
+                          href="https://game.bilibili.com/yhxy"
+                          class="tooltip-link"
+                          @click="handleExternalLink"
+                          >《哔哩哔哩游戏中心用户协议》</a
+                        >
                       </li>
                     </ul>
                   </div>
@@ -136,9 +167,14 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfAgreeBilibili" size="large" style="width: 100%" @change="
-              (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
-            ">
+            <a-select
+              :value="settings.Function?.IfAgreeBilibili"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
+              "
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -151,16 +187,10 @@ const {
               <a-tooltip>
                 <template #title>
                   <div style="max-width: 300px">
-                    <p>
-                      屏蔽部分模拟器广告，支持的广告类型如下：
-                    </p>
+                    <p>屏蔽部分模拟器广告，支持的广告类型如下：</p>
                     <ul style="margin: 8px 0; padding-left: 16px">
-                      <li>
-                        <strong>MuMu模拟器</strong>：启动时广告
-                      </li>
-                      <li>
-                        <strong>雷电模拟器</strong>：启动时广告、桌面广告
-                      </li>
+                      <li><strong>MuMu模拟器</strong>：启动时广告</li>
+                      <li><strong>雷电模拟器</strong>：启动时广告、桌面广告</li>
                     </ul>
                   </div>
                 </template>
@@ -194,8 +224,12 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Voice?.Enabled" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)">
+            <a-select
+              :value="settings.Voice?.Enabled"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -209,8 +243,14 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Voice?.Type" :options="voiceTypeOptions" :disabled="!settings.Voice?.Enabled"
-              size="large" style="width: 100%" @change="(value: any) => handleSettingChange('Voice', 'Type', value)" />
+            <a-select
+              :value="settings.Voice?.Type"
+              :options="voiceTypeOptions"
+              :disabled="!settings.Voice?.Enabled"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
+            />
           </div>
         </a-col>
       </a-row>

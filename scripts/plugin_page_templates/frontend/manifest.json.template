@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "renderer": "custom-element",
+  "entry": "frontend/dist/index.js",
+  "style": [],
+  "elements": [
+    {
+      "tag": "${plugin_element_tag}"
+    }
+  ]
+}

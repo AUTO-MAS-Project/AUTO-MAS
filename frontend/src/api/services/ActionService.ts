@@ -8,6 +8,9 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
+import type { PluginPackageIn } from '../models/PluginPackageIn';
+import type { PluginReloadInstanceIn } from '../models/PluginReloadInstanceIn';
+import type { PluginReloadPluginIn } from '../models/PluginReloadPluginIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
@@ -28,6 +31,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
+        });
+    }
+    /**
+     * 操作模拟器
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static operationEmulatorApiEmulatorOperatePost(
+        requestBody: EmulatorOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/operate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -80,25 +102,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 操作模拟器
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static operationEmulatorApiEmulatorOperatePost(
-        requestBody: EmulatorOperateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/operate',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -325,6 +328,113 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/ocr/click/text',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重载插件实例
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reloadPluginsApiPluginsReloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/reload',
+        });
+    }
+    /**
+     * 重载单个插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reloadPluginInstanceApiPluginsReloadInstancePost(
+        requestBody: PluginReloadInstanceIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/reload_instance',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按插件名重载所有实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reloadPluginByNameApiPluginsReloadPluginPost(
+        requestBody: PluginReloadPluginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/reload_plugin',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 下载安装插件包
+     * 下载安装指定插件包。
+     *
+     * Args:
+     * data (PluginPackageIn): 包名参数。
+     *
+     * Returns:
+     * OutBase: 统一响应对象。
+     *
+     * Raises:
+     * 无。接口内部会捕获异常并转换为统一错误响应。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static installPluginPackageApiPluginsInstallPackagePost(
+        requestBody: PluginPackageIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/install_package',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 卸载插件包
+     * 卸载指定插件包。
+     *
+     * Args:
+     * data (PluginPackageIn): 包名参数。
+     *
+     * Returns:
+     * OutBase: 统一响应对象。
+     *
+     * Raises:
+     * 无。接口内部会捕获异常并转换为统一错误响应。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uninstallPluginPackageApiPluginsUninstallPackagePost(
+        requestBody: PluginPackageIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/uninstall_package',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

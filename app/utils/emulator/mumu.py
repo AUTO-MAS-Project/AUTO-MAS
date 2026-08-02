@@ -62,6 +62,139 @@ class MumuManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    async def _get_app_state(self, idx: str, package_name: str) -> str | None:
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "control",
+                "-v",
+                idx,
+                "app",
+                "info",
+                "-pkg",
+                package_name,
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except Exception as e:
+            logger.warning(f"获取 MuMu 应用状态失败: {e}")
+            return None
+
+        if result.returncode != 0:
+            logger.warning(f"获取 MuMu 应用状态失败: {result.stdout.strip()}")
+            return None
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            logger.warning(f"解析 MuMu 应用状态失败: {e}")
+            return None
+
+        if not isinstance(data, dict) or not isinstance(data.get("state"), str):
+            logger.warning(f"MuMu 应用状态返回异常: {result.stdout.strip()}")
+            return None
+
+        return data["state"].strip().lower()
+
+    @staticmethod
+    def _is_app_foreground(data: str, package_name: str) -> bool:
+        package_component = f"{package_name}/"
+        foreground_markers = (
+            "topResumedActivity=",
+            "ResumedActivity:",
+            "mResumedActivity:",
+            "mCurrentFocus=",
+        )
+        return any(
+            package_component in line
+            and any(marker in line for marker in foreground_markers)
+            for line in data.splitlines()
+        )
+
+    async def _wait_app_foreground(self, idx: str, package_name: str) -> bool:
+        for attempt in range(6):
+            try:
+                result = await ProcessRunner.run_process(
+                    self.emulator_path,
+                    "adb",
+                    "-v",
+                    idx,
+                    "shell",
+                    "dumpsys",
+                    "activity",
+                    "activities",
+                    timeout=self.config.get("Info", "MaxWaitTime"),
+                    if_merge_std=True,
+                )
+            except Exception as e:
+                logger.debug(f"检查 MuMu 应用前台状态失败: {e}")
+            else:
+                if result.returncode == 0 and self._is_app_foreground(
+                    result.stdout, package_name
+                ):
+                    return True
+                if result.returncode != 0:
+                    logger.debug(
+                        f"检查 MuMu 应用前台状态失败: {result.stdout.strip()}"
+                    )
+
+            if attempt < 5:
+                await asyncio.sleep(1)
+
+        return False
+
+    async def _ensure_app_foreground(self, idx: str, package_name: str) -> bool:
+        state = await self._get_app_state(idx, package_name)
+        if state != "running":
+            try:
+                result = await ProcessRunner.run_process(
+                    self.emulator_path,
+                    "control",
+                    "-v",
+                    idx,
+                    "app",
+                    "launch",
+                    "-pkg",
+                    package_name,
+                    timeout=self.config.get("Info", "MaxWaitTime"),
+                    if_merge_std=True,
+                )
+                if result.returncode != 0:
+                    logger.warning(f"MuMu 应用补启动失败: {result.stdout.strip()}")
+            except Exception as e:
+                logger.warning(f"MuMu 应用补启动失败: {e}")
+
+        if await self._wait_app_foreground(idx, package_name):
+            return True
+
+        logger.warning(f"MuMu 应用未进入前台，尝试使用 monkey 补启动: {package_name}")
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "adb",
+                "-v",
+                idx,
+                "shell",
+                "monkey",
+                "-p",
+                package_name,
+                "1",
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+            if result.returncode != 0:
+                logger.warning(f"MuMu monkey 补启动失败: {result.stdout.strip()}")
+        except Exception as e:
+            logger.warning(f"MuMu monkey 补启动失败: {e}")
+
+        if await self._wait_app_foreground(idx, package_name):
+            return True
+
+        logger.warning(
+            f"MuMu 应用补启动后仍未进入前台，将继续运行: {idx} - {package_name}"
+        )
+        return False
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
@@ -125,12 +258,21 @@ class MumuManager(DeviceBase):
             if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
-                await asyncio.sleep(
-                    30
-                    if package_name != ""
-                    and self.config.get("Info", "MaxWaitTime") > 60
-                    else 3
-                )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
+                if package_name:
+                    try:
+                        await self._ensure_app_foreground(idx, package_name)
+                    except Exception as e:
+                        logger.warning(
+                            f"MuMu 应用检查或补启动异常，将继续运行: "
+                            f"{idx} - {package_name} - {e}"
+                        )
+                    await asyncio.sleep(
+                        30
+                        if self.config.get("Info", "MaxWaitTime") > 60
+                        else 3
+                    )
+                else:
+                    await asyncio.sleep(3)
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
@@ -141,9 +283,16 @@ class MumuManager(DeviceBase):
     async def close(self, idx: str) -> DeviceStatus:
         try:
             status = await self.getStatus(idx)
-            if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
+            if status not in [
+                DeviceStatus.ONLINE,
+                DeviceStatus.STARTING,
+                DeviceStatus.ERROR,
+                DeviceStatus.UNKNOWN,
+            ]:
                 logger.warning(f"设备{idx}未在线，当前状态: {status}")
                 return status
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                logger.warning(f"设备{idx}状态无法确认，仍尝试发送 MuMu 关闭命令")
 
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -170,7 +319,8 @@ class MumuManager(DeviceBase):
 
             else:
                 if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                    raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+                    logger.warning(f"MuMu 模拟器 {idx} 关闭命令已发送，但状态无法确认: {status}")
+                    return status
                 raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
         finally:
             if self.config.get("Info", "ForceKillOnClose"):

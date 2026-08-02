@@ -12,12 +12,7 @@
           配置完成后，点击“保存配置”结束本次会话。
         </p>
         <div class="mask-actions">
-          <a-button
-            v-if="maaEndWebsocketId"
-            type="primary"
-            size="large"
-            @click="handleSaveMaaEndConfig"
-          >
+          <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
             保存配置
           </a-button>
         </div>
@@ -205,7 +200,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="maaEndConfig.Game.Path"
-                    placeholder="请选择游戏可执行文件"
+                    placeholder="请选择 Endfield.exe 文件的路径"
                     size="large"
                     class="path-input"
                     readonly
@@ -339,27 +334,7 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    账号切换方式
-                    <a-tooltip
-                      title="选择由 MAS 切换游戏内已保存账号，或由 MAAEND 内置任务按账号末四位切换"
-                    >
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
-                  size="large"
-                  :options="accountSwitchMethodOptions"
-                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -381,7 +356,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -401,7 +376,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -438,6 +413,11 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
@@ -459,8 +439,8 @@ const isInitializing = ref(true)
 const isSaving = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
-const maaEndSubscriptionId = ref<string | null>(null)
-const maaEndWebsocketId = ref<string | null>(null)
+const maaEndSubscriptionIds = ref<string[]>([])
+const maaEndTaskId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 
 const formData = reactive({
@@ -483,7 +463,6 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
-    AccountSwitchMethod: 'MAS',
   },
   Game: {
     ControllerType: 'Win32-Front',
@@ -509,11 +488,6 @@ const controllerOptions = [
 const booleanOptions = [
   { label: '是', value: true },
   { label: '否', value: false },
-]
-
-const accountSwitchMethodOptions = [
-  { label: 'MAS 自建账号切换', value: 'MAS' },
-  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
 ]
 
 const emulatorLoading = ref(false)
@@ -704,11 +678,11 @@ const selectGamePath = async () => {
 }
 
 const cleanupConfigSession = () => {
-  if (maaEndSubscriptionId.value) {
-    unsubscribe(maaEndSubscriptionId.value)
-    maaEndSubscriptionId.value = null
+  for (const subscriptionId of maaEndSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  maaEndWebsocketId.value = null
+  maaEndSubscriptionIds.value = []
+  maaEndTaskId.value = null
   showMaaEndConfigMask.value = false
   if (maaEndConfigTimeout) {
     window.clearTimeout(maaEndConfigTimeout)
@@ -730,25 +704,20 @@ const handleMaaEndConfig = async () => {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
     }
 
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`MaaEnd 配置异常: ${data.message}`)
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         cleanupConfigSession()
-        return
-      }
+      }),
+    ]
 
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupConfigSession()
-      }
-    })
-
-    maaEndSubscriptionId.value = subscriptionId
-    maaEndWebsocketId.value = response.taskId
+    maaEndSubscriptionIds.value = subscriptionIds
+    maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
     message.success('已启动脚本级 MaaEnd 配置')
 
@@ -768,11 +737,11 @@ const handleMaaEndConfig = async () => {
 
 const handleSaveMaaEndConfig = async () => {
   try {
-    if (!maaEndWebsocketId.value) {
+    if (!maaEndTaskId.value) {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }
