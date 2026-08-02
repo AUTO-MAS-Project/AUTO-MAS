@@ -98,7 +98,7 @@ When overriding Ant Design Vue internals:
 7. Close protection is required when dismissing a form would lose unsaved changes.
 8. In the frameless Electron window, treat the title bar and its minimize, maximize, and close buttons as reserved application chrome. Ordinary modals, masks, drawers, and popovers must not cover or block those controls.
 9. Inspect the title bar height and stacking context before setting overlay `z-index`. Keep normal business overlays below the title bar or reserve its space; only an intentional startup or shutdown safety layer may block window controls.
-10. At low window heights, constrain the dialog to the usable viewport and scroll the dialog body or content region. Do not make the page body or the modal wrapper provide the overflow, and keep close and footer actions reachable.
+10. At low window heights, constrain the dialog to the usable viewport and choose exactly one vertical scroll owner for the flow, normally the dialog body or content region. Ordinary child lists and grids must expand inside that scroller instead of adding another `overflow-y: auto`; nested scrolling is reserved for deliberately independent panes. Do not make the page body or the modal wrapper provide the overflow, and keep close and footer actions reachable.
 
 ### Scrollbars
 1. Define scrollbar width, track, thumb, and hover colors in the shared global stylesheet or shared tokens; do not repeat browser-specific scrollbar rules in individual pages.

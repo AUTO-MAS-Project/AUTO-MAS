@@ -10,8 +10,8 @@ describe('ScriptCreateDialog structure', () => {
 
   it('keeps the modal below the title bar and scrolls content inside short windows', () => {
     expect(source).toContain(':z-index="900"')
-    expect(source).toContain('top: 48px;')
-    expect(source).toContain('height: min(500px, calc(100vh - 176px));')
-    expect(source).toContain('overflow-y: auto;')
+    expect(source).toContain('top: 64px;')
+    expect(source).toContain('height: min(500px, calc(100vh - 192px));')
+    expect(source.match(/overflow-y: auto;/g)).toHaveLength(1)
   })
 })
