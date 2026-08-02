@@ -31,7 +31,9 @@
       >
         <FolderOpenOutlined />
         <span class="mode-title">外部 MaaFW 配置</span>
-        <span class="mode-description">从 MFAAvalonia 或 MXU 的配置文件中生成预览。</span>
+        <span class="mode-description">
+          从 MFAAvalonia、MFW/CFA 或 MXU 的配置文件中生成预览。
+        </span>
       </button>
       <button
         v-if="mode === 'new-user'"
@@ -95,7 +97,7 @@
       <a-spin :spinning="loading">
         <a-empty
           v-if="sourceScanned && sources.length === 0"
-          description="该位置没有发现可识别的 MFAAvalonia/MXU 配置"
+          description="该位置没有发现可识别的 MFAAvalonia/MFW/CFA/MXU 配置"
           class="source-empty"
         />
         <a-radio-group
