@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -83,13 +83,18 @@ def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
 
 
 def _build_maafw_agent_env_info_items(agent_plans: list[Any]) -> list[MaaFWAgentEnvInfo]:
+    def read(agent: Any, key: str) -> Any:
+        if isinstance(agent, dict):
+            return agent.get(key)
+        return getattr(agent, key, None)
+
     return [
         MaaFWAgentEnvInfo(
-            childExec=agent.childExec,
-            executable=agent.executable,
-            runtimeKind=agent.runtimeKind,
-            isolatedVenvPath=agent.isolatedVenvPath,
-            fallbackReason=agent.fallbackReason,
+            childExec=read(agent, "childExec") or "",
+            executable=read(agent, "executable") or "",
+            runtimeKind=read(agent, "runtimeKind"),
+            isolatedVenvPath=read(agent, "isolatedVenvPath"),
+            fallbackReason=read(agent, "fallbackReason"),
         )
         for agent in agent_plans
     ]
@@ -784,13 +789,74 @@ async def update_maafw_project(
     payload: MaaFWProjectUpdateIn = Body(...),
 ) -> MaaFWProjectUpdateOut:
     """按脚本更新配置手动检查并应用 MaaFW 项目资源更新。"""
-    from automas_maafw_agent_env.service import MaaFWAgentEnvService
     from automas_maafw_interface.loader import MaaFWInterfaceLoadError
     from automas_maafw_interface.service import MaaFWInterfaceService
     from automas_maafw_project_update.service import MaaFWProjectUpdateService
+    from automas_maafw_runner.service import MaaFWRunnerService
+    from automas_script_maafw.project_path import (
+        release_project_path,
+        try_reserve_project_path,
+    )
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
 
     logs: list[str] = []
     current_version = ""
+    update_loop = asyncio.get_running_loop()
+
+    def publish_update_progress(progress: dict[str, Any]) -> None:
+        """Bridge thread-safe updater callbacks onto the main WebSocket."""
+
+        payload_data = {"scriptId": payload.scriptId, **dict(progress)}
+
+        def schedule() -> None:
+            asyncio.create_task(
+                Publisher.send(
+                    id=payload.scriptId,
+                    type=ws_protocol.MAAFW_PROJECT_UPDATE_PROGRESS,
+                    data=payload_data,
+                )
+            )
+
+        update_loop.call_soon_threadsafe(schedule)
+
+    def publish_environment_progress(progress: dict[str, Any]) -> None:
+        """Forward warmup detail without turning a successful update into failure."""
+
+        progress_data = dict(progress)
+        if progress_data.get("stage") in {"completed", "failed"}:
+            return
+        publish_update_progress(
+            {
+                "phase": "preparing_environment",
+                **progress_data,
+            }
+        )
+
+    def publish_resource_update_progress(progress: dict[str, Any]) -> None:
+        """Keep the updater's resource terminal distinct from the whole workflow."""
+
+        progress_data = dict(progress)
+        if (
+            progress_data.get("stage") == "completed"
+            and progress_data.get("status") == "updated"
+        ):
+            publish_update_progress(
+                {
+                    **progress_data,
+                    "stage": "preparing_environment",
+                    "status": "running",
+                    "message": "项目资源已更新，正在准备运行环境",
+                    "percent": 90.0,
+                    "phase": "resource_applied",
+                    "final": False,
+                }
+            )
+            return
+        if progress_data.get("stage") == "completed":
+            progress_data["phase"] = "finalizing"
+            progress_data["final"] = True
+        publish_update_progress(progress_data)
 
     def append_log(message: str) -> None:
         timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
@@ -852,50 +918,149 @@ async def update_maafw_project(
             )
 
         project_path = Path(project_path_raw).resolve()
-        interface_model = MaaFWInterfaceService().load(project_path)
-        current_version = interface_model.version or ""
+        reservation_key = await try_reserve_project_path(project_path)
+        if reservation_key is None:
+            append_log("MaaFW 项目正在运行或更新，请稍后重试")
+            return MaaFWProjectUpdateOut(
+                code=409,
+                status="error",
+                message="MaaFW 项目正在运行或更新，请稍后重试",
+                data=MaaFWProjectUpdateData(
+                    checked=False,
+                    updated=False,
+                    currentVersion=current_version,
+                    logs=logs,
+                ),
+            )
 
-        mirror_cdk = (
-            update_group.get("MirrorChyanCDK")
-            or Config.get("Update", "MirrorChyanCDK")
-        )
-        channel = update_group.get("Channel") or Config.get("Update", "Channel")
-        source_config = None
+        environment_warning = ""
         try:
-            from automas_script_maafw.schema import build_source_config
+            interface_model = MaaFWInterfaceService().load(project_path)
+            current_version = interface_model.version or ""
 
-            source_config = build_source_config(script_form)
-        except Exception as e:
-            append_log(f"读取脚本更新源配置失败，回退默认更新源: {type(e).__name__}: {e}")
-        update_result = await MaaFWProjectUpdateService().update_if_needed(
-            project_path,
-            interface_model,
-            mirror_cdk=mirror_cdk,
-            channel=channel,
-            proxy=Config.proxy,
-            send_log=append_log,
-            source_config=source_config,
-        )
-
-        if update_result.updated:
-            refreshed_interface = MaaFWInterfaceService().load(
-                project_path,
-                force_reload=True,
+            mirror_cdk = (
+                update_group.get("MirrorChyanCDK")
+                or Config.get("Update", "MirrorChyanCDK")
             )
-            append_log("MaaFW 项目已更新，准备 Agent Python 环境")
-            await asyncio.to_thread(
-                MaaFWAgentEnvService().prepare_env,
+            channel = update_group.get("Channel") or Config.get("Update", "Channel")
+            source_config = None
+            try:
+                from automas_script_maafw.schema import build_source_config
+
+                source_config = build_source_config(script_form)
+            except Exception as e:
+                append_log(
+                    "读取脚本更新源配置失败，回退默认更新源: "
+                    f"{type(e).__name__}: {e}"
+                )
+            update_result = await MaaFWProjectUpdateService().update_if_needed(
                 project_path,
-                refreshed_interface,
+                interface_model,
+                mirror_cdk=mirror_cdk,
+                channel=channel,
+                proxy=Config.proxy,
                 send_log=append_log,
+                source_config=source_config,
+                progress=publish_resource_update_progress,
             )
+
+            if update_result.updated:
+                current_version = update_result.latest_version or current_version
+                append_log(
+                    "[完成] MaaFW 项目资源已更新"
+                    + (f"至 {current_version}" if current_version else "")
+                )
+                try:
+                    refreshed_interface = MaaFWInterfaceService().load(
+                        project_path,
+                        force_reload=True,
+                    )
+                except Exception as refresh_error:
+                    environment_warning = (
+                        "项目资源已更新，但新版 interface 重新读取失败；"
+                        "请修复项目文件后重新进入: "
+                        f"{type(refresh_error).__name__}: {refresh_error}"
+                    )
+                    append_log(f"[警告] {environment_warning}")
+                    publish_update_progress(
+                        {
+                            "stage": "completed",
+                            "status": "updated_with_environment_warning",
+                            "message": environment_warning,
+                            "percent": 100.0,
+                            "phase": "finalizing",
+                            "final": True,
+                        }
+                    )
+                else:
+                    installed_version = (
+                        refreshed_interface.version or update_result.latest_version
+                    )
+                    current_version = installed_version or current_version
+                    append_log("开始预热 MaaFW 实际运行环境")
+                    publish_update_progress(
+                        {
+                            "stage": "preparing_environment",
+                            "status": "running",
+                            "message": "正在准备 MaaFW 实际运行环境",
+                            "percent": None,
+                        }
+                    )
+                    try:
+                        await asyncio.to_thread(
+                            MaaFWRunnerService().prepare_project_environment,
+                            project_path,
+                            refreshed_interface,
+                            runtime_pool_root=Path.cwd()
+                            / "config"
+                            / "maafw_runtime_pool",
+                            send_log=append_log,
+                            progress=publish_environment_progress,
+                        )
+                    except Exception as env_error:
+                        environment_warning = (
+                            "项目资源已更新，但运行环境预热未完成: "
+                            f"{type(env_error).__name__}: {env_error}"
+                        )
+                        append_log(f"[警告] {environment_warning}")
+                        publish_update_progress(
+                            {
+                                "stage": "completed",
+                                "status": "updated_with_environment_warning",
+                                "message": environment_warning,
+                                "percent": 100.0,
+                                "phase": "finalizing",
+                                "final": True,
+                            }
+                        )
+                    else:
+                        append_log("[完成] MaaFW 运行环境预热完成")
+                        publish_update_progress(
+                            {
+                                "stage": "completed",
+                                "status": "updated",
+                                "message": "MaaFW project and runtime environment are ready",
+                                "percent": 100.0,
+                                "phase": "finalizing",
+                                "final": True,
+                            }
+                        )
+            elif getattr(update_result, "update_available", False):
+                append_log(
+                    "[完成] MaaFW 项目更新检查完成：已发现新版本，当前来源暂不可安装"
+                )
+            else:
+                append_log("[完成] MaaFW 项目更新检查完成：当前已是最新版本")
+        finally:
+            await release_project_path(reservation_key)
+            append_log("MaaFW 项目更新锁已释放")
 
         return MaaFWProjectUpdateOut(
-            message=update_result.message,
+            message=environment_warning or update_result.message,
             data=MaaFWProjectUpdateData(
                 checked=update_result.checked,
                 updated=update_result.updated,
-                currentVersion=update_result.current_version,
+                currentVersion=current_version or update_result.current_version,
                 latestVersion=update_result.latest_version,
                 source=update_result.source,
                 logs=logs,
@@ -950,27 +1115,99 @@ async def update_maafw_project(
     status_code=200,
 )
 async def prepare_maafw_agent_env(
+    request: Request,
     payload: MaaFWAgentEnvPrepareIn = Body(...),
 ) -> MaaFWAgentEnvPrepareOut:
     """Prepare MaaFW Runner and agent Python envs before starting tasks."""
 
-    from automas_maafw_agent_env.service import MaaFWAgentEnvService
     from automas_maafw_interface.loader import MaaFWInterfaceLoadError
     from automas_maafw_interface.service import MaaFWInterfaceService
+    from automas_maafw_runner.service import MaaFWRunnerService
+    from automas_script_maafw.project_path import (
+        release_project_path,
+        try_reserve_project_path,
+    )
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
 
     logs: list[str] = []
     root_path: Path | None = None
     agent_plans: list[Any] = []
+    reservation_key: str | None = None
+    prepare_terminal_published = False
+    prepare_loop = asyncio.get_running_loop()
+    progress_id = request.headers.get("X-MaaFW-Progress-Id", "").strip()[:128]
+
+    def publish_prepare_progress(progress: dict[str, Any]) -> None:
+        nonlocal prepare_terminal_published
+        if not progress_id:
+            return
+        progress_data = dict(progress)
+        if progress_data.get("stage") in {"completed", "failed"}:
+            prepare_terminal_published = True
+            progress_data.setdefault("final", True)
+        payload_data = {
+            "scriptId": progress_id,
+            "project_path": str(root_path or payload.path),
+            **progress_data,
+        }
+
+        def schedule() -> None:
+            asyncio.create_task(
+                Publisher.send(
+                    id=progress_id,
+                    type=ws_protocol.MAAFW_ENV_PREPARE_PROGRESS,
+                    data=payload_data,
+                )
+            )
+
+        prepare_loop.call_soon_threadsafe(schedule)
+
     try:
         root_path = Path(payload.path).resolve()
+        reservation_key = await try_reserve_project_path(root_path)
+        if reservation_key is None:
+            message = "MaaFW 项目正在运行、更新或准备环境，请稍后重试"
+            publish_prepare_progress(
+                {
+                    "stage": "failed",
+                    "status": "busy",
+                    "message": message,
+                    "percent": None,
+                }
+            )
+            return MaaFWAgentEnvPrepareOut(
+                code=409,
+                status="error",
+                message=message,
+                data=MaaFWAgentEnvPrepareData(
+                    path=str(root_path),
+                    agentCount=0,
+                    agents=[],
+                    logs=logs,
+                ),
+            )
+        publish_prepare_progress(
+            {
+                "stage": "resolving",
+                "status": "running",
+                "message": "正在解析 MaaFW 项目运行环境",
+                "percent": 2.0,
+            }
+        )
         interface = MaaFWInterfaceService().load(root_path)
         prepare_result = await asyncio.to_thread(
-            MaaFWAgentEnvService().prepare_env,
+            MaaFWRunnerService().prepare_project_environment,
             root_path,
             interface,
+            runtime_pool_root=Path.cwd() / "config" / "maafw_runtime_pool",
             send_log=logs.append,
+            progress=publish_prepare_progress,
         )
-        agent_plans = prepare_result.plans
+        agent_result = prepare_result.get("agents")
+        agent_result = agent_result if isinstance(agent_result, dict) else {}
+        raw_agent_plans = agent_result.get("plans")
+        agent_plans = raw_agent_plans if isinstance(raw_agent_plans, list) else []
         agents = _build_maafw_agent_env_info_items(agent_plans)
         data = MaaFWAgentEnvPrepareData(
             path=str(root_path),
@@ -979,6 +1216,15 @@ async def prepare_maafw_agent_env(
             logs=logs,
         )
     except MaaFWInterfaceLoadError as e:
+        if not prepare_terminal_published:
+            publish_prepare_progress(
+                {
+                    "stage": "failed",
+                    "status": "failed",
+                    "message": str(e),
+                    "percent": None,
+                }
+            )
         return MaaFWAgentEnvPrepareOut(
             code=400,
             status="error",
@@ -992,6 +1238,15 @@ async def prepare_maafw_agent_env(
         )
     except Exception as e:
         agents = _build_maafw_agent_env_info_items(agent_plans)
+        if not prepare_terminal_published:
+            publish_prepare_progress(
+                {
+                    "stage": "failed",
+                    "status": "failed",
+                    "message": f"{type(e).__name__}: {e}",
+                    "percent": None,
+                }
+            )
         return MaaFWAgentEnvPrepareOut(
             code=500,
             status="error",
@@ -1003,6 +1258,8 @@ async def prepare_maafw_agent_env(
                 logs=logs,
             ),
         )
+    finally:
+        await release_project_path(reservation_key)
 
     return MaaFWAgentEnvPrepareOut(
         message=f"MaaFW runtime env prepared, agent count: {data.agentCount}",
