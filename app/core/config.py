@@ -2109,8 +2109,12 @@ class AppConfig(GlobalConfig):
         if script_id is None:
             script_pairs = [(uid, config) for uid, config in self.ScriptConfig.items()]
         else:
-            uid = uuid.UUID(script_id)
-            script_pairs = [(uid, self.ScriptConfig[uid])]
+            try:
+                uid = uuid.UUID(script_id)
+                config = self.ScriptConfig[uid]
+            except (ValueError, KeyError):
+                return []
+            script_pairs = [(uid, config)]
 
         records: list[ScriptRecord] = []
         for uid, config in script_pairs:
