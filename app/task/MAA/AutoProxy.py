@@ -65,6 +65,47 @@ _MAA_CLIENT_TYPE_TO_INT = {
 logger = get_logger("MAA 自动代理")
 
 
+def _build_depot_maintain_task(plans_json: str) -> dict:
+    """生成 MAA 库存保持任务配置。"""
+
+    plans = []
+    for plan in json.loads(plans_json):
+        if (
+            isinstance(plan, dict)
+            and isinstance(plan.get("Stage"), str)
+            and bool(plan["Stage"])
+            and isinstance(plan.get("DropId"), str)
+            and bool(plan["DropId"])
+            and isinstance(plan.get("DropCount"), int)
+            and not isinstance(plan.get("DropCount"), bool)
+            and plan["DropCount"] > 0
+        ):
+            plans.append(
+                {
+                    "Stage": plan["Stage"],
+                    "DropId": plan["DropId"],
+                    "DropCount": plan["DropCount"],
+                    "UseMedicine": False,
+                    "MedicineCount": 0,
+                    "UseStone": False,
+                    "StoneCount": 0,
+                }
+            )
+
+    return {
+        "$type": "DepotMaintainTask",
+        "Name": "库存保持",
+        "IsEnable": True,
+        "TaskType": "DepotMaintain",
+        "UpdateDepot": True,
+        "IsStageManually": False,
+        "SkipDuringActivity": False,
+        "SkipDuringResourceCollection": False,
+        "UseAutoSeries": False,
+        "PlanList": plans,
+    }
+
+
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
 
@@ -408,6 +449,10 @@ class AutoProxyTask(TaskExecuteBase):
         # 每个任务类型匹配第一个配置作为配置基础
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
 
+            # 默认关闭时不写入新任务，兼容尚未支持库存保持的 MAA 版本
+            if en_task == "DepotMaintain" and not self.task_dict[en_task]:
+                continue
+
             for task_item in gui_new_set["Configurations"]["Default"]["TaskQueue"]:
                 if task_item.get("TaskType", "") == en_task:
                     task_set[en_task] = task_item
@@ -420,6 +465,11 @@ class AutoProxyTask(TaskExecuteBase):
                     "IsEnable": False,
                     "TaskType": en_task,
                 }
+
+        if "DepotMaintain" in task_set:
+            task_set["DepotMaintain"] = _build_depot_maintain_task(
+                self.cur_user_config.get("Task", "DepotMaintainPlans")
+            )
 
         # 关闭所有定时
         for i in range(1, 9):
@@ -623,6 +673,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_dict["StartUp"] = True
         task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
         for task_type in MAA_TASKS:
+
+            if task_type not in task_set:
+                continue
 
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
             task_queue.append(task_set[task_type])

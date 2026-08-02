@@ -51,7 +51,16 @@ TYPE_BOOK = {
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 
-MAA_TASKS = ["StartUp", "Fight", "Infrast", "Recruit", "Mall", "Award", "Roguelike"]
+MAA_TASKS = [
+    "StartUp",
+    "Fight",
+    "Infrast",
+    "Recruit",
+    "Mall",
+    "Award",
+    "Roguelike",
+    "DepotMaintain",
+]
 """MAA任务列表"""
 
 MAA_TASKS_ZH = [
@@ -62,8 +71,41 @@ MAA_TASKS_ZH = [
     "信用收支",
     "领取奖励",
     "自动肉鸽",
+    "库存保持",
 ]
 """MAA任务列表"""
+
+MAA_DEPOT_EXCLUDED_ITEM_IDS = {
+    "3213",
+    "3223",
+    "3233",
+    "3243",
+    "3253",
+    "3263",
+    "3273",
+    "3283",
+    "7001",
+    "7002",
+    "7003",
+    "7004",
+    "4004",
+    "4005",
+    "3105",
+    "3131",
+    "3132",
+    "3133",
+    "6001",
+    "3141",
+    "4002",
+    "32001",
+    "30115",
+    "30125",
+    "30135",
+    "30145",
+    "30155",
+    "30165",
+}
+"""MAA 库存保持不可刷取物品 ID"""
 
 MAA_STAGE_KEY = [
     "MedicineNumb",
