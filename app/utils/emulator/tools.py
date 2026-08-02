@@ -20,6 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import os
 import re
 import winreg
@@ -222,7 +223,13 @@ def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
     return {et: _dedupe_path_strings(paths) for et, paths in acc.items()}
 
 
-def search_all_emulators() -> List[Dict[str, str]]:
+async def search_all_emulators() -> List[Dict[str, str]]:
+    """在线程中搜索所有支持的模拟器，避免阻塞事件循环。"""
+
+    return await asyncio.to_thread(_search_all_emulators_sync)
+
+
+def _search_all_emulators_sync() -> List[Dict[str, str]]:
     """搜索所有支持的模拟器：仅卸载表 UninstallString 路径（全同步实现）。"""
 
     logger.info("开始搜索所有模拟器, mode=registry_uninstall")
