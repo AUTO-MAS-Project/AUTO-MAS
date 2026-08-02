@@ -54,11 +54,27 @@
       </a-col>
     </a-row>
     <a-alert
-      v-if="maafwConfig.Update.Source === 'GitHub'"
+      v-if="maafwConfig.Update.Source === ''"
+      class="update-alert"
+      type="info"
+      show-icon
+      message="自动选择更新源"
+      description="有项目 CDK 或 MAS 全局 CDK 时优先使用 MirrorChyan；没有 CDK 时先发现版本，再由 GitHub 安装同版本资源。"
+    />
+    <a-alert
+      v-else-if="maafwConfig.Update.Source === 'GitHub'"
       class="update-alert"
       type="info"
       show-icon
       message="GitHub 更新源会自动读取项目 interface.json 中声明的仓库，默认拉取最新 Release 的第一个 .zip 资产，无需额外填写。"
+    />
+    <a-alert
+      v-else-if="projectUpdateMirrorSourceBlocked"
+      class="update-alert"
+      type="warning"
+      show-icon
+      message="MirrorChyan 当前只能发现版本，不能安装更新"
+      description="请填写项目 Mirror 酱 CDK，或在 MAS 全局更新设置中配置 CDK；也可以随时改用 GitHub 更新源。"
     />
     <a-row :gutter="24" class="update-action-row">
       <a-col :span="8">
@@ -99,6 +115,53 @@
           </a-button>
         </a-form-item>
       </a-col>
+      <a-col :span="8">
+        <a-form-item label="更新进度">
+          <div
+            class="project-update-progress"
+            :class="`project-update-progress-${projectUpdateStatus}`"
+          >
+            <div v-if="projectUpdateStatus === 'idle'" class="project-update-progress-idle">
+              尚未开始更新
+            </div>
+            <template v-else>
+              <div class="project-update-progress-header">
+                <span>{{ projectUpdateStage || '正在更新项目资源' }}</span>
+                <span v-if="displayProgressPercent !== null">
+                  总体 {{ displayProgressPercent }}%
+                </span>
+              </div>
+              <a-progress
+                v-if="displayProgressPercent !== null"
+                :percent="displayProgressPercent"
+                :status="progressStatus"
+                :show-info="false"
+                :stroke-width="8"
+              />
+              <div
+                v-else-if="projectUpdateStatus === 'running'"
+                class="project-update-indeterminate-track"
+                aria-label="更新进行中，暂时没有可用的总大小"
+              >
+                <span />
+              </div>
+              <div v-else class="project-update-failure-track" />
+              <div v-if="downloadSummary" class="project-update-progress-detail">
+                {{ downloadSummary }}
+              </div>
+              <div v-if="discoverySummary" class="project-update-progress-detail">
+                {{ discoverySummary }}
+              </div>
+              <div
+                v-if="projectUpdateMessage && projectUpdateMessage !== projectUpdateStage"
+                class="project-update-progress-message"
+              >
+                {{ projectUpdateMessage }}
+              </div>
+            </template>
+          </div>
+        </a-form-item>
+      </a-col>
     </a-row>
     <div v-if="projectUpdateLogs.length" class="agent-env-log-box project-update-log-box">
       <div
@@ -135,15 +198,28 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { QuestionCircleOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import type { MaaFWProjectUpdateStatus } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 
-defineProps<{
+const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   isAutoUpdateDisabled: boolean
   projectUpdateLoading: boolean
   projectUpdateDisabled: boolean
+  projectUpdateMirrorSourceBlocked: boolean
+  projectUpdateStatus: MaaFWProjectUpdateStatus
+  projectUpdateStage: string
+  projectUpdateProgress: number | null
+  projectUpdateDownloadPercent: number | null
+  projectUpdateDownloadedBytes: number | null
+  projectUpdateTotalBytes: number | null
+  projectUpdateMessage: string
+  projectUpdateDiscoveredVersion: string
+  projectUpdateMetadataSource: string
+  projectUpdatePackageSource: string
   projectUpdateLogs: string[]
   updateSourceOptions: Array<{ label: string; value: string }>
   updateChannelOptions: Array<{ label: string; value: string }>
@@ -153,6 +229,55 @@ const emit = defineEmits<{
   change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
   'manual-update': []
 }>()
+
+const displayProgressPercent = computed(() => {
+  if (props.projectUpdateProgress === null) return null
+  return Math.round(Math.min(Math.max(props.projectUpdateProgress, 0), 100))
+})
+
+const progressStatus = computed<'active' | 'success' | 'exception'>(() => {
+  if (props.projectUpdateStatus === 'completed') return 'success'
+  if (props.projectUpdateStatus === 'failed') return 'exception'
+  return 'active'
+})
+
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const base = 1024
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(base)), units.length - 1)
+  return `${Number((bytes / Math.pow(base, unitIndex)).toFixed(2))} ${units[unitIndex]}`
+}
+
+const downloadSummary = computed(() => {
+  const parts: string[] = []
+  if (props.projectUpdateDownloadPercent !== null) {
+    parts.push(`下载 ${Math.round(props.projectUpdateDownloadPercent)}%`)
+  }
+  if (props.projectUpdateDownloadedBytes !== null) {
+    const downloaded = formatBytes(props.projectUpdateDownloadedBytes)
+    if (props.projectUpdateTotalBytes !== null && props.projectUpdateTotalBytes > 0) {
+      parts.push(`${downloaded} / ${formatBytes(props.projectUpdateTotalBytes)}`)
+    } else {
+      parts.push(`已下载 ${downloaded}`)
+    }
+  }
+  return parts.join(' · ')
+})
+
+const discoverySummary = computed(() => {
+  const parts: string[] = []
+  if (props.projectUpdateDiscoveredVersion) {
+    parts.push(`版本 ${props.projectUpdateDiscoveredVersion}`)
+  }
+  if (props.projectUpdateMetadataSource) {
+    parts.push(`元数据 ${props.projectUpdateMetadataSource}`)
+  }
+  if (props.projectUpdatePackageSource) {
+    parts.push(`安装 ${props.projectUpdatePackageSource}`)
+  }
+  return parts.join(' · ')
+})
 </script>
 
 <style scoped>
@@ -207,6 +332,76 @@ const emit = defineEmits<{
 
 .manual-update-button {
   min-width: 160px;
+}
+
+.project-update-progress {
+  min-height: 40px;
+  padding-top: 2px;
+}
+
+.project-update-progress-idle,
+.project-update-progress-detail,
+.project-update-progress-message {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.project-update-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--ant-color-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.project-update-progress-completed .project-update-progress-header {
+  color: var(--ant-color-success);
+}
+
+.project-update-progress-failed .project-update-progress-header,
+.project-update-progress-failed .project-update-progress-message {
+  color: var(--ant-color-error);
+}
+
+.project-update-indeterminate-track,
+.project-update-failure-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ant-color-fill-secondary);
+}
+
+.project-update-indeterminate-track span {
+  position: absolute;
+  inset-block: 0;
+  width: 38%;
+  border-radius: inherit;
+  background: var(--ant-color-primary);
+  animation: project-update-indeterminate 1.2s ease-in-out infinite;
+}
+
+.project-update-failure-track {
+  border: 1px solid var(--ant-color-error-border);
+  background: var(--ant-color-error-bg);
+}
+
+.project-update-progress-detail,
+.project-update-progress-message {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+
+@keyframes project-update-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(280%);
+  }
 }
 
 .project-update-log-box {

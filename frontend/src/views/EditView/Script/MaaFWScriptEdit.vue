@@ -63,8 +63,17 @@
           :rules="rules"
           :preview-data="previewData"
           :agent-env-result="agentEnvResult"
+          :agent-env-progress-status="agentEnvProgressStatus"
+          :agent-env-progress-stage="agentEnvProgressStage"
+          :agent-env-progress-percent="agentEnvProgressPercent"
+          :agent-env-progress-message="agentEnvProgressMessage"
+          :agent-env-progress-logs="agentEnvProgressLogs"
+          :agent-env-progress-downloaded-bytes="agentEnvProgressDownloadedBytes"
+          :agent-env-progress-total-bytes="agentEnvProgressTotalBytes"
           :interface-loading="interfaceLoading"
           :agent-env-loading="agentEnvLoading"
+          :is-agent-env-preparing="isAgentEnvPreparing"
+          :is-project-update-running="isProjectUpdateRunning"
           :is-setup-mode="false"
           :preview-project-title="previewProjectTitle"
           :interface-stats="interfaceStats"
@@ -116,6 +125,17 @@
           :is-auto-update-disabled="isAutoUpdateDisabled"
           :project-update-loading="projectUpdateLoading"
           :project-update-disabled="projectUpdateDisabled"
+          :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
+          :project-update-status="projectUpdateStatus"
+          :project-update-stage="projectUpdateStage"
+          :project-update-progress="projectUpdateProgress"
+          :project-update-download-percent="projectUpdateDownloadPercent"
+          :project-update-downloaded-bytes="projectUpdateDownloadedBytes"
+          :project-update-total-bytes="projectUpdateTotalBytes"
+          :project-update-message="projectUpdateMessage"
+          :project-update-discovered-version="projectUpdateDiscoveredVersion"
+          :project-update-metadata-source="projectUpdateMetadataSource"
+          :project-update-package-source="projectUpdatePackageSource"
           :project-update-logs="projectUpdateLogs"
           :update-source-options="updateSourceOptions"
           :update-channel-options="updateChannelOptions"
@@ -194,7 +214,24 @@ const {
   rules,
   previewData,
   agentEnvResult,
+  agentEnvProgressStatus,
+  agentEnvProgressStage,
+  agentEnvProgressPercent,
+  agentEnvProgressMessage,
+  agentEnvProgressLogs,
+  agentEnvProgressDownloadedBytes,
+  agentEnvProgressTotalBytes,
   projectUpdateLogs,
+  projectUpdateStatus,
+  projectUpdateStage,
+  projectUpdateProgress,
+  projectUpdateDownloadPercent,
+  projectUpdateDownloadedBytes,
+  projectUpdateTotalBytes,
+  projectUpdateMessage,
+  projectUpdateDiscoveredVersion,
+  projectUpdateMetadataSource,
+  projectUpdatePackageSource,
   scriptEditHint,
   scriptIconUrl,
   pageLoading,
@@ -218,6 +255,9 @@ const {
   isInterfaceReady,
   isAgentEnvReady,
   isAgentEnvFailed,
+  isAgentEnvPreparing,
+  projectUpdateMirrorSourceBlocked,
+  isProjectUpdateRunning,
   projectUpdateDisabled,
   periodTaskOptions,
   previewProjectTitle,
@@ -274,15 +314,17 @@ const handleCancel = () => {
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   try {
-    await loadScript()
+    await Promise.all([loadScript(), loadEmulatorOptions()])
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
     router.replace('/scripts')
     return
   }
-  await loadEmulatorOptions()
   isInitializing.value = false
+  if (maafwConfig.Info.Path && previewData.value) {
+    void handlePrepareAgentEnv()
+  }
 })
 
 onBeforeUnmount(() => {

@@ -80,8 +80,17 @@
                 :rules="rules"
                 :preview-data="previewData"
                 :agent-env-result="agentEnvResult"
+                :agent-env-progress-status="agentEnvProgressStatus"
+                :agent-env-progress-stage="agentEnvProgressStage"
+                :agent-env-progress-percent="agentEnvProgressPercent"
+                :agent-env-progress-message="agentEnvProgressMessage"
+                :agent-env-progress-logs="agentEnvProgressLogs"
+                :agent-env-progress-downloaded-bytes="agentEnvProgressDownloadedBytes"
+                :agent-env-progress-total-bytes="agentEnvProgressTotalBytes"
                 :interface-loading="interfaceLoading"
                 :agent-env-loading="agentEnvLoading"
+                :is-agent-env-preparing="isAgentEnvPreparing"
+                :is-project-update-running="isProjectUpdateRunning"
                 :is-setup-mode="true"
                 :preview-project-title="previewProjectTitle"
                 :interface-stats="interfaceStats"
@@ -144,6 +153,17 @@
                 :is-auto-update-disabled="isAutoUpdateDisabled"
                 :project-update-loading="projectUpdateLoading"
                 :project-update-disabled="projectUpdateDisabled"
+                :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
+                :project-update-status="projectUpdateStatus"
+                :project-update-stage="projectUpdateStage"
+                :project-update-progress="projectUpdateProgress"
+                :project-update-download-percent="projectUpdateDownloadPercent"
+                :project-update-downloaded-bytes="projectUpdateDownloadedBytes"
+                :project-update-total-bytes="projectUpdateTotalBytes"
+                :project-update-message="projectUpdateMessage"
+                :project-update-discovered-version="projectUpdateDiscoveredVersion"
+                :project-update-metadata-source="projectUpdateMetadataSource"
+                :project-update-package-source="projectUpdatePackageSource"
                 :project-update-logs="projectUpdateLogs"
                 :update-source-options="updateSourceOptions"
                 :update-channel-options="updateChannelOptions"
@@ -243,7 +263,24 @@ const {
   rules,
   previewData,
   agentEnvResult,
+  agentEnvProgressStatus,
+  agentEnvProgressStage,
+  agentEnvProgressPercent,
+  agentEnvProgressMessage,
+  agentEnvProgressLogs,
+  agentEnvProgressDownloadedBytes,
+  agentEnvProgressTotalBytes,
   projectUpdateLogs,
+  projectUpdateStatus,
+  projectUpdateStage,
+  projectUpdateProgress,
+  projectUpdateDownloadPercent,
+  projectUpdateDownloadedBytes,
+  projectUpdateTotalBytes,
+  projectUpdateMessage,
+  projectUpdateDiscoveredVersion,
+  projectUpdateMetadataSource,
+  projectUpdatePackageSource,
   scriptIconUrl,
   pageLoading,
   isInitializing,
@@ -265,6 +302,9 @@ const {
   isInterfaceReady,
   isAgentEnvReady,
   isAgentEnvFailed,
+  isAgentEnvPreparing,
+  projectUpdateMirrorSourceBlocked,
+  isProjectUpdateRunning,
   projectUpdateDisabled,
   periodTaskOptions,
   previewProjectTitle,
@@ -304,7 +344,9 @@ const {
   dispose,
 } = useMaaFWScriptConfig(scriptId)
 
-const isStepZeroReady = computed(() => isInterfaceReady.value && isAgentEnvReady.value)
+const isStepZeroReady = computed(
+  () => isInterfaceReady.value && isAgentEnvReady.value && !isAgentEnvPreparing.value
+)
 const isControlStepComplete = computed(() =>
   Boolean(maafwConfig.Info.Controller && maafwConfig.Info.Resource)
 )
@@ -312,6 +354,7 @@ const maxReachableStep = computed(() => {
   if (!isStepZeroReady.value) return 0
   if (!reuseComplete.value) return 1
   if (!isControlStepComplete.value) return 2
+  if (isProjectUpdateRunning.value) return 3
   return 4
 })
 const STEP_TITLES = ['选择项目', '复用配置', '控制配置', '更新设置', '运行参数'] as const
@@ -325,6 +368,7 @@ const canAdvanceNext = computed(() => {
   if (currentStep.value === 0) return isStepZeroReady.value
   if (currentStep.value === 1) return reuseComplete.value
   if (currentStep.value === 2) return isControlStepComplete.value
+  if (currentStep.value === 3) return !isProjectUpdateRunning.value
   return true
 })
 
@@ -373,12 +417,11 @@ const handleCancel = () => {
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   try {
-    await loadScript()
+    await Promise.all([loadScript(), loadEmulatorOptions()])
     if (maafwConfig.Info.Path) {
       router.replace(`/scripts/${scriptId}/edit/maafw`)
       return
     }
-    await loadEmulatorOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`引导加载失败: ${errorMsg}`)

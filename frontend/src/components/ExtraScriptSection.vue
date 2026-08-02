@@ -3,7 +3,7 @@
     <div class="section-header">
       <h3>额外脚本</h3>
     </div>
-    <a-form-item name="scriptBeforeTask">
+    <a-form-item>
       <template #label>
         <a-tooltip title="在任务执行前运行自定义脚本">
           <span class="form-label">
@@ -46,7 +46,7 @@
         </a-col>
       </a-row>
     </a-form-item>
-    <a-form-item name="scriptAfterTask">
+    <a-form-item>
       <template #label>
         <a-tooltip title="在任务执行后运行自定义脚本">
           <span class="form-label">

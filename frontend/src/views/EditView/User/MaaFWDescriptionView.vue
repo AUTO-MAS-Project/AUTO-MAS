@@ -1,21 +1,18 @@
 <template>
-  <!-- eslint-disable vue/no-v-html -- HTML is sanitized by sanitizeHtml before rendering. -->
-  <div
-    v-if="renderedHtml"
-    class="maafw-description-view"
-    @click="handleContentClick"
-    v-html="renderedHtml"
-  />
-  <!-- eslint-enable vue/no-v-html -->
-  <a-modal v-model:open="previewOpen" :footer="null" centered width="80%">
-    <img
-      v-if="previewImage"
-      :src="previewImage"
-      alt=""
-      loading="lazy"
-      class="description-preview-image"
-    />
-  </a-modal>
+  <div class="maafw-description-view">
+    <!-- eslint-disable vue/no-v-html -- HTML is sanitized by sanitizeHtml before rendering. -->
+    <div v-if="renderedHtml" @click="handleContentClick" v-html="renderedHtml" />
+    <!-- eslint-enable vue/no-v-html -->
+    <a-modal v-model:open="previewOpen" :footer="null" centered width="80%">
+      <img
+        v-if="previewImage"
+        :src="previewImage"
+        alt=""
+        loading="lazy"
+        class="description-preview-image"
+      />
+    </a-modal>
+  </div>
 </template>
 
 <script setup lang="ts">

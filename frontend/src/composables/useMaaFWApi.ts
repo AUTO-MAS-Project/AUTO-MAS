@@ -239,7 +239,10 @@ export function useMaaFWApi() {
     }
   }
 
-  const prepareAgentEnv = async (path: string): Promise<MaaFWAgentEnvPrepareData | null> => {
+  const prepareAgentEnv = async (
+    path: string,
+    progressId?: string
+  ): Promise<MaaFWAgentEnvPrepareData | null> => {
     loading.value = true
     error.value = null
 
@@ -248,6 +251,7 @@ export function useMaaFWApi() {
         method: 'POST',
         url: '/api/scripts/maafw/agent-env/prepare',
         body: { path },
+        headers: progressId ? { 'X-MaaFW-Progress-Id': progressId } : undefined,
         mediaType: 'application/json',
         errors: {
           422: 'Validation Error',
