@@ -1,7 +1,7 @@
 <template>
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
-    <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
+    <draggable v-model="localScripts" item-key="id" :animation="200" :disabled="props.searching" ghost-class="script-ghost"
       chosen-class="script-chosen" drag-class="script-drag" handle=".script-drag-handle" class="draggable-scripts"
       @end="onScriptDragEnd">
       <template #item="{ element: script }">
@@ -127,15 +127,16 @@
                     </a-menu>
                   </template>
                 </a-dropdown>
-                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
+                <a-tooltip :title="props.searching ? '搜索时自动展开用户' : isUsersCollapsed(script.id) ? '展开用户' : '收起用户'">
                   <a-button
                     size="middle"
                     class="action-button"
-                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
+                    :disabled="props.searching"
+                    :aria-label="isUsersCollapsed(script.id) ? '展开用户' : '收起用户'"
                     @click="toggleUsersCollapsed(script.id)"
                   >
                     <template #icon>
-                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
+                      <DownOutlined v-if="isUsersCollapsed(script.id)" />
                       <UpOutlined v-else />
                     </template>
                   </a-button>
@@ -146,12 +147,12 @@
             <!-- 用户列表 -->
             <div
               v-if="
-                !collapsedScriptIds.has(script.id) && script.users && script.users.length > 0
+                !isUsersCollapsed(script.id) && script.users && script.users.length > 0
               "
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->
-              <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
+              <draggable v-model="script.users" item-key="id" :animation="200" :disabled="props.searching" ghost-class="user-ghost"
                 chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
                 @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
@@ -324,7 +325,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
+            <div v-else-if="!isUsersCollapsed(script.id)" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -363,6 +364,7 @@ interface Props {
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
+  searching?: boolean
 }
 
 interface Emits {
@@ -459,6 +461,9 @@ const saveCollapsedScriptIds = () => {
     // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
   }
 }
+
+const isUsersCollapsed = (scriptId: string) =>
+  !props.searching && collapsedScriptIds.value.has(scriptId)
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
