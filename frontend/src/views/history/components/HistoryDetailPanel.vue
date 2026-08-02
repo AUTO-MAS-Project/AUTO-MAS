@@ -12,11 +12,19 @@
     <!-- 已选择用户时显示详情 -->
     <div v-else class="detail-content">
       <!-- 统计信息卡片 -->
-      <UserStatisticsCard :recruit-statistics="recruitStatistics" :drop-statistics="dropStatistics" />
+      <UserStatisticsCard
+        :recruit-statistics="recruitStatistics"
+        :drop-statistics="dropStatistics"
+        :matrix-statistics="matrixStatistics"
+      />
 
       <!-- 记录列表 -->
-      <HistoryRecordList :records="records" :selected-index="selectedRecordIndex" :error-info="errorInfo"
-        @select="(index, record) => $emit('select-record', index, record)" />
+      <HistoryRecordList
+        :records="records"
+        :selected-index="selectedRecordIndex"
+        :error-info="errorInfo"
+        @select="(index, record) => $emit('select-record', index, record)"
+      />
     </div>
   </div>
 </template>
@@ -39,6 +47,7 @@ interface Props {
   errorInfo: Record<string, string> | null
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
+  matrixStatistics: Record<string, string> | null
 }
 
 defineProps<Props>()
