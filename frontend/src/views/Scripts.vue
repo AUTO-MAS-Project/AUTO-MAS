@@ -85,17 +85,34 @@
   <div class="scripts-header">
     <div class="header-left">
       <h1 class="page-title">脚本管理</h1>
+      <a-input
+        v-model:value="scriptSearchKeyword"
+        allow-clear
+        class="script-search"
+        placeholder="搜索脚本或用户名称、ID"
+        aria-label="搜索脚本或用户"
+      >
+        <template #prefix><SearchOutlined /></template>
+      </a-input>
     </div>
     <div class="header-actions">
       <a-space size="middle">
         <a-tooltip title="收起所有脚本的用户列表">
-          <a-button size="large" :disabled="scripts.length === 0" @click="handleCollapseAll">
+          <a-button
+            size="large"
+            :disabled="scripts.length === 0 || isSearching"
+            @click="handleCollapseAll"
+          >
             <template #icon><UpOutlined /></template>
             一键收起
           </a-button>
         </a-tooltip>
         <a-tooltip title="展开所有脚本的用户列表">
-          <a-button size="large" :disabled="scripts.length === 0" @click="handleExpandAll">
+          <a-button
+            size="large"
+            :disabled="scripts.length === 0 || isSearching"
+            @click="handleExpandAll"
+          >
             <template #icon><DownOutlined /></template>
             一键展开
           </a-button>
@@ -124,9 +141,17 @@
     </div>
   </div>
 
+  <div v-else-if="!addLoading && loadedOnce && filteredScripts.length === 0" class="empty-state">
+    <a-empty description="未找到匹配的脚本或用户">
+      <a-button @click="scriptSearchKeyword = ''">清空搜索</a-button>
+    </a-empty>
+  </div>
+
   <ScriptTable
+    v-else
     ref="scriptTableRef"
-    :scripts="scripts"
+    :scripts="filteredScripts"
+    :searching="isSearching"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
     :all-plans-data="allPlansData"
@@ -561,6 +586,7 @@ import {
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
+  SearchOutlined,
   SettingOutlined,
   UpOutlined,
   UserOutlined,
@@ -581,6 +607,7 @@ import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
+import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
 
 defineOptions({ name: 'ScriptsPage' })
 
@@ -601,6 +628,11 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+const scriptSearchKeyword = ref('')
+const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
+const filteredScripts = computed(() =>
+  filterScriptsByKeyword(scripts.value, scriptSearchKeyword.value)
+)
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
@@ -1656,8 +1688,15 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .header-left {
+  display: flex;
   flex: 1;
   min-width: 0;
+  align-items: center;
+  gap: 24px;
+}
+
+.script-search {
+  width: min(360px, 40vw);
 }
 
 .header-actions {
@@ -1671,11 +1710,24 @@ const handlePassCheckUser = async (user: User) => {
   }
 
   .scripts-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
     padding: 0 2px;
   }
 
+  .header-left {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .script-search {
+    width: 100%;
+  }
+
   .header-actions {
-    margin-left: 8px;
+    margin-left: 0;
   }
 }
 

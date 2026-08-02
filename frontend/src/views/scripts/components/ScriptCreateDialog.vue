@@ -6,6 +6,7 @@
     :keyboard="!submitting"
     :mask-closable="!submitting"
     :confirm-loading="submitting"
+    :z-index="900"
     :footer="null"
     class="script-create-dialog"
     title="新建脚本"
@@ -386,43 +387,21 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 </script>
 
 <style scoped>
+:global(.script-create-dialog) {
+  top: 48px;
+  padding-bottom: 16px;
+}
+
+:global(.script-create-dialog .ant-modal-content) {
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+}
+
 .create-layout {
-  min-height: 500px;
+  height: min(500px, calc(100vh - 176px));
+  min-height: 0;
   margin: -8px -24px 0;
-}
-
-.type-grid,
-.type-sections,
-.entity-list {
-  scrollbar-color: var(--ant-color-border) transparent;
-  scrollbar-width: thin;
-}
-
-.type-grid::-webkit-scrollbar,
-.type-sections::-webkit-scrollbar,
-.entity-list::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
-}
-
-.type-grid::-webkit-scrollbar-track,
-.type-sections::-webkit-scrollbar-track,
-.entity-list::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-
-.type-grid::-webkit-scrollbar-thumb,
-.type-sections::-webkit-scrollbar-thumb,
-.entity-list::-webkit-scrollbar-thumb {
-  border-radius: 8px;
-  background: var(--ant-color-border) !important;
-}
-
-.type-grid::-webkit-scrollbar-thumb:hover,
-.type-sections::-webkit-scrollbar-thumb:hover,
-.entity-list::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary) !important;
+  overflow: hidden;
 }
 
 .choice-copy {
@@ -433,8 +412,10 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 }
 
 .step-content {
+  height: 100%;
   min-width: 0;
   padding: 24px 28px;
+  overflow-y: auto;
   background: var(--ant-color-bg-elevated);
 }
 

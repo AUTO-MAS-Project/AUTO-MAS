@@ -10,6 +10,7 @@ configureLocalMonaco()
 
 import Antd from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
+import '@/styles/scrollbar.css'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 
