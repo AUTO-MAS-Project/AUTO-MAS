@@ -2,12 +2,12 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
 import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { PluginUpdateIn } from '../models/PluginUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueReorderIn } from '../models/QueueReorderIn';
@@ -20,7 +20,6 @@ import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
 import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
-import type { UserImportAbyssSnapshotIn } from '../models/UserImportAbyssSnapshotIn';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
@@ -30,6 +29,44 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class UpdateService {
+    /**
+     * 更新模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateEmulatorApiEmulatorUpdatePost(
+        requestBody: EmulatorUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderEmulatorApiEmulatorOrderPost(
+        requestBody: EmulatorReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 更新脚本配置信息
      * @param requestBody
@@ -126,26 +163,6 @@ export class UpdateService {
         });
     }
     /**
-     * 从 M7A config.yaml 导入三深渊快照
-     * 从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。
-     * @param requestBody
-     * @returns AbyssSnapshotImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importM7AAbyssSnapshotApiScriptsUserImportM7AAbyssSnapshotPost(
-        requestBody: UserImportAbyssSnapshotIn,
-    ): CancelablePromise<AbyssSnapshotImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/import-m7a-abyss-snapshot',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 重新排序用户
      * @param requestBody
      * @returns OutBase Successful Response
@@ -214,82 +231,6 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新计划表配置信息
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updatePlanApiPlanUpdatePost(
-        requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序计划表
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderPlanApiPlanOrderPost(
-        requestBody: PlanReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updateEmulatorApiEmulatorUpdatePost(
-        requestBody: EmulatorUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderEmulatorApiEmulatorOrderPost(
-        requestBody: EmulatorReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -412,6 +353,44 @@ export class UpdateService {
         });
     }
     /**
+     * 更新计划表配置信息
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePlanApiPlanUpdatePost(
+        requestBody: PlanUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序计划表
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderPlanApiPlanOrderPost(
+        requestBody: PlanReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 更新工具配置
      * 更新工具配置
      * @param requestBody
@@ -482,6 +461,25 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginInstanceApiPluginsUpdatePost(
+        requestBody: PluginUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

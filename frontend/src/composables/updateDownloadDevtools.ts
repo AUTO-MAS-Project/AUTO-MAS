@@ -50,12 +50,12 @@ export function useUpdateDownloadDevtools() {
 
   const simulateFailure = (reason: string) => {
     assertDevelopment()
-    download.receiveSignal({ Failed: reason })
+    download.receiveFailed(reason)
   }
 
   const simulateCompletion = () => {
     assertDevelopment()
-    download.receiveSignal({ Accomplish: 'dev-update-package.zip' })
+    download.receiveCompleted()
   }
 
   const resetSimulation = () => {

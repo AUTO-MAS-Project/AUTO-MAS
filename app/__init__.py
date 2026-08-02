@@ -21,10 +21,16 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .api import *
-from .core import *
-from .models import *
-from .services import *
-from .utils import *
+from importlib import import_module as _import_module
+from typing import Any
 
-__all__ = ["api", "core", "models", "services", "utils"]
+
+__all__ = ["api", "core", "plugins", "models", "services", "task", "utils"]
+
+
+def __getattr__(name: str) -> Any:
+    if name in __all__:
+        module = _import_module(f".{name}", __name__)
+        globals()[name] = module
+        return module
+    raise AttributeError(name)

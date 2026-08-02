@@ -46,7 +46,13 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input v-model:value="formData.userName" placeholder="请输入用户名" size="large" class="modern-input" @blur="saveField('Info.Name', formData.userName)" />
+                  <a-input
+                    v-model:value="formData.userName"
+                    placeholder="请输入用户名"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Info.Name', formData.userName)"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -196,8 +202,16 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select v-model:value="formData.Task.TaskIndex" size="large" @change="handleTaskIndexChange">
-                    <a-select-option v-for="item in okwwTaskOptions" :key="item.value" :value="item.value">
+                  <a-select
+                    v-model:value="formData.Task.TaskIndex"
+                    size="large"
+                    @change="handleTaskIndexChange"
+                  >
+                    <a-select-option
+                      v-for="item in okwwTaskOptions"
+                      :key="item.value"
+                      :value="item.value"
+                    >
                       {{ item.label }}
                     </a-select-option>
                   </a-select>
@@ -213,18 +227,25 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly class="modern-input" />
+                  <a-input
+                    :value="currentStartupArguments"
+                    size="large"
+                    readonly
+                    class="modern-input"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
           </div>
         </a-form>
 
-        <OkwwConfigEditor
+        <OkScriptConfigEditor
           v-if="userId"
           :script-id="scriptId"
           :user-id="userId"
+          endpoint-prefix="/plugin/okww/configs"
           @saved="handleConfigSaved"
+          @unavailable="goBackToScriptEdit"
         />
       </a-card>
 
@@ -324,17 +345,17 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { useUserApi } from '@/composables/useUserApi'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
+import { useOkScriptConfigApi } from '@/composables/useOkScriptConfigApi'
 import WebhookManager from '@/components/WebhookManager.vue'
-import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser } = useUserApi()
-const { getScript } = useScriptApi()
+const api = useScriptRegistryApi()
+const okwwConfigApi = useOkScriptConfigApi('/plugin/okww/configs')
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
@@ -345,12 +366,12 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
-/** ok-ww 已适配任务（-t 1..8）；9–11 不提供选项 */
-const OKWW_MAX_TASK_INDEX = 8
-
 const resourceOptions = [{ label: '官服', value: '官服' }]
 
-const okwwTaskOptions = [
+// 任务序号下拉动态来自后端 /plugin/okww/configs/list（跟随 ok-ww 版本与内置 i18n）。
+// 下方静态表仅作纯安装态（无 repo 源码）或动态加载失败时的兜底默认。
+// ponytail: 静态兜底，动态列表非空即整体覆盖
+const okwwTaskOptions = ref<Array<{ value: number; label: string }>>([
   { label: '1 - DailyTask（日常）', value: 1 },
   { label: '2 - MultiAccountDailyTask（多账号日常）', value: 2 },
   { label: '3 - FarmEchoTask（刷声骸）', value: 3 },
@@ -359,7 +380,7 @@ const okwwTaskOptions = [
   { label: '6 - NightmareNestTask（梦魇巢穴）', value: 6 },
   { label: '7 - SimulationTask（模拟领域）', value: 7 },
   { label: '8 - TacetTask（无音区）', value: 8 },
-]
+])
 
 interface OkwwUserInfoForm {
   Name: string
@@ -446,11 +467,11 @@ const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 
 const handleCancel = () => router.push('/scripts')
 
 const createUserImmediately = async () => {
-  const resp = await addUser(scriptId)
-  if (!resp?.userId) {
-    throw new Error(resp?.message || '创建用户失败')
+  const created = await api.addUser(scriptId)
+  if (!created?.id) {
+    throw new Error('创建用户失败')
   }
-  userId.value = resp.userId
+  userId.value = created.id
   isEdit.value = true
   await router.replace({
     name: 'OkwwUserEdit',
@@ -476,9 +497,11 @@ const saveField = async (key: string, value: unknown) => {
       formData.userName = String(value || '')
     }
 
-    await updateUser(scriptId, userId.value, patch)
+    await api.updateUser(scriptId, userId.value, patch)
   } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.error(msg)
+    message.error(msg)
   } finally {
     isSaving.value = false
   }
@@ -486,7 +509,7 @@ const saveField = async (key: string, value: unknown) => {
 
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  await updateUser(scriptId, userId.value, {
+  await api.updateUser(scriptId, userId.value, {
     Task: {
       TaskIndex: formData.Task.TaskIndex,
     },
@@ -498,14 +521,48 @@ const handleTaskIndexChange = async (value: number) => {
   try {
     await saveTaskConfig()
   } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.error(msg)
+    message.error(msg)
   }
 }
 
 const loadScriptInfo = async () => {
-  const detail = await getScript(scriptId)
-  if (detail) {
-    scriptName.value = detail.name
+  const scripts = await api.getScripts(scriptId)
+  const script = scripts[0]
+  if (script) {
+    scriptName.value = script.name
+  }
+  return script
+}
+
+/** ok-ww 程序不可用时禁止新建用户与进入配置编辑（无法动态读取配置字段与翻译）。 */
+const validateOkwwProgram = async (): Promise<boolean> => {
+  const script = await loadScriptInfo()
+  const rootPath = String((script?.config as Record<string, any>)?.Info?.RootPath || '')
+    .trim()
+    .replace(/\\/g, '/')
+  if (!rootPath || rootPath === '.') return false
+  return window.electronAPI.fileExists(`${rootPath}/ok-ww.exe`)
+}
+
+/** 从后端动态注册表刷新任务序号下拉；失败则保留静态兜底。 */
+const loadTaskOptions = async () => {
+  try {
+    const resp = await okwwConfigApi.listConfigFiles(scriptId, userId.value)
+    if (resp?.code !== 200 || !Array.isArray(resp.data)) return
+    const options = resp.data
+      .filter(config => typeof config.taskIndex === 'number')
+      .map(config => ({
+        value: config.taskIndex as number,
+        label: `${config.taskIndex} - ${config.displayName || config.filename}`,
+      }))
+      .sort((left, right) => left.value - right.value)
+    if (options.length > 0) {
+      okwwTaskOptions.value = options
+    }
+  } catch (e) {
+    logger.error(`加载任务列表失败: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 
@@ -515,14 +572,14 @@ const loadUser = async () => {
     if (!userId.value) {
       await createUserImmediately()
     }
-    const resp = await getUsers(scriptId, userId.value)
-    const userIndex = resp?.index?.find(i => i.uid === userId.value)
-    const data = resp?.data?.[userId.value]
-    if (!userIndex || !data) {
+    await loadTaskOptions()
+    const users = await api.getUsers(scriptId, userId.value)
+    const user = users[0]
+    if (!user) {
       throw new Error('用户不存在或加载失败')
     }
 
-    const userData = data as Partial<OkwwUserFormData>
+    const userData = user.config as Partial<OkwwUserFormData>
 
     Object.assign(formData, {
       Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
@@ -532,9 +589,10 @@ const loadUser = async () => {
     })
     formData.Info.Mode = '详细'
     const taskIndex = Number(formData.Task.TaskIndex)
+    const validIndexes = okwwTaskOptions.value.map(opt => opt.value)
     let shouldPersistTaskIndex = false
-    if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKWW_MAX_TASK_INDEX) {
-      formData.Task.TaskIndex = 1
+    if (!Number.isFinite(taskIndex) || !validIndexes.includes(taskIndex)) {
+      formData.Task.TaskIndex = validIndexes[0] ?? 1
       shouldPersistTaskIndex = true
     }
     const patch: Record<string, any> = {}
@@ -544,12 +602,13 @@ const loadUser = async () => {
       }
     }
     if (Object.keys(patch).length > 0) {
-      await updateUser(scriptId, userId.value, patch)
+      await api.updateUser(scriptId, userId.value, patch)
     }
     await nextTick()
     formData.userName = formData.Info.Name || ''
   } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.error(msg)
     message.error('加载用户失败')
     handleCancel()
   } finally {
@@ -557,13 +616,22 @@ const loadUser = async () => {
     pageLoading.value = false
   }
 }
-
 const handleConfigSaved = () => {
   logger.info('OK-WW 配置已保存')
 }
 
+const goBackToScriptEdit = () => router.replace(`/scripts/${scriptId}/edit/okww`)
+
 onMounted(async () => {
-  await loadScriptInfo()
+  if (!(await validateOkwwProgram())) {
+    message.error(
+      isEdit.value
+        ? '当前 ok-ww 程序不可用，请先在脚本设置中选择正确的 ok-ww 根目录'
+        : '请先在脚本设置中选择 ok-ww 根目录，再添加用户'
+    )
+    goBackToScriptEdit()
+    return
+  }
   await loadUser()
 })
 </script>
@@ -656,4 +724,3 @@ onMounted(async () => {
   }
 }
 </style>
-

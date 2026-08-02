@@ -1,0 +1,74 @@
+import { OpenAPI } from '@/api'
+import {
+  subscribe,
+  unsubscribe,
+  type WSEnvelope,
+  type WSSubscriptionKey,
+} from '@/composables/useWebSocket'
+import { getPluginPageContext } from './pluginPageContext'
+
+const logger = window.electronAPI.getLogger('插件前端 API')
+
+function toBackendUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
+
+  const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+  const trimmed = String(path || '').trim()
+  if (!trimmed) {
+    throw new Error('插件调用路径不能为空')
+  }
+
+  if (trimmed.startsWith('/')) {
+    return `${base}${trimmed}`
+  }
+
+  return `${base}/plugin/${trimmed.replace(/^\/+/, '')}`
+}
+
+async function parseResponse(response: Response): Promise<unknown> {
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return await response.json()
+  }
+  return await response.text()
+}
+
+export function installPluginAPI(): void {
+  window.pluginAPI = {
+    call: async (path: string, payload?: unknown) => {
+      const url = toBackendUrl(path)
+      const hasBody = payload !== undefined
+      logger.info(`插件调用后端接口: ${url}`)
+      const response = await fetch(url, {
+        method: hasBody ? 'POST' : 'GET',
+        headers: hasBody ? { 'Content-Type': 'application/json' } : undefined,
+        body: hasBody ? JSON.stringify(payload) : undefined,
+      })
+      const data = await parseResponse(response)
+      if (!response.ok) {
+        const message = typeof data === 'string' ? data : JSON.stringify(data)
+        throw new Error(`插件接口调用失败: ${response.status} ${message}`)
+      }
+      return data
+    },
+    subscribe: (key: WSSubscriptionKey, handler: (message: WSEnvelope) => void) => {
+      const normalizedKey = {
+        id: String(key?.id || '').trim(),
+        type: String(key?.type || '').trim(),
+      }
+      if (!normalizedKey.id || !normalizedKey.type) {
+        throw new Error('插件订阅必须包含非空 id 和 type')
+      }
+      const subscriptionId = subscribe(normalizedKey, handler)
+      let active = true
+      return () => {
+        if (!active) return
+        active = false
+        unsubscribe(subscriptionId)
+      }
+    },
+    getPageContext: () => getPluginPageContext(),
+  }
+}

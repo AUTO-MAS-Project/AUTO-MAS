@@ -283,9 +283,16 @@ class MumuManager(DeviceBase):
     async def close(self, idx: str) -> DeviceStatus:
         try:
             status = await self.getStatus(idx)
-            if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
+            if status not in [
+                DeviceStatus.ONLINE,
+                DeviceStatus.STARTING,
+                DeviceStatus.ERROR,
+                DeviceStatus.UNKNOWN,
+            ]:
                 logger.warning(f"设备{idx}未在线，当前状态: {status}")
                 return status
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                logger.warning(f"设备{idx}状态无法确认，仍尝试发送 MuMu 关闭命令")
 
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -312,7 +319,8 @@ class MumuManager(DeviceBase):
 
             else:
                 if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                    raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+                    logger.warning(f"MuMu 模拟器 {idx} 关闭命令已发送，但状态无法确认: {status}")
+                    return status
                 raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
         finally:
             if self.config.get("Info", "ForceKillOnClose"):

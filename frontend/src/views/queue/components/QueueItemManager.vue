@@ -22,9 +22,19 @@
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable v-model="queueItems" group="queueItems" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" handle=".drag-handle"
-        class="draggable-container" @end="onDragEnd">
+      <draggable
+        v-model="queueItems"
+        group="queueItems"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        handle=".drag-handle"
+        class="draggable-container"
+        @end="onDragEnd"
+      >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell drag-cell">
@@ -34,12 +44,25 @@
             </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell script-cell">
-              <a-select v-model:value="record.script" size="small" style="width: 200px" class="script-select"
-                placeholder="请选择脚本" :options="scriptOptions" allow-clear @change="updateQueueItemScript(record)" />
+              <a-select
+                v-model:value="record.script"
+                size="small"
+                style="width: 200px"
+                class="script-select"
+                placeholder="请选择脚本"
+                :options="scriptOptions"
+                allow-clear
+                @change="updateQueueItemScript(record)"
+              />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteQueueItem(record.id)">
+                <a-popconfirm
+                  title="确定要删除这个任务吗？"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="deleteQueueItem(record.id)"
+                >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
                     删除
@@ -273,179 +296,12 @@ onMounted(() => {
 <style scoped>
 .queue-item-card {
   margin-bottom: 24px;
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
 }
 
 .queue-item-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-/* 表格样式优化 */
-.queue-table {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-.queue-table :deep(.ant-table-wrapper) {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-/* 禁用所有滚动条，让表格自动延伸 */
-:deep(.ant-table-wrapper) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table-container) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-body) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-content) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-tbody) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table) {
-  font-size: 14px;
-  table-layout: auto;
-  width: 100%;
-  overflow: visible !important;
-}
-
-/* 列宽度控制 */
-:deep(.ant-table-thead > tr > th:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(2)) {
-  width: auto !important;
-  min-width: 120px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(3)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(2)) {
-  width: auto !important;
-  min-width: 120px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(3)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-/* 强制移除任何可能的滚动条 */
-:deep(.ant-table-wrapper),
-:deep(.ant-table-container),
-:deep(.ant-table-body),
-:deep(.ant-table-content),
-:deep(.ant-table),
-:deep(.ant-table-tbody) {
-  scrollbar-width: none !important;
-  /* Firefox */
-  -ms-overflow-style: none !important;
-  /* IE/Edge */
-}
-
-:deep(.ant-table-wrapper)::-webkit-scrollbar,
-:deep(.ant-table-container)::-webkit-scrollbar,
-:deep(.ant-table-body)::-webkit-scrollbar,
-:deep(.ant-table-content)::-webkit-scrollbar,
-:deep(.ant-table)::-webkit-scrollbar,
-:deep(.ant-table-tbody)::-webkit-scrollbar {
-  display: none !important;
-  /* Chrome/Safari */
-}
-
-/* 表格行和列样式 */
-:deep(.ant-table-tbody > tr > td) {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-:deep(.ant-table-thead > tr > th) {
-  font-weight: 600;
-  padding: 8px 12px;
-  text-align: center;
-  background-color: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-/* 脚本名称列特殊处理 */
-:deep(.ant-table-tbody > tr > td:nth-child(2)) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  word-break: break-all;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(2)) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 确保列内容正确显示 */
-:deep(.ant-table-thead > tr > th) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-tbody > tr > td) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-cell) {
-  text-align: center;
-}
-
-/* 表格整体布局优化 */
-:deep(.ant-table-wrapper) {
-  width: 100%;
-  min-height: auto;
-}
-
-/* 确保表格不会被压缩 */
-:deep(.ant-table-fixed-header) {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-:deep(.ant-table-fixed-header)::-webkit-scrollbar {
-  display: none !important;
-}
-
-/* 序号列样式 */
-:deep(.ant-table-tbody > tr > td:first-child) {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
 }
 
 /* 操作按钮布局 */
@@ -465,12 +321,6 @@ onMounted(() => {
   margin-right: 6px !important;
 }
 
-/* 操作列内容居中且不超出 */
-:deep(.ant-table-tbody > tr > td:nth-child(3) .ant-space) {
-  justify-content: center;
-  width: 100%;
-}
-
 /* 按钮图标样式调整 */
 :deep(.ant-btn .anticon) {
   font-size: 14px;
@@ -487,7 +337,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
   transition: all 0.2s ease;
@@ -534,7 +384,7 @@ onMounted(() => {
 
 .draggable-table-header {
   display: flex;
-  background-color: var(--ant-color-fill-quaternary);
+  background-color: var(--app-background-card-elevated-bg, var(--ant-color-fill-quaternary));
   border-bottom: 1px solid var(--ant-color-border);
 }
 
@@ -580,7 +430,7 @@ onMounted(() => {
 .draggable-row {
   display: flex;
   align-items: center;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-bottom: 1px solid var(--ant-color-border);
   transition: all 0.2s ease;
   cursor: default;
@@ -591,7 +441,7 @@ onMounted(() => {
 }
 
 .draggable-row:hover {
-  background-color: var(--ant-color-fill-quaternary);
+  background-color: var(--app-background-card-elevated-bg, var(--ant-color-fill-quaternary));
 }
 
 .draggable-row.row-dragging {

@@ -24,6 +24,20 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.plugins import PluginManager
+
+
+def _get_emulator_service():
+    service = PluginManager.service.get("emulator")
+    if service is None:
+        raise RuntimeError("emulator service is unavailable")
+    return service
+
+
+def _error_code(exc: Exception) -> int:
+    return 503 if "service is unavailable" in str(exc) else 500
+
+
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
@@ -148,11 +162,11 @@ async def get_plan_combox() -> ComboBoxOut:
 async def get_emulator_combox() -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_emulator_combox()
+        raw_data = await _get_emulator_service().list_options()
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
         )
     return ComboBoxOut(data=data)
 
@@ -168,11 +182,11 @@ async def get_emulator_devices_combox(
     emulator: EmulatorDeleteIn = Body(...),
 ) -> ComboBoxOut:
     try:
-        raw_data = await Config.get_emulator_devices_combox(emulator.emulatorId)
+        raw_data = await _get_emulator_service().list_device_options(emulator.emulatorId)
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
         )
     return ComboBoxOut(data=data)
 

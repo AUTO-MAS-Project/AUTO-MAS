@@ -1,0 +1,995 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+import mimetypes
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel, Field
+
+from app.plugins import PluginConfigStore, PluginManager
+from app.plugins.frontend_extensions import build_page_snapshot, load_frontend_asset
+from app.plugins.market import fetch_market_snapshot
+from app.plugins.realtime import publish_plugin_snapshot
+from app.plugins.server import plugin_server
+from app.api.ws_command import ws_command
+from app.models.schema import OutBase, PluginMarketSnapshot
+from app.runtime_tasks import RuntimeTasks
+from app.utils import get_logger
+
+
+logger = get_logger("插件API")
+router = APIRouter(prefix="/api/plugins", tags=["插件实例"])
+config_store = PluginConfigStore()
+
+
+class PluginInstanceModel(BaseModel):
+    id: str = Field(..., description="实例ID")
+    plugin: str = Field(..., description="插件名")
+    enabled: bool = Field(default=True, description="是否启用")
+    name: str = Field(..., description="实例名称")
+    config: Dict[str, Any] = Field(default_factory=dict, description="插件配置")
+    system: bool = Field(default=False, description="是否系统插件")
+    locked: bool = Field(default=False, description="是否锁定")
+    visible: bool = Field(default=True, description="是否显示")
+
+
+class PluginRuntimeStateModel(BaseModel):
+    instance_id: str = Field(..., description="实例ID")
+    plugin: str = Field(..., description="插件名")
+    status: str = Field(default="configured", description="运行状态")
+    generation: int = Field(default=0, description="实例代际（每次重载成功后递增）")
+    lifecycle_phase: str = Field(default="configured", description="生命周期阶段")
+    lifecycle_updated_at: Optional[str] = Field(default=None, description="生命周期阶段更新时间")
+    reload_count: int = Field(default=0, description="成功重载次数")
+    last_reload_reason: Optional[str] = Field(default=None, description="最近重载原因")
+    last_reload_at: Optional[str] = Field(default=None, description="最近重载时间")
+    created_at: Optional[str] = Field(default=None, description="记录创建时间")
+    discovered_at: Optional[str] = Field(default=None, description="发现时间")
+    loaded_at: Optional[str] = Field(default=None, description="代码加载时间")
+    activated_at: Optional[str] = Field(default=None, description="激活时间")
+    disposed_at: Optional[str] = Field(default=None, description="销毁时间")
+    unloaded_at: Optional[str] = Field(default=None, description="卸载时间")
+    last_error: Optional[str] = Field(default=None, description="最近错误")
+    last_error_at: Optional[str] = Field(default=None, description="最近错误时间")
+
+
+class PluginServiceModel(BaseModel):
+    provides: List[str] = Field(default_factory=list, description="提供的服务")
+    needs: List[str] = Field(default_factory=list, description="必须服务")
+    wants: List[str] = Field(default_factory=list, description="可选服务")
+
+
+class PluginRouteModel(BaseModel):
+    kind: str = Field(..., description="服务类型")
+    path: str = Field(..., description="声明路径")
+    methods: List[str] = Field(default_factory=list, description="允许的调用方式")
+    plugin: str = Field(..., description="插件名")
+
+
+class PluginActionModel(BaseModel):
+    id: str = Field(..., description="动作 ID")
+    label: str = Field(..., description="按钮标题")
+    path: str = Field(..., description="调用路径")
+    method: str = Field(default="POST", description="HTTP 方法")
+    payload: Any = Field(default=None, description="默认请求载荷")
+    plugin: str = Field(..., description="插件名")
+
+
+class PluginPackageModel(BaseModel):
+    package: str = Field(..., description="插件安装包名")
+    version: Optional[str] = Field(default=None, description="插件包版本")
+    source: str = Field(default="pypi", description="插件来源")
+    path: Optional[str] = Field(default=None, description="本地工程路径")
+
+
+class PageDeclarationModel(BaseModel):
+    id: str = Field(..., description="页面 ID")
+    path: str = Field(..., description="前端路由路径")
+    title: str = Field(..., description="页面标题")
+    menu_label: str = Field(..., description="菜单显示名称")
+    icon: str = Field(default="app", description="菜单图标键")
+    component: str = Field(..., description="前端组件键")
+    renderer: str = Field(default="component", description="页面渲染方式")
+    url: Optional[str] = Field(default=None, description="插件页面入口 URL")
+    frontend_plugin: Optional[str] = Field(default=None, description="插件前端扩展插件 ID")
+    element_tag: Optional[str] = Field(default=None, description="custom element 标签")
+    entry_asset_url: Optional[str] = Field(default=None, description="前端扩展入口资源 URL")
+    style_asset_urls: List[str] = Field(default_factory=list, description="前端扩展样式资源 URL 列表")
+    manifest_version: Optional[int] = Field(default=None, description="前端扩展 manifest 版本")
+    section: str = Field(default="main", description="菜单区域")
+    order: int = Field(default=1000, description="排序权重")
+    visible: bool = Field(default=True, description="是否显示在菜单中")
+    dev_only: bool = Field(default=False, description="是否仅开发环境显示")
+    source: str = Field(default="host:core", description="声明来源")
+
+
+class PluginsGetOut(OutBase):
+    version: int = Field(default=1, description="配置版本")
+    discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
+    schemas: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="插件Schema映射")
+    schema_errors: Dict[str, str] = Field(default_factory=dict, description="插件Schema加载错误")
+    plugin_services: Dict[str, PluginServiceModel] = Field(
+        default_factory=dict,
+        description="插件服务声明",
+    )
+    plugin_routes: Dict[str, List[PluginRouteModel]] = Field(
+        default_factory=dict,
+        description="插件声明式服务路由",
+    )
+    plugin_actions: Dict[str, List[PluginActionModel]] = Field(
+        default_factory=dict,
+        description="插件声明式前端动作",
+    )
+    instances: List[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
+    plugin_packages: Dict[str, PluginPackageModel] = Field(
+        default_factory=dict,
+        description="插件安装包信息",
+    )
+    runtime_states: Dict[str, PluginRuntimeStateModel] = Field(
+        default_factory=dict,
+        description="插件实例运行态",
+    )
+
+    pages: List[Dict[str, Any]] = Field(default_factory=list, description="前端页面声明")
+    page_errors: List[str] = Field(default_factory=list, description="页面声明警告")
+
+
+class PluginAddIn(BaseModel):
+    plugin: str = Field(..., description="插件名")
+    name: Optional[str] = Field(default=None, description="实例名称")
+    enabled: bool = Field(default=True, description="是否启用")
+    config: Dict[str, Any] = Field(default_factory=dict, description="插件配置")
+
+
+class PluginAddOut(OutBase):
+    instance: Optional[PluginInstanceModel] = Field(default=None, description="新增实例")
+
+
+class PluginUpdateIn(BaseModel):
+    instanceId: str = Field(..., description="实例ID")
+    plugin: Optional[str] = Field(default=None, description="插件名")
+    name: Optional[str] = Field(default=None, description="实例名称")
+    enabled: Optional[bool] = Field(default=None, description="是否启用")
+    config: Optional[Dict[str, Any]] = Field(default=None, description="插件配置")
+
+
+class PluginDeleteIn(BaseModel):
+    instanceId: str = Field(..., description="实例ID")
+
+
+class PluginReloadInstanceIn(BaseModel):
+    instanceId: str = Field(..., description="实例ID")
+
+
+class PluginReloadPluginIn(BaseModel):
+    plugin: str = Field(..., description="插件名")
+
+
+class PluginPackageIn(BaseModel):
+    package: str = Field(..., description="PyPI 包名")
+
+
+class PluginFrontendBackgroundOut(OutBase):
+    enabled: bool = Field(default=False, description="是否启用前端背景")
+    image_url: Optional[str] = Field(default=None, description="背景图片代理地址")
+    blur_px: int = Field(default=0, description="模糊半径")
+    brightness: int = Field(default=100, description="亮度百分比")
+    opacity: int = Field(default=100, description="图片透明度百分比")
+    overlay_opacity: int = Field(default=0, description="遮罩透明度百分比")
+    card_opacity: int = Field(default=92, description="卡片透明度百分比")
+    panel_opacity: int = Field(default=92, description="面板透明度百分比")
+    elevated_opacity: int = Field(default=92, description="浮层透明度百分比")
+    sider_opacity: int = Field(default=88, description="侧边栏透明度百分比")
+    position: str = Field(default="center", description="背景位置")
+    fit: str = Field(default="cover", description="背景填充方式")
+
+
+@router.get(
+    "/market/snapshot",
+    tags=["Get"],
+    summary="获取插件市场初始快照",
+    response_model=PluginMarketSnapshot,
+    status_code=200,
+)
+async def get_plugin_market_snapshot(
+    per_prefix_limit: int = Query(
+        default=60,
+        ge=1,
+        le=200,
+        description="每个支持前缀最多扫描的 PyPI 项目数",
+    ),
+) -> PluginMarketSnapshot:
+    """通过 HTTP 返回页面初始快照；WS 仅承载后续实时操作事件。"""
+
+    snapshot = await fetch_market_snapshot(
+        plugins_dir=Path.cwd() / "plugins",
+        per_prefix_limit=per_prefix_limit,
+    )
+    return PluginMarketSnapshot.model_validate(snapshot)
+
+
+BACKGROUND_SERVICE_NAME = "frontend_background"
+BACKGROUND_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+
+def _clamp_int(raw: Any, default: int, low: int, high: int) -> int:
+    try:
+        value = int(raw)
+    except Exception:
+        value = default
+    return max(low, min(high, value))
+
+
+def _strip_wrapping_quotes(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _normalize_background_payload(raw: Any) -> Dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    position = str(raw.get("position") or "center").strip().lower()
+    if position not in {"center", "top", "bottom"}:
+        position = "center"
+
+    fit = str(raw.get("fit") or "cover").strip().lower()
+    if fit not in {"cover", "contain"}:
+        fit = "cover"
+
+    return {
+        "image_path": _strip_wrapping_quotes(raw.get("image_path") or raw.get("local_path")),
+        "blur_px": _clamp_int(raw.get("blur_px"), 8, 0, 40),
+        "brightness": _clamp_int(raw.get("brightness"), 85, 20, 160),
+        "opacity": _clamp_int(raw.get("opacity"), 100, 0, 100),
+        "overlay_opacity": _clamp_int(raw.get("overlay_opacity"), 35, 0, 90),
+        "card_opacity": _clamp_int(raw.get("card_opacity"), 92, 0, 100),
+        "panel_opacity": _clamp_int(
+            raw.get("panel_opacity", raw.get("card_opacity")), 92, 0, 100
+        ),
+        "elevated_opacity": _clamp_int(
+            raw.get("elevated_opacity", raw.get("card_opacity")), 92, 0, 100
+        ),
+        "sider_opacity": _clamp_int(raw.get("sider_opacity"), 88, 0, 100),
+        "position": position,
+        "fit": fit,
+    }
+
+
+def _is_safe_image_path(path: Path) -> bool:
+    return path.suffix.lower() in BACKGROUND_ALLOWED_EXTS and path.exists() and path.is_file()
+
+
+def _resolve_background_image_path(payload: Dict[str, Any]) -> Path | None:
+    image_path = str(payload.get("image_path") or "").strip()
+    if not image_path:
+        return None
+    candidate = Path(image_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    candidate = candidate.resolve()
+    return candidate if _is_safe_image_path(candidate) else None
+
+
+async def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
+    """发现插件（先自动安装本地 editable，再统一按 Entry Point 发现）。"""
+    PluginManager.plugins_dir = plugins_dir
+    PluginManager.loader.plugins_dir = plugins_dir
+    return await PluginManager.discover_plugins()
+
+
+def _schedule_update_reload(instance_id: str) -> None:
+    async def _runner() -> None:
+        try:
+            await PluginManager.reload_instance(instance_id)
+        except Exception as exc:
+            logger.error(
+                f"插件实例后台重载失败: instance_id={instance_id}, error={type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            try:
+                await publish_plugin_snapshot(
+                    reason="api.plugins.update.reload_failed",
+                    message=f"插件实例后台重载失败: {instance_id}",
+                )
+            except Exception as snapshot_exc:
+                logger.warning(
+                    f"插件快照后台发布失败: instance_id={instance_id}, "
+                    f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
+                )
+
+    RuntimeTasks.spawn(
+        _runner(), name=f"plugin-reload-instance:{instance_id}"
+    )
+
+
+def _schedule_enabled_runtime_update(instance_id: str, enabled: bool) -> None:
+    async def _runner() -> None:
+        try:
+            await PluginManager.apply_instance_enabled(instance_id, enabled)
+        except Exception as exc:
+            logger.error(
+                f"插件实例后台启用状态切换失败: instance_id={instance_id}, error={type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            try:
+                await publish_plugin_snapshot(
+                    reason="api.plugins.update.enabled_failed",
+                    message=f"插件实例启用状态切换失败: {instance_id}",
+                )
+            except Exception as snapshot_exc:
+                logger.warning(
+                    f"插件快照后台发布失败: instance_id={instance_id}, "
+                    f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
+                )
+
+    RuntimeTasks.spawn(
+        _runner(), name=f"plugin-enabled-update:{instance_id}"
+    )
+
+
+def _schedule_update_snapshot(instance_id: str, reason: str = "api.plugins.update") -> None:
+    async def _runner() -> None:
+        try:
+            await publish_plugin_snapshot(
+                reason=reason,
+                message=f"已更新插件实例: {instance_id}",
+            )
+        except Exception as snapshot_exc:
+            logger.warning(
+                f"插件快照后台发布失败: instance_id={instance_id}, "
+                f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
+            )
+
+    RuntimeTasks.spawn(
+        _runner(), name=f"plugin-snapshot-update:{instance_id}"
+    )
+
+
+def _need_discover_for_update(data: PluginUpdateIn) -> bool:
+    return data.plugin is not None or data.config is not None
+
+
+def _is_name_only_update(data: PluginUpdateIn) -> bool:
+    return (
+        data.name is not None
+        and data.plugin is None
+        and data.config is None
+        and data.enabled is None
+    )
+
+
+def _is_enabled_only_update(data: PluginUpdateIn) -> bool:
+    return (
+        data.enabled is not None
+        and data.plugin is None
+        and data.config is None
+        and data.name is None
+    )
+
+
+def _resolve_effective_config(
+    *,
+    data: PluginUpdateIn,
+    target: Dict[str, Any],
+    discovered: Dict[str, Any],
+    need_discover: bool,
+) -> tuple[str, Dict[str, Any]]:
+    next_plugin = data.plugin if data.plugin is not None else target.get("plugin")
+    if not isinstance(next_plugin, str) or not next_plugin:
+        raise ValueError(f"插件实例缺少有效 plugin 字段: {data.instanceId}")
+
+    # 仅更新启用状态/名称时，沿用现有配置，避免无关 schema 校验影响开关流程。
+    if data.plugin is None and data.config is None:
+        current_config = target.get("config", {})
+        if not isinstance(current_config, dict):
+            raise ValueError(f"插件实例配置无效: {data.instanceId}")
+        return next_plugin, current_config
+
+    next_config = data.config if data.config is not None else target.get("config", {})
+
+    if need_discover:
+        if next_plugin not in discovered:
+            raise ValueError(f"未发现插件: {next_plugin}")
+
+    effective_config = config_store.load_effective_config(
+        next_plugin,
+        next_config,
+    )
+    return next_plugin, effective_config
+
+
+
+def _build_instances(
+    root: Dict[str, Any],
+    discovered: Dict[str, Any],
+) -> List[PluginInstanceModel]:
+    instances: List[PluginInstanceModel] = []
+    for item in root.get("instances", []):
+        if not isinstance(item, dict):
+            continue
+        plugin_name = str(item.get("plugin") or "")
+        plugin_source = discovered.get(plugin_name)
+        system = bool(getattr(plugin_source, "system", False))
+        locked = bool(getattr(plugin_source, "locked", False))
+        visible = bool(getattr(plugin_source, "visible", True))
+        instances.append(
+            PluginInstanceModel(
+                **{
+                    **item,
+                    "enabled": True if system else item.get("enabled", True),
+                    "system": system,
+                    "locked": locked,
+                    "visible": visible,
+                }
+            )
+        )
+    return instances
+
+
+def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+    from app.core.script_types import script_type_registry
+
+    script_type_plugins: set[str] = set()
+    for provider in script_type_registry.list():
+        if not provider.is_builtin:
+            owner = script_type_registry.get_owner(provider.type_key)
+            if owner:
+                plugin_name = owner.split(":", 1)[0] if ":" in owner else owner
+                script_type_plugins.add(plugin_name)
+
+    schemas: Dict[str, Dict[str, Any]] = {}
+    errors: Dict[str, str] = {}
+    for plugin_name in discovered:
+        if plugin_name in script_type_plugins:
+            schemas[plugin_name] = {}
+            continue
+        try:
+            schemas[plugin_name] = config_store.load_schema(plugin_name)
+        except Exception as e:
+            schemas[plugin_name] = {}
+            errors[plugin_name] = f"{type(e).__name__}: {e}"
+    return schemas, errors
+
+
+def _build_plugin_services(discovered: Dict[str, Any]) -> Dict[str, PluginServiceModel]:
+    services: Dict[str, PluginServiceModel] = {}
+    loader = PluginManager.loader
+
+    for plugin_name, plugin_source in discovered.items():
+        try:
+            _, plugin_class = loader._resolve_plugin_module_and_class(
+                plugin_name,
+                plugin_source,
+                clear_cache=False,
+            )
+            provides, needs, wants = loader._meta(plugin_class)
+            services[plugin_name] = PluginServiceModel(
+                provides=sorted(provides),
+                needs=sorted(needs),
+                wants=sorted(wants),
+            )
+        except Exception:
+            services[plugin_name] = PluginServiceModel()
+
+    return services
+
+
+def _build_plugin_packages(discovered: Dict[str, Any]) -> Dict[str, PluginPackageModel]:
+    packages: Dict[str, PluginPackageModel] = {}
+    for plugin_name, plugin_source in discovered.items():
+        package_name = str(getattr(plugin_source, "distribution", "") or "").strip()
+        if not package_name:
+            continue
+        plugin_path = getattr(plugin_source, "path", None)
+        packages[plugin_name] = PluginPackageModel(
+            package=package_name,
+            version=getattr(plugin_source, "version", None),
+            source=str(getattr(plugin_source, "source", "pypi") or "pypi"),
+            path=str(plugin_path) if plugin_path else None,
+        )
+    return packages
+
+
+@router.get(
+    "/frontend/background",
+    tags=["Get"],
+    summary="获取主应用背景配置",
+    response_model=PluginFrontendBackgroundOut,
+    status_code=200,
+)
+async def get_frontend_background() -> PluginFrontendBackgroundOut:
+    payload = _normalize_background_payload(PluginManager.service.get(BACKGROUND_SERVICE_NAME))
+    if payload is None:
+        return PluginFrontendBackgroundOut(enabled=False, message="未启用背景插件")
+
+    image_path = _resolve_background_image_path(payload)
+    if image_path is None:
+        return PluginFrontendBackgroundOut(enabled=False, message="背景图片不存在或路径不合法")
+
+    image_url = f"/api/plugins/frontend/background/image?v={int(image_path.stat().st_mtime)}"
+    return PluginFrontendBackgroundOut(
+        enabled=True,
+        image_url=image_url,
+        blur_px=payload["blur_px"],
+        brightness=payload["brightness"],
+        opacity=payload["opacity"],
+        overlay_opacity=payload["overlay_opacity"],
+        card_opacity=payload["card_opacity"],
+        panel_opacity=payload["panel_opacity"],
+        elevated_opacity=payload["elevated_opacity"],
+        sider_opacity=payload["sider_opacity"],
+        position=payload["position"],
+        fit=payload["fit"],
+    )
+
+
+@router.get(
+    "/frontend/background/image",
+    tags=["Get"],
+    summary="获取主应用背景图片",
+    response_class=FileResponse,
+    status_code=200,
+)
+async def get_frontend_background_image() -> FileResponse:
+    payload = _normalize_background_payload(PluginManager.service.get(BACKGROUND_SERVICE_NAME))
+    if payload is None:
+        raise HTTPException(status_code=404, detail="背景插件未启用")
+
+    image_path = _resolve_background_image_path(payload)
+    if image_path is None:
+        raise HTTPException(status_code=404, detail="背景图片不存在或路径不合法")
+
+    media_type = mimetypes.guess_type(str(image_path))[0] or "application/octet-stream"
+    return FileResponse(str(image_path), media_type=media_type)
+
+
+@router.get(
+    "/assets/{plugin_id}/{asset_path:path}",
+    tags=["Get"],
+    summary="获取插件前端扩展静态资源",
+    response_class=Response,
+    status_code=200,
+)
+async def get_plugin_frontend_asset(plugin_id: str, asset_path: str) -> Response:
+    try:
+        discovered = await _discover_plugins(Path.cwd() / "plugins")
+        plugin_source = discovered.get(plugin_id)
+        if plugin_source is None:
+            raise HTTPException(status_code=404, detail=f"未找到插件: {plugin_id}")
+
+        asset = load_frontend_asset(plugin_id, plugin_source, asset_path)
+        media_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
+        return Response(
+            content=asset.read_bytes(),
+            media_type=media_type,
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateModel]:
+    """构建插件实例运行态快照。
+
+    优先返回运行中记录（来自 PluginLoader），若实例尚未加载则返回 configured 状态。
+    """
+    result: Dict[str, PluginRuntimeStateModel] = {}
+
+    records = getattr(PluginManager.loader, "records", {})
+    for instance_id, record in records.items():
+        result[str(instance_id)] = PluginRuntimeStateModel(
+            instance_id=str(record.instance_id),
+            plugin=str(record.plugin_name),
+            status=str(record.status),
+            generation=int(getattr(record, "generation", 0) or 0),
+            lifecycle_phase=str(getattr(record, "lifecycle_phase", record.status) or record.status),
+            lifecycle_updated_at=getattr(record, "lifecycle_updated_at", None),
+            reload_count=int(getattr(record, "reload_count", 0) or 0),
+            last_reload_reason=getattr(record, "last_reload_reason", None),
+            last_reload_at=getattr(record, "last_reload_at", None),
+            created_at=record.created_at,
+            discovered_at=record.discovered_at,
+            loaded_at=record.loaded_at,
+            activated_at=record.activated_at,
+            disposed_at=record.disposed_at,
+            unloaded_at=record.unloaded_at,
+            last_error=record.last_error,
+            last_error_at=record.last_error_at,
+        )
+
+    for item in root.get("instances", []):
+        if not isinstance(item, dict):
+            continue
+        instance_id = str(item.get("id") or "")
+        if not instance_id or instance_id in result:
+            continue
+        plugin_name = str(item.get("plugin") or "")
+        result[instance_id] = PluginRuntimeStateModel(
+            instance_id=instance_id,
+            plugin=plugin_name,
+            status="configured",
+            generation=0,
+            lifecycle_phase="configured",
+        )
+
+    return result
+
+
+@ws_command("plugins.get")
+@router.post(
+    "/get",
+    tags=["Get"],
+    summary="获取插件实例配置",
+    response_model=PluginsGetOut,
+    status_code=200,
+)
+async def get_plugins() -> PluginsGetOut:
+    try:
+        plugins_dir = Path.cwd() / "plugins"
+        discovered = await _discover_plugins(plugins_dir)
+        root = await config_store.get_root(
+            plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
+        schemas, schema_errors = _build_schemas(discovered)
+        plugin_services = _build_plugin_services(discovered)
+        server_snapshot = plugin_server.snapshot()
+        page_items, page_errors = build_page_snapshot(
+            discovered=discovered,
+            records=getattr(PluginManager.loader, "records", {}),
+        )
+        return PluginsGetOut(
+            version=int(root.get("version", 1)),
+            discovered_plugins=list(discovered.keys()),
+            schemas=schemas,
+            schema_errors=schema_errors,
+            plugin_services=plugin_services,
+            plugin_routes=server_snapshot["plugin_routes"],
+            plugin_actions=server_snapshot["plugin_actions"],
+            plugin_packages=_build_plugin_packages(discovered),
+            instances=_build_instances(root, discovered),
+            runtime_states=_build_runtime_states(root),
+            pages=page_items,
+            page_errors=page_errors,
+        )
+    except Exception as e:
+        return PluginsGetOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            version=1,
+            discovered_plugins=[],
+            schemas={},
+            schema_errors={},
+            plugin_services={},
+            plugin_routes={},
+            plugin_actions={},
+            plugin_packages={},
+            instances=[],
+            runtime_states={},
+            pages=[],
+            page_errors=[],
+        )
+
+
+@ws_command("plugins.reload")
+@router.post(
+    "/reload",
+    tags=["Action"],
+    summary="重载插件实例",
+    response_model=OutBase,
+    status_code=200,
+)
+async def reload_plugins() -> OutBase:
+    try:
+        await PluginManager.reload()
+        await publish_plugin_snapshot(
+            reason="api.plugins.reload",
+            message="插件系统已重载",
+        )
+        return OutBase(message="插件系统重载成功")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@ws_command("plugins.reload_instance", params=PluginReloadInstanceIn)
+@router.post(
+    "/reload_instance",
+    tags=["Action"],
+    summary="重载单个插件实例",
+    response_model=OutBase,
+    status_code=200,
+)
+async def reload_plugin_instance(data: PluginReloadInstanceIn = Body(...)) -> OutBase:
+    try:
+        await PluginManager.reload_instance(data.instanceId)
+        await publish_plugin_snapshot(
+            reason="api.plugins.reload_instance",
+            message=f"插件实例已重载: {data.instanceId}",
+        )
+        return OutBase(message=f"插件实例重载成功: {data.instanceId}")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@ws_command("plugins.reload_plugin", params=PluginReloadPluginIn)
+@router.post(
+    "/reload_plugin",
+    tags=["Action"],
+    summary="按插件名重载所有实例",
+    response_model=OutBase,
+    status_code=200,
+)
+async def reload_plugin_by_name(data: PluginReloadPluginIn = Body(...)) -> OutBase:
+    try:
+        await PluginManager.reload_plugin(data.plugin)
+        await publish_plugin_snapshot(
+            reason="api.plugins.reload_plugin",
+            message=f"插件已重载: {data.plugin}",
+        )
+        return OutBase(message=f"插件重载成功: {data.plugin}")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@ws_command("plugins.install_package", params=PluginPackageIn)
+@router.post(
+    "/install_package",
+    tags=["Action"],
+    summary="下载安装插件包",
+    response_model=OutBase,
+    status_code=200,
+)
+async def install_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
+    """下载安装指定插件包。
+
+    Args:
+        data (PluginPackageIn): 包名参数。
+
+    Returns:
+        OutBase: 统一响应对象。
+
+    Raises:
+        无。接口内部会捕获异常并转换为统一错误响应。
+    """
+    try:
+        await PluginManager.install_plugin_package(data.package)
+        await publish_plugin_snapshot(
+            reason="api.plugins.install_package",
+            message=f"插件包已安装: {data.package}",
+        )
+        return OutBase(message=f"插件包下载安装成功: {data.package}")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@ws_command("plugins.uninstall_package", params=PluginPackageIn)
+@router.post(
+    "/uninstall_package",
+    tags=["Action"],
+    summary="卸载插件包",
+    response_model=OutBase,
+    status_code=200,
+)
+async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
+    """卸载指定插件包。
+
+    Args:
+        data (PluginPackageIn): 包名参数。
+
+    Returns:
+        OutBase: 统一响应对象。
+
+    Raises:
+        无。接口内部会捕获异常并转换为统一错误响应。
+    """
+    try:
+        if PluginManager.is_system_plugin_package(data.package):
+            raise ValueError(f"系统插件包不可卸载: {data.package}")
+        await PluginManager.uninstall_plugin_package(data.package)
+        await publish_plugin_snapshot(
+            reason="api.plugins.uninstall_package",
+            message=f"插件包已卸载: {data.package}",
+        )
+        return OutBase(message=f"插件包卸载成功: {data.package}")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@ws_command("plugins.add", params=PluginAddIn)
+@router.post(
+    "/add",
+    tags=["Add"],
+    summary="新增插件实例",
+    response_model=PluginAddOut,
+    status_code=200,
+)
+async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
+    try:
+        plugins_dir = Path.cwd() / "plugins"
+        discovered = await _discover_plugins(plugins_dir)
+
+        if data.plugin not in discovered:
+            raise ValueError(f"未发现插件: {data.plugin}")
+        if PluginManager.is_system_plugin(data.plugin):
+            raise ValueError(f"系统插件不允许新增实例: {data.plugin}")
+
+        # 先校验配置是否合法（包含默认值注入）
+        effective_config = config_store.load_effective_config(
+            data.plugin,
+            data.config,
+        )
+
+        root = await config_store.get_root(
+            plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
+        instance = {
+            "id": config_store.generate_instance_id(data.plugin),
+            "plugin": data.plugin,
+            "enabled": data.enabled,
+            "name": data.name or f"{data.plugin} 实例",
+            "config": effective_config,
+        }
+        root.setdefault("instances", []).append(instance)
+        await config_store.save_root(plugins_dir, root)
+
+        if PluginManager.started and data.enabled:
+            await PluginManager.reload_instance(instance["id"])
+
+        await publish_plugin_snapshot(
+            reason="api.plugins.add",
+            message=f"已新增插件实例: {instance['id']}",
+        )
+
+        return PluginAddOut(instance=PluginInstanceModel(**instance))
+    except Exception as e:
+        return PluginAddOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            instance=None,
+        )
+
+
+@ws_command("plugins.update", params=PluginUpdateIn)
+@router.post(
+    "/update",
+    tags=["Update"],
+    summary="更新插件实例",
+    response_model=OutBase,
+    status_code=200,
+)
+async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
+    try:
+        plugins_dir = Path.cwd() / "plugins"
+        need_discover = _need_discover_for_update(data)
+        discovered: Dict[str, Any] = {}
+        if need_discover:
+            discovered = await _discover_plugins(plugins_dir)
+        root = await config_store.get_root(
+            plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
+
+        instances = root.get("instances", [])
+        target = None
+        for item in instances:
+            if isinstance(item, dict) and item.get("id") == data.instanceId:
+                target = item
+                break
+
+        if target is None:
+            raise ValueError(f"未找到插件实例: {data.instanceId}")
+        target_plugin = str(target.get("plugin") or "")
+        if PluginManager.is_system_plugin(target_plugin):
+            if data.plugin is not None and data.plugin != target_plugin:
+                raise ValueError(f"系统插件不可变更插件类型: {target_plugin}")
+            if data.enabled is False:
+                raise ValueError(f"系统插件不可禁用: {target_plugin}")
+
+        was_enabled = bool(target.get("enabled", False))
+
+        next_plugin, effective_config = _resolve_effective_config(
+            data=data,
+            target=target,
+            discovered=discovered,
+            need_discover=need_discover,
+        )
+
+        target["plugin"] = next_plugin
+        target["config"] = effective_config
+        if data.name is not None:
+            target["name"] = data.name
+        if data.enabled is not None:
+            target["enabled"] = data.enabled
+
+        await config_store.save_root(plugins_dir, root)
+
+        if PluginManager.started:
+            if _is_name_only_update(data):
+                _schedule_update_snapshot(data.instanceId, reason="api.plugins.update.name")
+            elif _is_enabled_only_update(data) and was_enabled != bool(data.enabled):
+                _schedule_enabled_runtime_update(data.instanceId, bool(data.enabled))
+            else:
+                _schedule_update_reload(data.instanceId)
+        else:
+            RuntimeTasks.spawn(
+                publish_plugin_snapshot(
+                    reason="api.plugins.update",
+                    message=f"已更新插件实例: {data.instanceId}",
+                ),
+                name=f"plugin-snapshot-update:{data.instanceId}",
+            )
+
+        return OutBase()
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@ws_command("plugins.delete", params=PluginDeleteIn)
+@router.post(
+    "/delete",
+    tags=["Delete"],
+    summary="删除插件实例",
+    response_model=OutBase,
+    status_code=200,
+)
+async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
+    try:
+        plugins_dir = Path.cwd() / "plugins"
+        discovered = await _discover_plugins(plugins_dir)
+        root = await config_store.get_root(
+            plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
+
+        old_instances = root.get("instances", [])
+        new_instances = [
+            item
+            for item in old_instances
+            if not (isinstance(item, dict) and item.get("id") == data.instanceId)
+        ]
+
+        if len(new_instances) == len(old_instances):
+            raise ValueError(f"未找到插件实例: {data.instanceId}")
+
+        target_instance = next(
+            item
+            for item in old_instances
+            if isinstance(item, dict) and item.get("id") == data.instanceId
+        )
+        target_plugin = str(target_instance.get("plugin") or "")
+        if PluginManager.is_system_plugin(target_plugin):
+            raise ValueError(f"系统插件不可删除: {target_plugin}")
+
+        if PluginManager.started:
+            await PluginManager.ensure_instance_can_delete(
+                data.instanceId,
+                plugin_name=target_plugin,
+                discovered=discovered,
+            )
+            await PluginManager.loader.unload_instance(data.instanceId)
+
+        root["instances"] = new_instances
+        await config_store.save_root(plugins_dir, root)
+        await publish_plugin_snapshot(
+            reason="api.plugins.delete",
+            message=f"已删除插件实例: {data.instanceId}",
+        )
+        return OutBase()
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")

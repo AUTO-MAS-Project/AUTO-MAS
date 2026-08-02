@@ -11,3 +11,4 @@ export type GameSignAccountDeleteIn = {
      */
     accountId: string;
 };
+

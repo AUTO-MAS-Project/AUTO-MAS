@@ -21,21 +21,35 @@
 #   Contact: DLmaster_361@163.com
 
 
-import time
-import asyncio
+"""出站 WebSocket 客户端
+
+后端作为客户端连接外部第三方进程（如 Koishi 通知服务、插件声明的外部服务）。
+与前端主连接（app/core/ws）分层管理，互不混用状态。
+心跳使用 WebSocket 协议层 ping/pong，不使用应用层业务消息。
+"""
+
 import json
-from typing import Optional, Callable, Any, Dict, List
+import asyncio
+from typing import Optional, Callable, Any, Awaitable, Dict
 
 from websockets.asyncio.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger
 
+# 远程命令执行器签名: (endpoint, params) -> 归一化结果字典
+CommandExecutor = Callable[[str, Optional[Dict[str, Any]]], Awaitable[Dict[str, Any]]]
+
+
 # ============== WebSocket 客户端实例 ==============
 
 
 class WebSocketClient:
-    """WebSocket 客户端，支持应用层 Ping/Pong 心跳维护，可创建多个实例连接不同服务端"""
+    """出站 WebSocket 客户端，可创建多个实例连接不同服务端。
+
+    心跳由 websockets 库协议层 ping/pong 维护；
+    支持指数退避自动重连与可注入的远程命令执行器。
+    """
 
     _instance_counter = 0  # 实例计数器，用于生成唯一标识
 
@@ -51,14 +65,15 @@ class WebSocketClient:
         on_disconnect: Optional[Callable[[], Any]] = None,
         name: Optional[str] = None,
         auth_token: Optional[str] = None,
+        command_executor: Optional[CommandExecutor] = None,
     ):
         """
         初始化 WebSocket 客户端
 
         Args:
             url: WebSocket 服务器地址，例如 "ws://localhost:8080/ws"
-            ping_interval: 发送 Ping 的时间间隔（秒）
-            ping_timeout: Ping 超时时间（秒），超过此时间未收到 Pong 则断开连接
+            ping_interval: 协议层 ping 发送间隔（秒）
+            ping_timeout: 协议层 pong 超时时间（秒），超时视为连接断开
             reconnect_interval: 重连间隔时间（秒）
             max_reconnect_attempts: 最大重连次数，-1 表示无限重连
             on_message: 收到消息时的回调函数
@@ -66,6 +81,7 @@ class WebSocketClient:
             on_disconnect: 断开连接时的回调函数
             name: 客户端名称，用于日志标识，不传则自动生成
             auth_token: 认证令牌，设置后连接成功时会自动发送认证消息
+            command_executor: 远程命令执行器，处理 type=="command" 的入站消息
         """
         WebSocketClient._instance_counter += 1
         self.name = name or f"WSClient-{WebSocketClient._instance_counter}"
@@ -83,11 +99,10 @@ class WebSocketClient:
 
         self._connection: Optional[ClientConnection] = None
         self._running = False
-        self._last_ping = 0.0
-        self._last_pong = 0.0
         self._reconnect_count = 0
-        self._tasks: list[asyncio.Task] = []
+        self._receive_task: Optional[asyncio.Task] = None
         self._auth_token: Optional[str] = auth_token
+        self._command_executor = command_executor
 
     @property
     def is_connected(self) -> bool:
@@ -104,11 +119,9 @@ class WebSocketClient:
         try:
             self._connection = await connect(
                 self.url,
-                ping_interval=None,  # 禁用协议层心跳，使用应用层心跳
-                ping_timeout=None,
+                ping_interval=self.ping_interval,
+                ping_timeout=self.ping_timeout,
             )
-            self._last_ping = time.monotonic()
-            self._last_pong = time.monotonic()
             self._reconnect_count = 0
 
             self.logger.info(f"WebSocket 连接成功: {self.url}")
@@ -132,11 +145,13 @@ class WebSocketClient:
         """断开 WebSocket 连接"""
         self._running = False
 
-        # 取消所有任务
-        for task in self._tasks:
-            if not task.done():
-                task.cancel()
-        self._tasks.clear()
+        if self._receive_task is not None and not self._receive_task.done():
+            self._receive_task.cancel()
+            try:
+                await self._receive_task
+            except asyncio.CancelledError:
+                pass
+        self._receive_task = None
 
         if self._connection:
             try:
@@ -152,6 +167,10 @@ class WebSocketClient:
             result = self.on_disconnect()
             if asyncio.iscoroutine(result):
                 await result
+
+    async def close(self, code: int = 1000, reason: str = "正常关闭"):
+        """兼容统一的关闭接口。"""
+        await self.disconnect()
 
     async def send(self, message: Dict[str, Any]) -> bool:
         """
@@ -174,18 +193,27 @@ class WebSocketClient:
             self.logger.error(f"发送消息失败: {type(e).__name__}: {e}")
             return False
 
-    async def _send_ping(self):
-        """发送应用层 Ping"""
-        message = {"id": "Client", "type": "Signal", "data": {"Ping": "heartbeat"}}
-        if await self.send(message):
-            self._last_ping = time.monotonic()
-            self.logger.debug("已发送 Ping")
+    async def send_json(self, data: Dict[str, Any]) -> bool:
+        """兼容 FastAPI WebSocket 的 send_json 接口。"""
+        return await self.send(data)
 
-    async def _send_pong(self):
-        """发送应用层 Pong"""
-        message = {"id": "Client", "type": "Signal", "data": {"Pong": "heartbeat"}}
-        await self.send(message)
-        self.logger.debug("已发送 Pong")
+    async def send_auth(
+        self,
+        token: str,
+        auth_type: str = "auth",
+        extra_data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """发送认证消息。"""
+        self._auth_token = token
+        auth_message = {
+            "id": "Client",
+            "type": auth_type,
+            "data": {"token": token, **(extra_data or {})},
+        }
+        success = await self.send(auth_message)
+        if success:
+            self.logger.info("已发送认证消息")
+        return success
 
     async def _handle_message(self, raw_message: str):
         """
@@ -197,19 +225,7 @@ class WebSocketClient:
         try:
             data = json.loads(raw_message)
 
-            # 处理 Ping/Pong 信号
-            if data.get("type") == "Signal":
-                signal_data = data.get("data", {})
-                if "Pong" in signal_data:
-                    self._last_pong = time.monotonic()
-                    self.logger.debug("收到 Pong")
-                    return
-                elif "Ping" in signal_data:
-                    self.logger.debug("收到 Ping")
-                    await self._send_pong()
-                    return
-
-            # 处理 command 类型消息
+            # 处理 command 类型消息（外部进程远程调用后端命令）
             if data.get("type") == "command":
                 await self._handle_command(data)
                 # 同时也调用消息回调（如果有）
@@ -245,6 +261,10 @@ class WebSocketClient:
                     }
                 }
         """
+        if self._command_executor is None:
+            self.logger.warning("未配置命令执行器，忽略 command 消息")
+            return
+
         try:
             msg_id = data.get("id", "Unknown")
             msg_data = data.get("data", {})
@@ -259,10 +279,7 @@ class WebSocketClient:
 
             self.logger.info(f"收到来自 [{msg_id}] 的命令: {endpoint}")
 
-            # 调用命令执行器
-            from app.api.ws_command import execute_ws_command
-
-            result = await execute_ws_command(endpoint, params)
+            result = await self._command_executor(endpoint, params)
 
             # 发送响应
             response = {
@@ -282,14 +299,8 @@ class WebSocketClient:
         """消息接收循环"""
         while self._running and self.is_connected:
             try:
-                message = await asyncio.wait_for(
-                    self._connection.recv(), timeout=self.ping_interval
-                )
+                message = await self._connection.recv()
                 await self._handle_message(message)
-
-            except asyncio.TimeoutError:
-                # 接收超时，检查心跳状态
-                continue
 
             except ConnectionClosed as e:
                 self.logger.warning(
@@ -297,34 +308,11 @@ class WebSocketClient:
                 )
                 break
 
+            except asyncio.CancelledError:
+                raise
+
             except Exception as e:
                 self.logger.error(f"接收消息时发生异常: {type(e).__name__}: {e}")
-                break
-
-    async def _heartbeat_loop(self):
-        """心跳维护循环"""
-        while self._running and self.is_connected:
-            try:
-                current_time = time.monotonic()
-
-                # 检查 Pong 超时
-                if self._last_pong < self._last_ping:
-                    time_since_ping = current_time - self._last_ping
-                    if time_since_ping > self.ping_timeout:
-                        self.logger.warning(
-                            f"Pong 超时 ({time_since_ping:.1f}s)，断开连接"
-                        )
-                        break
-
-                # 发送 Ping
-                time_since_last_ping = current_time - self._last_ping
-                if time_since_last_ping >= self.ping_interval:
-                    await self._send_ping()
-
-                await asyncio.sleep(1.0)
-
-            except Exception as e:
-                self.logger.error(f"心跳循环异常: {type(e).__name__}: {e}")
                 break
 
     def _get_backoff_delay(self) -> float:
@@ -366,28 +354,16 @@ class WebSocketClient:
                 await asyncio.sleep(delay)
                 continue
 
-            # 连接成功，重置重连计数
+            # 连接成功，重置重连计数并运行接收循环
             self._reconnect_count = 0
+            self._receive_task = asyncio.create_task(self._receive_loop())
 
-            # 启动接收和心跳任务
-            receive_task = asyncio.create_task(self._receive_loop())
-            heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-            self._tasks = [receive_task, heartbeat_task]
-
-            # 等待任一任务结束
-            done, pending = await asyncio.wait(
-                self._tasks, return_when=asyncio.FIRST_COMPLETED
-            )
-
-            # 取消未完成的任务
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-            self._tasks.clear()
+            try:
+                await self._receive_task
+            except asyncio.CancelledError:
+                break
+            finally:
+                self._receive_task = None
 
             # 清理连接
             if self._connection:
@@ -424,36 +400,6 @@ class WebSocketClient:
 
         self.logger.info("WebSocket 客户端已停止")
 
-    async def run_once(self):
-        """
-        运行 WebSocket 客户端（不自动重连，连接断开后直接退出）
-        """
-        self._running = True
-
-        if not await self.connect():
-            return
-
-        # 启动接收和心跳任务
-        receive_task = asyncio.create_task(self._receive_loop())
-        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        self._tasks = [receive_task, heartbeat_task]
-
-        # 等待任一任务结束
-        done, pending = await asyncio.wait(
-            self._tasks, return_when=asyncio.FIRST_COMPLETED
-        )
-
-        # 取消未完成的任务
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-        self._tasks.clear()
-        await self.disconnect()
-
     async def _authenticate(self, token: str) -> bool:
         """
         发送认证消息
@@ -486,22 +432,33 @@ class WebSocketClient:
 
 
 class WSClientManager:
-    """WebSocket 客户端管理器，用于管理多个 WebSocket 客户端实例"""
+    """出站 WebSocket 客户端管理器，用于管理多个客户端实例"""
 
     # 系统客户端名称常量
     KOISHI_CLIENT_NAME = "Koishi"
 
     def __init__(self):
         self._clients: Dict[str, WebSocketClient] = {}
-        self._system_clients: set[str] = set()  # 系统客户端名称集合
+        self._system_clients: set[str] = {self.KOISHI_CLIENT_NAME}
         self._tasks: Dict[str, asyncio.Task] = {}
-        self._message_history: Dict[str, List[Dict[str, Any]]] = {}
-        self._max_history_per_client = 200
-        self._debug_connections: List[Any] = []  # WebSocket 连接列表
+        self._command_executor: Optional[CommandExecutor] = None
         self._logger = get_logger("WS管理器")
+
+    def set_command_executor(self, executor: CommandExecutor) -> None:
+        """
+        注入远程命令执行器（应用启动时调用一次）。
+
+        Args:
+            executor: 命令执行器，签名为 (endpoint, params) -> 结果字典。
+        """
+        self._command_executor = executor
 
     def get_client(self, name: str) -> Optional[WebSocketClient]:
         """获取客户端实例"""
+        return self._clients.get(name)
+
+    def get_session(self, name: str) -> Optional[WebSocketClient]:
+        """兼容旧接口：获取客户端实例。"""
         return self._clients.get(name)
 
     def has_client(self, name: str) -> bool:
@@ -525,7 +482,6 @@ class WSClientManager:
                 "ping_timeout": client.ping_timeout,
                 "reconnect_interval": client.reconnect_interval,
                 "max_reconnect_attempts": client.max_reconnect_attempts,
-                "message_count": len(self._message_history.get(name, [])),
             }
         return result
 
@@ -544,20 +500,8 @@ class WSClientManager:
         if name in self._clients:
             await self.remove_client(name)
 
-        # 创建消息回调
-        async def on_message(data: Dict[str, Any]):
-            await self._record_message(name, "received", data)
-
         async def on_connect():
             self._logger.info(f"客户端 [{name}] 已连接到 {url}")
-            await self._broadcast_event(
-                {
-                    "event": "connected",
-                    "client": name,
-                    "url": url,
-                    "timestamp": time.time(),
-                }
-            )
 
             # 如果是 Koishi 系统客户端，自动发送认证
             if name == self.KOISHI_CLIENT_NAME and name in self._system_clients:
@@ -565,9 +509,6 @@ class WSClientManager:
 
         async def on_disconnect():
             self._logger.info(f"客户端 [{name}] 已断开连接")
-            await self._broadcast_event(
-                {"event": "disconnected", "client": name, "timestamp": time.time()}
-            )
 
         # 创建客户端
         client = WebSocketClient(
@@ -576,16 +517,35 @@ class WSClientManager:
             ping_timeout=ping_timeout,
             reconnect_interval=reconnect_interval,
             max_reconnect_attempts=max_reconnect_attempts,
-            on_message=on_message,
             on_connect=on_connect,
             on_disconnect=on_disconnect,
             name=name,
+            command_executor=self._command_executor,
         )
 
         self._clients[name] = client
-        self._message_history[name] = []
-
         self._logger.info(f"已创建 WebSocket 客户端: {name} -> {url}")
+        return client
+
+    async def openws(
+        self,
+        name: str,
+        url: str,
+        ping_interval: float = 15.0,
+        ping_timeout: float = 30.0,
+        reconnect_interval: float = 5.0,
+        max_reconnect_attempts: int = -1,
+    ) -> WebSocketClient:
+        """正式的正向 WebSocket 打开接口。"""
+        client = await self.create_client(
+            name=name,
+            url=url,
+            ping_interval=ping_interval,
+            ping_timeout=ping_timeout,
+            reconnect_interval=reconnect_interval,
+            max_reconnect_attempts=max_reconnect_attempts,
+        )
+        await self.connect_client(name)
         return client
 
     async def connect_client(self, name: str) -> bool:
@@ -607,7 +567,7 @@ class WSClientManager:
                 except asyncio.CancelledError:
                     pass
 
-        # 启动客户端任务（使用 run_once 避免自动重连）
+        # 启动客户端任务
         self._tasks[name] = asyncio.create_task(
             self._run_client_with_reconnect(name, client)
         )
@@ -664,11 +624,8 @@ class WSClientManager:
         await self.disconnect_client(name)
 
         # 删除客户端
-        del self._clients[name]
-
-        # 清理消息历史
-        if name in self._message_history:
-            del self._message_history[name]
+        if name in self._clients:
+            del self._clients[name]
 
         self._logger.info(f"已删除 WebSocket 客户端: {name}")
         return True
@@ -679,10 +636,7 @@ class WSClientManager:
         if not client or not client.is_connected:
             return False
 
-        success = await client.send(message)
-        if success:
-            await self._record_message(name, "sent", message)
-        return success
+        return await client.send(message)
 
     async def send_auth(
         self,
@@ -692,51 +646,13 @@ class WSClientManager:
         extra_data: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """发送认证消息"""
-        auth_message = {
-            "id": "Client",
-            "type": auth_type,
-            "data": {"token": token, **(extra_data or {})},
-        }
-        return await self.send_message(name, auth_message)
+        client = self._clients.get(name)
+        if not client or not client.is_connected:
+            return False
 
-    async def _record_message(self, name: str, direction: str, data: Dict[str, Any]):
-        """记录消息"""
-        if name not in self._message_history:
-            self._message_history[name] = []
-
-        record = {"direction": direction, "timestamp": time.time(), "data": data}
-
-        self._message_history[name].append(record)
-
-        # 限制历史记录数量
-        if len(self._message_history[name]) > self._max_history_per_client:
-            self._message_history[name].pop(0)
-
-        # 广播给调试前端
-        await self._broadcast_message(name, record)
-
-    async def _broadcast_message(self, client_name: str, record: Dict[str, Any]):
-        """广播消息给调试前端"""
-        message = {"type": "message", "client": client_name, **record}
-        await self._broadcast(message)
-
-    async def _broadcast_event(self, event: Dict[str, Any]):
-        """广播事件给调试前端"""
-        message = {"type": "event", **event}
-        await self._broadcast(message)
-
-    async def _broadcast(self, data: Dict[str, Any]):
-        """广播数据给所有调试前端"""
-        disconnected = []
-        for ws in self._debug_connections:
-            try:
-                await ws.send_json(data)
-            except Exception:
-                disconnected.append(ws)
-
-        for ws in disconnected:
-            if ws in self._debug_connections:
-                self._debug_connections.remove(ws)
+        return await client.send_auth(
+            token=token, auth_type=auth_type, extra_data=extra_data
+        )
 
     async def _auto_auth_koishi(self):
         """Koishi 系统客户端自动认证（连接/重连时调用）"""
@@ -755,32 +671,6 @@ class WSClientManager:
                 self._logger.warning("Koishi 系统客户端认证消息发送失败")
         else:
             self._logger.warning("Koishi Token 为空，跳过认证")
-
-    def get_message_history(
-        self, name: Optional[str] = None
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """获取消息历史"""
-        if name:
-            return {name: self._message_history.get(name, [])}
-        return self._message_history.copy()
-
-    def clear_message_history(self, name: Optional[str] = None):
-        """清空消息历史"""
-        if name:
-            if name in self._message_history:
-                self._message_history[name] = []
-        else:
-            for key in self._message_history:
-                self._message_history[key] = []
-
-    def add_debug_connection(self, ws: Any):
-        """添加调试前端连接"""
-        self._debug_connections.append(ws)
-
-    def remove_debug_connection(self, ws: Any):
-        """移除调试前端连接"""
-        if ws in self._debug_connections:
-            self._debug_connections.remove(ws)
 
     @staticmethod
     def http_to_ws_url(http_url: str) -> str:
@@ -818,7 +708,6 @@ class WSClientManager:
             return False
 
         ws_url = self.http_to_ws_url(http_url)
-        token = Config.get("Notify", "KoishiToken")
 
         self._logger.info(f"正在初始化 Koishi 系统客户端: {ws_url}")
 
@@ -860,8 +749,6 @@ class WSClientManager:
         Returns:
             bool: 是否成功更新
         """
-        from app.core import Config
-
         # 如果客户端存在，先断开
         if self.has_client(self.KOISHI_CLIENT_NAME):
             await self.disconnect_client(self.KOISHI_CLIENT_NAME)
@@ -903,58 +790,3 @@ async def create_ws_client(
     protocol = "wss" if use_ssl else "ws"
     url = f"{protocol}://{host}:{port}{path}"
     return WebSocketClient(url=url, **kwargs)
-
-
-# 使用示例
-async def _example():
-    """示例用法：同时连接多个服务端并发送消息"""
-
-    async def on_message(client_name: str):
-        async def handler(data: Dict[str, Any]):
-            print(f"[{client_name}] 收到消息: {data}")
-
-        return handler
-
-    # 创建多个客户端实例，连接不同服务端
-    client1 = await create_ws_client(
-        host="localhost",
-        port=5140,
-        path="/AUTO_MAS",
-        name="Server1",  # 指定名称便于日志区分
-        ping_interval=15.0,
-        ping_timeout=30.0,
-        on_message=await on_message("Server1"),
-    )
-
-    # 创建一个任务用于定期向客户端发送消息
-    async def send_messages():
-        # 等待客户端连接成功
-        while not client1.is_connected:
-            await asyncio.sleep(0.1)
-        await client1._authenticate(token="123456")
-
-        # 发送测试消息
-        for i in range(5):
-            message = {
-                "id": "TestClient",
-                "type": "TestMessage",
-                "data": {"count": i, "message": f"这是第 {i + 1} 条测试消息"},
-            }
-            # 向 client1 发送消息
-            success = await client1.send(message)
-            if success:
-                print(f"[发送成功] -> Server1: {message}")
-            else:
-                print(f"[发送失败] -> Server1")
-
-            await asyncio.sleep(3)  # 每3秒发送一次
-
-    # 并发运行客户端和发送消息任务
-    await asyncio.gather(
-        client1.run(),
-        send_messages(),
-    )
-
-
-if __name__ == "__main__":
-    asyncio.run(_example())
