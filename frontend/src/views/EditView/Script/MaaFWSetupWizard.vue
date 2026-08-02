@@ -98,8 +98,17 @@
                 @prepare-agent-env="handlePrepareAgentEnv"
                 @copy="copyToClipboard"
               />
-              <ControlConfigSection
+              <MaaFWConfigurationReusePanel
                 v-else-if="currentStep === 1"
+                key="configuration-reuse"
+                :script-id="scriptId"
+                mode="first-user"
+                :default-source-path="maafwConfig.Info.Path"
+                @skipped="handleReuseSkipped"
+                @applied="handleReuseApplied"
+              />
+              <ControlConfigSection
+                v-else-if="currentStep === 2"
                 key="control"
                 :maafw-config="maafwConfig"
                 :preview-data="previewData"
@@ -128,7 +137,7 @@
                 @select-game-path="selectGamePath"
               />
               <UpdateSettingsSection
-                v-else-if="currentStep === 2"
+                v-else-if="currentStep === 3"
                 key="update"
                 :maafw-config="maafwConfig"
                 :preview-data="previewData"
@@ -167,7 +176,7 @@
             </a-button>
             <div class="step-nav-right">
               <a-button
-                v-if="currentStep < 3"
+                v-if="currentStep < 4"
                 type="primary"
                 size="large"
                 class="step-nav-button step-nav-main"
@@ -186,7 +195,7 @@
                   class="step-nav-button step-nav-main"
                   @click="goCreateFirstUser"
                 >
-                  创建第一个用户！
+                  {{ importedUserId ? '编辑已导入用户' : '创建第一个用户！' }}
                 </a-button>
               </template>
             </div>
@@ -210,6 +219,8 @@ import {
 } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 import { useMaaFWScriptConfig } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWConfigurationApplyResult } from '@/composables/useMaaFWConfigurationReuse'
+import MaaFWConfigurationReusePanel from '@/components/MaaFWConfigurationReusePanel.vue'
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
@@ -223,6 +234,8 @@ const scriptId = route.params.id as string
 
 const formRef = ref<FormInstance>()
 const currentStep = ref(0)
+const reuseComplete = ref(false)
+const importedUserId = ref('')
 
 const {
   maafwConfig,
@@ -292,15 +305,16 @@ const {
 } = useMaaFWScriptConfig(scriptId)
 
 const isStepZeroReady = computed(() => isInterfaceReady.value && isAgentEnvReady.value)
-const isStepTwoComplete = computed(() =>
+const isControlStepComplete = computed(() =>
   Boolean(maafwConfig.Info.Controller && maafwConfig.Info.Resource)
 )
 const maxReachableStep = computed(() => {
   if (!isStepZeroReady.value) return 0
-  if (!isStepTwoComplete.value) return 1
-  return 3
+  if (!reuseComplete.value) return 1
+  if (!isControlStepComplete.value) return 2
+  return 4
 })
-const STEP_TITLES = ['选择项目', '控制配置', '更新设置', '运行参数'] as const
+const STEP_TITLES = ['选择项目', '复用配置', '控制配置', '更新设置', '运行参数'] as const
 const stepItems = computed(() =>
   STEP_TITLES.map((title, index) => ({
     title,
@@ -309,18 +323,33 @@ const stepItems = computed(() =>
 )
 const canAdvanceNext = computed(() => {
   if (currentStep.value === 0) return isStepZeroReady.value
-  if (currentStep.value === 1) return isStepTwoComplete.value
+  if (currentStep.value === 1) return reuseComplete.value
+  if (currentStep.value === 2) return isControlStepComplete.value
   return true
 })
 
 const goToStep = (step: number) => {
-  if (step < 0 || step > 3) return
+  if (step < 0 || step > 4) return
   if (step > currentStep.value && step > maxReachableStep.value) return
   currentStep.value = step
 }
 
 const goCreateFirstUser = () => {
+  if (importedUserId.value) {
+    router.push(`/scripts/${scriptId}/users/${importedUserId.value}/edit/maafw`)
+    return
+  }
   router.push(`/scripts/${scriptId}/users/add/maafw`)
+}
+
+const handleReuseSkipped = () => {
+  reuseComplete.value = true
+}
+
+const handleReuseApplied = async (result: MaaFWConfigurationApplyResult) => {
+  importedUserId.value = result.createdUser.id
+  reuseComplete.value = true
+  await loadScript()
 }
 
 const handleFinish = () => {

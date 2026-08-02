@@ -22,7 +22,18 @@
           </div>
         </template>
 
+        <MaaFWConfigurationReusePanel
+          v-if="!isEdit"
+          :script-id="scriptId"
+          mode="new-user"
+          :default-source-path="scriptPath"
+          :existing-users="existingUsers"
+          @blank="createUserImmediately"
+          @applied="handleReuseApplied"
+        />
+
         <a-form
+          v-else
           ref="formRef"
           :model="formData"
           :rules="rules"
@@ -93,7 +104,9 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import { useMaaFWApi } from '@/composables/useMaaFWApi'
+import type { MaaFWConfigurationApplyResult } from '@/composables/useMaaFWConfigurationReuse'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
+import MaaFWConfigurationReusePanel from '@/components/MaaFWConfigurationReusePanel.vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
@@ -108,6 +121,7 @@ import type {
   MaaFWTaskSnapshot,
   MaaFWUserConfig,
 } from '@/types/script'
+import type { ScriptUserRecord } from '@/types/scriptRegistry'
 
 const logger = window.electronAPI.getLogger('MaaFW用户编辑')
 
@@ -171,6 +185,7 @@ const scriptType = ref('')
 const scriptIconUrl = ref<string | null>(null)
 const scriptPath = ref('')
 const scriptConfig = ref<MaaFWScriptConfig | null>(null)
+const existingUsers = ref<ScriptUserRecord[]>([])
 const preferAdbController = ref(false)
 const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 const selectedTaskName = ref('')
@@ -801,7 +816,7 @@ const loadScriptInfo = async () => {
     if (isEdit.value) {
       await loadUserData()
     } else {
-      await createUserImmediately()
+      existingUsers.value = await registryApi.getUsers(scriptId)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -834,6 +849,16 @@ const createUserImmediately = async () => {
     message.error('创建用户失败')
     handleCancel()
   }
+}
+
+const handleReuseApplied = async (result: MaaFWConfigurationApplyResult) => {
+  userId = result.createdUser.id
+  isEdit.value = true
+  router.replace({
+    name: 'MaaFWUserEdit',
+    params: { ...route.params, userId },
+  })
+  await loadUserData()
 }
 
 const loadUserData = async () => {
