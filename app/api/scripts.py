@@ -189,6 +189,19 @@ def _is_maafw_framework_script(script_config: Any) -> bool:
         return config_class_name in {"MaaFWConfig", "M9AConfig"}
 
 
+def _is_maafw_managed_script(script_config: Any) -> bool:
+    """Return whether a plugin record is the immutable Managed MaaFW type."""
+
+    try:
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        return isinstance(script_config, PluginScriptConfig) and str(
+            script_config.get("Meta", "PluginTypeKey") or ""
+        ).strip() == "MaaFWManaged"
+    except Exception:
+        return False
+
+
 async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
     """解析 MaaFW 框架脚本的表单态配置（插件形态与 legacy 均适用）。
 
@@ -881,6 +894,19 @@ async def update_maafw_project(
 
     try:
         script_config = Config.ScriptConfig[script_uuid]
+        if _is_maafw_managed_script(script_config):
+            append_log("托管 MaaFW 项目必须通过统一项目管理页更新")
+            return MaaFWProjectUpdateOut(
+                code=409,
+                status="error",
+                message="托管 MaaFW 项目不能使用普通目录更新；请打开“项目与依赖”管理版本",
+                data=MaaFWProjectUpdateData(
+                    checked=False,
+                    updated=False,
+                    currentVersion=current_version,
+                    logs=logs,
+                ),
+            )
         if not _is_maafw_framework_script(script_config):
             append_log("指定脚本不是 MaaFW 项目")
             return MaaFWProjectUpdateOut(

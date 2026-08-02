@@ -202,6 +202,7 @@ class Task(TaskExecuteBase):
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
+        self._script_execution_reservations: dict[str, str] = {}
 
     def _resolve_script_provider(self, script_uid: uuid.UUID):
         """解析脚本对应的 provider，兼容插件脚本。"""
@@ -212,6 +213,21 @@ class Task(TaskExecuteBase):
         if self._exit_result == "success":
             self._exit_result = "error"
             self._exit_error = error
+
+    async def _release_script_execution_reservation(
+        self,
+        script_id: str,
+    ) -> None:
+        owner = self._script_execution_reservations.get(script_id)
+        if owner is None:
+            return
+        await Config.release_script_execution(script_id, owner=owner)
+        if self._script_execution_reservations.get(script_id) == owner:
+            self._script_execution_reservations.pop(script_id, None)
+
+    async def _release_all_script_execution_reservations(self) -> None:
+        for script_id in list(self._script_execution_reservations):
+            await self._release_script_execution_reservation(script_id)
 
     def cancel(self) -> bool:
         """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
@@ -369,6 +385,47 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
+            reservation_owner = (
+                f"task:{self.task_info.task_id}:script:{current_script_uid}"
+            )
+            try:
+                reserved = await Config.try_reserve_script_execution(
+                    str(current_script_uid),
+                    owner=reservation_owner,
+                )
+            except KeyError:
+                script_item.status = "异常"
+                self._record_error(f"脚本 {current_script_uid} 已被删除")
+                logger.info(
+                    f"跳过任务: {current_script_uid}, 对应脚本在启动前已被删除"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
+                )
+                continue
+            if not reserved:
+                script_item.status = "跳过"
+                logger.info(
+                    f"跳过任务: {current_script_uid}, 脚本已被其他任务锁定或预留"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 已被其他任务调度器锁定",
+                    ),
+                )
+                continue
+            self._script_execution_reservations[str(current_script_uid)] = (
+                reservation_owner
+            )
+
             try:
                 provider = self._resolve_script_provider(current_script_uid)
             except KeyError:
@@ -384,6 +441,9 @@ class Task(TaskExecuteBase):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(level="error", message="脚本类型不支持"),
                 )
+                await self._release_script_execution_reservation(
+                    str(current_script_uid)
+                )
                 continue
 
             capability = await Config.get_script_record_capability(current_script_uid)
@@ -396,6 +456,9 @@ class Task(TaskExecuteBase):
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(level="error", message=reason),
+                )
+                await self._release_script_execution_reservation(
+                    str(current_script_uid)
                 )
                 continue
 
@@ -415,18 +478,8 @@ class Task(TaskExecuteBase):
                         message=f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}",
                     ),
                 )
-                continue
-
-            if Config.ScriptConfig[current_script_uid].is_locked:
-                script_item.status = "跳过"
-                logger.info(f"跳过任务: {current_script_uid}, 脚本已被其他任务锁定")
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="warning",
-                        message=f"任务 {script_item.name} 已被其他任务调度器锁定",
-                    ),
+                await self._release_script_execution_reservation(
+                    str(current_script_uid)
                 )
                 continue
 
@@ -543,9 +596,14 @@ class Task(TaskExecuteBase):
                     result=result_event,
                     data=script_event_data,
                 )
+            finally:
+                await self._release_script_execution_reservation(
+                    str(current_script_uid)
+                )
 
     async def final_task(self) -> None:
 
+        await self._release_all_script_execution_reservations()
         logger.info(f"任务结束: {self.task_info.task_id}")
 
         await Publisher.send(
@@ -581,6 +639,7 @@ class Task(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         """处理任务异常并记录退出状态。"""
+        await self._release_all_script_execution_reservations()
         if self._exit_result == "success":
             self._exit_result = "error"
             self._exit_error = f"{type(e).__name__}: {e}"

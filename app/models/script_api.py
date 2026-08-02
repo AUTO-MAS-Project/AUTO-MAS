@@ -21,6 +21,7 @@ class ScriptTypeDescriptor(BaseModel):
     create_group_declared: bool = Field(
         default=False, description="脚本类型是否显式声明了创建分组"
     )
+    creatable: bool = Field(default=True, description="是否允许用户创建此脚本类型")
     docs_url: str | None = Field(default=None, description="文档地址")
     editor_kind: str = Field(..., description="编辑器类型")
     supported_modes: list[str] = Field(..., description="支持的任务模式")

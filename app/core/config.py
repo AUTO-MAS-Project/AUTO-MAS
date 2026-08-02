@@ -24,6 +24,7 @@ import os
 import re
 import sys
 import copy
+import hashlib
 import httpx
 import shutil
 import asyncio
@@ -40,7 +41,7 @@ import inspect
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from functools import wraps
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine, Mapping
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
@@ -134,6 +135,12 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
+class ScriptTypeConversionCASMismatch(RuntimeError):
+    """The source record changed before a type conversion could commit."""
+
+    conversion_state = "source_changed"
+
+
 def _script_config_write(
     *,
     script_id_argument: str | None = None,
@@ -220,6 +227,7 @@ class AppConfig(GlobalConfig):
             f"script_config_write_task_{id(self)}",
             default=None,
         )
+        self._script_execution_reservations: dict[str, str] = {}
 
         self._inject_truststore()
 
@@ -282,6 +290,14 @@ class AppConfig(GlobalConfig):
             script_uid = uuid.UUID(normalized_script_id)
             if script_uid not in self.ScriptConfig:
                 raise KeyError(f"脚本 {normalized_script_id} 不存在")
+            reservation_owner = self._script_execution_reservations.get(
+                normalized_script_id
+            )
+            if reservation_owner is not None:
+                raise RuntimeError(
+                    "脚本已进入任务启动或运行阶段，无法开始配置维护事务: "
+                    f"script_id={normalized_script_id}, owner={reservation_owner}"
+                )
             script_config = self.ScriptConfig[script_uid]
             script_config.begin_maintenance(task)
 
@@ -352,6 +368,60 @@ class AppConfig(GlobalConfig):
             owner_reentrant=True,
         ):
             yield
+
+    async def try_reserve_script_execution(
+        self,
+        script_id: str,
+        *,
+        owner: str,
+    ) -> bool:
+        """Atomically reserve a record before resolving its execution provider.
+
+        The reservation closes the gap between TaskManager provider resolution and
+        the manager's normal runtime lock.  Configuration maintenance (including
+        MaaFW Managed conversion) rejects the record until the task releases it.
+        """
+
+        normalized_script_id = str(uuid.UUID(script_id))
+        normalized_owner = str(owner).strip()
+        if not normalized_owner:
+            raise ValueError("脚本运行 reservation owner 不能为空")
+        async with self._script_config_write_lock:
+            script_uid = uuid.UUID(normalized_script_id)
+            if script_uid not in self.ScriptConfig:
+                raise KeyError(f"脚本 {normalized_script_id} 不存在")
+            if self.ScriptConfig[script_uid].is_locked:
+                return False
+            if normalized_script_id in self._script_execution_reservations:
+                return False
+            self._script_execution_reservations[normalized_script_id] = (
+                normalized_owner
+            )
+            return True
+
+    async def release_script_execution(
+        self,
+        script_id: str,
+        *,
+        owner: str,
+    ) -> None:
+        """Release a TaskManager execution reservation idempotently."""
+
+        normalized_script_id = str(uuid.UUID(script_id))
+        normalized_owner = str(owner).strip()
+        async with self._script_config_write_lock:
+            current_owner = self._script_execution_reservations.get(
+                normalized_script_id
+            )
+            if current_owner is None:
+                return
+            if current_owner != normalized_owner:
+                raise RuntimeError(
+                    "脚本运行 reservation owner 不匹配: "
+                    f"script_id={normalized_script_id}, "
+                    f"expected={current_owner}, actual={normalized_owner}"
+                )
+            self._script_execution_reservations.pop(normalized_script_id, None)
 
     @_script_config_write(script_id_argument="script_id")
     async def lock_script_config(self, script_id: str) -> ConfigBase:
@@ -1258,6 +1328,7 @@ class AppConfig(GlobalConfig):
 
         provider = script_type_registry.get(script)
         self._require_provider_available(provider, "新增脚本配置")
+        self._require_provider_creatable(provider)
 
         if not provider.is_builtin:
             from app.models.plugin_script_config import PluginScriptConfig
@@ -1343,6 +1414,553 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    @staticmethod
+    def _canonical_payload_fingerprint(payload: Mapping[str, Any]) -> str:
+        """Return a stable fingerprint without persisting payload plaintext."""
+
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def _write_json_atomically(path: Path, payload: Mapping[str, Any]) -> None:
+        """Durably replace one JSON file without exposing a partial document."""
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        encoded = json.dumps(payload, ensure_ascii=False, indent=4).encode("utf-8")
+        with temp_path.open("xb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_path, path)
+
+    @staticmethod
+    def _conversion_journal_identity(journal: Mapping[str, Any]) -> dict[str, Any]:
+        """Whitelist non-sensitive fields accepted by conversion journals."""
+
+        allowed = (
+            "schemaVersion",
+            "kind",
+            "operationId",
+            "scriptId",
+            "sourceType",
+            "targetType",
+            "sourceFingerprint",
+            "projectReference",
+            "projectId",
+            "version",
+            "state",
+            "createdAt",
+        )
+        return {
+            key: copy.deepcopy(journal[key])
+            for key in allowed
+            if key in journal
+        }
+
+    def _plugin_script_type_conversion_snapshot(
+        self,
+        script_id: str | uuid.UUID,
+    ) -> dict[str, Any]:
+        """Capture one plugin record in storage form for conversion CAS."""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        script_uid = (
+            script_id if isinstance(script_id, uuid.UUID) else uuid.UUID(script_id)
+        )
+        script_config = self.ScriptConfig[script_uid]
+        if not isinstance(script_config, PluginScriptConfig):
+            raise TypeError(f"脚本 {script_uid} 不是插件脚本配置")
+
+        user_order = [str(user_uid) for user_uid in script_config.UserData.order]
+        users: dict[str, dict[str, Any]] = {}
+        for user_uid in script_config.UserData.order:
+            user_config = script_config.UserData[user_uid]
+            users[str(user_uid)] = {
+                "id": str(user_uid),
+                "type": str(user_config.get("Meta", "PluginTypeKey") or ""),
+                "name": str(user_config.get("Info", "Name") or ""),
+                "config": self._read_plugin_payload(
+                    user_config.get("PluginData", "Config")
+                ),
+            }
+
+        return {
+            "script": {
+                "id": str(script_uid),
+                "type": str(script_config.get("Meta", "PluginTypeKey") or ""),
+                "name": str(script_config.get("Info", "Name") or ""),
+                "config": self._read_plugin_payload(
+                    script_config.get("PluginData", "Config")
+                ),
+            },
+            "userOrder": user_order,
+            "users": users,
+        }
+
+    async def get_plugin_script_type_conversion_snapshot(
+        self,
+        script_id: str,
+    ) -> dict[str, Any]:
+        """Expose an encrypted-at-rest snapshot for a subsequent conversion CAS."""
+
+        async with self.script_config_write_scope(script_id):
+            return copy.deepcopy(
+                self._plugin_script_type_conversion_snapshot(script_id)
+            )
+
+    @staticmethod
+    def _conversion_target_snapshot(
+        source_snapshot: Mapping[str, Any],
+        *,
+        target_type: str,
+        target_script_storage: Mapping[str, Any],
+        target_user_storage: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        script = source_snapshot.get("script")
+        users = source_snapshot.get("users")
+        user_order = source_snapshot.get("userOrder")
+        if not isinstance(script, Mapping) or not isinstance(users, Mapping):
+            raise TypeError("脚本转换快照结构无效")
+        if not isinstance(user_order, list):
+            raise TypeError("脚本转换快照缺少用户顺序")
+
+        target_users: dict[str, dict[str, Any]] = {}
+        for user_id in user_order:
+            source_user = users.get(user_id)
+            if not isinstance(source_user, Mapping):
+                raise ValueError(f"脚本转换快照缺少用户 {user_id}")
+            target_users[str(user_id)] = {
+                "id": str(user_id),
+                "type": target_type,
+                "name": str(source_user.get("name") or ""),
+                "config": copy.deepcopy(target_user_storage[str(user_id)]),
+            }
+
+        return {
+            "script": {
+                "id": str(script.get("id") or ""),
+                "type": target_type,
+                "name": str(script.get("name") or ""),
+                "config": copy.deepcopy(target_script_storage),
+            },
+            "userOrder": [str(user_id) for user_id in user_order],
+            "users": target_users,
+        }
+
+    @staticmethod
+    def _validate_conversion_target_snapshot(
+        target_snapshot: Mapping[str, Any],
+        *,
+        source_snapshot: Mapping[str, Any],
+        target_type: str,
+    ) -> dict[str, Any]:
+        """Validate a decrypted durable target artifact before replay."""
+
+        candidate = copy.deepcopy(dict(target_snapshot))
+        source_script = source_snapshot.get("script")
+        source_users = source_snapshot.get("users")
+        source_order = source_snapshot.get("userOrder")
+        script = candidate.get("script")
+        users = candidate.get("users")
+        order = candidate.get("userOrder")
+        if not all(
+            isinstance(item, Mapping)
+            for item in (source_script, source_users, script, users)
+        ) or not isinstance(source_order, list) or not isinstance(order, list):
+            raise RuntimeError("脚本转换 target artifact 结构无效")
+        normalized_order = [str(item) for item in order]
+        if (
+            order != source_order
+            or len(users) != len(normalized_order)
+            or set(users) != set(normalized_order)
+        ):
+            raise RuntimeError("脚本转换 target artifact 的用户顺序无效")
+        if (
+            script.get("id") != source_script.get("id")
+            or script.get("name") != source_script.get("name")
+            or script.get("type") != target_type
+            or not isinstance(script.get("config"), Mapping)
+        ):
+            raise RuntimeError("脚本转换 target artifact 的脚本身份无效")
+        for user_id in order:
+            source_user = source_users.get(user_id)
+            target_user = users.get(user_id)
+            if not isinstance(source_user, Mapping) or not isinstance(
+                target_user, Mapping
+            ):
+                raise RuntimeError(
+                    f"脚本转换 target artifact 缺少用户 {user_id}"
+                )
+            if (
+                target_user.get("id") != user_id
+                or target_user.get("name") != source_user.get("name")
+                or target_user.get("type") != target_type
+                or not isinstance(target_user.get("config"), Mapping)
+            ):
+                raise RuntimeError(
+                    f"脚本转换 target artifact 的用户 {user_id} 身份无效"
+                )
+        return candidate
+
+    def _load_conversion_target_artifact(
+        self,
+        path: Path,
+        *,
+        operation_id: str,
+        source_fingerprint: str,
+        source_snapshot: Mapping[str, Any],
+        target_type: str,
+    ) -> tuple[dict[str, Any], str]:
+        """Load a DPAPI-protected exact storage target for deterministic replay."""
+
+        from app.utils.security import dpapi_decrypt
+
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise RuntimeError("脚本转换 target artifact 已损坏")
+        expected_identity = {
+            "schemaVersion": 1,
+            "kind": "maafw.managed-conversion-target",
+            "operationId": operation_id,
+            "sourceFingerprint": source_fingerprint,
+        }
+        for key, value in expected_identity.items():
+            if raw.get(key) != value:
+                raise RuntimeError(f"脚本转换 target artifact 冲突: {key}")
+        ciphertext = raw.get("ciphertext")
+        if not isinstance(ciphertext, str) or not ciphertext:
+            raise RuntimeError("脚本转换 target artifact 缺少 DPAPI 密文")
+        try:
+            plaintext = dpapi_decrypt(
+                ciphertext,
+                entropy=b"AUTO-MAS script type conversion v1",
+            )
+            decrypted = json.loads(plaintext)
+        except Exception as exc:
+            raise RuntimeError("脚本转换 target artifact 无法解密") from exc
+        if not isinstance(decrypted, dict):
+            raise RuntimeError("脚本转换 target artifact 解密结果无效")
+        snapshot = self._validate_conversion_target_snapshot(
+            decrypted,
+            source_snapshot=source_snapshot,
+            target_type=target_type,
+        )
+        fingerprint = self._canonical_payload_fingerprint(snapshot)
+        if raw.get("targetFingerprint") != fingerprint:
+            raise RuntimeError("脚本转换 target artifact fingerprint 不匹配")
+        return snapshot, fingerprint
+
+    def _write_conversion_target_artifact(
+        self,
+        path: Path,
+        *,
+        operation_id: str,
+        source_fingerprint: str,
+        target_snapshot: Mapping[str, Any],
+        target_fingerprint: str,
+    ) -> None:
+        """Persist exact storage ciphertext encrypted as one DPAPI artifact."""
+
+        from app.utils.security import dpapi_encrypt
+
+        plaintext = json.dumps(
+            target_snapshot,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        artifact = {
+            "schemaVersion": 1,
+            "kind": "maafw.managed-conversion-target",
+            "operationId": operation_id,
+            "sourceFingerprint": source_fingerprint,
+            "targetFingerprint": target_fingerprint,
+            "ciphertext": dpapi_encrypt(
+                plaintext,
+                description="AUTO-MAS script type conversion target",
+                entropy=b"AUTO-MAS script type conversion v1",
+            ),
+        }
+        self._write_json_atomically(path, artifact)
+
+    async def convert_plugin_script_type(
+        self,
+        script_id: str,
+        *,
+        source_type: str,
+        target_type: str,
+        expected_snapshot: Mapping[str, Any],
+        target_script_config: Mapping[str, Any],
+        target_user_configs: Mapping[str, Mapping[str, Any]],
+        journal: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Atomically retype one plugin script record in its maintenance transaction.
+
+        The caller must already hold ``script_config_transaction`` for this script.
+        The source snapshot is compared in storage form, then the complete parent and
+        user record is replaced in one filesystem operation.  A non-sensitive journal
+        makes retries after a process interruption deterministic.
+        """
+
+        normalized_script_id = str(uuid.UUID(script_id))
+        normalized_source_type = str(source_type).strip()
+        normalized_target_type = str(target_type).strip()
+        if not normalized_source_type or not normalized_target_type:
+            raise ValueError("脚本转换的 source_type 和 target_type 不能为空")
+        if normalized_source_type == normalized_target_type:
+            raise ValueError("脚本转换的源类型与目标类型不能相同")
+
+        task = asyncio.current_task()
+        active = self._script_config_transaction.get()
+        if (
+            task is None
+            or active is None
+            or active[0] != normalized_script_id
+            or active[2] is not task
+        ):
+            raise RuntimeError(
+                "convert_plugin_script_type 必须在同一脚本的配置维护事务中调用"
+            )
+
+        script_uid = uuid.UUID(normalized_script_id)
+        current_config = self.ScriptConfig[script_uid]
+        if current_config.is_locked:
+            raise RuntimeError(f"脚本 {normalized_script_id} 正在运行，无法转换")
+
+        source_provider = script_type_registry.get(normalized_source_type)
+        target_provider = script_type_registry.get(normalized_target_type)
+        if source_provider.is_builtin or target_provider.is_builtin:
+            raise TypeError(
+                "convert_plugin_script_type 仅支持 PluginScriptConfig provider 之间换型"
+            )
+        self._require_provider_available(target_provider, "转换脚本配置")
+
+        current_snapshot = self._plugin_script_type_conversion_snapshot(script_uid)
+        source_user_order = expected_snapshot.get("userOrder")
+        if not isinstance(source_user_order, list):
+            raise TypeError("expected_snapshot.userOrder 必须是列表")
+        normalized_user_ids = [str(uuid.UUID(str(item))) for item in source_user_order]
+        supplied_user_ids = {str(uuid.UUID(str(item))) for item in target_user_configs}
+        if supplied_user_ids != set(normalized_user_ids):
+            raise ValueError("目标用户配置必须与源用户 UUID 集合完全一致")
+
+        current_type = str(current_snapshot["script"]["type"] or "")
+        if current_type == normalized_source_type:
+            if current_snapshot != dict(expected_snapshot):
+                raise ScriptTypeConversionCASMismatch(
+                    "脚本配置在转换前已变化，CAS 校验失败"
+                )
+            if any(
+                user["type"] != normalized_source_type
+                for user in current_snapshot["users"].values()
+            ):
+                raise RuntimeError(
+                    "脚本包含与 source_type 不一致的用户配置，拒绝转换"
+                )
+            if normalized_user_ids != current_snapshot["userOrder"]:
+                raise ScriptTypeConversionCASMismatch(
+                    "脚本用户顺序在转换前已变化，CAS 校验失败"
+                )
+        elif current_type != normalized_target_type:
+            raise RuntimeError(
+                "脚本当前类型既不是转换源类型，也不是可恢复的目标类型"
+            )
+
+        target_script_storage = await form_to_storage(
+            target_provider,
+            dict(target_script_config),
+            "script",
+        )
+
+        target_user_storage: dict[str, dict[str, Any]] = {}
+        for user_id in normalized_user_ids:
+            raw_target_user = target_user_configs.get(user_id)
+            if raw_target_user is None:
+                for raw_key, value in target_user_configs.items():
+                    if str(uuid.UUID(str(raw_key))) == user_id:
+                        raw_target_user = value
+                        break
+            if not isinstance(raw_target_user, Mapping):
+                raise TypeError(f"目标用户配置 {user_id} 必须是对象")
+            target_user_storage[user_id] = await form_to_storage(
+                target_provider,
+                dict(raw_target_user),
+                "user",
+            )
+
+        target_snapshot = self._conversion_target_snapshot(
+            expected_snapshot,
+            target_type=normalized_target_type,
+            target_script_storage=target_script_storage,
+            target_user_storage=target_user_storage,
+        )
+        source_fingerprint = self._canonical_payload_fingerprint(expected_snapshot)
+        target_fingerprint = self._canonical_payload_fingerprint(target_snapshot)
+
+        journal_data = self._conversion_journal_identity(journal)
+        if journal_data.get("schemaVersion") != 1:
+            raise ValueError("脚本转换 journal.schemaVersion 必须为 1")
+        if journal_data.get("kind") != "maafw.managed-conversion":
+            raise ValueError("脚本转换 journal.kind 无效")
+        operation_id = str(uuid.UUID(str(journal_data.get("operationId") or "")))
+        expected_journal_fields = {
+            "scriptId": normalized_script_id,
+            "sourceType": normalized_source_type,
+            "targetType": normalized_target_type,
+            "sourceFingerprint": source_fingerprint,
+        }
+        for key, expected_value in expected_journal_fields.items():
+            actual_value = journal_data.get(key)
+            if actual_value != expected_value:
+                raise ValueError(
+                    f"脚本转换 journal.{key} 不匹配: {actual_value!r}"
+                )
+        if journal_data.get("state") != "project_imported":
+            raise ValueError("脚本转换必须从 project_imported 状态开始")
+
+        journal_dir = self.config_path / "script_config_transactions"
+        journal_path = journal_dir / f"{operation_id}.json"
+        target_artifact_path = journal_dir / f"{operation_id}.target.json"
+        if target_artifact_path.is_file():
+            target_snapshot, target_fingerprint = (
+                self._load_conversion_target_artifact(
+                    target_artifact_path,
+                    operation_id=operation_id,
+                    source_fingerprint=source_fingerprint,
+                    source_snapshot=expected_snapshot,
+                    target_type=normalized_target_type,
+                )
+            )
+            target_script_storage = copy.deepcopy(
+                target_snapshot["script"]["config"]
+            )
+            target_user_storage = {
+                user_id: copy.deepcopy(target_snapshot["users"][user_id]["config"])
+                for user_id in normalized_user_ids
+            }
+        else:
+            self._write_conversion_target_artifact(
+                target_artifact_path,
+                operation_id=operation_id,
+                source_fingerprint=source_fingerprint,
+                target_snapshot=target_snapshot,
+                target_fingerprint=target_fingerprint,
+            )
+        persisted_journal: dict[str, Any] | None = None
+        if journal_path.is_file():
+            raw_persisted = json.loads(journal_path.read_text(encoding="utf-8"))
+            if not isinstance(raw_persisted, dict):
+                raise RuntimeError("脚本转换 journal 已损坏")
+            persisted_journal = raw_persisted
+            for key, expected_value in {
+                **expected_journal_fields,
+                "operationId": operation_id,
+                "kind": "maafw.managed-conversion",
+                "targetFingerprint": target_fingerprint,
+            }.items():
+                if persisted_journal.get(key) != expected_value:
+                    raise RuntimeError(f"脚本转换 journal 冲突: {key}")
+
+        current_fingerprint = self._canonical_payload_fingerprint(current_snapshot)
+        if current_fingerprint == target_fingerprint:
+            if persisted_journal is None:
+                raise RuntimeError("目标脚本已转换，但缺少匹配的恢复 journal")
+            committed_journal = {
+                **persisted_journal,
+                "state": "committed",
+                "recovered": persisted_journal.get("state") != "committed",
+            }
+            self._write_json_atomically(journal_path, committed_journal)
+            return {
+                "converted": True,
+                "idempotent": True,
+                "recovered": bool(committed_journal["recovered"]),
+                "scriptId": normalized_script_id,
+                "sourceType": normalized_source_type,
+                "targetType": normalized_target_type,
+                "journal": committed_journal,
+            }
+
+        if current_type != normalized_source_type:
+            raise RuntimeError(
+                "脚本目标状态与 conversion artifact 不匹配，拒绝覆盖"
+            )
+
+        prepared_journal = {
+            **journal_data,
+            "operationId": operation_id,
+            "sourceFingerprint": source_fingerprint,
+            "targetFingerprint": target_fingerprint,
+            "state": "project_imported",
+        }
+        self._write_json_atomically(journal_path, prepared_journal)
+
+        from app.models.plugin_script_config import (
+            PluginScriptConfig,
+            PluginUserConfig,
+        )
+
+        record_payload: dict[str, Any] = {
+            "Meta": {"PluginTypeKey": normalized_target_type},
+            "Info": {"Name": current_snapshot["script"]["name"]},
+            "PluginData": {
+                "Config": json.dumps(target_script_storage, ensure_ascii=False),
+            },
+            "SubConfigsInfo": {"UserData": {"instances": []}},
+        }
+        user_payload = record_payload["SubConfigsInfo"]["UserData"]
+        for user_id in normalized_user_ids:
+            user_payload["instances"].append(
+                {"uid": user_id, "type": PluginUserConfig.__name__}
+            )
+            user_payload[user_id] = {
+                "Meta": {"PluginTypeKey": normalized_target_type},
+                "Info": {"Name": current_snapshot["users"][user_id]["name"]},
+                "PluginData": {
+                    "Config": json.dumps(
+                        target_user_storage[user_id],
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+
+        replacement = PluginScriptConfig()
+        await replacement.load(record_payload)
+        for save_method in self.ScriptConfig._save_methods:
+            await replacement.add_save_method(save_method)
+        if self.ScriptConfig.file is not None:
+            await replacement.add_save_method(self.ScriptConfig.save)
+
+        root_payload = await self.ScriptConfig.toDict(if_decrypt=False)
+        root_payload[normalized_script_id] = await replacement.toDict(if_decrypt=False)
+        if self.ScriptConfig.file is None:
+            raise RuntimeError("ScriptConfig 尚未连接持久化文件")
+        self._write_json_atomically(self.ScriptConfig.file, root_payload)
+        self.ScriptConfig.data[script_uid] = replacement
+
+        committed_journal = {
+            **prepared_journal,
+            "state": "committed",
+            "recovered": False,
+        }
+        self._write_json_atomically(journal_path, committed_journal)
+        return {
+            "converted": True,
+            "idempotent": False,
+            "recovered": False,
+            "scriptId": normalized_script_id,
+            "sourceType": normalized_source_type,
+            "targetType": normalized_target_type,
+            "journal": committed_journal,
+        }
+
     @_script_config_write(
         script_id_argument="script_id",
         owner_reentrant=True,
@@ -1423,6 +2041,12 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
+        reservation_owner = self._script_execution_reservations.get(str(uid))
+        if reservation_owner is not None:
+            raise RuntimeError(
+                "脚本正在启动或运行，无法删除: "
+                f"script_id={uid}, owner={reservation_owner}"
+            )
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
@@ -1797,6 +2421,12 @@ class AppConfig(GlobalConfig):
 
         return provider.metadata.get("available", True) is not False
 
+    @staticmethod
+    def _provider_is_creatable(provider: Any) -> bool:
+        """判断脚本类型 provider 是否允许用户创建。"""
+
+        return provider.metadata.get("creatable", True) is not False
+
     @classmethod
     def _require_provider_available(cls, provider: Any, action: str) -> None:
         """阻止对未启用脚本类型执行写操作。"""
@@ -1804,6 +2434,14 @@ class AppConfig(GlobalConfig):
         if cls._provider_is_available(provider):
             return
         raise RuntimeError(f"脚本类型 {provider.type_key} 当前未启用，无法{action}")
+
+    @classmethod
+    def _require_provider_creatable(cls, provider: Any) -> None:
+        """阻止通过通用创建入口新增内部脚本类型。"""
+
+        if cls._provider_is_creatable(provider):
+            return
+        raise RuntimeError(f"脚本类型 {provider.type_key} 不支持直接创建")
 
     def _resolve_plugin_record_provider(self, script_config: Any):
         """解析插件脚本容器对应的 provider，缺失时回退到离线描述。"""

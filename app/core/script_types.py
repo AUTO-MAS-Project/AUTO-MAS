@@ -521,6 +521,7 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
         ),
         "create_group_declared": provider.metadata.get("create_group")
         in {"general", "specialized"},
+        "creatable": provider.metadata.get("creatable", True) is not False,
         "docs_url": provider.docs_url,
         "editor_kind": provider.editor_kind,
         "supported_modes": list(provider.supported_modes),
