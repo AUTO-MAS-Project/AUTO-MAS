@@ -39,6 +39,7 @@ import json
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
+    MaaConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
@@ -59,6 +60,7 @@ from app.utils.constants import (
     RESOURCE_STAGE_DROP_INFO,
     TYPE_BOOK,
     RESOURCE_STAGE_DATE_TEXT,
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
 from app.utils import get_logger
 from .script_types import (
@@ -2043,6 +2045,36 @@ class AppConfig(GlobalConfig):
         logger.success("用户自定义基建排班下拉框信息获取成功")
 
         return data
+
+    async def get_maa_depot_items(self, script_id: str) -> list[dict[str, str]]:
+        """获取 MAA 库存保持物品选项。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        item_index_path = (
+            Path(script_config.get("Info", "Path")) / "resource" / "item_index.json"
+        )
+        if not item_index_path.exists():
+            raise FileNotFoundError(
+                f"未找到 MAA 物品资源: {item_index_path}，请更新 MAA 后重试"
+            )
+
+        items = json.loads(item_index_path.read_text(encoding="utf-8"))
+        return [
+            {"label": item.get("name") or item_id, "value": item_id}
+            for item_id, item in sorted(
+                (
+                    (item_id, item)
+                    for item_id, item in items.items()
+                    if item_id.isdigit()
+                    and item_id not in MAA_DEPOT_EXCLUDED_ITEM_IDS
+                    and isinstance(item, dict)
+                ),
+                key=lambda entry: int(entry[0]),
+            )
+        ]
 
     async def add_plan(
         self, script: Literal["MaaPlan"]

@@ -97,6 +97,17 @@
           <!-- 任务配置组件 -->
           <TaskConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
+          <!-- 库存保持配置组件 -->
+          <DepotMaintainConfigSection
+            :form-data="formData"
+            :loading="loading"
+            :stage-options="stageOptions"
+            :item-options="depotItemOptions"
+            :item-options-loading="depotItemOptionsLoading"
+            :item-options-error="depotItemOptionsError"
+            @save="handleFieldSave"
+          />
+
           <!-- 森空岛配置组件 -->
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
@@ -145,6 +156,7 @@ import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskConfigSection from '@/views/MAAUserEdit/TaskConfigSection.vue'
+import DepotMaintainConfigSection from '@/views/MAAUserEdit/DepotMaintainConfigSection.vue'
 import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -181,6 +193,11 @@ const infrastructureConfigPath = ref('')
 const infrastructureImporting = ref(false)
 const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
 const infrastructureOptionsLoading = ref(false)
+
+// 库存保持物品选项
+const depotItemOptions = ref<Array<{ label: string; value: string }>>([])
+const depotItemOptionsLoading = ref(false)
+const depotItemOptionsError = ref('')
 
 // 服务器选项
 const serverOptions = [
@@ -465,6 +482,8 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfReclamation: false,
     IfRoguelike: false,
+    IfDepotMaintain: false,
+    DepotMaintainPlans: '[]',
   },
   Notify: {
     Enabled: false,
@@ -743,6 +762,27 @@ const loadStageOptions = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载关卡选项失败: ${errorMsg}`)
+  }
+}
+
+const loadDepotItemOptions = async () => {
+  depotItemOptionsLoading.value = true
+  depotItemOptionsError.value = ''
+  try {
+    const response = await Service.getMaaDepotItemsApiScriptsMaaDepotItemsPost({ scriptId })
+    if (response.code !== 200) {
+      depotItemOptionsError.value = response.message || '加载 MAA 库存物品失败'
+      return
+    }
+    depotItemOptions.value = response.data
+      .filter(option => option.value)
+      .map(option => ({ label: option.label, value: option.value as string }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载 MAA 库存物品失败: ${errorMsg}`)
+    depotItemOptionsError.value = '加载 MAA 库存物品失败'
+  } finally {
+    depotItemOptionsLoading.value = false
   }
 }
 
@@ -1136,6 +1176,7 @@ onMounted(() => {
   loadScriptInfo()
   loadStageModeOptions()
   loadStageOptions()
+  loadDepotItemOptions()
 
   // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
   // 如果是新建模式，也尝试加载基建配置选项（如果已经有用户ID）

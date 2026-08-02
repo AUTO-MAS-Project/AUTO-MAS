@@ -472,6 +472,14 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfReclamation = ConfigItem(
             "Task", "IfReclamation", False, BoolValidator()
         )
+        ## 是否库存保持
+        self.Task_IfDepotMaintain = ConfigItem(
+            "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 库存保持计划
+        self.Task_DepotMaintainPlans = ConfigItem(
+            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
