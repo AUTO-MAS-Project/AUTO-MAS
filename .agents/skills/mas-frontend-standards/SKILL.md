@@ -31,6 +31,7 @@ Before editing frontend code:
 | Reusable page flow | `src/views/<module>/useXxxLogic.ts` or composable | Template expressions |
 | Pure utility | `src/utils` | Copied inside components |
 | Domain type | `src/types` or generated `src/api/models` | Repeated local component types |
+| Shared reactive application state | `src/stores` with Pinia | Page-level `localStorage` access |
 | Global style token | `src/style.css` or future `src/styles` | Repeated page-local variables |
 | Global browser UI style such as scrollbars | `src/styles`, imported once by the renderer entry | Repeated component-level browser pseudo-elements |
 | Electron capability | `electron` and preload types | Direct renderer Node access |
@@ -63,11 +64,14 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 1. Route paths use lowercase kebab-case; route names use PascalCase.
 2. Route components are lazy-loaded and business routes include `meta.title`.
 3. Prefer `navigateTo` or `navigateToByName`; avoid scattered hardcoded paths.
-4. The project has Pinia as a dependency but does not currently use registered stores. Do not introduce stores just because Pinia exists.
-5. Prefer local state first; use composables for cross-component, persistent, or coordinated state.
-6. Do not invent token, login, permission, or security storage in pages.
-7. API and WebSocket endpoints come from Electron config helpers; do not hardcode backend addresses in business pages.
-8. Vite-exposed environment variables use the `VITE_` prefix.
+4. Prefer Pinia for reactive application data shared across components or pages, coordinated state with multiple readers or writers, and state that should survive component unmounts or route changes during the current session.
+5. Do not store Pinia-suitable state directly in `localStorage`, and do not keep Pinia and `localStorage` as competing sources of truth.
+6. Keep truly component-local, short-lived state in the owning component. Do not create a store for a single isolated control or form draft with no cross-component lifecycle.
+7. Use `localStorage` only for small, non-sensitive browser-local preferences that must survive application restarts and do not belong to Pinia, backend data, or Electron configuration. Namespace keys, validate parsed values, and provide safe defaults for missing or invalid data.
+8. When shared Pinia state also needs durable persistence, prefer an existing backend or Electron configuration owner instead of adding ad hoc `localStorage` mirroring.
+9. Never place tokens, credentials, permissions, secrets, large business datasets, or server-authoritative data in `localStorage`.
+10. API and WebSocket endpoints come from Electron config helpers; do not hardcode backend addresses in business pages.
+11. Vite-exposed environment variables use the `VITE_` prefix.
 
 ## Style And Code Quality
 
@@ -110,7 +114,8 @@ Review the diff produced by Prettier and include the intended formatting changes
 | --- | --- |
 | "I can generate a fresh page faster." | Inspect and reuse local page, component, and composable patterns first. |
 | "The API call is tiny, so direct fetch is fine." | Business API calls go through generated services and composables. |
-| "Pinia is installed, so I can add a store." | Current app does not use registered stores; use local state or composables unless enabling Pinia is the task. |
+| "Shared state is easiest to put in localStorage." | Shared reactive application state belongs in Pinia; `localStorage` is only the narrow fallback for durable, non-sensitive local preferences. |
+| "Pinia should hold every frontend value." | Keep isolated short-lived state local, and keep persistent authoritative data in its backend or Electron configuration owner. |
 | "I can tweak generated API files." | `src/api` is generated; regenerate through the project command instead. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
 
