@@ -486,6 +486,10 @@ class MaaUserConfig_Task(BaseModel):
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
+    IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
+    DepotMaintainPlans: Optional[str] = Field(
+        default=None, description="库存保持计划 JSON"
+    )
 
 
 class MaaUserConfig_Notify(BaseModel):
