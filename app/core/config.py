@@ -2107,6 +2107,95 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    def parse_maaend_failed_tasks(self, logs: list[str]) -> List[str]:
+        """
+        解析MaaEnd失败任务名称
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            List[str]: 失败任务名称列表
+        """
+
+        failed_tasks: List[str] = []
+        ignored_tasks = {"停止任务", "⛔ 结束进程", "__MXU_KILLPROC__", "StopTask"}
+
+        for log_line in logs:
+            match = re.search(r"任务失败:\s*(.+)", log_line)
+            if match is None:
+                continue
+
+            task_name = match.group(1).strip()
+            if (
+                task_name
+                and task_name not in ignored_tasks
+                and task_name not in failed_tasks
+            ):
+                failed_tasks.append(task_name)
+
+        return failed_tasks
+
+    def parse_maaend_matrix_statistics(
+        self, logs: list[str]
+    ) -> tuple[Optional[Dict[str, str]], bool]:
+        """
+        解析MaaEnd基质刷取统计
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            tuple[Optional[Dict[str, str]], bool]: 基质统计数据与是否识别到基质流程
+        """
+
+        matrix_statistics: Dict[str, str] = {}
+        pending_statistics: Dict[str, str] = {}
+        current_matrix_skill = ""
+        has_matrix_flow = False
+        locked_count = 0
+
+        for log_line in logs:
+            skill_match = re.search(r"OCR到技能：(.+)", log_line)
+            if skill_match:
+                current_matrix_skill = skill_match.group(1).strip()
+                continue
+
+            weapon_match = re.search(r"匹配到武器：(.+)", log_line)
+            if weapon_match and current_matrix_skill:
+                pending_statistics[current_matrix_skill] = (
+                    weapon_match.group(1).strip()
+                )
+                current_matrix_skill = ""
+                continue
+
+            completed_match = re.search(
+                r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
+                log_line,
+            )
+            if completed_match is None:
+                continue
+
+            has_matrix_flow = True
+            current_locked_count = int(completed_match.group(1))
+            locked_count += current_locked_count
+            if current_locked_count > 0:
+                matched_items = list(pending_statistics.items())[
+                    -current_locked_count:
+                ]
+                matrix_statistics.update(matched_items)
+
+            pending_statistics = {}
+            current_matrix_skill = ""
+
+        if not has_matrix_flow:
+            return None, False
+
+        if locked_count == 0:
+            return {}, True
+
+        return (matrix_statistics or None), True
+
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
     ) -> None:
@@ -2123,7 +2212,15 @@ class AppConfig(GlobalConfig):
             f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
         )
 
-        data: Dict[str, str] = {"maaend_result": maaend_result}
+        failed_tasks = self.parse_maaend_failed_tasks(logs)
+        matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
+
+        if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
+            maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        data: Dict[str, Any] = {"maaend_result": maaend_result}
+        if has_matrix_flow and matrix_statistics is not None:
+            data["matrix_statistics"] = matrix_statistics
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2264,6 +2361,11 @@ class AppConfig(GlobalConfig):
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
 
+                # 合并基质统计
+                elif key == "matrix_statistics":
+                    for skill, weapon in single_data[key].items():
+                        data[key][skill] = weapon
+
                 # 处理理智相关字段 - 使用最后一个文件的值
                 elif key in ["sanity", "sanity_full_at"]:
                     data[key] = single_data[key]
@@ -2303,7 +2405,11 @@ class AppConfig(GlobalConfig):
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
 
         # 确保返回的字典始终包含 index 字段，即使为空
-        result = {k: v for k, v in data.items() if v}
+        result = {
+            k: v
+            for k, v in data.items()
+            if v or (k == "matrix_statistics" and isinstance(v, dict))
+        }
         if "index" not in result:
             result["index"] = []
 
