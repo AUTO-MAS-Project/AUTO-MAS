@@ -469,17 +469,122 @@ export type HSRTaskMapping = Partial<
   Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', 'SRA' | 'M7A'>
 >
 
+export type HSRTaskKey = keyof HSRTaskMapping
+
+export interface HSRSRAReceiveRewardsConfig {
+  TrailblazerProfile: boolean
+  Assignments: boolean
+  Mail: boolean
+  DailyTraining: boolean
+  NamelessHonor: boolean
+  GiftOfOdyssey: boolean
+  RedeemCode: boolean
+}
+
+export interface HSRSRADivergentUniverseConfig {
+  RunTimes: number
+  UseTechnique: boolean
+  PointRewards: boolean
+}
+
+export interface HSRSRACurrencyWarsConfig {
+  Mode: 'normal' | 'overclock'
+  Difficulty: 'lowest' | 'highest'
+  RunTimes: number
+}
+
+export interface HSRM7AReceiveRewardsConfig {
+  RunDailyTraining: boolean
+  UseSynthesis: boolean
+  UseHimekoTrial: boolean
+  UseMemoryOne: boolean
+  DailyCheckIn: boolean
+  Dispatch: boolean
+  Mail: boolean
+  Support: boolean
+  DailyTrainingReward: boolean
+  NamelessHonor: boolean
+  RedeemCode: boolean
+  Achievement: boolean
+  Messages: boolean
+}
+
+export interface HSRM7ADivergentUniverseConfig {
+  Mode: 'normal' | 'cycle'
+  Level: number
+  BonusEnabled: boolean
+}
+
+export interface HSRM7ACurrencyWarsConfig {
+  Mode: 'normal' | 'overclock'
+  RankDifficulty: 'lowest' | 'current' | 'highest'
+  Strategy: 'default' | 'aglaea' | 'seele'
+  RestartOnSpecialTags: boolean
+  FastMode: boolean
+  BonusEnabled: boolean
+}
+
+export interface HSRCultivationTargetConfig {
+  Enabled: boolean
+  M7ARecognitionScheme: 'instance' | 'drop'
+  M7AOrnamentWeeklyCount: number
+  M7AUseUserStageWhenOnlyRelics: boolean
+}
+
+export interface HSRManagedTaskConfig {
+  TaskMapping: HSRTaskMapping
+  M7A: {
+    LowPerformanceMode: boolean
+  }
+  SRAReceiveRewards: HSRSRAReceiveRewardsConfig
+  SRADivergentUniverse: HSRSRADivergentUniverseConfig
+  SRACurrencyWars: HSRSRACurrencyWarsConfig
+  M7AReceiveRewards: HSRM7AReceiveRewardsConfig
+  M7ADivergentUniverse: HSRM7ADivergentUniverseConfig
+  M7ACurrencyWars: HSRM7ACurrencyWarsConfig
+  CultivationTarget: HSRCultivationTargetConfig
+}
+
+export type HSRManagedTaskConfigGroup =
+  | 'M7A'
+  | 'SRAReceiveRewards'
+  | 'SRADivergentUniverse'
+  | 'SRACurrencyWars'
+  | 'M7AReceiveRewards'
+  | 'M7ADivergentUniverse'
+  | 'M7ACurrencyWars'
+  | 'CultivationTarget'
+
 export interface HSRScriptConfig {
   Info?: { Name?: string }
-  SRA?: { Path?: string }
+  Control?: {
+    Direct?: boolean
+    Engine?: 'SRA' | 'M7A'
+    TimeoutMinutes?: number
+  }
+  SRA?: { Path?: string; Config?: string }
   M7A?: { Path?: string; LowPerformanceMode?: boolean }
-  Game?: { Path?: string; Arguments?: string; WaitTime?: number }
+  Game?: {
+    Backend?: 'local' | 'mas_cloud' | 'native_owned'
+    Path?: string
+    Arguments?: string
+    WaitTime?: number
+    ForceResolution1920x1080?: boolean
+    RedeemCodesOnlyWhenChanged?: boolean
+  }
   Run?: {
     RunTimesLimit?: number
     DailyTimeLimit?: number
     WeeklyTimeLimit?: number
   }
   TaskMapping?: HSRTaskMapping
+  SRAReceiveRewards?: Partial<HSRSRAReceiveRewardsConfig>
+  SRADivergentUniverse?: Partial<HSRSRADivergentUniverseConfig>
+  SRACurrencyWars?: Partial<HSRSRACurrencyWarsConfig>
+  M7AReceiveRewards?: Partial<HSRM7AReceiveRewardsConfig>
+  M7ADivergentUniverse?: Partial<HSRM7ADivergentUniverseConfig>
+  M7ACurrencyWars?: Partial<HSRM7ACurrencyWarsConfig>
+  CultivationTarget?: Partial<HSRCultivationTargetConfig>
 }
 
 // HSR TaskMapping 默认值（Daily / ReceiveRewards / DivergentUniverse / CurrencyWars 默认走 SRA）
