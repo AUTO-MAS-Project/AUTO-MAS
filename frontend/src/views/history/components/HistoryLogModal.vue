@@ -185,16 +185,16 @@ interface Props {
   fontSizeOptions: number[]
   editorTheme: string
   monacoOptions: Record<string, any>
-  registerLogLanguage: (monaco: any) => void
+  registerLogLanguage: any
 }
 
 const props = defineProps<Props>()
 
 defineEmits<{
-  (e: 'close'): void
-  (e: 'open-file'): void
-  (e: 'open-directory'): void
-  (e: 'update:fontSize', value: number): void
+  close: []
+  'open-file': []
+  'open-directory': []
+  'update:fontSize': [number]
 }>()
 
 // 去除空行开关（默认开启）

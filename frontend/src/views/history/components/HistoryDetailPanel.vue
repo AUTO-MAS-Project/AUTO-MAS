@@ -53,7 +53,7 @@ interface Props {
 defineProps<Props>()
 
 defineEmits<{
-  (e: 'select-record', index: number, record: RecordItem): void
+  'select-record': [number, RecordItem]
 }>()
 </script>
 
