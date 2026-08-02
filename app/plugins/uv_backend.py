@@ -34,9 +34,16 @@ def _find_uv() -> str | None:
     """查找 uv 可执行文件路径。
 
     查找顺序：
-    1. Electron 安装位置 (environment/python/Scripts/uv.exe)
-    2. 系统 PATH
+    1. AUTO_MAS_UV_EXE 指定路径
+    2. Electron 安装位置 (environment/python/Scripts/uv.exe)
+    3. 系统 PATH
     """
+    configured_uv = os.environ.get("AUTO_MAS_UV_EXE")
+    if configured_uv:
+        configured_path = Path(configured_uv)
+        if configured_path.is_file():
+            return str(configured_path)
+
     local_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if local_uv.is_file():
         return str(local_uv)
