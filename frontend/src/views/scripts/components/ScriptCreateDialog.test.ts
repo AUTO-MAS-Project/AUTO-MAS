@@ -14,4 +14,11 @@ describe('ScriptCreateDialog structure', () => {
     expect(source).toContain('height: min(500px, calc(100vh - 192px));')
     expect(source.match(/overflow-y: auto;/g)).toHaveLength(1)
   })
+
+  it('centers template loading in a sized state container', () => {
+    expect(source).toContain('<div v-if="templateLoading" class="template-loading-state">')
+    expect(source).toContain('<a-spin size="large" tip="正在加载配置模板..." />')
+    expect(source).toContain('min-height: 240px;')
+    expect(source).not.toContain('<a-spin :spinning="templateLoading">')
+  })
 })
