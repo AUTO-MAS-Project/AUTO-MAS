@@ -13,6 +13,8 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
+  onSystemResume?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: () => void) => () => void
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
@@ -169,10 +171,9 @@ export interface ElectronAPI {
     isRunning: boolean
     pid?: number
     startTime?: Date
-    wsConnected: boolean
-    lastPingTime?: Date
     error?: string
   }>
+  backendWaitReady: () => Promise<{ ready: boolean; reason?: string }>
 
   // 清理资源
   cleanup: () => Promise<{ success: boolean }>
@@ -207,16 +208,45 @@ export interface ElectronAPI {
       isRunning: boolean
       pid?: number
       startTime?: Date
-      wsConnected: boolean
-      lastPingTime?: Date
       error?: string
     }) => void
   ) => void
   removeBackendStatusListener?: () => void
 }
 
+export interface PluginPageContext {
+  pageId: string
+  path: string
+  title: string
+  renderer: string
+  source: string
+  pluginId: string | null
+  elementTag: string | null
+}
+
+export interface PluginAPI {
+  call: (path: string, payload?: unknown) => Promise<unknown>
+  subscribe: (
+    key: { id: string; type: string },
+    handler: (message: { id: string; type: string; data: unknown }) => void
+  ) => () => void
+  getPageContext: () => PluginPageContext | null
+}
+
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    pluginAPI: PluginAPI
+    __AUTO_MAS_PLUGIN_VUE__?: typeof import('vue')
+    wsDebug?: string
+    debugScheduler?: typeof import('@/utils/scheduler-debug').debugScheduler
+  }
+
+  interface Performance {
+    memory?: {
+      usedJSHeapSize: number
+      totalJSHeapSize: number
+      jsHeapSizeLimit: number
+    }
   }
 }

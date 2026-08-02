@@ -30,6 +30,32 @@ from app.models.schema import *
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
 
+@router.get(
+    "/runtime-snapshot",
+    tags=["Get"],
+    summary="获取运行中任务初始快照",
+    response_model=TaskRuntimeSnapshot,
+    status_code=200,
+)
+async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
+    """返回当前运行任务；WS 只承载后续状态、日志与完成事件。"""
+
+    return TaskManager.get_runtime_snapshot()
+
+
+@router.get(
+    "/power/countdown-snapshot",
+    tags=["Get"],
+    summary="获取电源倒计时初始快照",
+    response_model=PowerCountdownSnapshot,
+    status_code=200,
+)
+async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
+    """返回当前倒计时；WS 只承载后续逐秒更新与取消事件。"""
+
+    return System.get_power_countdown_snapshot()
+
+
 @router.post(
     "/start",
     tags=["Action"],

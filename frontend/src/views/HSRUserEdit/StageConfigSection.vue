@@ -41,7 +41,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.CalyxGolden"
             allow-clear
-            @change="value => handleStageSelectChange('CalyxGolden', value)"
+            @change="handleStageSelectChange('CalyxGolden', $event)"
           />
         </a-form-item>
       </a-col>
@@ -65,7 +65,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.CalyxCrimson"
             allow-clear
-            @change="value => handleStageSelectChange('CalyxCrimson', value)"
+            @change="handleStageSelectChange('CalyxCrimson', $event)"
           />
         </a-form-item>
       </a-col>
@@ -89,7 +89,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.Relic"
             allow-clear
-            @change="value => handleStageSelectChange('Relic', value)"
+            @change="handleStageSelectChange('Relic', $event)"
           />
         </a-form-item>
       </a-col>
@@ -113,7 +113,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.Ornament"
             allow-clear
-            @change="value => handleStageSelectChange('Ornament', value)"
+            @change="handleStageSelectChange('Ornament', $event)"
           />
         </a-form-item>
       </a-col>
@@ -258,20 +258,13 @@ const emitSave = (key: string, value: unknown) => {
 
 type ActiveChannel = 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament'
 
-const emptyNativeStageValue = '{ }'
+const emptyNativeStageValue: Record<string, never> = {}
 
 const parseScriptStage = (raw: unknown): HSRScriptStagePayload | null => {
-  if (!raw || typeof raw !== 'string') return null
-  const text = raw.trim()
-  if (!text || text === '{}' || text === '{ }') return null
-  try {
-    const data = JSON.parse(text)
-    return data && typeof data === 'object' && !Array.isArray(data)
-      ? (data as HSRScriptStagePayload)
-      : null
-  } catch {
-    return null
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as HSRScriptStagePayload
   }
+  return null
 }
 
 const payloadMatchesEngine = (payload: HSRScriptStagePayload | null) => {
@@ -429,14 +422,14 @@ const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOpti
   }
 
   const value = Object.keys(stages).length
-    ? JSON.stringify({ engine: props.dailyEngine, stages })
+    ? { engine: props.dailyEngine, stages }
     : emptyNativeStageValue
 
   emitSave('Stage.ScriptStage', value)
 }
 
 const saveNativeEchoOfWarStage = (option: HSRDynamicStageOption | null) => {
-  const value = option ? JSON.stringify(buildNativeStagePayload(option)) : emptyNativeStageValue
+  const value = option ? buildNativeStagePayload(option) : emptyNativeStageValue
   emitSave('Stage.ScriptEchoOfWar', value)
 }
 
@@ -531,10 +524,7 @@ const handleEowWeekdayChange = (value: string) => {
   emitSave('TaskOpt.EchoOfWarWeekday', value)
 }
 
-const filterOption = (
-  input: unknown,
-  option?: { label?: unknown; children?: unknown }
-) => {
+const filterOption = (input: unknown, option?: { label?: unknown; children?: unknown }) => {
   const text = (option?.label ?? option?.children ?? '').toString()
   return text.toLowerCase().includes(String(input ?? '').toLowerCase())
 }

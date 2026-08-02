@@ -114,10 +114,7 @@
       </template>
 
       <!-- 空状态 -->
-      <div
-        v-else
-        class="empty-stats"
-      >
+      <div v-else class="empty-stats">
         <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
       </div>
     </div>
@@ -175,12 +172,12 @@ const hasMultipleStatistics = computed(() => {
 
 watch(
   availableStatistics,
-  (options) => {
-    if (!options.some((option) => option.value === activeStatistics.value)) {
+  options => {
+    if (!options.some(option => option.value === activeStatistics.value)) {
       activeStatistics.value = options[0]?.value ?? 'maa'
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 const handleStatisticsChange = (value: string | number) => {

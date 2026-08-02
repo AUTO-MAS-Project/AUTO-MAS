@@ -46,8 +46,7 @@ async def push_notification(
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
-        template = Config.notify_env.get_template("general_result.html")
-        message_html = template.render(message)
+        message_html = Notify.render_mail_template("general_result.html", message)
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendMail"):
@@ -84,8 +83,7 @@ async def push_notification(
             f"{'\n'.join(matrix_lines)}"
         )
 
-        template = Config.notify_env.get_template("MaaEnd_statistics.html")
-        message_html = template.render(message)
+        message_html = Notify.render_mail_template("MaaEnd_statistics.html", message)
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendStatistic"):

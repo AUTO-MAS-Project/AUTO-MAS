@@ -28,3 +28,4 @@ export type M9AUserConfig_Data = {
      */
     IfPassCheck?: (boolean | null);
 };
+

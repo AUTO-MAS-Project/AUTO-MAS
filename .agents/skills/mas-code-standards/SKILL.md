@@ -23,6 +23,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 4. Match nearby naming, logging tone, comment style, and result contracts.
 5. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
 6. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
+7. Before creating any commit, run `yarn format` and then `yarn lint` from `frontend`. Review the formatter diff and include the intended formatting changes in the commit. Do not commit if either command fails.
 
 ## Commit Lenses
 1. `e541fa5f`: small cleanup.
@@ -90,3 +91,4 @@ Protect these comments especially:
 10. Commit messages and scopes follow the project convention when preparing commits.
 11. Backend comments and config-class annotations use the project style rather than ad hoc prose.
 12. Existing useful comments were preserved or updated accurately, not removed as noise.
+13. Before every commit, both `yarn format` and `yarn lint` passed from `frontend`, with formatter changes reviewed before staging.

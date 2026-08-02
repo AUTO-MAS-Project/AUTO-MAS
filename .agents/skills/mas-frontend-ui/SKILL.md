@@ -84,6 +84,9 @@ When overriding Ant Design Vue internals:
 4. Show loading and empty states.
 5. Use `a-tag` only for finite enum statuses or scan-friendly categories.
 6. Time format is `YYYY-MM-DD HH:mm:ss` unless a local pattern differs.
+7. Parent-child search must define its matching semantics: a parent match may retain all children, while a child match should retain the parent and only the matching children unless the product explicitly needs broader results.
+8. Do not write filtered subsets back through full-list drag-sort APIs. Disable reordering while searching, or explicitly map the result back to the complete source list.
+9. Search may expand matching groups for discoverability, but must not overwrite the user's persisted collapse preference.
 
 ### Modals And Drawers
 1. Use `Modal.confirm` for destructive confirmation.
@@ -93,6 +96,15 @@ When overriding Ant Design Vue internals:
 5. Footer buttons follow "取消 / 确定" or "取消 / 保存".
 6. Avoid browser-native `alert` and `confirm`.
 7. Close protection is required when dismissing a form would lose unsaved changes.
+8. In the frameless Electron window, treat the title bar and its minimize, maximize, and close buttons as reserved application chrome. Ordinary modals, masks, drawers, and popovers must not cover or block those controls.
+9. Inspect the title bar height and stacking context before setting overlay `z-index`. Keep normal business overlays below the title bar or reserve its space; only an intentional startup or shutdown safety layer may block window controls.
+10. At low window heights, constrain the dialog to the usable viewport and choose exactly one vertical scroll owner for the flow, normally the dialog body or content region. Ordinary child lists and grids must expand inside that scroller instead of adding another `overflow-y: auto`; nested scrolling is reserved for deliberately independent panes. Do not make the page body or the modal wrapper provide the overflow, and keep close and footer actions reachable.
+
+### Scrollbars
+1. Define scrollbar width, track, thumb, and hover colors in the shared global stylesheet or shared tokens; do not repeat browser-specific scrollbar rules in individual pages.
+2. Scrollbars must support both light and dark themes. Tracks should be transparent or theme-matched, and a dark surface must never expose a hard-coded white track.
+3. Local scrollbar overrides are allowed only when a component has genuinely different interaction needs, and should reuse shared variables where possible.
+4. Do not hide scrollbars globally. Hidden scrollbars are acceptable only for deliberate containers that remain operable by wheel, touchpad, keyboard, and other supported input methods.
 
 ## Page States
 Every page or major panel should account for:
@@ -104,6 +116,8 @@ Every page or major panel should account for:
 5. Data state.
 6. Disabled state where relevant.
 7. Success and failure feedback for async operations.
+
+Loading indicators for an otherwise empty panel or dialog step must sit in a container with explicit usable size and centered alignment. Do not place an overlay spinner around zero-height conditional content, which leaves the indicator anchored at the container origin.
 
 For WebSocket, scheduler, download, backend startup, and other process flows, distinguish connecting, connected, disconnected, reconnecting, timeout, processing, success, and failure when those states exist.
 
@@ -143,6 +157,8 @@ Before declaring UI work complete:
 4. Run the relevant project verification from `mas-frontend-standards`.
 5. If UI cannot be visually checked, state what was not checked and why.
 6. Confirm interactive elements are visually discoverable and disabled elements are clearly non-interactive.
+7. For overlays in Electron, test a low-height viewport and confirm title-bar controls remain visible and clickable, the outer page does not gain unintended overflow, and the dialog's internal content can still scroll.
+8. When scrollbar styling changes, inspect both light and dark themes on an actually scrollable surface.
 
 ## Red Lines
 

@@ -21,30 +21,70 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .core import router as core_router
-from .info import router as info_router
-from .scripts import router as scripts_router
-from .plan import router as plan_router
-from .emulator import router as emulator_router
-from .queue import router as queue_router
-from .dispatch import router as dispatch_router
-from .history import router as history_router
-from .tools import router as tools_router
-from .setting import router as setting_router
-from .update import router as update_router
-from .ocr import router as ocr_router
-from .ws_debug import router as ws_debug_router
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
-# 可选补丁：米游社扫码登录（可安全删除以下 2 行及 app/api/qr_login.py）
-try:
-    from .qr_login import router as qr_login_router
-except ImportError:
-    qr_login_router = None
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
+    from .core import router as core_router
+    from .info import router as info_router
+    from .scripts import router as scripts_router
+    from .plan import router as plan_router
+    from .emulator import router as emulator_router
+    from .queue import router as queue_router
+    from .dispatch import router as dispatch_router
+    from .history import router as history_router
+    from .tools import router as tools_router
+    from .setting import router as setting_router
+    from .update import router as update_router
+    from .ocr import router as ocr_router
+    from .plugins import router as plugins_router
+    from .plugin_gateway import router as plugin_gateway_router
+    from .scripts2 import router as scripts2_router
+    from .script_types import router as script_types_router
+
+    qr_login_router: APIRouter | None
+
+
+_ROUTER_MODULES: dict[str, str] = {
+    "core_router": ".core",
+    "info_router": ".info",
+    "scripts_router": ".scripts",
+    "plan_router": ".plan",
+    "emulator_router": ".emulator",
+    "queue_router": ".queue",
+    "dispatch_router": ".dispatch",
+    "history_router": ".history",
+    "tools_router": ".tools",
+    "setting_router": ".setting",
+    "update_router": ".update",
+    "ocr_router": ".ocr",
+    "plugins_router": ".plugins",
+    "plugin_gateway_router": ".plugin_gateway",
+    "scripts2_router": ".scripts2",
+    "script_types_router": ".script_types",
+}
+
+
+def __getattr__(name: str):
+    if name in _ROUTER_MODULES:
+        import importlib
+        module = importlib.import_module(_ROUTER_MODULES[name], __package__)
+        return module.router
+    if name == "qr_login_router":
+        try:
+            from .qr_login import router
+            return router
+        except ImportError:
+            return None
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 __all__ = [
     "core_router",
     "info_router",
     "scripts_router",
+    "scripts2_router",
+    "script_types_router",
     "plan_router",
     "emulator_router",
     "queue_router",
@@ -54,6 +94,7 @@ __all__ = [
     "setting_router",
     "update_router",
     "ocr_router",
-    "ws_debug_router",
+    "plugins_router",
+    "plugin_gateway_router",
     "qr_login_router",
 ]

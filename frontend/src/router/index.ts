@@ -1,11 +1,11 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import type { RouteLocationGeneric } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
-const logger = window.electronAPI.getLogger('路由管理')
+import { createPageRoutes, FALLBACK_PAGE_DECLARATIONS } from './pageDeclarations'
 
-// 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
-const SchedulerView = () => import('../views/scheduler/index.vue')
+const logger = window.electronAPI.getLogger('\u8def\u7531\u7ba1\u7406')
 
 let needInitLanding = true
 
@@ -18,43 +18,44 @@ const routes = [
     path: '/initialization',
     name: 'Initialization',
     component: () => import('../views/Initialization/index.vue'),
-    meta: { title: 'AUTO-MAS 初始化' },
+    meta: { title: 'AUTO-MAS \u521d\u59cb\u5316' },
   },
-  {
-    path: '/home',
-    name: 'Home',
-    component: () => import('../views/Home.vue'),
-    meta: { title: '主页' },
-  },
-  {
-    path: '/scripts',
-    name: 'Scripts',
-    component: () => import('../views/Scripts.vue'),
-    meta: { title: '脚本管理' },
-  },
-  {
-    path: '/scripts/:id/edit/maa',
-    name: 'MAAScriptEdit',
-    component: () => import('../views/EditView/Script/MAAScriptEdit.vue'),
-    meta: { title: '编辑MAA脚本' },
-  },
+  ...createPageRoutes(FALLBACK_PAGE_DECLARATIONS),
   {
     path: '/scripts/:id/edit/src',
     name: 'SRCScriptEdit',
     component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),
-    meta: { title: '编辑SRC脚本' },
+    meta: { title: '\u7f16\u8f91 SRC \u811a\u672c' },
   },
   {
     path: '/scripts/:id/edit/maaend',
     name: 'MaaEndScriptEdit',
     component: () => import('../views/EditView/Script/MaaEndScriptEdit.vue'),
-    meta: { title: '编辑MaaEnd脚本' },
+    meta: { title: '\u7f16\u8f91 MaaEnd \u811a\u672c' },
   },
   {
     path: '/scripts/:id/edit/m9a',
+    redirect: (to: RouteLocationGeneric) => `/scripts/${to.params.id}/edit/maafw`,
     name: 'M9AScriptEdit',
-    component: () => import('../views/EditView/Script/M9AScriptEdit.vue'),
     meta: { title: '编辑M9A脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/maafw',
+    name: 'MaaFWScriptEdit',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: '编辑MaaFramework项目' },
+  },
+  {
+    path: '/scripts/:id/setup/m9a',
+    redirect: (to: RouteLocationGeneric) => `/scripts/${to.params.id}/setup/maafw`,
+    name: 'M9ASetupWizard',
+    meta: { title: 'M9A项目引导' },
+  },
+  {
+    path: '/scripts/:id/setup/maafw',
+    name: 'MaaFWSetupWizard',
+    component: () => import('../views/EditView/Script/MaaFWSetupWizard.vue'),
+    meta: { title: 'MaaFramework项目引导' },
   },
   {
     path: '/scripts/:id/edit/hsr',
@@ -72,13 +73,13 @@ const routes = [
     path: '/scripts/:id/edit/okww',
     name: 'OkwwScriptEdit',
     component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
-    meta: { title: '编辑ok-ww脚本' },
+    meta: { title: '编辑鸣潮 ok-script 项目' },
   },
   {
-    path: '/scripts/:id/edit/oknte',
-    name: 'OkNteScriptEdit',
-    component: () => import('../views/EditView/Script/OkNteScriptEdit.vue'),
-    meta: { title: '编辑ok-nte脚本' },
+    path: '/scripts/:id/edit/ok-script',
+    name: 'OkScriptScriptEdit',
+    component: () => import('../views/EditView/Script/OkScriptScriptEdit.vue'),
+    meta: { title: '编辑 ok-script 项目' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
@@ -93,22 +94,40 @@ const routes = [
     meta: { title: '编辑MAA用户' },
   },
   {
+    path: '/scripts/:id/edit/schema',
+    name: 'GenericScriptEdit',
+    component: () => import('../views/EditView/Script/GenericScriptEdit.vue'),
+    meta: { title: '\u7f16\u8f91 Schema \u811a\u672c' },
+  },
+  {
+    path: '/scripts/:id/edit/plugin',
+    name: 'PluginScriptEdit',
+    component: () => import('../views/EditView/Script/PluginScriptEdit.vue'),
+    meta: { title: '\u7f16\u8f91\u63d2\u4ef6\u811a\u672c' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/src',
     name: 'SRCUserAdd',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '添加SRC用户' },
+    meta: { title: '\u6dfb\u52a0 SRC \u7528\u6237' },
   },
   {
     path: '/scripts/:scriptId/users/add/maaend',
     name: 'MaaEndUserAdd',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '添加MaaEnd用户' },
+    meta: { title: '\u6dfb\u52a0 MaaEnd \u7528\u6237' },
   },
   {
     path: '/scripts/:scriptId/users/add/m9a',
+    redirect: (to: RouteLocationGeneric) => `/scripts/${to.params.scriptId}/users/add/maafw`,
     name: 'M9AUserAdd',
-    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
     meta: { title: '添加M9A用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/maafw',
+    name: 'MaaFWUserAdd',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '添加MaaFramework用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/hsr',
@@ -120,19 +139,26 @@ const routes = [
     path: '/scripts/:scriptId/users/:userId/edit/src',
     name: 'SRCUserEdit',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '编辑SRC用户' },
+    meta: { title: '\u7f16\u8f91 SRC \u7528\u6237' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maaend',
     name: 'MaaEndUserEdit',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '编辑MaaEnd用户' },
+    meta: { title: '\u7f16\u8f91 MaaEnd \u7528\u6237' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/m9a',
+    redirect: (to: RouteLocationGeneric) =>
+      `/scripts/${to.params.scriptId}/users/${to.params.userId}/edit/maafw`,
     name: 'M9AUserEdit',
-    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
     meta: { title: '编辑M9A用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/maafw',
+    name: 'MaaFWUserEdit',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '编辑MaaFramework用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/hsr',
@@ -147,34 +173,40 @@ const routes = [
     meta: { title: '添加通用用户' },
   },
   {
-    path: '/scripts/:scriptId/users/:userId/edit/general',
-    name: 'GeneralUserEdit',
-    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
-    meta: { title: '编辑通用用户' },
+    path: '/scripts/:scriptId/users/add/schema',
+    name: 'GenericUserAdd',
+    component: () => import('../views/EditView/User/GenericUserEdit.vue'),
+    meta: { title: '\u6dfb\u52a0 Schema \u7528\u6237' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/plugin',
+    name: 'PluginUserAdd',
+    component: () => import('../views/EditView/User/PluginUserEdit.vue'),
+    meta: { title: '\u6dfb\u52a0\u63d2\u4ef6\u811a\u672c\u7528\u6237' },
   },
   {
     path: '/scripts/:scriptId/users/add/okww',
     name: 'OkwwUserAdd',
     component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
-    meta: { title: '添加ok-ww用户' },
+    meta: { title: '添加鸣潮用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/ok-script',
+    name: 'OkScriptUserAdd',
+    component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
+    meta: { title: '添加 ok-script 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/okww',
     name: 'OkwwUserEdit',
     component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
-    meta: { title: '编辑ok-ww用户' },
+    meta: { title: '编辑鸣潮用户' },
   },
   {
-    path: '/scripts/:scriptId/users/add/oknte',
-    name: 'OkNteUserAdd',
-    component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
-    meta: { title: '添加ok-nte用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/oknte',
-    name: 'OkNteUserEdit',
-    component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
-    meta: { title: '编辑ok-nte用户' },
+    path: '/scripts/:scriptId/users/:userId/edit/ok-script',
+    name: 'OkScriptUserEdit',
+    component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
+    meta: { title: '编辑 ok-script 用户' },
   },
   {
     path: '/plans',
@@ -183,73 +215,22 @@ const routes = [
     meta: { title: '计划管理' },
   },
   {
-    path: '/emulators',
-    name: 'Emulators',
-    component: () => import('../views/Emulator.vue'),
-    meta: { title: '模拟器管理' },
+    path: '/scripts/:scriptId/users/:userId/edit/schema',
+    name: 'GenericUserEdit',
+    component: () => import('../views/EditView/User/GenericUserEdit.vue'),
+    meta: { title: '\u7f16\u8f91 Schema \u7528\u6237' },
   },
   {
-    path: '/queue',
-    name: 'Queue',
-    component: () => import('../views/queue/index.vue'),
-    meta: { title: '调度队列' },
-  },
-  {
-    path: '/scheduler',
-    name: 'Scheduler',
-    component: SchedulerView,
-    meta: {
-      title: '调度中心',
-      keepAlive: true, // 启用 keep-alive，保持组件存活
-    },
-  },
-  {
-    path: '/TestRouter',
-    name: 'TestRouter',
-    component: () => import('../views/TestRouter.vue'),
-    meta: { title: '测试路由' },
-  },
-  {
-    path: '/OCRdev',
-    name: 'OCRdev',
-    component: () => import('../views/OCRdev.vue'),
-    meta: { title: 'OCR测试' },
-  },
-  {
-    path: '/WSdev',
-    name: 'WSdev',
-    component: () => import('../views/WSdev.vue'),
-    meta: { title: 'WSdev' },
-  },
-  {
-    path: '/OverlayMaskDev',
-    name: 'OverlayMaskDev',
-    component: () => import('../views/OverlayMaskDev.vue'),
-    meta: { title: '遮罩彩蛋测试' },
-  },
-  {
-    path: '/history',
-    name: 'History',
-    component: () => import('../views/history/index.vue'),
-    meta: { title: '历史记录' },
-  },
-  {
-    path: '/tools',
-    name: 'Tools',
-    component: () => import('../views/tools/index.vue'),
-    meta: { title: '工具' },
-  },
-  {
-    path: '/settings',
-    name: 'Settings',
-    component: () => import('../views/setting/index.vue'),
-    meta: { title: '设置' },
+    path: '/scripts/:scriptId/users/:userId/edit/plugin',
+    name: 'PluginUserEdit',
+    component: () => import('../views/EditView/User/PluginUserEdit.vue'),
+    meta: { title: '\u7f16\u8f91\u63d2\u4ef6\u811a\u672c\u7528\u6237' },
   },
   {
     path: '/logs',
     name: 'Logs',
     component: () => import('../views/Logs.vue'),
-    meta: { title: '日志查看', skipGuard: true },
+    meta: { title: '\u65e5\u5fd7\u67e5\u770b', skipGuard: true },
   },
 ]
 
@@ -259,12 +240,11 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
+  logger.info(`\u8def\u7531\u5b88\u536b: ${JSON.stringify({ to: to.path, from: from.path })}`)
 
-  const { isInitialized, isBootstrapping } = useAppInitialization()
+  const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
-  // 声明跳过的路由：直接放行
-  if ((to.meta as any)?.skipGuard) {
+  if (to.meta.skipGuard) {
     next()
     return
   }
@@ -274,7 +254,9 @@ router.beforeEach(async (to, from, next) => {
       const decision = await getInitializationDecision()
       if (decision.mode === 'skip-home') {
         needInitLanding = false
-        logger.info(`命中跳过初始化条件，直接进入主页: ${JSON.stringify(decision)}`)
+        logger.info(
+          `\u547d\u4e2d\u8df3\u8fc7\u521d\u59cb\u5316\u6761\u4ef6\uff0c\u76f4\u63a5\u8fdb\u5165\u4e3b\u9875: ${JSON.stringify(decision)}`
+        )
         void startSkippedInitializationStartup()
         next('/home')
         return
@@ -288,11 +270,22 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isDev = import.meta.env.DEV
-  if (isDev) return next()
+  if (isDev) {
+    if (!isAppReady.value && to.path !== '/initialization') {
+      next({ path: '/initialization', query: { redirect: to.fullPath } })
+      return
+    }
+    next()
+    return
+  }
 
   logger.info(
-    `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
+    `\u521d\u59cb\u5316\u72b6\u6001\u68c0\u67e5: ${JSON.stringify({
+      isInitialized: isInitialized.value,
+      isBootstrapping: isBootstrapping.value,
+    })}`
   )
+
   if (isBootstrapping.value) {
     needInitLanding = false
     if (to.path !== '/home') {

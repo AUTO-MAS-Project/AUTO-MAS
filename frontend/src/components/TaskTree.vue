@@ -33,8 +33,12 @@
               <span class="no-users-text">暂无用户</span>
             </div>
           </div>
-          <div v-for="(user, index) in script.user_list" :key="`user-${script.script_id}-${user.user_id}`"
-            class="user-item" :class="{ 'last-item': index === script.user_list.length - 1 }">
+          <div
+            v-for="(user, index) in script.user_list"
+            :key="`user-${script.script_id}-${user.user_id}`"
+            class="user-item"
+            :class="{ 'last-item': index === script.user_list.length - 1 }"
+          >
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
@@ -139,14 +143,16 @@ const updateExpandedScripts = () => {
   )
 }
 
-// 监听 taskData 变化 - 移除防抖，直接比较数据差异
+// 监听 taskData 快照变化，只在脚本集合变动时维护展开状态。
 watch(
   () => props.taskData,
   (newData, oldData) => {
     const newScriptCount = newData?.length ?? 0
     const oldScriptCount = oldData?.length ?? 0
-    const newUserCount = newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
-    const oldUserCount = oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const newUserCount =
+      newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const oldUserCount =
+      oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
 
     if (newScriptCount !== oldScriptCount || newUserCount !== oldUserCount) {
       logger.debug(
@@ -167,7 +173,7 @@ watch(
       }
     }
   },
-  { immediate: true, deep: true } // 改回deep watch确保能检测到所有变化
+  { immediate: true }
 )
 
 // 移除定时器和未使用变量
@@ -223,17 +229,21 @@ defineExpose({
 .script-header {
   cursor: pointer;
   padding: 12px 16px;
-  background: linear-gradient(135deg,
-      var(--ant-color-fill-quaternary) 0%,
-      var(--ant-color-fill-tertiary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-fill-quaternary) 0%,
+    var(--ant-color-fill-tertiary) 100%
+  );
   /* 保留hover过渡，但减少时间 */
   transition: background 0.1s ease;
 }
 
 .script-header:hover {
-  background: linear-gradient(135deg,
-      var(--ant-color-fill-tertiary) 0%,
-      var(--ant-color-fill-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-fill-tertiary) 0%,
+    var(--ant-color-fill-secondary) 100%
+  );
 }
 
 .script-content {

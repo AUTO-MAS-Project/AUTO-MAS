@@ -23,40 +23,46 @@
 
 from .constants import *
 from .logger import get_logger
-from .ImageUtils import ImageUtils
-from .LogMonitor import LogMonitor, strptime
-from .ProcessManager import (
-    ProcessManager,
-    ProcessRunner,
-    ProcessInfo,
-    ProcessResult,
-    is_process_running,
-)
 from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
-from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
-from .tools import decode_bytes, busy_wait
-from .websocket import WebSocketClient, create_ws_client
+
+_LAZY_EXPORTS = {
+    "ImageUtils": (".ImageUtils", "ImageUtils"),
+    "LogMonitor": (".LogMonitor", "LogMonitor"),
+    "strptime": (".LogMonitor", "strptime"),
+    "ProcessManager": (".ProcessManager", "ProcessManager"),
+    "ProcessRunner": (".ProcessManager", "ProcessRunner"),
+    "ProcessInfo": (".ProcessManager", "ProcessInfo"),
+    "ProcessResult": (".ProcessManager", "ProcessResult"),
+    "is_process_running": (".ProcessManager", "is_process_running"),
+    "MumuManager": (".emulator", "MumuManager"),
+    "LDManager": (".emulator", "LDManager"),
+    "search_all_emulators": (".emulator", "search_all_emulators"),
+    "EMULATOR_TYPE_BOOK": (".emulator", "EMULATOR_TYPE_BOOK"),
+    "decode_bytes": (".tools", "decode_bytes"),
+    "busy_wait": (".tools", "busy_wait"),
+    "WebSocketClient": (".websocket", "WebSocketClient"),
+    "create_ws_client": (".websocket", "create_ws_client"),
+    "get_path_runtime_lock": (".runtime_lock", "get_path_runtime_lock"),
+}
+
+
+def __getattr__(name: str):
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    from importlib import import_module
+
+    module_name, attribute_name = target
+    value = getattr(import_module(module_name, __name__), attribute_name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "constants",
     "get_logger",
-    "ImageUtils",
-    "LogMonitor",
-    "ProcessManager",
-    "ProcessRunner",
-    "ProcessInfo",
-    "ProcessResult",
-    "is_process_running",
     "dpapi_encrypt",
     "dpapi_decrypt",
     "sanitize_log_message",
-    "strptime",
-    "MumuManager",
-    "LDManager",
-    "search_all_emulators",
-    "EMULATOR_TYPE_BOOK",
-    "decode_bytes",
-    "busy_wait",
-    "WebSocketClient",
-    "create_ws_client",
 ]

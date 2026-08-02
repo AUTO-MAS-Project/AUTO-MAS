@@ -32,6 +32,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Mapping
 
 from .tools import decode_bytes
 from .constants import CREATION_FLAGS
@@ -71,14 +72,12 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 
 
 def is_process_running(process_name: str) -> bool:
-    """检查指定进程名是否正在运行且存在可见窗口"""
+    """检查指定进程名是否正在运行"""
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             if proc.info.get("name") == process_name:
-                for hwnd in get_window_handles(proc.pid):
-                    if win32gui.IsWindowVisible(hwnd):
-                        return True
+                return True
     return False
 
 
@@ -226,6 +225,7 @@ class ProcessManager:
         program: Path | str,
         *args: str,
         cwd: Path | None = None,
+        env: Mapping[str, str] | None = None,
         target_process: ProcessInfo | None = None,
         stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
@@ -238,6 +238,7 @@ class ProcessManager:
             program (Path | str): 可执行文件路径
             *args (str): 传递给可执行文件的参数
             cwd (Path | None): 可选的工作目录, 默认为可执行文件所在目录
+            env (Mapping[str, str] | None): 可选的子进程环境变量
             target_process (ProcessInfo | None): 期望目标进程信息, 用于跟踪主进程及其子进程, 默认为 None 表示跟踪直接启动的子进程
             stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
@@ -262,6 +263,7 @@ class ProcessManager:
             program,
             *args,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            env=dict(env) if env is not None else None,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,

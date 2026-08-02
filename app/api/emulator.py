@@ -21,10 +21,21 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 from fastapi import APIRouter, Body
-from app.core import Config, EmulatorManager
-from app.utils.emulator.tools import search_all_emulators
+from app.plugins import PluginManager
+
+
+def _get_emulator_service():
+    service = PluginManager.service.get("emulator")
+    if service is None:
+        raise RuntimeError("emulator service is unavailable")
+    return service
+
+
+def _error_code(exc: Exception) -> int:
+    return 503 if "service is unavailable" in str(exc) else 500
+
+
 from app.models.schema import (
     OutBase,
     EmulatorConfig,
@@ -53,12 +64,12 @@ router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 )
 async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
     try:
-        index, data = await Config.get_emulator(emulator.emulatorId)
+        index, data = await _get_emulator_service().get_config(emulator.emulatorId)
         index = [EmulatorConfigIndexItem(**_) for _ in index]
         data = {uid: EmulatorConfig(**cfg) for uid, cfg in data.items()}
     except Exception as e:
         return EmulatorGetOut(
-            code=500,
+            code=_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             index=[],
@@ -76,11 +87,11 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
 )
 async def add_emulator() -> EmulatorCreateOut:
     try:
-        uid, config = await Config.add_emulator()
+        uid, config = await _get_emulator_service().add()
         data = EmulatorConfig(**(await config.toDict()))
     except Exception as e:
         return EmulatorCreateOut(
-            code=500,
+            code=_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             emulatorId="",
@@ -98,12 +109,12 @@ async def add_emulator() -> EmulatorCreateOut:
 )
 async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_emulator(
+        await _get_emulator_service().update(
             emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -117,10 +128,10 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
 )
 async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_emulator(emulator.emulatorId)
+        await _get_emulator_service().delete(emulator.emulatorId)
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -134,10 +145,10 @@ async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
 )
 async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_emulator(emulator.indexList)
+        await _get_emulator_service().reorder(emulator.indexList)
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -151,12 +162,12 @@ async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
 )
 async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase:
     try:
-        await EmulatorManager.operate_emulator(
+        await _get_emulator_service().operate(
             emulator.operate, emulator.emulatorId, emulator.index
         )
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -170,10 +181,10 @@ async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase
 )
 async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
     try:
-        data = await EmulatorManager.get_status(emulator.emulatorId)
+        data = await _get_emulator_service().status(emulator.emulatorId)
     except Exception as e:
         return EmulatorStatusOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}", data={}
         )
     return EmulatorStatusOut(data=data)
 
@@ -186,13 +197,13 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
     status_code=200,
 )
 async def search_emulators() -> EmulatorSearchOut:
-    """枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。"""
+    """自动搜索系统中已安装的模拟器"""
     try:
-        emulators = await asyncio.to_thread(search_all_emulators)
+        emulators = await _get_emulator_service().search_installed()
         results = [EmulatorSearchResult(**emulator) for emulator in emulators]
     except Exception as e:
         return EmulatorSearchOut(
-            code=500,
+            code=_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             emulators=[],

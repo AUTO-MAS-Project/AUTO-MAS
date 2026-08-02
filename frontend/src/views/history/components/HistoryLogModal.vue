@@ -185,16 +185,16 @@ interface Props {
   fontSizeOptions: number[]
   editorTheme: string
   monacoOptions: Record<string, any>
-  registerLogLanguage: any
+  registerLogLanguage: (monaco: any) => void
 }
 
 const props = defineProps<Props>()
 
 defineEmits<{
-  close: []
-  'open-file': []
-  'open-directory': []
-  'update:fontSize': [number]
+  (e: 'close'): void
+  (e: 'open-file'): void
+  (e: 'open-directory'): void
+  (e: 'update:fontSize', value: number): void
 }>()
 
 // 去除空行开关（默认开启）
@@ -210,6 +210,8 @@ const displayLogContent = computed(() => {
     .filter(line => line.trim() !== '')
     .join('\n')
 })
+
+// 计算掉落物品总数
 </script>
 
 <style scoped>

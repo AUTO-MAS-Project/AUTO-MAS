@@ -21,19 +21,45 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .broadcast import Broadcast
+# 先完整初始化基础工具模块，避免 app.utils.emulator 与 app.models.config
+# 之间既有循环导入在 config 初始化路径上被触发（原先由 broadcast 模块顺带完成）
+import app.utils  # noqa: F401
+
 from .config import Config
 from .emulator_manager import EmulatorManager
-from .task_manager import TaskManager
-from .maa_manager import MaaFWManager
+from .page_registry import (
+    PageDeclaration,
+    PageFacade,
+    PageRegistry,
+    page_registry,
+    register_builtin_pages,
+)
 
-from .timer import MainTimer
+def __getattr__(name: str):
+    if name == "MaaFWManager":
+        from .maa_manager import MaaFWManager
+
+        return MaaFWManager
+    if name == "TaskManager":
+        from .task_manager import TaskManager
+
+        return TaskManager
+    if name == "MainTimer":
+        from .timer import MainTimer
+
+        return MainTimer
+    raise AttributeError(name)
+
 
 __all__ = [
-    "Broadcast",
     "Config",
     "MainTimer",
     "TaskManager",
     "EmulatorManager",
     "MaaFWManager",
+    "PageDeclaration",
+    "PageFacade",
+    "PageRegistry",
+    "page_registry",
+    "register_builtin_pages",
 ]

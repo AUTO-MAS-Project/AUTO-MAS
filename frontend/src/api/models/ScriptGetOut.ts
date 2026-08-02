@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralConfig } from './GeneralConfig';
-import type { HSRConfig } from './HSRConfig';
 import type { M9AConfig } from './M9AConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
-import type { OkNteConfig } from './OkNteConfig';
+import type { MaaFWConfig } from './MaaFWConfig';
+import type { OkefConfig } from './OkefConfig';
 import type { OkwwConfig } from './OkwwConfig';
+import type { PluginScriptConfig } from './PluginScriptConfig';
 import type { ScriptIndexItem } from './ScriptIndexItem';
 import type { SrcConfig } from './SrcConfig';
 export type ScriptGetOut = {
@@ -31,6 +32,6 @@ export type ScriptGetOut = {
     /**
      * 脚本数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | HSRConfig)>;
+    data: Record<string, (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | M9AConfig | MaaFWConfig | PluginScriptConfig)>;
 };
 

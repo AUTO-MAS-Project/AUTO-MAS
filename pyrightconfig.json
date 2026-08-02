@@ -1,0 +1,48 @@
+{
+  "include": [
+    "app",
+    "scripts",
+    "plugins"
+  ],
+  "exclude": [
+    "plugins/pypi",
+    "plugins/**/build",
+    "plugins/**/dist",
+    "plugins/**/*.egg-info",
+    "plugins/_generated",
+    "**/__pycache__",
+    "**/.venv"
+  ],
+  "extraPaths": [
+    ".",
+    "plugins/pypi/site-packages"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": false,
+  "reportUnnecessaryIsInstance": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownLambdaType": false,
+  "reportPrivateUsage": false,
+  "reportDeprecated": "warning",
+  "reportCallIssue": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportIndexIssue": "warning",
+  "reportArgumentType": "warning",
+  "executionEnvironments": [
+    {
+      "root": "plugins",
+      "extraPaths": [
+        ".",
+        "plugins/pypi/site-packages"
+      ],
+      "reportMissingImports": true,
+      "reportMissingTypeStubs": false
+    }
+  ]
+}
