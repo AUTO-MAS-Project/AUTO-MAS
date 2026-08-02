@@ -5,6 +5,7 @@ import 'dayjs/locale/zh-cn'
 import Antd from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/inspira.css'
+import '@/styles/scrollbar.css'
 
 import App from './App.vue'
 import router from './router/index.ts'
