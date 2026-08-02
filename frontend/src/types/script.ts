@@ -646,6 +646,7 @@ export interface Script {
   displayName?: string
   isBuiltin?: boolean
   providerAvailable?: boolean
+  providerCreatable?: boolean
   available?: boolean
   unavailableReason?: string | null
   createTime?: string

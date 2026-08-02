@@ -37,6 +37,27 @@
     </div>
 
     <a-space size="middle">
+      <a-tooltip
+        v-if="formData.type === 'MaaFW' || formData.type === 'MaaFWManaged'"
+        :title="
+          hasUnsavedChanges || isSaving
+            ? '请等待当前配置自动保存完成'
+            : isProjectUpdateRunning || isAgentEnvPreparing
+              ? '请等待当前项目更新或运行环境准备完成'
+              : '管理项目资源与运行依赖'
+        "
+      >
+        <a-button
+          size="large"
+          :disabled="hasUnsavedChanges || isSaving || isProjectUpdateRunning || isAgentEnvPreparing"
+          @click="managerOpen = true"
+        >
+          <template #icon>
+            <DatabaseOutlined />
+          </template>
+          项目与依赖
+        </a-button>
+      </a-tooltip>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -53,7 +74,9 @@
       class="config-card"
     >
       <template #extra>
-        <a-tag color="geekblue" class="type-tag">{{ formData.type }}</a-tag>
+        <a-tag color="geekblue" class="type-tag">
+          {{ formData.type === 'MaaFWManaged' ? 'MaaFramework 项目' : formData.type }}
+        </a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -75,6 +98,7 @@
           :is-agent-env-preparing="isAgentEnvPreparing"
           :is-project-update-running="isProjectUpdateRunning"
           :is-setup-mode="false"
+          :is-managed-project="formData.type === 'MaaFWManaged'"
           :preview-project-title="previewProjectTitle"
           :interface-stats="interfaceStats"
           :is-interface-ready="isInterfaceReady"
@@ -119,7 +143,16 @@
           @select-game-path="selectGamePath"
         />
 
+        <a-alert
+          v-if="formData.type === 'MaaFWManaged'"
+          type="info"
+          show-icon
+          message="项目资源由 MAS 托管"
+          description="托管项目的目录、版本、更新和运行依赖只能通过“项目与依赖”管理，以保护不可变版本。"
+        />
+
         <UpdateSettingsSection
+          v-else
           :maafw-config="maafwConfig"
           :preview-data="previewData"
           :is-auto-update-disabled="isAutoUpdateDisabled"
@@ -180,6 +213,13 @@
       </div>
     </div>
   </div>
+
+  <MaaFWProjectManagerModal
+    v-model:open="managerOpen"
+    :script-id="scriptId"
+    @converted="handleManagedProjectChanged"
+    @refreshed="handleManagedProjectChanged"
+  />
 </template>
 
 <script setup lang="ts">
@@ -191,6 +231,7 @@ import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  DatabaseOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
@@ -199,6 +240,7 @@ import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
+import MaaFWProjectManagerModal from './MaaFWScriptEdit/MaaFWProjectManagerModal.vue'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
@@ -207,6 +249,7 @@ const router = useRouter()
 const scriptId = route.params.id as string
 
 const formRef = ref<FormInstance>()
+const managerOpen = ref(false)
 
 const {
   maafwConfig,
@@ -296,6 +339,15 @@ const {
   handleBeforeUnload,
   dispose,
 } = useMaaFWScriptConfig(scriptId)
+
+let managedReloadPromise: Promise<void> | null = null
+const handleManagedProjectChanged = () => {
+  if (managedReloadPromise) return managedReloadPromise
+  managedReloadPromise = loadScript().finally(() => {
+    managedReloadPromise = null
+  })
+  return managedReloadPromise
+}
 
 const handleCancel = () => {
   if (hasUnsavedChanges.value || isSaving.value) {

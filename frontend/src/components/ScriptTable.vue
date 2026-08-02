@@ -131,7 +131,11 @@
                   </a-button>
                   <template #overlay>
                     <a-menu>
-                      <a-menu-item key="copy" @click="handleCopy(script)">
+                      <a-menu-item
+                        key="copy"
+                        :disabled="!isScriptCopyable(script)"
+                        @click="handleCopy(script)"
+                      >
                         <CopyOutlined />
                         复制脚本
                       </a-menu-item>
@@ -170,9 +174,7 @@
 
             <!-- 用户列表 -->
             <div
-              v-if="
-                !isUsersCollapsed(script.id) && script.users && script.users.length > 0
-              "
+              v-if="!isUsersCollapsed(script.id) && script.users && script.users.length > 0"
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->
@@ -470,6 +472,9 @@ watch(
 
 const isScriptOperable = (script: Script) => script.available !== false
 
+const isScriptCopyable = (script: Script) =>
+  isScriptOperable(script) && script.providerCreatable !== false
+
 const canEditScript = (script: Script) => script.providerAvailable ?? isScriptOperable(script)
 
 const handleEdit = (script: Script) => {
@@ -481,6 +486,7 @@ const handleDelete = (script: Script) => {
 }
 
 const handleCopy = (script: Script) => {
+  if (!isScriptCopyable(script)) return
   emit('copy', script)
 }
 
@@ -533,7 +539,9 @@ const getProjectLabel = (script: Script) => {
 }
 
 const getScriptTypeLabel = (script: Script) => {
-  if (script.type === 'MaaFW') return getProjectLabel(script) || 'MaaFW'
+  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged') {
+    return getProjectLabel(script) || 'MaaFramework 项目'
+  }
   if (script.type === 'OkScript')
     return getProjectLabel(script) || script.displayName || script.type
   return script.displayName || script.type

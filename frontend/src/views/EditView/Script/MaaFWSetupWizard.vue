@@ -58,7 +58,9 @@
         class="wizard-card"
       >
         <template #extra>
-          <a-tag color="geekblue" class="type-tag">{{ formData.type }}</a-tag>
+          <a-tag color="geekblue" class="type-tag">
+            {{ formData.type === 'MaaFWManaged' ? 'MaaFramework 项目' : formData.type }}
+          </a-tag>
         </template>
 
         <a-form
@@ -92,6 +94,7 @@
                 :is-agent-env-preparing="isAgentEnvPreparing"
                 :is-project-update-running="isProjectUpdateRunning"
                 :is-setup-mode="true"
+                :is-managed-project="formData.type === 'MaaFWManaged'"
                 :preview-project-title="previewProjectTitle"
                 :interface-stats="interfaceStats"
                 :is-interface-ready="isInterfaceReady"
@@ -146,7 +149,7 @@
                 @select-game-path="selectGamePath"
               />
               <UpdateSettingsSection
-                v-else-if="currentStep === 3"
+                v-else-if="currentStep === 3 && formData.type !== 'MaaFWManaged'"
                 key="update"
                 :maafw-config="maafwConfig"
                 :preview-data="previewData"
@@ -170,6 +173,93 @@
                 @change="handleChange"
                 @manual-update="handleManualProjectUpdate"
               />
+              <a-alert
+                v-else-if="currentStep === 3"
+                type="info"
+                show-icon
+                message="项目资源由 MAS 托管"
+                description="托管项目的目录、版本、更新和运行依赖只能通过统一项目管理页维护。"
+              />
+              <section v-else-if="currentStep === 4" key="managed" class="managed-step">
+                <a-alert
+                  type="info"
+                  show-icon
+                  :message="
+                    formData.type === 'MaaFW'
+                      ? '是否将当前 MaaFW 项目转为托管项目？'
+                      : '当前项目包保持普通模式'
+                  "
+                  :description="
+                    formData.type === 'MaaFW'
+                      ? '托管后仍使用当前脚本、用户与任务配置；MAS 会保存不可变项目版本，并统一管理项目资源、运行依赖、升级、切换与回收。'
+                      : `${formData.type} 的资源升级由对应项目包插件维护，当前不会转换为通用 MaaFWManaged。`
+                  "
+                />
+
+                <div class="managed-choice-grid">
+                  <button
+                    type="button"
+                    :class="[
+                      'managed-choice-card',
+                      { 'managed-choice-card-selected': managedDecision === 'ordinary' },
+                    ]"
+                    :disabled="managedOperationRunning"
+                    @click="chooseOrdinaryProject"
+                  >
+                    <span class="managed-choice-title">保持普通项目</span>
+                    <span>继续直接使用当前 MaaFW 目录，稍后仍可从项目配置页转换。</span>
+                  </button>
+                  <button
+                    type="button"
+                    :class="[
+                      'managed-choice-card',
+                      { 'managed-choice-card-selected': managedDecision === 'managed' },
+                    ]"
+                    :disabled="!managedConversionAvailable || managedOperationRunning"
+                    @click="openManagedProjectManager"
+                  >
+                    <span class="managed-choice-title">
+                      {{ managedDecision === 'managed' ? '已转为托管项目' : '转为托管项目' }}
+                    </span>
+                    <span>导入当前资源版本，并在统一页面管理项目版本与运行依赖。</span>
+                  </button>
+                </div>
+
+                <a-alert
+                  v-if="managedCapabilitiesLoaded && !managedConversionAvailable"
+                  type="warning"
+                  show-icon
+                  message="当前插件版本暂不支持原地转换"
+                  :description="managedUnavailableReason"
+                />
+                <a-alert
+                  v-else-if="managedDecision === 'ordinary'"
+                  type="success"
+                  show-icon
+                  message="将保持普通 MaaFW 项目"
+                  :description="
+                    formData.type === 'MaaFW'
+                      ? '这不会影响当前配置；完成向导后可随时打开“项目与依赖”进行转换。'
+                      : `${formData.type} 继续使用对应项目包插件提供的资源升级能力。`
+                  "
+                />
+                <a-alert
+                  v-else-if="managedDecision === 'managed'"
+                  type="success"
+                  show-icon
+                  message="当前脚本已由 MAS 托管"
+                  description="脚本 ID、全部用户和任务配置保持不变；可以继续设置运行参数。"
+                >
+                  <template #action>
+                    <a-button size="small" @click="openManagedProjectManager">
+                      管理项目与依赖
+                    </a-button>
+                  </template>
+                </a-alert>
+                <div v-else-if="managedCapabilitiesLoading" class="managed-capability-loading">
+                  <a-spin tip="正在检查托管能力" />
+                </div>
+              </section>
               <RunConfigSection
                 v-else
                 key="run"
@@ -196,7 +286,7 @@
             </a-button>
             <div class="step-nav-right">
               <a-button
-                v-if="currentStep < 4"
+                v-if="currentStep < 5"
                 type="primary"
                 size="large"
                 class="step-nav-button step-nav-main"
@@ -223,6 +313,13 @@
         </a-form>
       </a-card>
     </div>
+
+    <MaaFWProjectManagerModal
+      v-model:open="managerOpen"
+      :script-id="scriptId"
+      @converted="handleManagedConverted"
+      @refreshed="handleManagedRefreshed"
+    />
   </div>
 </template>
 
@@ -245,6 +342,8 @@ import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
+import MaaFWProjectManagerModal from './MaaFWScriptEdit/MaaFWProjectManagerModal.vue'
+import { useMaaFWManagedApi } from '@/composables/useMaaFWManagedApi'
 
 const logger = window.electronAPI.getLogger('MaaFW引导')
 
@@ -256,6 +355,10 @@ const formRef = ref<FormInstance>()
 const currentStep = ref(0)
 const reuseComplete = ref(false)
 const importedUserId = ref('')
+const managerOpen = ref(false)
+const managedDecision = ref<'pending' | 'ordinary' | 'managed'>('pending')
+const managedCapabilitiesLoaded = ref(false)
+const managedApi = useMaaFWManagedApi()
 
 const {
   maafwConfig,
@@ -350,14 +453,49 @@ const isStepZeroReady = computed(
 const isControlStepComplete = computed(() =>
   Boolean(maafwConfig.Info.Controller && maafwConfig.Info.Resource)
 )
+const managedCapabilitiesLoading = computed(
+  () => !managedCapabilitiesLoaded.value || managedApi.loading.value
+)
+const managedOperationRunning = computed(
+  () =>
+    managedApi.loading.value ||
+    managedApi.progress.value.status === 'running' ||
+    isProjectUpdateRunning.value ||
+    isAgentEnvPreparing.value ||
+    hasUnsavedChanges.value ||
+    saveStatus.value === 'saving'
+)
+const managedConversionAvailable = computed(
+  () =>
+    formData.type === 'MaaFW' &&
+    managedApi.capabilities.value?.available === true &&
+    managedApi.capabilities.value.features.inPlaceConversion === true
+)
+const managedUnavailableReason = computed(() => {
+  if (formData.type !== 'MaaFW') {
+    return `${formData.type} 项目包暂不支持转换为通用托管项目；请保持普通项目，并使用其项目包提供的升级能力。`
+  }
+  return (
+    managedApi.capabilities.value?.unavailableReason ||
+    '请更新 automas-script-maafw-managed 至支持原地转换的版本；当前仍可保持普通项目继续使用。'
+  )
+})
 const maxReachableStep = computed(() => {
   if (!isStepZeroReady.value) return 0
   if (!reuseComplete.value) return 1
   if (!isControlStepComplete.value) return 2
   if (isProjectUpdateRunning.value) return 3
-  return 4
+  if (managedDecision.value === 'pending' || managedOperationRunning.value) return 4
+  return 5
 })
-const STEP_TITLES = ['选择项目', '复用配置', '控制配置', '更新设置', '运行参数'] as const
+const STEP_TITLES = [
+  '选择项目',
+  '复用配置',
+  '控制配置',
+  '更新设置',
+  '项目托管',
+  '运行参数',
+] as const
 const stepItems = computed(() =>
   STEP_TITLES.map((title, index) => ({
     title,
@@ -369,11 +507,14 @@ const canAdvanceNext = computed(() => {
   if (currentStep.value === 1) return reuseComplete.value
   if (currentStep.value === 2) return isControlStepComplete.value
   if (currentStep.value === 3) return !isProjectUpdateRunning.value
+  if (currentStep.value === 4) {
+    return managedDecision.value !== 'pending' && !managedOperationRunning.value
+  }
   return true
 })
 
 const goToStep = (step: number) => {
-  if (step < 0 || step > 4) return
+  if (step < 0 || step > 5) return
   if (step > currentStep.value && step > maxReachableStep.value) return
   currentStep.value = step
 }
@@ -393,6 +534,44 @@ const handleReuseSkipped = () => {
 const handleReuseApplied = async (result: MaaFWConfigurationApplyResult) => {
   importedUserId.value = result.createdUser.id
   reuseComplete.value = true
+  await loadScript()
+}
+
+const loadManagedDecision = async () => {
+  managedCapabilitiesLoaded.value = false
+  try {
+    if (formData.type !== 'MaaFW' && formData.type !== 'MaaFWManaged') {
+      managedDecision.value = 'ordinary'
+      return
+    }
+    const capabilities = await managedApi.getCapabilities()
+    if (!capabilities.available) return
+    const binding = await managedApi.getCurrentBinding(scriptId)
+    if (binding.managed) managedDecision.value = 'managed'
+  } catch (error) {
+    logger.warn(`托管能力读取失败: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    managedCapabilitiesLoaded.value = true
+  }
+}
+
+const chooseOrdinaryProject = () => {
+  if (managedOperationRunning.value || managedDecision.value === 'managed') return
+  managedDecision.value = 'ordinary'
+}
+
+const openManagedProjectManager = () => {
+  if (managedDecision.value !== 'managed' && !managedConversionAvailable.value) return
+  managerOpen.value = true
+}
+
+const handleManagedConverted = async () => {
+  managedDecision.value = 'managed'
+  await loadScript()
+}
+
+const handleManagedRefreshed = async () => {
+  if (managedDecision.value !== 'managed') return
   await loadScript()
 }
 
@@ -422,6 +601,7 @@ onMounted(async () => {
       router.replace(`/scripts/${scriptId}/edit/maafw`)
       return
     }
+    void loadManagedDecision()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`引导加载失败: ${errorMsg}`)
@@ -434,6 +614,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   dispose()
+  managedApi.dispose()
 })
 </script>
 
@@ -603,6 +784,61 @@ onBeforeUnmount(() => {
   margin-bottom: 32px;
 }
 
+.managed-step {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.managed-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.managed-choice-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 132px;
+  padding: 22px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 10px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
+}
+
+.managed-choice-card:hover:not(:disabled),
+.managed-choice-card-selected {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-border);
+}
+
+.managed-choice-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.managed-choice-title {
+  color: var(--ant-color-text);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.managed-capability-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
 .step-nav {
   display: flex;
   align-items: center;
@@ -658,6 +894,10 @@ onBeforeUnmount(() => {
 
   .wizard-card :deep(.ant-card-body) {
     padding: 16px;
+  }
+
+  .managed-choice-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

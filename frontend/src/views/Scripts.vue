@@ -92,7 +92,7 @@
           type="primary"
           size="large"
           class="link"
-          :disabled="availableScriptTypes.length === 0"
+          :disabled="creatableScriptTypes.length === 0"
           @click="handleAddScript"
         >
           <template #icon>
@@ -241,12 +241,12 @@
     "
   >
     <div class="script-selection">
-      <div v-if="scripts.length === 0" class="no-scripts">
+      <div v-if="copyableScripts.length === 0" class="no-scripts">
         <p>暂无可用脚本</p>
       </div>
       <div v-else class="scripts-list">
         <div
-          v-for="script in scripts"
+          v-for="script in copyableScripts"
           :key="script.id"
           :class="[
             'script-item',
@@ -297,7 +297,7 @@
     <div class="type-selection">
       <a-radio-group v-model:value="selectedType" class="type-radio-group">
         <a-radio-button
-          v-for="descriptor in availableScriptTypes"
+          v-for="descriptor in visibleScriptTypes"
           :key="descriptor.type_key"
           :value="descriptor.type_key"
           class="type-option"
@@ -597,7 +597,9 @@ const getMaaFWProjectLabel = (script: Script) => {
 }
 
 const getScriptDisplayLabel = (script: Script) => {
-  if (script.type === 'MaaFW') return getMaaFWProjectLabel(script)
+  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged') {
+    return getMaaFWProjectLabel(script) || 'MaaFramework 项目'
+  }
   return script.displayName || script.type
 }
 
@@ -622,15 +624,24 @@ const filteredTemplates = computed(() => {
   )
 })
 
-const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
+const visibleScriptTypes = computed(() =>
+  scriptTypeDescriptors.value.filter(descriptor => descriptor.creatable !== false)
+)
 const creatableScriptTypes = computed(() =>
-  scriptTypeDescriptors.value.filter(descriptor => descriptor.available !== false)
+  visibleScriptTypes.value.filter(descriptor => descriptor.available !== false)
+)
+const copyableScripts = computed(() =>
+  scripts.value.filter(script => script.providerCreatable !== false)
 )
 const selectedTypeDescriptor = computed(() =>
   scriptTypeDescriptors.value.find(descriptor => descriptor.type_key === selectedType.value)
 )
-const selectedTypeUnavailable = computed(() => selectedTypeDescriptor.value?.available === false)
-const scriptCreateTypeOptions = computed(() => createScriptTypeOptions(availableScriptTypes.value))
+const selectedTypeUnavailable = computed(
+  () =>
+    selectedTypeDescriptor.value?.available === false ||
+    selectedTypeDescriptor.value?.creatable === false
+)
+const scriptCreateTypeOptions = computed(() => createScriptTypeOptions(scriptTypeDescriptors.value))
 
 const isScriptAvailable = (script: Script) => script.available !== false
 
@@ -641,6 +652,14 @@ const ensureScriptAvailable = (script: Script) => {
     return true
   }
   message.warning(script.unavailableReason || `脚本类型 ${script.type} 当前未启用，暂时不能操作`)
+  return false
+}
+
+const ensureScriptCreatable = (script: Script) => {
+  if (script.providerCreatable !== false) {
+    return true
+  }
+  message.warning(`脚本类型 ${script.displayName || script.type} 不支持直接创建或复制`)
   return false
 }
 
@@ -666,7 +685,9 @@ const loadScripts = async () => {
     const descriptors = await registryApi.getScriptTypes()
     scriptTypeDescriptors.value = descriptors
     if (!selectedType.value && descriptors.length > 0) {
-      selectedType.value = descriptors.find(item => item.available !== false)?.type_key || ''
+      selectedType.value =
+        descriptors.find(item => item.available !== false && item.creatable !== false)?.type_key ||
+        ''
     }
     const descriptorMap = descriptorMapFromList(descriptors)
     const scriptRecords = await registryApi.getScripts()
@@ -749,6 +770,7 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
 
 const handleCopyScript = async (script: Script) => {
   if (!ensureScriptAvailable(script)) return
+  if (!ensureScriptCreatable(script)) return
 
   addLoading.value = true
   copyingScriptId.value = script.id
@@ -796,6 +818,9 @@ const handleConfirmScriptSelect = async () => {
   if (!ensureScriptAvailable(selectedScript)) {
     return
   }
+  if (!ensureScriptCreatable(selectedScript)) {
+    return
+  }
 
   addLoading.value = true
   try {
@@ -814,7 +839,11 @@ const handleConfirmScriptSelect = async () => {
 
 const handleConfirmAddScript = async () => {
   if (selectedTypeUnavailable.value) {
-    message.warning(selectedTypeDescriptor.value?.unavailable_reason || '当前脚本类型不可用')
+    message.warning(
+      selectedTypeDescriptor.value?.creatable === false
+        ? '当前脚本类型不支持直接创建'
+        : selectedTypeDescriptor.value?.unavailable_reason || '当前脚本类型不可用'
+    )
     return
   }
   if (selectedType.value === 'General') {

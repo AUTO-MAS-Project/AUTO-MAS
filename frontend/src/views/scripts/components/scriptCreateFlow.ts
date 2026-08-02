@@ -98,7 +98,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
 
 export const createScriptTypeOptions = (descriptors: ScriptTypeDescriptor[]): ScriptTypeOption[] =>
   descriptors
-    .filter(descriptor => descriptor.available !== false)
+    .filter(descriptor => descriptor.available !== false && descriptor.creatable !== false)
     .map(descriptor => ({
       value: descriptor.type_key,
       title: descriptor.display_name,

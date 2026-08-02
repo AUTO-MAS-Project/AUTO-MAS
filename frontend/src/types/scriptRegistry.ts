@@ -8,6 +8,7 @@ export interface ScriptTypeDescriptor {
   theme_color?: string | null
   create_group?: 'general' | 'specialized'
   create_group_declared?: boolean
+  creatable?: boolean
   docs_url?: string | null
   editor_kind: string
   supported_modes: string[]

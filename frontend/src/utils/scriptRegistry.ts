@@ -124,6 +124,7 @@ export const getScriptTypeTagColor = (type: string, themeColor?: string | null) 
     case 'MaaEnd':
       return 'cyan'
     case 'MaaFW':
+    case 'MaaFWManaged':
       return 'geekblue'
     case 'Okww':
     case 'OkScript':
@@ -149,12 +150,14 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
 
 const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
   MaaFW: 'maafw',
+  MaaFWManaged: 'maafw',
   M9A: 'maafw',
   // ok-ww 使用专属编辑页（/edit/okww 等），与 PR #287/#288 的视觉与配置字段保持一致
   Okww: 'okww',
 }
 
 const PLUGIN_EDITOR_SEGMENTS: Record<string, string> = {
+  'plugin:automas_script_maafw': 'maafw',
   'plugin:automas_script_hsr': 'hsr',
 }
 
@@ -255,6 +258,7 @@ export const normalizeScriptRecord = (
 ): Script => {
   const descriptor = descriptorMap[record.type]
   const providerAvailable = Boolean(descriptor) && descriptor?.available !== false
+  const providerCreatable = Boolean(descriptor) && descriptor?.creatable !== false
   const available = record.available ?? providerAvailable
   const info =
     record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
@@ -273,9 +277,13 @@ export const normalizeScriptRecord = (
     themeColor: record.theme_color ?? descriptor?.theme_color ?? null,
     docsUrl: record.docs_url ?? descriptor?.docs_url ?? null,
     editHint: record.edit_hint ?? null,
-    displayName: descriptor?.display_name ?? record.type,
+    displayName:
+      record.type === 'MaaFWManaged'
+        ? 'MaaFramework 项目'
+        : (descriptor?.display_name ?? record.type),
     isBuiltin: descriptor?.is_builtin ?? isBuiltinScriptType(record.type),
     providerAvailable,
+    providerCreatable,
     available,
     unavailableReason: available
       ? null

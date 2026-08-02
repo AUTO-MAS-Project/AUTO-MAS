@@ -26,7 +26,13 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip title="选择包含 interface.json 的 MaaFramework 项目目录">
+            <a-tooltip
+              :title="
+                isManagedProject
+                  ? '托管项目目录由 MAS 的不可变 Project Store 维护'
+                  : '选择包含 interface.json 的 MaaFramework 项目目录'
+              "
+            >
               <span class="form-label">
                 项目目录
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -45,13 +51,18 @@
             <a-button
               size="large"
               class="path-button"
-              :disabled="interfaceLoading || isAgentEnvPreparing || isProjectUpdateRunning"
+              :disabled="
+                isManagedProject ||
+                interfaceLoading ||
+                isAgentEnvPreparing ||
+                isProjectUpdateRunning
+              "
               @click="emit('select-path')"
             >
               <template #icon>
                 <FolderOpenOutlined />
               </template>
-              选择文件夹
+              {{ isManagedProject ? '由 MAS 托管' : '选择文件夹' }}
             </a-button>
           </a-input-group>
           <div v-if="!isSetupMode" class="path-secondary-actions">
@@ -358,6 +369,7 @@ const props = defineProps<{
   isAgentEnvPreparing: boolean
   isProjectUpdateRunning: boolean
   isSetupMode: boolean
+  isManagedProject?: boolean
   previewProjectTitle: string
   interfaceStats: Array<{ label: string; value: number }>
   isInterfaceReady: boolean
