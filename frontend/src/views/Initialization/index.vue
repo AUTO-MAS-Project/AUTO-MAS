@@ -12,8 +12,15 @@
 
     <div class="step-content">
       <!-- 当前步骤内容 -->
-      <component :is="currentStepComponent" v-bind="currentStepProps" @update:selected-mirror="handleMirrorSelect"
-        @retry="handleRetry" @skip="handleSkip" @complete="handleBackendComplete" @error="handleBackendError" />
+      <component
+        :is="currentStepComponent"
+        v-bind="currentStepProps"
+        @update:selected-mirror="handleMirrorSelect"
+        @retry="handleRetry"
+        @skip="handleSkip"
+        @complete="handleBackendComplete"
+        @error="handleBackendError"
+      />
     </div>
 
     <!-- 步骤操作按钮区域 - 后端启动完成后会自动进入应用，不需要手动按钮 -->
@@ -21,9 +28,19 @@
   </div>
 
   <!-- 跳过初始化弹窗 -->
-  <a-modal v-model:open="forceEnterVisible" title="警告" ok-text="我知道我在做什么" cancel-text="取消"
-    @ok="handleForceEnterConfirm">
-    <a-alert message="注意" description="你正在尝试跳过初始化流程，可能导致程序无法正常运行。请确保你已经手动完成了所有配置。" type="warning" show-icon />
+  <a-modal
+    v-model:open="forceEnterVisible"
+    title="警告"
+    ok-text="我知道我在做什么"
+    cancel-text="取消"
+    @ok="handleForceEnterConfirm"
+  >
+    <a-alert
+      message="注意"
+      description="你正在尝试跳过初始化流程，可能导致程序无法正常运行。请确保你已经手动完成了所有配置。"
+      type="warning"
+      show-icon
+    />
   </a-modal>
 </template>
 
@@ -41,7 +58,7 @@ const logger = window.electronAPI.getLogger('初始化流程')
 // ==================== 步骤定义 ====================
 const steps = [
   { key: 'python', title: 'Python 安装', canSkip: false },
-  { key: 'pip', title: 'Pip 安装', canSkip: false },
+  { key: 'pip', title: 'uv 安装', canSkip: false },
   { key: 'git', title: 'Git 安装', canSkip: false },
   { key: 'repository', title: '源码拉取', canSkip: true },
   { key: 'dependency', title: '依赖安装', canSkip: true },
@@ -55,7 +72,7 @@ const initCompleted = ref(false)
 const forceEnterVisible = ref(false)
 const isDev = import.meta.env.DEV
 const version = import.meta.env.VITE_APP_VERSION
-const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
+const targetBranch = ref(isDev ? 'dev' : 'dev_v2')
 
 logger.info(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
 
@@ -93,12 +110,108 @@ interface StepState {
 }
 
 const stepStates = ref<Record<string, StepState>>({
-  python: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
-  pip: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
-  git: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
-  repository: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
-  dependency: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
-  backend: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
+  python: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
+  pip: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
+  git: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
+  repository: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
+  dependency: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
+  backend: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
 })
 
 // 倒计时定时器
@@ -125,7 +238,10 @@ const currentStepProps = computed(() => {
     message: state.message,
     progress: state.progress,
     showProgress: true,
-    progressStatus: (state.status === 'failed' ? 'exception' : 'normal') as 'normal' | 'exception' | 'success',
+    progressStatus: (state.status === 'failed' ? 'exception' : 'normal') as
+      | 'normal'
+      | 'exception'
+      | 'success',
     successTitle: `${step.title}完成`,
     showMirrorSelection: state.showMirrorSelection, // 所有步骤失败时都显示镜像源选择
     showSkipButton: step.canSkip && state.status === 'failed', // 只有可跳过的步骤且失败时才显示跳过按钮
@@ -141,7 +257,7 @@ const currentStepProps = computed(() => {
     deployProgress: state.deployProgress,
     operationDesc: state.operationDesc,
     checkInfo: state.checkInfo,
-    mirrorProgress: state.mirrorProgress
+    mirrorProgress: state.mirrorProgress,
   }
 })
 
@@ -185,19 +301,11 @@ function handleProgress(stepKey: string, progressData: any) {
 
   // 更新状态
   if (progress >= 100) {
-    // 进度达到 100%，标记为成功
-    state.status = 'success'
-    state.message = msg || '完成'
+    // 单个阶段达到 100% 不代表整个 IPC 操作已经成功；终态由 executeStep 的结果设置。
+    state.status = 'processing'
+    state.message = msg || '处理中...'
     state.progress = 100
-    state.currentMirror = ''
-    state.downloadSpeed = ''
-    state.downloadSize = ''
-    state.installMessage = ''
-    state.installProgress = 0
-    state.deployMessage = ''
-    state.deployProgress = 0
-    state.operationDesc = ''
-    logger.info(`[${stepKey}] 完成 - 100%`)
+    logger.info(`[${stepKey}] ${stage} 阶段进度完成 - 100%`)
   } else if (progress > 0) {
     // 进度更新中
     state.status = 'processing'
@@ -275,19 +383,19 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
     switch (stepKey) {
       case 'python':
-        result = await (window.electronAPI as any).installPython(state.selectedMirror)
+        result = await window.electronAPI.installPython(state.selectedMirror)
         break
       case 'pip':
-        result = await (window.electronAPI as any).installPip(state.selectedMirror)
+        result = await window.electronAPI.installPip(state.selectedMirror)
         break
       case 'git':
-        result = await (window.electronAPI as any).installGit(state.selectedMirror)
+        result = await window.electronAPI.installGit(state.selectedMirror)
         break
       case 'repository':
-        result = await (window.electronAPI as any).pullRepository(targetBranch.value, state.selectedMirror)
+        result = await window.electronAPI.pullRepository(targetBranch.value, state.selectedMirror)
         break
       case 'dependency':
-        result = await (window.electronAPI as any).installDependencies(state.selectedMirror)
+        result = await window.electronAPI.installDependencies(state.selectedMirror)
         break
       case 'backend':
         // 后端启动由BackendStartStep组件处理
@@ -569,12 +677,12 @@ async function loadMirrorConfigs() {
     await api.initMirrors()
 
     // 并行获取所有镜像源配置
-    const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
-      api.getMirrors('python'),      // Python 安装包
-      api.getMirrors('get_pip'),     // get-pip.py 脚本
-      api.getMirrors('git'),         // Git 安装包
-      api.getMirrors('repo'),        // Git 仓库
-      api.getMirrors('pip_mirror'),  // PyPI 镜像源
+    const [pythonMirrors, uvMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
+      api.getMirrors('python'), // Python 安装包
+      api.getMirrors('uv'), // uv 可执行文件
+      api.getMirrors('git'), // Git 安装包
+      api.getMirrors('repo'), // Git 仓库
+      api.getMirrors('pip_mirror'), // PyPI 镜像源
     ])
 
     // 转换后端镜像源格式为前端格式
@@ -589,14 +697,14 @@ async function loadMirrorConfigs() {
 
     // 设置各步骤的镜像源配置
     stepStates.value.python.mirrors = pythonMirrors.map(convertMirror)
-    stepStates.value.pip.mirrors = getPipMirrors.map(convertMirror)
+    stepStates.value.pip.mirrors = uvMirrors.map(convertMirror)
     stepStates.value.git.mirrors = gitMirrors.map(convertMirror)
     stepStates.value.repository.mirrors = repoMirrors.map(convertMirror)
     stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
 
     logger.info('镜像源配置加载完成')
     logger.info(`Python 镜像源: ${stepStates.value.python.mirrors.map(m => m.name)}`)
-    logger.info(`Pip 镜像源: ${stepStates.value.pip.mirrors.map(m => m.name)}`)
+    logger.info(`uv 镜像源: ${stepStates.value.pip.mirrors.map(m => m.name)}`)
     logger.info(`Git 镜像源: ${stepStates.value.git.mirrors.map(m => m.name)}`)
     logger.info(`Repository 镜像源: ${stepStates.value.repository.mirrors.map(m => m.name)}`)
     logger.info(`Dependency 镜像源: ${stepStates.value.dependency.mirrors.map(m => m.name)}`)
@@ -677,7 +785,9 @@ onMounted(async () => {
       }
     } else {
       // 版本号不同或无记录：执行完整初始化流程
-      logger.info(`自动更新已关闭，初始化版本号不一致（当前${version} vs 保存${savedVersion}），执行完整初始化流程`)
+      logger.info(
+        `自动更新已关闭，初始化版本号不一致（当前${version} vs 保存${savedVersion}），执行完整初始化流程`
+      )
     }
   } else if (!forceBackendUpdate) {
     // 自动更新开启且非强制更新：无条件执行完整初始化流程

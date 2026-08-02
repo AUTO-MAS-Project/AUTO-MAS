@@ -46,8 +46,7 @@ async def push_notification(
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
-        template = Config.notify_env.get_template("general_result.html")
-        message_html = template.render(message)
+        message_html = Notify.render_mail_template("general_result.html", message)
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendMail"):
@@ -69,14 +68,22 @@ async def push_notification(
             await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
 
     elif mode == "统计信息":
+        matrix_lines = []
+        if "matrix_statistics" in message and message["matrix_statistics"]:
+            matrix_lines.append("基质统计:")
+            for skill, weapon in message["matrix_statistics"].items():
+                matrix_lines.append(f"  {skill}: {weapon}")
+        elif "matrix_statistics" in message:
+            matrix_lines.append("基质统计: 无合适的基质")
+
         message_text = (
             f"开始时间: {message['start_time']}\n"
             f"结束时间: {message['end_time']}\n"
             f"MaaEnd执行结果: {message['user_result']}\n\n"
+            f"{'\n'.join(matrix_lines)}"
         )
 
-        template = Config.notify_env.get_template("general_statistics.html")
-        message_html = template.render(message)
+        message_html = Notify.render_mail_template("MaaEnd_statistics.html", message)
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendStatistic"):

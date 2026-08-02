@@ -23,5 +23,9 @@ export type GlobalConfig_Update = {
      * Mirror酱CDK
      */
     MirrorChyanCDK?: (string | null);
+    /**
+     * GitHub token/API key
+     */
+    GitHubToken?: (string | null);
 };
 

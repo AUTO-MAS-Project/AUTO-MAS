@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas_plugin_okww_adapter"
+version = "0.0.1"
+description = "OK-WW script adapter for AUTO-MAS"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.entry-points."auto_mas.plugins"]
+okww_adapter = "okww_adapter.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]

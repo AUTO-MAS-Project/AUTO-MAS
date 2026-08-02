@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "renderer": "custom-element",
+  "entry": "frontend/index.js",
+  "style": ["frontend/index.css"],
+  "elements": [{ "tag": "auto-mas-ok-script-workspace" }]
+}

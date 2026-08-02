@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralConfig } from './GeneralConfig';
-import type { HSRConfig } from './HSRConfig';
 import type { M9AConfig } from './M9AConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
-import type { OkNteConfig } from './OkNteConfig';
+import type { MaaFWConfig } from './MaaFWConfig';
+import type { OkefConfig } from './OkefConfig';
 import type { OkwwConfig } from './OkwwConfig';
+import type { PluginScriptConfig } from './PluginScriptConfig';
 import type { SrcConfig } from './SrcConfig';
 export type ScriptUpdateIn = {
     /**
@@ -18,6 +19,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | HSRConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | M9AConfig | MaaFWConfig | PluginScriptConfig);
 };
 

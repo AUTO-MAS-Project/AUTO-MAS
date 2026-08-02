@@ -1,0 +1,6 @@
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+frontend-src/node_modules/

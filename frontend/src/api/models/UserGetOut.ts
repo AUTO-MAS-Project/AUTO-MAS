@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { HSRUserConfig } from './HSRUserConfig';
 import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
+import type { MaaFWUserConfig } from './MaaFWUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
-import type { OkNteUserConfig } from './OkNteUserConfig';
+import type { OkefUserConfig } from './OkefUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
+import type { PluginUserConfig } from './PluginUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
 import type { UserIndexItem } from './UserIndexItem';
 export type UserGetOut = {
@@ -31,6 +32,6 @@ export type UserGetOut = {
     /**
      * 用户数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | HSRUserConfig)>;
+    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | PluginUserConfig)>;
 };
 

@@ -1,12 +1,11 @@
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import type { ScriptType } from '@/types/script'
+import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
+import { getScriptIcon } from '@/utils/scriptRegistry'
 import generalIcon from '@/assets/AUTO-MAS.ico'
-import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import m9aIcon from '@/assets/M9A.png'
-import okNteIcon from '@/assets/ok-nte.ico'
-import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 
 export type ConfigMode = 'template' | 'custom'
@@ -80,30 +79,36 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: m9aIcon,
   },
   {
-    value: 'Okww',
-    title: 'ok-ww 脚本',
-    description: 'ok-script 专项任务脚本',
-    keywords: ['okww', 'ok-ww', 'ok-script'],
+    value: 'OkScript',
+    title: 'ok-script 项目',
+    description: '读取 pyappify.yml 并通过内置表单编辑用户配置',
+    keywords: ['ok-script', 'pyappify', 'ok-ef', 'ok-ww', 'ok-nte'],
     group: 'specialized',
-    icon: okwwIcon,
+    icon: generalIcon,
   },
   {
-    value: 'OkNte',
-    title: 'ok-nte 脚本',
-    description: '异环 OK-NTE 自动化脚本',
-    keywords: ['oknte', 'ok-nte', '异环', 'ok-script'],
-    group: 'specialized',
-    icon: okNteIcon,
-  },
-  {
-    value: 'HSR',
-    title: 'HSR 脚本',
-    description: '三月七 / SRA 双脚本适配',
-    keywords: ['hsr', '三月七', 'sra'],
-    group: 'specialized',
-    icon: hsrIcon,
+    value: 'MaaFW',
+    title: 'MaaFramework 项目',
+    description: '读取 interface 并运行 MaaFramework 项目',
+    keywords: ['maafw', 'maaframework', 'interface'],
+    group: 'general',
+    icon: generalIcon,
   },
 ]
+
+export const createScriptTypeOptions = (descriptors: ScriptTypeDescriptor[]): ScriptTypeOption[] =>
+  descriptors
+    .filter(descriptor => descriptor.available !== false)
+    .map(descriptor => ({
+      value: descriptor.type_key,
+      title: descriptor.display_name,
+      description: descriptor.supported_modes.length
+        ? `支持模式：${descriptor.supported_modes.join(' / ')}`
+        : '由脚本类型插件提供',
+      keywords: [descriptor.type_key, descriptor.display_name, ...descriptor.supported_modes],
+      group: descriptor.create_group ?? 'specialized',
+      icon: getScriptIcon(descriptor.type_key, descriptor.icon_url),
+    }))
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
   const steps: CreateStep[] = [{ key: 'type', title: '脚本类型' }]
@@ -127,19 +132,6 @@ export const splitScriptTypeOptions = (options: ScriptTypeOption[]) => ({
   specialized: options.filter(option => option.group === 'specialized'),
   general: options.filter(option => option.group === 'general'),
 })
-
-const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
-  MAA: 'maa',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  M9A: 'm9a',
-  Okww: 'okww',
-  OkNte: 'oknte',
-  HSR: 'hsr',
-  General: 'general',
-}
-
-export const getScriptEditSegment = (type: ScriptType) => EDIT_SEGMENT_BY_TYPE[type]
 
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
   if (state.type !== 'General') {

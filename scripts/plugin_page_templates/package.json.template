@@ -1,0 +1,8 @@
+{
+  "name": "automas-plugin-${plugin_name}-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:frontend": "npm --prefix frontend-src run build"
+  }
+}

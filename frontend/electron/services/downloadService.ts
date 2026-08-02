@@ -30,6 +30,34 @@ interface DownloadChunk {
   completed: boolean
 }
 
+export interface DownloadOptions {
+  idleTimeoutMs?: number
+  overallTimeoutMs?: number
+  maxRedirects?: number
+  maxBytes?: number
+}
+
+interface DownloadContext {
+  options: DownloadOptions
+  deadline?: number
+  abortController: AbortController
+}
+
+function resolveHttpRedirect(currentUrl: string, location: string): string {
+  let redirectUrl: URL
+  try {
+    redirectUrl = new URL(location, currentUrl)
+  } catch {
+    throw new Error(`无效的下载重定向地址: ${location}`)
+  }
+
+  if (redirectUrl.protocol !== 'http:' && redirectUrl.protocol !== 'https:') {
+    throw new Error(`不支持的下载重定向协议: ${redirectUrl.protocol}`)
+  }
+
+  return redirectUrl.toString()
+}
+
 // ==================== 智能下载类 ====================
 
 export class SmartDownloader {
@@ -42,15 +70,25 @@ export class SmartDownloader {
   async download(
     url: string,
     savePath: string,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    options: DownloadOptions = {}
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 开始智能下载 ===')
     logger.info(`URL: ${url}`)
     logger.info(`保存路径: ${savePath}`)
 
     try {
+      const context: DownloadContext = {
+        options,
+        deadline:
+          options.overallTimeoutMs === undefined
+            ? undefined
+            : Date.now() + options.overallTimeoutMs,
+        abortController: new AbortController(),
+      }
+
       // 1. 获取文件头信息
-      const fileInfo = await this.getFileInfo(url)
+      const fileInfo = await this.getFileInfo(url, context)
 
       if (!fileInfo.isFile) {
         throw new Error('URL 返回的不是文件类型')
@@ -64,10 +102,10 @@ export class SmartDownloader {
 
       if (useMultiThread) {
         logger.info('使用多线程下载')
-        return await this.multiThreadDownload(url, savePath, fileInfo.size, onProgress)
+        return await this.multiThreadDownload(url, savePath, fileInfo.size, onProgress, 4, context)
       } else {
         logger.info('使用单线程下载')
-        return await this.singleThreadDownload(url, savePath, fileInfo.size, onProgress)
+        return await this.singleThreadDownload(url, savePath, fileInfo.size, onProgress, context)
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -79,42 +117,95 @@ export class SmartDownloader {
   /**
    * 获取文件信息
    */
-  private getFileInfo(url: string): Promise<{
+  private getFileInfo(
+    url: string,
+    context: DownloadContext,
+    redirectCount: number = 0
+  ): Promise<{
     isFile: boolean
     size: number
     supportsRange: boolean
   }> {
     return new Promise((resolve, reject) => {
       const client = url.startsWith('https') ? https : http
+      const remaining = this.getRemainingTime(context)
+      if (remaining !== undefined && remaining <= 0) {
+        reject(new Error('下载总时限已用尽'))
+        return
+      }
 
-      const req = client.request(url, { method: 'HEAD', timeout: 10000 }, response => {
-        // 处理重定向 (301, 302, 307, 308)
-        if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
-          const redirectUrl = response.headers.location
-          if (redirectUrl) {
-            logger.debug(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
-            req.destroy() // 销毁原请求
-            this.getFileInfo(redirectUrl).then(resolve).catch(reject)
+      const req = client.request(
+        url,
+        {
+          method: 'HEAD',
+          timeout: context.options.idleTimeoutMs ?? 10000,
+          signal: context.abortController.signal,
+        },
+        response => {
+          if (overallTimer) clearTimeout(overallTimer)
+
+          // 处理重定向 (301, 302, 307, 308)
+          if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
+            const redirectUrl = response.headers.location
+            if (redirectUrl) {
+              if (
+                context.options.maxRedirects !== undefined &&
+                redirectCount >= context.options.maxRedirects
+              ) {
+                req.destroy()
+                reject(new Error(`获取文件信息重定向超过 ${context.options.maxRedirects} 次`))
+                return
+              }
+              logger.debug(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
+              req.destroy() // 销毁原请求
+              let nextUrl: string
+              try {
+                nextUrl = resolveHttpRedirect(url, redirectUrl)
+              } catch (error) {
+                reject(error)
+                return
+              }
+              this.getFileInfo(nextUrl, context, redirectCount + 1)
+                .then(resolve)
+                .catch(reject)
+              return
+            }
+          }
+
+          const contentType = response.headers['content-type'] || ''
+          const contentLength = response.headers['content-length']
+          const acceptRanges = response.headers['accept-ranges']
+          const size = parseInt(contentLength || '0', 10)
+
+          if (context.options.maxBytes !== undefined && size > context.options.maxBytes) {
+            reject(new Error(`下载文件超过大小限制 ${context.options.maxBytes} 字节`))
             return
           }
+
+          // 判断是否为文件
+          const isFile = !contentType.includes('text/html') && contentLength !== undefined
+
+          resolve({
+            isFile,
+            size,
+            supportsRange: acceptRanges === 'bytes',
+          })
         }
+      )
+      const overallTimer =
+        remaining === undefined
+          ? undefined
+          : setTimeout(() => {
+              req.destroy()
+              reject(new Error('下载总时限已用尽'))
+            }, remaining)
 
-        const contentType = response.headers['content-type'] || ''
-        const contentLength = response.headers['content-length']
-        const acceptRanges = response.headers['accept-ranges']
-
-        // 判断是否为文件
-        const isFile = !contentType.includes('text/html') && contentLength !== undefined
-
-        resolve({
-          isFile,
-          size: parseInt(contentLength || '0', 10),
-          supportsRange: acceptRanges === 'bytes',
-        })
+      req.on('error', error => {
+        if (overallTimer) clearTimeout(overallTimer)
+        reject(error)
       })
-
-      req.on('error', reject)
       req.on('timeout', () => {
+        if (overallTimer) clearTimeout(overallTimer)
         req.destroy()
         reject(new Error('获取文件信息超时'))
       })
@@ -129,25 +220,105 @@ export class SmartDownloader {
     url: string,
     savePath: string,
     totalSize: number,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    context: DownloadContext = { options: {}, abortController: new AbortController() },
+    redirectCount: number = 0
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise(resolve => {
       const client = url.startsWith('https') ? https : http
-      const file = fs.createWriteStream(savePath)
+      let file: fs.WriteStream | undefined
+      let activeResponse: http.IncomingMessage | undefined
+      let settled = false
 
       let downloadedSize = 0
       let lastTime = Date.now()
       let lastDownloaded = 0
 
-      const req = client.get(url, response => {
+      const remaining = this.getRemainingTime(context)
+      if (remaining !== undefined && remaining <= 0) {
+        resolve({ success: false, error: '下载总时限已用尽' })
+        return
+      }
+
+      const finish = (
+        result: { success: boolean; error?: string },
+        removePartial: boolean = false
+      ): void => {
+        if (settled) return
+        settled = true
+        if (overallTimer) clearTimeout(overallTimer)
+
+        const complete = (): void => {
+          if (removePartial && file && fs.existsSync(savePath)) {
+            try {
+              fs.rmSync(savePath, { force: true })
+            } catch (error) {
+              logger.warn(`清理未完成下载失败: ${error}`)
+            }
+          }
+          resolve(result)
+        }
+
+        if (file && !file.closed) {
+          file.once('close', complete)
+          if (removePartial) {
+            activeResponse?.destroy()
+            file.destroy()
+          } else {
+            file.close()
+          }
+          return
+        }
+
+        complete()
+      }
+
+      const requestOptions =
+        context.options.idleTimeoutMs === undefined
+          ? { signal: context.abortController.signal }
+          : {
+              timeout: context.options.idleTimeoutMs,
+              signal: context.abortController.signal,
+            }
+      const req = client.get(url, requestOptions, response => {
+        activeResponse = response
         // 处理重定向 (301, 302, 307, 308)
         if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
+            if (
+              context.options.maxRedirects !== undefined &&
+              redirectCount >= context.options.maxRedirects
+            ) {
+              req.destroy()
+              finish({
+                success: false,
+                error: `下载重定向超过 ${context.options.maxRedirects} 次`,
+              })
+              return
+            }
             logger.info(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
+            settled = true
+            if (overallTimer) clearTimeout(overallTimer)
             req.destroy() // 销毁原请求
-            file.close()
-            this.singleThreadDownload(redirectUrl, savePath, totalSize, onProgress)
+            let nextUrl: string
+            try {
+              nextUrl = resolveHttpRedirect(url, redirectUrl)
+            } catch (error) {
+              resolve({
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+              })
+              return
+            }
+            this.singleThreadDownload(
+              nextUrl,
+              savePath,
+              totalSize,
+              onProgress,
+              context,
+              redirectCount + 1
+            )
               .then(resolve)
               .catch(error => resolve({ success: false, error: error.message }))
             return
@@ -155,16 +326,28 @@ export class SmartDownloader {
         }
 
         if (response.statusCode !== 200) {
-          file.close()
-          fs.unlinkSync(savePath)
-          resolve({ success: false, error: `HTTP ${response.statusCode}` })
+          response.destroy()
+          finish({ success: false, error: `HTTP ${response.statusCode}` })
           return
         }
 
+        file = fs.createWriteStream(savePath)
         response.pipe(file)
 
         response.on('data', (chunk: Buffer) => {
           downloadedSize += chunk.length
+          if (context.options.maxBytes !== undefined && downloadedSize > context.options.maxBytes) {
+            response.destroy()
+            req.destroy()
+            finish(
+              {
+                success: false,
+                error: `下载文件超过大小限制 ${context.options.maxBytes} 字节`,
+              },
+              true
+            )
+            return
+          }
 
           // 计算进度和速度
           const currentTime = Date.now()
@@ -195,16 +378,10 @@ export class SmartDownloader {
         response.on('error', err => {
           logger.error(`响应流错误: ${err.message}`)
           req.destroy()
-          file.close()
-          if (fs.existsSync(savePath)) {
-            fs.unlinkSync(savePath)
-          }
-          resolve({ success: false, error: `网络错误: ${err.message}` })
+          finish({ success: false, error: `网络错误: ${err.message}` }, true)
         })
 
         file.on('finish', () => {
-          file.close()
-
           // 下载完成时，无论是否达到上报间隔，都执行最后一次进度上报
           if (onProgress) {
             const currentTime = Date.now()
@@ -220,37 +397,33 @@ export class SmartDownloader {
           }
 
           logger.info('单线程下载完成')
-          resolve({ success: true })
+          finish({ success: true })
         })
 
         file.on('error', err => {
           logger.error(`文件写入错误: ${err.message}`)
           req.destroy()
-          file.close()
-          if (fs.existsSync(savePath)) {
-            fs.unlinkSync(savePath)
-          }
-          resolve({ success: false, error: `文件写入错误: ${err.message}` })
+          finish({ success: false, error: `文件写入错误: ${err.message}` }, true)
         })
       })
+      const overallTimer =
+        remaining === undefined
+          ? undefined
+          : setTimeout(() => {
+              req.destroy()
+              finish({ success: false, error: '下载总时限已用尽' }, true)
+            }, remaining)
 
       req.on('error', err => {
+        if (settled) return
         logger.error(`请求错误: ${err.message}`)
-        file.close()
-        if (fs.existsSync(savePath)) {
-          fs.unlinkSync(savePath)
-        }
-        resolve({ success: false, error: `网络连接错误: ${err.message}` })
+        finish({ success: false, error: `网络连接错误: ${err.message}` }, true)
       })
 
       req.on('timeout', () => {
         logger.warn('请求超时')
         req.destroy()
-        file.close()
-        if (fs.existsSync(savePath)) {
-          fs.unlinkSync(savePath)
-        }
-        resolve({ success: false, error: '下载超时' })
+        finish({ success: false, error: '下载超时' }, true)
       })
     })
   }
@@ -263,7 +436,8 @@ export class SmartDownloader {
     savePath: string,
     totalSize: number,
     onProgress?: ProgressCallback,
-    threadCount: number = 4
+    threadCount: number = 4,
+    context: DownloadContext = { options: {}, abortController: new AbortController() }
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // 计算每个分片的大小
@@ -315,7 +489,7 @@ export class SmartDownloader {
 
       try {
         // 并行下载所有分片
-        const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk))
+        const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk, context))
         await Promise.all(downloadPromises)
 
         clearInterval(progressInterval)
@@ -359,6 +533,7 @@ export class SmartDownloader {
       } catch (downloadError) {
         // 确保清理进度定时器
         clearInterval(progressInterval)
+        context.abortController.abort()
 
         const errorMsg =
           downloadError instanceof Error ? downloadError.message : String(downloadError)
@@ -381,15 +556,40 @@ export class SmartDownloader {
   /**
    * 下载单个分片
    */
-  private downloadChunk(url: string, chunk: DownloadChunk): Promise<void> {
+  private downloadChunk(
+    url: string,
+    chunk: DownloadChunk,
+    context: DownloadContext = { options: {}, abortController: new AbortController() },
+    redirectCount: number = 0
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const client = url.startsWith('https') ? https : http
+      let settled = false
+      let downloadedSize = 0
+      const remaining = this.getRemainingTime(context)
+
+      if (remaining !== undefined && remaining <= 0) {
+        reject(new Error('下载总时限已用尽'))
+        return
+      }
 
       const options = {
         headers: {
           Range: `bytes=${chunk.start}-${chunk.end}`,
         },
-        timeout: 30000,
+        timeout: context.options.idleTimeoutMs ?? 30000,
+        signal: context.abortController.signal,
+      }
+
+      const finish = (error?: Error): void => {
+        if (settled) return
+        settled = true
+        if (overallTimer) clearTimeout(overallTimer)
+        if (error) {
+          reject(error)
+        } else {
+          resolve()
+        }
       }
 
       const req = client.get(url, options, response => {
@@ -397,46 +597,86 @@ export class SmartDownloader {
         if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
+            if (
+              context.options.maxRedirects !== undefined &&
+              redirectCount >= context.options.maxRedirects
+            ) {
+              req.destroy()
+              finish(new Error(`分片 ${chunk.index} 重定向超过 ${context.options.maxRedirects} 次`))
+              return
+            }
             logger.debug(`分片 ${chunk.index} 跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
+            settled = true
+            if (overallTimer) clearTimeout(overallTimer)
             req.destroy() // 销毁原请求
-            this.downloadChunk(redirectUrl, chunk).then(resolve).catch(reject)
+            let nextUrl: string
+            try {
+              nextUrl = resolveHttpRedirect(url, redirectUrl)
+            } catch (error) {
+              reject(error)
+              return
+            }
+            this.downloadChunk(nextUrl, chunk, context, redirectCount + 1)
+              .then(resolve)
+              .catch(reject)
             return
           }
         }
 
         if (response.statusCode !== 206) {
-          reject(new Error(`分片下载失败，状态码: ${response.statusCode}`))
+          response.destroy()
+          finish(new Error(`分片下载失败，状态码: ${response.statusCode}`))
           return
         }
 
         chunk.data = []
 
         response.on('data', (data: Buffer) => {
+          downloadedSize += data.length
+          if (downloadedSize > chunk.end - chunk.start + 1) {
+            response.destroy()
+            req.destroy()
+            finish(new Error(`分片 ${chunk.index} 返回数据超过请求范围`))
+            return
+          }
           chunk.data.push(data)
         })
 
         response.on('end', () => {
           chunk.completed = true
-          resolve()
+          finish()
         })
 
         response.on('error', err => {
+          if (settled) return
           logger.error(`分片 ${chunk.index} 响应错误: ${err.message}`)
           req.destroy()
-          reject(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
+          finish(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
         })
       })
+      const overallTimer =
+        remaining === undefined
+          ? undefined
+          : setTimeout(() => {
+              req.destroy()
+              finish(new Error('下载总时限已用尽'))
+            }, remaining)
 
       req.on('error', err => {
+        if (settled) return
         logger.error(`分片 ${chunk.index} 请求错误: ${err.message}`)
-        reject(new Error(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
+        finish(new Error(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
       })
 
       req.on('timeout', () => {
         logger.warn(`分片 ${chunk.index} 请求超时`)
         req.destroy()
-        reject(new Error(`分片 ${chunk.index} 下载超时`))
+        finish(new Error(`分片 ${chunk.index} 下载超时`))
       })
     })
+  }
+
+  private getRemainingTime(context: DownloadContext): number | undefined {
+    return context.deadline === undefined ? undefined : Math.max(0, context.deadline - Date.now())
   }
 }

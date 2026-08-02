@@ -4,7 +4,8 @@ const downloadRequest = vi.fn()
 const installRequest = vi.fn()
 const cancelRequest = vi.fn()
 const switchRequest = vi.fn()
-const subscribe = vi.fn(() => 'update-subscription')
+let subscriptionCounter = 0
+const subscribe = vi.fn(() => `update-subscription-${++subscriptionCounter}`)
 const unsubscribe = vi.fn()
 
 vi.mock('@/api/services/Service', () => ({
@@ -56,6 +57,7 @@ const loadDownload = async () => {
 describe('useUpdateDownload', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    subscriptionCounter = 0
     vi.useRealTimers()
     downloadRequest.mockResolvedValue({ code: 200 })
     installRequest.mockResolvedValue({ code: 200 })
@@ -84,7 +86,7 @@ describe('useUpdateDownload', () => {
 
     expect(download.status.value).toBe('idle')
     expect(download.modalVisible.value).toBe(false)
-    expect(unsubscribe).toHaveBeenCalledWith('update-subscription')
+    expect(unsubscribe).toHaveBeenCalledWith('update-subscription-1')
   })
 
   it('keeps the current download when cancellation fails', async () => {
@@ -126,13 +128,13 @@ describe('useUpdateDownload', () => {
   it('clears failed state when the user closes the failed modal', async () => {
     const download = await loadDownload()
     await download.start('v9.9.9', {})
-    download.receiveSignal({ Failed: '下载失败' })
+    download.receiveFailed('下载失败')
 
     download.reset()
 
     expect(download.status.value).toBe('idle')
     expect(download.modalVisible.value).toBe(false)
-    expect(unsubscribe).toHaveBeenCalledWith('update-subscription')
+    expect(unsubscribe).toHaveBeenCalledWith('update-subscription-1')
   })
 
   it('moves to failed after the download timeout', async () => {
