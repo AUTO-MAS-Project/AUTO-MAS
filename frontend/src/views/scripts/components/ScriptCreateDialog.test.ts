@@ -8,10 +8,10 @@ describe('ScriptCreateDialog structure', () => {
     expect(source).not.toContain('<aside class="step-sidebar"')
   })
 
-  it('overrides the global scrollbar hiding with defined theme variables', () => {
-    expect(source).toContain('scrollbar-color: var(--ant-color-border) transparent;')
-    expect(source).toContain('width: 8px !important;')
-    expect(source).toContain('display: block !important;')
-    expect(source).toContain('background: var(--ant-color-border) !important;')
+  it('keeps the modal below the title bar and scrolls content inside short windows', () => {
+    expect(source).toContain(':z-index="900"')
+    expect(source).toContain('top: 48px;')
+    expect(source).toContain('height: min(500px, calc(100vh - 176px));')
+    expect(source).toContain('overflow-y: auto;')
   })
 })
