@@ -409,6 +409,7 @@
                 v-model:value="searchKeyword"
                 placeholder="搜索模板名称、作者或描述..."
                 allow-clear
+                size="large"
                 class="template-search"
               >
                 <template #prefix>
