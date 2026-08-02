@@ -3,6 +3,40 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 
 export type HSREngine = 'SRA' | 'M7A'
 
+export interface HSRNativeConfigOption {
+  id: string
+  label: string
+  path: string
+}
+
+export interface HSRNativeControlSnapshot {
+  engine: HSREngine
+  configurator_ready: boolean
+  direct_run_ready: boolean
+  configurator_reason: string
+  direct_run_reason: string
+  launcher_path: string
+  selected_config: string
+  configs: HSRNativeConfigOption[]
+  running?: boolean
+  pid?: number | null
+}
+
+export interface HSRBrowserCapability {
+  service: string
+  handoff_protocol?: string
+  service_available: boolean
+  backend?: 'local' | 'mas_cloud' | 'native_owned'
+  ready: boolean
+  blockers: string[]
+  adapter_bridges?: Array<{
+    engine: HSREngine
+    upstream_version: string
+    compatibility: string
+    upstream_supported: boolean
+  }>
+}
+
 export interface HSRAdapterCapability {
   engine: HSREngine
   display_name: string
@@ -11,6 +45,7 @@ export interface HSRAdapterCapability {
   capabilities: string[]
   ready?: boolean | null
   ready_reason?: string
+  native_control?: HSRNativeControlSnapshot
 }
 
 export interface HSRTaskCapability {
@@ -19,6 +54,59 @@ export interface HSRTaskCapability {
   phase: 'daily' | 'weekly'
   description: string
   engines: HSREngine[]
+  strategies?: Partial<Record<HSREngine, string[]>>
+}
+
+export type HSRManagedFieldType =
+  | 'boolean'
+  | 'integer'
+  | 'number'
+  | 'string'
+  | 'select'
+  | 'json'
+  | 'stage'
+
+export interface HSRManagedFieldOption {
+  value: unknown
+  label: string
+}
+
+export interface HSRManagedField {
+  key: string
+  label: string
+  type: HSRManagedFieldType
+  value: unknown
+  description?: string
+  options?: HSRManagedFieldOption[]
+  minimum?: number | null
+  maximum?: number | null
+  readonly?: boolean
+}
+
+export interface HSRManagedEngineForm {
+  key: string
+  engine: HSREngine
+  fields: HSRManagedField[]
+  source: string
+  warnings?: string[]
+}
+
+export interface HSRManagedTask extends HSRTaskCapability {
+  forms: Partial<Record<HSREngine, HSRManagedEngineForm>>
+}
+
+export interface HSRManagedConfigSnapshot {
+  revision: number
+  tasks: HSRManagedTask[]
+  task_mapping: Record<string, HSREngine>
+  warnings: string[]
+}
+
+export interface HSRDirectConfigImportResult {
+  engine: HSREngine
+  source: string
+  imported_at: string
+  size: number
 }
 
 export interface HSRCapabilitySnapshot {
@@ -32,6 +120,7 @@ export interface HSRCapabilitySnapshot {
   adapters: HSRAdapterCapability[]
   tasks: HSRTaskCapability[]
   warnings: string[]
+  browser?: HSRBrowserCapability
 }
 
 interface PluginEnvelope<T> {
@@ -100,5 +189,85 @@ export function useHSRPluginApi() {
     )
   }
 
-  return { getCapabilities, getStageOptions }
+  const getManagedConfig = async (
+    scriptId: string,
+    userId: string
+  ): Promise<HSRManagedConfigSnapshot> => {
+    return requestPluginData(
+      axios.get<PluginEnvelope<HSRManagedConfigSnapshot>>(url('/managed-config'), {
+        params: { scriptId, userId },
+      })
+    )
+  }
+
+  const importDirectConfig = async (
+    scriptId: string,
+    userId: string,
+    engine: HSREngine
+  ): Promise<HSRDirectConfigImportResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/import'), {
+        scriptId,
+        userId,
+        engine,
+      })
+    )
+  }
+
+  const getNativeConfigs = async (
+    scriptId: string,
+    engine: HSREngine
+  ): Promise<HSRNativeControlSnapshot> => {
+    return requestPluginData(
+      axios.get<PluginEnvelope<HSRNativeControlSnapshot>>(url('/native-configs'), {
+        params: { scriptId, engine },
+      })
+    )
+  }
+
+  const openNativeConfigurator = async (
+    scriptId: string,
+    engine: HSREngine
+  ): Promise<HSRNativeControlSnapshot> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRNativeControlSnapshot>>(url('/native-config/open'), {
+        scriptId,
+        engine,
+      })
+    )
+  }
+
+  const getNativeConfiguratorStatus = async (
+    scriptId: string,
+    engine: HSREngine
+  ): Promise<HSRNativeControlSnapshot> => {
+    return requestPluginData(
+      axios.get<PluginEnvelope<HSRNativeControlSnapshot>>(url('/native-config/status'), {
+        params: { scriptId, engine },
+      })
+    )
+  }
+
+  const stopNativeConfigurator = async (
+    scriptId: string,
+    engine: HSREngine
+  ): Promise<{ engine: HSREngine; running: boolean; pid?: number | null }> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<{ engine: HSREngine; running: boolean; pid?: number | null }>>(
+        url('/native-config/stop'),
+        { scriptId, engine }
+      )
+    )
+  }
+
+  return {
+    getCapabilities,
+    getStageOptions,
+    getManagedConfig,
+    importDirectConfig,
+    getNativeConfigs,
+    openNativeConfigurator,
+    getNativeConfiguratorStatus,
+    stopNativeConfigurator,
+  }
 }

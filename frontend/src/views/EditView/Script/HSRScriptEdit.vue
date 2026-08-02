@@ -76,6 +76,14 @@
           </a-row>
         </div>
 
+        <a-alert
+          type="info"
+          show-icon
+          class="user-control-notice"
+          message="运行模式与任务配置已移至用户配置"
+          description="请在用户页选择“MAS 管控”或“脚本直控”。两种模式都由 MAS 启动和关闭游戏；脚本页只维护安装路径与公共执行参数。"
+        />
+
         <!-- M7A / SRA / 游戏路径 -->
         <div class="form-section">
           <div class="section-header">
@@ -214,7 +222,7 @@
           </a-row>
 
           <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="24">
+            <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="启动星穹铁道时附加的命令行参数">
@@ -231,6 +239,48 @@
                   class="modern-input"
                   @blur="handleChange('Game', 'Arguments', hsrConfig.Game.Arguments)"
                 />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="6">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="仅在 MAS 启动本地游戏前临时写入当前用户注册表并切为窗口模式；任务完成、失败或手动停止并关闭游戏后恢复原值"
+                  >
+                    <span class="form-label">
+                      运行时设为 1920×1080 窗口模式
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <div class="game-toggle-option">
+                  <a-switch
+                    :checked="hsrConfig.Game.ForceResolution1920x1080"
+                    @change="handleGameResolutionChange"
+                  />
+                  <a-typography-text type="secondary">结束后恢复原注册表值</a-typography-text>
+                </div>
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="6">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="每个用户在每个引擎上首次执行一次；以后仅当原生配置中的兑换码变化时再次兑换，其他奖励不受影响"
+                  >
+                    <span class="form-label">
+                      兑换码仅在变化时执行
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <div class="game-toggle-option">
+                  <a-switch
+                    :checked="hsrConfig.Game.RedeemCodesOnlyWhenChanged"
+                    @change="handleRedeemCodePolicyChange"
+                  />
+                  <a-typography-text type="secondary">新用户先执行一次</a-typography-text>
+                </div>
               </a-form-item>
             </a-col>
           </a-row>
@@ -281,145 +331,6 @@
               </a-form-item>
             </a-col>
           </a-row>
-          <a-row :gutter="16">
-            <a-col v-if="effectiveEngines.has('M7A')" :span="12">
-              <a-form-item label="启用低性能兼容模式">
-                <a-switch
-                  v-model:checked="hsrConfig.M7A.LowPerformanceMode"
-                  :disabled="!hsrConfig.M7A.Path"
-                  @change="handleM7AConfigChange('LowPerformanceMode', $event)"
-                />
-                <div class="form-item-hint">
-                  仅对三月七差分宇宙生效，映射到 weekly_divergent_stable_mode
-                </div>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- 模块脚本分配 -->
-        <div v-if="effectiveEngines.size > 1" class="form-section">
-          <div class="section-header">
-            <h3>模块脚本分配</h3>
-          </div>
-          <p class="section-hint">
-            指定每个模块由三月七还是 SRA 执行。Auto-MAS 会按此映射构造 SRA / 三月七执行计划。
-          </p>
-          <a-row :gutter="24">
-            <a-col v-for="m in moduleList" :key="m.key" :span="12" style="margin-top: 12px">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ m.label }}
-                    <a-tooltip :title="getModuleHint(m.key)">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  :value="getTaskMapping(m.key)"
-                  size="large"
-                  :disabled="!isModuleSelectable()"
-                  :placeholder="getModulePlaceholder()"
-                  :options="getModuleOptions()"
-                  @change="handleTaskMappingChange(m.key, $event)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- 周常任务执行策略 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>周常任务执行策略</h3>
-          </div>
-          <p class="section-hint">
-            根据上方模块脚本分配的选择，差分宇宙 / 货币战争会按下表策略执行。
-            用户页不再需要配置这些参数；只有货币战争的"开拓者名称"在用户页填写。
-          </p>
-
-          <!-- 差分宇宙模板 -->
-          <a-row :gutter="24" style="margin-top: 12px">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">差分宇宙</span>
-                </template>
-                <a-alert v-if="getTaskMapping('DivergentUniverse') === 'SRA'" type="info" show-icon>
-                  <template #message>
-                    <div>SRA 执行策略：</div>
-                    <div>- 差分宇宙乐园漫记</div>
-                    <div>- 模式刷第一关</div>
-                    <div>- 次数 20</div>
-                    <div>- 启用积分奖励</div>
-                  </template>
-                </a-alert>
-                <a-alert
-                  v-else-if="getTaskMapping('DivergentUniverse') === 'M7A'"
-                  type="info"
-                  show-icon
-                >
-                  <template #message>
-                    <div>三月七执行策略：</div>
-                    <div>- 启用积分奖励</div>
-                    <div>- 周期演算</div>
-                    <div>
-                      - 低性能兼容模式：{{ hsrConfig.M7A.LowPerformanceMode ? '启用' : '关闭' }}
-                    </div>
-                    <div style="margin-top: 4px; color: var(--ant-color-text-tertiary)">
-                      其它 DU 字段（球队 / 赐福 / 演算策略）由三月七客户端自行决定
-                    </div>
-                  </template>
-                </a-alert>
-                <a-alert
-                  v-else
-                  type="warning"
-                  show-icon
-                  message="请先配置至少一个已加载 HSR 引擎的路径"
-                />
-              </a-form-item>
-            </a-col>
-
-            <!-- 货币战争执行策略 -->
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">货币战争</span>
-                </template>
-                <a-alert v-if="getTaskMapping('CurrencyWars') === 'SRA'" type="info" show-icon>
-                  <template #message>
-                    <div>SRA 执行策略：</div>
-                    <div>- 标准博弈</div>
-                    <div>- 最低难度</div>
-                    <div>- SRA 保存的第一套攻略</div>
-                    <div>- 运行次数 1</div>
-                    <div>- 开拓者名称：从用户页读取</div>
-                    <div class="strategy-warning">
-                      - 重点提示：SRA 货币战争不会自动领取积分奖励，请在游戏内手动领取。
-                    </div>
-                  </template>
-                </a-alert>
-                <a-alert v-else-if="getTaskMapping('CurrencyWars') === 'M7A'" type="info" show-icon>
-                  <template #message>
-                    <div>三月七执行策略：</div>
-                    <div>- 启用积分奖励</div>
-                    <div>- 标准博弈</div>
-                    <div>- 最低职级</div>
-                    <div>- 阿格莱雅策略</div>
-                    <div>- 特定词条接受重开</div>
-                    <div>- 开拓者名称：从用户页读取</div>
-                  </template>
-                </a-alert>
-                <a-alert
-                  v-else
-                  type="warning"
-                  show-icon
-                  message="请先配置至少一个已加载 HSR 引擎的路径"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -443,26 +354,32 @@ import {
   type HSREngine,
   type HSRCapabilitySnapshot,
 } from '@/composables/useHSRPluginApi'
-import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
-import { buildHSRCapabilityView } from '@/views/HSRUserEdit/capabilityView'
-
-type HSRTaskMapping = Partial<
-  Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', HSREngine>
->
+import { DEFAULT_HSR_TASK_MAPPING, type HSRManagedTaskConfig } from '@/types/script'
 
 // HSR 内部非空 reactive 形态（OpenAPI 生成类型字段全部为 optional | null，
 // 前端实际为非空；通过该形态消除 strict null 警告）。
-type HSRConfigData = {
+type HSRConfigData = HSRManagedTaskConfig & {
   Info: { Name: string }
-  SRA: { Path: string }
+  Control: {
+    Direct: boolean
+    Engine: HSREngine
+    TimeoutMinutes: number
+  }
+  SRA: { Path: string; Config: string }
   M7A: { Path: string; LowPerformanceMode: boolean }
-  Game: { Path: string; Arguments: string; WaitTime: number }
+  Game: {
+    Backend: 'local' | 'mas_cloud' | 'native_owned'
+    Path: string
+    Arguments: string
+    WaitTime: number
+    ForceResolution1920x1080: boolean
+    RedeemCodesOnlyWhenChanged: boolean
+  }
   Run: {
     RunTimesLimit: number
     DailyTimeLimit: number
     WeeklyTimeLimit: number
   }
-  TaskMapping: HSRTaskMapping
 }
 
 const logger = window.electronAPI.getLogger('HSR 脚本编辑')
@@ -485,45 +402,87 @@ const isSaving = ref(false)
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 let pluginSystemSubscriptionId: string | null = null
 
-const handlePluginSystemMessage = () => {
-  void hsrPluginApi
-    .getCapabilities(scriptId)
-    .then(snapshot => (capabilitySnapshot.value = snapshot))
-    .catch(error => logger.warn(`刷新 HSR 能力失败: ${String(error)}`))
-}
-
 const formData = reactive({
   infoName: '',
 })
 
 const hsrConfig = reactive<HSRConfigData>({
   Info: { Name: '' },
-  SRA: { Path: '' },
+  Control: { Direct: false, Engine: 'SRA', TimeoutMinutes: 120 },
+  SRA: { Path: '', Config: '' },
   M7A: { Path: '', LowPerformanceMode: false },
-  Game: { Path: '', Arguments: '', WaitTime: 60 },
+  Game: {
+    Backend: 'local',
+    Path: '',
+    Arguments: '',
+    WaitTime: 60,
+    ForceResolution1920x1080: false,
+    RedeemCodesOnlyWhenChanged: true,
+  },
   Run: {
     RunTimesLimit: 3,
     DailyTimeLimit: 20,
     WeeklyTimeLimit: 60,
   },
   TaskMapping: { ...DEFAULT_HSR_TASK_MAPPING },
+  SRAReceiveRewards: {
+    TrailblazerProfile: true,
+    Assignments: true,
+    Mail: true,
+    DailyTraining: true,
+    NamelessHonor: true,
+    GiftOfOdyssey: true,
+    RedeemCode: true,
+  },
+  SRADivergentUniverse: {
+    RunTimes: 20,
+    UseTechnique: false,
+    PointRewards: true,
+  },
+  SRACurrencyWars: {
+    Mode: 'normal',
+    Difficulty: 'lowest',
+    RunTimes: 1,
+  },
+  M7AReceiveRewards: {
+    RunDailyTraining: true,
+    UseSynthesis: true,
+    UseHimekoTrial: false,
+    UseMemoryOne: false,
+    DailyCheckIn: true,
+    Dispatch: true,
+    Mail: true,
+    Support: true,
+    DailyTrainingReward: true,
+    NamelessHonor: true,
+    RedeemCode: true,
+    Achievement: false,
+    Messages: false,
+  },
+  M7ADivergentUniverse: {
+    Mode: 'cycle',
+    Level: 5,
+    BonusEnabled: true,
+  },
+  M7ACurrencyWars: {
+    Mode: 'normal',
+    RankDifficulty: 'lowest',
+    Strategy: 'aglaea',
+    RestartOnSpecialTags: true,
+    FastMode: false,
+    BonusEnabled: true,
+  },
+  CultivationTarget: {
+    Enabled: false,
+    M7ARecognitionScheme: 'instance',
+    M7AOrnamentWeeklyCount: 1,
+    M7AUseUserStageWhenOnlyRelics: false,
+  },
 })
 
-const moduleList = [
-  { key: 'Daily', label: '体力', tooltip: '开拓力 / 遗器 / 历战余响' },
-  { key: 'ReceiveRewards', label: '日常与奖励', tooltip: '兑换码 / 邮件 / 委托 / 勋礼 / 每日实训' },
-  { key: 'DivergentUniverse', label: '差分宇宙', tooltip: '差分宇宙刷取' },
-  { key: 'CurrencyWars', label: '货币战争', tooltip: 'PVP 货币战争' },
-] as const
-
-const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
-const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 const candidateEngines = computed(
   () => new Set<HSREngine>(capabilitySnapshot.value?.candidate_engines || [])
 )
-
-// 路径变更后重排 TaskMapping 的判断已统一到 getModuleOptions / reconcileTaskMapping。
-// 不再保留静态 engineOptions。
 
 // 需要后端语义化校正（DPAPI 加解密、路径规范化等）的字段保存后再 GET 拉回；
 // 其余纯本地赋值字段不重复请求，避免覆盖用户刚改的值。
@@ -535,60 +494,35 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
 ])
 
 const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value || isSaving.value) return false
   isSaving.value = true
   try {
     const updateData: any = { [category]: { [key]: value } }
     const success = await updateScript(scriptId, updateData)
-    if (!success) return
+    if (!success) return false
     logger.info(`配置已保存: ${category}.${key}`)
     if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
       await refreshScript()
     }
+    return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    message.error(`保存配置失败：${errorMsg}`)
+    return false
   } finally {
     isSaving.value = false
   }
 }
 
-// 当前可用脚本集合由插件注册表与脚本选择求交得到。
-const availableScripts = computed<Set<'M7A' | 'SRA'>>(() => {
-  return new Set(effectiveEngines.value)
-})
-
-// 任意可用路径都未配置
-const noPathConfigured = computed(() => availableScripts.value.size === 0)
-
-// 单个模块在当前路径下的可选项。
-const getModuleOptions = (): Array<{ value: 'M7A' | 'SRA'; label: string }> => {
-  const out: Array<{ value: 'M7A' | 'SRA'; label: string }> = []
-  if (availableScripts.value.has('M7A')) out.push({ value: 'M7A', label: '三月七' })
-  if (availableScripts.value.has('SRA')) out.push({ value: 'SRA', label: 'SRA' })
-  return out
+const refreshCapability = async () => {
+  const snapshot = await hsrPluginApi.getCapabilities(scriptId)
+  capabilitySnapshot.value = snapshot
+  return snapshot
 }
 
-// 该模块当前是否可选择
-const isModuleSelectable = () => getModuleOptions().length > 0
-
-// select 当前显示值；无可用路径时返回 undefined，避免显示默认值误导
-const getTaskMapping = (k: keyof HSRTaskMapping): 'M7A' | 'SRA' | undefined => {
-  if (noPathConfigured.value) return undefined
-  return resolveTaskMappingValue(hsrConfig.TaskMapping?.[k], availableScripts.value)
-}
-
-const getModulePlaceholder = () => {
-  if (noPathConfigured.value) return '请先配置脚本路径'
-  return undefined
-}
-
-const getModuleHint = (moduleKey: string) => {
-  const baseTooltip = moduleList.find(m => m.key === moduleKey)?.tooltip ?? ''
-  if (noPathConfigured.value) {
-    return `${baseTooltip}\n请先配置三月七或 SRA 脚本路径`
-  }
-  return baseTooltip
+const handlePluginSystemMessage = () => {
+  void refreshCapability().catch(error => logger.warn(`刷新 HSR 能力失败: ${String(error)}`))
 }
 
 const refreshScript = async () => {
@@ -598,16 +532,35 @@ const refreshScript = async () => {
     formData.infoName = scriptDetail.name
     const cfg = scriptDetail.config as Partial<HSRConfigData>
     if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
+    if (cfg.Control) Object.assign(hsrConfig.Control, cfg.Control)
     if (cfg.SRA) Object.assign(hsrConfig.SRA, cfg.SRA)
     if (cfg.M7A) Object.assign(hsrConfig.M7A, cfg.M7A)
     if (cfg.Game) {
       Object.assign(hsrConfig.Game, cfg.Game)
+      if (!hsrConfig.Game.Backend) hsrConfig.Game.Backend = 'local'
       if (hsrConfig.Game.Arguments === undefined || hsrConfig.Game.Arguments === null) {
         hsrConfig.Game.Arguments = ''
       }
       if (hsrConfig.Game.WaitTime === undefined || hsrConfig.Game.WaitTime === null) {
         hsrConfig.Game.WaitTime = 60
       }
+      if (
+        hsrConfig.Game.ForceResolution1920x1080 === undefined ||
+        hsrConfig.Game.ForceResolution1920x1080 === null
+      ) {
+        hsrConfig.Game.ForceResolution1920x1080 = false
+      }
+      if (
+        hsrConfig.Game.RedeemCodesOnlyWhenChanged === undefined ||
+        hsrConfig.Game.RedeemCodesOnlyWhenChanged === null
+      ) {
+        hsrConfig.Game.RedeemCodesOnlyWhenChanged = true
+      }
+    }
+    if (!hsrConfig.Control.Engine) hsrConfig.Control.Engine = 'SRA'
+    if (!hsrConfig.Control.TimeoutMinutes) hsrConfig.Control.TimeoutMinutes = 120
+    if (hsrConfig.SRA.Config === undefined || hsrConfig.SRA.Config === null) {
+      hsrConfig.SRA.Config = ''
     }
     if (cfg.Run) {
       Object.assign(hsrConfig.Run, cfg.Run)
@@ -618,20 +571,32 @@ const refreshScript = async () => {
     if (cfg.TaskMapping) {
       hsrConfig.TaskMapping = { ...DEFAULT_HSR_TASK_MAPPING, ...cfg.TaskMapping }
     }
-    capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
+    if (cfg.SRAReceiveRewards) {
+      Object.assign(hsrConfig.SRAReceiveRewards, cfg.SRAReceiveRewards)
+    }
+    if (cfg.SRADivergentUniverse) {
+      Object.assign(hsrConfig.SRADivergentUniverse, cfg.SRADivergentUniverse)
+    }
+    if (cfg.SRACurrencyWars) {
+      Object.assign(hsrConfig.SRACurrencyWars, cfg.SRACurrencyWars)
+    }
+    if (cfg.M7AReceiveRewards) {
+      Object.assign(hsrConfig.M7AReceiveRewards, cfg.M7AReceiveRewards)
+    }
+    if (cfg.M7ADivergentUniverse) {
+      Object.assign(hsrConfig.M7ADivergentUniverse, cfg.M7ADivergentUniverse)
+    }
+    if (cfg.M7ACurrencyWars) {
+      Object.assign(hsrConfig.M7ACurrencyWars, cfg.M7ACurrencyWars)
+    }
+    if (cfg.CultivationTarget) {
+      Object.assign(hsrConfig.CultivationTarget, cfg.CultivationTarget)
+    }
+    await refreshCapability()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`刷新配置失败: ${errorMsg}`)
   }
-}
-
-const handleTaskMappingChange = (module: string, value: 'M7A' | 'SRA') => {
-  // 检查当前值是否与要保存的值一致，避免无意义保存
-  const current = hsrConfig.TaskMapping?.[module as keyof HSRTaskMapping]
-  if (current === value) return
-  if (!hsrConfig.TaskMapping) hsrConfig.TaskMapping = {}
-  hsrConfig.TaskMapping[module as keyof HSRTaskMapping] = value
-  handleChange('TaskMapping', module, value)
 }
 
 const handleRunConfigChange = async (key: string, value: any) => {
@@ -650,15 +615,28 @@ const handleRunConfigChange = async (key: string, value: any) => {
   }
 }
 
-const handleM7AConfigChange = async (key: string, value: unknown) => {
-  await handleChange('M7A', key, value)
-}
-
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {
   if (isInitializing.value || isSaving.value) return
   const normalizedValue = value ?? 60
   hsrConfig.Game[key] = normalizedValue
-  await handleChange('Game', key, normalizedValue)
+  const saved = await handleChange('Game', key, normalizedValue)
+  if (!saved) await refreshScript()
+}
+
+const handleGameResolutionChange = async (value: boolean | string | number) => {
+  if (isInitializing.value || isSaving.value) return
+  const enabled = Boolean(value)
+  hsrConfig.Game.ForceResolution1920x1080 = enabled
+  const saved = await handleChange('Game', 'ForceResolution1920x1080', enabled)
+  if (!saved) await refreshScript()
+}
+
+const handleRedeemCodePolicyChange = async (value: boolean | string | number) => {
+  if (isInitializing.value || isSaving.value) return
+  const enabled = Boolean(value)
+  hsrConfig.Game.RedeemCodesOnlyWhenChanged = enabled
+  const saved = await handleChange('Game', 'RedeemCodesOnlyWhenChanged', enabled)
+  if (!saved) await refreshScript()
 }
 
 // 路径选择时需校验的 exe 名（key -> exe 文件名）
@@ -694,16 +672,18 @@ const selectPath = async (key: string) => {
       }
     }
 
+    let saved = false
     if (key === 'M7A.Path') {
-      await handleChange('M7A', 'Path', path)
+      saved = await handleChange('M7A', 'Path', path)
     } else if (key === 'SRA.Path') {
-      await handleChange('SRA', 'Path', path)
+      saved = await handleChange('SRA', 'Path', path)
     } else if (key === 'Game.Path') {
-      await handleChange('Game', 'Path', path)
+      saved = await handleChange('Game', 'Path', path)
     } else {
       logger.warn(`未知的路径 key: ${key}`)
       return
     }
+    if (!saved) return
     message.success('路径已选择')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -719,11 +699,11 @@ const handleCancel = () => {
 // 清空路径：保存空字符串到后端，然后级联重排 TaskMapping。
 const clearPath = async (key: string) => {
   if (key === 'M7A.Path') {
-    await handleChange('M7A', 'Path', '')
-    hsrConfig.M7A.Path = ''
+    const saved = await handleChange('M7A', 'Path', '')
+    if (saved) hsrConfig.M7A.Path = ''
   } else if (key === 'SRA.Path') {
-    await handleChange('SRA', 'Path', '')
-    hsrConfig.SRA.Path = ''
+    const saved = await handleChange('SRA', 'Path', '')
+    if (saved) hsrConfig.SRA.Path = ''
   }
 }
 
@@ -765,6 +745,17 @@ onUnmounted(() => {
 <style scoped>
 .engine-path-hint {
   margin-bottom: 16px;
+}
+
+.user-control-notice {
+  margin-bottom: 20px;
+}
+
+.game-toggle-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
 }
 
 .script-edit-header {
@@ -873,12 +864,6 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--ant-color-text);
   font-size: 14px;
-}
-
-.strategy-warning {
-  margin-top: 8px;
-  color: var(--ant-color-warning);
-  font-weight: 600;
 }
 
 .help-icon {

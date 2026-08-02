@@ -6,7 +6,14 @@
           <a-breadcrumb-item>
             <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
           </a-breadcrumb-item>
-          <a-breadcrumb-item>{{ scriptName }}</a-breadcrumb-item>
+          <a-breadcrumb-item>
+            <router-link
+              :to="{ name: 'HSRScriptEdit', params: { id: scriptId } }"
+              class="breadcrumb-link"
+            >
+              {{ scriptName }}
+            </router-link>
+          </a-breadcrumb-item>
           <a-breadcrumb-item>
             <span class="breadcrumb-current">
               <img src="@/assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
@@ -58,17 +65,15 @@
                   <template #label>
                     <span class="form-label">启用</span>
                   </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
+                  <a-switch
+                    v-model:checked="formData.Info.Status"
+                    checked-children="启用"
+                    un-checked-children="禁用"
                     @change="handleFieldSave('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">是</a-select-option>
-                    <a-select-option :value="false">否</a-select-option>
-                  </a-select>
+                  />
                 </a-form-item>
               </a-col>
-              <a-col v-if="effectiveEngines.has('SRA')" :span="6">
+              <a-col v-if="controlMode === 'managed' && effectiveEngines.has('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">账号</span>
@@ -82,7 +87,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="effectiveEngines.has('SRA')" :span="6">
+              <a-col v-if="controlMode === 'managed' && effectiveEngines.has('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">密码</span>
@@ -134,21 +139,39 @@
                 </a-form-item>
               </a-col>
               <a-col :span="12">
+                <a-form-item class="control-mode-form-item">
+                  <template #label>
+                    <span class="form-label">运行模式</span>
+                  </template>
+                  <a-select
+                    :value="controlMode"
+                    :options="controlModeOptions"
+                    class="control-mode-select"
+                    size="large"
+                    @change="handleControlModeChange"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="24" style="margin-top: 8px">
+              <a-col :span="24">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">备注</span>
                   </template>
-                  <a-input
+                  <a-textarea
                     v-model:value="formData.Info.Notes"
-                    size="large"
-                    class="modern-input"
+                    :rows="2"
+                    allow-clear
+                    placeholder="请输入备注"
+                    class="notes-textarea"
                     @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
                   />
                 </a-form-item>
               </a-col>
             </a-row>
             <a-alert
-              v-if="effectiveEngines.has('SRA')"
+              v-if="controlMode === 'managed' && effectiveEngines.has('SRA')"
               type="info"
               show-icon
               style="margin-top: 8px"
@@ -156,203 +179,57 @@
             />
           </div>
 
-          <!-- 每日任务 -->
-          <div class="form-section">
-            <div class="section-header"><h3>每日任务</h3></div>
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item label="体力">
-                  <a-switch
-                    v-model:checked="formData.TaskSwitch.Daily"
-                    checked-children="开启"
-                    un-checked-children="关闭"
-                    :loading="isSaving"
-                    @change="(checked: boolean) => handleTaskSwitchToggle('Daily', checked)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="日常与奖励">
-                  <a-switch
-                    v-model:checked="formData.TaskSwitch.ReceiveRewards"
-                    checked-children="开启"
-                    un-checked-children="关闭"
-                    :loading="isSaving"
-                    @change="
-                      (checked: boolean) => handleTaskSwitchToggle('ReceiveRewards', checked)
-                    "
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <!-- 日常与奖励执行策略（按 TaskMapping.ReceiveRewards 动态展示） -->
+          <div v-if="controlMode === 'managed'" class="control-mode-content">
             <a-alert
-              v-if="
-                formData.TaskSwitch.ReceiveRewards && getTaskMapping('ReceiveRewards') === 'M7A'
-              "
               type="info"
               show-icon
-              style="margin-top: 12px"
-            >
-              <template #message>
-                <div>三月七「日常与奖励」执行策略：</div>
-                <div>- 每日实训：开启</div>
-                <div>- 每日实训的合成材料：开启</div>
-                <div>- 活动检测：开启</div>
-                <div>- 活动检测的每日签到：开启</div>
-                <div>
-                  - 奖励领取：开启，领取 委托奖励 / 邮件奖励 / 每日实训奖励 / 无名勋礼奖励 / 兑换码
-                </div>
-                <div>- 不领取：成就奖励、短信奖励</div>
-              </template>
-            </a-alert>
-            <a-alert
-              v-else-if="
-                formData.TaskSwitch.ReceiveRewards && getTaskMapping('ReceiveRewards') === 'SRA'
-              "
-              type="info"
-              show-icon
-              style="margin-top: 12px"
-            >
-              <template #message>
-                <div>SRA「日常与奖励」执行策略：</div>
-                <div>
-                  - 当前维护的奖励项全部领取：委托奖励 / 邮件奖励 / 每日实训奖励 / 无名勋礼奖励 /
-                  兑换码
-                </div>
-                <div>- 新增奖励不会自动领取，需更新适配后才会领取</div>
-              </template>
-            </a-alert>
+              message="MAS 按这个用户的任务开关、动态原生选项和执行引擎运行。"
+              class="mode-alert"
+            />
+            <StageConfigSection
+              v-if="dailyStageEngine"
+              :form-data="formData"
+              :loading="isSaving"
+              :daily-engine="dailyStageEngine"
+              :stage-options="hsrStageOptions"
+              :stage-options-loading="hsrStageOptionsLoading"
+              :stage-options-error="hsrStageOptionsError"
+              @save="handleFieldSave"
+            />
+            <ManagedTaskSection
+              :snapshot="managedConfigSnapshot"
+              :task-switch="formData.TaskSwitch"
+              :saving="isSaving"
+              :loading="managedConfigLoading"
+              @import-source="handleManagedSourceImport"
+              @task-toggle="handleTaskSwitchToggle"
+              @mapping-change="handleManagedMappingChange"
+              @field-change="handleManagedFieldChange"
+            />
           </div>
-
-          <!-- 周常：差分宇宙/货币战争 -->
-          <div class="form-section">
-            <div class="section-header"><h3>周常</h3></div>
-            <a-form-item label="差分/货币">
-              <a-select
-                :value="weeklyTaskMode"
-                size="large"
-                :loading="isSaving"
-                :disabled="isSaving"
-                @change="handleWeeklyTaskModeChange"
-              >
-                <a-select-option value="off">关闭</a-select-option>
-                <a-select-option value="DivergentUniverse">差分宇宙</a-select-option>
-                <a-select-option value="CurrencyWars">货币战争</a-select-option>
-              </a-select>
-            </a-form-item>
-
-            <!-- 差分宇宙执行策略：按 TaskMapping 动态显示 M7A/SRA -->
-            <div v-if="weeklyTaskMode === 'DivergentUniverse'" class="weekly-subblock">
-              <a-alert v-if="getTaskMapping('DivergentUniverse') === 'M7A'" type="info" show-icon>
-                <template #message>
-                  <div>三月七差分宇宙执行策略：</div>
-                  <div>- 启用积分奖励</div>
-                  <div>- 周期演算</div>
-                  <div>- 低性能兼容模式：跟随脚本页「启用低性能兼容模式」开关</div>
-                  <div style="margin-top: 8px; color: var(--ant-color-text-tertiary)">
-                    请提前在 HSR 内配好差分宇宙队伍（球队 / 赐福 /
-                    演算策略由三月七客户端自行决定）。
-                  </div>
-                </template>
-              </a-alert>
-              <a-alert
-                v-else-if="getTaskMapping('DivergentUniverse') === 'SRA'"
-                type="info"
-                show-icon
-              >
-                <template #message>
-                  <div>SRA 差分宇宙执行策略：</div>
-                  <div>- 差分宇宙乐园漫记</div>
-                  <div>- 模式刷第一关</div>
-                  <div>- 次数 20</div>
-                  <div>- 启用积分奖励</div>
-                  <div style="margin-top: 8px; color: var(--ant-color-text-tertiary)">
-                    请提前在 HSR 内配好差分宇宙队伍。
-                  </div>
-                </template>
-              </a-alert>
-              <a-alert
-                v-else
-                type="warning"
-                show-icon
-                message="请先在脚本页配置至少一个已加载 HSR 引擎的路径"
-              />
-            </div>
-
-            <!-- 货币战争执行策略：开拓者名称跟随用户名 + 按 TaskMapping 动态显示 -->
-            <div v-if="weeklyTaskMode === 'CurrencyWars'" class="weekly-subblock">
-              <a-row :gutter="24" style="margin-bottom: 12px">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <span class="form-label">开拓者名称</span>
-                    </template>
-                    <a-input
-                      :value="currencyWarsTrailblazerName"
-                      size="large"
-                      class="modern-input readonly-display"
-                      readonly
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-alert v-if="getTaskMapping('CurrencyWars') === 'M7A'" type="info" show-icon>
-                <template #message>
-                  <div>三月七货币战争执行策略：</div>
-                  <div>- 启用积分奖励</div>
-                  <div>- 标准博弈</div>
-                  <div>- 最低职级</div>
-                  <div>- 阿格莱雅策略</div>
-                  <div>- 特定词条接受重开</div>
-                  <div>- 开拓者名称：使用上方「用户名」</div>
-                </template>
-              </a-alert>
-              <a-alert v-else-if="getTaskMapping('CurrencyWars') === 'SRA'" type="info" show-icon>
-                <template #message>
-                  <div>SRA 货币战争执行策略：</div>
-                  <div>- 标准博弈</div>
-                  <div>- 最低难度</div>
-                  <div>- SRA 保存的第一套模板</div>
-                  <div>- 运行次数 1</div>
-                  <div>- 开拓者名称：使用上方「用户名」</div>
-                  <div class="strategy-warning">
-                    - 重点提示：SRA 货币战争不会自动领取积分奖励，请在游戏内手动领取。
-                  </div>
-                </template>
-              </a-alert>
-              <a-alert
-                v-else
-                type="warning"
-                show-icon
-                message="请先在脚本页配置至少一个已加载 HSR 引擎的路径"
-              />
-            </div>
-          </div>
-
-          <!-- 关卡配置 -->
-          <StageConfigSection
-            v-if="dailyTaskEngine"
-            :form-data="formData"
-            :loading="isSaving"
-            :daily-engine="dailyTaskEngine"
-            :stage-options="hsrStageOptions"
-            :stage-options-loading="hsrStageOptionsLoading"
-            :stage-options-error="hsrStageOptionsError"
-            @save="handleFieldSave"
-          />
-          <div v-else class="form-section">
-            <div class="section-header"><h3>体力配置</h3></div>
+          <div v-else class="control-mode-content">
             <a-alert
               type="warning"
               show-icon
-              message="请先在脚本页配置至少一个已加载 HSR 引擎的路径后，再配置体力关卡。"
+              message="脚本直控不会读取该用户的账号、体力副本和 MAS 任务开关。"
+              class="mode-alert"
+            />
+            <DirectControlSection
+              :available-engines="[...effectiveEngines]"
+              :control="formData.Control"
+              :direct="formData.Direct"
+              :native-controls="nativeControls"
+              :saving="isSaving"
+              :importing-engine="importingDirectEngine"
+              :opening-engine="openingConfiguratorEngine"
+              @toggle="handleDirectEngineToggle"
+              @import-config="handleDirectConfigImport"
+              @open-configurator="handleOpenNativeConfigurator"
             />
           </div>
 
           <!-- 进度与重置 (历战余响开始日 已下沉到 体力配置 区) -->
-          <div class="form-section">
+          <div v-if="controlMode === 'managed'" class="form-section">
             <div class="section-header"><h3>进度与重置</h3></div>
 
             <!-- 历战余响进度 -->
@@ -429,14 +306,18 @@ import {
   useHSRPluginApi,
   type HSREngine,
   type HSRCapabilitySnapshot,
+  type HSRManagedConfigSnapshot,
+  type HSRNativeControlSnapshot,
 } from '@/composables/useHSRPluginApi'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
-import StageConfigSection from '@/views/HSRUserEdit/StageConfigSection.vue'
 import type { HSRDynamicStageOptionsData, HSRUserConfigData } from '@/views/HSRUserEdit/types'
 import {
   buildHSRCapabilityView,
   resolveCapabilityTaskEngine,
 } from '@/views/HSRUserEdit/capabilityView'
+import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
+import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
+import StageConfigSection from '@/views/HSRUserEdit/StageConfigSection.vue'
 
 const getCurrentISOWeek = (): string => {
   const d = new Date()
@@ -491,6 +372,11 @@ const scriptConfig = ref<HSRScriptConfig | null>(null)
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
+const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
+const managedConfigLoading = ref(false)
+const nativeControls = reactive<Partial<Record<HSREngine, HSRNativeControlSnapshot>>>({})
+const importingDirectEngine = ref<HSREngine | null>(null)
+const openingConfiguratorEngine = ref<HSREngine | null>(null)
 let pluginSystemSubscriptionId: string | null = null
 
 const handlePluginSystemMessage = () => {
@@ -498,6 +384,8 @@ const handlePluginSystemMessage = () => {
     .getCapabilities(scriptId)
     .then(async snapshot => {
       capabilitySnapshot.value = snapshot
+      await refreshNativeControls()
+      if (userId && controlMode.value === 'managed') await loadManagedConfig()
       await loadHsrStageOptions()
     })
     .catch(error => logger.warn(`刷新 HSR 能力失败: ${String(error)}`))
@@ -507,8 +395,10 @@ const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
 
 const serverOptions = [{ value: 'CN-Official', label: '官服' }]
-
-type WeeklyTaskMode = 'off' | 'DivergentUniverse' | 'CurrencyWars'
+const controlModeOptions = [
+  { value: 'managed', label: 'MAS 管控' },
+  { value: 'direct', label: '脚本直控' },
+]
 type MutableRecord = Record<string, unknown>
 
 const DEFAULT_COMPLETION_DATE = '2000-01-01'
@@ -518,57 +408,20 @@ const hasValidCompletionDate = (value?: string | null): boolean => {
   return date !== '' && date !== DEFAULT_COMPLETION_DATE
 }
 
-// 根据脚本页 TaskMapping 返回指定模块的执行引擎（SRA 或 M7A）
+// 优先使用当前用户映射；旧脚本级 TaskMapping 只作为迁移回退。
 const getTaskMapping = (
   moduleKey: 'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars'
 ): HSREngine | undefined => {
   const mapping: HSRTaskMapping = {
     ...DEFAULT_HSR_TASK_MAPPING,
     ...(scriptConfig.value?.TaskMapping ?? {}),
+    ...(managedConfigSnapshot.value?.task_mapping ?? {}),
+    ...(formData.Managed.TaskMapping ?? {}),
   }
   return (
     resolveCapabilityTaskEngine(capabilitySnapshot.value, moduleKey, mapping[moduleKey]) ??
     resolveTaskMappingValue(mapping[moduleKey], effectiveEngines.value)
   )
-}
-
-const dailyTaskEngine = computed(() => getTaskMapping('Daily'))
-
-const weeklyTaskMode = computed<WeeklyTaskMode>(() => {
-  if (formData.TaskSwitch.DivergentUniverse) return 'DivergentUniverse'
-  if (formData.TaskSwitch.CurrencyWars) return 'CurrencyWars'
-  return 'off'
-})
-
-const setWeeklyTaskMode = (mode: WeeklyTaskMode) => {
-  formData.TaskSwitch.DivergentUniverse = mode === 'DivergentUniverse'
-  formData.TaskSwitch.CurrencyWars = mode === 'CurrencyWars'
-}
-
-const handleWeeklyTaskModeChange = async (mode: WeeklyTaskMode) => {
-  setWeeklyTaskMode(mode)
-  const userData = {
-    TaskSwitch: {
-      DivergentUniverse: formData.TaskSwitch.DivergentUniverse,
-      CurrencyWars: formData.TaskSwitch.CurrencyWars,
-    },
-  }
-
-  if (isInitializing.value || isSaving.value || !userId) return
-  isSaving.value = true
-  try {
-    const saved = await updateUser(scriptId, userId, userData)
-    if (saved) {
-      logger.info(`用户配置已保存: weeklyTaskMode=${mode}`)
-    } else {
-      logger.error('保存失败: weeklyTaskMode')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
 }
 
 const loadHsrStageOptions = async () => {
@@ -620,21 +473,14 @@ const loadHsrStageOptions = async () => {
 }
 
 watch(
-  () => scriptConfig.value?.TaskMapping?.Daily,
+  () => managedConfigSnapshot.value?.task_mapping?.Daily,
   () => {
     void loadHsrStageOptions()
   }
 )
 
-const currencyWarsTrailblazerName = computed(() => {
-  return String(formData.Info.Name ?? '').trim() || '未设置用户名'
-})
-
-const handleTaskSwitchToggle = async (
-  moduleKey: keyof HSRUserConfigData['TaskSwitch'],
-  enabled: boolean
-) => {
-  formData.TaskSwitch[moduleKey] = enabled
+const handleTaskSwitchToggle = async (moduleKey: string, enabled: boolean) => {
+  ;(formData.TaskSwitch as Record<string, boolean | null | undefined>)[moduleKey] = enabled
   const userData: Record<string, unknown> = { TaskSwitch: { [moduleKey]: enabled } }
   if (isInitializing.value || isSaving.value || !userId) return
   isSaving.value = true
@@ -676,6 +522,23 @@ const formData = reactive<HSRUserConfigData>({
   TaskOpt: {
     EchoOfWarWeekday: 'Monday',
   },
+  Control: {
+    Mode: 'managed',
+    SRA: false,
+    M7A: false,
+  },
+  Managed: {
+    TaskMapping: {},
+    Options: {},
+  },
+  Direct: {
+    SRAConfig: '',
+    M7AConfig: '',
+    SRAImportedAt: '',
+    M7AImportedAt: '',
+    SRASource: '',
+    M7ASource: '',
+  },
   Data: {
     EchoOfWarCompletedThisWeek: false,
     EchoOfWarLastResetWeek: '',
@@ -683,8 +546,136 @@ const formData = reactive<HSRUserConfigData>({
     WeeklyCompletedThisWeek: false,
     WeeklyLastResetWeek: '',
     WeeklyLastCompletionDate: '',
+    SRARedeemCodeFingerprint: '',
+    M7ARedeemCodeFingerprint: '',
   },
 })
+
+const controlMode = computed<'managed' | 'direct'>(() =>
+  formData.Control.Mode === 'direct' ? 'direct' : 'managed'
+)
+const dailyStageEngine = computed(() => getTaskMapping('Daily'))
+
+const refreshNativeControls = async () => {
+  await Promise.all(
+    [...effectiveEngines.value].map(async engine => {
+      try {
+        nativeControls[engine] = await hsrPluginApi.getNativeConfigs(scriptId, engine)
+      } catch (error) {
+        logger.warn(`读取 ${engine} 原生配置状态失败: ${String(error)}`)
+      }
+    })
+  )
+}
+
+const loadManagedConfig = async () => {
+  if (!userId) return
+  managedConfigLoading.value = true
+  try {
+    managedConfigSnapshot.value = await hsrPluginApi.getManagedConfig(scriptId, userId)
+    formData.Managed.TaskMapping = {
+      ...(managedConfigSnapshot.value.task_mapping ?? {}),
+      ...(formData.Managed.TaskMapping ?? {}),
+    }
+    await loadHsrStageOptions()
+  } catch (error) {
+    managedConfigSnapshot.value = null
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`HSR 动态任务配置加载失败: ${errorMsg}`)
+    message.error(`动态读取原生配置失败：${errorMsg}`)
+  } finally {
+    managedConfigLoading.value = false
+  }
+}
+
+const handleManagedSourceImport = async () => {
+  if (!userId || managedConfigLoading.value || isSaving.value) return
+  const previousOptions = formData.Managed.Options
+  const saved = await handleFieldSave('Managed.Options', {})
+  if (!saved) {
+    formData.Managed.Options = previousOptions
+    message.error('从源配置导入失败')
+    return
+  }
+  await loadManagedConfig()
+  message.success('已从当前 SRA / 三月七助手源配置导入')
+}
+
+const handleControlModeChange = async (value: string | number) => {
+  if (value !== 'managed' && value !== 'direct') return
+  formData.Control.Mode = value
+  await handleFieldSave('Control.Mode', value)
+  if (value === 'managed') await loadManagedConfig()
+  else await refreshNativeControls()
+}
+
+const handleManagedMappingChange = async (task: string, engine: HSREngine) => {
+  const mapping = { ...(formData.Managed.TaskMapping ?? {}), [task]: engine }
+  formData.Managed.TaskMapping = mapping
+  if (managedConfigSnapshot.value) {
+    managedConfigSnapshot.value.task_mapping = {
+      ...managedConfigSnapshot.value.task_mapping,
+      [task]: engine,
+    }
+  }
+  await handleFieldSave('Managed.TaskMapping', mapping)
+  if (task === 'Daily') await loadHsrStageOptions()
+}
+
+const handleManagedFieldChange = async (
+  engine: HSREngine,
+  task: string,
+  key: string,
+  value: unknown
+) => {
+  const options = { ...(formData.Managed.Options ?? {}) }
+  const engineOptions = { ...(options[engine] ?? {}) }
+  const taskOptions = { ...(engineOptions[task] ?? {}), [key]: value }
+  engineOptions[task] = taskOptions
+  options[engine] = engineOptions
+  formData.Managed.Options = options
+
+  const field = managedConfigSnapshot.value?.tasks
+    .find(item => item.key === task)
+    ?.forms?.[engine]?.fields.find(item => item.key === key)
+  if (field) field.value = value
+  await handleFieldSave('Managed.Options', options)
+}
+
+const handleDirectEngineToggle = async (engine: HSREngine, enabled: boolean) => {
+  formData.Control[engine] = enabled
+  await handleFieldSave(`Control.${engine}`, enabled)
+}
+
+const handleDirectConfigImport = async (engine: HSREngine) => {
+  if (!userId || importingDirectEngine.value) return
+  importingDirectEngine.value = engine
+  try {
+    const result = await hsrPluginApi.importDirectConfig(scriptId, userId, engine)
+    formData.Direct[`${engine}ImportedAt`] = result.imported_at
+    formData.Direct[`${engine}Source`] = result.source
+    message.success(`${engine} 原生配置已导入当前用户`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    message.error(`${engine} 配置导入失败：${errorMsg}`)
+  } finally {
+    importingDirectEngine.value = null
+  }
+}
+
+const handleOpenNativeConfigurator = async (engine: HSREngine) => {
+  if (openingConfiguratorEngine.value) return
+  openingConfiguratorEngine.value = engine
+  try {
+    nativeControls[engine] = await hsrPluginApi.openNativeConfigurator(scriptId, engine)
+    message.info(`已打开 ${engine} 配置器；保存并关闭后，再点击“从脚本原有配置导入”`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    message.error(`打开 ${engine} 配置器失败：${errorMsg}`)
+  } finally {
+    openingConfiguratorEngine.value = null
+  }
+}
 
 // EchoOfWarWeekday 变更已下沉到 StageConfigSection.vue（体力配置区）。
 
@@ -803,7 +794,7 @@ const handleFieldSave = async (key: string, value: unknown) => {
   }
   localTarget[parts[parts.length - 1]] = value
 
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || isSaving.value || !userId) return false
   isSaving.value = true
   try {
     const userData: MutableRecord = {}
@@ -819,9 +810,11 @@ const handleFieldSave = async (key: string, value: unknown) => {
     } else {
       logger.error(`保存失败: ${key}`)
     }
+    return Boolean(saved)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
+    return false
   } finally {
     isSaving.value = false
   }
@@ -854,15 +847,15 @@ onMounted(async () => {
     scriptName.value = script.name
     scriptConfig.value = script.config as HSRScriptConfig
     capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
+    await refreshNativeControls()
     if (!isEdit.value && capabilitySnapshot.value.available === false) {
       message.warning(capabilitySnapshot.value.unavailable_reason || '请先配置可用的 HSR 引擎路径')
       handleCancel()
       return
     }
-    await loadHsrStageOptions()
-
     if (isEdit.value) {
       await loadUserData()
+      if (controlMode.value === 'managed') await loadManagedConfig()
     } else {
       await createUserImmediately()
     }
@@ -890,6 +883,7 @@ const createUserImmediately = async () => {
         params: { scriptId, userId: result.userId },
       })
       await loadUserData()
+      if (controlMode.value === 'managed') await loadManagedConfig()
     } else {
       message.error('创建用户失败')
       handleCancel()
@@ -916,6 +910,20 @@ const loadUserData = async () => {
         if (userData.TaskSwitch)
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
         if (userData.TaskOpt) formData.TaskOpt = { ...formData.TaskOpt, ...userData.TaskOpt }
+        if (userData.Control) formData.Control = { ...formData.Control, ...userData.Control }
+        if (userData.Managed) {
+          formData.Managed = {
+            TaskMapping: {
+              ...(formData.Managed.TaskMapping ?? {}),
+              ...(userData.Managed.TaskMapping ?? {}),
+            },
+            Options: {
+              ...(formData.Managed.Options ?? {}),
+              ...(userData.Managed.Options ?? {}),
+            },
+          }
+        }
+        if (userData.Direct) formData.Direct = { ...formData.Direct, ...userData.Direct }
         if (userData.Data) formData.Data = { ...formData.Data, ...userData.Data }
         logger.info('用户数据加载成功')
       } else {
@@ -990,24 +998,28 @@ const loadUserData = async () => {
 }
 
 .form-section {
-  margin-bottom: 12px;
-  padding: 20px 24px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  margin-bottom: 24px;
 }
 
-/* 周常区域内的子块（差分宇宙 / 货币战争）：与主行用虚线分隔 */
-.weekly-subblock {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--ant-color-border-secondary);
+.control-mode-content {
+  margin-bottom: 24px;
 }
 
-.strategy-warning {
-  margin-top: 8px;
-  color: var(--ant-color-warning);
-  font-weight: 600;
+.control-mode-form-item {
+  margin-bottom: 0;
+}
+
+.control-mode-select {
+  width: 100%;
+}
+
+.notes-textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.mode-alert {
+  margin-bottom: 16px;
 }
 
 .section-header {
@@ -1058,11 +1070,6 @@ const loadUserData = async () => {
 .modern-input :deep(.ant-input:focus) {
   border-color: var(--ant-color-primary);
   box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
-.readonly-display {
-  color: var(--ant-color-text);
-  background: var(--ant-color-fill-quaternary);
 }
 
 .module-checkbox-label {
