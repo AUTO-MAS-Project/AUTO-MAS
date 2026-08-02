@@ -146,6 +146,7 @@
                   <a-select
                     :value="controlMode"
                     :options="controlModeOptions"
+                    :disabled="isSaving"
                     class="control-mode-select"
                     size="large"
                     @change="handleControlModeChange"
@@ -602,9 +603,15 @@ const handleManagedSourceImport = async () => {
 }
 
 const handleControlModeChange = async (value: string | number) => {
-  if (value !== 'managed' && value !== 'direct') return
+  if ((value !== 'managed' && value !== 'direct') || isSaving.value) return
+  const previousMode = formData.Control.Mode
   formData.Control.Mode = value
-  await handleFieldSave('Control.Mode', value)
+  const saved = await handleFieldSave('Control.Mode', value)
+  if (!saved) {
+    formData.Control.Mode = previousMode
+    message.error('运行模式保存失败，请重试')
+    return
+  }
   if (value === 'managed') await loadManagedConfig()
   else await refreshNativeControls()
 }
