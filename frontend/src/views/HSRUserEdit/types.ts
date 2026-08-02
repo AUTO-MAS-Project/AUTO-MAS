@@ -45,6 +45,11 @@ export type HSRScriptStageContainer = {
   stages?: Partial<Record<string, HSRScriptStagePayload>>
 }
 
+export type HSRPerEngineStageStore<T> = {
+  version?: 2
+  byEngine?: Partial<Record<HSRStageEngine, T>>
+}
+
 export type HSRUserSRAConfig = {
   Id?: string | null
   Password?: string | null
@@ -82,6 +87,23 @@ export type HSRUserConfigData = {
       | 'Sunday'
       | null
   }
+  Control: {
+    Mode?: 'managed' | 'direct' | null
+    SRA?: boolean | null
+    M7A?: boolean | null
+  }
+  Managed: {
+    TaskMapping?: Record<string, HSRStageEngine> | null
+    Options?: Record<string, Record<string, Record<string, unknown>>> | null
+  }
+  Direct: {
+    SRAConfig?: string | null
+    M7AConfig?: string | null
+    SRAImportedAt?: string | null
+    M7AImportedAt?: string | null
+    SRASource?: string | null
+    M7ASource?: string | null
+  }
   Data: {
     LastProxyDate?: string | null
     ProxyTimes?: number | null
@@ -92,5 +114,7 @@ export type HSRUserConfigData = {
     WeeklyLastCompletionDate?: string | null
     WeeklyCompletedThisWeek?: boolean | null
     WeeklyLastResetWeek?: string | null
+    SRARedeemCodeFingerprint?: string | null
+    M7ARedeemCodeFingerprint?: string | null
   }
 }
