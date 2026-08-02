@@ -117,6 +117,8 @@ Every page or major panel should account for:
 6. Disabled state where relevant.
 7. Success and failure feedback for async operations.
 
+Loading indicators for an otherwise empty panel or dialog step must sit in a container with explicit usable size and centered alignment. Do not place an overlay spinner around zero-height conditional content, which leaves the indicator anchored at the container origin.
+
 For WebSocket, scheduler, download, backend startup, and other process flows, distinguish connecting, connected, disconnected, reconnecting, timeout, processing, success, and failure when those states exist.
 
 ## Issue 128 UX Constraints
