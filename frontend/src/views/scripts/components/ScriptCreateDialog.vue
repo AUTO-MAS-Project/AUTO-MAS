@@ -400,17 +400,17 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 <style scoped>
 :global(.script-create-dialog) {
-  top: 48px;
+  top: 64px;
   padding-bottom: 16px;
 }
 
 :global(.script-create-dialog .ant-modal-content) {
-  max-height: calc(100vh - 64px);
+  max-height: calc(100vh - 128px);
   overflow: hidden;
 }
 
 .create-layout {
-  height: min(500px, calc(100vh - 176px));
+  height: min(500px, calc(100vh - 192px));
   min-height: 0;
   margin: -8px -24px 0;
   overflow: hidden;
@@ -524,20 +524,15 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 .type-grid {
   display: grid;
   width: 100%;
-  max-height: 344px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  overflow-y: auto;
 }
 
 .type-sections {
   display: flex;
   width: 100%;
-  max-height: 360px;
   flex-direction: column;
   gap: 18px;
-  padding-right: 4px;
-  overflow-y: auto;
 }
 
 .type-section-heading {
@@ -578,9 +573,7 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 .entity-list,
 .template-list {
-  max-height: 344px;
-  padding-right: 4px;
-  overflow-y: auto;
+  width: 100%;
 }
 
 .ellipsis {
