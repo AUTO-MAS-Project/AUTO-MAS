@@ -36,6 +36,11 @@ from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
+import inspect
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from functools import wraps
+from collections.abc import AsyncIterator, Callable, Coroutine
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
@@ -129,6 +134,37 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
+def _script_config_write(
+    *,
+    script_id_argument: str | None = None,
+    owner_reentrant: bool = False,
+) -> Callable:
+    """串行化一个公开的脚本或用户配置写操作。"""
+
+    def decorate(method: Callable[..., Coroutine[Any, Any, Any]]) -> Callable:
+        signature = inspect.signature(method)
+
+        @wraps(method)
+        async def wrapped(self: "AppConfig", *args: Any, **kwargs: Any) -> Any:
+            script_id: str | None = None
+            if script_id_argument is not None:
+                bound = signature.bind(self, *args, **kwargs)
+                raw_script_id = bound.arguments[script_id_argument]
+                script_id = (
+                    None if raw_script_id is None else str(raw_script_id)
+                )
+
+            async with self._script_config_write_scope(
+                script_id,
+                owner_reentrant=owner_reentrant,
+            ):
+                return await method(self, *args, **kwargs)
+
+        return wrapped
+
+    return decorate
+
+
 class AppConfig(GlobalConfig):
     VERSION = "v5.4.0-beta.1"
 
@@ -171,8 +207,165 @@ class AppConfig(GlobalConfig):
         self.temp_task: List[asyncio.Task] = []
         self._stage_refreshing = False
         self._game_sign_result_date = ""
+        self._script_config_write_lock = asyncio.Lock()
+        self._script_config_transaction: ContextVar[
+            tuple[str, str, asyncio.Task[Any]] | None
+        ] = ContextVar(
+            f"script_config_transaction_{id(self)}",
+            default=None,
+        )
+        self._script_config_write_task: ContextVar[
+            asyncio.Task[Any] | None
+        ] = ContextVar(
+            f"script_config_write_task_{id(self)}",
+            default=None,
+        )
 
         self._inject_truststore()
+
+    @asynccontextmanager
+    async def script_config_transaction(
+        self,
+        script_id: str,
+        *,
+        owner: str,
+    ) -> AsyncIterator[str]:
+        """为单个脚本持有 owner-aware 配置维护事务。
+
+        事务会先等待已在途的公开配置写完成，再阻止新的公开配置写，直到上下文
+        退出。持有事务的任务可以重入同一脚本的 ``update_script`` 和
+        ``update_user``，不会产生自锁。
+
+        Args:
+            script_id: 要维护的脚本及其全部用户配置。
+            owner: 用于诊断和重入校验的非空操作标识。
+
+        Yields:
+            规范化后的 owner 标识。
+
+        Raises:
+            KeyError: 取得写锁后目标脚本已不存在。
+            RuntimeError: 嵌套事务切换了 owner、脚本或 asyncio task，或尝试
+                从普通写作用域升级为维护事务。
+            ValueError: owner 为空。
+        """
+
+        normalized_script_id = str(uuid.UUID(script_id))
+        normalized_owner = str(owner).strip()
+        if not normalized_owner:
+            raise ValueError("脚本配置维护事务 owner 不能为空")
+
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("脚本配置维护事务必须在 asyncio task 中运行")
+
+        active = self._script_config_transaction.get()
+        if active is not None:
+            active_script_id, active_owner, active_task = active
+            if (
+                active_script_id == normalized_script_id
+                and active_owner == normalized_owner
+                and active_task is task
+            ):
+                yield normalized_owner
+                return
+            raise RuntimeError(
+                "脚本配置维护事务不可跨 owner、script_id 或 asyncio task 重入: "
+                f"active_owner={active_owner}, active_script_id={active_script_id}"
+            )
+
+        active_write_task = self._script_config_write_task.get()
+        if active_write_task is not None:
+            raise RuntimeError("普通脚本配置写作用域中不能启动配置维护事务")
+
+        async with self._script_config_write_lock:
+            script_uid = uuid.UUID(normalized_script_id)
+            if script_uid not in self.ScriptConfig:
+                raise KeyError(f"脚本 {normalized_script_id} 不存在")
+            script_config = self.ScriptConfig[script_uid]
+            script_config.begin_maintenance(task)
+
+            token = self._script_config_transaction.set(
+                (normalized_script_id, normalized_owner, task)
+            )
+            try:
+                yield normalized_owner
+            finally:
+                try:
+                    script_config.end_maintenance(task)
+                finally:
+                    self._script_config_transaction.reset(token)
+
+    @asynccontextmanager
+    async def _script_config_write_scope(
+        self,
+        script_id: str | None,
+        *,
+        owner_reentrant: bool,
+    ) -> AsyncIterator[None]:
+        """门控一个普通脚本或用户配置写操作。"""
+
+        normalized_script_id = (
+            str(uuid.UUID(script_id)) if script_id is not None else None
+        )
+        active = self._script_config_transaction.get()
+        if active is not None:
+            active_script_id, active_owner, active_task = active
+            if (
+                owner_reentrant
+                and normalized_script_id == active_script_id
+                and asyncio.current_task() is active_task
+            ):
+                yield
+                return
+            raise RuntimeError(
+                "脚本配置维护事务期间不允许执行当前写操作: "
+                f"owner={active_owner}, script_id={active_script_id}"
+            )
+
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("脚本配置写操作必须在 asyncio task 中运行")
+        active_write_task = self._script_config_write_task.get()
+        if active_write_task is task:
+            yield
+            return
+        if active_write_task is not None:
+            raise RuntimeError("普通脚本配置写作用域不可跨 asyncio task 继承")
+
+        async with self._script_config_write_lock:
+            token = self._script_config_write_task.set(task)
+            try:
+                yield
+            finally:
+                self._script_config_write_task.reset(token)
+
+    @asynccontextmanager
+    async def script_config_write_scope(
+        self,
+        script_id: str | None,
+    ) -> AsyncIterator[None]:
+        """串行执行插件存储写入，并允许同一 task 内重入。"""
+
+        async with self._script_config_write_scope(
+            script_id,
+            owner_reentrant=True,
+        ):
+            yield
+
+    @_script_config_write(script_id_argument="script_id")
+    async def lock_script_config(self, script_id: str) -> ConfigBase:
+        """在宿主写门内锁定一个运行中的脚本配置。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        await script_config.lock()
+        return script_config
+
+    @_script_config_write(script_id_argument="script_id")
+    async def unlock_script_config(self, script_id: str) -> None:
+        """在宿主写门内解锁一个运行结束的脚本配置。"""
+
+        await self.ScriptConfig[uuid.UUID(script_id)].unlock()
 
     @staticmethod
     def _inject_truststore() -> None:
@@ -1053,6 +1246,7 @@ class AppConfig(GlobalConfig):
             shutil.rmtree(default_config_dir, ignore_errors=True)
         logger.success("旧 Okww 脚本已迁移到插件脚本容器")
 
+    @_script_config_write()
     async def add_script(
         self,
         script: str,
@@ -1149,6 +1343,10 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    @_script_config_write(
+        script_id_argument="script_id",
+        owner_reentrant=True,
+    )
     async def update_script(
         self, script_id: str, data: Dict[str, Any]
     ) -> None:
@@ -1217,6 +1415,7 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 await self.ScriptConfig[uid].set(group, name, value)
 
+    @_script_config_write(script_id_argument="script_id")
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
 
@@ -1237,6 +1436,7 @@ class AppConfig(GlobalConfig):
         if (Path.cwd() / f"data/{uid}").exists():
             shutil.rmtree(Path.cwd() / f"data/{uid}")
 
+    @_script_config_write()
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
 
@@ -1244,6 +1444,7 @@ class AppConfig(GlobalConfig):
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
+    @_script_config_write(script_id_argument="script_id")
     async def import_script_from_file(self, script_id: str, jsonFile: str) -> None:
         """从文件加载脚本配置"""
 
@@ -1290,6 +1491,7 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"{script_id} 配置导出成功")
 
+    @_script_config_write(script_id_argument="script_id")
     async def import_script_from_web(self, script_id: str, url: str):
         """从「AUTO-MAS 配置分享中心」导入配置"""
 
@@ -1424,6 +1626,10 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    @_script_config_write(
+        script_id_argument="script_id",
+        owner_reentrant=True,
+    )
     async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加用户配置。"""
 
@@ -1457,6 +1663,10 @@ class AppConfig(GlobalConfig):
 
         return await script_config.UserData.add(provider.user_config_class)
 
+    @_script_config_write(
+        script_id_argument="script_id",
+        owner_reentrant=True,
+    )
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Any]
     ) -> None:
@@ -1521,6 +1731,7 @@ class AppConfig(GlobalConfig):
                     .set(group, name, value)
                 )
 
+    @_script_config_write(script_id_argument="script_id")
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
     ) -> None:
@@ -1544,6 +1755,10 @@ class AppConfig(GlobalConfig):
         target_config_dir.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
 
+    @_script_config_write(
+        script_id_argument="script_id",
+        owner_reentrant=True,
+    )
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
 
@@ -1556,6 +1771,7 @@ class AppConfig(GlobalConfig):
         if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
             shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
+    @_script_config_write(script_id_argument="script_id")
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
 
@@ -2018,6 +2234,7 @@ class AppConfig(GlobalConfig):
 
         return records
 
+    @_script_config_write(script_id_argument="script_id")
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
     ) -> None:
@@ -2168,6 +2385,7 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 await self.PlanConfig[plan_uid].set(group, name, value)
 
+    @_script_config_write()
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
 
@@ -2231,6 +2449,7 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 await self.EmulatorConfig[emulator_uid].set(group, name, value)
 
+    @_script_config_write()
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
 
@@ -2754,6 +2973,7 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    @_script_config_write(script_id_argument="script_id")
     async def add_webhook(
         self, script_id: Optional[str], user_id: Optional[str]
     ) -> tuple[uuid.UUID, Webhook]:
@@ -2778,6 +2998,7 @@ class AppConfig(GlobalConfig):
             )
             return uid, config
 
+    @_script_config_write(script_id_argument="script_id")
     async def update_webhook(
         self,
         script_id: Optional[str],
@@ -2813,6 +3034,7 @@ class AppConfig(GlobalConfig):
                         .set(group, name, value)
                     )
 
+    @_script_config_write(script_id_argument="script_id")
     async def del_webhook(
         self, script_id: Optional[str], user_id: Optional[str], webhook_id: str
     ) -> None:
@@ -2837,6 +3059,7 @@ class AppConfig(GlobalConfig):
                 .Notify_CustomWebhooks.remove(webhook_uid)
             )
 
+    @_script_config_write(script_id_argument="script_id")
     async def reorder_webhook(
         self, script_id: Optional[str], user_id: Optional[str], index_list: list[str]
     ) -> None:

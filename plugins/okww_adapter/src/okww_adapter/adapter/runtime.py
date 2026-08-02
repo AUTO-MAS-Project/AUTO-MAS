@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.models.schema import WSTaskNoticeData
@@ -77,8 +75,9 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         return "Pass"
 
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
+        await runtime.storage.lock()
+        runtime.extra["_storage_lock_acquired"] = True
         storage_script_config = runtime.get_storage_script_config()
-        await storage_script_config.lock()
         runtime.storage_script_config = storage_script_config
         runtime.script_config = await runtime.build_script_model()
         user_pairs = await runtime.build_user_models()
@@ -127,8 +126,10 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
                 shutil.copytree(script_config_path, temp_path, dirs_exist_ok=True)
 
     async def finalize(self, runtime: ScriptAdapterRuntime) -> None:
-        await self._restore_script_config_from_temp(runtime)
-        await self._write_back_user_config(runtime)
+        try:
+            await self._restore_script_config_from_temp(runtime)
+        finally:
+            await self._write_back_user_config(runtime)
         if any(user.status == "异常" for user in runtime.script_info.user_list):
             runtime.script_info.status = "异常"
             return
@@ -137,9 +138,11 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
     async def on_crash(self, runtime: ScriptAdapterRuntime, error: Exception) -> None:
         runtime.script_info.status = "异常"
         logger.exception(f"OK-WW 插件任务出现异常: {error}")
-        await self._restore_script_config_from_temp(runtime)
-        with suppress(Exception):
-            await self._write_back_user_config(runtime)
+        try:
+            await self._restore_script_config_from_temp(runtime)
+        finally:
+            with suppress(Exception):
+                await self._write_back_user_config(runtime)
         await Publisher.send(
             id=runtime.task_info.task_id,
             type=protocol.TASK_NOTICE,
@@ -161,14 +164,16 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         return _CheckedAutoProxyTask(inner)
 
     async def _write_back_user_config(self, runtime: ScriptAdapterRuntime) -> None:
-        script_uid = uuid.UUID(runtime.script_info.script_id)
-        script_cfg = Config.ScriptConfig[script_uid]
-        if script_cfg.is_locked:
-            await script_cfg.unlock()
-        user_config = runtime.extra.get("user_config")
-        if not isinstance(user_config, MultipleConfig):
+        if not runtime.extra.pop("_storage_lock_acquired", False):
             return
-        await script_cfg.UserData.load(await user_config.toDict(if_decrypt=False))
+
+        async with runtime.storage.write_transaction():
+            script_cfg = runtime.get_storage_script_config()
+            await runtime.storage.unlock()
+            user_config = runtime.extra.get("user_config")
+            if not isinstance(user_config, MultipleConfig):
+                return
+            await script_cfg.UserData.load(await user_config.toDict(if_decrypt=False))
 
     async def _restore_script_config_from_temp(self, runtime: ScriptAdapterRuntime) -> None:
         temp_path = runtime.extra.get("temp_path")

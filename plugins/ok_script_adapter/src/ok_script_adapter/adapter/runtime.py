@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from contextlib import suppress
 
 from app.core import Config
@@ -67,8 +66,9 @@ class OkScriptAdapterHooks(ScriptAdapterHooks):
         return "Pass"
 
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
+        await runtime.storage.lock()
+        runtime.extra["_storage_lock_acquired"] = True
         storage_config = runtime.get_storage_script_config()
-        await storage_config.lock()
         runtime.storage_script_config = storage_config
         runtime.script_config = await runtime.build_script_model()
         if not isinstance(runtime.script_config, ConfigBase):
@@ -139,11 +139,13 @@ class OkScriptAdapterHooks(ScriptAdapterHooks):
         )
 
     async def _write_back_user_config(self, runtime: ScriptAdapterRuntime) -> None:
-        script_uid = uuid.UUID(runtime.script_info.script_id)
-        storage_config = Config.ScriptConfig[script_uid]
-        if storage_config.is_locked:
-            await storage_config.unlock()
-        user_config = runtime.extra.get("user_config")
-        if isinstance(user_config, MultipleConfig):
-            await storage_config.UserData.load(await user_config.toDict(if_decrypt=False))
-            await Config.ScriptConfig.save()
+        if not runtime.extra.pop("_storage_lock_acquired", False):
+            return
+
+        async with runtime.storage.write_transaction():
+            storage_config = runtime.get_storage_script_config()
+            await runtime.storage.unlock()
+            user_config = runtime.extra.get("user_config")
+            if isinstance(user_config, MultipleConfig):
+                await storage_config.UserData.load(await user_config.toDict(if_decrypt=False))
+                await Config.ScriptConfig.save()

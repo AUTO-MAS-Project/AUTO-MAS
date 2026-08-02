@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import uuid
-from typing import TYPE_CHECKING, Any, Literal, Mapping
+from contextlib import asynccontextmanager
+from functools import wraps
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal, Mapping
 
 from pydantic import BaseModel
 
@@ -22,23 +24,65 @@ if TYPE_CHECKING:
 ConfigKind = Literal["script", "user"]
 
 
+def _serialized_write(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Run one logical store write under the host configuration gate."""
+
+    @wraps(method)
+    async def wrapped(
+        self: "ScriptConfigStore",
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        async with self.write_transaction():
+            return await method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class ScriptConfigStore:
     """Separate script schema models from host persistence containers."""
 
     def __init__(
         self,
         *,
+        script_id: str | None = None,
         provider: ScriptTypeProvider,
         storage_script_config: ConfigBase,
     ) -> None:
+        self.script_id = (
+            str(uuid.UUID(script_id)) if script_id is not None else None
+        )
         self.provider = provider
         self.storage_script_config = storage_script_config
 
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncIterator[None]:
+        """Serialize a complete storage write batch with host maintenance."""
+
+        from app.core.config import Config
+
+        async with Config.script_config_write_scope(self.script_id):
+            if self.script_id is not None:
+                self.storage_script_config = Config.ScriptConfig[
+                    uuid.UUID(self.script_id)
+                ]
+            yield
+
     async def lock(self) -> None:
-        await self.storage_script_config.lock()
+        if self.script_id is None:
+            raise RuntimeError("脚本配置存储缺少 script_id，无法进入运行锁")
+
+        from app.core.config import Config
+
+        self.storage_script_config = await Config.lock_script_config(self.script_id)
 
     async def unlock(self) -> None:
-        await self.storage_script_config.unlock()
+        if self.script_id is None:
+            raise RuntimeError("脚本配置存储缺少 script_id，无法退出运行锁")
+
+        from app.core.config import Config
+
+        await Config.unlock_script_config(self.script_id)
 
     async def read_script_data(self) -> dict[str, Any]:
         raw_payload = await self._read_script_storage_payload(if_decrypt=True)
@@ -91,9 +135,11 @@ class ScriptConfigStore:
             collection.data[uid] = user_model
         return collection
 
+    @_serialized_write
     async def save_script_model(self, model: Any) -> None:
         await self.write_script_data(await self._model_to_form_data(model))
 
+    @_serialized_write
     async def save_user_model(
         self,
         user_uid: uuid.UUID | str,
@@ -101,6 +147,7 @@ class ScriptConfigStore:
     ) -> None:
         await self.write_user_data(user_uid, await self._model_to_form_data(model))
 
+    @_serialized_write
     async def save_user_models(
         self,
         models: MultipleConfig[Any] | Mapping[uuid.UUID, Any],
@@ -116,6 +163,7 @@ class ScriptConfigStore:
         for user_uid, model in models.items():
             await self.save_user_model(user_uid, model)
 
+    @_serialized_write
     async def write_script_data(self, form_payload: Mapping[str, Any]) -> None:
         payload = copy.deepcopy(dict(form_payload))
         if isinstance(self.storage_script_config, PluginScriptConfig):
@@ -146,6 +194,7 @@ class ScriptConfigStore:
 
         await self.storage_script_config.load(payload)
 
+    @_serialized_write
     async def write_user_data(
         self,
         user_uid: uuid.UUID | str,
@@ -180,6 +229,7 @@ class ScriptConfigStore:
 
         await storage_user.load(payload)
 
+    @_serialized_write
     async def update_script_data(self, update: Mapping[str, Any]) -> None:
         if not isinstance(self.storage_script_config, PluginScriptConfig):
             for group, items in update.items():
@@ -196,6 +246,7 @@ class ScriptConfigStore:
         merged = self._deep_merge(current, dict(update))
         await self.write_script_data(self._strip_virtual_fields(merged, "script"))
 
+    @_serialized_write
     async def update_user_data(
         self,
         user_uid: uuid.UUID | str,

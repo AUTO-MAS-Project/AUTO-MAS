@@ -98,7 +98,7 @@ class MaaEndManager(TaskExecuteBase):
     async def prepare(self):
 
         # 锁定脚本配置并加载用户配置
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
+        await Config.lock_script_config(self.script_info.script_id)
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = MultipleConfig([MaaEndUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
@@ -175,20 +175,26 @@ class MaaEndManager(TaskExecuteBase):
             return
 
         logger.info("MaaEnd 主任务已结束, 开始执行后续操作")
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
+
+        write_back_user_config = False
+        try:
+            if self.task_info.mode in ["AutoProxy", "ManualReview"]:
+                if self.emulator_manager is not None:
+                    await self.emulator_manager.close(
+                        self.script_config.get("Game", "EmulatorIndex")
+                    )
+                write_back_user_config = True
+        finally:
+            async with Config.script_config_write_scope(self.script_info.script_id):
+                await Config.unlock_script_config(self.script_info.script_id)
+                if write_back_user_config:
+                    await Config.ScriptConfig[
+                        uuid.UUID(self.script_info.script_id)
+                    ].UserData.load(await self.user_config.toDict())
+                    await Config.ScriptConfig.save()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy", "ManualReview"]:
-
-            if self.emulator_manager is not None:
-                await self.emulator_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex")
-                )
-            await Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].UserData.load(await self.user_config.toDict())
-            await Config.ScriptConfig.save()
-
             error_user = [
                 u.name for u in self.script_info.user_list if u.status == "异常"
             ]

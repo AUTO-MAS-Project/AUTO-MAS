@@ -50,6 +50,13 @@ from app.utils.constants import (
 logger = get_logger("配置基类")
 
 
+def _current_task() -> asyncio.Task[Any] | None:
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
+
+
 class ValidatorBase(ABC):
     """基础配置验证器"""
 
@@ -724,6 +731,7 @@ class ConfigItem:
             else None
         )
         self.is_locked = False
+        self._maintenance_owner: asyncio.Task[Any] | None = None
         self._slots: list[Callable[[Any], Any]] = []
 
         if not self.validator.validate(self.value):
@@ -753,7 +761,7 @@ class ConfigItem:
         ) == value:
             return False
 
-        if self.is_locked:
+        if self._write_locked():
             raise ValueError(f"配置项 '{self.group}.{self.name}' 已锁定, 无法修改")
 
         old_value = self.value
@@ -852,6 +860,10 @@ class ConfigItem:
         """
         锁定配置项, 锁定后无法修改配置项值
         """
+        if self._maintenance_owner is not None:
+            raise ValueError(
+                f"配置项 '{self.group}.{self.name}' 正在维护, 无法锁定"
+            )
         self.is_locked = True
 
     def unlock(self):
@@ -859,6 +871,32 @@ class ConfigItem:
         解锁配置项, 解锁后可以修改配置项值
         """
         self.is_locked = False
+
+    def _write_locked(self) -> bool:
+        owner = self._maintenance_owner
+        return self.is_locked or (
+            owner is not None and owner is not _current_task()
+        )
+
+    def _assert_maintenance_available(self, owner: asyncio.Task[Any]) -> None:
+        if self.is_locked:
+            raise ValueError(
+                f"配置项 '{self.group}.{self.name}' 已锁定, 无法维护"
+            )
+        if self._maintenance_owner not in (None, owner):
+            raise ValueError(
+                f"配置项 '{self.group}.{self.name}' 已由其他任务维护"
+            )
+
+    def _begin_maintenance(self, owner: asyncio.Task[Any]) -> None:
+        self._maintenance_owner = owner
+
+    def _end_maintenance(self, owner: asyncio.Task[Any]) -> None:
+        if self._maintenance_owner is not owner:
+            raise RuntimeError(
+                f"配置项 '{self.group}.{self.name}' 的维护 owner 不匹配"
+            )
+        self._maintenance_owner = None
 
 
 class ConfigBase(ABC):
@@ -877,6 +915,7 @@ class ConfigBase(ABC):
     def __init__(self):
         self.file: Path | None = None
         self.is_locked = False
+        self._maintenance_owner: asyncio.Task[Any] | None = None
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
         # 配置项索引
@@ -906,7 +945,7 @@ class ConfigBase(ABC):
         if path.suffix != ".json":
             raise ValueError("配置文件必须是扩展名为 '.json' 的 JSON 文件")
 
-        if self.is_locked:
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         self.file = path
@@ -976,7 +1015,9 @@ class ConfigBase(ABC):
             是否因数据规范化/纠错而产生了写入（dirty）
         """
 
-        if self.is_locked:
+        if self._maintenance_owner is not None:
+            raise ValueError("配置维护事务期间不支持整体加载")
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         source_data = deepcopy(data) if isinstance(data, dict) else {}
@@ -1057,7 +1098,7 @@ class ConfigBase(ABC):
         if not self._config_item_index.get(group, {}).get(name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
-        if self.is_locked:
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         is_changed = self._config_item_index[group][name].setValue(value)
@@ -1083,7 +1124,7 @@ class ConfigBase(ABC):
         if not self._config_item_index.get(group, {}).get(name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
-        if self.is_locked:
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         self._config_item_index[group][name].bind(slot)
@@ -1105,7 +1146,7 @@ class ConfigBase(ABC):
         if not self._config_item_index.get(group, {}).get(name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
-        if self.is_locked:
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         self._config_item_index[group][name].unbind(slot)
@@ -1128,6 +1169,8 @@ class ConfigBase(ABC):
         """
         锁定配置项, 锁定后无法修改配置项值
         """
+        if self._maintenance_owner is not None:
+            raise ValueError("配置正在维护, 无法锁定")
 
         self.is_locked = True
 
@@ -1149,6 +1192,46 @@ class ConfigBase(ABC):
                 item.unlock()
         for config in self._multiple_config_index.values():
             await config.unlock()
+
+    def _write_locked(self) -> bool:
+        owner = self._maintenance_owner
+        return self.is_locked or (
+            owner is not None and owner is not _current_task()
+        )
+
+    def _assert_maintenance_available(self, owner: asyncio.Task[Any]) -> None:
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法进入维护事务")
+        if self._maintenance_owner not in (None, owner):
+            raise ValueError("配置已由其他任务维护")
+        for group in self._config_item_index.values():
+            for item in group.values():
+                item._assert_maintenance_available(owner)
+        for config in self._multiple_config_index.values():
+            config._assert_maintenance_available(owner)
+
+    def begin_maintenance(self, owner: asyncio.Task[Any]) -> None:
+        """允许 owner 修改配置，并拒绝其他任务及运行任务并发写入。"""
+
+        self._assert_maintenance_available(owner)
+        self._maintenance_owner = owner
+        for group in self._config_item_index.values():
+            for item in group.values():
+                item._begin_maintenance(owner)
+        for config in self._multiple_config_index.values():
+            config._begin_maintenance(owner)
+
+    def end_maintenance(self, owner: asyncio.Task[Any]) -> None:
+        """结束由 owner 持有的配置维护状态。"""
+
+        if self._maintenance_owner is not owner:
+            raise RuntimeError("配置维护 owner 不匹配")
+        for group in self._config_item_index.values():
+            for item in group.values():
+                item._end_maintenance(owner)
+        for config in self._multiple_config_index.values():
+            config._end_maintenance(owner)
+        self._maintenance_owner = None
 
 
 T = TypeVar("T", bound="ConfigBase")
@@ -1184,6 +1267,7 @@ class MultipleConfig(Generic[T]):
         self.order: list[uuid.UUID] = []
         self.data: dict[uuid.UUID, T] = {}
         self.is_locked = False
+        self._maintenance_owner: asyncio.Task[Any] | None = None
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
     def __getitem__(self, key: uuid.UUID) -> T:
@@ -1221,7 +1305,7 @@ class MultipleConfig(Generic[T]):
         if path.suffix != ".json":
             raise ValueError("配置文件必须是带有 '.json' 扩展名的 JSON 文件。")
 
-        if self.is_locked:
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         self.file = path
@@ -1292,7 +1376,9 @@ class MultipleConfig(Generic[T]):
             是否因数据规范化/纠错而产生了写入（dirty）
         """
 
-        if self.is_locked:
+        if self._maintenance_owner is not None:
+            raise ValueError("配置维护事务期间不支持重建配置集合")
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         source_data = deepcopy(data) if isinstance(data, dict) else {}
@@ -1424,7 +1510,9 @@ class MultipleConfig(Generic[T]):
         if config_type not in self.sub_config_type.values():
             raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
 
-        if self.is_locked:
+        if self._maintenance_owner is not None:
+            raise ValueError("配置维护事务期间不支持新增配置项")
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         uid = uuid.uuid4()
@@ -1451,13 +1539,15 @@ class MultipleConfig(Generic[T]):
             要移除的配置项的唯一标识符
         """
 
-        if self.is_locked:
+        if self._maintenance_owner is not None:
+            raise ValueError("配置维护事务期间不支持移除配置项")
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在")
 
-        if self.data[uid].is_locked:
+        if self.data[uid]._write_locked():
             raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
 
         self.data.pop(uid)
@@ -1478,7 +1568,9 @@ class MultipleConfig(Generic[T]):
         if set(order) != set(self.data.keys()):
             raise ValueError("顺序与当前配置项不匹配")
 
-        if self.is_locked:
+        if self._maintenance_owner is not None:
+            raise ValueError("配置维护事务期间不支持重排配置项")
+        if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         self.order = order
@@ -1489,6 +1581,8 @@ class MultipleConfig(Generic[T]):
         """
         锁定配置项, 锁定后无法修改配置项值
         """
+        if self._maintenance_owner is not None:
+            raise ValueError("配置正在维护, 无法锁定")
 
         self.is_locked = True
 
@@ -1504,6 +1598,32 @@ class MultipleConfig(Generic[T]):
 
         for item in self.values():
             await item.unlock()
+
+    def _write_locked(self) -> bool:
+        owner = self._maintenance_owner
+        return self.is_locked or (
+            owner is not None and owner is not _current_task()
+        )
+
+    def _assert_maintenance_available(self, owner: asyncio.Task[Any]) -> None:
+        if self.is_locked:
+            raise ValueError("配置集合已锁定, 无法进入维护事务")
+        if self._maintenance_owner not in (None, owner):
+            raise ValueError("配置集合已由其他任务维护")
+        for item in self.values():
+            item._assert_maintenance_available(owner)
+
+    def _begin_maintenance(self, owner: asyncio.Task[Any]) -> None:
+        self._maintenance_owner = owner
+        for item in self.values():
+            item.begin_maintenance(owner)
+
+    def _end_maintenance(self, owner: asyncio.Task[Any]) -> None:
+        if self._maintenance_owner is not owner:
+            raise RuntimeError("配置集合维护 owner 不匹配")
+        for item in self.values():
+            item.end_maintenance(owner)
+        self._maintenance_owner = None
 
     def keys(self):
         """返回配置项的所有唯一标识符"""
