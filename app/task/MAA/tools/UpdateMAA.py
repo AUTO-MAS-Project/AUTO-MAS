@@ -32,8 +32,25 @@ logger = get_logger("MAA 更新工具")
 async def update_maa(maa_path: Path):
     """更新 MAA 主程序"""
 
-    maa_set = json.loads((maa_path / "config/gui.json").read_text(encoding="utf-8"))
-    maa_update_package = maa_set.get("Global", {}).get("VersionUpdate.package", "")
+    # NEW: Update.UpdatePackage 优先生效
+    try:
+        new_set = json.loads(
+            (maa_path / "config/gui.new.json").read_text(encoding="utf-8")
+        )
+        maa_update_package = new_set.get("Update", {}).get("UpdatePackage", "")
+    except (FileNotFoundError, json.JSONDecodeError):
+        maa_update_package = ""
+    # OLD: Global.VersionUpdate.package
+    if not maa_update_package:
+        try:
+            old_set = json.loads(
+                (maa_path / "config/gui.json").read_text(encoding="utf-8")
+            )
+            maa_update_package = old_set.get("Global", {}).get(
+                "VersionUpdate.package", ""
+            )
+        except (FileNotFoundError, json.JSONDecodeError):
+            maa_update_package = ""
 
     if not maa_update_package or not (maa_path / maa_update_package).exists():
         return
