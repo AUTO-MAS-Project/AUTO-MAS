@@ -185,7 +185,7 @@ class EmulatorConfig(ConfigBase):
         )
         ## 关闭 MuMu 时强力清理残留进程
         self.Info_ForceKillOnClose = ConfigItem(
-            "Info", "ForceKillOnClose", True, BoolValidator()
+            "Info", "ForceKillOnClose", False, BoolValidator()
         )
 
         super().__init__()

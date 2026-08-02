@@ -41,32 +41,78 @@ async def update_maa(maa_path: Path):
     await System.kill_process(maa_path / "MAA.exe")
 
     maa_set = json.loads((maa_path / "config/gui.json").read_text(encoding="utf-8"))
+    maa_new_set = json.loads(
+        (maa_path / "config/gui.new.json").read_text(encoding="utf-8")
+    )
+
+    # 多配置使用默认配置
     if maa_set["Current"] != "Default":
         maa_set["Configurations"]["Default"] = maa_set["Configurations"][
             maa_set["Current"]
         ]
+        maa_new_set["Configurations"]["Default"] = maa_new_set["Configurations"][
+            maa_set["Current"]
+        ]
         maa_set["Current"] = "Default"
+
+    # 各配置部分的引用
+    global_set = maa_set["Global"]
+    default_set = maa_set["Configurations"]["Default"]
+
+    # 关闭所有定时
     for i in range(1, 9):
-        maa_set["Global"][f"Timer.Timer{i}"] = "False"
+        global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
+    # NEW: Timers.List[*].IsEnabled = false
+    if "Timers" not in maa_new_set:
+        maa_new_set["Timers"] = {}
+    if "List" not in maa_new_set["Timers"]:
+        maa_new_set["Timers"]["List"] = []
+    for timer in maa_new_set["Timers"].get("List", []):
+        if isinstance(timer, dict):
+            timer["IsEnabled"] = False
 
     # 不直接运行任务
-    maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "0"
-    maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "False"
-    maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+    default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
+    # NEW: PostActions [Flags] 枚举 None=0
+    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
+        "Gui", {}
+    )["PostActions"] = 0
+    default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
+    default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
+    # NEW:
+    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
+        "Gui", {}
+    ).setdefault("StartUpSettings", {})["RunDirectly"] = False
+    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
+        "Gui", {}
+    ).setdefault("StartUpSettings", {})["StartEmulator"] = False
 
     # 静默模式相关配置
-    maa_set["Global"]["GUI.UseTray"] = "True"
-    maa_set["Global"]["GUI.MinimizeToTray"] = "True"
-    maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+    global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
+    global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
+    global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
+    # NEW:
+    maa_new_set.setdefault("Gui", {})["UseTray"] = True
+    maa_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
+    maa_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
 
     # 更新配置
-    maa_set["Global"]["VersionUpdate.package"] = maa_update_package
-    maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
-    maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-    maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "True"
+    global_set["VersionUpdate.package"] = maa_update_package  # OLD: 即将移除
+    global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
+    global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
+    global_set["VersionUpdate.AutoInstallUpdatePackage"] = "True"  # OLD: 即将移除
+    # NEW:
+    maa_new_set.setdefault("Update", {})["UpdatePackage"] = maa_update_package
+    maa_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
+    maa_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
+    maa_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = True
 
-    (maa_path / "config/gui.json").write_text(
-        json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
+    (maa_path / "config/gui.json").write_text(  # OLD: 即将移除
+        json.dumps(maa_set, ensure_ascii=False, indent=4),
+        encoding="utf-8",  # OLD: 即将移除
+    )  # OLD: 即将移除
+    (maa_path / "config/gui.new.json").write_text(
+        json.dumps(maa_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
     )
 
     try:
