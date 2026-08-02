@@ -215,13 +215,36 @@ class MumuManager(DeviceBase):
             )
         except Exception as e:
             logger.warning(f"屏蔽 MuMu 应用商店悬浮广告失败: {e}")
+        else:
+            if result.returncode == 0:
+                logger.success("已屏蔽 MuMu 应用商店悬浮广告")
+            else:
+                logger.warning(
+                    f"屏蔽 MuMu 应用商店悬浮广告失败: {result.stdout.strip()}"
+                )
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "adb",
+                "-v",
+                idx,
+                "shell",
+                "am",
+                "force-stop",
+                MUMU_STORE_PACKAGE,
+                timeout=10,
+                if_merge_std=True,
+            )
+        except Exception as e:
+            logger.warning(f"停止 MuMu 应用商店广告进程失败: {e}")
             return
 
         if result.returncode == 0:
-            logger.success("已屏蔽 MuMu 应用商店悬浮广告")
+            logger.success("已停止 MuMu 应用商店广告进程")
         else:
             logger.warning(
-                f"屏蔽 MuMu 应用商店悬浮广告失败: {result.stdout.strip()}"
+                f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}"
             )
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
