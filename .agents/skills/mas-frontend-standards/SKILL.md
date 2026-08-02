@@ -32,6 +32,7 @@ Before editing frontend code:
 | Pure utility | `src/utils` | Copied inside components |
 | Domain type | `src/types` or generated `src/api/models` | Repeated local component types |
 | Global style token | `src/style.css` or future `src/styles` | Repeated page-local variables |
+| Global browser UI style such as scrollbars | `src/styles`, imported once by the renderer entry | Repeated component-level browser pseudo-elements |
 | Electron capability | `electron` and preload types | Direct renderer Node access |
 
 Use the narrowest module boundary first. Promote to shared directories only after real cross-module reuse.
@@ -79,6 +80,8 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 7. Do not use `console.log` in business code; use `window.electronAPI.getLogger('module')`.
 8. Extract magic values such as intervals, timeouts, status codes, and route names into constants when they repeat or carry meaning.
 9. Keep Ant Design Vue default CSS unless a local layout or readability need requires scoped customization.
+10. Keep project-wide browser UI rules such as scrollbar styling in one renderer-global stylesheet, imported once from the application entry and driven by light/dark theme variables.
+11. Derived filters and searches must preserve the source data order. A reduced search result must not be passed to persistence or reorder APIs as if it were the complete collection.
 
 ## Verification Gate
 
