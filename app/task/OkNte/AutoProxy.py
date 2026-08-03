@@ -34,6 +34,7 @@ from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_runnin
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
+from .tools import push_notification
 
 logger = get_logger("OK-NTE 自动代理")
 
@@ -644,6 +645,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.kill_managed_process(kill_game=kill_game)
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
+        user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
@@ -659,6 +661,32 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+            user_logs_list.append(log_path.with_suffix(".json"))
+
+        if user_logs_list:
+            statistics = await Config.merge_statistic_info(user_logs_list)
+            statistics["user_info"] = self.cur_user_item.name
+            statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+            statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            statistics["user_result"] = (
+                "OK-NTE 任务全部完成" if self.run_book else self.cur_user_item.result
+            )
+            success_symbol = "√" if self.run_book else "X"
+
+            try:
+                await push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-NTE 自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                )
+            except Exception as e:
+                logger.exception(f"推送通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送通知时出现异常: {e}"},
+                )
 
         await self._persist_user_run_result()
 
