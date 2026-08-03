@@ -78,6 +78,56 @@ from .script_config_codec import form_to_storage, storage_to_form
 
 logger = get_logger("配置管理")
 
+GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
+
+
+def _load_game_sign_result_snapshot(
+    path: Path, *, result_date: str
+) -> dict[str, Any]:
+    """读取当天的游戏签到结果快照。"""
+
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"读取游戏签到结果快照失败: {e}")
+        return {}
+
+    if not isinstance(payload, dict) or payload.get("date") != result_date:
+        return {}
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        logger.warning("游戏签到结果快照格式无效，已忽略")
+        return {}
+    return result
+
+
+def _save_game_sign_result_snapshot(
+    path: Path | None, result: dict[str, Any], *, result_date: str
+) -> None:
+    """原子保存游戏签到结果快照。"""
+
+    if path is None:
+        return
+
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_text(
+            json.dumps(
+                {"date": result_date, "result": result},
+                ensure_ascii=False,
+                indent=4,
+            ),
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning(f"保存游戏签到结果快照失败: {e}")
+
 
 class AppConfig(GlobalConfig):
     VERSION = "v5.4.0-beta.1"
@@ -120,6 +170,7 @@ class AppConfig(GlobalConfig):
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
         self._stage_refreshing = False
+        self._game_sign_result_date = ""
 
         self._inject_truststore()
 
@@ -195,9 +246,17 @@ class AppConfig(GlobalConfig):
             self.config_path / "GameSignAccounts.json"
         )
 
+        # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
+            self.config_path / GAME_SIGN_RESULT_FILENAME,
+            result_date=today,
+        )
+        self._game_sign_result_date = today
+
         # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
         last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
-        if last_sign_date != datetime.now().strftime("%Y-%m-%d"):
+        if last_sign_date != today:
             await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
         from app.services import System
@@ -2476,7 +2535,48 @@ class AppConfig(GlobalConfig):
 
         logger.debug("获取工具设置")
 
+        today = datetime.now().strftime("%Y-%m-%d")
+        if self._game_sign_result_date != today:
+            self.ToolsConfig._game_sign_result_data = {}
+            self._game_sign_result_date = today
+
         return await self.ToolsConfig.toDict()
+
+    async def update_game_sign_results(
+        self, formatted: dict[str, Any], *, replace: bool = False
+    ) -> None:
+        """合并、持久化并广播游戏签到结果。
+
+        Args:
+            formatted: 已按平台和账号分组的签到结果。
+            replace: 是否按账号 UID 替换已有结果。
+        """
+
+        from app.tools.game_sign import merge_sign_results
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        existing = (
+            self.ToolsConfig._game_sign_result_data
+            if self._game_sign_result_date == today
+            else {}
+        )
+        result = merge_sign_results(existing, formatted, replace=replace)
+        self.ToolsConfig._game_sign_result_data = result
+        self._game_sign_result_date = today
+        _save_game_sign_result_snapshot(
+            self.config_path / GAME_SIGN_RESULT_FILENAME,
+            result,
+            result_date=today,
+        )
+
+        try:
+            await self.send_websocket_message(
+                id="GameSign",
+                type="Update",
+                data={"Result": json.dumps(result, ensure_ascii=False)},
+            )
+        except Exception as e:
+            logger.warning(f"广播游戏签到结果失败: {e}")
 
     async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新工具设置"""
@@ -2525,9 +2625,14 @@ class AppConfig(GlobalConfig):
         )
 
     def _clear_game_sign_account_results(self, account_id: str) -> None:
-        """清除指定游戏签到账号的内存结果。"""
+        """清除指定游戏签到账号的结果。"""
 
+        today = datetime.now().strftime("%Y-%m-%d")
         result = self.ToolsConfig._game_sign_result_data
+        if getattr(self, "_game_sign_result_date", today) != today:
+            result.clear()
+            self._game_sign_result_date = today
+
         for platform in list(result):
             result[platform] = [
                 group
@@ -2536,6 +2641,18 @@ class AppConfig(GlobalConfig):
             ]
             if not result[platform]:
                 del result[platform]
+
+        tools_file = getattr(self.ToolsConfig, "file", None)
+        snapshot_path = (
+            tools_file.with_name(GAME_SIGN_RESULT_FILENAME)
+            if isinstance(tools_file, Path)
+            else None
+        )
+        _save_game_sign_result_snapshot(
+            snapshot_path,
+            result,
+            result_date=today,
+        )
 
     async def update_game_sign_account(
         self, account_id: str, data: Dict[str, Dict[str, Any]]
