@@ -270,7 +270,6 @@ class _MainTimer:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
-            merge_sign_results,
             run_all_sign_in,
         )
 
@@ -289,9 +288,7 @@ class _MainTimer:
 
             # 格式化并合并结果
             formatted = format_sign_results(results)
-            Config.ToolsConfig._game_sign_result_data = merge_sign_results(
-                Config.ToolsConfig._game_sign_result_data, formatted
-            )
+            await Config.update_game_sign_results(formatted)
 
             # 清除计划时间
             await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
@@ -349,7 +346,6 @@ class _MainTimer:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
-            merge_sign_results,
             run_all_sign_in,
         )
 
@@ -359,9 +355,7 @@ class _MainTimer:
                 return
 
             formatted = format_sign_results(results)
-            Config.ToolsConfig._game_sign_result_data = merge_sign_results(
-                Config.ToolsConfig._game_sign_result_data, formatted
-            )
+            await Config.update_game_sign_results(formatted)
 
             # 签到后检查是否所有用户都已完成
             all_signed_after = True
