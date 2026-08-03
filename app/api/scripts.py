@@ -23,6 +23,7 @@
 
 import asyncio
 import uuid
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,75 @@ _MAAFW_IMAGE_SUFFIXES = {
     ".svg",
     ".webp",
 }
+_MAAFW_RUNTIME_POOL_SERVICE = "maafw.runtime_pool.v1"
+_MAAFW_MANAGED_ENVIRONMENT_SERVICE = "maafw.managed.environment.v1"
+
+
+def _maafw_runtime_pool_route() -> tuple[Path, str]:
+    """Return the configured Runtime Pool root and stable identity."""
+
+    from app.plugins.manager import PluginManager
+
+    service = PluginManager.service.get(_MAAFW_RUNTIME_POOL_SERVICE)
+    storage_info = getattr(service, "storage_info", None)
+    if not callable(storage_info):
+        raise RuntimeError(
+            f"插件服务 {_MAAFW_RUNTIME_POOL_SERVICE} 未加载或不支持 storage_info()"
+        )
+    payload = storage_info()
+    if not isinstance(payload, Mapping):
+        raise RuntimeError("MaaFW Runtime Pool storage_info 必须返回对象")
+    raw_root = str(payload.get("root") or "").strip()
+    pool_id = str(payload.get("poolId") or "").strip()
+    if not raw_root or not pool_id:
+        raise RuntimeError("MaaFW Runtime Pool storage_info 缺少 root 或 poolId")
+    root = Path(raw_root)
+    if not root.is_absolute():
+        raise RuntimeError("MaaFW Runtime Pool root 必须是绝对路径")
+    return root.resolve(), pool_id
+
+
+async def _prepare_managed_maafw_environment(
+    script_id: str,
+    requested_path: str,
+    *,
+    send_log: Any,
+    progress: Any,
+) -> dict[str, Any] | None:
+    """Delegate Managed prewarm to its owning plugin service."""
+
+    normalized_script_id = script_id.strip()
+    if not normalized_script_id:
+        return None
+    records = await Config.get_script_records(normalized_script_id)
+    if len(records) != 1:
+        return None
+    record = records[0]
+    script_type = (
+        record.get("type")
+        if isinstance(record, Mapping)
+        else getattr(record, "type", None)
+    )
+    if script_type != "MaaFWManaged":
+        return None
+
+    from app.plugins.manager import PluginManager
+
+    service = PluginManager.service.get(_MAAFW_MANAGED_ENVIRONMENT_SERVICE)
+    prepare = getattr(service, "prepare_script_environment", None)
+    if not callable(prepare):
+        raise RuntimeError(
+            "MaaFWManaged 脚本缺少 maafw.managed.environment.v1 预热服务"
+        )
+    result = await prepare(
+        normalized_script_id,
+        requested_path,
+        send_log=send_log,
+        progress=progress,
+    )
+    if not isinstance(result, Mapping):
+        raise RuntimeError("MaaFW Managed 预热服务必须返回对象")
+    return dict(result)
 
 
 def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
@@ -1033,13 +1103,15 @@ async def update_maafw_project(
                         }
                     )
                     try:
+                        runtime_pool_root, runtime_pool_id = (
+                            _maafw_runtime_pool_route()
+                        )
                         await asyncio.to_thread(
                             MaaFWRunnerService().prepare_project_environment,
                             project_path,
                             refreshed_interface,
-                            runtime_pool_root=Path.cwd()
-                            / "config"
-                            / "maafw_runtime_pool",
+                            runtime_pool_root=runtime_pool_root,
+                            runtime_pool_id=runtime_pool_id,
                             send_log=append_log,
                             progress=publish_environment_progress,
                         )
@@ -1162,7 +1234,45 @@ async def prepare_maafw_agent_env(
     reservation_key: str | None = None
     prepare_terminal_published = False
     prepare_loop = asyncio.get_running_loop()
-    progress_id = request.headers.get("X-MaaFW-Progress-Id", "").strip()[:128]
+    body_script_id = str(payload.scriptId or "").strip()
+    header_progress_id = request.headers.get(
+        "X-MaaFW-Progress-Id", ""
+    ).strip()
+    if len(body_script_id) > 128 or len(header_progress_id) > 128:
+        return MaaFWAgentEnvPrepareOut(
+            code=400,
+            status="error",
+            message="MaaFW scriptId/progressId 长度不能超过 128 个字符",
+            data=MaaFWAgentEnvPrepareData(
+                path=str(Path(payload.path)),
+                agentCount=0,
+                agents=[],
+                logs=logs,
+            ),
+        )
+    if (
+        body_script_id
+        and header_progress_id
+        and body_script_id != header_progress_id
+    ):
+        return MaaFWAgentEnvPrepareOut(
+            code=400,
+            status="error",
+            message=(
+                "请求体 scriptId 与 X-MaaFW-Progress-Id 不一致；"
+                "拒绝准备或向其他脚本发布进度"
+            ),
+            data=MaaFWAgentEnvPrepareData(
+                path=str(Path(payload.path)),
+                agentCount=0,
+                agents=[],
+                logs=logs,
+            ),
+        )
+    # The body is authoritative.  The header remains a compatibility fallback
+    # for older callers that did not yet send MaaFWAgentEnvPrepareIn.scriptId.
+    script_id = body_script_id or header_progress_id
+    progress_id = script_id
 
     def publish_prepare_progress(progress: dict[str, Any]) -> None:
         nonlocal prepare_terminal_published
@@ -1190,46 +1300,63 @@ async def prepare_maafw_agent_env(
         prepare_loop.call_soon_threadsafe(schedule)
 
     try:
-        root_path = Path(payload.path).resolve()
-        reservation_key = await try_reserve_project_path(root_path)
-        if reservation_key is None:
-            message = "MaaFW 项目正在运行、更新或准备环境，请稍后重试"
-            publish_prepare_progress(
-                {
-                    "stage": "failed",
-                    "status": "busy",
-                    "message": message,
-                    "percent": None,
-                }
-            )
-            return MaaFWAgentEnvPrepareOut(
-                code=409,
-                status="error",
-                message=message,
-                data=MaaFWAgentEnvPrepareData(
-                    path=str(root_path),
-                    agentCount=0,
-                    agents=[],
-                    logs=logs,
-                ),
-            )
-        publish_prepare_progress(
-            {
-                "stage": "resolving",
-                "status": "running",
-                "message": "正在解析 MaaFW 项目运行环境",
-                "percent": 2.0,
-            }
-        )
-        interface = MaaFWInterfaceService().load(root_path)
-        prepare_result = await asyncio.to_thread(
-            MaaFWRunnerService().prepare_project_environment,
-            root_path,
-            interface,
-            runtime_pool_root=Path.cwd() / "config" / "maafw_runtime_pool",
+        managed_result = await _prepare_managed_maafw_environment(
+            script_id,
+            payload.path,
             send_log=logs.append,
             progress=publish_prepare_progress,
         )
+        if managed_result is not None:
+            managed_project_path = str(
+                managed_result.get("projectPath") or ""
+            ).strip()
+            prepare_result = managed_result.get("prepareResult")
+            if not managed_project_path or not isinstance(prepare_result, Mapping):
+                raise RuntimeError("MaaFW Managed 预热结果缺少 projectPath/prepareResult")
+            root_path = Path(managed_project_path).resolve()
+        else:
+            root_path = Path(payload.path).resolve()
+            reservation_key = await try_reserve_project_path(root_path)
+            if reservation_key is None:
+                message = "MaaFW 项目正在运行、更新或准备环境，请稍后重试"
+                publish_prepare_progress(
+                    {
+                        "stage": "failed",
+                        "status": "busy",
+                        "message": message,
+                        "percent": None,
+                    }
+                )
+                return MaaFWAgentEnvPrepareOut(
+                    code=409,
+                    status="error",
+                    message=message,
+                    data=MaaFWAgentEnvPrepareData(
+                        path=str(root_path),
+                        agentCount=0,
+                        agents=[],
+                        logs=logs,
+                    ),
+                )
+            publish_prepare_progress(
+                {
+                    "stage": "resolving",
+                    "status": "running",
+                    "message": "正在解析 MaaFW 项目运行环境",
+                    "percent": 2.0,
+                }
+            )
+            interface = MaaFWInterfaceService().load(root_path)
+            runtime_pool_root, runtime_pool_id = _maafw_runtime_pool_route()
+            prepare_result = await asyncio.to_thread(
+                MaaFWRunnerService().prepare_project_environment,
+                root_path,
+                interface,
+                runtime_pool_root=runtime_pool_root,
+                runtime_pool_id=runtime_pool_id,
+                send_log=logs.append,
+                progress=publish_prepare_progress,
+            )
         agent_result = prepare_result.get("agents")
         agent_result = agent_result if isinstance(agent_result, dict) else {}
         raw_agent_plans = agent_result.get("plans")
