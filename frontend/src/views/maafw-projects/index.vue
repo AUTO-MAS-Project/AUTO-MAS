@@ -21,6 +21,13 @@
       </a-space>
     </header>
 
+    <MaaFWGlobalInventoryPanel
+      :inventory="inventory"
+      :loading="inventoryLoading"
+      :error="inventoryError"
+      @refresh="loadInventory"
+    />
+
     <a-alert
       v-if="scriptListError"
       type="error"
@@ -37,9 +44,11 @@
       <a-spin size="large" tip="正在读取 MaaFW 项目" />
     </div>
 
-    <a-empty v-else-if="maafwScripts.length === 0" description="当前没有 MaaFW 项目">
-      <a-button type="primary" @click="goToScripts">前往脚本管理创建项目</a-button>
-    </a-empty>
+    <a-card v-else-if="maafwScripts.length === 0" class="empty-context-card" :bordered="false">
+      <a-empty description="当前没有 MaaFW 脚本，仍可在上方查看未绑定的托管资源">
+        <a-button type="primary" @click="goToScripts">前往脚本管理创建项目</a-button>
+      </a-empty>
+    </a-card>
 
     <template v-else>
       <a-alert
@@ -101,8 +110,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, EditOutlined } from '@ant-design/icons-vue'
+import {
+  useMaaFWManagedApi,
+  type MaaFWManagedGlobalInventory,
+} from '@/composables/useMaaFWManagedApi'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type { ScriptRecord } from '@/types/scriptRegistry'
+import MaaFWGlobalInventoryPanel from './components/MaaFWGlobalInventoryPanel.vue'
 import MaaFWProjectManagerWorkspace from './components/MaaFWProjectManagerWorkspace.vue'
 
 defineOptions({ name: 'MaaFWProjectsPage' })
@@ -111,9 +125,13 @@ const logger = window.electronAPI.getLogger('MaaFW项目管理')
 const route = useRoute()
 const router = useRouter()
 const registryApi = useScriptRegistryApi()
+const managedApi = useMaaFWManagedApi()
 const MANAGER_CONFIRM_Z_INDEX = 950
 
 const maafwScripts = ref<ScriptRecord[]>([])
+const inventory = ref<MaaFWManagedGlobalInventory | null>(null)
+const inventoryLoading = ref(false)
+const inventoryError = ref('')
 const selectedScriptId = ref('')
 const scriptListLoading = ref(false)
 const scriptListError = ref('')
@@ -210,6 +228,20 @@ const loadScripts = async () => {
   }
 }
 
+const loadInventory = async () => {
+  inventoryLoading.value = true
+  inventoryError.value = ''
+  try {
+    inventory.value = await managedApi.getInventory()
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : '读取 MaaFW 全局资源盘点失败'
+    inventoryError.value = reason
+    logger.error(`读取 MaaFW 全局资源盘点失败: ${reason}`)
+  } finally {
+    inventoryLoading.value = false
+  }
+}
+
 const handleScriptChange = (value: unknown) => {
   const scriptId = typeof value === 'string' ? value : ''
   if (!scriptId || workspaceBusy.value) return
@@ -220,7 +252,8 @@ const handleScriptChange = (value: unknown) => {
 
 const handleWorkspaceChanged = () => {
   if (contextRefreshPromise) return contextRefreshPromise
-  contextRefreshPromise = refreshScriptRecords()
+  contextRefreshPromise = Promise.all([refreshScriptRecords(), loadInventory()])
+    .then(() => undefined)
     .catch(caught => {
       const reason = caught instanceof Error ? caught.message : '刷新 MaaFW 脚本状态失败'
       logger.warn(`刷新 MaaFW 脚本状态失败: ${reason}`)
@@ -284,7 +317,9 @@ onBeforeRouteUpdate((to, from) => {
 
 onBeforeRouteLeave(confirmOperationNavigation)
 
-onMounted(() => void loadScripts())
+onMounted(() => {
+  void Promise.all([loadScripts(), loadInventory()])
+})
 </script>
 
 <style scoped>
@@ -322,6 +357,10 @@ onMounted(() => void loadScripts())
 }
 
 .context-card {
+  background: var(--ant-color-bg-container);
+}
+
+.empty-context-card {
   background: var(--ant-color-bg-container);
 }
 

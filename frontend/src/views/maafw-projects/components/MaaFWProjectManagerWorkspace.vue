@@ -263,6 +263,7 @@ let versionsRequestSequence = 0
 let overviewRefreshPromise: Promise<boolean> | null = null
 let terminalReconciliationPromise: Promise<void> | null = null
 let terminalRefreshPending = false
+let terminalReconciliationGeneration = 0
 
 const operationRunning = computed(
   () =>
@@ -306,16 +307,19 @@ const progressRecoveryUncertain = computed(
 const progressTagColor = computed(() => {
   if (api.progress.value.status === 'success') return 'green'
   if (api.progress.value.status === 'error') return 'red'
+  if (api.progress.value.status === 'unknown') return 'orange'
   return 'blue'
 })
 const progressStatusLabel = computed(() => {
   if (api.progress.value.status === 'success') return '已完成'
   if (api.progress.value.status === 'error') return '失败'
+  if (api.progress.value.status === 'unknown') return '结果待核对'
   return '处理中'
 })
-const progressBarStatus = computed<'active' | 'success' | 'exception'>(() => {
+const progressBarStatus = computed<'active' | 'success' | 'exception' | 'normal'>(() => {
   if (api.progress.value.status === 'success') return 'success'
   if (api.progress.value.status === 'error') return 'exception'
+  if (api.progress.value.status === 'unknown') return 'normal'
   return 'active'
 })
 const progressBytes = computed(() => {
@@ -335,9 +339,15 @@ const gcPreviewSummary = computed(() => {
   const runtimeCandidates = Array.isArray(runtimePool.candidates)
     ? runtimePool.candidates.length
     : 0
+  const checkoutGarbageCollection = asRecord(projectStore.checkoutGarbageCollection)
+  const checkoutCandidates = Array.isArray(checkoutGarbageCollection.candidates)
+    ? checkoutGarbageCollection.candidates.length
+    : 0
   const reclaimed =
-    numberOrZero(projectStore.reclaimedBytes) + numberOrZero(runtimePool.reclaimedBytes)
-  return `候选项目版本 ${projectCandidates} 个，共享运行时 ${runtimeCandidates} 个，预计释放 ${formatBytes(reclaimed)}`
+    numberOrZero(projectStore.reclaimedBytes) +
+    numberOrZero(runtimePool.reclaimedBytes) +
+    numberOrZero(checkoutGarbageCollection.reclaimedBytes)
+  return `候选项目版本 ${projectCandidates} 个，脱壳目录 ${checkoutCandidates} 个，共享运行时 ${runtimeCandidates} 个，预计释放 ${formatBytes(reclaimed)}`
 })
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -437,7 +447,11 @@ watch(operationRunning, busy => emit('busy-change', busy), { immediate: true })
 watch(
   () => api.progress.value.status,
   (status, previousStatus) => {
-    if (previousStatus === 'running' && (status === 'success' || status === 'error')) {
+    if (
+      previousStatus === 'running' &&
+      (status === 'success' || status === 'error' || status === 'unknown')
+    ) {
+      terminalReconciliationGeneration += 1
       mutationFinalizing.value = true
       if (initialLoading.value) {
         terminalRefreshPending = true
@@ -445,7 +459,8 @@ watch(
       }
       queueTerminalReconciliation()
     }
-  }
+  },
+  { flush: 'sync' }
 )
 
 watch(mutationRunning, running => emit('operation-change', running), { immediate: true })
@@ -458,9 +473,37 @@ watch(
   }
 )
 
+const finalizeTerminalReconciliation = (refreshGeneration: number) => {
+  if (
+    !mutationFinalizing.value ||
+    refreshGeneration !== terminalReconciliationGeneration ||
+    !['success', 'error', 'unknown'].includes(api.progress.value.status)
+  ) {
+    return
+  }
+  if (api.progress.value.status === 'unknown') {
+    api.progress.value = {
+      ...api.progress.value,
+      stage: '资源状态已核对，操作结果未知',
+      message: '后端旧操作记录无法恢复；当前资源状态已经刷新，请根据页面结果决定后续操作',
+    }
+  } else if (
+    api.progress.value.status === 'success' &&
+    api.progress.value.stage === '服务端已确认无活跃操作'
+  ) {
+    api.progress.value = {
+      ...api.progress.value,
+      stage: '资源状态已核对',
+      message: '服务端已无活跃操作，当前项目与运行时状态已经刷新并安全解锁',
+    }
+  }
+  mutationFinalizing.value = false
+}
+
 const refreshOverview = () => {
   if (overviewRefreshPromise) return overviewRefreshPromise
   if (disposed || !api.capabilities.value?.available) return Promise.resolve(false)
+  const refreshGeneration = terminalReconciliationGeneration
   overviewRefreshPromise = (async () => {
     overviewLoading.value = true
     pageError.value = ''
@@ -491,6 +534,7 @@ const refreshOverview = () => {
         versions.value = []
       }
       emit('refreshed')
+      finalizeTerminalReconciliation(refreshGeneration)
       return true
     } catch (caught) {
       if (disposed) return false
@@ -509,10 +553,12 @@ const queueTerminalReconciliation = () => {
   if (terminalReconciliationPromise) return
   terminalReconciliationPromise = (async () => {
     const refreshStartedBeforeTerminal = overviewRefreshPromise
-    if (refreshStartedBeforeTerminal) await refreshStartedBeforeTerminal
+    if (refreshStartedBeforeTerminal) {
+      await refreshStartedBeforeTerminal
+      if (!mutationFinalizing.value) return
+    }
     if (disposed) return
-    const refreshed = await refreshOverview()
-    if (refreshed) mutationFinalizing.value = false
+    await refreshOverview()
   })().finally(() => {
     terminalReconciliationPromise = null
   })
@@ -562,6 +608,16 @@ const runAndRefresh = async <T,>(
   try {
     const result = await operation()
     if (disposed) return null
+    if (result === undefined && api.progress.value.status === 'success') {
+      message.warning('服务端确认操作已完成，但原请求响应丢失；正在刷新资源状态，请勿重复提交')
+      await refreshOverview()
+      return null
+    }
+    if (result === undefined && api.progress.value.status === 'unknown') {
+      message.warning('连接中断且后端已重启，操作结果待核对；正在刷新资源状态，请勿重复提交')
+      await refreshOverview()
+      return null
+    }
     message.success(successText)
     await refreshOverview()
     return result
@@ -574,6 +630,11 @@ const runAndRefresh = async <T,>(
     }
     if (api.progress.value.status === 'success') {
       message.warning('后台操作已完成，但原请求响应中断；已按权威状态刷新资源')
+      await refreshOverview()
+      return null
+    }
+    if (api.progress.value.status === 'unknown') {
+      message.warning('连接中断且后端已无原操作记录；正在核对资源状态，请勿重复提交')
       await refreshOverview()
       return null
     }
@@ -630,6 +691,14 @@ const checkRemote = async (input: MaaFWManagedRemoteSourceInput) => {
   try {
     const discovery = await api.checkRemote(input)
     if (disposed) return
+    if (!discovery) {
+      message.warning(
+        api.progress.value.status === 'unknown'
+          ? '连接中断且后端已重启，未能恢复远程检查结果；请重新检查'
+          : '远程资源检查已完成，但原请求响应中断；请重新检查以读取最新结果'
+      )
+      return
+    }
     remoteDiscovery.value = discovery
     message.info(remoteDiscovery.value.message || '远程资源检查完成')
   } catch (caught) {

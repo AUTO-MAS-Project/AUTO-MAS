@@ -20,6 +20,8 @@ export const MAAFW_MANAGED_ENDPOINTS = {
   capabilities: `${MANAGED_BASE_PATH}/capabilities`,
   convert: `${MANAGED_BASE_PATH}/convert`,
   progress: `${MANAGED_BASE_PATH}/progress`,
+  activeOperation: `${MANAGED_BASE_PATH}/operations/active`,
+  inventory: `${MANAGED_BASE_PATH}/inventory`,
   projects: `${MANAGED_BASE_PATH}/projects/list`,
   versions: `${MANAGED_BASE_PATH}/versions/list`,
   importLocal: `${MANAGED_BASE_PATH}/import`,
@@ -44,6 +46,7 @@ export type MaaFWManagedOperation =
   | 'convert'
   | 'import-local'
   | 'import-remote'
+  | 'remote-check'
   | 'upgrade-local'
   | 'upgrade-remote'
   | 'apply-upgrade'
@@ -56,12 +59,13 @@ export type MaaFWManagedOperation =
   | 'gc-preview'
   | 'gc-apply'
 
-export type MaaFWManagedProgressStatus = 'idle' | 'running' | 'success' | 'error'
+export type MaaFWManagedProgressStatus = 'idle' | 'running' | 'success' | 'error' | 'unknown'
 
 const MAAFW_MANAGED_OPERATIONS: readonly MaaFWManagedOperation[] = [
   'convert',
   'import-local',
   'import-remote',
+  'remote-check',
   'upgrade-local',
   'upgrade-remote',
   'apply-upgrade',
@@ -86,6 +90,8 @@ export interface MaaFWManagedFeatures {
   upgradePlans: boolean
   runtimeManagement: boolean
   operationProgress?: boolean
+  activeOperationLookup?: boolean
+  serverMutationExclusion?: boolean
   pinning?: boolean
   garbageCollection?: boolean
 }
@@ -136,6 +142,7 @@ export interface MaaFWManagedProjectVersion {
   current?: boolean
   pinned?: boolean
   references?: string[]
+  activeLeaseIds?: string[]
   lastUsedAt?: string | null
   dataPath?: string
   manifestPath?: string
@@ -147,6 +154,7 @@ export interface MaaFWManagedProjectVersion {
 
 export interface MaaFWManagedRuntime {
   runtimeId: string
+  poolId?: string
   path?: string
   environmentPath?: string
   venvPath?: string
@@ -162,6 +170,72 @@ export interface MaaFWManagedRuntime {
   pinned?: boolean
   references?: string[]
   activeLeaseIds?: string[]
+}
+
+export interface MaaFWManagedStorageInfo {
+  available: boolean
+  reason?: string
+  root?: string
+  storeId?: string
+  runRoot?: string
+  runRootId?: string
+  poolId?: string
+  isDefault?: boolean
+  isDefaultRunRoot?: boolean
+  rootIdentity?: Record<string, unknown>
+  runRootIdentity?: Record<string, unknown>
+}
+
+export interface MaaFWManagedCheckout {
+  checkoutId: string
+  dataPath: string
+  storeId: string
+  runRootId: string
+  projectId: string
+  version: string
+  sourceHash: string
+  payloadHash?: string
+  scriptId: string
+  storeAvailable: boolean
+  scriptAvailable?: boolean
+  bindingCurrent?: boolean
+  orphanReason?: string | null
+  createdAt?: string | null
+  lastUsedAt?: string | null
+  leaseProtectionAvailable?: boolean
+  activeLeaseIds?: string[]
+}
+
+export interface MaaFWManagedInventoryError {
+  scope?: string
+  path?: string
+  scriptId?: string
+  runtimeId?: string
+  error: string
+}
+
+export interface MaaFWManagedReferenceReconciliation<T> {
+  scriptCount?: number
+  runtimeCount?: number
+  updated?: T[]
+}
+
+export interface MaaFWManagedGlobalInventory {
+  complete: boolean
+  generatedAt: string
+  storage: {
+    projectStore: MaaFWManagedStorageInfo
+    runtimePool: MaaFWManagedStorageInfo
+  }
+  projects: MaaFWManagedProjectSummary[]
+  versions: MaaFWManagedProjectVersion[]
+  checkouts: MaaFWManagedCheckout[]
+  runtimes: MaaFWManagedRuntime[]
+  references: {
+    scripts: MaaFWManagedReferenceReconciliation<MaaFWManagedProjectVersion>
+    runtimes: MaaFWManagedReferenceReconciliation<MaaFWManagedRuntime>
+  }
+  errors: MaaFWManagedInventoryError[]
 }
 
 export interface MaaFWManagedUpgradeIssue {
@@ -260,6 +334,8 @@ export interface MaaFWManagedGarbageCollectionResult {
 }
 
 export interface MaaFWManagedProgress {
+  scriptId?: string
+  serverEpoch?: string
   operationId: string
   operation: MaaFWManagedOperation | ''
   status: MaaFWManagedProgressStatus
@@ -269,6 +345,12 @@ export interface MaaFWManagedProgress {
   downloadedBytes: number | null
   totalBytes: number | null
   logs: string[]
+}
+
+export interface MaaFWManagedActiveOperationLookup {
+  scriptId: string
+  serverEpoch: string
+  activeOperation: MaaFWManagedProgress | null
 }
 
 export interface MaaFWManagedLocalSourceInput {
@@ -310,6 +392,8 @@ const EMPTY_FEATURES: MaaFWManagedFeatures = {
   upgradePlans: false,
   runtimeManagement: false,
   operationProgress: false,
+  activeOperationLookup: false,
+  serverMutationExclusion: false,
   pinning: false,
   garbageCollection: false,
 }
@@ -571,6 +655,7 @@ export function useMaaFWManagedApi() {
   let activeProgressStartedAt = 0
   let missingProgressSince = 0
   const progressSubscriptions = new Set<string>()
+  const actionRequestsInFlight = new Set<string>()
 
   const request = async <T>(
     path: string,
@@ -711,6 +796,31 @@ export function useMaaFWManagedApi() {
         return
       }
       if (caught instanceof MaaFWManagedRequestError && caught.code === 404) {
+        if (capabilities.value?.features.activeOperationLookup === true) {
+          try {
+            const requestStillPending = actionRequestsInFlight.has(operationId)
+            const active = await lookupAndAttachActiveOperation(scriptId, {
+              emptyBehavior: requestStillPending ? 'keep' : 'reconcile',
+            })
+            if (active === 'none' && requestStillPending) {
+              progress.value = {
+                ...progress.value,
+                status: 'running',
+                stage: '正在等待后台登记操作',
+                message: '操作请求仍在发送，正在等待 MaaFW 后端建立权威进度记录',
+              }
+            }
+          } catch (lookupError) {
+            const reason = pluginErrorMessage(lookupError, '服务端活跃操作查询失败')
+            progress.value = {
+              ...progress.value,
+              status: 'running',
+              stage: '无法确认服务端活跃操作',
+              message: `暂时无法确认后台操作（${reason}）；为避免重复修改资源，将保持锁定并重试`,
+            }
+          }
+          return
+        }
         const now = Date.now()
         if (!missingProgressSince) missingProgressSince = now
         const waitingForRegistration =
@@ -783,10 +893,99 @@ export function useMaaFWManagedApi() {
     return operationId
   }
 
+  const lookupAndAttachActiveOperation = async (
+    scriptId: string,
+    options: { emptyBehavior?: 'clear' | 'keep' | 'reconcile' } = {}
+  ): Promise<'attached' | 'none'> => {
+    const lookup = await request<MaaFWManagedActiveOperationLookup>(
+      MAAFW_MANAGED_ENDPOINTS.activeOperation,
+      { scriptId }
+    )
+    if (lookup.scriptId !== scriptId) {
+      throw new Error('MaaFW 后端返回了不匹配的活跃操作脚本')
+    }
+    const serverEpoch = asString(lookup.serverEpoch).trim()
+    if (!serverEpoch) {
+      throw new Error('MaaFW 后端未返回有效的服务端运行标识')
+    }
+    const activeOperation = lookup.activeOperation
+    if (activeOperation === null) {
+      if (options.emptyBehavior !== 'keep') {
+        clearActiveOperationRef(scriptId)
+        stopProgressTracking()
+        progress.value =
+          options.emptyBehavior === 'reconcile'
+            ? {
+                ...progress.value,
+                status: 'success',
+                stage: '服务端已确认无活跃操作',
+                message: '旧操作不存在或后端已经重启；正在重新核对资源状态，完成后将安全解锁',
+                percent: null,
+              }
+            : { ...EMPTY_PROGRESS }
+      }
+      return 'none'
+    }
+    const operationId = asString(activeOperation.operationId)
+    const operation = asManagedOperation(activeOperation.operation)
+    if (asString(activeOperation.scriptId) !== scriptId) {
+      throw new Error('MaaFW 后端返回的活跃操作不属于当前脚本')
+    }
+    if (asString(activeOperation.serverEpoch).trim() !== serverEpoch) {
+      throw new Error('MaaFW 后端返回了过期的活跃操作')
+    }
+    if (!operationId || !PROGRESS_ID_PATTERN.test(operationId) || !operation) {
+      throw new Error('MaaFW 后端返回了无效的活跃操作标识')
+    }
+    if (activeOperation.status !== 'running') {
+      throw new Error('MaaFW 后端返回的活跃操作状态无效')
+    }
+    progress.value = {
+      operationId,
+      operation,
+      status: 'running',
+      stage: asString(activeOperation.stage) || '正在恢复操作状态',
+      message: asString(activeOperation.message) || '正在读取 MaaFW 后端活跃操作进度',
+      percent: asNumber(activeOperation.percent),
+      downloadedBytes: asNumber(activeOperation.downloadedBytes),
+      totalBytes: asNumber(activeOperation.totalBytes),
+      logs: asStringArray(activeOperation.logs),
+    }
+    writeActiveOperationRef(scriptId, operationId, operation, capabilities.value)
+    attachProgressTracking(scriptId, operationId)
+    return 'attached'
+  }
+
   const resumeProgress = async (scriptId: string): Promise<boolean> => {
     const currentCapabilities = capabilities.value
     if (!currentCapabilities || currentCapabilities.features.operationProgress !== true)
       return false
+
+    if (currentCapabilities.features.activeOperationLookup === true) {
+      stopProgressTracking()
+      progress.value = {
+        operationId: '',
+        operation: '',
+        status: 'running',
+        stage: '正在查询服务端活跃操作',
+        message: '正在由 MaaFW 后端确认该脚本是否有尚未结束的资源操作',
+        percent: null,
+        downloadedBytes: null,
+        totalBytes: null,
+        logs: [],
+      }
+      try {
+        return (await lookupAndAttachActiveOperation(scriptId)) === 'attached'
+      } catch (caught) {
+        progress.value = {
+          ...progress.value,
+          stage: '无法确认服务端活跃操作',
+          message: '为避免重复修改 MaaFW 资源，项目管理操作将保持锁定；请重试',
+        }
+        throw caught
+      }
+    }
+
     const stored = readActiveOperationRef(scriptId, currentCapabilities)
     if (!stored) return false
     progress.value = {
@@ -818,8 +1017,10 @@ export function useMaaFWManagedApi() {
   ) => {
     const progressId = beginProgressTracking(scriptId, operation, message)
     let keepTracking = false
+    actionRequestsInFlight.add(progressId)
     try {
       const result = await action(progressId)
+      actionRequestsInFlight.delete(progressId)
       if (progress.value.operationId === progressId && progress.value.status === 'running') {
         progress.value = {
           ...progress.value,
@@ -832,16 +1033,146 @@ export function useMaaFWManagedApi() {
       clearActiveOperationRef(scriptId, progressId)
       return result
     } catch (caught) {
-      if (
-        capabilities.value?.features.operationProgress === true &&
-        progress.value.operationId === progressId &&
-        progress.value.status === 'running'
-      ) {
-        keepTracking = true
+      actionRequestsInFlight.delete(progressId)
+      if (capabilities.value?.features.operationProgress === true) {
+        let authoritativeProgress: Record<string, unknown> | null = null
+        try {
+          authoritativeProgress = await request<Record<string, unknown>>(
+            MAAFW_MANAGED_ENDPOINTS.progress,
+            { scriptId, operationId: progressId }
+          )
+        } catch (progressError) {
+          if (!(progressError instanceof MaaFWManagedRequestError && progressError.code === 404)) {
+            if (progress.value.operationId === progressId && progress.value.status === 'success') {
+              progress.value = {
+                ...progress.value,
+                stage: '操作已完成，请刷新',
+                message: '服务端已通过实时进度确认操作完成；请以刷新后的资源状态为准',
+                percent: 100,
+              }
+              return undefined
+            }
+            if (progress.value.operationId === progressId && progress.value.status === 'error') {
+              throw new MaaFWManagedRequestError(
+                progress.value.message || 'MaaFW 后端确认资源操作失败',
+                false
+              )
+            }
+            keepTracking = true
+            progress.value = {
+              ...progress.value,
+              status: 'running',
+              stage: '无法确认原操作状态',
+              message: '动作请求异常后无法读取原操作进度；为避免重复修改资源，将保持锁定并重试',
+            }
+            throw caught
+          }
+        }
+
+        if (authoritativeProgress !== null) {
+          const authoritativeOperationId =
+            asString(authoritativeProgress.operationId) ||
+            asString(authoritativeProgress.progressId)
+          if (authoritativeOperationId !== progressId) {
+            keepTracking = true
+            progress.value = {
+              ...progress.value,
+              status: 'running',
+              stage: '原操作响应无效',
+              message: '后端返回了不匹配的操作进度；为避免重复修改资源，将保持锁定',
+            }
+            throw caught
+          }
+          updateProgress(authoritativeProgress)
+          if (progress.value.status === 'success') {
+            progress.value = {
+              ...progress.value,
+              stage: '操作已完成，请刷新',
+              message: '服务端确认操作已经完成；原请求响应中断，请以刷新后的资源状态为准',
+              percent: 100,
+            }
+            return undefined
+          }
+          if (progress.value.status === 'error') {
+            throw new MaaFWManagedRequestError(
+              progress.value.message || 'MaaFW 后端确认资源操作失败',
+              false
+            )
+          }
+        }
+
+        if (capabilities.value.features.activeOperationLookup !== true) {
+          keepTracking = true
+          progress.value = {
+            ...progress.value,
+            status: 'running',
+            stage: '正在确认后台状态',
+            message: '原操作尚未返回终态；将继续按原操作编号跟踪，确认前不会解锁新操作',
+          }
+          throw caught
+        }
+        let active: 'attached' | 'none'
+        try {
+          active = await lookupAndAttachActiveOperation(scriptId, { emptyBehavior: 'keep' })
+        } catch {
+          keepTracking = true
+          progress.value = {
+            ...progress.value,
+            status: 'running',
+            stage: '无法确认服务端活跃操作',
+            message: '动作请求失败后无法安全读取服务端状态；为避免重复修改资源，将保持锁定',
+          }
+          throw caught
+        }
+        if (active === 'attached') {
+          keepTracking = true
+          throw caught
+        }
+        clearActiveOperationRef(scriptId, progressId)
+        stopProgressTracking()
+        const reason = pluginErrorMessage(caught, 'MaaFW 托管资源操作失败')
+        if (!(caught instanceof MaaFWManagedRequestError) || caught.code === undefined) {
+          progress.value = {
+            ...EMPTY_PROGRESS,
+            operationId: progressId,
+            operation,
+            status: 'unknown',
+            stage: '操作结果待核对',
+            message: '请求连接中断且后端已无原操作记录；正在重新核对资源状态，完成后将安全解锁',
+          }
+          return undefined
+        }
         progress.value = {
-          ...progress.value,
-          stage: '正在确认后台状态',
-          message: '动作请求未返回可确认终态，正在查询 MaaFW 后端权威进度',
+          ...EMPTY_PROGRESS,
+          operationId: progressId,
+          operation,
+          status: 'error',
+          stage: '操作失败',
+          message: reason,
+        }
+        throw caught
+      }
+      if (caught instanceof MaaFWManagedRequestError && caught.code === 409) {
+        clearActiveOperationRef(scriptId, progressId)
+        try {
+          const attached = await resumeProgress(scriptId)
+          if (attached) {
+            keepTracking = true
+          } else {
+            progress.value = {
+              ...EMPTY_PROGRESS,
+              status: 'running',
+              stage: '正在确认服务端活跃操作',
+              message: '服务端拒绝了重复操作，但未返回可接管的操作；为避免重复修改资源，将保持锁定',
+            }
+          }
+        } catch {
+          progress.value = {
+            ...EMPTY_PROGRESS,
+            status: 'running',
+            stage: '无法接管服务端活跃操作',
+            message: '服务端已拒绝重复操作，但无法安全读取当前操作；为避免重复修改资源，将保持锁定',
+          }
         }
         throw caught
       }
@@ -861,6 +1192,7 @@ export function useMaaFWManagedApi() {
       clearActiveOperationRef(scriptId, progressId)
       throw caught
     } finally {
+      actionRequestsInFlight.delete(progressId)
       if (!keepTracking && progress.value.operationId === progressId) stopProgressTracking()
     }
   }
@@ -922,6 +1254,9 @@ export function useMaaFWManagedApi() {
   const listRuntimes = (scriptId: string) =>
     run(() => request<MaaFWManagedRuntime[]>(MAAFW_MANAGED_ENDPOINTS.runtimes, { scriptId }))
 
+  const getInventory = () =>
+    run(() => request<MaaFWManagedGlobalInventory>(MAAFW_MANAGED_ENDPOINTS.inventory, {}))
+
   const getOverview = async (scriptId: string): Promise<MaaFWManagedOverview> => {
     const binding = await getCurrentBinding(scriptId)
     if (!binding.managed || capabilities.value?.features.projectOverview === false) {
@@ -974,7 +1309,13 @@ export function useMaaFWManagedApi() {
 
   const checkRemote = (input: MaaFWManagedRemoteSourceInput) =>
     run(() =>
-      request<MaaFWManagedRemoteDiscovery>(MAAFW_MANAGED_ENDPOINTS.checkRemote, { ...input })
+      tracked(input.scriptId, 'remote-check', '正在检查远程资源版本', progressId =>
+        request<MaaFWManagedRemoteDiscovery>(
+          MAAFW_MANAGED_ENDPOINTS.checkRemote,
+          { ...input, progressId },
+          progressId
+        )
+      )
     )
 
   const importRemote = (input: MaaFWManagedRemoteSourceInput) =>
@@ -1141,6 +1482,7 @@ export function useMaaFWManagedApi() {
     listProjects,
     listVersions,
     listRuntimes,
+    getInventory,
     convert,
     importLocal,
     upgradeLocal,

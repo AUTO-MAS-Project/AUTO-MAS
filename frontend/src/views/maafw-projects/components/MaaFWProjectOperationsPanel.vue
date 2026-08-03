@@ -205,8 +205,15 @@
                   </a-form-item>
                 </a-col>
                 <a-col :span="12">
-                  <a-form-item label="MirrorChyan CDK" required>
-                    <a-input-password v-model:value="remoteForm.mirrorChyanCDK" :disabled="busy" />
+                  <a-form-item
+                    label="MirrorChyan CDK（可选）"
+                    extra="留空时由后端继承 MAS 全局更新设置中的 Mirror 酱 CDK"
+                  >
+                    <a-input-password
+                      v-model:value="remoteForm.mirrorChyanCDK"
+                      :disabled="busy"
+                      placeholder="留空时使用宿主全局 CDK"
+                    />
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -437,11 +444,8 @@ const buildRemoteInput = (): MaaFWManagedRemoteSourceInput | null => {
     message.warning('请填写项目 ID')
     return null
   }
-  if (
-    remoteForm.source === 'MirrorChyan' &&
-    (!remoteForm.mirrorChyanRid.trim() || !remoteForm.mirrorChyanCDK.trim())
-  ) {
-    message.warning('MirrorChyan 来源需要 RID 和 CDK')
+  if (remoteForm.source === 'MirrorChyan' && !remoteForm.mirrorChyanRid.trim()) {
+    message.warning('MirrorChyan 来源需要 RID')
     return null
   }
   if (remoteForm.source === 'GitHub' && !remoteForm.githubRepo.trim()) {
