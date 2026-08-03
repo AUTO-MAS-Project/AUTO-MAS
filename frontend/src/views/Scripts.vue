@@ -63,7 +63,7 @@
       </a-input>
     </div>
     <div class="header-actions">
-      <a-space size="middle">
+      <a-space size="middle" wrap>
         <a-tooltip title="收起所有脚本的用户列表">
           <a-button
             size="large"
@@ -86,6 +86,16 @@
               <DownOutlined />
             </template>
             一键展开
+          </a-button>
+        </a-tooltip>
+        <a-tooltip
+          :title="hasMaaFWProjects ? '统一管理 MaaFW 项目与运行依赖' : '请先创建 MaaFW 项目'"
+        >
+          <a-button size="large" :disabled="!hasMaaFWProjects" @click="openMaaFWProjects">
+            <template #icon>
+              <DatabaseOutlined />
+            </template>
+            MaaFW 项目
           </a-button>
         </a-tooltip>
         <a-button
@@ -474,6 +484,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
+  DatabaseOutlined,
   DownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
@@ -539,6 +550,9 @@ const scriptSearchKeyword = ref('')
 const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
 const filteredScripts = computed(() =>
   filterScriptsByKeyword(scripts.value, scriptSearchKeyword.value)
+)
+const hasMaaFWProjects = computed(() =>
+  scripts.value.some(script => script.type === 'MaaFW' || script.type === 'MaaFWManaged')
 )
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 const scriptTypeDescriptors = ref<ScriptTypeDescriptor[]>([])
@@ -734,6 +748,11 @@ const handleExpandAll = () => {
 
 const handleAddScript = () => {
   scriptCreateVisible.value = true
+}
+
+const openMaaFWProjects = () => {
+  if (!hasMaaFWProjects.value) return
+  void router.push({ name: 'MaaFWProjects', query: { from: 'scripts' } })
 }
 
 const navigateToCreatedScript = (result: { id: string; type: string; editor_kind: string }) => {

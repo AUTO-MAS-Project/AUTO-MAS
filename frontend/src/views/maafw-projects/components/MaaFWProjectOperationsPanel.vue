@@ -234,10 +234,10 @@
               </a-row>
 
               <a-alert
-                v-if="remoteDiscovery"
-                :type="remoteDiscovery.installable ? 'success' : 'warning'"
+                v-if="currentRemoteDiscovery"
+                :type="currentRemoteDiscovery.installable ? 'success' : 'warning'"
                 show-icon
-                :message="remoteDiscovery.message || '远程资源检查完成'"
+                :message="currentRemoteDiscovery.message || '远程资源检查完成'"
                 :description="remoteDiscoveryDescription"
               />
 
@@ -246,7 +246,7 @@
                 <a-button
                   type="primary"
                   :loading="busy"
-                  :disabled="Boolean(remoteDiscovery && !remoteDiscovery.installable)"
+                  :disabled="!currentRemoteDiscovery?.installable"
                   @click="submitRemote"
                 >
                   {{ binding.projectId ? '下载并生成升级计划' : '下载并导入' }}
@@ -270,6 +270,8 @@ import type {
   MaaFWManagedRemoteDiscovery,
   MaaFWManagedRemoteSourceInput,
 } from '@/composables/useMaaFWManagedApi'
+
+defineOptions({ name: 'MaaFWProjectOperationsPanel' })
 
 const props = defineProps<{
   scriptId: string
@@ -312,6 +314,16 @@ const remoteForm = reactive({
   githubTag: '',
   githubAssetPattern: '',
 })
+const remoteFormRevision = ref(0)
+const lastCheckedRemoteRevision = ref(-1)
+
+watch(
+  remoteForm,
+  () => {
+    remoteFormRevision.value += 1
+  },
+  { deep: true }
+)
 
 watch(
   () => props.binding,
@@ -369,12 +381,16 @@ const planBlockingMessages = computed(() => {
   return [...new Set(messages)]
 })
 
+const currentRemoteDiscovery = computed(() =>
+  lastCheckedRemoteRevision.value === remoteFormRevision.value ? props.remoteDiscovery : null
+)
+
 const remoteDiscoveryDescription = computed(() => {
-  if (!props.remoteDiscovery) return ''
-  const current = props.remoteDiscovery.currentVersion || '未绑定'
-  const latest = props.remoteDiscovery.latestVersion || '未发现'
+  if (!currentRemoteDiscovery.value) return ''
+  const current = currentRemoteDiscovery.value.currentVersion || '未绑定'
+  const latest = currentRemoteDiscovery.value.latestVersion || '未发现'
   return `当前 ${current} · 远程 ${latest}${
-    props.remoteDiscovery.installable ? ' · 可下载安装' : ' · 无可安装候选'
+    currentRemoteDiscovery.value.installable ? ' · 可下载安装' : ' · 无可安装候选'
   }`
 })
 
@@ -448,10 +464,17 @@ const buildRemoteInput = (): MaaFWManagedRemoteSourceInput | null => {
 
 const submitRemoteCheck = () => {
   const input = buildRemoteInput()
-  if (input) emit('remote-check', input)
+  if (input) {
+    lastCheckedRemoteRevision.value = remoteFormRevision.value
+    emit('remote-check', input)
+  }
 }
 
 const submitRemote = () => {
+  if (!currentRemoteDiscovery.value?.installable) {
+    message.warning('远程来源已变化，请先重新检查可安装候选')
+    return
+  }
   const input = buildRemoteInput()
   if (input) emit('remote-submit', props.binding.projectId ? 'upgrade' : 'import', input)
 }

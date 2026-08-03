@@ -255,6 +255,8 @@ import type {
   MaaFWManagedRuntime,
 } from '@/composables/useMaaFWManagedApi'
 
+defineOptions({ name: 'MaaFWProjectResourcesPanel' })
+
 const props = defineProps<{
   binding: MaaFWManagedBinding
   features: MaaFWManagedFeatures

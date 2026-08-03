@@ -215,13 +215,28 @@
                       'managed-choice-card',
                       { 'managed-choice-card-selected': managedDecision === 'managed' },
                     ]"
-                    :disabled="!managedConversionAvailable || managedOperationRunning"
+                    :disabled="
+                      !managerWorkspaceActive &&
+                      (!managedConversionAvailable || managedOperationRunning)
+                    "
                     @click="openManagedProjectManager"
                   >
                     <span class="managed-choice-title">
-                      {{ managedDecision === 'managed' ? '已转为托管项目' : '转为托管项目' }}
+                      {{
+                        managerWorkspaceActive
+                          ? '查看托管操作'
+                          : managedDecision === 'managed'
+                            ? '已转为托管项目'
+                            : '转为托管项目'
+                      }}
                     </span>
-                    <span>导入当前资源版本，并在统一页面管理项目版本与运行依赖。</span>
+                    <span>
+                      {{
+                        managerWorkspaceActive
+                          ? '项目状态核验、后台操作或最终状态对账仍在进行，点击重新打开查看。'
+                          : '导入当前资源版本，并在统一页面管理项目版本与运行依赖。'
+                      }}
+                    </span>
                   </button>
                 </div>
 
@@ -319,6 +334,8 @@
       :script-id="scriptId"
       @converted="handleManagedConverted"
       @refreshed="handleManagedRefreshed"
+      @busy-change="managerWorkspaceBusy = $event"
+      @operation-change="managerOperationRunning = $event"
     />
   </div>
 </template>
@@ -356,6 +373,8 @@ const currentStep = ref(0)
 const reuseComplete = ref(false)
 const importedUserId = ref('')
 const managerOpen = ref(false)
+const managerWorkspaceBusy = ref(false)
+const managerOperationRunning = ref(false)
 const managedDecision = ref<'pending' | 'ordinary' | 'managed'>('pending')
 const managedCapabilitiesLoaded = ref(false)
 const managedApi = useMaaFWManagedApi()
@@ -456,10 +475,14 @@ const isControlStepComplete = computed(() =>
 const managedCapabilitiesLoading = computed(
   () => !managedCapabilitiesLoaded.value || managedApi.loading.value
 )
+const managerWorkspaceActive = computed(
+  () => managerWorkspaceBusy.value || managerOperationRunning.value
+)
 const managedOperationRunning = computed(
   () =>
     managedApi.loading.value ||
     managedApi.progress.value.status === 'running' ||
+    managerWorkspaceActive.value ||
     isProjectUpdateRunning.value ||
     isAgentEnvPreparing.value ||
     hasUnsavedChanges.value ||
@@ -561,7 +584,12 @@ const chooseOrdinaryProject = () => {
 }
 
 const openManagedProjectManager = () => {
-  if (managedDecision.value !== 'managed' && !managedConversionAvailable.value) return
+  if (
+    !managerWorkspaceActive.value &&
+    managedDecision.value !== 'managed' &&
+    !managedConversionAvailable.value
+  )
+    return
   managerOpen.value = true
 }
 

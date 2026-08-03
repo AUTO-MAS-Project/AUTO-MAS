@@ -50,7 +50,7 @@
         <a-button
           size="large"
           :disabled="hasUnsavedChanges || isSaving || isProjectUpdateRunning || isAgentEnvPreparing"
-          @click="managerOpen = true"
+          @click="openProjectManager"
         >
           <template #icon>
             <DatabaseOutlined />
@@ -213,13 +213,6 @@
       </div>
     </div>
   </div>
-
-  <MaaFWProjectManagerModal
-    v-model:open="managerOpen"
-    :script-id="scriptId"
-    @converted="handleManagedProjectChanged"
-    @refreshed="handleManagedProjectChanged"
-  />
 </template>
 
 <script setup lang="ts">
@@ -240,7 +233,6 @@ import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
-import MaaFWProjectManagerModal from './MaaFWScriptEdit/MaaFWProjectManagerModal.vue'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
@@ -249,7 +241,6 @@ const router = useRouter()
 const scriptId = route.params.id as string
 
 const formRef = ref<FormInstance>()
-const managerOpen = ref(false)
 
 const {
   maafwConfig,
@@ -340,13 +331,8 @@ const {
   dispose,
 } = useMaaFWScriptConfig(scriptId)
 
-let managedReloadPromise: Promise<void> | null = null
-const handleManagedProjectChanged = () => {
-  if (managedReloadPromise) return managedReloadPromise
-  managedReloadPromise = loadScript().finally(() => {
-    managedReloadPromise = null
-  })
-  return managedReloadPromise
+const openProjectManager = () => {
+  void router.push({ name: 'MaaFWProjects', query: { scriptId, from: 'edit' } })
 }
 
 const handleCancel = () => {

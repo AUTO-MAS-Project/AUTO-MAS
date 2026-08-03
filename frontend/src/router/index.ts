@@ -22,6 +22,12 @@ const routes = [
   },
   ...createPageRoutes(FALLBACK_PAGE_DECLARATIONS),
   {
+    path: '/scripts/maafw-projects',
+    name: 'MaaFWProjects',
+    component: () => import('../views/maafw-projects/index.vue'),
+    meta: { title: 'MaaFW 项目与资源' },
+  },
+  {
     path: '/scripts/:id/edit/src',
     name: 'SRCScriptEdit',
     component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),

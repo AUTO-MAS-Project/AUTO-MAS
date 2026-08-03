@@ -58,6 +58,23 @@ export type MaaFWManagedOperation =
 
 export type MaaFWManagedProgressStatus = 'idle' | 'running' | 'success' | 'error'
 
+const MAAFW_MANAGED_OPERATIONS: readonly MaaFWManagedOperation[] = [
+  'convert',
+  'import-local',
+  'import-remote',
+  'upgrade-local',
+  'upgrade-remote',
+  'apply-upgrade',
+  'cancel-upgrade',
+  'switch-version',
+  'install-runtime',
+  'delete-version',
+  'delete-runtime',
+  'pin',
+  'gc-preview',
+  'gc-apply',
+]
+
 export interface MaaFWManagedFeatures {
   [key: string]: boolean | undefined
   singleEntry?: boolean
@@ -324,6 +341,117 @@ const asNumber = (value: unknown): number | null =>
 
 const hasOwn = (value: object, key: PropertyKey) => Object.prototype.hasOwnProperty.call(value, key)
 
+const ACTIVE_OPERATION_STORAGE_PREFIX = 'auto-mas:maafw-managed:active-operation:'
+const PROGRESS_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/
+
+interface MaaFWManagedActiveOperationRef {
+  v: 1
+  scriptId: string
+  operationId: string
+  operation: MaaFWManagedOperation
+  startedAt: string
+  apiVersion: string
+  distributionVersion: string
+}
+
+const asManagedOperation = (value: unknown): MaaFWManagedOperation | '' =>
+  typeof value === 'string' && MAAFW_MANAGED_OPERATIONS.includes(value as MaaFWManagedOperation)
+    ? (value as MaaFWManagedOperation)
+    : ''
+
+const activeOperationStorageKey = (scriptId: string) =>
+  `${ACTIVE_OPERATION_STORAGE_PREFIX}${scriptId}`
+
+const clearActiveOperationRef = (scriptId: string, expectedOperationId?: string) => {
+  try {
+    const key = activeOperationStorageKey(scriptId)
+    if (expectedOperationId) {
+      const raw = window.sessionStorage.getItem(key)
+      if (raw) {
+        try {
+          const stored = asRecord(JSON.parse(raw))
+          if (stored.operationId !== expectedOperationId) return
+        } catch {
+          window.sessionStorage.removeItem(key)
+          return
+        }
+      }
+    }
+    window.sessionStorage.removeItem(key)
+  } catch (caught) {
+    logger.warn(
+      `清理 MaaFW 托管操作恢复引用失败: ${caught instanceof Error ? caught.message : String(caught)}`
+    )
+  }
+}
+
+const writeActiveOperationRef = (
+  scriptId: string,
+  operationId: string,
+  operation: MaaFWManagedOperation,
+  currentCapabilities: MaaFWManagedCapabilities | null
+) => {
+  if (currentCapabilities?.features.operationProgress !== true) return
+  const stored: MaaFWManagedActiveOperationRef = {
+    v: 1,
+    scriptId,
+    operationId,
+    operation,
+    startedAt: new Date().toISOString(),
+    apiVersion: currentCapabilities.apiVersion,
+    distributionVersion: currentCapabilities.distributionVersion,
+  }
+  try {
+    window.sessionStorage.setItem(activeOperationStorageKey(scriptId), JSON.stringify(stored))
+  } catch (caught) {
+    logger.warn(
+      `保存 MaaFW 托管操作恢复引用失败: ${caught instanceof Error ? caught.message : String(caught)}`
+    )
+  }
+}
+
+const readActiveOperationRef = (
+  scriptId: string,
+  currentCapabilities: MaaFWManagedCapabilities
+): MaaFWManagedActiveOperationRef | null => {
+  try {
+    const raw = window.sessionStorage.getItem(activeOperationStorageKey(scriptId))
+    if (!raw) return null
+    const stored = asRecord(JSON.parse(raw))
+    const operation = asManagedOperation(stored.operation)
+    const startedAt = typeof stored.startedAt === 'string' ? Date.parse(stored.startedAt) : NaN
+    const valid =
+      stored.v === 1 &&
+      stored.scriptId === scriptId &&
+      typeof stored.operationId === 'string' &&
+      PROGRESS_ID_PATTERN.test(stored.operationId) &&
+      Boolean(operation) &&
+      Number.isFinite(startedAt) &&
+      startedAt <= Date.now() + 5_000 &&
+      stored.apiVersion === currentCapabilities.apiVersion &&
+      stored.distributionVersion === currentCapabilities.distributionVersion
+    if (!valid) {
+      clearActiveOperationRef(scriptId)
+      return null
+    }
+    return {
+      v: 1,
+      scriptId,
+      operationId: stored.operationId as string,
+      operation: operation as MaaFWManagedOperation,
+      startedAt: stored.startedAt as string,
+      apiVersion: stored.apiVersion as string,
+      distributionVersion: stored.distributionVersion as string,
+    }
+  } catch (caught) {
+    logger.warn(
+      `读取 MaaFW 托管操作恢复引用失败: ${caught instanceof Error ? caught.message : String(caught)}`
+    )
+    clearActiveOperationRef(scriptId)
+    return null
+  }
+}
+
 const parseJsonRecord = (value: unknown): Record<string, unknown> => {
   if (typeof value !== 'string') return asRecord(value)
   try {
@@ -412,6 +540,20 @@ const pluginErrorMessage = (error: unknown, fallback: string) => {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+class MaaFWManagedRequestError extends Error {
+  constructor(
+    message: string,
+    readonly transient: boolean,
+    readonly code?: number
+  ) {
+    super(message)
+    this.name = 'MaaFWManagedRequestError'
+  }
+}
+
+const isTransientRequestError = (error: unknown) =>
+  error instanceof MaaFWManagedRequestError && error.transient
+
 let operationCounter = 0
 
 export function useMaaFWManagedApi() {
@@ -423,7 +565,11 @@ export function useMaaFWManagedApi() {
   const loading = computed(() => pendingCount.value > 0)
 
   let pollTimer: number | null = null
+  let pollInFlight = false
   let progressGeneration = 0
+  let activeProgressScriptId = ''
+  let activeProgressStartedAt = 0
+  let missingProgressSince = 0
   const progressSubscriptions = new Set<string>()
 
   const request = async <T>(
@@ -446,11 +592,23 @@ export function useMaaFWManagedApi() {
       )
       const body = response.data
       if (body.code !== 200 || body.data === null || body.data === undefined) {
-        throw new Error(body.message || 'MaaFW 托管资源操作失败')
+        throw new MaaFWManagedRequestError(
+          body.message || 'MaaFW 托管资源操作失败',
+          body.code >= 500,
+          body.code
+        )
       }
       return body.data
     } catch (caught) {
-      throw new Error(pluginErrorMessage(caught, 'MaaFW 托管资源操作失败'))
+      if (caught instanceof MaaFWManagedRequestError) throw caught
+      throw new MaaFWManagedRequestError(
+        pluginErrorMessage(caught, 'MaaFW 托管资源操作失败'),
+        axios.isAxiosError(caught) &&
+          (!caught.response || Number(caught.response.data?.code || caught.response.status) >= 500),
+        axios.isAxiosError<PluginEnvelope<unknown>>(caught)
+          ? Number(caught.response?.data?.code || caught.response?.status) || undefined
+          : undefined
+      )
     }
   }
 
@@ -471,7 +629,8 @@ export function useMaaFWManagedApi() {
 
   const updateProgress = (raw: Record<string, unknown>) => {
     const operationId = asString(raw.operationId) || asString(raw.progressId)
-    if (operationId && operationId !== progress.value.operationId) return
+    if (!operationId || operationId !== progress.value.operationId) return
+    missingProgressSince = 0
 
     const rawStatus = asString(raw.status).toLowerCase()
     const nextStatus: MaaFWManagedProgressStatus =
@@ -492,6 +651,7 @@ export function useMaaFWManagedApi() {
     const hasTotalBytes = hasOwn(raw, 'totalBytes') || hasOwn(raw, 'total_bytes')
     progress.value = {
       ...progress.value,
+      operation: asManagedOperation(raw.operation) || progress.value.operation,
       status: nextStatus,
       stage: asString(raw.stage) || progress.value.stage,
       message: asString(raw.message) || progress.value.message,
@@ -504,6 +664,12 @@ export function useMaaFWManagedApi() {
         : progress.value.totalBytes,
       logs: hasOwn(raw, 'logs') ? asStringArray(raw.logs) : progress.value.logs,
     }
+    if (nextStatus === 'success' || nextStatus === 'error') {
+      if (activeProgressScriptId) {
+        clearActiveOperationRef(activeProgressScriptId, progress.value.operationId)
+      }
+      stopProgressTracking()
+    }
   }
 
   const stopProgressTracking = () => {
@@ -514,9 +680,15 @@ export function useMaaFWManagedApi() {
     }
     progressSubscriptions.forEach(subscriptionId => unsubscribe(subscriptionId))
     progressSubscriptions.clear()
+    pollInFlight = false
+    activeProgressScriptId = ''
+    activeProgressStartedAt = 0
+    missingProgressSince = 0
   }
 
   const pollProgress = async (scriptId: string, operationId: string, generation: number) => {
+    if (pollInFlight) return
+    pollInFlight = true
     try {
       const data = await request<Record<string, unknown>>(MAAFW_MANAGED_ENDPOINTS.progress, {
         scriptId,
@@ -526,12 +698,67 @@ export function useMaaFWManagedApi() {
         return
       }
       updateProgress(data)
-    } catch {
-      if (generation === progressGeneration && pollTimer !== null) {
-        window.clearInterval(pollTimer)
-        pollTimer = null
+    } catch (caught) {
+      if (generation !== progressGeneration || operationId !== progress.value.operationId) return
+      if (isTransientRequestError(caught)) {
+        missingProgressSince = 0
+        progress.value = {
+          ...progress.value,
+          status: 'running',
+          stage: '正在重新连接',
+          message: '与后端的连接暂时中断，正在恢复 MaaFW 操作进度',
+        }
+        return
       }
+      if (caught instanceof MaaFWManagedRequestError && caught.code === 404) {
+        const now = Date.now()
+        if (!missingProgressSince) missingProgressSince = now
+        const waitingForRegistration =
+          now - activeProgressStartedAt < 15_000 || now - missingProgressSince < 15_000
+        progress.value = {
+          ...progress.value,
+          status: 'running',
+          stage: waitingForRegistration ? '正在等待后台登记操作' : '正在确认进度记录',
+          message: waitingForRegistration
+            ? '操作请求刚刚发出，正在等待 MaaFW 后端建立进度记录'
+            : '暂未找到操作进度；为避免重复修改资源，将继续保持锁定并重试',
+        }
+        return
+      }
+      const reason = pluginErrorMessage(caught, 'MaaFW 托管操作进度查询失败')
+      missingProgressSince = 0
+      progress.value = {
+        ...progress.value,
+        status: 'running',
+        stage: '正在确认后台状态',
+        message: `进度接口暂时无法确认操作终态（${reason}）；为避免重复修改资源，将保持锁定并继续重试`,
+      }
+    } finally {
+      if (generation === progressGeneration) pollInFlight = false
     }
+  }
+
+  const attachProgressTracking = (
+    scriptId: string,
+    operationId: string,
+    startedAt = Date.now()
+  ) => {
+    stopProgressTracking()
+    activeProgressScriptId = scriptId
+    activeProgressStartedAt = startedAt
+    missingProgressSince = 0
+    const generation = progressGeneration
+    const handler = (wsMessage: { data: unknown }) => updateProgress(asRecord(wsMessage.data))
+    progressSubscriptions.add(subscribe({ id: scriptId, type: WS_MAAFW_MANAGED_PROGRESS }, handler))
+    progressSubscriptions.add(
+      subscribe({ id: operationId, type: WS_MAAFW_MANAGED_PROGRESS }, handler)
+    )
+    if (capabilities.value?.features.operationProgress) {
+      pollTimer = window.setInterval(() => {
+        void pollProgress(scriptId, operationId, generation)
+      }, 1000)
+    }
+    return generation
   }
 
   const beginProgressTracking = (
@@ -539,8 +766,6 @@ export function useMaaFWManagedApi() {
     operation: MaaFWManagedOperation,
     message: string
   ) => {
-    stopProgressTracking()
-    const generation = progressGeneration
     const operationId = `${scriptId}:${operation}:${Date.now()}:${++operationCounter}`
     progress.value = {
       operationId,
@@ -553,17 +778,36 @@ export function useMaaFWManagedApi() {
       totalBytes: null,
       logs: [],
     }
-    const handler = (wsMessage: { data: unknown }) => updateProgress(asRecord(wsMessage.data))
-    progressSubscriptions.add(subscribe({ id: scriptId, type: WS_MAAFW_MANAGED_PROGRESS }, handler))
-    progressSubscriptions.add(
-      subscribe({ id: operationId, type: WS_MAAFW_MANAGED_PROGRESS }, handler)
-    )
-    if (capabilities.value?.features.operationProgress) {
-      pollTimer = window.setInterval(() => {
-        void pollProgress(scriptId, operationId, generation)
-      }, 1000)
-    }
+    writeActiveOperationRef(scriptId, operationId, operation, capabilities.value)
+    attachProgressTracking(scriptId, operationId)
     return operationId
+  }
+
+  const resumeProgress = async (scriptId: string): Promise<boolean> => {
+    const currentCapabilities = capabilities.value
+    if (!currentCapabilities || currentCapabilities.features.operationProgress !== true)
+      return false
+    const stored = readActiveOperationRef(scriptId, currentCapabilities)
+    if (!stored) return false
+    progress.value = {
+      operationId: stored.operationId,
+      operation: stored.operation,
+      status: 'running',
+      stage: '正在恢复操作状态',
+      message: '正在读取离开页面前的 MaaFW 托管操作进度',
+      percent: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      logs: [],
+    }
+    const parsedStartedAt = Date.parse(stored.startedAt)
+    const generation = attachProgressTracking(
+      scriptId,
+      stored.operationId,
+      Number.isFinite(parsedStartedAt) ? Math.min(parsedStartedAt, Date.now()) : Date.now()
+    )
+    await pollProgress(scriptId, stored.operationId, generation)
+    return progress.value.operationId === stored.operationId
   }
 
   const tracked = async <T>(
@@ -573,9 +817,10 @@ export function useMaaFWManagedApi() {
     action: (progressId: string) => Promise<T>
   ) => {
     const progressId = beginProgressTracking(scriptId, operation, message)
+    let keepTracking = false
     try {
       const result = await action(progressId)
-      if (progress.value.status === 'running') {
+      if (progress.value.operationId === progressId && progress.value.status === 'running') {
         progress.value = {
           ...progress.value,
           status: 'success',
@@ -584,19 +829,57 @@ export function useMaaFWManagedApi() {
           percent: 100,
         }
       }
+      clearActiveOperationRef(scriptId, progressId)
       return result
     } catch (caught) {
-      const reason = pluginErrorMessage(caught, 'MaaFW 托管资源操作失败')
-      progress.value = {
-        ...progress.value,
-        status: 'error',
-        stage: '操作失败',
-        message: reason,
+      if (
+        capabilities.value?.features.operationProgress === true &&
+        progress.value.operationId === progressId &&
+        progress.value.status === 'running'
+      ) {
+        keepTracking = true
+        progress.value = {
+          ...progress.value,
+          stage: '正在确认后台状态',
+          message: '动作请求未返回可确认终态，正在查询 MaaFW 后端权威进度',
+        }
+        throw caught
       }
+      const reason = pluginErrorMessage(caught, 'MaaFW 托管资源操作失败')
+      if (
+        progress.value.operationId === progressId &&
+        progress.value.status !== 'success' &&
+        progress.value.status !== 'error'
+      ) {
+        progress.value = {
+          ...progress.value,
+          status: 'error',
+          stage: '操作失败',
+          message: reason,
+        }
+      }
+      clearActiveOperationRef(scriptId, progressId)
       throw caught
     } finally {
-      stopProgressTracking()
+      if (!keepTracking && progress.value.operationId === progressId) stopProgressTracking()
     }
+  }
+
+  const releaseProgressTracking = (scriptId: string, operationId: string) => {
+    if (
+      activeProgressScriptId !== scriptId ||
+      progress.value.operationId !== operationId ||
+      progress.value.status !== 'running' ||
+      progress.value.stage !== '正在确认进度记录' ||
+      !missingProgressSince ||
+      Date.now() - missingProgressSince < 15_000
+    ) {
+      return false
+    }
+    clearActiveOperationRef(scriptId, operationId)
+    stopProgressTracking()
+    progress.value = { ...EMPTY_PROGRESS }
+    return true
   }
 
   const getCapabilities = async (): Promise<MaaFWManagedCapabilities> => {
@@ -851,6 +1134,8 @@ export function useMaaFWManagedApi() {
     capabilities,
     progress,
     getCapabilities,
+    resumeProgress,
+    releaseProgressTracking,
     getCurrentBinding,
     getOverview,
     listProjects,
