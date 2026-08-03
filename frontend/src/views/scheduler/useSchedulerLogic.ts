@@ -7,6 +7,7 @@ import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
+import { isTaskStopConfirmed } from './taskStop'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
@@ -495,20 +496,21 @@ export function useSchedulerLogic() {
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
+    const taskId = tab.websocketId
     try {
-      await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
+      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      if (!isTaskStopConfirmed(response)) {
+        throw new Error(response.message || '停止任务失败')
+      }
 
-      // 播放任务中止音频
-      const { playSound } = useAudioPlayer()
-      await playSound('maa_task_aborted')
-
-      // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
-      message.info('正在停止任务，请稍候...')
-      saveTabsToStorage(schedulerTabs.value)
+      // HTTP 返回时后端已完成收尾；WebSocket 断线时由这里补齐前端状态。
+      if (tab.websocketId === taskId) {
+        await handleSignalMessage(tab, { Accomplish: '任务已停止', Stopped: true })
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`停止任务失败: ${errorMsg}`)
-      message.error('停止任务失败')
+      message.error(errorMsg)
       saveTabsToStorage(schedulerTabs.value)
     }
   }
@@ -790,9 +792,10 @@ export function useSchedulerLogic() {
   const handleSignalMessage = async (tab: SchedulerTab, data: any) => {
     logger.debug(`处理Signal消息: ${JSON.stringify(data)}`)
 
-    // 只有收到WebSocket的Accomplish信号才将任务标记为结束状态
-    // 这确保了调度台状态与实际任务执行状态严格同步
+    // 收到 WebSocket 完成信号或停止接口确认后，才将任务标记为结束。
+    // 后者用于 WebSocket 断线导致完成信号丢失的场景。
     if (data && data.Accomplish) {
+      const stopped = data.Stopped === true
       logger.info('收到Accomplish信号，设置任务状态为结束')
 
       // 清空日志并显示原始代理结果信息
@@ -841,11 +844,11 @@ export function useSchedulerLogic() {
         tab.websocketId = null
       }
 
-      // 播放任务完成音频
+      // 播放任务结束音频
       const { playSound } = useAudioPlayer()
-      await playSound('task_completed')
+      await playSound(stopped ? 'maa_task_aborted' : 'task_completed')
 
-      message.success('任务完成')
+      message.success(stopped ? '任务已停止' : '任务完成')
       saveTabsToStorage(schedulerTabs.value)
 
       // 触发Vue的响应式更新
