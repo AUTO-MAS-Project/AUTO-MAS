@@ -17,7 +17,7 @@
           </div>
           <a-space>
             <a-button
-              v-if="features.runtimeManagement"
+              v-if="features.runtimeManagement && !readOnly"
               :disabled="busy || !binding.projectId || !binding.version"
               @click="emit('install-runtime')"
             >
@@ -146,7 +146,7 @@
               {{ formatTime(record.lastUsedAt) }}
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space wrap>
+              <a-space v-if="!readOnly" wrap>
                 <a-button
                   v-if="features.upgradePlans"
                   size="small"
@@ -217,7 +217,7 @@
               {{ record.activeLeaseIds?.length || 0 }}
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space wrap>
+              <a-space v-if="!readOnly" wrap>
                 <a-button
                   v-if="features.pinning !== false"
                   size="small"
@@ -244,6 +244,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { TableColumnsType } from 'ant-design-vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import type {
@@ -267,6 +268,7 @@ const props = defineProps<{
   loading: boolean
   versionsLoading: boolean
   busy: boolean
+  readOnly: boolean
 }>()
 
 const emit = defineEmits<{
@@ -288,20 +290,20 @@ const projectColumns: TableColumnsType<MaaFWManagedProjectSummary> = [
   { title: '操作', key: 'action', width: 110 },
 ]
 
-const versionColumns: TableColumnsType<MaaFWManagedProjectVersion> = [
+const versionColumns = computed<TableColumnsType<MaaFWManagedProjectVersion>>(() => [
   { title: '版本', key: 'version', dataIndex: 'version', width: 190 },
   { title: '引用', key: 'references', width: 280 },
   { title: '最近使用', key: 'lastUsedAt', width: 180 },
-  { title: '操作', key: 'action', width: 300 },
-]
+  ...(!props.readOnly ? [{ title: '操作', key: 'action', width: 300 }] : []),
+])
 
-const runtimeColumns: TableColumnsType<MaaFWManagedRuntime> = [
+const runtimeColumns = computed<TableColumnsType<MaaFWManagedRuntime>>(() => [
   { title: '运行时', key: 'runtimeId', dataIndex: 'runtimeId', width: 265 },
   { title: '依赖', key: 'requirements', width: 235 },
   { title: '占用 / 最近使用', key: 'usage', width: 190 },
   { title: '保护', key: 'protection', width: 130 },
-  { title: '操作', key: 'action', width: 180 },
-]
+  ...(!props.readOnly ? [{ title: '操作', key: 'action', width: 180 }] : []),
+])
 
 const selectProject = (projectId: string) => {
   if (projectId === props.selectedProjectId && props.versions.length) return

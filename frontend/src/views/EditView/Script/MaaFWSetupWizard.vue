@@ -106,7 +106,7 @@
                 :agent-env-checklist-description="agentEnvChecklistDescription"
                 @change="handleChange"
                 @select-path="selectMaaFWPath"
-                @preview-interface="handlePreviewInterface"
+                @preview-interface="rereadInterface"
                 @prepare-agent-env="handlePrepareAgentEnv"
                 @copy="copyToClipboard"
               />
@@ -360,7 +360,11 @@ import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 import MaaFWProjectManagerModal from './MaaFWScriptEdit/MaaFWProjectManagerModal.vue'
-import { useMaaFWManagedApi } from '@/composables/useMaaFWManagedApi'
+import {
+  getMaaFWManagedMutationUnavailableReason,
+  hasMaaFWManagedSafeMutationContract,
+  useMaaFWManagedApi,
+} from '@/composables/useMaaFWManagedApi'
 
 const logger = window.electronAPI.getLogger('MaaFW引导')
 
@@ -467,7 +471,11 @@ const {
 } = useMaaFWScriptConfig(scriptId)
 
 const isStepZeroReady = computed(
-  () => isInterfaceReady.value && isAgentEnvReady.value && !isAgentEnvPreparing.value
+  () =>
+    isInterfaceReady.value &&
+    isAgentEnvReady.value &&
+    !interfaceLoading.value &&
+    !isAgentEnvPreparing.value
 )
 const isControlStepComplete = computed(() =>
   Boolean(maafwConfig.Info.Controller && maafwConfig.Info.Resource)
@@ -492,13 +500,18 @@ const managedConversionAvailable = computed(
   () =>
     formData.type === 'MaaFW' &&
     managedApi.capabilities.value?.available === true &&
-    managedApi.capabilities.value.features.inPlaceConversion === true
+    managedApi.capabilities.value.features.inPlaceConversion === true &&
+    hasMaaFWManagedSafeMutationContract(managedApi.capabilities.value)
 )
 const managedUnavailableReason = computed(() => {
   if (formData.type !== 'MaaFW') {
     return `${formData.type} 项目包暂不支持转换为通用托管项目；请保持普通项目，并使用其项目包提供的升级能力。`
   }
+  const mutationUnavailableReason = getMaaFWManagedMutationUnavailableReason(
+    managedApi.capabilities.value
+  )
   return (
+    mutationUnavailableReason ||
     managedApi.capabilities.value?.unavailableReason ||
     '请更新 automas-script-maafw-managed 至支持原地转换的版本；当前仍可保持普通项目继续使用。'
   )
@@ -558,6 +571,19 @@ const handleReuseApplied = async (result: MaaFWConfigurationApplyResult) => {
   importedUserId.value = result.createdUser.id
   reuseComplete.value = true
   await loadScript()
+}
+
+const rereadInterface = async () => {
+  if (interfaceLoading.value || isAgentEnvPreparing.value || isProjectUpdateRunning.value) return
+  agentEnvResult.value = null
+  agentEnvProgressStatus.value = 'idle'
+  agentEnvProgressStage.value = ''
+  agentEnvProgressPercent.value = null
+  agentEnvProgressMessage.value = ''
+  agentEnvProgressLogs.value = []
+  agentEnvProgressDownloadedBytes.value = null
+  agentEnvProgressTotalBytes.value = null
+  await handlePreviewInterface()
 }
 
 const loadManagedDecision = async () => {

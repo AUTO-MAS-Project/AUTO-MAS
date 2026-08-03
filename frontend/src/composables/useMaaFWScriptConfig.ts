@@ -40,6 +40,13 @@ const MAAFW_DIRECT_CONTROLLER_TYPES = ['Adb', 'Win32'] as const
 export type MaaFWProjectUpdateStatus = 'idle' | 'running' | 'completed' | 'failed'
 export type MaaFWAgentEnvProgressStatus = 'idle' | 'running' | 'completed' | 'failed'
 
+type MaaFWPendingSave = {
+  revision: number
+  category: keyof MaaFWScriptConfig
+  key: string
+  value: unknown
+}
+
 const PROJECT_UPDATE_STAGE_LABELS: Record<string, string> = {
   checking: '正在检查可用版本',
   downloading: '正在下载项目资源',
@@ -184,12 +191,6 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const saveErrorMessage = ref('')
   const hasUnsavedChanges = ref(false)
-  const pendingSave = ref<{
-    category: keyof MaaFWScriptConfig
-    key: string
-    value: unknown
-    force: boolean
-  } | null>(null)
   const previewData = ref<MaaFWInterfacePreviewData | null>(null)
   const agentEnvResult = ref<MaaFWAgentEnvPrepareData | null>(null)
   const agentEnvProgressStatus = ref<MaaFWAgentEnvProgressStatus>('idle')
@@ -217,10 +218,21 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const monthlyOnceTasks = ref<string[]>([])
   const globalUpdateChannel = ref<string>('')
   const globalMirrorChyanCDK = ref<string>('')
+  const pendingSaves: MaaFWPendingSave[] = []
+  let disposed = false
+  let latestSaveRevision = 0
+  let persistedSaveRevision = 0
+  let saveDrainPromise: Promise<boolean> | null = null
+  let lastUpdateErrorMessage = ''
   let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
   let projectUpdateSubscriptionId: string | null = null
   let agentEnvProgressSubscriptionId: string | null = null
-  let agentEnvPrepareRequest: { path: string; promise: Promise<void> } | null = null
+  let agentEnvGeneration = 0
+  let agentEnvPrepareRequest: {
+    path: string
+    generation: number
+    promise: Promise<void>
+  } | null = null
 
   const emulatorLoading = ref(false)
   const emulatorDeviceLoading = ref(false)
@@ -286,6 +298,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       !previewData.value ||
       isAutoUpdateDisabled.value ||
       isSaving.value ||
+      hasUnsavedChanges.value ||
       interfaceLoading.value ||
       isAgentEnvPreparing.value ||
       isProjectUpdateRunning.value ||
@@ -315,6 +328,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
   ])
 
   const setSaveStatus = (status: 'idle' | 'saving' | 'saved' | 'error', errorMessage = '') => {
+    if (disposed) return
     if (saveStatusTimer) {
       clearTimeout(saveStatusTimer)
       saveStatusTimer = null
@@ -323,6 +337,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     saveErrorMessage.value = errorMessage
     if (status === 'saved') {
       saveStatusTimer = setTimeout(() => {
+        if (disposed) return
         saveStatus.value = 'idle'
         saveStatusTimer = null
       }, 2000)
@@ -437,14 +452,81 @@ export function useMaaFWScriptConfig(scriptId: string) {
   }
 
   const updateScriptConfig = async (config: Record<string, unknown>) => {
+    lastUpdateErrorMessage = ''
     try {
       await registryApi.updateScript(scriptId, config)
       return true
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      message.error(errorMsg)
+      lastUpdateErrorMessage = errorMsg
+      if (!disposed) message.error(errorMsg)
       return false
     }
+  }
+
+  const buildPendingSavePatch = (entries: MaaFWPendingSave[]): Record<string, unknown> => {
+    const patch: Record<string, Record<string, unknown>> = {}
+    entries.forEach(entry => {
+      const categoryPatch = patch[entry.category] ?? {}
+      categoryPatch[entry.key] = entry.value
+      patch[entry.category] = categoryPatch
+    })
+    return patch
+  }
+
+  const drainPendingSaves = async (): Promise<boolean> => {
+    isSaving.value = true
+    setSaveStatus('saving')
+    let activeBatch: MaaFWPendingSave[] = []
+    try {
+      while (pendingSaves.length > 0) {
+        activeBatch = pendingSaves.splice(0, pendingSaves.length)
+        const latestBatchRevision = Math.max(...activeBatch.map(entry => entry.revision))
+        const success = await updateScriptConfig(buildPendingSavePatch(activeBatch))
+        if (!success) {
+          pendingSaves.unshift(...activeBatch)
+          activeBatch = []
+          if (!disposed) {
+            hasUnsavedChanges.value = true
+            setSaveStatus(
+              'error',
+              lastUpdateErrorMessage ? `保存失败：${lastUpdateErrorMessage}` : '保存失败，请重试'
+            )
+          }
+          return false
+        }
+
+        persistedSaveRevision = Math.max(persistedSaveRevision, latestBatchRevision)
+        logger.info(
+          `配置已保存: ${activeBatch.map(entry => `${entry.category}.${entry.key}`).join(', ')}`
+        )
+        activeBatch = []
+      }
+
+      const fullyPersisted = persistedSaveRevision >= latestSaveRevision
+      if (!disposed) {
+        hasUnsavedChanges.value = !fullyPersisted
+        if (fullyPersisted) setSaveStatus('saved')
+      }
+      return fullyPersisted
+    } catch (error) {
+      if (activeBatch.length > 0) pendingSaves.unshift(...activeBatch)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      if (!disposed) {
+        hasUnsavedChanges.value = true
+        setSaveStatus('error', `保存失败：${errorMsg}`)
+      }
+      return false
+    } finally {
+      if (!disposed) isSaving.value = false
+      saveDrainPromise = null
+    }
+  }
+
+  const ensureSaveDrain = () => {
+    if (!saveDrainPromise) saveDrainPromise = drainPendingSaves()
+    return saveDrainPromise
   }
 
   const handleChange = async (
@@ -453,37 +535,13 @@ export function useMaaFWScriptConfig(scriptId: string) {
     value: unknown,
     force = false
   ) => {
-    if ((!force && isInitializing.value) || isSaving.value) {
-      if (isSaving.value) {
-        pendingSave.value = { category, key, value, force }
-      }
-      return
-    }
+    if (disposed) return false
+    if (!force && isInitializing.value) return true
 
+    const revision = ++latestSaveRevision
+    pendingSaves.push({ revision, category, key, value })
     hasUnsavedChanges.value = true
-    setSaveStatus('saving')
-    isSaving.value = true
-    try {
-      const success = await updateScriptConfig({ [category]: { [key]: value } })
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-        hasUnsavedChanges.value = false
-        setSaveStatus('saved')
-      } else {
-        setSaveStatus('error')
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-      setSaveStatus('error', `保存失败：${errorMsg}`)
-    } finally {
-      isSaving.value = false
-      if (pendingSave.value) {
-        const pending = pendingSave.value
-        pendingSave.value = null
-        void handleChange(pending.category, pending.key, pending.value, pending.force)
-      }
-    }
+    return await ensureSaveDrain()
   }
 
   const handlePeriodTaskChange = async (
@@ -802,6 +860,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     value.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
 
   const handleAgentEnvProgress = (data: WSMaaFWEnvPrepareProgressData) => {
+    if (disposed) return
     if (data.scriptId && data.scriptId !== scriptId) return
     if (
       data.project_path &&
@@ -856,7 +915,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
   }
 
   const ensureAgentEnvProgressSubscription = () => {
-    if (agentEnvProgressSubscriptionId) return
+    if (disposed || agentEnvProgressSubscriptionId) return
     agentEnvProgressSubscriptionId = subscribe(
       { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
       wsMessage => handleAgentEnvProgress(wsMessage.data)
@@ -886,6 +945,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
   // ---- Action handlers ----
 
   const handlePreviewInterface = async () => {
+    if (disposed) return
     if (isAgentEnvPreparing.value || isProjectUpdateRunning.value) return
     if (!maafwConfig.Info.Path) {
       message.warning('请先选择 MaaFramework 项目目录')
@@ -893,18 +953,21 @@ export function useMaaFWScriptConfig(scriptId: string) {
     }
 
     const data = await previewInterface(maafwConfig.Info.Path)
+    if (disposed) return
     if (data) {
       previewData.value = data
       await syncScriptNameFromProject(data)
       await syncProjectLabelFromProject(data)
       syncControllerResourceSelection(!isInitializing.value)
       await prunePeriodTaskSelections()
+      if (disposed) return
       message.success(`已读取 ${previewProjectTitle.value}`)
       await handlePrepareAgentEnv()
     }
   }
 
   const handlePrepareAgentEnv = async () => {
+    if (disposed) return
     if (isProjectUpdateRunning.value) return
     if (!maafwConfig.Info.Path) {
       message.warning('请先选择 MaaFramework 项目目录')
@@ -912,13 +975,18 @@ export function useMaaFWScriptConfig(scriptId: string) {
     }
 
     const targetPath = maafwConfig.Info.Path
-    if (agentEnvPrepareRequest) {
+    while (agentEnvPrepareRequest) {
       const activeRequest = agentEnvPrepareRequest
       await activeRequest.promise
+      if (disposed) return
       if (activeRequest.path === targetPath || maafwConfig.Info.Path !== targetPath) {
         return
       }
     }
+
+    const generation = ++agentEnvGeneration
+    const isRequestAlive = () => !disposed && generation === agentEnvGeneration
+    const isCurrentRequest = () => isRequestAlive() && maafwConfig.Info.Path === targetPath
 
     agentEnvResult.value = null
     ensureAgentEnvProgressSubscription()
@@ -930,8 +998,11 @@ export function useMaaFWScriptConfig(scriptId: string) {
     agentEnvProgressDownloadedBytes.value = null
     agentEnvProgressTotalBytes.value = null
     const promise = (async () => {
-      const data = await prepareAgentEnv(targetPath, scriptId)
-      if (maafwConfig.Info.Path !== targetPath) return
+      const data = await prepareAgentEnv(targetPath, scriptId, {
+        isActive: isRequestAlive,
+        notify: false,
+      })
+      if (!isCurrentRequest()) return
 
       if (!data) {
         agentEnvResult.value = {
@@ -945,6 +1016,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
         agentEnvProgressStatus.value = 'failed'
         agentEnvProgressStage.value = '运行环境准备失败'
         agentEnvProgressMessage.value = 'MaaFW 运行环境准备失败'
+        message.error('MaaFW 运行环境准备失败')
         return
       }
 
@@ -967,7 +1039,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       }
       message.success(`MaaFW 运行环境已准备完成，共 ${data.agentCount} 个 Agent`)
     })()
-    const request = { path: targetPath, promise }
+    const request = { path: targetPath, generation, promise }
     agentEnvPrepareRequest = request
     try {
       await promise
@@ -989,7 +1061,14 @@ export function useMaaFWScriptConfig(scriptId: string) {
       message.warning('当前脚本未声明版本，无法判断更新')
       return
     }
-    if (isSaving.value || isAgentEnvPreparing.value || isProjectUpdateRunning.value) return
+    if (
+      isSaving.value ||
+      hasUnsavedChanges.value ||
+      isAgentEnvPreparing.value ||
+      isProjectUpdateRunning.value
+    ) {
+      return
+    }
     if (projectUpdateMirrorSourceBlocked.value) {
       message.warning('MirrorChyan 安装需要项目 CDK 或全局 CDK；也可以改用 GitHub 更新源')
       return
@@ -1272,8 +1351,11 @@ export function useMaaFWScriptConfig(scriptId: string) {
     }
   }
 
-  /** 清理定时器，供页面在 onBeforeUnmount 中调用 */
+  /** 清理页面订阅；后台保存与环境预热请求继续执行，但不再回写页面状态。 */
   const dispose = () => {
+    if (disposed) return
+    disposed = true
+    agentEnvGeneration += 1
     if (saveStatusTimer) {
       clearTimeout(saveStatusTimer)
       saveStatusTimer = null

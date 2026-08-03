@@ -105,6 +105,43 @@ export interface MaaFWManagedCapabilities {
   hostApis: Record<string, boolean>
 }
 
+const SAFE_MUTATION_FEATURES = [
+  'operationProgress',
+  'activeOperationLookup',
+  'serverMutationExclusion',
+] as const
+
+const SAFE_MUTATION_FEATURE_LABELS: Record<(typeof SAFE_MUTATION_FEATURES)[number], string> = {
+  operationProgress: '操作进度',
+  activeOperationLookup: '服务端活动操作查询',
+  serverMutationExclusion: '服务端写操作排他',
+}
+
+export const hasMaaFWManagedSafeMutationContract = (
+  currentCapabilities: MaaFWManagedCapabilities | null | undefined
+) =>
+  currentCapabilities?.available === true &&
+  SAFE_MUTATION_FEATURES.every(feature => currentCapabilities.features[feature] === true)
+
+export const getMaaFWManagedMutationUnavailableReason = (
+  currentCapabilities: MaaFWManagedCapabilities | null | undefined
+) => {
+  if (!currentCapabilities?.available) {
+    return (
+      currentCapabilities?.unavailableReason ||
+      '当前未提供 MaaFW 托管资源服务；项目资源变更已停用。'
+    )
+  }
+  const missingFeatures = SAFE_MUTATION_FEATURES.filter(
+    feature => currentCapabilities.features[feature] !== true
+  ).map(feature => SAFE_MUTATION_FEATURE_LABELS[feature])
+  if (!missingFeatures.length) return ''
+  const version = currentCapabilities.distributionVersion
+    ? `Managed ${currentCapabilities.distributionVersion}`
+    : '当前 Managed 插件'
+  return `${version} 缺少安全写入能力：${missingFeatures.join('、')}。项目管理已切换为只读；请升级 automas-script-maafw-managed 后重试。`
+}
+
 export interface MaaFWManagedInventorySummary {
   files?: number
   directories?: number
@@ -1015,6 +1052,13 @@ export function useMaaFWManagedApi() {
     message: string,
     action: (progressId: string) => Promise<T>
   ) => {
+    if (!hasMaaFWManagedSafeMutationContract(capabilities.value)) {
+      throw new MaaFWManagedRequestError(
+        getMaaFWManagedMutationUnavailableReason(capabilities.value),
+        false,
+        412
+      )
+    }
     const progressId = beginProgressTracking(scriptId, operation, message)
     let keepTracking = false
     actionRequestsInFlight.add(progressId)
@@ -1034,6 +1078,32 @@ export function useMaaFWManagedApi() {
       return result
     } catch (caught) {
       actionRequestsInFlight.delete(progressId)
+      if (caught instanceof MaaFWManagedRequestError && caught.code === 409) {
+        clearActiveOperationRef(scriptId, progressId)
+        try {
+          const active = await lookupAndAttachActiveOperation(scriptId, { emptyBehavior: 'keep' })
+          keepTracking = true
+          if (active === 'none') {
+            progress.value = {
+              ...progress.value,
+              status: 'running',
+              stage: '正在确认服务端活跃操作',
+              message:
+                '服务端拒绝了重复操作，但暂未返回可接管的活动操作；为避免重复修改资源，将保持锁定并重试',
+            }
+          }
+        } catch {
+          keepTracking = true
+          progress.value = {
+            ...progress.value,
+            status: 'running',
+            stage: '无法接管服务端活跃操作',
+            message:
+              '服务端已拒绝重复操作，但无法安全读取当前活动操作；为避免重复修改资源，将保持锁定',
+          }
+        }
+        throw caught
+      }
       if (capabilities.value?.features.operationProgress === true) {
         let authoritativeProgress: Record<string, unknown> | null = null
         try {
@@ -1149,30 +1219,6 @@ export function useMaaFWManagedApi() {
           status: 'error',
           stage: '操作失败',
           message: reason,
-        }
-        throw caught
-      }
-      if (caught instanceof MaaFWManagedRequestError && caught.code === 409) {
-        clearActiveOperationRef(scriptId, progressId)
-        try {
-          const attached = await resumeProgress(scriptId)
-          if (attached) {
-            keepTracking = true
-          } else {
-            progress.value = {
-              ...EMPTY_PROGRESS,
-              status: 'running',
-              stage: '正在确认服务端活跃操作',
-              message: '服务端拒绝了重复操作，但未返回可接管的操作；为避免重复修改资源，将保持锁定',
-            }
-          }
-        } catch {
-          progress.value = {
-            ...EMPTY_PROGRESS,
-            status: 'running',
-            stage: '无法接管服务端活跃操作',
-            message: '服务端已拒绝重复操作，但无法安全读取当前操作；为避免重复修改资源，将保持锁定',
-          }
         }
         throw caught
       }

@@ -173,6 +173,11 @@ type MaaFWAgentEnvPrepareOut = {
   data?: MaaFWAgentEnvPrepareData | null
 }
 
+type MaaFWRequestLifecycle = {
+  isActive?: () => boolean
+  notify?: boolean
+}
+
 export function useMaaFWApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -241,8 +246,13 @@ export function useMaaFWApi() {
 
   const prepareAgentEnv = async (
     path: string,
-    progressId?: string
+    scriptId?: string,
+    lifecycle?: MaaFWRequestLifecycle
   ): Promise<MaaFWAgentEnvPrepareData | null> => {
+    const isActive = () => lifecycle?.isActive?.() ?? true
+    const shouldNotify = () => lifecycle?.notify !== false && isActive()
+    if (!isActive()) return null
+
     loading.value = true
     error.value = null
 
@@ -250,8 +260,8 @@ export function useMaaFWApi() {
       const response = await apiRequest<MaaFWAgentEnvPrepareOut>(OpenAPI, {
         method: 'POST',
         url: '/api/scripts/maafw/agent-env/prepare',
-        body: { path },
-        headers: progressId ? { 'X-MaaFW-Progress-Id': progressId } : undefined,
+        body: { path, scriptId },
+        headers: scriptId ? { 'X-MaaFW-Progress-Id': scriptId } : undefined,
         mediaType: 'application/json',
         errors: {
           422: 'Validation Error',
@@ -260,9 +270,9 @@ export function useMaaFWApi() {
 
       if (response.code !== 200 || !response.data) {
         const errorMsg = response.message || '准备 MaaFW 运行环境失败'
-        message.error(errorMsg)
+        if (shouldNotify()) message.error(errorMsg)
         if (response.data) {
-          error.value = errorMsg
+          if (isActive()) error.value = errorMsg
           return normalizeAgentEnvPrepareData(response.data, response.status, response.message)
         }
         throw new Error(errorMsg)
@@ -271,14 +281,14 @@ export function useMaaFWApi() {
       return normalizeAgentEnvPrepareData(response.data, response.status, response.message)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '准备 MaaFW 运行环境失败'
-      error.value = errorMsg
+      if (isActive()) error.value = errorMsg
       logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
+      if (shouldNotify() && err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
     } finally {
-      loading.value = false
+      if (isActive()) loading.value = false
     }
   }
 

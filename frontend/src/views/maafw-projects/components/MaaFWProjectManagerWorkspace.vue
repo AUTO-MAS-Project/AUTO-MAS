@@ -30,6 +30,15 @@
       </template>
     </a-alert>
 
+    <a-alert
+      v-if="api.capabilities.value?.available && !safeMutationAvailable"
+      class="manager-readonly-alert"
+      type="warning"
+      show-icon
+      message="当前 Managed 插件仅允许只读查看"
+      :description="mutationUnavailableReason"
+    />
+
     <div v-if="operationProgressVisible" class="operation-progress-panel">
       <div class="progress-heading">
         <div>
@@ -77,6 +86,7 @@
           :loading="overviewLoading"
           :versions-loading="versionsLoading"
           :busy="operationRunning"
+          :read-only="!safeMutationAvailable"
           @refresh="refreshOverview"
           @select-project="selectProject"
           @switch-version="confirmSwitchVersion"
@@ -88,7 +98,7 @@
         />
       </a-tab-pane>
 
-      <a-tab-pane key="operations" tab="导入与升级">
+      <a-tab-pane v-if="safeMutationAvailable" key="operations" tab="导入与升级">
         <MaaFWProjectOperationsPanel
           :script-id="scriptId"
           :binding="binding"
@@ -105,7 +115,7 @@
       </a-tab-pane>
 
       <a-tab-pane
-        v-if="effectiveFeatures.garbageCollection !== false"
+        v-if="safeMutationAvailable && effectiveFeatures.garbageCollection !== false"
         key="maintenance"
         tab="空间回收"
       >
@@ -197,6 +207,8 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message, Modal, type ModalFuncProps } from 'ant-design-vue'
 import {
+  getMaaFWManagedMutationUnavailableReason,
+  hasMaaFWManagedSafeMutationContract,
   useMaaFWManagedApi,
   type MaaFWManagedBinding,
   type MaaFWManagedFeatures,
@@ -276,6 +288,12 @@ const operationRunning = computed(
 )
 const mutationRunning = computed(
   () => api.progress.value.status === 'running' || mutationFinalizing.value
+)
+const safeMutationAvailable = computed(() =>
+  hasMaaFWManagedSafeMutationContract(api.capabilities.value)
+)
+const mutationUnavailableReason = computed(() =>
+  getMaaFWManagedMutationUnavailableReason(api.capabilities.value)
 )
 
 const effectiveFeatures = computed<MaaFWManagedFeatures>(() => {
@@ -405,14 +423,19 @@ const loadManager = async () => {
     const previousManaged = binding.value?.managed
     const capabilities = await api.getCapabilities()
     if (disposed || !capabilities.available) return
-    await api.resumeProgress(props.scriptId)
+    if (hasMaaFWManagedSafeMutationContract(capabilities)) {
+      await api.resumeProgress(props.scriptId)
+    }
     if (disposed) return
     const overview = await api.getOverview(props.scriptId)
     if (disposed) return
     binding.value = overview.binding
     projects.value = overview.projects
     runtimes.value = overview.runtimes
-    activeTab.value = overview.binding.managed ? 'resources' : 'operations'
+    activeTab.value =
+      overview.binding.managed || !hasMaaFWManagedSafeMutationContract(capabilities)
+        ? 'resources'
+        : 'operations'
     if (previousManaged === false && overview.binding.managed) emit('converted', props.scriptId)
     const preferredProject = overview.binding.projectId || overview.projects[0]?.projectId || ''
     if (preferredProject) {
@@ -949,6 +972,10 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 12px;
+}
+
+.manager-readonly-alert {
+  margin-bottom: 16px;
 }
 
 .manager-scroll-container {
