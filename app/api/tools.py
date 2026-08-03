@@ -23,7 +23,7 @@
 
 from fastapi import APIRouter, Body
 from datetime import datetime
-from typing import Any
+from inspect import isawaitable
 
 from app.core import Config
 from app.models.schema import (
@@ -41,40 +41,6 @@ from app.models.schema import (
 )
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
-
-GAME_SIGN_CREDENTIAL_FIELDS = {
-    "MiyousheToken",
-    "KuroToken",
-    "SklandToken",
-}
-GAME_SIGN_CREDENTIAL_REDACTION = "******"
-
-
-def _redact_game_sign_account(data: dict[str, Any]) -> dict[str, Any]:
-    """将账号配置中的凭据替换为仅表示已配置的占位符。"""
-
-    redacted = dict(data)
-    account_data = redacted.get("GameSignAccount")
-    if isinstance(account_data, dict):
-        redacted["GameSignAccount"] = _redact_game_sign_account(account_data)
-        return redacted
-
-    for field in GAME_SIGN_CREDENTIAL_FIELDS:
-        redacted[field] = (
-            GAME_SIGN_CREDENTIAL_REDACTION if redacted.get(field) else ""
-        )
-    return redacted
-
-
-def _redact_game_sign_accounts(data: dict[str, Any]) -> dict[str, Any]:
-    """脱敏 MultipleConfig 结构中的全部游戏签到账号。"""
-
-    return {
-        key: _redact_game_sign_account(value)
-        if key != "instances" and isinstance(value, dict)
-        else value
-        for key, value in data.items()
-    }
 
 
 @router.post(
@@ -134,7 +100,6 @@ async def manual_game_sign() -> OutBase:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
-            merge_sign_results,
             run_all_sign_in,
         )
 
@@ -143,9 +108,9 @@ async def manual_game_sign() -> OutBase:
         # 格式化并存储结果
         formatted = format_sign_results(results)
         # 合并结果（手动签到按 account_uid 替换旧数据）
-        Config.ToolsConfig._game_sign_result_data = merge_sign_results(
-            Config.ToolsConfig._game_sign_result_data, formatted, replace=True
-        )
+        result_update = Config.update_game_sign_results(formatted, replace=True)
+        if isawaitable(result_update):
+            await result_update
 
         # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
         today = datetime.now().strftime("%Y-%m-%d")
@@ -193,8 +158,7 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
     """获取所有游戏签到账号组"""
 
     try:
-        raw = await Config.get_game_sign_accounts(if_decrypt=False)
-        data = _redact_game_sign_accounts(raw)
+        data = await Config.get_game_sign_accounts()
     except Exception as e:
         return GameSignAccountsListOut(
             code=500,
@@ -218,9 +182,9 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
     try:
         uid, config = await Config.add_game_sign_account()
         # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
-        raw = await config.toDict(if_decrypt=False)
+        raw = await config.toDict()
         flat = raw.get("GameSignAccount", raw)
-        data = GameSignAccountGroupConfig(**_redact_game_sign_account(flat))
+        data = GameSignAccountGroupConfig(**flat)
         # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
         return GameSignAccountCreateOut(
@@ -246,14 +210,10 @@ async def get_game_sign_account(
     """获取游戏签到账号组详情"""
 
     try:
-        raw = await Config.get_game_sign_account(
-            account.accountId, if_decrypt=False
-        )
+        raw = await Config.get_game_sign_account(account.accountId)
         # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
         flat = raw.get("GameSignAccount", raw)
-        account_data = GameSignAccountGroupConfig(
-            **_redact_game_sign_account(flat)
-        )
+        account_data = GameSignAccountGroupConfig(**flat)
     except Exception as e:
         return GameSignAccountCreateOut(
             code=500,
@@ -280,10 +240,6 @@ async def update_game_sign_account(
     try:
         # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
         flat_data = account.data.model_dump(exclude_unset=True)
-        for field in GAME_SIGN_CREDENTIAL_FIELDS:
-            if flat_data.get(field) == GAME_SIGN_CREDENTIAL_REDACTION:
-                flat_data.pop(field)
-
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:
