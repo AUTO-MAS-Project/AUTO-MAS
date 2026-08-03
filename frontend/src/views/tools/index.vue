@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
 import TabGameSign from './TabGameSign.vue'
+
+defineOptions({ name: 'ToolsPage' })
+
 const logger = window.electronAPI.getLogger('工具')
 
 const { loading, getTools, updateTools } = useToolsApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 // 活动标签
 const activeKey = ref('arknightspc')
@@ -74,10 +79,22 @@ const gameSignStatusTag = useStatusTag(
 )
 
 // 轮询定时器
-let pollTimer: NodeJS.Timeout | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let gameSignSubscriptionId: string | null = null
+let statusPollFailed = false
 
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
+
+const syncGameSignResult = (result: unknown) => {
+    if (!isMounted || typeof result !== 'string') return
+    if (toolsConfig.GameSign) {
+        toolsConfig.GameSign.Result = result
+    }
+    if (editingConfig.GameSign) {
+        editingConfig.GameSign.Result = result
+    }
+}
 
 // 仅更新状态（不影响编辑状态，不触发 loading）
 const updateStatus = async () => {
@@ -89,8 +106,11 @@ const updateStatus = async () => {
         // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
         const response = await Service.getToolsApiToolsGetPost()
         if (!isMounted) return
-        if (response.code !== 200 || !response.data) return
+        if (response.code !== 200 || !response.data) {
+            throw new Error(response.message || '工具状态响应无效')
+        }
         const data = response.data
+        statusPollFailed = false
         if (data.ArknightsPC?.Status) {
             // 只更新 toolsConfig 的状态，不更新 editingConfig
             // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
@@ -99,13 +119,14 @@ const updateStatus = async () => {
         if (data.GameSign?.Status) {
             toolsConfig.GameSign!.Status = data.GameSign.Status
         }
-        if (data.GameSign?.Result) {
-            toolsConfig.GameSign!.Result = data.GameSign.Result
-            // 同步签到结果到编辑状态，否则展示组件读到的是初始空值
-            editingConfig.GameSign!.Result = data.GameSign.Result
-        }
+        // 同步签到结果到编辑状态，否则展示组件读到的是初始空值
+        syncGameSignResult(data.GameSign?.Result)
     } catch (error) {
-        // 静默失败，不影响用户操作
+        if (!statusPollFailed) {
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.warn(`更新工具状态失败，将继续重试: ${errorMsg}`)
+            statusPollFailed = true
+        }
     }
 }
 
@@ -114,17 +135,17 @@ const refreshGameSignConfig = async () => {
     try {
         const response = await Service.getToolsApiToolsGetPost()
         if (!isMounted) return
-        if (response.code !== 200 || !response.data) return
+        if (response.code !== 200 || !response.data) {
+            throw new Error(response.message || '签到结果响应无效')
+        }
         const data = response.data
         if (data.GameSign?.Status) {
             toolsConfig.GameSign!.Status = data.GameSign.Status
         }
-        if (data.GameSign?.Result) {
-            toolsConfig.GameSign!.Result = data.GameSign.Result
-            editingConfig.GameSign!.Result = data.GameSign.Result
-        }
-    } catch {
-        // 静默失败
+        syncGameSignResult(data.GameSign?.Result)
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`刷新签到结果失败: ${errorMsg}`)
     }
 }
 
@@ -246,6 +267,7 @@ const handleSelectVisibleChange = (visible: boolean) => {
         logger.debug('下拉框打开，暂停轮询')
     } else {
         logger.debug('下拉框关闭，恢复轮询')
+        void updateStatus()
     }
 }
 
@@ -292,9 +314,19 @@ const handleKeyDown = async (event: KeyboardEvent) => {
 
 // 使用 VueUse 的 useEventListener 管理键盘事件
 useEventListener(document, 'keydown', handleKeyDown)
+useEventListener(window, 'focus', () => void updateStatus())
+useEventListener(document, 'visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        void updateStatus()
+    }
+})
 
 // 生命周期：加载配置并启动轮询
 onMounted(async () => {
+    gameSignSubscriptionId = subscribe({ id: 'GameSign', type: 'Update' }, message => {
+        const data = message.data as { Result?: unknown } | undefined
+        syncGameSignResult(data?.Result)
+    })
     await loadTools()
     startStatusPolling()
 })
@@ -303,6 +335,10 @@ onMounted(async () => {
 onUnmounted(() => {
     isMounted = false
     stopStatusPolling()
+    if (gameSignSubscriptionId) {
+        unsubscribe(gameSignSubscriptionId)
+        gameSignSubscriptionId = null
+    }
 })
 </script>
 
