@@ -37,6 +37,8 @@ export interface MAAScriptConfig {
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
     AnnihilationAvoidWaste: boolean
+    IfAutoUninstallBeforeQueue: boolean
+    IfAutoInstallAfterQueue: boolean
   }
   Emulator: {
     Id: string

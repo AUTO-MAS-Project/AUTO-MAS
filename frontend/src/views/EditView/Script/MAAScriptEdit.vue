@@ -233,6 +233,36 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，运行该脚本所在队列前，通过 ADB 按当前启用用户的服务器自动卸载对应『明日方舟』。此功能由 Taimer 用户提出">
+                    <span class="form-label">
+                      运行队列前自动卸载『明日方舟』
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch v-model:checked="maaConfig.Run.IfAutoUninstallBeforeQueue"
+                  @change="handleChange('Run', 'IfAutoUninstallBeforeQueue', $event)" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，运行该脚本所在队列后，按当前启用用户的服务器自动下载并安装对应『明日方舟』；官服与 B 服使用官方分发源，其他服务器使用 APKPure 镜像。此功能由 Taimer 用户提出">
+                    <span class="form-label">
+                      运行队列后自动安装『明日方舟』
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch v-model:checked="maaConfig.Run.IfAutoInstallAfterQueue"
+                  @change="handleChange('Run', 'IfAutoInstallAfterQueue', $event)" />
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
       </a-form>
@@ -291,6 +321,8 @@ const maaConfig = reactive<MAAScriptConfig>({
     AnnihilationTimeLimit: 40,
     RoutineTimeLimit: 10,
     AnnihilationAvoidWaste: false,
+    IfAutoUninstallBeforeQueue: false,
+    IfAutoInstallAfterQueue: false,
   },
   Emulator: {
     Id: '',

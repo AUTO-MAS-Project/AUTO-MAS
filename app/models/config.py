@@ -741,6 +741,14 @@ class MaaConfig(ConfigBase):
         self.Run_AnnihilationAvoidWaste = ConfigItem(
             "Run", "AnnihilationAvoidWaste", False, BoolValidator()
         )
+        ## 是否在运行队列前按启用用户服务器自动卸载明日方舟
+        self.Run_IfAutoUninstallBeforeQueue = ConfigItem(
+            "Run", "IfAutoUninstallBeforeQueue", False, BoolValidator()
+        )
+        ## 是否在运行队列后按启用用户服务器自动安装明日方舟
+        self.Run_IfAutoInstallAfterQueue = ConfigItem(
+            "Run", "IfAutoInstallAfterQueue", False, BoolValidator()
+        )
 
         self.UserData = MultipleConfig([MaaUserConfig])
 

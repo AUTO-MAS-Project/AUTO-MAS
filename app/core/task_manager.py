@@ -22,6 +22,8 @@
 
 import uuid
 import asyncio
+from contextlib import suppress
+from dataclasses import dataclass
 from typing import Dict, Literal
 
 from .config import (
@@ -35,7 +37,8 @@ from .config import (
     OkNteConfig,
     HSRConfig,
 )
-from app.services import System
+from .emulator_manager import EmulatorManager
+from app.services import ArknightsPackage, System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
 from app.task import (
@@ -52,6 +55,18 @@ from app.utils.constants import POWER_SIGN_MAP
 
 
 logger = get_logger("业务调度")
+
+
+@dataclass(frozen=True)
+class ArknightsPackageAutomation:
+    """单个 MAA 脚本和服务器的队列前后明日方舟处理配置快照。"""
+
+    script_name: str
+    emulator_id: str
+    emulator_index: str
+    server: str
+    uninstall_before_queue: bool
+    install_after_queue: bool
 
 
 class TaskInfo(TaskItem):
@@ -76,6 +91,7 @@ class Task(TaskExecuteBase):
         super().__init__()
         self.task_info = task_info
         self.is_closing = False
+        self.arknights_package_automations: list[ArknightsPackageAutomation] = []
 
     async def prepare(self):
 
@@ -108,6 +124,132 @@ class Task(TaskExecuteBase):
             f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个脚本项"
         )
 
+        self.arknights_package_automations = (
+            self._collect_arknights_package_automations()
+            if self.task_info.queue_id is not None
+            else []
+        )
+
+    def _collect_arknights_package_automations(
+        self,
+    ) -> list[ArknightsPackageAutomation]:
+        """按启用用户服务器收集队列内的明日方舟安装管理配置。"""
+
+        automations = []
+        for script_item in self.task_info.script_list:
+            script_uid = uuid.UUID(script_item.script_id)
+            if script_uid not in Config.ScriptConfig:
+                continue
+
+            script_config = Config.ScriptConfig[script_uid]
+            if not isinstance(script_config, MaaConfig):
+                continue
+
+            uninstall_before_queue = bool(
+                script_config.get("Run", "IfAutoUninstallBeforeQueue")
+            )
+            install_after_queue = bool(
+                script_config.get("Run", "IfAutoInstallAfterQueue")
+            )
+            if not uninstall_before_queue and not install_after_queue:
+                continue
+
+            enabled_servers = {
+                user_config.get("Info", "Server")
+                for user_config in script_config.UserData.values()
+                if user_config.get("Info", "Status")
+            }
+            for server in sorted(enabled_servers):
+                automations.append(
+                    ArknightsPackageAutomation(
+                        script_name=script_item.name,
+                        emulator_id=script_config.get("Emulator", "Id"),
+                        emulator_index=script_config.get("Emulator", "Index"),
+                        server=server,
+                        uninstall_before_queue=uninstall_before_queue,
+                        install_after_queue=install_after_queue,
+                    )
+                )
+
+        return automations
+
+    async def _run_arknights_package_action(
+        self, action: Literal["uninstall", "install"]
+    ) -> None:
+        """按模拟器实例和服务器去重执行明日方舟卸载或安装。"""
+
+        completed_targets: set[tuple[str, str, str]] = set()
+        action_name = "卸载" if action == "uninstall" else "安装"
+
+        for automation in self.arknights_package_automations:
+            enabled = (
+                automation.uninstall_before_queue
+                if action == "uninstall"
+                else automation.install_after_queue
+            )
+            if not enabled:
+                continue
+
+            target = (
+                automation.emulator_id,
+                automation.emulator_index,
+                automation.server,
+            )
+            if target in completed_targets:
+                continue
+            completed_targets.add(target)
+
+            try:
+                if automation.emulator_id in ("", "-"):
+                    raise RuntimeError("未配置模拟器")
+                if automation.emulator_index in ("", "-"):
+                    raise RuntimeError("未配置模拟器实例")
+
+                emulator_uid = uuid.UUID(automation.emulator_id)
+                emulator_config = Config.EmulatorConfig[emulator_uid]
+                emulator = await EmulatorManager.get_emulator_instance(
+                    automation.emulator_id
+                )
+                resource = ArknightsPackage.get_resource(automation.server)
+
+                logger.info(
+                    f"队列{action_name}明日方舟{resource.display_name}: "
+                    f"{automation.script_name}"
+                )
+                if action == "uninstall":
+                    await ArknightsPackage.uninstall(
+                        emulator,
+                        server=automation.server,
+                        emulator_type=emulator_config.get("Info", "Type"),
+                        emulator_path=emulator_config.get("Info", "Path"),
+                        emulator_index=automation.emulator_index,
+                    )
+                else:
+                    await ArknightsPackage.install(
+                        emulator,
+                        server=automation.server,
+                        emulator_type=emulator_config.get("Info", "Type"),
+                        emulator_path=emulator_config.get("Info", "Path"),
+                        emulator_index=automation.emulator_index,
+                        proxy=Config.proxy,
+                    )
+            except Exception as e:
+                logger.exception(
+                    f"脚本 {automation.script_name} 队列{action_name}"
+                    f"明日方舟服务器 {automation.server} 失败: {e}"
+                )
+                with suppress(Exception):
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={
+                            "Error": (
+                                f"脚本 {automation.script_name} 队列{action_name}"
+                                f"明日方舟服务器 {automation.server} 失败: {e}"
+                            )
+                        },
+                    )
+
     async def main_task(self):
 
         await self.prepare()
@@ -115,6 +257,9 @@ class Task(TaskExecuteBase):
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
+
+        if self.task_info.queue_id is not None:
+            await self._run_arknights_package_action("uninstall")
 
         # 可选：从指定脚本开始执行（仅队列任务）
         start_index = 0
@@ -201,6 +346,9 @@ class Task(TaskExecuteBase):
             await self.spawn(task_item)
 
     async def final_task(self) -> None:
+
+        if self.task_info.queue_id is not None:
+            await self._run_arknights_package_action("install")
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 

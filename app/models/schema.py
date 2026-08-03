@@ -549,6 +549,12 @@ class MaaConfig_Run(BaseModel):
     AnnihilationAvoidWaste: Optional[bool] = Field(
         default=None, description="剿灭避免无代理卡浪费理智"
     )
+    IfAutoUninstallBeforeQueue: Optional[bool] = Field(
+        default=None, description="是否在运行队列前按启用用户服务器自动卸载明日方舟"
+    )
+    IfAutoInstallAfterQueue: Optional[bool] = Field(
+        default=None, description="是否在运行队列后按启用用户服务器自动安装明日方舟"
+    )
 
 
 class MaaConfig(BaseModel):
