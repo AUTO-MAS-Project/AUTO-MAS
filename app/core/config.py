@@ -30,7 +30,7 @@ import uvicorn
 import sqlite3
 import truststore
 from pathlib import Path
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
@@ -563,9 +563,15 @@ class AppConfig(GlobalConfig):
         if Config.websocket is None:
             logger.warning("WebSocket 未连接")
         else:
-            await Config.websocket.send_json(
-                WebSocketMessage(id=id, type=type, data=data).model_dump()
-            )
+            websocket = Config.websocket
+            try:
+                await websocket.send_json(
+                    WebSocketMessage(id=id, type=type, data=data).model_dump()
+                )
+            except (RuntimeError, WebSocketDisconnect):
+                if Config.websocket is websocket:
+                    Config.websocket = None
+                logger.warning("WebSocket 已断开，消息未发送")
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""

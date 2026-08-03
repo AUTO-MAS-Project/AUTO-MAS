@@ -85,10 +85,11 @@ async def connect_websocket(websocket: WebSocket):
             )
             last_ping = time.monotonic()
 
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, RuntimeError):
             break
 
-    Config.websocket = None
+    if Config.websocket is websocket:
+        Config.websocket = None
     logger.warning("主 WebSocket 已断开，等待前端重新连接")
 
 
