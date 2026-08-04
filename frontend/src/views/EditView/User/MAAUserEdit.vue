@@ -54,27 +54,27 @@
 
           <!-- 任务配置组件 -->
           <TaskConfigSection
+            v-model:activity-first="formData.Task.IfActivityFirst"
+            v-model:activity-stage-index="formData.Task.ActivityStageIndex"
             :form-data="formData"
             :loading="loading"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-index="displayActivityStageIndex"
-            @update-activity-first="updateActivityFirst"
-            @update-activity-stage-index="updateActivityStageIndex"
             @save="handleFieldSave"
           />
 
           <!-- 库存保持配置组件 -->
           <DepotMaintainConfigSection
             v-if="!isPlanMode"
+            v-model:enabled="formData.Task.IfDepotMaintain"
             :form-data="formData"
             :loading="loading"
             :stage-options="stageOptions"
             :item-options="depotItemOptions"
             :item-options-loading="depotItemOptionsLoading"
             :item-options-error="depotItemOptionsError"
-            @update-enabled="updateDepotMaintainEnabled"
             @save="handleFieldSave"
           />
 
@@ -1159,21 +1159,6 @@ const updateSeriesNumb = (value: string) => {
     formData.Info.SeriesNumb = value
     handleFieldSave('Info.SeriesNumb', value)
   }
-}
-
-const updateActivityFirst = (value: boolean) => {
-  formData.Task.IfActivityFirst = value
-  handleFieldSave('Task.IfActivityFirst', value)
-}
-
-const updateActivityStageIndex = (value: number) => {
-  formData.Task.ActivityStageIndex = value
-  handleFieldSave('Task.ActivityStageIndex', value)
-}
-
-const updateDepotMaintainEnabled = (value: boolean) => {
-  formData.Task.IfDepotMaintain = value
-  handleFieldSave('Task.IfDepotMaintain', value)
 }
 
 const updateStage = (value: string) => {

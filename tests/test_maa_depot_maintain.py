@@ -137,11 +137,6 @@ def test_stage_info_uses_the_selected_maa_server_and_activity_timezone() -> None
         async def get_stage(self, refresh: bool = False) -> dict:
             return json.loads(parsed_stage_data)
 
-        def get(self, _group: str, key: str) -> str:
-            if key == "StageData":
-                return json.dumps(raw_stage_data)
-            return parsed_stage_data
-
     stage_config = StageInfoConfigStub()
     en_info = asyncio.run(
         AppConfig.get_stage_info(stage_config, "Info", server="YoStarEN")
