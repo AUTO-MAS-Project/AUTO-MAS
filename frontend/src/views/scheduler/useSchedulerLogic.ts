@@ -593,23 +593,53 @@ export function useSchedulerLogic() {
     }
   }
 
+  /**
+   * 构造停止任务的本地完成数据。
+   *
+   * 沿用当前总览快照，避免补齐状态时把面板清空；result 留空以保留已有日志。
+   */
+  const buildStoppedCompletion = (tab: SchedulerTab): WSTaskCompletedData => ({
+    result: '',
+    outcome: 'cancelled',
+    error: null,
+    task_info: (tab.overviewData ?? []).map(script => ({
+      script_id: script.script_id,
+      name: script.name,
+      status: script.status,
+      userList: script.user_list.map(user => ({
+        user_id: user.user_id,
+        name: user.name,
+        status: user.status,
+      })),
+    })),
+  })
+
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.taskId) return
 
+    const taskId = tab.taskId
     try {
-      await Service.stopTaskApiDispatchStopPost({ taskId: tab.taskId })
+      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      if (response.code !== 200) {
+        throw new Error(response.message || '停止任务失败')
+      }
 
       // 播放任务中止音频
       const { playSound } = useAudioPlayer()
       await playSound('maa_task_aborted')
 
-      // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
-      message.info('正在停止任务，请稍候...')
-      saveTabsToStorage(schedulerTabs.value)
+      // stop 接口内部会等待任务收尾，返回时后端已经结束该任务。WebSocket 断线会
+      // 让 task.completed 丢失，此处补齐前端状态，避免调度台永久停留在运行中；
+      // 已收到真实完成消息时 tab.taskId 已被清空，跳过以免重复收尾。
+      if (tab.taskId === taskId) {
+        await handleTaskCompleted(tab, buildStoppedCompletion(tab))
+      } else {
+        saveTabsToStorage(schedulerTabs.value)
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`停止任务失败: ${errorMsg}`)
-      message.error('停止任务失败')
+      message.error(errorMsg)
       saveTabsToStorage(schedulerTabs.value)
     }
   }
