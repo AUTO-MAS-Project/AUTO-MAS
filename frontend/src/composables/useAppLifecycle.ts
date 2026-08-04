@@ -43,8 +43,10 @@ const logger = window.electronAPI.getLogger('应用生命周期')
 
 // ==================== 常量 ====================
 
-// 正常关闭流程超时（非心跳超时）：10 秒内未收到 backend.shutdown.ready 直接 taskkill
-const CLOSE_READY_TIMEOUT = 10000
+// 正常关闭流程超时（非心跳超时）：超时未收到 backend.shutdown.ready 直接 taskkill。
+// teardown 会等待所有任务真正收尾（含模拟器清理），10 秒不足以覆盖重任务场景，
+// 过早 taskkill 会打断插件与配置清理；后端挂死时由该上限兜底。
+const CLOSE_READY_TIMEOUT = 30000
 // 收到 ready 后等待后端进程正常退出的时限，超时才允许 taskkill
 const PROCESS_EXIT_TIMEOUT = 5000
 const PROCESS_POLL_INTERVAL = 300

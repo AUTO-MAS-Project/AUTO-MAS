@@ -139,7 +139,7 @@ const response = await request(
 `@/composables/useAppLifecycle` 持有应用级常驻订阅与后端进程恢复决策：
 
 - 常驻订阅：`backend.shutdown.ready`、`frontend.close.requested`、`power.countdown.updated/cancelled`、`dialog.request`，在建立连接前注册，重连不重复注册，页面切换不取消
-- `closeApp()`：退出并关闭后端 —— POST `/api/core/close` → 等待 `backend.shutdown.ready`（10 秒超时）→ 等待后端进程退出 → 超时才 taskkill → 关闭前端；关闭流程期间禁止自动重连与自动重启
+- `closeApp()`：退出并关闭后端 —— POST `/api/core/close` → 等待 `backend.shutdown.ready`（30 秒超时）→ 等待后端进程退出 → 超时才 taskkill → 关闭前端；关闭流程期间禁止自动重连与自动重启
 - 异常断开：连接层一轮重连（5 次退避）失败后，由协调器查询后端进程状态 —— 进程已死则自动重启后端（上限 3 次，超限弹窗提示重启应用），进程存活则延迟继续重连
 
 ## 连接状态
