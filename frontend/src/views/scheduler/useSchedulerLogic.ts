@@ -7,7 +7,6 @@ import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
-import { isTaskStopConfirmed } from './taskStop'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
@@ -499,7 +498,7 @@ export function useSchedulerLogic() {
     const taskId = tab.websocketId
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
-      if (!isTaskStopConfirmed(response)) {
+      if (response.code !== 200) {
         throw new Error(response.message || '停止任务失败')
       }
 

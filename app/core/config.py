@@ -568,10 +568,12 @@ class AppConfig(GlobalConfig):
                 await websocket.send_json(
                     WebSocketMessage(id=id, type=type, data=data).model_dump()
                 )
-            except (RuntimeError, WebSocketDisconnect):
+            except (RuntimeError, WebSocketDisconnect) as e:
                 if Config.websocket is websocket:
                     Config.websocket = None
-                logger.warning("WebSocket 已断开，消息未发送")
+                logger.warning(
+                    f"WebSocket 已断开，消息未发送: {e.__class__.__name__}: {e}"
+                )
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
