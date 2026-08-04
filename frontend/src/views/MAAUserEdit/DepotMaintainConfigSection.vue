@@ -147,6 +147,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  'update-enabled': [value: boolean]
 }>()
 
 const columns: TableColumnsType = [
@@ -192,7 +193,9 @@ watch(
 )
 
 const emitSave = (key: string, value: any) => emit('save', key, value)
-const handleEnabledChange = (value: boolean) => emitSave('Task.IfDepotMaintain', value)
+const handleEnabledChange = (value: boolean) => {
+  emit('update-enabled', value)
+}
 
 const savePlans = () => {
   emitSave(
