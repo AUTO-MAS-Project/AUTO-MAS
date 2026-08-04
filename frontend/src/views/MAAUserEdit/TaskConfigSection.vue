@@ -77,9 +77,9 @@
       <a-col :span="6">
         <a-form-item label="优先刷取活动关">
           <a-switch
-            :checked="formData.Task.IfActivityFirst"
+            v-model:checked="activityFirst"
             :disabled="loading"
-            @change="handleActivityFirstChange"
+            @change="emitSave('Task.IfActivityFirst', activityFirst)"
           />
         </a-form-item>
       </a-col>
@@ -98,10 +98,7 @@
             :options="activityStageOptions"
             :loading="activityStageLoading"
             :disabled="
-              loading ||
-              activityStageLoading ||
-              !formData.Task.IfActivityFirst ||
-              activityStageOptions.length === 0
+              loading || activityStageLoading || !activityFirst || activityStageOptions.length === 0
             "
             :placeholder="activityStageOptions.length ? '请选择活动关卡' : '当前无可刷活动关'"
             show-search
@@ -127,22 +124,20 @@ defineProps<{
   displayActivityStageIndex?: number
 }>()
 
+const activityFirst = defineModel<boolean>('activityFirst', { required: true })
+const activityStageIndex = defineModel<number>('activityStageIndex', { required: true })
+
 const emit = defineEmits<{
   save: [key: string, value: any]
-  'update-activity-first': [value: boolean]
-  'update-activity-stage-index': [value: number]
 }>()
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
 
-const handleActivityFirstChange = (value: boolean) => {
-  emit('update-activity-first', value)
-}
-
 const handleActivityStageChange = (value: number) => {
-  emit('update-activity-stage-index', value)
+  activityStageIndex.value = value
+  emitSave('Task.ActivityStageIndex', value)
 }
 </script>
 

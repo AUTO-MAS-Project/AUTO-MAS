@@ -5,14 +5,14 @@
       <a-space>
         <span>启用</span>
         <a-switch
-          :checked="formData.Task.IfDepotMaintain"
+          v-model:checked="enabled"
           :disabled="loading"
-          @change="handleEnabledChange"
+          @change="emitSave('Task.IfDepotMaintain', enabled)"
         />
       </a-space>
     </div>
 
-    <template v-if="formData.Task.IfDepotMaintain">
+    <template v-if="enabled">
       <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
       <div class="plan-actions">
         <a-space wrap>
@@ -57,7 +57,6 @@
         :columns="columns"
         :data-source="plans"
         :pagination="false"
-        :row-key="rowKey"
         :row-selection="rowSelection"
         :scroll="{ x: 680 }"
         size="small"
@@ -122,7 +121,7 @@ import {
 import type { TableColumnsType } from 'ant-design-vue'
 import {
   DEPOT_MAINTAIN_PRESETS,
-  importDepotMaintainPreset,
+  getDepotMaintainPreset,
   type DepotMaintainPlan as SavedDepotMaintainPlan,
   type DepotMaintainPresetKey,
 } from './depotMaintainPresets'
@@ -145,9 +144,10 @@ const props = defineProps<{
   itemOptionsError: string
 }>()
 
+const enabled = defineModel<boolean>('enabled', { required: true })
+
 const emit = defineEmits<{
   save: [key: string, value: any]
-  'update-enabled': [value: boolean]
 }>()
 
 const columns: TableColumnsType = [
@@ -160,7 +160,6 @@ const columns: TableColumnsType = [
 const plans = ref<DepotMaintainPlan[]>([])
 const selectedRowKeys = ref<number[]>([])
 let nextKey = 0
-const rowKey = (record: DepotMaintainPlan) => record.key
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
   getCheckboxProps: () => ({ disabled: props.loading }),
@@ -193,9 +192,6 @@ watch(
 )
 
 const emitSave = (key: string, value: any) => emit('save', key, value)
-const handleEnabledChange = (value: boolean) => {
-  emit('update-enabled', value)
-}
 
 const savePlans = () => {
   emitSave(
@@ -213,10 +209,7 @@ const addPlan = () => {
 
 const importPreset = (preset: DepotMaintainPresetKey) => {
   selectedRowKeys.value = []
-  plans.value = importDepotMaintainPreset(
-    plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount })),
-    preset
-  ).map(plan => ({ key: nextKey++, ...plan }))
+  plans.value.push(...getDepotMaintainPreset(preset).map(plan => ({ key: nextKey++, ...plan })))
   savePlans()
 }
 
@@ -227,8 +220,7 @@ const removePlan = (key: number) => {
 }
 
 const removeSelectedPlans = () => {
-  const keys = new Set(selectedRowKeys.value)
-  plans.value = plans.value.filter(plan => !keys.has(plan.key))
+  plans.value = plans.value.filter(plan => !selectedRowKeys.value.includes(plan.key))
   selectedRowKeys.value = []
   savePlans()
 }

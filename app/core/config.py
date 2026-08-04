@@ -1774,15 +1774,9 @@ class AppConfig(GlobalConfig):
     ):
         """获取关卡信息"""
 
-        # 默认立即返回缓存；任务执行可要求等待远端刷新完成。
-        raw_stage_data = json.loads(self.get("Data", "StageData"))
-        has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
-            "sideStoryStage" in raw_stage_data["Official"]
-        )
-        await self.get_stage(refresh=refresh or not has_server_data)
-
+        stage_by_server = await self.get_stage(refresh=refresh)
         server = "Official" if server == "Bilibili" else server
-        stage_data = json.loads(self.get("Data", "Stage")).get(server, {})
+        stage_data = stage_by_server.get(server, {})
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
@@ -1852,18 +1846,16 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(
-        self, refresh: bool = False
-    ) -> Optional[Dict[str, Any]]:
+    async def get_stage(self, refresh: bool = False) -> Dict[str, Any]:
         """更新活动关卡信息；需要最新数据时等待刷新，否则立即返回缓存。"""
 
         raw_stage_data = json.loads(self.get("Data", "StageData"))
         has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
             "sideStoryStage" in raw_stage_data["Official"]
         )
+        refresh = refresh or not has_server_data
         if (
             not refresh
-            and has_server_data
             and datetime.now() - timedelta(hours=1)
             < datetime.strptime(
                 self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"

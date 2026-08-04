@@ -40,13 +40,7 @@ const PRESET_PLANS: Record<Exclude<DepotMaintainPresetKey, 'all'>, DepotMaintain
   'skill-summary': [{ Stage: 'CA-5', DropId: '3303', DropCount: 200 }],
 }
 
-export const importDepotMaintainPreset = (
-  plans: DepotMaintainPlan[],
-  preset: DepotMaintainPresetKey
-) => [
-  ...plans,
-  ...(preset === 'all'
+export const getDepotMaintainPreset = (preset: DepotMaintainPresetKey) =>
+  preset === 'all'
     ? DEPOT_MAINTAIN_PRESETS.flatMap(({ key }) => PRESET_PLANS[key])
     : PRESET_PLANS[preset]
-  ).map(plan => ({ ...plan })),
-]

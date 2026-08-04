@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { importDepotMaintainPreset } from './depotMaintainPresets'
+import { getDepotMaintainPreset } from './depotMaintainPresets'
 
 describe('inventory maintenance presets', () => {
-  it('appends one MAA preset without replacing existing plans', () => {
-    const existing = [{ Stage: '1-7', DropId: '30012', DropCount: 100 }]
-    const plans = importDepotMaintainPreset(existing, 'lmd')
-
-    expect(existing).toHaveLength(1)
-    expect(plans).toEqual([...existing, { Stage: 'CE-6', DropId: '4001', DropCount: 2_000_000 }])
+  it('returns one MAA preset', () => {
+    expect(getDepotMaintainPreset('lmd')).toEqual([
+      { Stage: 'CE-6', DropId: '4001', DropCount: 2_000_000 },
+    ])
   })
 
   it('imports all 19 plans in menu order', () => {
-    const plans = importDepotMaintainPreset([], 'all')
+    const plans = getDepotMaintainPreset('all')
 
     expect(plans).toHaveLength(19)
     expect(plans.slice(0, 2)).toEqual([
