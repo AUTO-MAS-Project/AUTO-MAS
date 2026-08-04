@@ -125,10 +125,12 @@ def init_maaend_task_config(config) -> None:
             ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
         )
 
+
 """
 脚本级和用户级的 MaaEnd 任务配置项结构相同。配置文件来源为脚本且启用快速配置时,
 任务开关读取脚本配置；理智任务选项始终读取用户配置。
 """
+
 
 def _normalize_maaend_sanity_task_type(task_data: object) -> None:
     """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
@@ -776,7 +778,9 @@ class MaaEndUserConfig(ConfigBase):
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
         ## 是否启用快速配置
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 理智任务配置模式
         self.Info_SanityMode = ConfigItem("Info", "SanityMode", "Fixed")
         ## 资源名称
@@ -872,7 +876,10 @@ class MaaEndUserConfig(ConfigBase):
             if info_data.get("Mode") == "自定义":
                 info_data["Mode"] = "详细"
                 info_data["IfQuickConfig"] = False
-            elif info_data.get("Mode") in ("简洁", "详细") and "SanityMode" not in info_data:
+            elif (
+                info_data.get("Mode") in ("简洁", "详细")
+                and "SanityMode" not in info_data
+            ):
                 info_data["Mode"] = "简洁"
                 info_data.pop("IfQuickConfig", None)
 
@@ -1158,6 +1165,7 @@ class SrcUserConfig(ConfigBase):
             OptionsValidator(
                 [
                     "-",
+                    "Cavern_of_Corrosion_Path_of_Insight",
                     "Cavern_of_Corrosion_Path_of_Possession",
                     "Cavern_of_Corrosion_Path_of_Hidden_Salvation",
                     "Cavern_of_Corrosion_Path_of_Thundersurge",
@@ -1185,22 +1193,23 @@ class SrcUserConfig(ConfigBase):
                 [
                     "-",
                     "Calyx_Golden_Memories_Planarcadia",
-                    "Calyx_Golden_Aether_Planarcadia",
-                    "Calyx_Golden_Treasures_Planarcadia",
                     "Calyx_Golden_Memories_Amphoreus",
-                    "Calyx_Golden_Aether_Amphoreus",
-                    "Calyx_Golden_Treasures_Amphoreus",
                     "Calyx_Golden_Memories_Penacony",
-                    "Calyx_Golden_Aether_Penacony",
-                    "Calyx_Golden_Treasures_Penacony",
                     "Calyx_Golden_Memories_The_Xianzhou_Luofu",
-                    "Calyx_Golden_Aether_The_Xianzhou_Luofu",
-                    "Calyx_Golden_Treasures_The_Xianzhou_Luofu",
                     "Calyx_Golden_Memories_Jarilo_VI",
+                    "Calyx_Golden_Aether_Planarcadia",
+                    "Calyx_Golden_Aether_Amphoreus",
+                    "Calyx_Golden_Aether_Penacony",
+                    "Calyx_Golden_Aether_The_Xianzhou_Luofu",
                     "Calyx_Golden_Aether_Jarilo_VI",
+                    "Calyx_Golden_Treasures_Planarcadia",
+                    "Calyx_Golden_Treasures_Amphoreus",
+                    "Calyx_Golden_Treasures_Penacony",
+                    "Calyx_Golden_Treasures_The_Xianzhou_Luofu",
                     "Calyx_Golden_Treasures_Jarilo_VI",
                     "Calyx_Crimson_Destruction_Herta_StorageZone",
                     "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape",
+                    "Calyx_Crimson_Destruction_Planarcadia_InkfordHermitage",
                     "Calyx_Crimson_Preservation_Herta_SupplyZone",
                     "Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark",
                     "Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains",
@@ -1210,40 +1219,43 @@ class SrcUserConfig(ConfigBase):
                     "Calyx_Crimson_Abundance_Luofu_FyxestrollGarden",
                     "Calyx_Crimson_Erudition_Jarilo_RivetTown",
                     "Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater",
+                    "Calyx_Crimson_Erudition_Planarcadia_SeafeldTVTower",
                     "Calyx_Crimson_Harmony_Jarilo_RobotSettlement",
                     "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape",
                     "Calyx_Crimson_Nihility_Jarilo_GreatMine",
                     "Calyx_Crimson_Nihility_Luofu_AlchemyCommission",
+                    "Calyx_Crimson_Nihility_Amphoreus_RadiantScarwoodGroveofEpiphany",
                     "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos",
                     "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern",
-                    "Stagnant_Shadow_Quanta",
-                    "Stagnant_Shadow_Gust",
-                    "Stagnant_Shadow_Fulmination",
-                    "Stagnant_Shadow_Blaze",
                     "Stagnant_Shadow_Spike",
-                    "Stagnant_Shadow_Rime",
-                    "Stagnant_Shadow_Mirage",
-                    "Stagnant_Shadow_Icicle",
-                    "Stagnant_Shadow_Doom",
-                    "Stagnant_Shadow_Puppetry",
-                    "Stagnant_Shadow_Abomination",
-                    "Stagnant_Shadow_Scorch",
-                    "Stagnant_Shadow_Celestial",
                     "Stagnant_Shadow_Perdition",
-                    "Stagnant_Shadow_Nectar",
+                    "Stagnant_Shadow_Duty",
+                    "Stagnant_Shadow_Deepsheaf",
+                    "Stagnant_Shadow_Blaze",
+                    "Stagnant_Shadow_Scorch",
                     "Stagnant_Shadow_Roast",
                     "Stagnant_Shadow_Ire",
-                    "Stagnant_Shadow_Duty",
-                    "Stagnant_Shadow_Timbre",
-                    "Stagnant_Shadow_Mechwolf",
-                    "Stagnant_Shadow_Gloam",
-                    "Stagnant_Shadow_Sloggyre",
-                    "Stagnant_Shadow_Gelidmoon",
-                    "Stagnant_Shadow_Deepsheaf",
-                    "Stagnant_Shadow_Cinders",
-                    "Stagnant_Shadow_Sirens",
                     "Stagnant_Shadow_Ashes",
+                    "Stagnant_Shadow_Rime",
+                    "Stagnant_Shadow_Icicle",
+                    "Stagnant_Shadow_Nectar",
+                    "Stagnant_Shadow_Sirens",
+                    "Stagnant_Shadow_Fulmination",
+                    "Stagnant_Shadow_Doom",
+                    "Stagnant_Shadow_Mechwolf",
                     "Stagnant_Shadow_Soundburst",
+                    "Stagnant_Shadow_Gust",
+                    "Stagnant_Shadow_Celestial",
+                    "Stagnant_Shadow_Gloam",
+                    "Stagnant_Shadow_Cinders",
+                    "Stagnant_Shadow_Quanta",
+                    "Stagnant_Shadow_Abomination",
+                    "Stagnant_Shadow_Gelidmoon",
+                    "Stagnant_Shadow_Devour",
+                    "Stagnant_Shadow_Mirage",
+                    "Stagnant_Shadow_Puppetry",
+                    "Stagnant_Shadow_Timbre",
+                    "Stagnant_Shadow_Sloggyre",
                 ]
             ),
         )
@@ -1255,6 +1267,8 @@ class SrcUserConfig(ConfigBase):
             OptionsValidator(
                 [
                     "-",
+                    "Divergent_Universe_Bugs_Incoming",
+                    "Divergent_Universe_Gilded_Recollection",
                     "Divergent_Universe_Within_the_West_Wind",
                     "Divergent_Universe_Moonlit_Blood",
                     "Divergent_Universe_Unceasing_Strife",
@@ -1288,6 +1302,7 @@ class SrcUserConfig(ConfigBase):
             OptionsValidator(
                 [
                     "-",
+                    "Echo_of_War_The_Comedy_of_Doom",
                     "Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass",
                     "Echo_of_War_Glance_of_Twilight",
                     "Echo_of_War_Inner_Beast_Battlefield",
@@ -1538,12 +1553,16 @@ class HSRUserConfig(ConfigBase):
         )
         ## 历战余响最近一次完成日期
         self.Data_EchoOfWarLastCompletionDate = ConfigItem(
-            "Data", "EchoOfWarLastCompletionDate", "2000-01-01",
+            "Data",
+            "EchoOfWarLastCompletionDate",
+            "2000-01-01",
             DateTimeValidator("%Y-%m-%d"),
         )
         ## 周常（差分宇宙/货币战争）最近一次完成日期
         self.Data_WeeklyLastCompletionDate = ConfigItem(
-            "Data", "WeeklyLastCompletionDate", "2000-01-01",
+            "Data",
+            "WeeklyLastCompletionDate",
+            "2000-01-01",
             DateTimeValidator("%Y-%m-%d"),
         )
         ## 本周是否已完成周常（仅依据 Data 字段判断）
@@ -1556,7 +1575,9 @@ class HSRUserConfig(ConfigBase):
         )
         ## HSR 三深渊月度（每月一次）—— 三深渊最近一次完成日期
         self.Data_AbyssLastCompletionDate = ConfigItem(
-            "Data", "AbyssLastCompletionDate", "2000-01-01",
+            "Data",
+            "AbyssLastCompletionDate",
+            "2000-01-01",
             DateTimeValidator("%Y-%m-%d"),
         )
         ## HSR 三深渊月度（每月一次）—— 本月是否已完成三深渊（仅依据 Data 字段判断）
@@ -1603,10 +1624,19 @@ class HSRUserConfig(ConfigBase):
         ## TaskOpt ---------------------------------------------------------
         ## 历战余响开始刷的星期（周一 ~ 周日）
         self.TaskOpt_EchoOfWarWeekday = ConfigItem(
-            "TaskOpt", "EchoOfWarWeekday", "Monday",
+            "TaskOpt",
+            "EchoOfWarWeekday",
+            "Monday",
             OptionsValidator(
-                ["Monday", "Tuesday", "Wednesday", "Thursday",
-                 "Friday", "Saturday", "Sunday"]
+                [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
             ),
         )
 
@@ -1768,9 +1798,7 @@ class HSRConfig(ConfigBase):
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
-        self.Game_WaitTime = ConfigItem(
-            "Game", "WaitTime", 60, RangeValidator(0, 9999)
-        )
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
 
         ## Run -------------------------------------------------------------
         ## 失败任务最大尝试次数
@@ -1862,10 +1890,7 @@ class M9AUserConfig(ConfigBase):
             "Task", "AvailableTasks", "[]", JSONValidator(list)
         )
         ## 运行任务队列 (用户在可用任务列表中选择)
-        self.Task_Queue = ConfigItem(
-            "Task", "Queue", "[]", JSONValidator(list)
-        )
- 
+        self.Task_Queue = ConfigItem("Task", "Queue", "[]", JSONValidator(list))
 
         ## Data ------------------------------------------------------------
         ## 上次代理日期
@@ -2028,7 +2053,6 @@ class M9AConfig(ConfigBase):
         self.UserData = MultipleConfig([M9AUserConfig])
 
         super().__init__()
-
 
 
 class MaaPlanConfig(ConfigBase):
@@ -2268,9 +2292,7 @@ class OkwwUserConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         # ok-ww.exe -t N -e
-        self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 1, RangeValidator(1, 8)
-        )
+        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 1, RangeValidator(1, 8))
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2294,7 +2316,9 @@ class OkwwUserConfig(ConfigBase):
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
-        self.Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
@@ -2403,10 +2427,10 @@ class OkNteUserConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         # ok-nte.exe -t N -e；上游 DailyTask 是 -t 2
-        self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 2, RangeValidator(1, 11)
+        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 11))
+        self.Task_ExitOnFinish = ConfigItem(
+            "Task", "ExitOnFinish", True, BoolValidator()
         )
-        self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2430,7 +2454,9 @@ class OkNteUserConfig(ConfigBase):
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
-        self.Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
@@ -2498,15 +2524,11 @@ class GeneralConfig(ConfigBase):
         ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
         ## 根目录路径
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
-        )
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Script ----------------------------------------------------------
         ## 脚本路径
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
+        self.Script_ScriptPath = ConfigItem("Script", "ScriptPath", "", FileValidator())
         ## 脚本参数
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
@@ -2523,9 +2545,7 @@ class GeneralConfig(ConfigBase):
         self.Script_TrackProcessCmdline = ConfigItem(
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
+        self.Script_ConfigPath = ConfigItem("Script", "ConfigPath", "", FileValidator())
         ## 配置路径模式
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
@@ -2538,9 +2558,7 @@ class GeneralConfig(ConfigBase):
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
         ## 日志路径
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
+        self.Script_LogPath = ConfigItem("Script", "LogPath", "", FileValidator())
         ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         ## 日志时间戳开始位置
@@ -2619,9 +2637,7 @@ class OkwwConfig(ConfigBase):
 
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
-        )
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Game ------------------------------------------------------------
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
@@ -2654,14 +2670,10 @@ class OkNteConfig(ConfigBase):
 
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-NTE 脚本")
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
-        )
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Script ----------------------------------------------------------
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
+        self.Script_ScriptPath = ConfigItem("Script", "ScriptPath", "", FileValidator())
         # OkNte 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
@@ -2674,9 +2686,7 @@ class OkNteConfig(ConfigBase):
         self.Script_TrackProcessCmdline = ConfigItem(
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
+        self.Script_ConfigPath = ConfigItem("Script", "ConfigPath", "", FileValidator())
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
         )
@@ -2686,9 +2696,7 @@ class OkNteConfig(ConfigBase):
             "Always",
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
+        self.Script_LogPath = ConfigItem("Script", "LogPath", "", FileValidator())
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
         self.Script_LogTimeStart = ConfigItem(
             "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
@@ -2722,7 +2730,9 @@ class OkNteConfig(ConfigBase):
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        self.Game_IfForceClose = ConfigItem("Game", "IfForceClose", True, BoolValidator())
+        self.Game_IfForceClose = ConfigItem(
+            "Game", "IfForceClose", True, BoolValidator()
+        )
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
@@ -2749,13 +2759,9 @@ class GameSignAccountGroup(ConfigBase):
     def __init__(self) -> None:
 
         ## GameSignAccount - 账号组名称
-        self.Name = ConfigItem(
-            "GameSignAccount", "Name", "用户 1", StringValidator()
-        )
+        self.Name = ConfigItem("GameSignAccount", "Name", "用户 1", StringValidator())
         ## GameSignAccount - 是否启用（该用户是否参与签到）
-        self.Enabled = ConfigItem(
-            "GameSignAccount", "Enabled", True, BoolValidator()
-        )
+        self.Enabled = ConfigItem("GameSignAccount", "Enabled", True, BoolValidator())
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
@@ -2770,7 +2776,10 @@ class GameSignAccountGroup(ConfigBase):
         )
         ## GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
         self.LastSignDate = ConfigItem(
-            "GameSignAccount", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+            "GameSignAccount",
+            "LastSignDate",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
         )
 
         super().__init__()

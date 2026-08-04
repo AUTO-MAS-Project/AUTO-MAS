@@ -82,9 +82,7 @@ logger = get_logger("配置管理")
 GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
 
 
-def _load_game_sign_result_snapshot(
-    path: Path, *, result_date: str
-) -> dict[str, Any]:
+def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str, Any]:
     """读取当天的游戏签到结果快照。"""
 
     if not path.exists():
@@ -129,6 +127,7 @@ def _save_game_sign_result_snapshot(
     except (OSError, TypeError, ValueError) as e:
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
+
 if (Path.cwd() / "environment/git/bin/git.exe").exists():
     os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
         Path.cwd() / "environment/git/bin/git.exe"
@@ -141,7 +140,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.4.0-beta.1"
+    VERSION = "v5.4.0-beta.4"
 
     def __init__(self) -> None:
         super().__init__()
@@ -614,7 +613,9 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"],
+        script: Literal[
+            "MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"
+        ],
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
@@ -1480,18 +1481,14 @@ class AppConfig(GlobalConfig):
 
         logger.debug("获取所有游戏签到账号组")
 
-        return await self.ToolsConfig.GameSign_Accounts.toDict(
-            if_decrypt=if_decrypt
-        )
+        return await self.ToolsConfig.GameSign_Accounts.toDict(if_decrypt=if_decrypt)
 
     async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
         """添加游戏签到账号组"""
 
         logger.info("添加游戏签到账号组")
 
-        uid, config = await self.ToolsConfig.GameSign_Accounts.add(
-            GameSignAccountGroup
-        )
+        uid, config = await self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
         return uid, config
 
     async def get_game_sign_account(
@@ -1576,9 +1573,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("调整游戏签到账号组顺序")
 
-        await self.ToolsConfig.GameSign_Accounts.setOrder(
-            [uuid.UUID(_) for _ in order]
-        )
+        await self.ToolsConfig.GameSign_Accounts.setOrder([uuid.UUID(_) for _ in order])
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
@@ -2352,9 +2347,7 @@ class AppConfig(GlobalConfig):
 
             weapon_match = re.search(r"匹配到武器：(.+)", log_line)
             if weapon_match and current_matrix_skill:
-                pending_statistics[current_matrix_skill] = (
-                    weapon_match.group(1).strip()
-                )
+                pending_statistics[current_matrix_skill] = weapon_match.group(1).strip()
                 current_matrix_skill = ""
                 continue
 
@@ -2369,9 +2362,7 @@ class AppConfig(GlobalConfig):
             current_locked_count = int(completed_match.group(1))
             locked_count += current_locked_count
             if current_locked_count > 0:
-                matched_items = list(pending_statistics.items())[
-                    -current_locked_count:
-                ]
+                matched_items = list(pending_statistics.items())[-current_locked_count:]
                 matrix_statistics.update(matched_items)
 
             pending_statistics = {}
@@ -2491,7 +2482,9 @@ class AppConfig(GlobalConfig):
             json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
         )
 
-        logger.success(f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+        logger.success(
+            f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}"
+        )
 
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """

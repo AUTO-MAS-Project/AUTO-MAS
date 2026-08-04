@@ -79,7 +79,7 @@
           <a-switch
             :checked="formData.Task.IfActivityFirst"
             :disabled="loading"
-            @change="emitSave('Task.IfActivityFirst', $event)"
+            @change="handleActivityFirstChange"
           />
         </a-form-item>
       </a-col>
@@ -107,7 +107,7 @@
             show-search
             option-filter-prop="label"
             size="large"
-            @change="emitSave('Task.ActivityStageIndex', $event)"
+            @change="handleActivityStageChange"
           />
         </a-form-item>
       </a-col>
@@ -129,10 +129,20 @@ defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  'update-activity-first': [value: boolean]
+  'update-activity-stage-index': [value: number]
 }>()
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
+}
+
+const handleActivityFirstChange = (value: boolean) => {
+  emit('update-activity-first', value)
+}
+
+const handleActivityStageChange = (value: number) => {
+  emit('update-activity-stage-index', value)
 }
 </script>
 

@@ -60,6 +60,8 @@
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-index="displayActivityStageIndex"
+            @update-activity-first="updateActivityFirst"
+            @update-activity-stage-index="updateActivityStageIndex"
             @save="handleFieldSave"
           />
 
@@ -72,6 +74,7 @@
             :item-options="depotItemOptions"
             :item-options-loading="depotItemOptionsLoading"
             :item-options-error="depotItemOptionsError"
+            @update-enabled="updateDepotMaintainEnabled"
             @save="handleFieldSave"
           />
 
@@ -128,6 +131,8 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+const pendingFieldSaves = new Map<string, any>()
+let fieldSavePromise: Promise<void> | null = null
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -536,40 +541,63 @@ watch(
   }
 )
 
-// 即时保存单个字段变更
+// 即时保存单个字段变更。保存中的后续变更保留最后一次值，避免被 isSaving 直接丢弃。
 const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || !userId) return
 
-  isSaving.value = true
-  try {
-    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-    const parts = key.split('.')
-    let userData: Record<string, any> = {}
-    let current = userData
+  pendingFieldSaves.set(key, value)
+  if (fieldSavePromise) return fieldSavePromise
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
+  const savePromise = (async () => {
+    isSaving.value = true
+    try {
+      while (pendingFieldSaves.size > 0) {
+        const pendingEntry = pendingFieldSaves.entries().next().value as
+          | [string, any]
+          | undefined
+        if (!pendingEntry) break
+
+        const [pendingKey, pendingValue] = pendingEntry
+        pendingFieldSaves.delete(pendingKey)
+
+        // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+        const parts = pendingKey.split('.')
+        let userData: Record<string, any> = {}
+        let current = userData
+
+        for (let i = 0; i < parts.length - 1; i++) {
+          current[parts[i]] = {}
+          current = current[parts[i]]
+        }
+        current[parts[parts.length - 1]] = pendingValue
+
+        // 特殊处理：userName 和 userId 需要同步到 Info
+        if (pendingKey === 'userName') {
+          userData = { Info: { Name: pendingValue } }
+        } else if (pendingKey === 'userId') {
+          userData = { Info: { Id: pendingValue } }
+        }
+
+        const success = await updateUser(scriptId, userId, userData)
+        if (!success) {
+          pendingFieldSaves.clear()
+          break
+        }
+
+        logger.info(`用户配置已保存: ${pendingKey}`)
+      }
+    } catch (error) {
+      pendingFieldSaves.clear()
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+    } finally {
+      isSaving.value = false
+      fieldSavePromise = null
     }
-    current[parts[parts.length - 1]] = value
+  })()
+  fieldSavePromise = savePromise
 
-    // 特殊处理：userName 和 userId 需要同步到 Info
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
-    } else if (key === 'userId') {
-      userData = { Info: { Id: value } }
-    }
-
-    await updateUser(scriptId, userId, userData)
-    // 刷新数据
-    await loadUserData()
-    logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  return savePromise
 }
 
 // 保存完整用户数据（仅用于特殊批量操作）
@@ -1016,6 +1044,15 @@ const validateStageName = (stageName: string): boolean => {
   return stagePattern.test(stageName.trim())
 }
 
+type StageField = 'Stage' | 'Stage_1' | 'Stage_2' | 'Stage_3' | 'Stage_Remain'
+
+const updateStageField = (field: StageField, value: string) => {
+  if (isPlanMode.value) return
+
+  formData.Info[field] = value
+  void handleFieldSave(`Info.${field}`, value)
+}
+
 // 添加自定义关卡到选项列表
 const addStageToOptions = (stageName: string) => {
   if (!stageName || !stageName.trim()) {
@@ -1050,9 +1087,7 @@ const addCustomStage = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage = stageName.trim()
-    }
+    updateStageField('Stage', stageName.trim())
   }
 }
 
@@ -1064,9 +1099,7 @@ const addCustomStage1 = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_1 = stageName.trim()
-    }
+    updateStageField('Stage_1', stageName.trim())
   }
 }
 
@@ -1078,9 +1111,7 @@ const addCustomStage2 = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_2 = stageName.trim()
-    }
+    updateStageField('Stage_2', stageName.trim())
   }
 }
 
@@ -1092,9 +1123,7 @@ const addCustomStage3 = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_3 = stageName.trim()
-    }
+    updateStageField('Stage_3', stageName.trim())
   }
 }
 
@@ -1106,9 +1135,7 @@ const addCustomStageRemain = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_Remain = stageName.trim()
-    }
+    updateStageField('Stage_Remain', stageName.trim())
   }
 }
 
@@ -1134,39 +1161,39 @@ const updateSeriesNumb = (value: string) => {
   }
 }
 
+const updateActivityFirst = (value: boolean) => {
+  formData.Task.IfActivityFirst = value
+  handleFieldSave('Task.IfActivityFirst', value)
+}
+
+const updateActivityStageIndex = (value: number) => {
+  formData.Task.ActivityStageIndex = value
+  handleFieldSave('Task.ActivityStageIndex', value)
+}
+
+const updateDepotMaintainEnabled = (value: boolean) => {
+  formData.Task.IfDepotMaintain = value
+  handleFieldSave('Task.IfDepotMaintain', value)
+}
+
 const updateStage = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage = value
-    handleFieldSave('Info.Stage', value)
-  }
+  updateStageField('Stage', value)
 }
 
 const updateStage1 = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_1 = value
-    handleFieldSave('Info.Stage_1', value)
-  }
+  updateStageField('Stage_1', value)
 }
 
 const updateStage2 = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_2 = value
-    handleFieldSave('Info.Stage_2', value)
-  }
+  updateStageField('Stage_2', value)
 }
 
 const updateStage3 = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_3 = value
-    handleFieldSave('Info.Stage_3', value)
-  }
+  updateStageField('Stage_3', value)
 }
 
 const updateStageRemain = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_Remain = value
-    handleFieldSave('Info.Stage_Remain', value)
-  }
+  updateStageField('Stage_Remain', value)
 }
 
 watch(
