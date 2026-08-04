@@ -34,6 +34,8 @@ const SCHEDULER_TABS_KEY = 'scheduler-tabs-session'
 const STORAGE_SAVE_DEBOUNCE_MS = 800
 const LOG_RENDER_INTERVAL_MS = 200
 const LOG_RENDER_MAX_CHARS = 120000
+// /stop 成功后等待真实 task.completed 的窗口；仅超时未到达时才本地补齐
+const STOP_COMPLETION_GRACE_MS = 1500
 
 let storageSaveTimer: number | null = null
 const pendingLogUpdates = new Map<string, number>()
@@ -628,9 +630,14 @@ export function useSchedulerLogic() {
       const { playSound } = useAudioPlayer()
       await playSound('maa_task_aborted')
 
-      // stop 接口内部会等待任务收尾，返回时后端已经结束该任务。WebSocket 断线会
-      // 让 task.completed 丢失，此处补齐前端状态，避免调度台永久停留在运行中；
-      // 已收到真实完成消息时 tab.taskId 已被清空，跳过以免重复收尾。
+      // stop 接口内部会等待任务收尾，返回时后端已经结束该任务，且 task.completed
+      // 在 HTTP 响应生成前就已写入主连接（final_task 先于 accomplish 置位）。
+      // 连接健康时先给真实完成消息留出短暂窗口，避免本地合成快照抢先清掉 taskId、
+      // 导致随后到达的权威结果找不到调度台而被丢弃；WebSocket 断线丢失完成消息时，
+      // 窗口结束后才本地补齐，防止调度台永久停留在运行中。
+      if (tab.taskId === taskId && ws.state.value === 'open') {
+        await new Promise(resolve => window.setTimeout(resolve, STOP_COMPLETION_GRACE_MS))
+      }
       if (tab.taskId === taskId) {
         await handleTaskCompleted(tab, buildStoppedCompletion(tab))
       } else {
