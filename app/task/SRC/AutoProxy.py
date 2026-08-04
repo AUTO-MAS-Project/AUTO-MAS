@@ -190,7 +190,10 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"运行脚本任务: {self.src_exe_path}")
             self.wait_event.clear()
             t = datetime.now()
-            await self.src_process_manager.open_process(self.src_exe_path)
+            await self.src_process_manager.open_process(
+                self.src_exe_path,
+                redirect_file=self.src_root_path / "log" / "automas_src_stdout.log",
+            )
 
             # 静默模式隐藏 SRC 窗口
             if Config.get("Function", "IfSilence"):

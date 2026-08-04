@@ -230,6 +230,7 @@ class ProcessManager:
         stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
+        redirect_file: Path | None = None,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -243,6 +244,9 @@ class ProcessManager:
             stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
+            redirect_file (Path | None): 若指定, 将子进程 stdout/stderr 重定向到该文件。
+                用于无控制台 GUI 子进程(如 src.exe): 其内部 print/colorama 在 DEVNULL 上
+                flush 会抛 OSError [Errno 22], 重定向到真实文件可避免该崩溃。优先于 stdout/stderr。
         """
 
         if await self.is_running():
@@ -259,16 +263,32 @@ class ProcessManager:
 
         await self.clear()
 
-        self.process = await asyncio.create_subprocess_exec(
-            program,
-            *args,
-            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-            env=dict(env) if env is not None else None,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            creationflags=CREATION_FLAGS,
-        )
+        # 无控制台 GUI 子进程若使用 DEVNULL 作为 stdout, 其 print()/colorama
+        # 在 flush 时会抛出 OSError [Errno 22]。重定向到真实文件提供可 flush 句柄。
+        redirect_handle = None
+        if redirect_file is not None:
+            with suppress(OSError):
+                redirect_file.parent.mkdir(parents=True, exist_ok=True)
+            redirect_handle = open(redirect_file, "w", encoding="utf-8")
+            stdout = redirect_handle
+            stderr = redirect_handle
+
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                program,
+                *args,
+                cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+                env=dict(env) if env is not None else None,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                creationflags=CREATION_FLAGS,
+            )
+        finally:
+            # 子进程已在 spawn 时继承句柄副本, 父进程可安全关闭自身句柄
+            if redirect_handle is not None:
+                with suppress(OSError):
+                    redirect_handle.close()
 
         if target_process is not None:
 
