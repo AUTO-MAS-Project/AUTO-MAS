@@ -57,39 +57,39 @@ async def connect_websocket(websocket: WebSocket):
     data = {}
 
     asyncio.create_task(TaskManager.start_startup_queue())
-    while True:
+    try:
+        while True:
 
-        try:
+            try:
 
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
-            if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
-                last_pong = time.monotonic()
-            elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+                if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
+                    last_pong = time.monotonic()
+                elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+                    await websocket.send_json(
+                        WebSocketMessage(
+                            id="Main", type="Signal", data={"Pong": "无描述"}
+                        ).model_dump()
+                    )
+                else:
+                    await Broadcast.put(data)
+
+            except asyncio.TimeoutError:
+
+                if last_pong < last_ping:
+                    await websocket.close(code=1000, reason="Ping超时")
+                    break
                 await websocket.send_json(
                     WebSocketMessage(
-                        id="Main", type="Signal", data={"Pong": "无描述"}
+                        id="Main", type="Signal", data={"Ping": "无描述"}
                     ).model_dump()
                 )
-            else:
-                await Broadcast.put(data)
-
-        except asyncio.TimeoutError:
-
-            if last_pong < last_ping:
-                await websocket.close(code=1000, reason="Ping超时")
-                break
-            await websocket.send_json(
-                WebSocketMessage(
-                    id="Main", type="Signal", data={"Ping": "无描述"}
-                ).model_dump()
-            )
-            last_ping = time.monotonic()
-
-        except (WebSocketDisconnect, RuntimeError):
-            break
-
-    if Config.websocket is websocket:
-        Config.websocket = None
+                last_ping = time.monotonic()
+    except (WebSocketDisconnect, RuntimeError) as e:
+        logger.warning(f"主 WebSocket 通信失败: {type(e).__name__}: {e}")
+    finally:
+        if Config.websocket is websocket:
+            Config.websocket = None
     logger.warning("主 WebSocket 已断开，等待前端重新连接")
 
 
