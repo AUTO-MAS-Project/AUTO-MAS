@@ -189,6 +189,7 @@ class ProcessManager:
         self.target_process: psutil.Process | None = None
         self.window_title = window_title
         self.window_class_name = window_class_name
+        self._drain_tasks: list[asyncio.Task[None]] = []
 
     @property
     def main_pid(self) -> int | None:
@@ -230,7 +231,7 @@ class ProcessManager:
         stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
-        redirect_file: Path | None = None,
+        null_stream_to_pipe: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -244,9 +245,7 @@ class ProcessManager:
             stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
-            redirect_file (Path | None): 若指定, 将子进程 stdout/stderr 重定向到该文件。
-                用于无控制台 GUI 子进程(如 src.exe): 其内部 print/colorama 在 DEVNULL 上
-                flush 会抛 OSError [Errno 22], 重定向到真实文件可避免该崩溃。优先于 stdout/stderr。
+            null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
         """
 
         if await self.is_running():
@@ -263,38 +262,56 @@ class ProcessManager:
 
         await self.clear()
 
-        # 无控制台 GUI 子进程若使用 DEVNULL 作为 stdout, 其 print()/colorama
-        # 在 flush 时会抛出 OSError [Errno 22]。重定向到真实文件提供可 flush 句柄。
-        redirect_handle = None
-        if redirect_file is not None:
-            with suppress(OSError):
-                redirect_file.parent.mkdir(parents=True, exist_ok=True)
-            redirect_handle = open(redirect_file, "w", encoding="utf-8")
-            stdout = redirect_handle
-            stderr = redirect_handle
+        # 若指定了 null_stream_to_pipe, 将 stdout/stderr 为 DEVNULL 的流替换为管道, 并在后台消费以防止阻塞
+        drain_streams = []
+        if null_stream_to_pipe:
+            if stdout == asyncio.subprocess.DEVNULL:
+                stdout = asyncio.subprocess.PIPE
+                drain_streams.append("stdout")
+            if stderr == asyncio.subprocess.DEVNULL:
+                stderr = asyncio.subprocess.PIPE
+                drain_streams.append("stderr")
 
-        try:
-            self.process = await asyncio.create_subprocess_exec(
-                program,
-                *args,
-                cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-                env=dict(env) if env is not None else None,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                creationflags=CREATION_FLAGS,
-            )
-        finally:
-            # 子进程已在 spawn 时继承句柄副本, 父进程可安全关闭自身句柄
-            if redirect_handle is not None:
-                with suppress(OSError):
-                    redirect_handle.close()
+        self.process = await asyncio.create_subprocess_exec(
+            program,
+            *args,
+            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            env=dict(env) if env is not None else None,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            creationflags=CREATION_FLAGS,
+        )
+
+        # 启动协程消费管道流以防止阻塞
+        if drain_streams:
+            for name in drain_streams:
+                stream = getattr(self.process, name)
+                if stream is not None:
+                    self._drain_tasks.append(asyncio.create_task(self._drain(stream)))
 
         if target_process is not None:
 
             await self.search_process(
                 target_process, datetime.now() + timedelta(seconds=60)
             )
+
+    async def _drain(self, stream: asyncio.StreamReader) -> None:
+        """
+        消费子进程标准流, 丢弃写入, 防止管道背压阻塞子进程。
+
+        Args:
+            stream (asyncio.StreamReader): 子进程的标准流对象
+        """
+
+        try:
+            while _ := await stream.readline():
+                pass
+        except (ValueError, OSError):
+            # 管道读端在子进程退出后被关闭, 属正常终止; 忽略无效句柄冲突
+            pass
+        except Exception:
+            pass
 
     async def open_protocol(
         self, protocol_url: str, target_process: ProcessInfo
@@ -378,6 +395,15 @@ class ProcessManager:
 
     async def clear(self) -> None:
         """清空跟踪的进程信息"""
+
+        # 清理残留的排水任务, 避免泄漏
+        if self._drain_tasks:
+            for task in self._drain_tasks:
+                if not task.done():
+                    task.cancel()
+            with suppress(asyncio.CancelledError):
+                await asyncio.gather(*self._drain_tasks, return_exceptions=True)
+            self._drain_tasks = []
 
         self.process = None
         self.target_process = None
