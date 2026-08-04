@@ -865,7 +865,9 @@ class _TaskManager:
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
-                raise ValueError("未找到对应任务")
+                # 任务已经结束时，中止操作仍视为成功。
+                logger.info(f"任务 {task_id} 已结束，无需中止")
+                return
             if self.task_handler[uid].is_closing:
                 raise RuntimeError("任务已在中止中")
             self.task_handler[uid].cancel()
