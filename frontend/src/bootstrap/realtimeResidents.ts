@@ -14,6 +14,7 @@ import {
   bootstrapSchedulerSubscriptions,
   disposeSchedulerSubscriptions,
 } from '@/views/scheduler/useSchedulerLogic'
+import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
 
 let registered = false
 
@@ -35,6 +36,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('update-download', {
       bootstrap: bootstrapUpdateDownloadSubscriptions,
       dispose: disposeUpdateDownloadSubscriptions,
+    })
+    registerResidentResource('system-notices', {
+      bootstrap: bootstrapSystemNotices,
+      dispose: disposeSystemNotices,
     })
     registered = true
   }

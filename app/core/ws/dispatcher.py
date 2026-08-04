@@ -53,6 +53,8 @@ class _WSDispatcher:
             id (str): 路由 ID。
             type (str): 消息类别。
             handler (Handler): 同步或异步处理器，入参为 WSEnvelope。
+                同步处理器在主连接接收循环内联执行，必须保持轻量；
+                耗时逻辑请使用异步处理器（以持有的后台任务运行）。
 
         Returns:
             Callable[[], None]: 幂等的注销函数。
