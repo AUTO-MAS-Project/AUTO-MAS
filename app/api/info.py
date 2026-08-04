@@ -258,7 +258,17 @@ async def get_web_config() -> InfoOut:
 )
 async def get_overview() -> InfoOut:
     try:
-        stage = await Config.get_stage_info("Info")
+        stage_by_server = {
+            server: await Config.get_stage_info("Info", server=server)
+            for server in (
+                "Official",
+                "Bilibili",
+                "YoStarEN",
+                "YoStarJP",
+                "YoStarKR",
+                "txwy",
+            )
+        }
         proxy = await Config.get_proxy_overview()
     except Exception as e:
         return InfoOut(
@@ -267,4 +277,10 @@ async def get_overview() -> InfoOut:
             message=f"{type(e).__name__}: {str(e)}",
             data={"Stage": [], "Proxy": []},
         )
-    return InfoOut(data={"Stage": stage, "Proxy": proxy})
+    return InfoOut(
+        data={
+            "Stage": stage_by_server["Official"],
+            "StageByServer": stage_by_server,
+            "Proxy": proxy,
+        }
+    )

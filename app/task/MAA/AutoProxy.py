@@ -101,9 +101,26 @@ def _build_depot_maintain_task(plans_json: str) -> dict:
         "IsStageManually": False,
         "SkipDuringActivity": False,
         "SkipDuringResourceCollection": False,
-        "UseAutoSeries": False,
+        "UseAutoSeries": True,
         "PlanList": plans,
     }
+
+
+def _resolve_activity_stage(
+    activity_stages: list[dict], configured_index: int
+) -> str | None:
+    """按序号选择当前活动材料关卡，序号失效时回退到第一项。"""
+
+    stages = [
+        stage["Value"]
+        for stage in activity_stages
+        if isinstance(stage, dict)
+        and isinstance(stage.get("Value"), str)
+        and stage["Value"]
+    ]
+    if not stages:
+        return None
+    return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -274,6 +291,8 @@ class AutoProxyTask(TaskExecuteBase):
                     task: self.cur_user_config.get("Task", f"If{task}")
                     for task in MAA_TASKS
                 }
+                if self.cur_user_config.get("Info", "StageMode") != "Fixed":
+                    self.task_dict["DepotMaintain"] = False
             else:  # Annihilation
                 self.task_dict = {
                     task: bool(task in ("StartUp", "Fight")) for task in MAA_TASKS
@@ -446,6 +465,22 @@ class AutoProxyTask(TaskExecuteBase):
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         task_set = {}
+        activity_stage = None
+        if (
+            self.mode == "Routine"
+            and self.task_dict["Fight"]
+            and self.cur_user_config.get("Task", "IfActivityFirst")
+        ):
+            stage_info = await Config.get_stage_info(
+                "Info",
+                server=self.cur_user_config.get("Info", "Server"),
+                refresh=True,
+            )
+            activity_stage = _resolve_activity_stage(
+                stage_info.get("Activity", []),
+                self.cur_user_config.get("Task", "ActivityStageIndex"),
+            )
+
         # 每个任务类型匹配第一个配置作为配置基础
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
 
@@ -669,6 +704,34 @@ class AutoProxyTask(TaskExecuteBase):
                     "Info", "InfrastMode"
                 )
 
+        activity_fight = None
+        if self.mode == "Routine" and activity_stage:
+            activity_fight = task_set["Fight"].copy()
+            activity_fight.update(
+                {
+                    "Name": "活动关优先",
+                    "IsEnable": True,
+                    "StagePlan": [activity_stage],
+                    "IsStageManually": True,
+                    "UseOptionalStage": False,
+                    "UseWeeklySchedule": False,
+                    "EnableTargetDrop": False,
+                    "DropId": "",
+                    "DropCount": 0,
+                    "IsInventoryTarget": False,
+                    "EnableTimesLimit": False,
+                }
+            )
+            # 理智药额度只交给优先活动关，避免后续普通作战重复消耗。
+            task_set["Fight"].update(
+                {
+                    "UseMedicine": False,
+                    "MedicineCount": 0,
+                    "UseExpiringMedicine": False,
+                    "UseExpireMedicineForActivity": False,
+                }
+            )
+
         # 导出任务配置
         self.task_dict["StartUp"] = True
         task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
@@ -679,6 +742,9 @@ class AutoProxyTask(TaskExecuteBase):
 
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
             task_queue.append(task_set[task_type])
+
+            if task_type == "StartUp" and activity_fight:
+                task_queue.append(activity_fight)
 
             # 剩余理智关卡配置
             if (
@@ -721,12 +787,21 @@ class AutoProxyTask(TaskExecuteBase):
         elif "任务已全部完成！" in log:
 
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-                if f"完成任务: {zh_task}" in log:
+                if (
+                    f"完成任务: {zh_task}" in log
+                    or f"{zh_task} 任务跳过" in log
+                ):
                     self.task_dict[en_task] = False
 
             if self.mode == "Annihilation" and "完成任务: 剿灭作战" in log:
                 self.task_dict["Fight"] = False
-            elif self.mode == "Routine" and "任务出错: 剩余理智" in log:
+            elif self.mode == "Routine" and (
+                "任务出错: 理智作战" in log
+                or any(
+                    f"理智作战: {task_name} 添加任务失败" in log
+                    for task_name in ("活动关优先", "理智作战", "剩余理智")
+                )
+            ):
                 self.task_dict["Fight"] = True
 
             if any(self.task_dict.values()):

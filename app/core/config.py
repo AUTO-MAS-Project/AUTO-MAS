@@ -190,7 +190,7 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
-        self._stage_refreshing = False
+        self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
         truststore.inject_into_ssl()
@@ -1774,11 +1774,20 @@ class AppConfig(GlobalConfig):
             "Sunday",
             "Info",
         ],
+        refresh: bool = False,
+        server: str = "Official",
     ):
         """获取关卡信息"""
 
-        # get_stage 会立即返回缓存，网络刷新在后台进行
-        await self.get_stage()
+        # 默认立即返回缓存；任务执行可要求等待远端刷新完成。
+        raw_stage_data = json.loads(self.get("Data", "StageData"))
+        has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
+            "sideStoryStage" in raw_stage_data["Official"]
+        )
+        await self.get_stage(refresh=refresh or not has_server_data)
+
+        server = "Official" if server == "Bilibili" else server
+        stage_data = json.loads(self.get("Data", "Stage")).get(server, {})
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
@@ -1789,23 +1798,27 @@ class AppConfig(GlobalConfig):
                     and stage["value"] in RESOURCE_STAGE_DROP_INFO
                 ):
                     res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
+            stage_options = [dict(item) for item in stage_data.get("ALL", [])]
+            for combox in stage_options:
+                combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
+                    combox["value"], combox["label"]
+                )
             return {
-                "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
+                "Activity": stage_data.get("Info", []),
                 "Resource": res_stage_info,
+                "Options": stage_options,
             }
         elif type == "User":
-            data = json.loads(self.get("Data", "Stage")).get("ALL", [])
+            data = stage_data.get("ALL", [])
             for combox in data:
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
             return data
         elif type == "Today":
-            return json.loads(self.get("Data", "Stage")).get(
-                datetime.now(tz=UTC4).strftime("%A"), []
-            )
+            return stage_data.get(datetime.now(tz=UTC4).strftime("%A"), [])
         else:
-            return json.loads(self.get("Data", "Stage")).get(type, [])
+            return stage_data.get(type, [])
 
     async def get_proxy_overview(self) -> Dict[str, Any]:
         """获取代理情况概览信息"""
@@ -1844,28 +1857,44 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
-        """更新活动关卡信息。网络检查在后台执行，立即返回本地缓存。"""
+    async def get_stage(
+        self, refresh: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """更新活动关卡信息；需要最新数据时等待刷新，否则立即返回缓存。"""
 
-        if datetime.now() - timedelta(hours=1) < datetime.strptime(
-            self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+        raw_stage_data = json.loads(self.get("Data", "StageData"))
+        has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
+            "sideStoryStage" in raw_stage_data["Official"]
+        )
+        if (
+            not refresh
+            and has_server_data
+            and datetime.now() - timedelta(hours=1)
+            < datetime.strptime(
+                self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+            )
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
 
-        if not self._stage_refreshing:
-            self._stage_refreshing = True
+        if self._stage_refresh_task is None:
             task = asyncio.create_task(self._refresh_stage())
+            self._stage_refresh_task = task
             self.temp_task.append(task)
 
             def _done(t: asyncio.Task) -> None:
-                self._stage_refreshing = False
+                if self._stage_refresh_task is t:
+                    self._stage_refresh_task = None
                 if t in self.temp_task:
                     self.temp_task.remove(t)
 
             task.add_done_callback(_done)
         else:
             logger.info("活动关卡信息更新任务已在进行中")
+
+        refresh_task = self._stage_refresh_task
+        if refresh and refresh_task is not None:
+            await asyncio.shield(refresh_task)
 
         return json.loads(self.get("Data", "Stage"))
 
@@ -1874,12 +1903,21 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取活动关卡信息")
         try:
+            raw_stage_data = json.loads(self.get("Data", "StageData"))
+            has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
+                "sideStoryStage" in raw_stage_data["Official"]
+            )
+            headers = (
+                {"If-None-Match": self.get("Data", "StageETag")}
+                if has_server_data
+                else {}
+            )
             async with httpx.AsyncClient(
                 proxy=self.proxy, follow_redirects=True
             ) as client:
                 response = await client.get(
                     "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json",
-                    headers={"If-None-Match": self.get("Data", "StageETag")},
+                    headers=headers,
                 )
 
                 if response.status_code == 304:
@@ -1906,12 +1944,7 @@ class AppConfig(GlobalConfig):
                     await self.set(
                         "Data",
                         "StageData",
-                        json.dumps(
-                            response.json()
-                            .get("Official", {})
-                            .get("sideStoryStage", {}),
-                            ensure_ascii=False,
-                        ),
+                        json.dumps(response.json(), ensure_ascii=False),
                     )
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")

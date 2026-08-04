@@ -35,6 +35,17 @@ export interface ResourceItem {
   Activity: Pick<ActivityInfo, 'Tip' | 'StageName'>
 }
 
+export interface StageOption {
+  label: string
+  value: string | null
+}
+
+export interface StageOverview {
+  Activity: ActivityItem[]
+  Resource: ResourceItem[]
+  Options: StageOption[]
+}
+
 export interface ProxyInfo {
   LastProxyDate: string
   ProxyTimes: number
@@ -43,9 +54,7 @@ export interface ProxyInfo {
 }
 
 export interface HomeOverviewResponse {
-  Stage: {
-    Activity: ActivityItem[]
-    Resource: ResourceItem[]
-  }
+  Stage: StageOverview
+  StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
 }

@@ -23,7 +23,7 @@ import uuid
 import json
 import calendar
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from app.utils.constants import (
@@ -473,6 +473,14 @@ class MaaUserConfig(ConfigBase):
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 活动期间是否优先刷活动关
+        self.Task_IfActivityFirst = ConfigItem(
+            "Task", "IfActivityFirst", False, BoolValidator()
+        )
+        ## 优先刷取的活动关卡序号
+        self.Task_ActivityStageIndex = ConfigItem(
+            "Task", "ActivityStageIndex", 1, RangeValidator(1, 9999)
         )
         ## 库存保持计划
         self.Task_DepotMaintainPlans = ConfigItem(
@@ -3134,62 +3142,80 @@ class GlobalConfig(ConfigBase):
 
         try:
             raw_stage_data = json.loads(self.get("Data", "StageData"))
+            if "Official" in raw_stage_data:
+                stage_data_by_server = {
+                    server: data.get("sideStoryStage", {})
+                    for server, data in raw_stage_data.items()
+                    if isinstance(data, dict)
+                }
+            else:
+                stage_data_by_server = {"Official": raw_stage_data}
 
-            activity_stage_drop_info = []
-            activity_stage_combox = []
+            all_stage_data = {}
+            for server, server_stage_data in stage_data_by_server.items():
+                activity_stage_drop_info = []
+                activity_stage_combox = []
 
-            for side_story in raw_stage_data.values():
-                if (
-                    datetime.strptime(
-                        side_story["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                    ).replace(tzinfo=UTC8)
-                    < datetime.now(tz=UTC8)
-                    < datetime.strptime(
-                        side_story["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                    ).replace(tzinfo=UTC8)
-                ):
-                    for stage in side_story["Stages"]:
-                        activity_stage_combox.append(
-                            {"label": stage["Display"], "value": stage["Value"]}
-                        )
-
-                        if "SSReopen" not in stage["Display"]:
-
-                            if stage["Drop"] in MATERIALS_MAP:
-                                drop_id = stage["Drop"]
-                            elif "玉" in stage["Drop"]:
-                                drop_id = "30012"
-                            else:
-                                drop_id = "NotFound"
-
-                            activity_stage_drop_info.append(
-                                {
-                                    "Display": stage["Display"],
-                                    "Value": stage["Value"],
-                                    "Drop": drop_id,
-                                    "DropName": MATERIALS_MAP.get(
-                                        stage["Drop"], stage["Drop"]
-                                    ),
-                                    "Activity": side_story["Activity"],
-                                }
+                for side_story in server_stage_data.values():
+                    activity = side_story["Activity"]
+                    activity_timezone = timezone(
+                        timedelta(hours=activity.get("TimeZone", 8))
+                    )
+                    if (
+                        datetime.strptime(
+                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                        ).replace(tzinfo=activity_timezone)
+                        < datetime.now(tz=activity_timezone)
+                        < datetime.strptime(
+                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                        ).replace(tzinfo=activity_timezone)
+                    ):
+                        for stage in side_story["Stages"]:
+                            activity_stage_combox.append(
+                                {"label": stage["Display"], "value": stage["Value"]}
                             )
-        except:
+
+                            if "SSReopen" not in stage["Display"]:
+
+                                if stage["Drop"] in MATERIALS_MAP:
+                                    drop_id = stage["Drop"]
+                                elif "玉" in stage["Drop"]:
+                                    drop_id = "30012"
+                                else:
+                                    drop_id = "NotFound"
+
+                                activity_stage_drop_info.append(
+                                    {
+                                        "Display": stage["Display"],
+                                        "Value": stage["Value"],
+                                        "Drop": drop_id,
+                                        "DropName": MATERIALS_MAP.get(
+                                            stage["Drop"], stage["Drop"]
+                                        ),
+                                        "Activity": activity,
+                                    }
+                                )
+
+                stage_data = {"Info": activity_stage_drop_info}
+
+                for day in range(0, 8):
+                    res_stage = []
+
+                    for stage in RESOURCE_STAGE_INFO:
+                        if day in stage["days"] or day == 0:
+                            res_stage.append(
+                                {"label": stage["text"], "value": stage["value"]}
+                            )
+
+                    stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
+                        res_stage[0:1] + activity_stage_combox + res_stage[1:]
+                    )
+
+                all_stage_data[server] = stage_data
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return "{ }"
 
-        stage_data = {"Info": activity_stage_drop_info}
-
-        for day in range(0, 8):
-            res_stage = []
-
-            for stage in RESOURCE_STAGE_INFO:
-                if day in stage["days"] or day == 0:
-                    res_stage.append({"label": stage["text"], "value": stage["value"]})
-
-            stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                res_stage[0:1] + activity_stage_combox + res_stage[1:]
-            )
-
-        return json.dumps(stage_data, ensure_ascii=False)
+        return json.dumps(all_stage_data, ensure_ascii=False)
 
 
 CLASS_BOOK = {
