@@ -192,7 +192,7 @@ class AutoProxyTask(TaskExecuteBase):
             t = datetime.now()
             await self.src_process_manager.open_process(
                 self.src_exe_path,
-                redirect_file=self.src_root_path / "log" / "automas_src_stdout.log",
+                null_stream_to_pipe=True,
             )
 
             # 静默模式隐藏 SRC 窗口
