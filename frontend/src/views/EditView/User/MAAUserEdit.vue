@@ -53,10 +53,22 @@
             @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
 
           <!-- 任务配置组件 -->
-          <TaskConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <TaskConfigSection
+            v-model:activity-first="formData.Task.IfActivityFirst"
+            v-model:activity-stage-index="formData.Task.ActivityStageIndex"
+            :form-data="formData"
+            :loading="loading"
+            :activity-stage-options="activityStageOptions"
+            :activity-stage-loading="activityStageLoading"
+            :activity-stage-error="activityStageError"
+            :display-activity-stage-index="displayActivityStageIndex"
+            @save="handleFieldSave"
+          />
 
           <!-- 库存保持配置组件 -->
           <DepotMaintainConfigSection
+            v-if="!isPlanMode"
+            v-model:enabled="formData.Task.IfDepotMaintain"
             :form-data="formData"
             :loading="loading"
             :stage-options="stageOptions"
@@ -93,8 +105,8 @@ import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
-import { GetStageIn } from '@/api/models/GetStageIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
+import type { HomeOverviewResponse } from '@/types/home.ts'
 
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
@@ -160,6 +172,10 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
+const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
+const activityStageLoading = ref(false)
+const activityStageError = ref('')
+const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
 
 // 剩余理智关卡专用选项（将"当前/上次"改为"不选择"）
 const stageRemainOptions = computed(() => {
@@ -433,6 +449,8 @@ const getDefaultMAAUserData = () => ({
     IfReclamation: false,
     IfRoguelike: false,
     IfDepotMaintain: false,
+    IfActivityFirst: false,
+    ActivityStageIndex: 1,
     DepotMaintainPlans: '[]',
   },
   Notify: {
@@ -462,6 +480,13 @@ const formData = reactive({
   userId: '',
   // 嵌套的实际数据
   ...getDefaultMAAUserData(),
+})
+
+const displayActivityStageIndex = computed(() => {
+  const configuredIndex = formData.Task.ActivityStageIndex
+  return activityStageOptions.value.some(option => option.value === configuredIndex)
+    ? configuredIndex
+    : activityStageOptions.value[0]?.value
 })
 
 // 表单验证规则
@@ -682,22 +707,7 @@ const loadUserData = async () => {
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
 
-        // 检查并添加自定义关卡到选项列表
-        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
-        stageFields.forEach(field => {
-          const stageValue = (formData.Info as any)[field]
-          if (stageValue && isCustomStage(stageValue)) {
-            // 检查是否已存在
-            const exists = stageOptions.value.find((option: any) => option.value === stageValue)
-            if (!exists) {
-              stageOptions.value.push({
-                label: stageValue,
-                value: stageValue,
-                isCustom: true,
-              })
-            }
-          }
-        })
+        appendConfiguredCustomStages()
 
         logger.info('用户数据加载成功')
 
@@ -721,27 +731,60 @@ const loadUserData = async () => {
   }
 }
 
-const loadStageOptions = async () => {
-  try {
-    const response = await Service.getStageComboxApiInfoComboxStagePost({
-      type: GetStageIn.type.USER,
-    })
-    if (response && response.code === 200 && response.data) {
-      const predefinedOptions = [...response.data].map(option => ({
-        ...option,
-        isCustom: false, // 明确标记从API加载的关卡为非自定义
-      }))
-      const predefinedValues = new Set(predefinedOptions.map(option => option.value))
-      const customOptions = stageOptions.value.filter(
-        option => option.isCustom && !predefinedValues.has(option.value)
-      )
-
-      // 保留用户在选项请求完成前添加的自定义关卡，同时去掉竞态期间误判的标准关卡。
-      stageOptions.value = [...predefinedOptions, ...customOptions]
+const appendConfiguredCustomStages = () => {
+  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+  stageFields.forEach(field => {
+    const stageValue = (formData.Info as any)[field]
+    if (stageValue && isCustomStage(stageValue)) {
+      const exists = stageOptions.value.find((option: any) => option.value === stageValue)
+      if (!exists) {
+        stageOptions.value.push({
+          label: stageValue,
+          value: stageValue,
+          isCustom: true,
+        })
+      }
     }
+  })
+}
+
+const applyServerStageOptions = () => {
+  const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
+  const stageOverview = stageOverviewByServer.value[server]
+  if (!stageOverview) {
+    return
+  }
+
+  stageOptions.value = stageOverview.Options.map(option => ({
+    ...option,
+    isCustom: false,
+  }))
+  appendConfiguredCustomStages()
+  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
+    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
+    value: index + 1,
+  }))
+}
+
+const loadActivityStageOptions = async () => {
+  activityStageLoading.value = true
+  activityStageError.value = ''
+  try {
+    const response = await Service.getOverviewApiInfoGetOverviewPost()
+    if (response.code !== 200) {
+      activityStageError.value = response.message || '加载活动关卡失败'
+      return
+    }
+
+    const overview = response.data as HomeOverviewResponse
+    stageOverviewByServer.value = overview.StageByServer
+    applyServerStageOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载关卡选项失败: ${errorMsg}`)
+    logger.error(`加载活动关卡失败: ${errorMsg}`)
+    activityStageError.value = '加载活动关卡失败'
+  } finally {
+    activityStageLoading.value = false
   }
 }
 
@@ -1104,7 +1147,6 @@ const handleCancel = () => {
   }
   router.push('/scripts')
 }
-// 新增：处理来自StageConfigSection的值更新事件
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
     formData.Info.MedicineNumb = value
@@ -1139,6 +1181,11 @@ const updateStageRemain = (value: string) => {
   updateStageField('Stage_Remain', value)
 }
 
+watch(
+  () => formData.Info.Server,
+  () => applyServerStageOptions()
+)
+
 // 初始化加载
 onMounted(() => {
   if (!scriptId) {
@@ -1149,7 +1196,7 @@ onMounted(() => {
 
   loadScriptInfo()
   loadStageModeOptions()
-  loadStageOptions()
+  loadActivityStageOptions()
   loadDepotItemOptions()
 
   // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
