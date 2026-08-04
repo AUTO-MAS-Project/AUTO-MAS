@@ -15,16 +15,50 @@
     <template v-if="formData.Task.IfDepotMaintain">
       <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
       <div class="plan-actions">
-        <a-button type="dashed" :disabled="loading" @click="addPlan">
-          <template #icon><PlusOutlined /></template>
-          添加物品
-        </a-button>
+        <a-space wrap>
+          <a-dropdown :disabled="loading" :trigger="['click']">
+            <a-button type="dashed" :disabled="loading">
+              <template #icon><AppstoreAddOutlined /></template>
+              添加预设
+              <DownOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item key="all" @click="importPreset('all')">全部预设</a-menu-item>
+                <a-menu-divider />
+                <a-menu-item
+                  v-for="preset in DEPOT_MAINTAIN_PRESETS"
+                  :key="preset.key"
+                  @click="importPreset(preset.key)"
+                >
+                  {{ preset.label }}
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+          <a-button type="dashed" :disabled="loading" @click="addPlan">
+            <template #icon><PlusOutlined /></template>
+            添加物品
+          </a-button>
+          <a-popconfirm
+            :title="`确定删除选中的 ${selectedRowKeys.length} 项库存保持计划吗？`"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="removeSelectedPlans"
+          >
+            <a-button danger :disabled="loading || selectedRowKeys.length === 0">
+              <template #icon><DeleteOutlined /></template>
+              删除选中
+            </a-button>
+          </a-popconfirm>
+        </a-space>
       </div>
       <a-table
         :columns="columns"
         :data-source="plans"
         :pagination="false"
         :row-key="rowKey"
+        :row-selection="rowSelection"
         :scroll="{ x: 680 }"
         size="small"
       >
@@ -78,20 +112,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { computed, ref, watch } from 'vue'
+import {
+  AppstoreAddOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  PlusOutlined,
+} from '@ant-design/icons-vue'
 import type { TableColumnsType } from 'ant-design-vue'
+import {
+  DEPOT_MAINTAIN_PRESETS,
+  importDepotMaintainPreset,
+  type DepotMaintainPlan as SavedDepotMaintainPlan,
+  type DepotMaintainPresetKey,
+} from './depotMaintainPresets'
 
 type SelectOption = {
   label: string
   value: string
 }
 
-type DepotMaintainPlan = {
+type DepotMaintainPlan = SavedDepotMaintainPlan & {
   key: number
-  Stage: string
-  DropId: string
-  DropCount: number
 }
 
 const props = defineProps<{
@@ -115,12 +157,21 @@ const columns: TableColumnsType = [
 ]
 
 const plans = ref<DepotMaintainPlan[]>([])
+const selectedRowKeys = ref<number[]>([])
 let nextKey = 0
 const rowKey = (record: DepotMaintainPlan) => record.key
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  getCheckboxProps: () => ({ disabled: props.loading }),
+  onChange: (keys: (string | number)[]) => {
+    selectedRowKeys.value = keys.filter((key): key is number => typeof key === 'number')
+  },
+}))
 
 watch(
   () => props.formData.Task.DepotMaintainPlans,
   value => {
+    selectedRowKeys.value = []
     try {
       const parsed = JSON.parse(value || '[]')
       plans.value = Array.isArray(parsed)
@@ -157,8 +208,25 @@ const addPlan = () => {
   savePlans()
 }
 
+const importPreset = (preset: DepotMaintainPresetKey) => {
+  selectedRowKeys.value = []
+  plans.value = importDepotMaintainPreset(
+    plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount })),
+    preset
+  ).map(plan => ({ key: nextKey++, ...plan }))
+  savePlans()
+}
+
 const removePlan = (key: number) => {
+  selectedRowKeys.value = selectedRowKeys.value.filter(selectedKey => selectedKey !== key)
   plans.value = plans.value.filter(plan => plan.key !== key)
+  savePlans()
+}
+
+const removeSelectedPlans = () => {
+  const keys = new Set(selectedRowKeys.value)
+  plans.value = plans.value.filter(plan => !keys.has(plan.key))
+  selectedRowKeys.value = []
   savePlans()
 }
 </script>

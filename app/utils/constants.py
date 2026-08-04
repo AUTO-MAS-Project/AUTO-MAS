@@ -53,25 +53,25 @@ MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 
 MAA_TASKS = [
     "StartUp",
+    "DepotMaintain",
     "Fight",
     "Infrast",
     "Recruit",
     "Mall",
     "Award",
     "Roguelike",
-    "DepotMaintain",
 ]
 """MAA任务列表"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
+    "库存保持",
     "理智作战",
     "基建换班",
     "自动公招",
     "信用收支",
     "领取奖励",
     "自动肉鸽",
-    "库存保持",
 ]
 """MAA任务列表"""
 
