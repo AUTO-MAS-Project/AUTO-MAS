@@ -122,7 +122,13 @@ import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  error: userError,
+} = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -132,7 +138,15 @@ const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
 const pendingFieldSaves = new Map<string, any>()
-let fieldSavePromise: Promise<void> | null = null
+let fieldSavePromise: Promise<boolean> | null = null
+
+const reportFieldSaveFailure = () => {
+  const errorMsg = userError.value
+  if (!errorMsg || errorMsg.includes('HTTP error')) {
+    message.error('用户配置保存失败，请检查后端连接后重试')
+  }
+  logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
+}
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -542,19 +556,17 @@ watch(
 )
 
 // 即时保存单个字段变更。保存中的后续变更保留最后一次值，避免被 isSaving 直接丢弃。
-const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || !userId) return
+const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
+  if (isInitializing.value || !userId) return false
 
   pendingFieldSaves.set(key, value)
   if (fieldSavePromise) return fieldSavePromise
 
-  const savePromise = (async () => {
+  const savePromise = (async (): Promise<boolean> => {
     isSaving.value = true
     try {
       while (pendingFieldSaves.size > 0) {
-        const pendingEntry = pendingFieldSaves.entries().next().value as
-          | [string, any]
-          | undefined
+        const pendingEntry = pendingFieldSaves.entries().next().value as [string, any] | undefined
         if (!pendingEntry) break
 
         const [pendingKey, pendingValue] = pendingEntry
@@ -581,15 +593,20 @@ const handleFieldSave = async (key: string, value: any) => {
         const success = await updateUser(scriptId, userId, userData)
         if (!success) {
           pendingFieldSaves.clear()
-          break
+          reportFieldSaveFailure()
+          return false
         }
 
         logger.info(`用户配置已保存: ${pendingKey}`)
       }
+      return true
     } catch (error) {
       pendingFieldSaves.clear()
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
+      reportFieldSaveFailure()
+      if (error instanceof Error) {
+        logger.error(`保存异常: ${error.message}`)
+      }
+      return false
     } finally {
       isSaving.value = false
       fieldSavePromise = null
@@ -1139,7 +1156,10 @@ const addCustomStageRemain = (stageName: string) => {
   }
 }
 
-const handleCancel = () => {
+const handleCancel = async () => {
+  const pendingSave = fieldSavePromise
+  if (pendingSave && !(await pendingSave)) return
+
   if (maaSubscriptionId.value) {
     unsubscribe(maaSubscriptionId.value)
     maaSubscriptionId.value = null
