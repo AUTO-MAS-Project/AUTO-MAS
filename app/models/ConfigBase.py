@@ -1336,12 +1336,22 @@ class MultipleConfig(Generic[T]):
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            json.dumps(
-                await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4
-            ),
-            encoding="utf-8",
+        temporary_path = self.file.with_name(
+            f".{self.file.name}.{uuid.uuid4().hex}.tmp"
         )
+        try:
+            temporary_path.write_text(
+                json.dumps(
+                    await self.toDict(if_decrypt=False),
+                    ensure_ascii=False,
+                    indent=4,
+                ),
+                encoding="utf-8",
+            )
+            temporary_path.replace(self.file)
+        finally:
+            with suppress(OSError):
+                temporary_path.unlink()
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """
