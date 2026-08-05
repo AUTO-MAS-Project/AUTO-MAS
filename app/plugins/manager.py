@@ -892,6 +892,20 @@ class _PluginManager:
         *,
         discovered: Dict[str, Any] | None = None,
     ) -> None:
+        """在宿主配置写事务中同步脚本类型并迁移旧配置。"""
+
+        from app.core import Config
+
+        async with Config.script_config_write_scope(None):
+            await self._sync_script_types_and_migrate_legacy_configs_locked(
+                discovered=discovered,
+            )
+
+    async def _sync_script_types_and_migrate_legacy_configs_locked(
+        self,
+        *,
+        discovered: Dict[str, Any] | None = None,
+    ) -> None:
         """同步脚本类型映射，并把旧宿主脚本配置迁移到插件当前类。"""
 
         from app.core import Config
@@ -945,6 +959,10 @@ class _PluginManager:
                         script_name = str(script_id)
 
                     try:
+                        if script.is_locked:
+                            raise RuntimeError(
+                                "脚本正在运行，暂不替换其配置对象"
+                            )
                         legacy_migrator = provider.metadata.get(
                             "legacy_config_migrator"
                         )

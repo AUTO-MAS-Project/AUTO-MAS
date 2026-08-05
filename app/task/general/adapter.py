@@ -62,8 +62,9 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
         from app.core.emulator_manager import EmulatorManager
 
+        await runtime.storage.lock()
+        runtime.extra["_storage_lock_acquired"] = True
         storage_script_config = runtime.get_storage_script_config()
-        await storage_script_config.lock()
 
         script_config = await runtime.build_script_model()
         runtime.script_config = script_config
@@ -151,36 +152,48 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
         from app.services.notification import Notify
         from .tools.notify import push_notification
 
+        storage_lock_acquired = bool(
+            runtime.extra.pop("_storage_lock_acquired", False)
+            or runtime.storage.is_locked
+        )
         if runtime.check_result != "Pass":
+            if storage_lock_acquired:
+                async with runtime.storage.write_transaction():
+                    await runtime.storage.unlock()
             runtime.script_info.status = "异常"
             return
 
         script_config = runtime.script_config
         storage_script_config = runtime.get_storage_script_config()
         if script_config is None:
+            if storage_lock_acquired:
+                async with runtime.storage.write_transaction():
+                    await runtime.storage.unlock()
             runtime.script_info.status = "异常"
             return
 
         logger.info("通用脚本任务已结束, 开始执行后续操作")
-        await storage_script_config.unlock()
+        async with runtime.storage.write_transaction():
+            if storage_lock_acquired:
+                await runtime.storage.unlock()
+            if runtime.mode == "AutoProxy":
+                for user_uid, user_config in runtime.user_config.items():
+                    storage_user_config = storage_script_config.UserData[user_uid]
+                    payload = await user_config.toDict(if_decrypt=False)
+                    payload.pop("SubConfigsInfo", None)
+                    await storage_user_config.set(
+                        "PluginData",
+                        "Config",
+                        json.dumps(payload, ensure_ascii=False),
+                    )
+                    await storage_user_config.set(
+                        "Info",
+                        "Name",
+                        user_config.get("Info", "Name"),
+                    )
         logger.success(f"已解锁脚本配置 {runtime.script_info.script_id}")
 
         if runtime.mode == "AutoProxy":
-            for user_uid, user_config in runtime.user_config.items():
-                storage_user_config = storage_script_config.UserData[user_uid]
-                payload = await user_config.toDict(if_decrypt=False)
-                payload.pop("SubConfigsInfo", None)
-                await storage_user_config.set(
-                    "PluginData",
-                    "Config",
-                    json.dumps(payload, ensure_ascii=False),
-                )
-                await storage_user_config.set(
-                    "Info",
-                    "Name",
-                    user_config.get("Info", "Name"),
-                )
-
             error_user = [
                 user.name for user in runtime.script_info.user_list if user.status == "异常"
             ]

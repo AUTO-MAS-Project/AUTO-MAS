@@ -297,7 +297,7 @@
     <div class="type-selection">
       <a-radio-group v-model:value="selectedType" class="type-radio-group">
         <a-radio-button
-          v-for="descriptor in availableScriptTypes"
+          v-for="descriptor in creatableScriptTypes"
           :key="descriptor.type_key"
           :value="descriptor.type_key"
           class="type-option"
@@ -512,6 +512,7 @@ import {
   getUserCreatePath,
   getUserEditPath,
   handleScriptIconError,
+  isMaaFWEditorKind,
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
 import MarkdownIt from 'markdown-it'
@@ -624,7 +625,9 @@ const filteredTemplates = computed(() => {
 
 const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
 const creatableScriptTypes = computed(() =>
-  scriptTypeDescriptors.value.filter(descriptor => descriptor.available !== false)
+  scriptTypeDescriptors.value.filter(
+    descriptor => descriptor.available !== false && descriptor.creatable !== false
+  )
 )
 const selectedTypeDescriptor = computed(() =>
   scriptTypeDescriptors.value.find(descriptor => descriptor.type_key === selectedType.value)
@@ -666,7 +669,9 @@ const loadScripts = async () => {
     const descriptors = await registryApi.getScriptTypes()
     scriptTypeDescriptors.value = descriptors
     if (!selectedType.value && descriptors.length > 0) {
-      selectedType.value = descriptors.find(item => item.available !== false)?.type_key || ''
+      selectedType.value =
+        descriptors.find(item => item.available !== false && item.creatable !== false)?.type_key ||
+        ''
     }
     const descriptorMap = descriptorMapFromList(descriptors)
     const scriptRecords = await registryApi.getScripts()
@@ -716,7 +721,7 @@ const handleAddScript = () => {
 }
 
 const navigateToCreatedScript = (result: { id: string; type: string; editor_kind: string }) => {
-  if (result.type === 'MaaFW' || result.type === 'M9A') {
+  if (isMaaFWEditorKind(result.editor_kind)) {
     router.push(`/scripts/${result.id}/setup/maafw`)
     return
   }
@@ -829,14 +834,7 @@ const handleConfirmAddScript = async () => {
   try {
     const result = await registryApi.addScript(selectedType.value)
     typeSelectVisible.value = false
-    // MaaFW / M9A 新建脚本进入引导流程，其余类型直接进入编辑页
-    if (result.type === 'MaaFW' || result.type === 'M9A') {
-      router.push(`/scripts/${result.id}/setup/maafw`)
-    } else {
-      router.push(
-        getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
-      )
-    }
+    navigateToCreatedScript(result)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加脚本失败: ${errorMsg}`)

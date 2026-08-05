@@ -68,16 +68,6 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "is_builtin": True,
     },
     {
-        "type_key": "M9A",
-        "display_name": "M9A脚本",
-        "script_class_name": "M9AConfig",
-        "user_class_name": "M9AUserConfig",
-        "supported_modes": ("AutoProxy", "ScriptConfig"),
-        "icon": "M9A",
-        "editor_kind": "builtin:m9a",
-        "is_builtin": False,
-    },
-    {
         "type_key": "MaaFW",
         "display_name": "MaaFramework 项目",
         "script_class_name": "MaaFWConfig",
@@ -507,6 +497,9 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
 
     client = provider.metadata.get("client")
     client = dict(client) if isinstance(client, dict) else {}
+    framework = provider.metadata.get("framework")
+    if isinstance(framework, str) and framework.strip():
+        client["framework"] = framework.strip()
 
     return {
         "type_key": provider.type_key,
@@ -521,6 +514,7 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
         ),
         "create_group_declared": provider.metadata.get("create_group")
         in {"general", "specialized"},
+        "creatable": provider.metadata.get("creatable", True) is not False,
         "docs_url": provider.docs_url,
         "editor_kind": provider.editor_kind,
         "supported_modes": list(provider.supported_modes),
@@ -801,7 +795,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     from app.models.config import (
         GeneralConfig as LegacyGeneralConfig,
         GeneralUserConfig as LegacyGeneralUserConfig,
-        M9AConfig,
         MaaConfig,
         MaaEndConfig,
         MaaEndUserConfig,
@@ -816,7 +809,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         MaaConfig,
         MaaEndConfig,
         SrcConfig,
-        M9AConfig,
         MaaFWConfig,
         OkwwConfig,
     )
@@ -828,7 +820,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     MaaConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaEndConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     SrcConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
-    M9AConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaFWConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     OkwwConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaUserConfig.related_config["PlanConfig"] = global_config.PlanConfig
@@ -857,8 +848,6 @@ def _resolve_legacy_config_classes(
     from app.models.config import (
         GeneralConfig,
         GeneralUserConfig,
-        M9AConfig,
-        M9AUserConfig,
         MaaConfig,
         MaaEndConfig,
         MaaEndUserConfig,
@@ -871,7 +860,6 @@ def _resolve_legacy_config_classes(
 
     script_classes: dict[str, type[ConfigBase]] = {
         "GeneralConfig": GeneralConfig,
-        "M9AConfig": M9AConfig,
         "MaaConfig": MaaConfig,
         "MaaEndConfig": MaaEndConfig,
         "MaaFWConfig": MaaFWConfig,
@@ -879,7 +867,6 @@ def _resolve_legacy_config_classes(
     }
     user_classes: dict[str, type[ConfigBase]] = {
         "GeneralUserConfig": GeneralUserConfig,
-        "M9AUserConfig": M9AUserConfig,
         "MaaEndUserConfig": MaaEndUserConfig,
         "MaaFWUserConfig": MaaFWUserConfig,
         "MaaUserConfig": MaaUserConfig,

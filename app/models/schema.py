@@ -404,7 +404,6 @@ class ScriptIndexItem(BaseModel):
         "GeneralConfig",
         "SrcConfig",
         "MaaEndConfig",
-        "M9AConfig",
         "MaaFWConfig",
         "PluginScriptConfig",
     ] = Field(
@@ -419,7 +418,6 @@ class UserIndexItem(BaseModel):
         "GeneralUserConfig",
         "SrcUserConfig",
         "MaaEndUserConfig",
-        "M9AUserConfig",
         "MaaFWUserConfig",
         "PluginUserConfig",
     ] = Field(..., description="配置类型")
@@ -1008,80 +1006,6 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
-class M9AUserConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="用户名称")
-    Status: Optional[bool] = Field(default=None, description="是否启用")
-    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    IfScriptBeforeTask: Optional[bool] = Field(
-        default=None, description="是否在任务前执行脚本"
-    )
-    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
-    IfScriptAfterTask: Optional[bool] = Field(
-        default=None, description="是否在任务后执行脚本"
-    )
-    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
-    Notes: Optional[str] = Field(default=None, description="备注")
-    Tag: Optional[str] = Field(default=None, description="用户标签信息")
-    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
-    Account: Optional[str] = Field(default=None, description="账号信息（用于切换账号，仅官服生效）")
-
-
-class M9AUserConfig_Task(BaseModel):
-    AvailableTasks: Optional[Union[str, List]] = Field(default=None, description="可用任务列表 JSON 数组字符串或数组")
-    Queue: Optional[Union[str, List]] = Field(default=None, description="运行任务队列 JSON 数组字符串或数组")
-
-class M9AUserConfig_Data(BaseModel):
-    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
-    LastPsychubeDate: Optional[str] = Field(default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD")
-    LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
-    LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
-    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
-
-
-class M9AUserConfig_Notify(BaseModel):
-    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
-    IfSendStatistic: Optional[bool] = Field(
-        default=None, description="是否发送统计信息"
-    )
-    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
-    ToAddress: Optional[str] = Field(default=None, description="收件地址")
-    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
-    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-
-
-class M9AUserConfig(BaseModel):
-    Info: Optional[M9AUserConfig_Info] = Field(default=None, description="基础信息")
-    Task: Optional[M9AUserConfig_Task] = Field(default=None, description="任务配置")
-    Data: Optional[M9AUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[M9AUserConfig_Notify] = Field(default=None, description="单独通知")
-
-
-class M9AConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="M9A 脚本名称")
-    Path: Optional[str] = Field(default=None, description="M9A 路径")
-
-
-class M9AConfig_Emulator(BaseModel):
-    Id: Optional[str] = Field(default=None, description="模拟器 ID")
-    Index: Optional[str] = Field(default=None, description="模拟器索引")
-
-
-class M9AConfig_Run(BaseModel):
-    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
-    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
-    RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
-    IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
-    IfPsychubeDailyOnce: Optional[bool] = Field(default=None, description="每日心相每日只执行一次")
-    IfSleepDreamMonthlyOnce: Optional[bool] = Field(default=None, description="深眠浅梦每月只执行一次")
-
-
-class M9AConfig(BaseModel):
-    Info: Optional[M9AConfig_Info] = Field(default=None, description="脚本基础信息")
-    Emulator: Optional[M9AConfig_Emulator] = Field(default=None, description="模拟器配置")
-    Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
-
-
 class MaaFWUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
@@ -1185,8 +1109,13 @@ class MaaFWConfig_Game(BaseModel):
 
 class MaaFWConfig_Update(BaseModel):
     IfAutoUpdate: Optional[bool] = Field(default=None, description="是否在运行前自动更新 MaaFW 项目")
-    Source: Optional[Literal["MirrorChyan"]] = Field(
-        default=None, description="项目更新源，暂仅支持 MirrorChyan"
+    Source: Optional[Literal["MirrorChyan", "GitHub"]] = Field(
+        default=None, description="项目更新源；默认使用 MirrorChyan，可显式切换 GitHub"
+    )
+    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库 owner/repository")
+    GitHubTag: Optional[str] = Field(default=None, description="GitHub Release Tag")
+    GitHubAssetPattern: Optional[str] = Field(
+        default=None, description="GitHub Release 资源匹配正则"
     )
     Channel: Optional[Literal["", "stable", "beta"]] = Field(
         default=None, description="项目更新渠道，留空时使用全局更新渠道"
@@ -1222,14 +1151,24 @@ class MaaFWConfig(BaseModel):
 
 class MaaFWProjectUpdateIn(BaseModel):
     scriptId: str = Field(..., description="MaaFW 脚本 ID")
+    apply: bool = Field(
+        default=False,
+        description="是否再次检查并应用可安装更新；默认仅检查版本",
+    )
 
 
 class MaaFWProjectUpdateData(BaseModel):
     checked: bool = Field(..., description="是否完成更新检查")
     updated: bool = Field(..., description="是否实际更新了 MaaFW 项目资源")
+    updateAvailable: bool = Field(default=False, description="是否发现新版本")
+    installable: bool = Field(default=False, description="发现的新版本是否有可安装包")
     currentVersion: str = Field(..., description="更新前的项目版本")
     latestVersion: Optional[str] = Field(default=None, description="最新项目版本")
     source: Optional[str] = Field(default=None, description="实际使用的更新源")
+    providerErrorCode: Optional[int] = Field(
+        default=None,
+        description="更新源返回的原始错误码（例如 MirrorChyan CDK 错误码）",
+    )
     logs: List[str] = Field(default_factory=list, description="项目更新日志")
 
 
@@ -1386,6 +1325,10 @@ class MaaFWInterfacePreviewOut(OutBase):
 
 class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(..., description="MaaFW project root path")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="Script ID used to correlate a MaaFW prewarm cache/progress identity",
+    )
 
 
 class MaaFWAgentEnvInfo(BaseModel):
@@ -1401,6 +1344,13 @@ class MaaFWAgentEnvPrepareData(BaseModel):
     agentCount: int = Field(default=0, description="Agent count")
     agents: List[MaaFWAgentEnvInfo] = Field(default_factory=list, description="Agent env info")
     logs: List[str] = Field(default_factory=list, description="Preparation logs")
+    # The environment cache is only reusable when it still points at the
+    # same immutable Runtime Pool entry.  Keep this metadata in the backend
+    # response/sidecar; older records may omit it and will be refreshed once.
+    runtimeId: Optional[str] = Field(default=None, description="Prepared Runtime Pool runtime ID")
+    poolId: Optional[str] = Field(default=None, description="Prepared Runtime Pool identity")
+    pythonExecutable: Optional[str] = Field(default=None, description="Prepared runtime Python executable")
+    venvPath: Optional[str] = Field(default=None, description="Prepared runtime virtual environment")
 
 
 class MaaFWAgentEnvPrepareOut(OutBase):
@@ -1510,10 +1460,9 @@ class ScriptCreateIn(BaseModel):
         "Okww",
         "OkScript",
         "MaaEnd",
-        "M9A",
         "MaaFW",
     ] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本"
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, MaaFW脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1539,7 +1488,6 @@ class ScriptCreateOut(OutBase):
         SrcConfig,
         GeneralConfig,
         MaaEndConfig,
-        M9AConfig,
         MaaFWConfig,
         PluginScriptConfig,
     ] = Field(
@@ -1562,7 +1510,6 @@ class ScriptGetOut(OutBase):
             SrcConfig,
             GeneralConfig,
             MaaEndConfig,
-            M9AConfig,
             MaaFWConfig,
             PluginScriptConfig,
         ],
@@ -1578,7 +1525,6 @@ class ScriptUpdateIn(BaseModel):
         SrcConfig,
         GeneralConfig,
         MaaEndConfig,
-        M9AConfig,
         MaaFWConfig,
         PluginScriptConfig,
     ] = Field(
@@ -1636,7 +1582,6 @@ class UserGetOut(OutBase):
             SrcUserConfig,
             GeneralUserConfig,
             MaaEndUserConfig,
-            M9AUserConfig,
             MaaFWUserConfig,
             PluginUserConfig,
         ],
@@ -1650,7 +1595,6 @@ class UserCreateOut(OutBase):
         SrcUserConfig,
         GeneralUserConfig,
         MaaEndUserConfig,
-        M9AUserConfig,
         MaaFWUserConfig,
         PluginUserConfig,
     ] = (
@@ -1665,7 +1609,6 @@ class UserUpdateIn(UserInBase):
         SrcUserConfig,
         GeneralUserConfig,
         MaaEndUserConfig,
-        M9AUserConfig,
         MaaFWUserConfig,
         PluginUserConfig,
     ] = (

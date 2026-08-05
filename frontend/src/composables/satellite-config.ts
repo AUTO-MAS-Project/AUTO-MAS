@@ -38,6 +38,9 @@ function getDeclaredIconUrl(descriptor: ScriptTypeDescriptor): string {
     }
     return iconUrl
   }
+  if (descriptor.is_builtin === false) {
+    return ''
+  }
   return getLocalIconUrl(legacyBuiltinIconFiles[descriptor.type_key] ?? '')
 }
 

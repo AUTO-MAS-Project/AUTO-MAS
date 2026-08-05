@@ -3,7 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaFWUserConfig } from './MaaFWUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
@@ -31,6 +30,6 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | PluginUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | MaaFWUserConfig | PluginUserConfig);
 };
 

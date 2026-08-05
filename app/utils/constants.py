@@ -40,8 +40,6 @@ TYPE_BOOK = {
     "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
-    "M9AConfig": "M9A",
-    "M9AUserConfig": "M9A",
     "MaaFWConfig": "MaaFramework 项目",
     "MaaFWUserConfig": "MaaFramework 项目",
 }

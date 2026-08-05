@@ -23,7 +23,6 @@ export namespace UserIndexItem {
         OKEF_USER_CONFIG = 'OkefUserConfig',
         SRC_USER_CONFIG = 'SrcUserConfig',
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
-        M9AUSER_CONFIG = 'M9AUserConfig',
         MAA_FWUSER_CONFIG = 'MaaFWUserConfig',
         PLUGIN_USER_CONFIG = 'PluginUserConfig',
     }

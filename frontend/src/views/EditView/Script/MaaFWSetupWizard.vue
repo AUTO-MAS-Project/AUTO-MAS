@@ -16,7 +16,7 @@
                 class="breadcrumb-logo"
                 @error="event => handleScriptIconError(event, formData.type)"
               />
-              项目引导
+              {{ projectDisplayName }} 项目引导
             </div>
           </a-breadcrumb-item>
         </a-breadcrumb>
@@ -52,11 +52,7 @@
     </div>
 
     <div class="wizard-content">
-      <a-card
-        :title="formData.type === 'M9A' ? 'M9A 项目引导' : 'MaaFramework 项目引导'"
-        :loading="pageLoading"
-        class="wizard-card"
-      >
+      <a-card :title="`${projectDisplayName} 项目引导`" :loading="pageLoading" class="wizard-card">
         <template #extra>
           <a-tag color="geekblue" class="type-tag">{{ formData.type }}</a-tag>
         </template>
@@ -80,8 +76,17 @@
                 :rules="rules"
                 :preview-data="previewData"
                 :agent-env-result="agentEnvResult"
+                :agent-env-progress-status="agentEnvProgressStatus"
+                :agent-env-progress-stage="agentEnvProgressStage"
+                :agent-env-progress-percent="agentEnvProgressPercent"
+                :agent-env-progress-message="agentEnvProgressMessage"
+                :agent-env-progress-logs="agentEnvProgressLogs"
+                :agent-env-progress-downloaded-bytes="agentEnvProgressDownloadedBytes"
+                :agent-env-progress-total-bytes="agentEnvProgressTotalBytes"
                 :interface-loading="interfaceLoading"
                 :agent-env-loading="agentEnvLoading"
+                :is-agent-env-preparing="isAgentEnvPreparing"
+                :is-project-update-running="isProjectUpdateRunning"
                 :is-setup-mode="true"
                 :preview-project-title="previewProjectTitle"
                 :interface-stats="interfaceStats"
@@ -98,13 +103,25 @@
                 @prepare-agent-env="handlePrepareAgentEnv"
                 @copy="copyToClipboard"
               />
-              <ControlConfigSection
+              <MaaFWConfigurationReusePanel
                 v-else-if="currentStep === 1"
+                key="configuration-reuse"
+                :script-id="scriptId"
+                mode="first-user"
+                :allow-external="true"
+                :default-source-path="maafwConfig.Info.Path"
+                @skipped="handleReuseSkipped"
+                @pending="handleReusePending"
+                @applied="handleReuseApplied"
+              />
+              <ControlConfigSection
+                v-else-if="currentStep === 2"
                 key="control"
                 :maafw-config="maafwConfig"
                 :preview-data="previewData"
                 :interface-loading="interfaceLoading"
                 :emulator-loading="emulatorLoading"
+                :emulator-options-ready="emulatorOptionsReady"
                 :emulator-device-loading="emulatorDeviceLoading"
                 :emulator-options="emulatorOptions"
                 :emulator-device-options="emulatorDeviceOptions"
@@ -128,13 +145,26 @@
                 @select-game-path="selectGamePath"
               />
               <UpdateSettingsSection
-                v-else-if="currentStep === 2"
+                v-else-if="currentStep === 3"
                 key="update"
                 :maafw-config="maafwConfig"
                 :preview-data="previewData"
                 :is-auto-update-disabled="isAutoUpdateDisabled"
                 :project-update-loading="projectUpdateLoading"
                 :project-update-disabled="projectUpdateDisabled"
+                :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
+                :project-update-action="projectUpdateAction"
+                :project-update-status="projectUpdateStatus"
+                :project-update-stage="projectUpdateStage"
+                :project-update-progress="projectUpdateProgress"
+                :project-update-download-percent="projectUpdateDownloadPercent"
+                :project-update-downloaded-bytes="projectUpdateDownloadedBytes"
+                :project-update-total-bytes="projectUpdateTotalBytes"
+                :project-update-message="projectUpdateMessage"
+                :project-update-provider-error-code="projectUpdateProviderErrorCode"
+                :project-update-discovered-version="projectUpdateDiscoveredVersion"
+                :project-update-metadata-source="projectUpdateMetadataSource"
+                :project-update-package-source="projectUpdatePackageSource"
                 :project-update-logs="projectUpdateLogs"
                 :update-source-options="updateSourceOptions"
                 :update-channel-options="updateChannelOptions"
@@ -167,7 +197,7 @@
             </a-button>
             <div class="step-nav-right">
               <a-button
-                v-if="currentStep < 3"
+                v-if="currentStep < 4"
                 type="primary"
                 size="large"
                 class="step-nav-button step-nav-main"
@@ -186,7 +216,7 @@
                   class="step-nav-button step-nav-main"
                   @click="goCreateFirstUser"
                 >
-                  创建第一个用户！
+                  {{ importedUserId ? '编辑已导入用户' : '创建第一个用户！' }}
                 </a-button>
               </template>
             </div>
@@ -210,6 +240,8 @@ import {
 } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 import { useMaaFWScriptConfig } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWConfigurationApplyResult } from '@/composables/useMaaFWConfigurationReuse'
+import MaaFWConfigurationReusePanel from '@/components/MaaFWConfigurationReusePanel.vue'
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
@@ -223,6 +255,8 @@ const scriptId = route.params.id as string
 
 const formRef = ref<FormInstance>()
 const currentStep = ref(0)
+const reuseComplete = ref(false)
+const importedUserId = ref('')
 
 const {
   maafwConfig,
@@ -230,7 +264,26 @@ const {
   rules,
   previewData,
   agentEnvResult,
+  agentEnvProgressStatus,
+  agentEnvProgressStage,
+  agentEnvProgressPercent,
+  agentEnvProgressMessage,
+  agentEnvProgressLogs,
+  agentEnvProgressDownloadedBytes,
+  agentEnvProgressTotalBytes,
   projectUpdateLogs,
+  projectUpdateAction,
+  projectUpdateStatus,
+  projectUpdateStage,
+  projectUpdateProgress,
+  projectUpdateDownloadPercent,
+  projectUpdateDownloadedBytes,
+  projectUpdateTotalBytes,
+  projectUpdateMessage,
+  projectUpdateProviderErrorCode,
+  projectUpdateDiscoveredVersion,
+  projectUpdateMetadataSource,
+  projectUpdatePackageSource,
   scriptIconUrl,
   pageLoading,
   isInitializing,
@@ -240,6 +293,7 @@ const {
   interfaceLoading,
   agentEnvLoading,
   projectUpdateLoading,
+  emulatorOptionsReady,
   emulatorLoading,
   emulatorDeviceLoading,
   emulatorOptions,
@@ -252,6 +306,9 @@ const {
   isInterfaceReady,
   isAgentEnvReady,
   isAgentEnvFailed,
+  isAgentEnvPreparing,
+  projectUpdateMirrorSourceBlocked,
+  isProjectUpdateRunning,
   projectUpdateDisabled,
   periodTaskOptions,
   previewProjectTitle,
@@ -291,16 +348,31 @@ const {
   dispose,
 } = useMaaFWScriptConfig(scriptId)
 
-const isStepZeroReady = computed(() => isInterfaceReady.value && isAgentEnvReady.value)
-const isStepTwoComplete = computed(() =>
+const projectDisplayName = computed(() => {
+  const candidates = [
+    previewProjectTitle.value,
+    maafwConfig.Info.ProjectLabel,
+    maafwConfig.Info.Name,
+  ]
+  return (
+    candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MaaFramework'
+  )
+})
+
+const isStepZeroReady = computed(
+  () => isInterfaceReady.value && isAgentEnvReady.value && !isAgentEnvPreparing.value
+)
+const isControlStepComplete = computed(() =>
   Boolean(maafwConfig.Info.Controller && maafwConfig.Info.Resource)
 )
 const maxReachableStep = computed(() => {
   if (!isStepZeroReady.value) return 0
-  if (!isStepTwoComplete.value) return 1
-  return 3
+  if (!reuseComplete.value) return 1
+  if (!isControlStepComplete.value) return 2
+  if (isProjectUpdateRunning.value) return 3
+  return 4
 })
-const STEP_TITLES = ['选择项目', '控制配置', '更新设置', '运行参数'] as const
+const STEP_TITLES = ['选择项目', '复用配置', '控制配置', '更新设置', '运行参数'] as const
 const stepItems = computed(() =>
   STEP_TITLES.map((title, index) => ({
     title,
@@ -309,18 +381,38 @@ const stepItems = computed(() =>
 )
 const canAdvanceNext = computed(() => {
   if (currentStep.value === 0) return isStepZeroReady.value
-  if (currentStep.value === 1) return isStepTwoComplete.value
+  if (currentStep.value === 1) return reuseComplete.value
+  if (currentStep.value === 2) return isControlStepComplete.value
+  if (currentStep.value === 3) return !isProjectUpdateRunning.value
   return true
 })
 
 const goToStep = (step: number) => {
-  if (step < 0 || step > 3) return
+  if (step < 0 || step > 4) return
   if (step > currentStep.value && step > maxReachableStep.value) return
   currentStep.value = step
 }
 
 const goCreateFirstUser = () => {
+  if (importedUserId.value) {
+    router.push(`/scripts/${scriptId}/users/${importedUserId.value}/edit/maafw`)
+    return
+  }
   router.push(`/scripts/${scriptId}/users/add/maafw`)
+}
+
+const handleReuseSkipped = () => {
+  reuseComplete.value = true
+}
+
+const handleReusePending = () => {
+  reuseComplete.value = false
+}
+
+const handleReuseApplied = async (result: MaaFWConfigurationApplyResult) => {
+  importedUserId.value = result.createdUser.id
+  reuseComplete.value = true
+  await loadScript()
 }
 
 const handleFinish = () => {
@@ -344,12 +436,11 @@ const handleCancel = () => {
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   try {
-    await loadScript()
+    await Promise.all([loadScript(), loadEmulatorOptions()])
     if (maafwConfig.Info.Path) {
       router.replace(`/scripts/${scriptId}/edit/maafw`)
       return
     }
-    await loadEmulatorOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`引导加载失败: ${errorMsg}`)

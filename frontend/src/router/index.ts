@@ -1,5 +1,4 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import type { RouteLocationGeneric } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
@@ -34,22 +33,10 @@ const routes = [
     meta: { title: '\u7f16\u8f91 MaaEnd \u811a\u672c' },
   },
   {
-    path: '/scripts/:id/edit/m9a',
-    redirect: (to: RouteLocationGeneric) => `/scripts/${to.params.id}/edit/maafw`,
-    name: 'M9AScriptEdit',
-    meta: { title: '编辑M9A脚本' },
-  },
-  {
     path: '/scripts/:id/edit/maafw',
     name: 'MaaFWScriptEdit',
     component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
     meta: { title: '编辑MaaFramework项目' },
-  },
-  {
-    path: '/scripts/:id/setup/m9a',
-    redirect: (to: RouteLocationGeneric) => `/scripts/${to.params.id}/setup/maafw`,
-    name: 'M9ASetupWizard',
-    meta: { title: 'M9A项目引导' },
   },
   {
     path: '/scripts/:id/setup/maafw',
@@ -118,12 +105,6 @@ const routes = [
     meta: { title: '\u6dfb\u52a0 MaaEnd \u7528\u6237' },
   },
   {
-    path: '/scripts/:scriptId/users/add/m9a',
-    redirect: (to: RouteLocationGeneric) => `/scripts/${to.params.scriptId}/users/add/maafw`,
-    name: 'M9AUserAdd',
-    meta: { title: '添加M9A用户' },
-  },
-  {
     path: '/scripts/:scriptId/users/add/maafw',
     name: 'MaaFWUserAdd',
     component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
@@ -146,13 +127,6 @@ const routes = [
     name: 'MaaEndUserEdit',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
     meta: { title: '\u7f16\u8f91 MaaEnd \u7528\u6237' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/m9a',
-    redirect: (to: RouteLocationGeneric) =>
-      `/scripts/${to.params.scriptId}/users/${to.params.userId}/edit/maafw`,
-    name: 'M9AUserEdit',
-    meta: { title: '编辑M9A用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maafw',

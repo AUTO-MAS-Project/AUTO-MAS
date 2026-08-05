@@ -45,7 +45,7 @@ async def get_script_type_icon(type_key: str) -> Response:
     """根据脚本类型键返回插件声明的图标资源。
 
     icon_path 格式为 ``package_name:relative/path``，例如
-    ``automas_script_maafw_pack_m9a:assets/m9a.png``。
+    ``example_script_plugin:assets/icon.png``。
     """
     try:
         provider = script_type_registry.get(type_key)

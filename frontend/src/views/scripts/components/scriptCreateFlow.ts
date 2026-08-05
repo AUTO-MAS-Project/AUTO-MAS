@@ -5,7 +5,6 @@ import { getScriptIcon } from '@/utils/scriptRegistry'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
-import m9aIcon from '@/assets/M9A.png'
 import srcIcon from '@/assets/SRC.png'
 
 export type ConfigMode = 'template' | 'custom'
@@ -71,14 +70,6 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: maaEndIcon,
   },
   {
-    value: 'M9A',
-    title: 'M9A 脚本',
-    description: '重返未来：1999 自动化脚本',
-    keywords: ['m9a', '1999', '重返未来'],
-    group: 'specialized',
-    icon: m9aIcon,
-  },
-  {
     value: 'OkScript',
     title: 'ok-script 项目',
     description: '读取 pyappify.yml 并通过内置表单编辑用户配置',
@@ -98,17 +89,40 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
 
 export const createScriptTypeOptions = (descriptors: ScriptTypeDescriptor[]): ScriptTypeOption[] =>
   descriptors
-    .filter(descriptor => descriptor.available !== false)
-    .map(descriptor => ({
-      value: descriptor.type_key,
-      title: descriptor.display_name,
-      description: descriptor.supported_modes.length
-        ? `支持模式：${descriptor.supported_modes.join(' / ')}`
-        : '由脚本类型插件提供',
-      keywords: [descriptor.type_key, descriptor.display_name, ...descriptor.supported_modes],
-      group: descriptor.create_group ?? 'specialized',
-      icon: getScriptIcon(descriptor.type_key, descriptor.icon_url),
-    }))
+    .filter(descriptor => descriptor.available !== false && descriptor.creatable !== false)
+    .map(descriptor => {
+      const createClient = descriptor.client?.create
+      const createDescription =
+        typeof createClient === 'object' && createClient !== null && 'description' in createClient
+          ? (createClient as { description?: unknown }).description
+          : undefined
+      const createKeywords =
+        typeof createClient === 'object' && createClient !== null && 'keywords' in createClient
+          ? (createClient as { keywords?: unknown }).keywords
+          : undefined
+      const description =
+        typeof createDescription === 'string' && createDescription.trim()
+          ? createDescription.trim()
+          : descriptor.supported_modes.length
+            ? `支持模式：${descriptor.supported_modes.join(' / ')}`
+            : '由脚本类型插件提供'
+      const keywords = Array.isArray(createKeywords)
+        ? createKeywords.filter((keyword): keyword is string => typeof keyword === 'string')
+        : []
+      return {
+        value: descriptor.type_key,
+        title: descriptor.display_name,
+        description,
+        keywords: [
+          descriptor.type_key,
+          descriptor.display_name,
+          ...keywords,
+          ...descriptor.supported_modes,
+        ],
+        group: descriptor.create_group ?? 'specialized',
+        icon: getScriptIcon(descriptor.type_key, descriptor.icon_url),
+      }
+    })
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
   const steps: CreateStep[] = [{ key: 'type', title: '脚本类型' }]

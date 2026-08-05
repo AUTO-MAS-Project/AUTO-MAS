@@ -23,6 +23,7 @@ DEFAULT_INDEX_URLS: list[str] = [
 ]
 
 UV_INSTALL_SCRIPT_URL = "https://astral.sh/uv/install.ps1"
+AUTO_MAS_UV_INDEX_URL_ENV = "AUTO_MAS_UV_INDEX_URL"
 
 
 def _embedded_uv_path(app_root: Path | None = None) -> Path:
@@ -34,9 +35,16 @@ def _find_uv() -> str | None:
     """查找 uv 可执行文件路径。
 
     查找顺序：
-    1. Electron 安装位置 (environment/python/Scripts/uv.exe)
-    2. 系统 PATH
+    1. AUTO_MAS_UV_EXE 指定路径
+    2. Electron 安装位置 (environment/python/Scripts/uv.exe)
+    3. 系统 PATH
     """
+    configured_uv = os.environ.get("AUTO_MAS_UV_EXE")
+    if configured_uv:
+        configured_path = Path(configured_uv)
+        if configured_path.is_file():
+            return str(configured_path)
+
     local_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if local_uv.is_file():
         return str(local_uv)
@@ -47,6 +55,11 @@ def _set_cached_uv(path: str) -> str:
     global _uv_path
     _uv_path = path
     os.environ["AUTO_MAS_UV_EXE"] = path
+    if not any(
+        str(os.environ.get(name) or "").strip()
+        for name in ("UV_INDEX_URL", "UV_DEFAULT_INDEX", AUTO_MAS_UV_INDEX_URL_ENV)
+    ):
+        os.environ[AUTO_MAS_UV_INDEX_URL_ENV] = DEFAULT_INDEX_URLS[0]
     return path
 
 

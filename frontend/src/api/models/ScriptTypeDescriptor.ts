@@ -35,6 +35,10 @@ export type ScriptTypeDescriptor = {
      */
     create_group_declared?: boolean;
     /**
+     * 是否允许用户创建此脚本类型
+     */
+    creatable?: boolean;
+    /**
      * 文档地址
      */
     docs_url?: (string | null);

@@ -3,7 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralConfig } from './GeneralConfig';
-import type { M9AConfig } from './M9AConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
 import type { MaaFWConfig } from './MaaFWConfig';
@@ -19,6 +18,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | M9AConfig | MaaFWConfig | PluginScriptConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | MaaFWConfig | PluginScriptConfig);
 };
 

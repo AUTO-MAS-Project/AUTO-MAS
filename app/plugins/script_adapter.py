@@ -297,6 +297,7 @@ class ScriptAdapterRuntime:
             from .script_config_store import ScriptConfigStore
 
             self._storage = ScriptConfigStore(
+                script_id=str(self.script_uid),
                 provider=self.resolve_provider(),
                 storage_script_config=self.get_storage_script_config(),
             )
@@ -426,7 +427,9 @@ class ScriptAdapterRuntime:
 
         from app.core import Config as RuntimeConfig
 
-        if self.storage_script_config is None:
+        if self._storage is not None:
+            self.storage_script_config = self._storage.storage_script_config
+        elif self.storage_script_config is None:
             self.storage_script_config = RuntimeConfig.ScriptConfig[self.script_uid]
         return self.storage_script_config
 

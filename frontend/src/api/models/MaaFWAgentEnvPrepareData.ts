@@ -20,5 +20,21 @@ export type MaaFWAgentEnvPrepareData = {
      * Preparation logs
      */
     logs?: Array<string>;
+    /**
+     * Prepared Runtime Pool runtime ID
+     */
+    runtimeId?: (string | null);
+    /**
+     * Prepared Runtime Pool identity
+     */
+    poolId?: (string | null);
+    /**
+     * Prepared runtime Python executable
+     */
+    pythonExecutable?: (string | null);
+    /**
+     * Prepared runtime virtual environment
+     */
+    venvPath?: (string | null);
 };
 

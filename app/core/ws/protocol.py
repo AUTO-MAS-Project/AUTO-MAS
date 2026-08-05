@@ -76,6 +76,12 @@ UPDATE_COMPLETED = "update.completed"
 UPDATE_FAILED = "update.failed"
 UPDATE_CANCELLED = "update.cancelled"
 
+# MaaFW project resource update (id is the script UUID)
+MAAFW_PROJECT_UPDATE_PROGRESS = "maafw.project-update.progress"
+
+# MaaFW runtime prewarm (id is the script UUID supplied by the editing page)
+MAAFW_ENV_PREPARE_PROGRESS = "maafw.env-prepare.progress"
+
 # 插件系统实时消息（id=PluginSystem）
 PLUGIN_RUNTIME_UPDATED = "plugin.runtime.updated"
 PLUGIN_SNAPSHOT_UPDATED = "plugin.snapshot.updated"

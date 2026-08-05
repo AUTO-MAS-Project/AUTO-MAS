@@ -58,6 +58,10 @@ export const WS_UPDATE_COMPLETED = 'update.completed'
 export const WS_UPDATE_FAILED = 'update.failed'
 export const WS_UPDATE_CANCELLED = 'update.cancelled'
 
+// MaaFW 项目资源更新（id 为脚本 UUID）
+export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
+export const WS_MAAFW_ENV_PREPARE_PROGRESS = 'maafw.env-prepare.progress'
+
 // 插件系统实时消息（id=PluginSystem）
 export const WS_PLUGIN_RUNTIME_UPDATED = 'plugin.runtime.updated'
 export const WS_PLUGIN_SNAPSHOT_UPDATED = 'plugin.snapshot.updated'
@@ -175,6 +179,47 @@ export interface WSUpdateFailedData {
   message: string
 }
 
+export type WSMaaFWProjectUpdateStage =
+  | 'checking'
+  | 'downloading'
+  | 'validating'
+  | 'extracting'
+  | 'switching'
+  | 'preparing_environment'
+  | 'completed'
+  | 'failed'
+  | string
+
+/** MaaFW 项目资源更新进度（id 为脚本 UUID）。 */
+export interface WSMaaFWProjectUpdateProgressData {
+  scriptId?: string
+  phase?: string | null
+  final?: boolean
+  stage: WSMaaFWProjectUpdateStage
+  status?: string
+  message?: string
+  provider_error_code?: number | null
+  version?: string | null
+  metadata_source?: string | null
+  package_source?: string | null
+  downloaded_bytes?: number | null
+  total_bytes?: number | null
+  percent?: number | null
+}
+
+/** MaaFW 运行环境准备进度（id 为脚本 UUID）。 */
+export interface WSMaaFWEnvPrepareProgressData {
+  scriptId?: string
+  project_path?: string | null
+  stage: string
+  status?: string
+  message?: string
+  percent?: number | null
+  downloaded_bytes?: number | null
+  total_bytes?: number | null
+  logs?: string[]
+}
+
 export interface WSPluginRuntimeStateData {
   instance_id: string
   plugin: string
@@ -269,6 +314,8 @@ export interface WSMessageDataMap {
   [WS_UPDATE_COMPLETED]: WSUpdateCompletedData
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
+  [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
+  [WS_MAAFW_ENV_PREPARE_PROGRESS]: WSMaaFWEnvPrepareProgressData
   [WS_PLUGIN_RUNTIME_UPDATED]: WSPluginRuntimeUpdatedData
   [WS_PLUGIN_SNAPSHOT_UPDATED]: WSPluginSnapshotUpdatedData
   [WS_PLUGIN_HMR]: WSPluginHmrData
