@@ -1,5 +1,5 @@
 <template>
-  <div class="ok-script-config-editor">
+  <div class="plugin-config-editor">
     <div class="editor-header">
       <h3>{{ title }}</h3>
       <a-tag v-if="hasChanges" color="warning">有未保存的更改</a-tag>
@@ -260,10 +260,10 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  useOkScriptConfigApi,
-  type OkScriptConfigFile as ConfigFile,
-  type OkScriptConfigPatchMap,
-} from '@/composables/useOkScriptConfigApi'
+  usePluginConfigApi,
+  type PluginConfigFile as ConfigFile,
+  type PluginConfigPatchMap,
+} from '@/composables/usePluginConfigApi'
 
 type ConfigField = ConfigFile['fields'][number]
 
@@ -275,7 +275,7 @@ const props = withDefaults(
     title?: string
   }>(),
   {
-    endpointPrefix: '/plugin/ok-script/configs',
+    endpointPrefix: '/plugin/configs',
     title: '配置编辑',
   }
 )
@@ -285,7 +285,7 @@ const emit = defineEmits<{
   unavailable: []
 }>()
 
-const logger = window.electronAPI.getLogger('ok-script配置编辑')
+const logger = window.electronAPI.getLogger('插件配置编辑')
 
 const loading = ref(false)
 const unavailableReason = ref('')
@@ -323,7 +323,7 @@ const selectedConfig = computed(() => {
 
 const selectedConfigForTemplate = computed<ConfigFile>(() => selectedConfig.value || emptyConfig)
 const hasChanges = computed(() => changedFiles.value.size > 0)
-const okScriptConfigApi = useOkScriptConfigApi(props.endpointPrefix)
+const pluginConfigApi = usePluginConfigApi(props.endpointPrefix)
 
 const getFieldSection = (field: ConfigField) => field.section || '全部配置'
 
@@ -457,7 +457,7 @@ const loadConfigs = async () => {
   if (!props.scriptId || !props.userId) return
   loading.value = true
   try {
-    const resp = await okScriptConfigApi.listConfigFiles(props.scriptId, props.userId)
+    const resp = await pluginConfigApi.listConfigFiles(props.scriptId, props.userId)
     if (resp?.code === 200 && resp?.data) {
       unavailableReason.value = ''
       configs.value = resp.data
@@ -474,7 +474,7 @@ const loadConfigs = async () => {
         selectConfig(selectedFilename.value)
       }
     } else if (resp?.code === 409) {
-      unavailableReason.value = resp?.message || '当前 ok-ww 程序不可用，请返回设置'
+      unavailableReason.value = resp?.message || '当前插件配置不可用，请返回脚本设置'
       configs.value = []
     } else {
       message.error(resp?.message || '加载配置失败')
@@ -490,8 +490,8 @@ const loadConfigs = async () => {
 const saveAll = async (silent = true) => {
   if (!hasChanges.value) return
   try {
-    const configsToUpdate: OkScriptConfigPatchMap = { ...localChanges.value }
-    const resp = await okScriptConfigApi.batchUpdateConfigFiles(
+    const configsToUpdate: PluginConfigPatchMap = { ...localChanges.value }
+    const resp = await pluginConfigApi.batchUpdateConfigFiles(
       props.scriptId,
       props.userId,
       configsToUpdate
@@ -552,7 +552,7 @@ watch(
 </script>
 
 <style scoped>
-.ok-script-config-editor {
+.plugin-config-editor {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -560,8 +560,8 @@ watch(
   min-height: 520px;
 }
 
-.ok-script-config-editor :deep(.ant-spin-nested-loading),
-.ok-script-config-editor :deep(.ant-spin-container) {
+.plugin-config-editor :deep(.ant-spin-nested-loading),
+.plugin-config-editor :deep(.ant-spin-container) {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -785,7 +785,7 @@ watch(
 }
 
 @media (max-width: 768px) {
-  .ok-script-config-editor {
+  .plugin-config-editor {
     height: calc(100vh - 180px);
     min-height: 480px;
   }

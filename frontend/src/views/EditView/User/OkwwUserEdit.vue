@@ -239,7 +239,7 @@
           </div>
         </a-form>
 
-        <OkScriptConfigEditor
+        <PluginJsonConfigEditor
           v-if="userId"
           :script-id="scriptId"
           :user-id="userId"
@@ -346,16 +346,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import { useOkScriptConfigApi } from '@/composables/useOkScriptConfigApi'
+import { usePluginConfigApi } from '@/composables/usePluginConfigApi'
 import WebhookManager from '@/components/WebhookManager.vue'
-import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
+import PluginJsonConfigEditor from '@/components/PluginJsonConfigEditor.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
 const api = useScriptRegistryApi()
-const okwwConfigApi = useOkScriptConfigApi('/plugin/okww/configs')
+const okwwConfigApi = usePluginConfigApi('/plugin/okww/configs')
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')

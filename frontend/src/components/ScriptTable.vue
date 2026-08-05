@@ -170,9 +170,7 @@
 
             <!-- 用户列表 -->
             <div
-              v-if="
-                !isUsersCollapsed(script.id) && script.users && script.users.length > 0
-              "
+              v-if="!isUsersCollapsed(script.id) && script.users && script.users.length > 0"
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->
@@ -534,8 +532,6 @@ const getProjectLabel = (script: Script) => {
 
 const getScriptTypeLabel = (script: Script) => {
   if (script.type === 'MaaFW') return getProjectLabel(script) || 'MaaFW'
-  if (script.type === 'OkScript')
-    return getProjectLabel(script) || script.displayName || script.type
   return script.displayName || script.type
 }
 
