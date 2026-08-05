@@ -1464,6 +1464,21 @@ class AppConfig(GlobalConfig):
         return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
+    def _conversion_snapshot_identity(
+        snapshot: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Remove advisory metadata before comparing conversion snapshots.
+
+        ``scriptLocked`` is exposed for an early caller-side rejection, but it
+        is a transient state rather than part of the script configuration CAS
+        identity.  Omitting it keeps old callers and durable artifacts valid.
+        """
+
+        identity = copy.deepcopy(dict(snapshot))
+        identity.pop("scriptLocked", None)
+        return identity
+
+    @staticmethod
     def _write_json_atomically(path: Path, payload: Mapping[str, Any]) -> None:
         """Durably replace one JSON file without exposing a partial document."""
 
@@ -1529,6 +1544,11 @@ class AppConfig(GlobalConfig):
             }
 
         return {
+            # Keep lock state as advisory metadata for callers that need to
+            # reject an expensive conversion before importing resources.  It
+            # is intentionally not part of the durable conversion identity;
+            # the commit-time ``is_locked`` check remains the race guard.
+            "scriptLocked": bool(script_config.is_locked),
             "script": {
                 "id": str(script_uid),
                 "type": str(script_config.get("Meta", "PluginTypeKey") or ""),
@@ -1689,7 +1709,9 @@ class AppConfig(GlobalConfig):
             source_snapshot=source_snapshot,
             target_type=target_type,
         )
-        fingerprint = self._canonical_payload_fingerprint(snapshot)
+        fingerprint = self._canonical_payload_fingerprint(
+            self._conversion_snapshot_identity(snapshot)
+        )
         if raw.get("targetFingerprint") != fingerprint:
             raise RuntimeError("脚本转换 target artifact fingerprint 不匹配")
         return snapshot, fingerprint
@@ -1790,7 +1812,9 @@ class AppConfig(GlobalConfig):
 
         current_type = str(current_snapshot["script"]["type"] or "")
         if current_type == normalized_source_type:
-            if current_snapshot != dict(expected_snapshot):
+            if self._conversion_snapshot_identity(
+                current_snapshot
+            ) != self._conversion_snapshot_identity(expected_snapshot):
                 raise ScriptTypeConversionCASMismatch(
                     "脚本配置在转换前已变化，CAS 校验失败"
                 )
@@ -1839,7 +1863,9 @@ class AppConfig(GlobalConfig):
             target_user_storage=target_user_storage,
         )
         source_fingerprint = self._canonical_payload_fingerprint(expected_snapshot)
-        target_fingerprint = self._canonical_payload_fingerprint(target_snapshot)
+        target_fingerprint = self._canonical_payload_fingerprint(
+            self._conversion_snapshot_identity(target_snapshot)
+        )
 
         journal_data = self._conversion_journal_identity(journal)
         if journal_data.get("schemaVersion") != 1:
@@ -1905,7 +1931,9 @@ class AppConfig(GlobalConfig):
                 if persisted_journal.get(key) != expected_value:
                     raise RuntimeError(f"脚本转换 journal 冲突: {key}")
 
-        current_fingerprint = self._canonical_payload_fingerprint(current_snapshot)
+        current_fingerprint = self._canonical_payload_fingerprint(
+            self._conversion_snapshot_identity(current_snapshot)
+        )
         if current_fingerprint == target_fingerprint:
             if persisted_journal is None:
                 raise RuntimeError("目标脚本已转换，但缺少匹配的恢复 journal")
