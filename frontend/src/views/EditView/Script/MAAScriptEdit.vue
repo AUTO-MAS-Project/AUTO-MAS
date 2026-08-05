@@ -30,6 +30,15 @@
         <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
 
+      <a-alert message="使用说明" type="info" show-icon class="notice-alert">
+        <template #description>
+          <div class="notice-content">
+            <p>剿灭任务会独立启动一次 MAA。</p>
+            <p>MAA 专项仅支持模拟器；PC 版请使用通用脚本。</p>
+          </div>
+        </template>
+      </a-alert>
+
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
         <div class="form-section">
@@ -591,6 +600,19 @@ const selectMAAPath = async () => {
   padding: 8px 16px;
   border-radius: 8px;
   border: none;
+}
+
+.notice-alert {
+  margin-bottom: 24px;
+  border-radius: 8px;
+}
+
+.notice-content p {
+  margin: 0;
+}
+
+.notice-content p + p {
+  margin-top: 4px;
 }
 
 /* 表单样式 */
