@@ -42,7 +42,7 @@
     <div v-if="operationProgressVisible" class="operation-progress-panel">
       <div class="progress-heading">
         <div>
-          <strong>{{ api.progress.value.stage || '正在处理 MaaFW 资源' }}</strong>
+          <strong>{{ progressStageLabel }}</strong>
           <p>{{ api.progress.value.message }}</p>
         </div>
         <a-space>
@@ -64,8 +64,13 @@
       />
       <div v-if="progressBytes" class="progress-bytes">{{ progressBytes }}</div>
       <a-collapse v-if="api.progress.value.logs.length" ghost>
-        <a-collapse-panel key="logs" header="查看操作日志">
-          <pre class="operation-logs">{{ api.progress.value.logs.join('\n') }}</pre>
+        <a-collapse-panel key="logs" header="查看操作过程">
+          <ol class="operation-logs" aria-label="MaaFW 项目操作过程">
+            <li v-for="(line, index) in api.progress.value.logs" :key="`${index}-${line}`">
+              <span class="operation-log-index">{{ index + 1 }}</span>
+              <span>{{ line }}</span>
+            </li>
+          </ol>
         </a-collapse-panel>
       </a-collapse>
     </div>
@@ -74,7 +79,99 @@
       <a-spin size="large" tip="正在读取 MaaFW 托管能力与资源" />
     </div>
 
-    <a-tabs v-else-if="api.capabilities.value?.available && binding" v-model:active-key="activeTab">
+    <a-card
+      v-if="
+        !initialLoading &&
+        globalUpdateSettingsLoaded &&
+        api.capabilities.value?.available &&
+        binding
+      "
+      class="managed-update-settings-card"
+      size="small"
+      :bordered="false"
+    >
+      <template #title>托管项目统一更新设置</template>
+      <template #extra>
+        <a-tag color="blue">全局来源 · 当前项目渠道</a-tag>
+      </template>
+      <a-form layout="vertical">
+        <a-row :gutter="16">
+          <a-col :xs="24" :md="6">
+            <a-form-item label="更新源">
+              <a-select
+                v-model:value="managedUpdateSettings.source"
+                :disabled="globalUpdateSettingsLoading || operationRunning"
+              >
+                <a-select-option value="MirrorChyan">MirrorChyan</a-select-option>
+                <a-select-option value="GitHub">GitHub</a-select-option>
+                <a-select-option value="AutoSite">AutoSite（仅普通 AUTO-MAS）</a-select-option>
+                <a-select-option value="CNB">CNB（仅普通 AUTO-MAS）</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="6">
+            <a-form-item label="当前项目渠道" extra="每个托管项目独立选择稳定版或测试版">
+              <a-select
+                v-model:value="managedUpdateSettings.channel"
+                :disabled="
+                  globalUpdateSettingsLoading ||
+                  operationRunning ||
+                  !binding.managed ||
+                  api.capabilities.value?.features.remoteSettings !== true
+                "
+              >
+                <a-select-option value="stable">稳定版</a-select-option>
+                <a-select-option value="beta">测试版</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item label="Mirror酱 CDK" extra="托管项目的 MirrorChyan 检查和安装统一继承此值">
+              <a-input-password
+                v-model:value="managedUpdateSettings.mirrorChyanCDK"
+                :disabled="
+                  globalUpdateSettingsLoading ||
+                  operationRunning ||
+                  managedUpdateSettings.source !== 'MirrorChyan'
+                "
+                placeholder="填写全局 MirrorChyan CDK"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-alert
+          v-if="persistedGlobalUpdateSource === 'AutoSite' || persistedGlobalUpdateSource === 'CNB'"
+          type="warning"
+          show-icon
+          message="托管远程操作已暂停"
+          description="当前全局来源仅适用于普通 AUTO-MAS。请在顶部保存 MirrorChyan 或 GitHub 后，才能检查远程资源、下载并导入或升级托管资源。"
+        />
+        <a-space>
+          <a-button
+            type="primary"
+            :loading="globalUpdateSettingsLoading || globalUpdateSettingsSaving"
+            :disabled="operationRunning"
+            @click="saveManagedUpdateSettings"
+          >
+            保存统一设置
+          </a-button>
+          <a-typography-text type="secondary">
+            MirrorChyan/GitHub 用于托管远程资源；AutoSite/CNB 是普通 AUTO-MAS 来源，保存项目渠道
+            不会改动它。
+          </a-typography-text>
+        </a-space>
+      </a-form>
+    </a-card>
+
+    <a-tabs
+      v-if="
+        !initialLoading &&
+        globalUpdateSettingsLoaded &&
+        api.capabilities.value?.available &&
+        binding
+      "
+      v-model:active-key="activeTab"
+    >
       <a-tab-pane key="resources" tab="项目与依赖">
         <MaaFWProjectResourcesPanel
           :binding="binding"
@@ -105,6 +202,7 @@
           :features="effectiveFeatures"
           :busy="operationRunning"
           :remote-discovery="remoteDiscovery"
+          :global-update-source="persistedGlobalUpdateSource"
           @convert="confirmConvert"
           @local-submit="confirmLocalSubmit"
           @remote-check="checkRemote"
@@ -122,8 +220,11 @@
         <section class="maintenance-section">
           <div class="section-heading">
             <div>
-              <h3>过期资源回收</h3>
-              <p>先生成预览；当前版本、固定资源、引用和活动 lease 始终受到保护。</p>
+              <h3>无引用资源回收</h3>
+              <p>
+                默认零宽限、零额外保留；仅固定资源、脚本引用和活动 lease
+                受保护。“当前版本”指针本身不算引用。
+              </p>
             </div>
           </div>
 
@@ -148,7 +249,7 @@
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="宽限期（天）">
+                <a-form-item label="本次宽限期（天）">
                   <a-input-number
                     v-model:value="gcForm.graceDays"
                     :min="0"
@@ -159,7 +260,7 @@
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="每个项目 / 运行时保留最新数量">
+                <a-form-item label="本次额外保留最新数量">
                   <a-input-number
                     v-model:value="gcForm.keepLatest"
                     :min="0"
@@ -206,6 +307,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message, Modal, type ModalFuncProps } from 'ant-design-vue'
+import { useSettingsApi } from '@/composables/useSettingsApi'
 import {
   getMaaFWManagedMutationUnavailableReason,
   hasMaaFWManagedSafeMutationContract,
@@ -213,6 +315,7 @@ import {
   type MaaFWManagedBinding,
   type MaaFWManagedFeatures,
   type MaaFWManagedGarbageCollectionResult,
+  type MaaFWManagedGlobalUpdateSource,
   type MaaFWManagedLocalSourceInput,
   type MaaFWManagedProjectSummary,
   type MaaFWManagedProjectVersion,
@@ -226,6 +329,12 @@ import MaaFWProjectResourcesPanel from './MaaFWProjectResourcesPanel.vue'
 defineOptions({ name: 'MaaFWProjectManagerWorkspace' })
 
 const MANAGER_CONFIRM_Z_INDEX = 950
+const DEFAULT_MANAGED_UPDATE_SOURCE: MaaFWManagedGlobalUpdateSource = 'MirrorChyan'
+
+type GlobalUpdateSettingsValue = {
+  source: MaaFWManagedGlobalUpdateSource
+  mirrorChyanCDK: string
+}
 
 const props = withDefaults(
   defineProps<{
@@ -245,6 +354,7 @@ const emit = defineEmits<{
 }>()
 
 const api = useMaaFWManagedApi()
+const { getSettings, updateSettings } = useSettingsApi()
 type ConfirmHandle = ReturnType<typeof Modal.confirm>
 const activeConfirmHandles = new Set<ConfirmHandle>()
 let disposed = false
@@ -268,11 +378,34 @@ const gcPreviewInput = ref<{
 const mutationFinalizing = ref(false)
 const gcForm = reactive({
   projectId: '',
-  graceDays: 30,
-  keepLatest: 2,
+  graceDays: 0,
+  keepLatest: 0,
 })
+const managedUpdateSettings = reactive<{
+  source: MaaFWManagedGlobalUpdateSource
+  channel: 'stable' | 'beta'
+  mirrorChyanCDK: string
+}>({
+  source: DEFAULT_MANAGED_UPDATE_SOURCE,
+  channel: 'stable',
+  mirrorChyanCDK: '',
+})
+const globalUpdateSettingsLoading = ref(false)
+const globalUpdateSettingsLoaded = ref(false)
+const globalUpdateSettingsSaving = ref(false)
+const globalUpdateSettingsSnapshot = ref<GlobalUpdateSettingsValue | null>(null)
+const persistedGlobalUpdateSource = computed<MaaFWManagedGlobalUpdateSource>(
+  () => globalUpdateSettingsSnapshot.value?.source ?? DEFAULT_MANAGED_UPDATE_SOURCE
+)
 let versionsRequestSequence = 0
+let managerLoadSequence = 0
+let managerContextScriptId = ''
+let loadedScriptId = ''
+let globalUpdateSettingsRequestSequence = 0
+let globalUpdateSettingsPending = 0
+let managedUpdateSettingsSavePromise: Promise<void> | null = null
 let overviewRefreshPromise: Promise<boolean> | null = null
+let overviewRefreshContext: { scriptId: string; loadSequence: number } | null = null
 let terminalReconciliationPromise: Promise<void> | null = null
 let terminalRefreshPending = false
 let terminalReconciliationGeneration = 0
@@ -283,6 +416,8 @@ const operationRunning = computed(
     overviewLoading.value ||
     versionsLoading.value ||
     mutationFinalizing.value ||
+    globalUpdateSettingsLoading.value ||
+    globalUpdateSettingsSaving.value ||
     api.loading.value ||
     api.progress.value.status === 'running'
 )
@@ -312,7 +447,12 @@ const effectiveFeatures = computed<MaaFWManagedFeatures>(() => {
         garbageCollection: false,
         operationProgress: false,
       }
-  if (binding.value && !binding.value.managed && binding.value.scriptType !== 'MaaFW') {
+  if (
+    binding.value &&
+    !binding.value.managed &&
+    binding.value.scriptType !== 'MaaFW' &&
+    binding.value.scriptType !== 'M9A'
+  ) {
     features.inPlaceConversion = false
   }
   return features
@@ -333,6 +473,25 @@ const progressStatusLabel = computed(() => {
   if (api.progress.value.status === 'error') return '失败'
   if (api.progress.value.status === 'unknown') return '结果待核对'
   return '处理中'
+})
+const progressStageLabel = computed(() => {
+  const stage = String(api.progress.value.stage || '').trim()
+  const labels: Record<string, string> = {
+    completed: '操作已完成',
+    failed: '操作失败',
+    'project-import': '正在导入项目资源',
+    'project-validate': '正在校验项目资源',
+    'project-stage': '正在准备项目资源',
+    'config-persisted': '正在保存项目配置',
+    'runtime-resolve': '正在解析运行依赖',
+    'runtime-install': '正在更新运行环境',
+    'download:starting': '正在下载项目资源',
+    'download:progress': '正在下载项目资源',
+    'download:validated': '项目资源下载并校验完成',
+    'resource-commit': '正在提交资源变更',
+  }
+  if (!stage) return '正在处理 MaaFW 资源'
+  return labels[stage] || stage
 })
 const progressBarStatus = computed<'active' | 'success' | 'exception' | 'normal'>(() => {
   if (api.progress.value.status === 'success') return 'success'
@@ -411,35 +570,370 @@ const showManagedConfirm = (config: ModalFuncProps) => {
   activeConfirmHandles.add(handle)
 }
 
+const isCurrentManagerContext = (loadSequence: number, scriptId: string) =>
+  !disposed && loadSequence === managerLoadSequence && props.scriptId === scriptId
+
+const beginGlobalUpdateSettingsOperation = () => {
+  globalUpdateSettingsPending += 1
+  globalUpdateSettingsLoading.value = true
+}
+
+const endGlobalUpdateSettingsOperation = () => {
+  globalUpdateSettingsPending = Math.max(0, globalUpdateSettingsPending - 1)
+  globalUpdateSettingsLoading.value = globalUpdateSettingsPending > 0
+}
+
+type GlobalUpdateSettingsPatch = {
+  Source?: MaaFWManagedGlobalUpdateSource
+  MirrorChyanCDK?: string
+}
+
+type ManagedUpdateSettingsSnapshot = {
+  source: MaaFWManagedGlobalUpdateSource
+  mirrorChyanCDK: string
+  channel: 'stable' | 'beta'
+}
+
+const normalizeGlobalUpdateSource = (value: unknown): MaaFWManagedGlobalUpdateSource => {
+  if (value === 'GitHub' || value === 'MirrorChyan' || value === 'AutoSite' || value === 'CNB') {
+    return value
+  }
+  return DEFAULT_MANAGED_UPDATE_SOURCE
+}
+
+const readGlobalUpdateSettings = (settings: {
+  Update?: { Source?: unknown; MirrorChyanCDK?: unknown } | null
+}): GlobalUpdateSettingsValue => {
+  const update = settings.Update
+  const source = normalizeGlobalUpdateSource(update?.Source)
+  const mirrorChyanCDK = String(update?.MirrorChyanCDK ?? '').trim()
+  return { source, mirrorChyanCDK }
+}
+
+const applyGlobalUpdateSettings = (settings: {
+  Update?: { Source?: unknown; MirrorChyanCDK?: unknown } | null
+}) => {
+  const { source, mirrorChyanCDK } = readGlobalUpdateSettings(settings)
+  managedUpdateSettings.source = source
+  managedUpdateSettings.mirrorChyanCDK = mirrorChyanCDK
+  globalUpdateSettingsSnapshot.value = { source, mirrorChyanCDK }
+  globalUpdateSettingsLoaded.value = true
+}
+
+const loadManagedUpdateSettings = async (loadSequence: number, scriptId: string) => {
+  const requestSequence = ++globalUpdateSettingsRequestSequence
+  beginGlobalUpdateSettingsOperation()
+  try {
+    const settings = await getSettings()
+    if (!settings) {
+      if (
+        requestSequence !== globalUpdateSettingsRequestSequence ||
+        !isCurrentManagerContext(loadSequence, scriptId)
+      ) {
+        return
+      }
+      throw new Error('无法读取 AUTO-MAS 全局更新设置')
+    }
+    if (
+      requestSequence !== globalUpdateSettingsRequestSequence ||
+      !isCurrentManagerContext(loadSequence, scriptId)
+    ) {
+      return
+    }
+    applyGlobalUpdateSettings(settings)
+  } finally {
+    endGlobalUpdateSettingsOperation()
+  }
+}
+
+const rollbackManagedUpdateSettings = async (
+  scriptId: string,
+  wasManaged: boolean,
+  previous: ManagedUpdateSettingsSnapshot,
+  globalPatch: GlobalUpdateSettingsPatch,
+  globalWriteAttempted: boolean,
+  channelWriteAttempted: boolean,
+  settingsRequestSequence: number,
+  loadSequence: number
+) => {
+  const rollbackErrors: string[] = []
+
+  if (channelWriteAttempted) {
+    try {
+      await api.updateRemoteSettings(scriptId, previous.channel)
+    } catch (caught) {
+      rollbackErrors.push(caught instanceof Error ? caught.message : '当前项目渠道回滚失败')
+    }
+  }
+
+  if (globalWriteAttempted && Object.keys(globalPatch).length) {
+    const rollbackPatch: GlobalUpdateSettingsPatch = {}
+    if (globalPatch.Source !== undefined) rollbackPatch.Source = previous.source
+    if (globalPatch.MirrorChyanCDK !== undefined) {
+      rollbackPatch.MirrorChyanCDK = previous.mirrorChyanCDK
+    }
+    try {
+      const restored = await updateSettings({ Update: rollbackPatch })
+      if (!restored) rollbackErrors.push('全局更新设置回滚失败')
+    } catch (caught) {
+      rollbackErrors.push(caught instanceof Error ? caught.message : '全局更新设置回滚失败')
+    }
+  }
+
+  try {
+    const settings = await getSettings()
+    if (!settings) throw new Error('无法重新读取全局更新设置')
+    if (!disposed && settingsRequestSequence === globalUpdateSettingsRequestSequence) {
+      applyGlobalUpdateSettings(settings)
+    }
+  } catch (caught) {
+    rollbackErrors.push(caught instanceof Error ? caught.message : '保存失败后的全局设置刷新失败')
+  }
+
+  if (wasManaged) {
+    try {
+      const refreshedBinding = await api.getCurrentBinding(scriptId)
+      if (isCurrentManagerContext(loadSequence, scriptId)) binding.value = refreshedBinding
+    } catch (caught) {
+      rollbackErrors.push(caught instanceof Error ? caught.message : '保存失败后的项目绑定刷新失败')
+    }
+  }
+
+  return rollbackErrors
+}
+
+const saveManagedUpdateSettings = async () => {
+  if (
+    disposed ||
+    globalUpdateSettingsSaving.value ||
+    globalUpdateSettingsLoading.value ||
+    operationRunning.value
+  ) {
+    return
+  }
+  const previousGlobal = globalUpdateSettingsSnapshot.value
+  if (!globalUpdateSettingsLoaded.value || !previousGlobal) {
+    message.warning('全局更新设置尚未读取完成，请刷新后重试')
+    return
+  }
+
+  const scriptId = props.scriptId
+  const saveLoadSequence = managerLoadSequence
+  const wasManaged = binding.value?.managed === true
+  const previous: ManagedUpdateSettingsSnapshot = {
+    ...previousGlobal,
+    channel: binding.value?.updateChannel === 'beta' ? 'beta' : 'stable',
+  }
+  const requestedChannel = managedUpdateSettings.channel
+  const currentMirrorChyanCDK = managedUpdateSettings.mirrorChyanCDK.trim()
+  managedUpdateSettings.mirrorChyanCDK = currentMirrorChyanCDK
+  const globalPatch: GlobalUpdateSettingsPatch = {}
+  if (managedUpdateSettings.source !== previous.source) {
+    globalPatch.Source = managedUpdateSettings.source
+  }
+  if (currentMirrorChyanCDK !== previous.mirrorChyanCDK) {
+    globalPatch.MirrorChyanCDK = currentMirrorChyanCDK
+  }
+
+  const channelChanged =
+    wasManaged &&
+    api.capabilities.value?.features.remoteSettings === true &&
+    requestedChannel !== previous.channel
+  if (
+    wasManaged &&
+    requestedChannel !== previous.channel &&
+    api.capabilities.value?.features.remoteSettings !== true
+  ) {
+    managedUpdateSettings.source = previous.source
+    managedUpdateSettings.mirrorChyanCDK = previous.mirrorChyanCDK
+    managedUpdateSettings.channel = previous.channel
+    message.error('当前 Managed 插件不支持保存项目更新渠道，请刷新后重试')
+    return
+  }
+
+  const hasGlobalChanges = Object.keys(globalPatch).length > 0
+  if (!hasGlobalChanges && !channelChanged) {
+    message.info('更新设置没有变化')
+    return
+  }
+
+  const settingsRequestSequence = ++globalUpdateSettingsRequestSequence
+  globalUpdateSettingsSaving.value = true
+  beginGlobalUpdateSettingsOperation()
+  let resolveSaveCompletion!: () => void
+  const saveCompletion = new Promise<void>(resolve => {
+    resolveSaveCompletion = resolve
+  })
+  managedUpdateSettingsSavePromise = saveCompletion
+  let globalWriteAttempted = false
+  let channelWriteAttempted = false
+  try {
+    if (hasGlobalChanges) {
+      globalWriteAttempted = true
+      const saved = await updateSettings({ Update: globalPatch })
+      if (!saved) throw new Error('全局更新来源或 MirrorChyan CDK 保存失败')
+    }
+
+    if (channelChanged) {
+      channelWriteAttempted = true
+      await api.updateRemoteSettings(scriptId, requestedChannel)
+    }
+
+    const settings = await getSettings()
+    if (!settings) throw new Error('设置已保存，但重新读取全局更新设置失败')
+    const refreshedGlobal = readGlobalUpdateSettings(settings)
+    if (globalPatch.Source !== undefined && refreshedGlobal.source !== globalPatch.Source) {
+      throw new Error('全局更新来源刷新后与请求不一致')
+    }
+    if (
+      globalPatch.MirrorChyanCDK !== undefined &&
+      refreshedGlobal.mirrorChyanCDK !== currentMirrorChyanCDK
+    ) {
+      throw new Error('MirrorChyan CDK 刷新后与请求不一致')
+    }
+    if (!disposed && settingsRequestSequence === globalUpdateSettingsRequestSequence) {
+      applyGlobalUpdateSettings(settings)
+    }
+    if (wasManaged) {
+      const refreshedBinding = await api.getCurrentBinding(scriptId)
+      if (channelChanged && refreshedBinding.updateChannel !== requestedChannel) {
+        throw new Error('当前项目更新渠道刷新后与请求不一致')
+      }
+      if (isCurrentManagerContext(saveLoadSequence, scriptId)) binding.value = refreshedBinding
+    }
+
+    if (
+      isCurrentManagerContext(saveLoadSequence, scriptId) &&
+      settingsRequestSequence === globalUpdateSettingsRequestSequence
+    ) {
+      pageError.value = ''
+      const savedParts = [
+        hasGlobalChanges ? '全局更新设置' : '',
+        channelChanged ? '当前项目渠道' : '',
+      ].filter(Boolean)
+      message.success(`${savedParts.join('、')}已保存并刷新`)
+    }
+  } catch (caught) {
+    let rollbackErrors: string[] = []
+    try {
+      rollbackErrors = await rollbackManagedUpdateSettings(
+        scriptId,
+        wasManaged,
+        previous,
+        globalPatch,
+        globalWriteAttempted,
+        channelWriteAttempted,
+        settingsRequestSequence,
+        saveLoadSequence
+      )
+    } catch (rollbackCaught) {
+      rollbackErrors.push(
+        rollbackCaught instanceof Error ? rollbackCaught.message : '保存失败后的回滚异常'
+      )
+      try {
+        const settings = await getSettings()
+        if (!settings) throw new Error('无法重新读取全局更新设置')
+        if (!disposed && settingsRequestSequence === globalUpdateSettingsRequestSequence) {
+          applyGlobalUpdateSettings(settings)
+        }
+      } catch (refreshCaught) {
+        rollbackErrors.push(
+          refreshCaught instanceof Error ? refreshCaught.message : '保存失败后的全局设置刷新失败'
+        )
+      }
+      if (wasManaged) {
+        try {
+          const refreshedBinding = await api.getCurrentBinding(scriptId)
+          if (isCurrentManagerContext(saveLoadSequence, scriptId)) {
+            binding.value = refreshedBinding
+          }
+        } catch (bindingRefreshCaught) {
+          rollbackErrors.push(
+            bindingRefreshCaught instanceof Error
+              ? bindingRefreshCaught.message
+              : '保存失败后的项目绑定刷新失败'
+          )
+        }
+      }
+    }
+    const reason = caught instanceof Error ? caught.message : '保存托管项目更新设置失败'
+    const rollbackMessage = rollbackErrors.length
+      ? `；回滚或刷新未完全成功：${rollbackErrors.join('；')}`
+      : '；已回滚并刷新为保存前状态'
+    if (isCurrentManagerContext(saveLoadSequence, scriptId)) {
+      reportFailure(new Error(`${reason}${rollbackMessage}`), '保存托管项目更新设置失败')
+    }
+  } finally {
+    endGlobalUpdateSettingsOperation()
+    globalUpdateSettingsSaving.value = false
+    if (managedUpdateSettingsSavePromise === saveCompletion) {
+      managedUpdateSettingsSavePromise = null
+    }
+    resolveSaveCompletion()
+  }
+}
+
 const loadManager = async () => {
+  const loadSequence = ++managerLoadSequence
+  const scriptId = props.scriptId
+  const contextChanged = Boolean(managerContextScriptId && managerContextScriptId !== scriptId)
+  managerContextScriptId = scriptId
+  const previousManaged = binding.value?.managed
+  const previousLoadedScriptId = loadedScriptId
+  const wasFinalizing = mutationFinalizing.value
   initialLoading.value = true
   pageError.value = ''
   remoteDiscovery.value = null
   gcPreview.value = null
   gcPreviewInput.value = null
-  api.resetProgress()
+  globalUpdateSettingsLoaded.value = false
+  globalUpdateSettingsSnapshot.value = null
+  binding.value = null
+  projects.value = []
+  versions.value = []
+  runtimes.value = []
+  selectedProjectId.value = ''
+  overviewLoading.value = false
+  versionsLoading.value = false
+  loadedScriptId = ''
+  api.resetProgress(contextChanged)
   try {
-    const wasFinalizing = mutationFinalizing.value
-    const previousManaged = binding.value?.managed
-    const capabilities = await api.getCapabilities()
-    if (disposed || !capabilities.available) return
-    if (hasMaaFWManagedSafeMutationContract(capabilities)) {
-      await api.resumeProgress(props.scriptId)
-    }
-    if (disposed) return
-    const overview = await api.getOverview(props.scriptId)
-    if (disposed) return
+    const pendingSave = managedUpdateSettingsSavePromise
+    if (pendingSave) await pendingSave.catch(() => undefined)
+    if (!isCurrentManagerContext(loadSequence, scriptId)) return
+
+    // Settings and capability discovery are independent network reads.  Do
+    // them together so a slow global-config request cannot make the manager
+    // appear frozen before the project overview starts loading.
+    const [, capabilities] = await Promise.all([
+      loadManagedUpdateSettings(loadSequence, scriptId),
+      api.getCapabilities(),
+    ])
+    if (!isCurrentManagerContext(loadSequence, scriptId) || !capabilities.available) return
+    const progressPromise = hasMaaFWManagedSafeMutationContract(capabilities)
+      ? api.resumeProgress(scriptId)
+      : Promise.resolve(null)
+    const overviewPromise = api.getOverview(scriptId)
+    const [, overview] = await Promise.all([progressPromise, overviewPromise])
+    if (!isCurrentManagerContext(loadSequence, scriptId)) return
     binding.value = overview.binding
     projects.value = overview.projects
     runtimes.value = overview.runtimes
+    loadedScriptId = scriptId
     activeTab.value =
       overview.binding.managed || !hasMaaFWManagedSafeMutationContract(capabilities)
         ? 'resources'
         : 'operations'
-    if (previousManaged === false && overview.binding.managed) emit('converted', props.scriptId)
+    if (
+      previousLoadedScriptId === scriptId &&
+      previousManaged === false &&
+      overview.binding.managed
+    ) {
+      emit('converted', scriptId)
+    }
     const preferredProject = overview.binding.projectId || overview.projects[0]?.projectId || ''
     if (preferredProject) {
-      const versionsLoaded = await selectProject(preferredProject)
+      const versionsLoaded = await selectProject(preferredProject, false, scriptId, loadSequence)
       if (!versionsLoaded) return
     } else {
       selectedProjectId.value = ''
@@ -448,13 +942,15 @@ const loadManager = async () => {
     if (wasFinalizing && !terminalRefreshPending) emit('refreshed')
     if (!terminalRefreshPending) mutationFinalizing.value = false
   } catch (caught) {
-    if (disposed) return
+    if (!isCurrentManagerContext(loadSequence, scriptId)) return
     reportFailure(caught, '读取 MaaFW 项目管理数据失败')
   } finally {
-    initialLoading.value = false
-    if (terminalRefreshPending) {
-      terminalRefreshPending = false
-      queueTerminalReconciliation()
+    if (isCurrentManagerContext(loadSequence, scriptId)) {
+      initialLoading.value = false
+      if (terminalRefreshPending) {
+        terminalRefreshPending = false
+        queueTerminalReconciliation()
+      }
     }
   }
 }
@@ -462,6 +958,14 @@ const loadManager = async () => {
 watch(
   () => props.scriptId,
   () => void loadManager(),
+  { immediate: true }
+)
+
+watch(
+  () => binding.value?.updateChannel,
+  channel => {
+    managedUpdateSettings.channel = channel === 'beta' ? 'beta' : 'stable'
+  },
   { immediate: true }
 )
 
@@ -524,22 +1028,46 @@ const finalizeTerminalReconciliation = (refreshGeneration: number) => {
 }
 
 const refreshOverview = () => {
-  if (overviewRefreshPromise) return overviewRefreshPromise
-  if (disposed || !api.capabilities.value?.available) return Promise.resolve(false)
+  const refreshScriptId = props.scriptId
+  const refreshLoadSequence = managerLoadSequence
+  if (
+    overviewRefreshPromise &&
+    overviewRefreshContext?.scriptId === refreshScriptId &&
+    overviewRefreshContext.loadSequence === refreshLoadSequence
+  ) {
+    return overviewRefreshPromise
+  }
+  if (!isCurrentManagerContext(refreshLoadSequence, refreshScriptId)) {
+    return Promise.resolve(false)
+  }
   const refreshGeneration = terminalReconciliationGeneration
-  overviewRefreshPromise = (async () => {
+  const pendingSave = managedUpdateSettingsSavePromise
+  let refreshPromise!: Promise<boolean>
+  refreshPromise = (async () => {
     overviewLoading.value = true
     pageError.value = ''
+    globalUpdateSettingsLoaded.value = false
+    globalUpdateSettingsSnapshot.value = null
     try {
-      const overview = await api.getOverview(props.scriptId)
-      if (disposed) return false
+      if (pendingSave) await pendingSave.catch(() => undefined)
+      if (!isCurrentManagerContext(refreshLoadSequence, refreshScriptId)) return false
+      const settingsPromise = loadManagedUpdateSettings(refreshLoadSequence, refreshScriptId).catch(
+        caught => caught
+      )
+      const overview = await api.getOverview(refreshScriptId)
+      const settingsError = await settingsPromise
+      if (!isCurrentManagerContext(refreshLoadSequence, refreshScriptId)) return false
       const convertedToManaged = binding.value?.managed === false && overview.binding.managed
       binding.value = overview.binding
       projects.value = overview.projects
       runtimes.value = overview.runtimes
+      loadedScriptId = refreshScriptId
+      if (settingsError) {
+        reportFailure(settingsError, '读取 AUTO-MAS 全局更新设置失败')
+      }
       if (convertedToManaged) {
         activeTab.value = 'resources'
-        emit('converted', props.scriptId)
+        emit('converted', refreshScriptId)
       }
       const selectedProjectStillExists = overview.projects.some(
         project => project.projectId === selectedProjectId.value
@@ -550,8 +1078,15 @@ const refreshOverview = () => {
         overview.projects[0]?.projectId ||
         ''
       if (projectId) {
-        const versionsLoaded = await selectProject(projectId, true)
-        if (disposed || !versionsLoaded) return false
+        const versionsLoaded = await selectProject(
+          projectId,
+          true,
+          refreshScriptId,
+          refreshLoadSequence
+        )
+        if (!isCurrentManagerContext(refreshLoadSequence, refreshScriptId) || !versionsLoaded) {
+          return false
+        }
       } else {
         selectedProjectId.value = ''
         versions.value = []
@@ -560,16 +1095,24 @@ const refreshOverview = () => {
       finalizeTerminalReconciliation(refreshGeneration)
       return true
     } catch (caught) {
-      if (disposed) return false
-      reportFailure(caught, '刷新 MaaFW 项目管理数据失败')
+      if (isCurrentManagerContext(refreshLoadSequence, refreshScriptId)) {
+        reportFailure(caught, '刷新 MaaFW 项目管理数据失败')
+      }
       return false
     } finally {
-      overviewLoading.value = false
+      if (isCurrentManagerContext(refreshLoadSequence, refreshScriptId)) {
+        overviewLoading.value = false
+      }
     }
   })().finally(() => {
-    overviewRefreshPromise = null
+    if (overviewRefreshPromise === refreshPromise) {
+      overviewRefreshPromise = null
+      overviewRefreshContext = null
+    }
   })
-  return overviewRefreshPromise
+  overviewRefreshPromise = refreshPromise
+  overviewRefreshContext = { scriptId: refreshScriptId, loadSequence: refreshLoadSequence }
+  return refreshPromise
 }
 
 const queueTerminalReconciliation = () => {
@@ -587,7 +1130,13 @@ const queueTerminalReconciliation = () => {
   })
 }
 
-const selectProject = async (projectId: string, force = false): Promise<boolean> => {
+const selectProject = async (
+  projectId: string,
+  force = false,
+  scriptId = props.scriptId,
+  loadSequence = managerLoadSequence
+): Promise<boolean> => {
+  if (!isCurrentManagerContext(loadSequence, scriptId)) return false
   if (!projectId || (!force && projectId === selectedProjectId.value && versions.value.length)) {
     return true
   }
@@ -595,9 +1144,9 @@ const selectProject = async (projectId: string, force = false): Promise<boolean>
   selectedProjectId.value = projectId
   versionsLoading.value = true
   try {
-    const nextVersions = await api.listVersions(props.scriptId, projectId)
+    const nextVersions = await api.listVersions(scriptId, projectId)
     if (
-      disposed ||
+      !isCurrentManagerContext(loadSequence, scriptId) ||
       requestSequence !== versionsRequestSequence ||
       selectedProjectId.value !== projectId
     ) {
@@ -607,7 +1156,7 @@ const selectProject = async (projectId: string, force = false): Promise<boolean>
     return true
   } catch (caught) {
     if (
-      disposed ||
+      !isCurrentManagerContext(loadSequence, scriptId) ||
       requestSequence !== versionsRequestSequence ||
       selectedProjectId.value !== projectId
     ) {
@@ -617,7 +1166,10 @@ const selectProject = async (projectId: string, force = false): Promise<boolean>
     reportFailure(caught, `读取项目 ${projectId} 的版本失败`)
     return false
   } finally {
-    if (requestSequence === versionsRequestSequence) {
+    if (
+      requestSequence === versionsRequestSequence &&
+      isCurrentManagerContext(loadSequence, scriptId)
+    ) {
       versionsLoading.value = false
     }
   }
@@ -674,17 +1226,18 @@ const confirmConvert = (input: {
   showManagedConfirm({
     title: '转换为托管 MaaFW 项目？',
     content:
-      '后端会从当前项目路径导入不可变资源，并保留此脚本 ID、全部用户和任务关联。转换失败时不会报告为已完成。',
+      '后端会从当前项目路径导入受版本保护的资源，并保留此脚本 ID、全部用户和任务关联。转换失败时不会报告为已完成。',
     okText: '确认转换',
     cancelText: '取消',
-    async onOk() {
-      const result = await runAndRefresh(
+    onOk() {
+      void runAndRefresh(
         () => api.convert({ scriptId: props.scriptId, ...input }),
         '已转换为托管 MaaFW 项目'
-      )
-      if (result && (result.converted || result.idempotent)) {
-        activeTab.value = 'resources'
-      }
+      ).then(result => {
+        if (result && (result.converted || result.idempotent)) {
+          activeTab.value = 'resources'
+        }
+      })
     },
   })
 }
@@ -858,7 +1411,7 @@ const confirmPinVersion = (version: MaaFWManagedProjectVersion, pinned: boolean)
   }
   showManagedConfirm({
     title: `取消固定 ${version.projectId}@${version.version}？`,
-    content: '取消固定后，该版本可能在满足宽限期和引用条件时被 GC 回收。',
+    content: '取消固定后，如果没有脚本引用或活动 lease，该版本会在下一次 GC 被回收。',
     okText: '取消固定',
     cancelText: '返回',
     onOk: action,
@@ -877,7 +1430,7 @@ const confirmPinRuntime = (runtime: MaaFWManagedRuntime, pinned: boolean) => {
   }
   showManagedConfirm({
     title: `取消固定 ${runtime.runtimeId}？`,
-    content: '取消固定后，该运行时可能在满足宽限期和引用条件时被 GC 回收。',
+    content: '取消固定后，如果没有脚本引用或活动 lease，该运行时会在下一次 GC 被回收。',
     okText: '取消固定',
     cancelText: '返回',
     onOk: action,
@@ -968,6 +1521,12 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.maafw-project-manager-workspace {
+  padding: 4px 4px 8px;
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
 .manager-version {
   display: flex;
   justify-content: flex-end;
@@ -976,6 +1535,12 @@ onBeforeUnmount(() => {
 
 .manager-readonly-alert {
   margin-bottom: 16px;
+}
+
+.managed-update-settings-card {
+  margin-bottom: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
 }
 
 .manager-scroll-container {
@@ -1024,16 +1589,56 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.operation-logs,
 .gc-detail {
   margin: 0;
   padding: 12px;
-  overflow-x: auto;
+  max-height: 240px;
+  overflow: auto;
   color: var(--ant-color-text);
-  background: var(--ant-color-fill-tertiary);
+  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
   border-radius: 6px;
+  font-family: var(--ant-font-family-code, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.operation-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+  border-radius: 8px;
+}
+
+.operation-logs li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: var(--ant-color-text);
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.operation-log-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  border-radius: 50%;
+  font-size: 12px;
 }
 
 .maintenance-section {

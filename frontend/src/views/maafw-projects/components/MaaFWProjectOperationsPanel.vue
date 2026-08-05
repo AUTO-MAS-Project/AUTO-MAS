@@ -28,15 +28,6 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="版本（可选）">
-              <a-input
-                v-model:value="convertForm.version"
-                :disabled="busy"
-                placeholder="留空时使用项目声明版本"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
             <a-form-item label="运行时约束（可选）">
               <a-input
                 v-model:value="convertForm.runtimeConstraint"
@@ -103,7 +94,7 @@
         <div class="section-heading">
           <div>
             <h3>导入与升级</h3>
-            <p>本地目录或 ZIP 会先导入不可变版本；已有绑定只生成计划，不会直接切换。</p>
+            <p>本地目录或 ZIP 会导入为新版本；已有绑定先生成配置计划，确认后再切换。</p>
           </div>
         </div>
 
@@ -117,22 +108,23 @@
         <a-tabs v-else v-model:active-key="sourceTab">
           <a-tab-pane v-if="features.localImport" key="local" tab="本地目录 / ZIP">
             <a-form layout="vertical" class="operation-form">
+              <a-alert
+                v-if="!binding.projectId"
+                type="info"
+                show-icon
+                message="项目身份和版本将从 ProjectInterface 自动读取"
+                description="首次本地导入不需要手填项目 ID；interface.json 的 name 和 version 会作为受保护资源身份。"
+                class="local-import-hint"
+              />
               <a-row :gutter="16">
                 <a-col :span="8">
-                  <a-form-item label="项目 ID" required>
+                  <a-form-item label="项目 ID（已有绑定时固定）">
                     <a-input
                       v-model:value="localForm.projectId"
                       :disabled="busy || Boolean(binding.projectId)"
-                      placeholder="稳定项目标识"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="目标版本（可选）">
-                    <a-input
-                      v-model:value="localForm.version"
-                      :disabled="busy"
-                      placeholder="留空时读取 manifest / interface"
+                      :placeholder="
+                        binding.projectId ? '当前绑定项目 ID' : '由 ProjectInterface.name 自动读取'
+                      "
                     />
                   </a-form-item>
                 </a-col>
@@ -184,41 +176,57 @@
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
-                  <a-form-item label="来源">
-                    <a-select v-model:value="remoteForm.source" :disabled="busy">
-                      <a-select-option value="MirrorChyan">MirrorChyan</a-select-option>
-                      <a-select-option value="GitHub">GitHub Release</a-select-option>
-                    </a-select>
+                  <a-form-item label="项目更新渠道">
+                    <a-space>
+                      <a-tag color="blue">
+                        {{ binding.updateChannel === 'beta' ? '测试版' : '稳定版' }}
+                      </a-tag>
+                      <a-typography-text type="secondary"
+                        >已保存，需在页面顶部统一设置</a-typography-text
+                      >
+                    </a-space>
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
-                  <a-form-item label="通道（可选）">
-                    <a-input v-model:value="remoteForm.channel" :disabled="busy" />
+                  <a-form-item label="统一来源">
+                    <a-space>
+                      <a-tag color="blue">{{ globalUpdateSource }}</a-tag>
+                      <a-typography-text type="secondary">页面统一配置</a-typography-text>
+                    </a-space>
                   </a-form-item>
                 </a-col>
               </a-row>
 
-              <a-row v-if="remoteForm.source === 'MirrorChyan'" :gutter="16">
-                <a-col :span="12">
-                  <a-form-item label="MirrorChyan RID" required>
-                    <a-input v-model:value="remoteForm.mirrorChyanRid" :disabled="busy" />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item
-                    label="MirrorChyan CDK（可选）"
-                    extra="留空时由后端继承 MAS 全局更新设置中的 Mirror 酱 CDK"
-                  >
-                    <a-input-password
-                      v-model:value="remoteForm.mirrorChyanCDK"
-                      :disabled="busy"
-                      placeholder="留空时使用宿主全局 CDK"
-                    />
-                  </a-form-item>
+              <a-alert
+                v-if="remoteOperationsBlockedByGlobalSource"
+                type="warning"
+                show-icon
+                message="当前全局来源不能用于托管远程资源"
+                description="当前全局来源为 AutoSite/CNB。请在页面顶部保存 MirrorChyan 或 GitHub 后，才能检查远程资源、下载并导入或升级。"
+              />
+
+              <a-row v-if="managedRemoteSource === 'MirrorChyan'" :gutter="16">
+                <a-col :span="24">
+                  <a-alert
+                    type="info"
+                    show-icon
+                    :message="
+                      binding.projectId
+                        ? 'MirrorChyan RID 将从当前托管项目的 interface.json 读取'
+                        : '首次导入将使用项目 ID 作为 MirrorChyan RID；页面统一 CDK 已在上方配置'
+                    "
+                  />
                 </a-col>
               </a-row>
 
-              <a-row v-else :gutter="16">
+              <a-alert
+                v-else-if="managedRemoteSource === 'GitHub' && binding.projectId"
+                type="info"
+                show-icon
+                message="GitHub 仓库与资源匹配规则将从当前托管项目的 interface.json 读取"
+              />
+
+              <a-row v-else-if="managedRemoteSource === 'GitHub'" :gutter="16">
                 <a-col :span="10">
                   <a-form-item label="GitHub 仓库" required>
                     <a-input
@@ -249,11 +257,19 @@
               />
 
               <a-space>
-                <a-button :loading="busy" @click="submitRemoteCheck">检查远程资源</a-button>
+                <a-button
+                  :loading="busy"
+                  :disabled="remoteOperationsBlockedByGlobalSource"
+                  @click="submitRemoteCheck"
+                >
+                  检查远程资源
+                </a-button>
                 <a-button
                   type="primary"
                   :loading="busy"
-                  :disabled="!currentRemoteDiscovery?.installable"
+                  :disabled="
+                    remoteOperationsBlockedByGlobalSource || !currentRemoteDiscovery?.installable
+                  "
                   @click="submitRemote"
                 >
                   {{ binding.projectId ? '下载并生成升级计划' : '下载并导入' }}
@@ -273,9 +289,11 @@ import { message } from 'ant-design-vue'
 import type {
   MaaFWManagedBinding,
   MaaFWManagedFeatures,
+  MaaFWManagedGlobalUpdateSource,
   MaaFWManagedLocalSourceInput,
   MaaFWManagedRemoteDiscovery,
   MaaFWManagedRemoteSourceInput,
+  MaaFWManagedRemoteSource,
 } from '@/composables/useMaaFWManagedApi'
 
 defineOptions({ name: 'MaaFWProjectOperationsPanel' })
@@ -286,6 +304,7 @@ const props = defineProps<{
   features: MaaFWManagedFeatures
   busy: boolean
   remoteDiscovery: MaaFWManagedRemoteDiscovery | null
+  globalUpdateSource: MaaFWManagedGlobalUpdateSource
 }>()
 
 const emit = defineEmits<{
@@ -301,28 +320,30 @@ const sourceTab = ref<'local' | 'remote'>('local')
 const localSourceKind = ref<'directory' | 'archive'>('directory')
 const convertForm = reactive({
   projectId: '',
-  version: '',
   runtimeConstraint: '',
 })
 const localForm = reactive({
   projectId: '',
-  version: '',
   runtimeConstraint: '',
   source: '',
 })
 const remoteForm = reactive({
   projectId: '',
   runtimeConstraint: '',
-  source: 'MirrorChyan' as 'MirrorChyan' | 'GitHub',
-  channel: '',
   mirrorChyanRid: '',
-  mirrorChyanCDK: '',
   githubRepo: '',
   githubTag: '',
   githubAssetPattern: '',
 })
 const remoteFormRevision = ref(0)
 const lastCheckedRemoteRevision = ref(-1)
+const managedRemoteSource = computed<MaaFWManagedRemoteSource | null>(() => {
+  if (props.globalUpdateSource === 'MirrorChyan' || props.globalUpdateSource === 'GitHub') {
+    return props.globalUpdateSource
+  }
+  return null
+})
+const remoteOperationsBlockedByGlobalSource = computed(() => managedRemoteSource.value === null)
 
 watch(
   remoteForm,
@@ -339,6 +360,21 @@ watch(
     localForm.runtimeConstraint = binding.runtimeConstraint || localForm.runtimeConstraint
     remoteForm.projectId = binding.projectId || remoteForm.projectId
     remoteForm.runtimeConstraint = binding.runtimeConstraint || remoteForm.runtimeConstraint
+  },
+  { immediate: true }
+)
+
+watch(
+  () =>
+    [
+      props.globalUpdateSource,
+      props.binding.updateChannel,
+      props.binding.projectId,
+      props.binding.version,
+      props.binding.runtimeConstraint,
+    ] as const,
+  () => {
+    remoteFormRevision.value += 1
   },
   { immediate: true }
 )
@@ -404,7 +440,6 @@ const remoteDiscoveryDescription = computed(() => {
 const submitConvert = () => {
   emit('convert', {
     projectId: convertForm.projectId.trim() || undefined,
-    version: convertForm.version.trim() || undefined,
     runtimeConstraint: convertForm.runtimeConstraint.trim() || undefined,
   })
 }
@@ -422,16 +457,19 @@ const selectLocalSource = async () => {
 }
 
 const submitLocal = () => {
-  const projectId = localForm.projectId.trim()
+  const projectId = localForm.projectId.trim() || undefined
   const source = localForm.source.trim()
-  if (!projectId || !source) {
-    message.warning('请选择资源来源并填写项目 ID')
+  if (!source || (props.binding.projectId && !projectId)) {
+    message.warning(
+      props.binding.projectId
+        ? '当前绑定项目缺少项目 ID，请刷新后重试'
+        : '请选择包含 ProjectInterface 的资源来源'
+    )
     return
   }
   emit('local-submit', props.binding.projectId ? 'upgrade' : 'import', {
     scriptId: props.scriptId,
     projectId,
-    version: localForm.version.trim() || undefined,
     runtimeConstraint: localForm.runtimeConstraint.trim() || undefined,
     sourcePath: localSourceKind.value === 'directory' ? source : undefined,
     sourceArchive: localSourceKind.value === 'archive' ? source : undefined,
@@ -439,16 +477,17 @@ const submitLocal = () => {
 }
 
 const buildRemoteInput = (): MaaFWManagedRemoteSourceInput | null => {
+  const source = managedRemoteSource.value
+  if (!source) {
+    message.warning('当前全局来源为 AutoSite/CNB，请在页面顶部保存 MirrorChyan 或 GitHub 后再操作')
+    return null
+  }
   const projectId = remoteForm.projectId.trim()
   if (!projectId) {
     message.warning('请填写项目 ID')
     return null
   }
-  if (remoteForm.source === 'MirrorChyan' && !remoteForm.mirrorChyanRid.trim()) {
-    message.warning('MirrorChyan 来源需要 RID')
-    return null
-  }
-  if (remoteForm.source === 'GitHub' && !remoteForm.githubRepo.trim()) {
+  if (source === 'GitHub' && !props.binding.projectId && !remoteForm.githubRepo.trim()) {
     message.warning('GitHub 来源需要 owner/repository')
     return null
   }
@@ -456,13 +495,14 @@ const buildRemoteInput = (): MaaFWManagedRemoteSourceInput | null => {
     scriptId: props.scriptId,
     projectId,
     runtimeConstraint: remoteForm.runtimeConstraint.trim() || undefined,
-    source: remoteForm.source,
-    channel: remoteForm.channel.trim() || undefined,
+    source,
+    channel: props.binding.updateChannel,
     mirrorChyanRid: remoteForm.mirrorChyanRid.trim() || undefined,
-    mirrorChyanCDK: remoteForm.mirrorChyanCDK.trim() || undefined,
-    githubRepo: remoteForm.githubRepo.trim() || undefined,
-    githubTag: remoteForm.githubTag.trim() || undefined,
-    githubAssetPattern: remoteForm.githubAssetPattern.trim() || undefined,
+    githubRepo: props.binding.projectId ? undefined : remoteForm.githubRepo.trim() || undefined,
+    githubTag: props.binding.projectId ? undefined : remoteForm.githubTag.trim() || undefined,
+    githubAssetPattern: props.binding.projectId
+      ? undefined
+      : remoteForm.githubAssetPattern.trim() || undefined,
   }
 }
 

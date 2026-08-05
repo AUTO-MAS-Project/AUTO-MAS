@@ -54,7 +54,7 @@
           <a-statistic title="托管项目" :value="inventory.projects.length" />
         </a-col>
         <a-col :xs="24" :sm="12" :xl="6">
-          <a-statistic title="不可变版本" :value="inventory.versions.length" />
+          <a-statistic title="已安装项目版本" :value="inventory.versions.length" />
         </a-col>
         <a-col :xs="24" :sm="12" :xl="6">
           <a-statistic title="共享运行时" :value="inventory.runtimes.length" />

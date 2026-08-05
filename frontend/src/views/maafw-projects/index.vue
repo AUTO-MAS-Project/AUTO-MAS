@@ -3,7 +3,7 @@
     <header class="page-header">
       <div>
         <h1>MaaFW 项目与资源</h1>
-        <p>统一查看项目版本、资源引用和共享运行时，并将普通 MaaFW 项目转为托管。</p>
+        <p>统一查看 MaaFW 项目版本、资源引用和共享运行时，并管理普通与托管项目。</p>
       </div>
       <a-space>
         <a-button @click="goToSource">
@@ -59,7 +59,7 @@
         :description="selectionError"
       />
 
-      <a-card class="context-card" :bordered="false">
+      <a-card class="context-manager-card" :bordered="false">
         <div class="context-layout">
           <div class="context-selector">
             <label for="maafw-project-context">管理上下文</label>
@@ -82,25 +82,25 @@
               <strong>{{ getScriptLabel(selectedScript) }}</strong>
               <span>{{ selectedScript.user_count }} 个用户</span>
             </div>
-            <a-tag :color="selectedScript.type === 'MaaFWManaged' ? 'green' : 'blue'">
-              {{ selectedScript.type === 'MaaFWManaged' ? '已托管' : '外部项目' }}
-            </a-tag>
+            <a-typography-text type="secondary">
+              {{ getScriptContextLabel(selectedScript) }}
+            </a-typography-text>
           </div>
         </div>
         <a-typography-text v-if="selectedProjectPath" class="project-path" type="secondary">
           项目路径：{{ selectedProjectPath }}
         </a-typography-text>
+        <div class="context-manager-divider" />
+        <MaaFWProjectManagerWorkspace
+          v-if="selectedScriptId"
+          :key="selectedScriptId"
+          :script-id="selectedScriptId"
+          @converted="handleWorkspaceChanged"
+          @refreshed="handleWorkspaceChanged"
+          @busy-change="workspaceBusy = $event"
+          @operation-change="operationRunning = $event"
+        />
       </a-card>
-
-      <MaaFWProjectManagerWorkspace
-        v-if="selectedScriptId"
-        :key="selectedScriptId"
-        :script-id="selectedScriptId"
-        @converted="handleWorkspaceChanged"
-        @refreshed="handleWorkspaceChanged"
-        @busy-change="workspaceBusy = $event"
-        @operation-change="operationRunning = $event"
-      />
     </template>
   </div>
 </template>
@@ -167,7 +167,17 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const getScriptLabel = (script: ScriptRecord) => {
   const info = asRecord(script.config?.Info)
   const projectLabel = typeof info.ProjectLabel === 'string' ? info.ProjectLabel.trim() : ''
-  return projectLabel || script.name || 'MaaFW 项目'
+  const normalizedProjectLabel = projectLabel
+    .split('@', 1)[0]
+    .replace(/\s+(?:版本号\s*[:：]?\s*)?v?\d+(?:\.\d+)+(?:[-+][\w.]+)?$/i, '')
+    .trim()
+  return normalizedProjectLabel || script.name || 'MaaFW 项目'
+}
+
+const getScriptContextLabel = (script: ScriptRecord) => {
+  if (script.type === 'MaaFWManaged') return '托管项目'
+  if (script.type === 'MaaFW') return '普通项目'
+  return 'MaaFW 项目'
 }
 
 const shortId = (scriptId: string) =>
@@ -207,10 +217,19 @@ const syncSelectedScript = () => {
 }
 
 const refreshScriptRecords = async () => {
-  const records = await registryApi.getScripts()
-  maafwScripts.value = records.filter(
-    script => script.type === 'MaaFW' || script.type === 'MaaFWManaged'
+  const [records, descriptors] = await Promise.all([
+    registryApi.getScripts(),
+    registryApi.getScriptTypes(),
+  ])
+  const maafwTypes = new Set(
+    descriptors
+      .filter(descriptor => asRecord(descriptor.client).framework === 'maafw')
+      .map(descriptor => descriptor.type_key)
   )
+  maafwTypes.add('MaaFW')
+  maafwTypes.add('MaaFWManaged')
+  maafwTypes.add('M9A')
+  maafwScripts.value = records.filter(script => maafwTypes.has(script.type))
   syncSelectedScript()
 }
 
@@ -356,8 +375,15 @@ onMounted(() => {
   justify-content: center;
 }
 
+.context-manager-card,
 .context-card {
   background: var(--ant-color-bg-container);
+}
+
+.context-manager-divider {
+  height: 1px;
+  margin: 24px 0 8px;
+  background: var(--ant-color-border-secondary);
 }
 
 .empty-context-card {

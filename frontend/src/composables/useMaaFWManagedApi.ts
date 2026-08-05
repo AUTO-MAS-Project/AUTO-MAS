@@ -11,6 +11,9 @@ const MANAGED_BASE_PATH = '/plugin/maafw-managed'
 
 export const MAAFW_MANAGED_API_VERSION = 'maafw-managed.v1'
 
+export type MaaFWManagedRemoteSource = 'MirrorChyan' | 'GitHub'
+export type MaaFWManagedGlobalUpdateSource = MaaFWManagedRemoteSource | 'AutoSite' | 'CNB'
+
 /**
  * Managed 0.2.x keeps the historical action paths. `capabilities`, `convert`,
  * and `progress` are additive host-UI contracts and deliberately live beside
@@ -18,6 +21,7 @@ export const MAAFW_MANAGED_API_VERSION = 'maafw-managed.v1'
  */
 export const MAAFW_MANAGED_ENDPOINTS = {
   capabilities: `${MANAGED_BASE_PATH}/capabilities`,
+  settings: `${MANAGED_BASE_PATH}/settings`,
   convert: `${MANAGED_BASE_PATH}/convert`,
   progress: `${MANAGED_BASE_PATH}/progress`,
   activeOperation: `${MANAGED_BASE_PATH}/operations/active`,
@@ -87,6 +91,7 @@ export interface MaaFWManagedFeatures {
   projectOverview: boolean
   localImport: boolean
   remoteImport: boolean
+  remoteSettings?: boolean
   upgradePlans: boolean
   runtimeManagement: boolean
   operationProgress?: boolean
@@ -191,6 +196,7 @@ export interface MaaFWManagedProjectVersion {
 
 export interface MaaFWManagedRuntime {
   runtimeId: string
+  updateChannel: 'stable' | 'beta'
   poolId?: string
   path?: string
   environmentPath?: string
@@ -315,6 +321,7 @@ export interface MaaFWManagedBinding {
   version: string
   runtimeConstraint: string
   runtimeId: string
+  updateChannel: 'stable' | 'beta'
   pinned: boolean
   status: string
   pendingPlan: MaaFWManagedUpgradePlan | null
@@ -392,7 +399,7 @@ export interface MaaFWManagedActiveOperationLookup {
 
 export interface MaaFWManagedLocalSourceInput {
   scriptId: string
-  projectId: string
+  projectId?: string
   version?: string
   runtimeConstraint?: string
   sourcePath?: string
@@ -403,7 +410,7 @@ export interface MaaFWManagedRemoteSourceInput {
   scriptId: string
   projectId: string
   runtimeConstraint?: string
-  source: 'MirrorChyan' | 'GitHub'
+  source: MaaFWManagedRemoteSource
   channel?: string
   mirrorChyanRid?: string
   mirrorChyanCDK?: string
@@ -426,6 +433,7 @@ const EMPTY_FEATURES: MaaFWManagedFeatures = {
   projectOverview: false,
   localImport: false,
   remoteImport: false,
+  remoteSettings: false,
   upgradePlans: false,
   runtimeManagement: false,
   operationProgress: false,
@@ -619,6 +627,7 @@ export const readMaaFWManagedBinding = (record: ScriptRecord): MaaFWManagedBindi
   const config = asRecord(record.config)
   const managed = asRecord(config.Managed)
   const managedRuntime = asRecord(config.ManagedRuntime)
+  const managedRemote = asRecord(config.ManagedRemote)
   const publicPlan = parseJsonRecord(managed.UpgradePlan)
   const durablePlan = parseJsonRecord(managed.PendingUpgrade)
   const durablePlanId = asString(durablePlan.planId)
@@ -636,6 +645,7 @@ export const readMaaFWManagedBinding = (record: ScriptRecord): MaaFWManagedBindi
     version: asString(managed.Version),
     runtimeConstraint: asString(managed.RuntimeConstraint),
     runtimeId: asString(managedRuntime.RuntimeId),
+    updateChannel: managedRemote.Channel === 'beta' ? 'beta' : 'stable',
     pinned: Boolean(managed.Pinned ?? managedRuntime.Pinned),
     status: asString(managed.Status),
     pendingPlan: planId
@@ -838,7 +848,11 @@ export function useMaaFWManagedApi() {
             const requestStillPending = actionRequestsInFlight.has(operationId)
             const active = await lookupAndAttachActiveOperation(scriptId, {
               emptyBehavior: requestStillPending ? 'keep' : 'reconcile',
+              expectedGeneration: generation,
             })
+            if (generation !== progressGeneration || operationId !== progress.value.operationId) {
+              return
+            }
             if (active === 'none' && requestStillPending) {
               progress.value = {
                 ...progress.value,
@@ -895,7 +909,16 @@ export function useMaaFWManagedApi() {
     activeProgressStartedAt = startedAt
     missingProgressSince = 0
     const generation = progressGeneration
-    const handler = (wsMessage: { data: unknown }) => updateProgress(asRecord(wsMessage.data))
+    const handler = (wsMessage: { data: unknown }) => {
+      if (
+        generation !== progressGeneration ||
+        activeProgressScriptId !== scriptId ||
+        operationId !== progress.value.operationId
+      ) {
+        return
+      }
+      updateProgress(asRecord(wsMessage.data))
+    }
     progressSubscriptions.add(subscribe({ id: scriptId, type: WS_MAAFW_MANAGED_PROGRESS }, handler))
     progressSubscriptions.add(
       subscribe({ id: operationId, type: WS_MAAFW_MANAGED_PROGRESS }, handler)
@@ -932,12 +955,21 @@ export function useMaaFWManagedApi() {
 
   const lookupAndAttachActiveOperation = async (
     scriptId: string,
-    options: { emptyBehavior?: 'clear' | 'keep' | 'reconcile' } = {}
+    options: {
+      emptyBehavior?: 'clear' | 'keep' | 'reconcile'
+      expectedGeneration?: number
+    } = {}
   ): Promise<'attached' | 'none'> => {
     const lookup = await request<MaaFWManagedActiveOperationLookup>(
       MAAFW_MANAGED_ENDPOINTS.activeOperation,
       { scriptId }
     )
+    if (
+      options.expectedGeneration !== undefined &&
+      options.expectedGeneration !== progressGeneration
+    ) {
+      return 'none'
+    }
     if (lookup.scriptId !== scriptId) {
       throw new Error('MaaFW 后端返回了不匹配的活跃操作脚本')
     }
@@ -1000,6 +1032,7 @@ export function useMaaFWManagedApi() {
 
     if (currentCapabilities.features.activeOperationLookup === true) {
       stopProgressTracking()
+      const resumeGeneration = progressGeneration
       progress.value = {
         operationId: '',
         operation: '',
@@ -1012,8 +1045,13 @@ export function useMaaFWManagedApi() {
         logs: [],
       }
       try {
-        return (await lookupAndAttachActiveOperation(scriptId)) === 'attached'
+        return (
+          (await lookupAndAttachActiveOperation(scriptId, {
+            expectedGeneration: resumeGeneration,
+          })) === 'attached'
+        )
       } catch (caught) {
+        if (resumeGeneration !== progressGeneration) return false
         progress.value = {
           ...progress.value,
           stage: '无法确认服务端活跃操作',
@@ -1286,6 +1324,14 @@ export function useMaaFWManagedApi() {
       return readMaaFWManagedBinding(records[0])
     })
 
+  const updateRemoteSettings = (scriptId: string, channel: 'stable' | 'beta') =>
+    run(() =>
+      request<{ scriptId: string; channel: 'stable' | 'beta' }>(MAAFW_MANAGED_ENDPOINTS.settings, {
+        scriptId,
+        channel,
+      })
+    )
+
   const listProjects = (scriptId: string) =>
     run(() => request<MaaFWManagedProjectSummary[]>(MAAFW_MANAGED_ENDPOINTS.projects, { scriptId }))
 
@@ -1508,8 +1554,9 @@ export function useMaaFWManagedApi() {
     )
   }
 
-  const resetProgress = () => {
-    if (progress.value.status === 'running') return
+  const resetProgress = (force = false) => {
+    if (progress.value.status === 'running' && !force) return
+    if (force) stopProgressTracking()
     progress.value = { ...EMPTY_PROGRESS }
   }
 
@@ -1524,6 +1571,7 @@ export function useMaaFWManagedApi() {
     resumeProgress,
     releaseProgressTracking,
     getCurrentBinding,
+    updateRemoteSettings,
     getOverview,
     listProjects,
     listVersions,

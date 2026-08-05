@@ -21,7 +21,7 @@
               :disabled="busy || !binding.projectId || !binding.version"
               @click="emit('install-runtime')"
             >
-              准备共享运行时
+              更新运行环境
             </a-button>
             <a-button :loading="loading" :disabled="busy" @click="emit('refresh')">
               <template #icon><ReloadOutlined /></template>
@@ -56,7 +56,9 @@
         <div class="section-heading">
           <div>
             <h3>项目资源</h3>
-            <p>每个版本不可变；选择项目后可查看版本、引用和切换计划。</p>
+            <p>
+              每个版本的内容受保护；升级会导入新版本。仍被脚本引用或已固定的旧版本可用于切换和回退。
+            </p>
           </div>
         </div>
 
@@ -67,6 +69,7 @@
           :loading="loading"
           :pagination="false"
           row-key="projectId"
+          :custom-row="projectRowProps"
         >
           <template #emptyText>
             <a-empty description="尚未导入托管项目资源" />
@@ -77,25 +80,16 @@
                 type="link"
                 class="project-link"
                 :disabled="busy || versionsLoading"
-                @click="selectProject(record.projectId)"
+                @click.stop="selectProject(record.projectId)"
               >
                 {{ record.projectId }}
               </a-button>
             </template>
             <template v-else-if="column.key === 'currentVersion'">
-              {{ record.currentVersion || '—' }}
+              {{ displayProjectVersion(record) }}
             </template>
             <template v-else-if="column.key === 'size'">
               {{ formatBytes(projectSizeBytes(record.summary)) }}
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a-button
-                size="small"
-                :disabled="busy || versionsLoading"
-                @click="selectProject(record.projectId)"
-              >
-                查看版本
-              </a-button>
             </template>
           </template>
         </a-table>
@@ -183,7 +177,11 @@
         <div class="section-heading">
           <div>
             <h3>共享运行时</h3>
-            <p>相同依赖选择器复用同一环境；引用、固定标记和活动 lease 会阻止回收。</p>
+            <p>
+              相同完整依赖选择器复用同一环境；不同 MaaFW 版本保持隔离。各环境中的相同依赖会通过共享
+              uv 缓存和 hardlink 复用，页面占用是目录逻辑大小；引用、固定标记和活动 lease
+              会阻止回收。
+            </p>
           </div>
         </div>
 
@@ -204,6 +202,14 @@
                 <a-typography-text code copyable>{{ record.runtimeId }}</a-typography-text>
                 <a-tag v-if="record.pinned" color="blue">已固定</a-tag>
               </div>
+            </template>
+            <template v-else-if="column.key === 'projects'">
+              <div v-if="runtimeProjects(record).length" class="runtime-project-list">
+                <a-tag v-for="project in runtimeProjects(record)" :key="project" color="blue">
+                  {{ project }}
+                </a-tag>
+              </div>
+              <span v-else class="secondary-text">未绑定项目</span>
             </template>
             <template v-else-if="column.key === 'requirements'">
               <span>{{ formatRequirements(record) }}</span>
@@ -284,10 +290,9 @@ const emit = defineEmits<{
 
 const projectColumns: TableColumnsType<MaaFWManagedProjectSummary> = [
   { title: '项目 ID', key: 'projectId', dataIndex: 'projectId', width: 240 },
-  { title: 'Store 当前版本', key: 'currentVersion', dataIndex: 'currentVersion', width: 150 },
+  { title: '当前 / 绑定版本', key: 'currentVersion', dataIndex: 'currentVersion', width: 160 },
   { title: '版本数', key: 'versionCount', dataIndex: 'versionCount', width: 90 },
   { title: '占用', key: 'size', width: 120 },
-  { title: '操作', key: 'action', width: 110 },
 ]
 
 const versionColumns = computed<TableColumnsType<MaaFWManagedProjectVersion>>(() => [
@@ -299,6 +304,7 @@ const versionColumns = computed<TableColumnsType<MaaFWManagedProjectVersion>>(()
 
 const runtimeColumns = computed<TableColumnsType<MaaFWManagedRuntime>>(() => [
   { title: '运行时', key: 'runtimeId', dataIndex: 'runtimeId', width: 265 },
+  { title: '项目', key: 'projects', width: 180 },
   { title: '依赖', key: 'requirements', width: 235 },
   { title: '占用 / 最近使用', key: 'usage', width: 190 },
   { title: '保护', key: 'protection', width: 130 },
@@ -310,8 +316,24 @@ const selectProject = (projectId: string) => {
   emit('select-project', projectId)
 }
 
+const projectRowProps = (record: MaaFWManagedProjectSummary) => ({
+  class:
+    record.projectId === props.selectedProjectId
+      ? 'project-row-clickable project-row-selected'
+      : 'project-row-clickable',
+  onClick: () => selectProject(record.projectId),
+})
+
 const isBoundVersion = (version: MaaFWManagedProjectVersion) =>
   version.projectId === props.binding.projectId && version.version === props.binding.version
+
+const displayProjectVersion = (project: MaaFWManagedProjectSummary) => {
+  if (project.currentVersion) return project.currentVersion
+  if (project.projectId === props.binding.projectId && props.binding.version) {
+    return props.binding.version
+  }
+  return project.versions.length === 1 ? project.versions[0] : '—'
+}
 
 const formatBytes = (value?: number | null) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
@@ -336,6 +358,19 @@ const formatRequirements = (runtime: MaaFWManagedRuntime) => {
     ? runtime.selectorRequirements
     : runtime.packages || []
   return requirements.length ? requirements.join('、') : runtime.maafwVersion || '未记录'
+}
+
+const runtimeProjects = (runtime: MaaFWManagedRuntime) => {
+  const projectIds = new Set<string>()
+  for (const reference of runtime.references || []) {
+    const value = String(reference || '').trim()
+    if (!value.startsWith('maafw-project:')) continue
+    const identity = value.slice('maafw-project:'.length)
+    const at = identity.lastIndexOf('@')
+    const projectId = (at > 0 ? identity.slice(0, at) : identity).trim()
+    if (projectId) projectIds.add(projectId)
+  }
+  return [...projectIds].sort((left, right) => left.localeCompare(right, 'zh-CN'))
 }
 </script>
 
@@ -374,6 +409,18 @@ const formatRequirements = (runtime: MaaFWManagedRuntime) => {
   height: auto;
   padding: 0;
   text-align: left;
+}
+
+:deep(.project-row-clickable) {
+  cursor: pointer;
+}
+
+:deep(.project-row-clickable:hover > td) {
+  background: var(--ant-color-fill-quaternary);
+}
+
+:deep(.project-row-selected > td) {
+  background: var(--ant-color-primary-bg);
 }
 
 .reference-list,
