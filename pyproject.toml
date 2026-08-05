@@ -61,7 +61,7 @@ packages = [
     { name = "automas-maafw-project-update", version = "0.2.3" },
     { name = "automas-maafw-runtime-pool", version = "0.2.0" },
     { name = "automas-maafw-runner", version = "0.4.0" },
-    { name = "automas-script-maafw", version = "0.1.12" },
+    { name = "automas-script-maafw", version = "0.1.13" },
 ]
 
 [tool.uv]

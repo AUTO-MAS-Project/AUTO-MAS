@@ -33,4 +33,3 @@ export type ScriptGetOut = {
      */
     data: Record<string, (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | MaaFWConfig | PluginScriptConfig)>;
 };
-

@@ -20,4 +20,3 @@ export type ScriptUpdateIn = {
      */
     data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | MaaFWConfig | PluginScriptConfig);
 };
-

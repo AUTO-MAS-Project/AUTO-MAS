@@ -1757,12 +1757,12 @@ class MaaFWConfig(ConfigBase):
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", True, BoolValidator()
         )
-        ## 更新源；MirrorChyan 是默认发现源，GitHub 可作为显式回退
+        ## 更新源，暂仅支持 MirrorChyan
         self.Update_Source = ConfigItem(
             "Update",
             "Source",
             "MirrorChyan",
-            OptionsValidator(["MirrorChyan", "GitHub"]),
+            OptionsValidator(["MirrorChyan"]),
         )
         ## 更新渠道，留空时使用全局更新渠道
         self.Update_Channel = ConfigItem(

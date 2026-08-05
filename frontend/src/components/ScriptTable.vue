@@ -170,9 +170,7 @@
 
             <!-- 用户列表 -->
             <div
-              v-if="
-                !isUsersCollapsed(script.id) && script.users && script.users.length > 0
-              "
+              v-if="!isUsersCollapsed(script.id) && script.users && script.users.length > 0"
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->

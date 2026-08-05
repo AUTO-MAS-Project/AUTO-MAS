@@ -1510,14 +1510,15 @@ class MultipleConfig(Generic[T]):
         if config_type not in self.sub_config_type.values():
             raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
 
-        if self._maintenance_owner is not None:
-            raise ValueError("配置维护事务期间不支持新增配置项")
         if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
         uid = uuid.uuid4()
+        new_item = config_type()
+        if self._maintenance_owner is not None:
+            new_item.begin_maintenance(self._maintenance_owner)
         self.order.append(uid)
-        self.data[uid] = config_type()
+        self.data[uid] = new_item
 
         for save_method in self._save_methods:
             await self.data[uid].add_save_method(save_method)
@@ -1539,8 +1540,6 @@ class MultipleConfig(Generic[T]):
             要移除的配置项的唯一标识符
         """
 
-        if self._maintenance_owner is not None:
-            raise ValueError("配置维护事务期间不支持移除配置项")
         if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 
@@ -1550,6 +1549,9 @@ class MultipleConfig(Generic[T]):
         if self.data[uid]._write_locked():
             raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
 
+        removed = self.data[uid]
+        if self._maintenance_owner is not None:
+            removed.end_maintenance(self._maintenance_owner)
         self.data.pop(uid)
         self.order.remove(uid)
 
@@ -1568,8 +1570,6 @@ class MultipleConfig(Generic[T]):
         if set(order) != set(self.data.keys()):
             raise ValueError("顺序与当前配置项不匹配")
 
-        if self._maintenance_owner is not None:
-            raise ValueError("配置维护事务期间不支持重排配置项")
         if self._write_locked():
             raise ValueError("配置已锁定, 无法修改")
 

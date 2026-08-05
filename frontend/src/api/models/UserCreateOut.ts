@@ -32,4 +32,3 @@ export type UserCreateOut = {
      */
     data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | MaaFWUserConfig | PluginUserConfig);
 };
-

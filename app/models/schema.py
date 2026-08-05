@@ -1109,13 +1109,8 @@ class MaaFWConfig_Game(BaseModel):
 
 class MaaFWConfig_Update(BaseModel):
     IfAutoUpdate: Optional[bool] = Field(default=None, description="是否在运行前自动更新 MaaFW 项目")
-    Source: Optional[Literal["MirrorChyan", "GitHub"]] = Field(
-        default=None, description="项目更新源；默认使用 MirrorChyan，可显式切换 GitHub"
-    )
-    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库 owner/repository")
-    GitHubTag: Optional[str] = Field(default=None, description="GitHub Release Tag")
-    GitHubAssetPattern: Optional[str] = Field(
-        default=None, description="GitHub Release 资源匹配正则"
+    Source: Optional[Literal["MirrorChyan"]] = Field(
+        default=None, description="项目更新源，暂仅支持 MirrorChyan"
     )
     Channel: Optional[Literal["", "stable", "beta"]] = Field(
         default=None, description="项目更新渠道，留空时使用全局更新渠道"
@@ -1151,24 +1146,14 @@ class MaaFWConfig(BaseModel):
 
 class MaaFWProjectUpdateIn(BaseModel):
     scriptId: str = Field(..., description="MaaFW 脚本 ID")
-    apply: bool = Field(
-        default=False,
-        description="是否再次检查并应用可安装更新；默认仅检查版本",
-    )
 
 
 class MaaFWProjectUpdateData(BaseModel):
     checked: bool = Field(..., description="是否完成更新检查")
     updated: bool = Field(..., description="是否实际更新了 MaaFW 项目资源")
-    updateAvailable: bool = Field(default=False, description="是否发现新版本")
-    installable: bool = Field(default=False, description="发现的新版本是否有可安装包")
     currentVersion: str = Field(..., description="更新前的项目版本")
     latestVersion: Optional[str] = Field(default=None, description="最新项目版本")
     source: Optional[str] = Field(default=None, description="实际使用的更新源")
-    providerErrorCode: Optional[int] = Field(
-        default=None,
-        description="更新源返回的原始错误码（例如 MirrorChyan CDK 错误码）",
-    )
     logs: List[str] = Field(default_factory=list, description="项目更新日志")
 
 
@@ -1325,10 +1310,6 @@ class MaaFWInterfacePreviewOut(OutBase):
 
 class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(..., description="MaaFW project root path")
-    scriptId: Optional[str] = Field(
-        default=None,
-        description="Script ID used to correlate a MaaFW prewarm cache/progress identity",
-    )
 
 
 class MaaFWAgentEnvInfo(BaseModel):
@@ -1344,13 +1325,6 @@ class MaaFWAgentEnvPrepareData(BaseModel):
     agentCount: int = Field(default=0, description="Agent count")
     agents: List[MaaFWAgentEnvInfo] = Field(default_factory=list, description="Agent env info")
     logs: List[str] = Field(default_factory=list, description="Preparation logs")
-    # The environment cache is only reusable when it still points at the
-    # same immutable Runtime Pool entry.  Keep this metadata in the backend
-    # response/sidecar; older records may omit it and will be refreshed once.
-    runtimeId: Optional[str] = Field(default=None, description="Prepared Runtime Pool runtime ID")
-    poolId: Optional[str] = Field(default=None, description="Prepared Runtime Pool identity")
-    pythonExecutable: Optional[str] = Field(default=None, description="Prepared runtime Python executable")
-    venvPath: Optional[str] = Field(default=None, description="Prepared runtime virtual environment")
 
 
 class MaaFWAgentEnvPrepareOut(OutBase):

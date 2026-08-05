@@ -1,16 +1,9 @@
 import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service, type ComboBoxItem } from '@/api'
+import { OpenAPI, Service, type ComboBoxItem } from '@/api'
 import { useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useSettingsApi } from '@/composables/useSettingsApi'
-import { subscribe, unsubscribe } from '@/composables/useWebSocket'
-import {
-  WS_MAAFW_ENV_PREPARE_PROGRESS,
-  WS_MAAFW_PROJECT_UPDATE_PROGRESS,
-  type WSMaaFWEnvPrepareProgressData,
-  type WSMaaFWProjectUpdateProgressData,
-} from '@/services/websocket/types'
 import type {
   MaaFWAgentEnvPrepareData,
   MaaFWControllerInfo,
@@ -21,6 +14,90 @@ import type {
 } from '@/types/script'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
+
+const MAAFW_PROJECT_UPDATE_PROGRESS_TYPE = 'maafw.project-update.progress'
+const MAAFW_ENV_PREPARE_PROGRESS_TYPE = 'maafw.env-prepare.progress'
+const MAAFW_PROGRESS_SOCKET_TIMEOUT_MS = 3000
+
+type MaaFWProjectUpdateProgressData = {
+  scriptId?: string
+  phase?: string | null
+  final?: boolean
+  stage: string
+  status?: string
+  message?: string
+  provider_error_code?: number | null
+  version?: string | null
+  metadata_source?: string | null
+  package_source?: string | null
+  downloaded_bytes?: number | null
+  total_bytes?: number | null
+  percent?: number | null
+}
+
+type MaaFWEnvPrepareProgressData = {
+  scriptId?: string
+  project_path?: string | null
+  stage: string
+  status?: string
+  message?: string
+  percent?: number | null
+  downloaded_bytes?: number | null
+  total_bytes?: number | null
+  logs?: string[]
+}
+
+type MaaFWProgressEnvelope = {
+  id: string
+  type: typeof MAAFW_PROJECT_UPDATE_PROGRESS_TYPE | typeof MAAFW_ENV_PREPARE_PROGRESS_TYPE
+  data: MaaFWProjectUpdateProgressData | MaaFWEnvPrepareProgressData
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const parseMaaFWProgressEnvelope = (value: unknown): MaaFWProgressEnvelope | null => {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.type !== 'string') {
+    return null
+  }
+  if (!isRecord(value.data) || !value.id.trim() || typeof value.data.stage !== 'string') return null
+  if (
+    value.type !== MAAFW_PROJECT_UPDATE_PROGRESS_TYPE &&
+    value.type !== MAAFW_ENV_PREPARE_PROGRESS_TYPE
+  ) {
+    return null
+  }
+  return {
+    id: value.id,
+    type: value.type,
+    data: value.data as MaaFWProgressEnvelope['data'],
+  }
+}
+
+const toWebSocketOrigin = (value: string): string => {
+  const raw = value.trim()
+  if (!raw) return ''
+  try {
+    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`)
+    const protocol = parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 'wss:' : 'ws:'
+    return `${protocol}//${parsed.host}`
+  } catch {
+    return ''
+  }
+}
+
+const resolveMaaFWProgressSocketUrl = async (): Promise<string> => {
+  let endpoint = ''
+  try {
+    endpoint = (await window.electronAPI?.getApiEndpoint('websocket')) || ''
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取 MaaFW WebSocket 端点失败，将回退 HTTP/OpenAPI 基础地址: ${errorMsg}`)
+  }
+  const origin = toWebSocketOrigin(endpoint || OpenAPI.BASE || window.location.origin)
+  if (!origin) throw new Error('无法解析 MaaFW WebSocket 基础地址')
+  return `${origin}/plugin/maafw/progress`
+}
 
 export type EmulatorType = 'general' | 'mumu' | 'ldplayer'
 
@@ -221,8 +298,9 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const globalUpdateChannel = ref<string>('')
   const globalMirrorChyanCDK = ref<string>('')
   let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
-  let projectUpdateSubscriptionId: string | null = null
-  let agentEnvProgressSubscriptionId: string | null = null
+  let maaFWProgressSocket: WebSocket | null = null
+  let maaFWProgressSocketPromise: Promise<boolean> | null = null
+  let maaFWProgressSocketGeneration = 0
   let agentEnvPrepareRequest: { path: string; promise: Promise<void> } | null = null
 
   const emulatorLoading = ref(false)
@@ -742,7 +820,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     return value
   }
 
-  const handleProjectUpdateProgress = (data: WSMaaFWProjectUpdateProgressData) => {
+  const handleProjectUpdateProgress = (data: MaaFWProjectUpdateProgressData) => {
     if (data.scriptId && data.scriptId !== scriptId) return
 
     const stage = String(data.stage || '')
@@ -811,7 +889,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const normalizeProgressPath = (value: string) =>
     value.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
 
-  const handleAgentEnvProgress = (data: WSMaaFWEnvPrepareProgressData) => {
+  const handleAgentEnvProgress = (data: MaaFWEnvPrepareProgressData) => {
     if (data.scriptId && data.scriptId !== scriptId) return
     if (
       data.project_path &&
@@ -857,20 +935,121 @@ export function useMaaFWScriptConfig(scriptId: string) {
     agentEnvProgressStatus.value = 'running'
   }
 
-  const ensureProjectUpdateSubscription = () => {
-    if (projectUpdateSubscriptionId) return
-    projectUpdateSubscriptionId = subscribe(
-      { id: scriptId, type: WS_MAAFW_PROJECT_UPDATE_PROGRESS },
-      wsMessage => handleProjectUpdateProgress(wsMessage.data)
-    )
+  const handleMaaFWProgressMessage = (event: MessageEvent) => {
+    if (maaFWProgressSocket === null) return
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(String(event.data))
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`解析 MaaFW 插件进度消息失败: ${errorMsg}`)
+      return
+    }
+
+    const envelope = parseMaaFWProgressEnvelope(parsed)
+    if (!envelope) {
+      logger.warn('收到无效的 MaaFW 插件进度消息，已忽略')
+      return
+    }
+    const dataScriptId = envelope.data.scriptId
+    if (envelope.id !== scriptId && dataScriptId !== scriptId) return
+
+    if (envelope.type === MAAFW_PROJECT_UPDATE_PROGRESS_TYPE) {
+      handleProjectUpdateProgress(envelope.data as MaaFWProjectUpdateProgressData)
+    } else {
+      handleAgentEnvProgress(envelope.data as MaaFWEnvPrepareProgressData)
+    }
   }
 
-  const ensureAgentEnvProgressSubscription = () => {
-    if (agentEnvProgressSubscriptionId) return
-    agentEnvProgressSubscriptionId = subscribe(
-      { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
-      wsMessage => handleAgentEnvProgress(wsMessage.data)
-    )
+  const ensureMaaFWProgressSocket = async (): Promise<boolean> => {
+    if (maaFWProgressSocket?.readyState === WebSocket.OPEN) return true
+    if (maaFWProgressSocketPromise) return maaFWProgressSocketPromise
+
+    const generation = maaFWProgressSocketGeneration
+    const pending = (async () => {
+      let url: string
+      try {
+        url = await resolveMaaFWProgressSocketUrl()
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`准备 MaaFW 插件 WebSocket 失败: ${errorMsg}`)
+        return false
+      }
+
+      return await new Promise<boolean>(resolve => {
+        let settled = false
+        let timeoutId: number | undefined
+        const settle = (connected: boolean) => {
+          if (settled) return
+          settled = true
+          if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+          resolve(connected)
+        }
+
+        let socket: WebSocket
+        try {
+          socket = new WebSocket(url)
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.warn(`创建 MaaFW 插件 WebSocket 失败: ${errorMsg}`)
+          settle(false)
+          return
+        }
+        maaFWProgressSocket = socket
+        timeoutId = window.setTimeout(() => {
+          logger.warn('MaaFW 插件 WebSocket 连接超时')
+          try {
+            socket.close(1000, '连接超时')
+          } catch {
+            // 忽略已关闭连接
+          }
+          settle(false)
+        }, MAAFW_PROGRESS_SOCKET_TIMEOUT_MS)
+
+        socket.onopen = () => {
+          if (generation !== maaFWProgressSocketGeneration || maaFWProgressSocket !== socket) {
+            try {
+              socket.close(1000, '编辑器已销毁')
+            } catch {
+              // 忽略
+            }
+            settle(false)
+            return
+          }
+          settle(true)
+        }
+        socket.onmessage = handleMaaFWProgressMessage
+        socket.onerror = () => {
+          if (maaFWProgressSocket !== socket) return
+          logger.warn('MaaFW 插件 WebSocket 发生错误')
+          settle(false)
+        }
+        socket.onclose = () => {
+          if (maaFWProgressSocket === socket) maaFWProgressSocket = null
+          settle(false)
+        }
+      })
+    })()
+    maaFWProgressSocketPromise = pending
+    try {
+      return await pending
+    } finally {
+      if (maaFWProgressSocketPromise === pending) maaFWProgressSocketPromise = null
+    }
+  }
+
+  const closeMaaFWProgressSocket = () => {
+    maaFWProgressSocketGeneration += 1
+    const socket = maaFWProgressSocket
+    maaFWProgressSocket = null
+    maaFWProgressSocketPromise = null
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+      try {
+        socket.close(1000, '编辑器已销毁')
+      } catch {
+        // 忽略已关闭连接
+      }
+    }
   }
 
   const resetProjectUpdateProgress = () => {
@@ -944,7 +1123,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     }
 
     agentEnvResult.value = null
-    ensureAgentEnvProgressSubscription()
+    await ensureMaaFWProgressSocket()
     agentEnvProgressStatus.value = 'running'
     agentEnvProgressStage.value = '正在准备 MaaFW 运行环境'
     agentEnvProgressPercent.value = null
@@ -1021,7 +1200,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       return
     }
 
-    ensureProjectUpdateSubscription()
+    await ensureMaaFWProgressSocket()
     const applyUpdate = projectUpdateAction.value === 'apply'
     resetProjectUpdateProgress()
     try {
@@ -1333,14 +1512,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       clearTimeout(saveStatusTimer)
       saveStatusTimer = null
     }
-    if (projectUpdateSubscriptionId) {
-      unsubscribe(projectUpdateSubscriptionId)
-      projectUpdateSubscriptionId = null
-    }
-    if (agentEnvProgressSubscriptionId) {
-      unsubscribe(agentEnvProgressSubscriptionId)
-      agentEnvProgressSubscriptionId = null
-    }
+    closeMaaFWProgressSocket()
   }
 
   const handleBeforeUnload = (event: BeforeUnloadEvent) => {

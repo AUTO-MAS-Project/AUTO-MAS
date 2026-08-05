@@ -33,4 +33,3 @@ export type UserGetOut = {
      */
     data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | MaaFWUserConfig | PluginUserConfig)>;
 };
-

@@ -383,7 +383,7 @@ const confirmApply = async () => {
     message.success(props.mode === 'first-user' ? '外部配置已导入' : '用户已创建')
     emit('applied', result)
   } catch {
-    // The composable exposes the exact server-side CAS/transaction error above.
+    // The composable already exposes the exact server-side error above.
   }
 }
 </script>

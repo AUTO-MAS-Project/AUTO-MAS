@@ -8,21 +8,9 @@ export type MaaFWConfig_Update = {
      */
     IfAutoUpdate?: (boolean | null);
     /**
-     * 项目更新源；默认使用 MirrorChyan，可显式切换 GitHub
+     * 项目更新源，暂仅支持 MirrorChyan
      */
-    Source?: ('MirrorChyan' | 'GitHub' | null);
-    /**
-     * GitHub 仓库 owner/repository
-     */
-    GitHubRepo?: (string | null);
-    /**
-     * GitHub Release Tag
-     */
-    GitHubTag?: (string | null);
-    /**
-     * GitHub Release 资源匹配正则
-     */
-    GitHubAssetPattern?: (string | null);
+    Source?: (string | null);
     /**
      * 项目更新渠道，留空时使用全局更新渠道
      */

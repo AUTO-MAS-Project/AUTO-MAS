@@ -24,4 +24,3 @@ export type UserUpdateIn = {
      */
     data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | MaaFWUserConfig | PluginUserConfig);
 };
-

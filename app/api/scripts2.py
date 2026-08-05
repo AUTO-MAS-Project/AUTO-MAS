@@ -1,5 +1,3 @@
-import asyncio
-
 from fastapi import APIRouter, Body
 
 from app.core import Config
@@ -77,26 +75,10 @@ async def update_script(script: ScriptRecordUpdateIn = Body(...)) -> OutBase:
 
 @router.post("/delete", summary="删除脚本", response_model=OutBase)
 async def delete_script(script: ScriptRecordDeleteIn = Body(...)) -> OutBase:
-    delete_error: Exception | None = None
     try:
         await Config.del_script(script.scriptId)
-    except KeyError:
-        pass
     except Exception as e:
-        delete_error = e
-    from app.core.maafw_agent_env_state import invalidate_maafw_agent_env_state
-
-    try:
-        await asyncio.to_thread(invalidate_maafw_agent_env_state, script.scriptId)
-    except Exception as e:
-        if delete_error is None:
-            delete_error = e
-    if delete_error is not None:
-        return OutBase(
-            code=500,
-            status="error",
-            message=f"{type(delete_error).__name__}: {delete_error}",
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 

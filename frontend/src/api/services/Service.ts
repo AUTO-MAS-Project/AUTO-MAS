@@ -888,8 +888,8 @@ export class Service {
         });
     }
     /**
-     * 检查或更新 MaaFW 项目资源
-     * 按脚本配置检查更新；``apply=true`` 时才下载并应用可安装版本。
+     * 手动更新 MaaFW 项目资源
+     * 按脚本更新配置手动检查并应用 MaaFW 项目资源更新。
      * @param requestBody
      * @returns MaaFWProjectUpdateOut Successful Response
      * @throws ApiError

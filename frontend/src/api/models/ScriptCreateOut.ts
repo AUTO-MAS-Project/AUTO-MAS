@@ -32,4 +32,3 @@ export type ScriptCreateOut = {
      */
     data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | MaaFWConfig | PluginScriptConfig);
 };
-

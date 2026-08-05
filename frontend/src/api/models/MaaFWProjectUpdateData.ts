@@ -12,14 +12,6 @@ export type MaaFWProjectUpdateData = {
      */
     updated: boolean;
     /**
-     * 是否发现新版本
-     */
-    updateAvailable?: boolean;
-    /**
-     * 发现的新版本是否有可安装包
-     */
-    installable?: boolean;
-    /**
      * 更新前的项目版本
      */
     currentVersion: string;
@@ -31,10 +23,6 @@ export type MaaFWProjectUpdateData = {
      * 实际使用的更新源
      */
     source?: (string | null);
-    /**
-     * 更新源返回的原始错误码（例如 MirrorChyan CDK 错误码）
-     */
-    providerErrorCode?: (number | null);
     /**
      * 项目更新日志
      */
