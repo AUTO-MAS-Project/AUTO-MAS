@@ -434,9 +434,10 @@ class AutoProxyTask(TaskExecuteBase):
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=dt,
             )
 
             if log_item.status == "OK-WW 正常运行中":

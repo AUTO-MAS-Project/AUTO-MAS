@@ -596,11 +596,10 @@ class HSRManager(TaskExecuteBase):
                 dt = start_time.replace(
                     tzinfo=datetime.now().astimezone().tzinfo
                 ).astimezone(UTC4)
-                log_path = (
-                    Path.cwd()
-                    / f"history/{dt.strftime('%Y-%m-%d')}"
-                    / user_item.name
-                    / f"{dt.strftime('%H-%M-%S')}.log"
+                log_path = Config.build_history_log_path(
+                    script_name=self.script_info.name,
+                    user_name=user_item.name,
+                    log_time=dt,
                 )
                 await Config.save_hsr_log(
                     log_path, log_item.content, log_item.status
