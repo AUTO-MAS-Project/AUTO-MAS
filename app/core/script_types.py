@@ -507,6 +507,9 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
 
     client = provider.metadata.get("client")
     client = dict(client) if isinstance(client, dict) else {}
+    framework = provider.metadata.get("framework")
+    if isinstance(framework, str) and framework.strip():
+        client["framework"] = framework.strip()
 
     return {
         "type_key": provider.type_key,

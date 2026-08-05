@@ -781,8 +781,21 @@ class _PluginManager:
             raw_bindings = getattr(module, "SCRIPT_TYPE_BINDINGS", None)
         if raw_bindings is None:
             raw_bindings = getattr(plugin_class, "SCRIPT_TYPE_BINDINGS", None)
-        if raw_bindings is None and not adapter_type_keys:
-            return []
+        if raw_bindings is None:
+            if "M9A" in adapter_type_keys:
+                # The current M9A pack intentionally exposes only its adapter
+                # keys.  Keep legacy host-owned M9AConfig records visible to
+                # uninstall/disable guards until startup migration replaces
+                # them with the plugin-owned config class.
+                raw_bindings = [
+                    {
+                        "type_key": "M9A",
+                        "display_name": "M9A",
+                        "script_config_class_name": "M9AConfig",
+                    }
+                ]
+            elif not adapter_type_keys:
+                return []
         if isinstance(raw_bindings, dict):
             raw_bindings = [raw_bindings]
         if raw_bindings is None:
@@ -852,13 +865,40 @@ class _PluginManager:
             )
             return []
 
+        raw_adapter_type_keys = (
+            getattr(module, "SCRIPT_ADAPTER_TYPE_KEYS", None)
+            if module is not None
+            else None
+        ) or getattr(plugin_class, "SCRIPT_ADAPTER_TYPE_KEYS", ())
+        if not isinstance(raw_adapter_type_keys, tuple):
+            raw_adapter_type_keys = ()
+        adapter_type_keys = {
+            str(item).strip()
+            for item in raw_adapter_type_keys
+            if str(item or "").strip()
+        }
+
         raw_bindings = None
         if module is not None:
             raw_bindings = getattr(module, "SCRIPT_TYPE_BINDINGS", None)
         if raw_bindings is None:
             raw_bindings = getattr(plugin_class, "SCRIPT_TYPE_BINDINGS", None)
         if raw_bindings is None:
-            return []
+            # The dev2 M9A pack intentionally keeps its public adapter
+            # declaration free of legacy wiring.  Existing installations may
+            # nevertheless still hold the old host-owned M9AConfig record;
+            # discover that one compatibility binding here so the host can run
+            # the pack's explicit migration before Managed conversion.
+            if "M9A" in adapter_type_keys:
+                raw_bindings = [
+                    {
+                        "type_key": "M9A",
+                        "display_name": "M9A",
+                        "script_config_class_name": "M9AConfig",
+                    }
+                ]
+            else:
+                return []
         if isinstance(raw_bindings, dict):
             raw_bindings = [raw_bindings]
         if not isinstance(raw_bindings, list):
@@ -966,6 +1006,19 @@ class _PluginManager:
                         legacy_migrator = provider.metadata.get(
                             "legacy_config_migrator"
                         )
+                        if (
+                            not callable(legacy_migrator)
+                            and binding.type_key == "M9A"
+                        ):
+                            # Keep the migration implementation in the M9A
+                            # pack rather than duplicating its task/config
+                            # mapping in the host.  A missing pack leaves the
+                            # legacy record untouched and is reported below.
+                            from automas_script_maafw_pack_m9a.migration import (
+                                migrate_legacy_m9a_config,
+                            )
+
+                            legacy_migrator = migrate_legacy_m9a_config
                         if callable(legacy_migrator):
                             new_script = legacy_migrator(script, provider)
                             if inspect.isawaitable(new_script):

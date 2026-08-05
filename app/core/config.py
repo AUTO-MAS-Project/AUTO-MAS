@@ -135,6 +135,43 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
+async def _run_to_thread_with_cancellation_drain(
+    function: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Drain a blocking worker before propagating task cancellation.
+
+    Configuration write scopes own process-wide locks.  Cancelling an ordinary
+    ``await asyncio.to_thread(...)`` releases those locks while the worker is
+    still mutating the filesystem, allowing a following request to observe a
+    half-finished delete.  Keep the worker attached to this task until it has
+    reached a terminal state, then preserve cancellation priority.
+    """
+
+    worker = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    cancellation_requested = False
+    while not worker.done():
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancellation_requested = True
+        except BaseException:
+            # The worker reached a terminal failure; consume its authoritative
+            # result below so cancellation keeps priority when requested.
+            break
+
+    try:
+        result = worker.result()
+    except BaseException:
+        if cancellation_requested:
+            raise asyncio.CancelledError
+        raise
+    if cancellation_requested:
+        raise asyncio.CancelledError
+    return result
+
+
 class ScriptTypeConversionCASMismatch(RuntimeError):
     """The source record changed before a type conversion could commit."""
 
@@ -2034,8 +2071,8 @@ class AppConfig(GlobalConfig):
                 await self.ScriptConfig[uid].set(group, name, value)
 
     @_script_config_write(script_id_argument="script_id")
-    async def del_script(self, script_id: str) -> None:
-        """删除脚本配置"""
+    async def del_script(self, script_id: str) -> str:
+        """删除脚本配置并返回提交前解析出的脚本类型键。"""
 
         logger.info(f"删除脚本配置: {script_id}")
 
@@ -2050,6 +2087,10 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
+        # 读取类型必须位于同一写作用域内；调用方据此决定删除后的资源回收，
+        # 不能在取得写锁前通过 get_script_records() 预读，否则换型或删除会造成 TOCTOU。
+        deleted_type = self._resolve_record_provider(self.ScriptConfig[uid]).type_key
+
         # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
             for key, value in queue.QueueItem.items():
@@ -2057,8 +2098,16 @@ class AppConfig(GlobalConfig):
                     await queue.QueueItem.remove(key)
 
         await self.ScriptConfig.remove(uid)
-        if (Path.cwd() / f"data/{uid}").exists():
-            shutil.rmtree(Path.cwd() / f"data/{uid}")
+        data_path = Path.cwd() / f"data/{uid}"
+        if data_path.exists():
+            # Keep recursive deletion off the event loop. Project checkouts
+            # and user snapshots can be large on Windows, making the UI look
+            # frozen while the filesystem walk releases file handles.
+            await _run_to_thread_with_cancellation_drain(
+                shutil.rmtree,
+                data_path,
+            )
+        return deleted_type
 
     @_script_config_write()
     async def reorder_script(self, index_list: list[str]) -> None:
