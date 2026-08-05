@@ -369,6 +369,31 @@ def _is_maafw_framework_script(script_config: Any) -> bool:
         return config_class_name in {"MaaFWConfig", "M9AConfig"}
 
 
+def _uses_project_store_resource_model(script_config: Any) -> bool:
+    """Return whether a plugin owns this script's resources via Project Store.
+
+    Ordinary directory update endpoints must not mutate provider-managed,
+    versioned resources.  Use the provider contract instead of coupling the
+    host to a concrete script type such as MaaFWManaged.
+    """
+
+    from app.core.script_types import script_type_registry
+    from app.models.plugin_script_config import PluginScriptConfig
+
+    if not isinstance(script_config, PluginScriptConfig):
+        return False
+    type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+    if not type_key:
+        raise RuntimeError("插件脚本缺少类型标识，拒绝使用普通目录更新")
+    provider = script_type_registry.get(type_key)
+    metadata = getattr(provider, "metadata", None)
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError(f"插件脚本类型 {type_key} 缺少资源模型元数据")
+    return str(metadata.get("resource_model") or "").strip().casefold() == (
+        "project-store"
+    )
+
+
 async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
     """解析 MaaFW 框架脚本的表单态配置（插件形态与 legacy 均适用）。
 
@@ -1071,6 +1096,19 @@ async def update_maafw_project(
                 code=400,
                 status="error",
                 message="指定脚本不是 MaaFW 项目",
+                data=MaaFWProjectUpdateData(
+                    checked=False,
+                    updated=False,
+                    currentVersion=current_version,
+                    logs=logs,
+                ),
+            )
+        if _uses_project_store_resource_model(script_config):
+            append_log("该 MaaFW 项目的版本化资源由插件管理")
+            return MaaFWProjectUpdateOut(
+                code=409,
+                status="error",
+                message="该项目使用插件管理的版本化资源，不能通过普通目录更新接口修改",
                 data=MaaFWProjectUpdateData(
                     checked=False,
                     updated=False,
