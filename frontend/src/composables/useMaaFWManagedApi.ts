@@ -377,6 +377,13 @@ export interface MaaFWManagedGarbageCollectionResult {
   runtimePool?: Record<string, unknown>
 }
 
+export interface MaaFWManagedGarbageCollectionInput {
+  dryRun: boolean
+  projectId?: string
+  graceDays: number
+  keepLatest: number
+}
+
 export interface MaaFWManagedProgress {
   scriptId?: string
   serverEpoch?: string
@@ -797,9 +804,7 @@ export function useMaaFWManagedApi() {
       logs: hasOwn(raw, 'logs') ? asStringArray(raw.logs) : progress.value.logs,
     }
     if (nextStatus === 'success' || nextStatus === 'error') {
-      if (activeProgressScriptId) {
-        clearActiveOperationRef(activeProgressScriptId, progress.value.operationId)
-      }
+      clearActiveOperationRef(activeProgressScriptId, progress.value.operationId)
       stopProgressTracking()
     }
   }
@@ -919,7 +924,11 @@ export function useMaaFWManagedApi() {
       }
       updateProgress(asRecord(wsMessage.data))
     }
-    progressSubscriptions.add(subscribe({ id: scriptId, type: WS_MAAFW_MANAGED_PROGRESS }, handler))
+    if (scriptId) {
+      progressSubscriptions.add(
+        subscribe({ id: scriptId, type: WS_MAAFW_MANAGED_PROGRESS }, handler)
+      )
+    }
     progressSubscriptions.add(
       subscribe({ id: operationId, type: WS_MAAFW_MANAGED_PROGRESS }, handler)
     )
@@ -1085,7 +1094,7 @@ export function useMaaFWManagedApi() {
   }
 
   const tracked = async <T>(
-    scriptId: string,
+    scriptId: string | undefined,
     operation: MaaFWManagedOperation,
     message: string,
     action: (progressId: string) => Promise<T>
@@ -1097,7 +1106,8 @@ export function useMaaFWManagedApi() {
         412
       )
     }
-    const progressId = beginProgressTracking(scriptId, operation, message)
+    const ownerScriptId = scriptId || ''
+    const progressId = beginProgressTracking(ownerScriptId, operation, message)
     let keepTracking = false
     actionRequestsInFlight.add(progressId)
     try {
@@ -1112,14 +1122,16 @@ export function useMaaFWManagedApi() {
           percent: 100,
         }
       }
-      clearActiveOperationRef(scriptId, progressId)
+      clearActiveOperationRef(ownerScriptId, progressId)
       return result
     } catch (caught) {
       actionRequestsInFlight.delete(progressId)
       if (caught instanceof MaaFWManagedRequestError && caught.code === 409) {
-        clearActiveOperationRef(scriptId, progressId)
+        clearActiveOperationRef(ownerScriptId, progressId)
         try {
-          const active = await lookupAndAttachActiveOperation(scriptId, { emptyBehavior: 'keep' })
+          const active = await lookupAndAttachActiveOperation(ownerScriptId, {
+            emptyBehavior: 'keep',
+          })
           keepTracking = true
           if (active === 'none') {
             progress.value = {
@@ -1147,7 +1159,7 @@ export function useMaaFWManagedApi() {
         try {
           authoritativeProgress = await request<Record<string, unknown>>(
             MAAFW_MANAGED_ENDPOINTS.progress,
-            { scriptId, operationId: progressId }
+            { scriptId: ownerScriptId, operationId: progressId }
           )
         } catch (progressError) {
           if (!(progressError instanceof MaaFWManagedRequestError && progressError.code === 404)) {
@@ -1221,7 +1233,7 @@ export function useMaaFWManagedApi() {
         }
         let active: 'attached' | 'none'
         try {
-          active = await lookupAndAttachActiveOperation(scriptId, { emptyBehavior: 'keep' })
+          active = await lookupAndAttachActiveOperation(ownerScriptId, { emptyBehavior: 'keep' })
         } catch {
           keepTracking = true
           progress.value = {
@@ -1236,7 +1248,7 @@ export function useMaaFWManagedApi() {
           keepTracking = true
           throw caught
         }
-        clearActiveOperationRef(scriptId, progressId)
+        clearActiveOperationRef(ownerScriptId, progressId)
         stopProgressTracking()
         const reason = pluginErrorMessage(caught, 'MaaFW 托管资源操作失败')
         if (!(caught instanceof MaaFWManagedRequestError) || caught.code === undefined) {
@@ -1273,7 +1285,7 @@ export function useMaaFWManagedApi() {
           message: reason,
         }
       }
-      clearActiveOperationRef(scriptId, progressId)
+      clearActiveOperationRef(ownerScriptId, progressId)
       throw caught
     } finally {
       actionRequestsInFlight.delete(progressId)
@@ -1525,25 +1537,21 @@ export function useMaaFWManagedApi() {
     )
 
   const collectGarbage = (
-    scriptId: string,
-    input: {
-      dryRun: boolean
-      projectId?: string
-      graceDays: number
-      keepLatest: number
-    }
+    scriptId: string | undefined,
+    input: MaaFWManagedGarbageCollectionInput
   ) => {
+    const ownerScriptId = scriptId || ''
     const operation: MaaFWManagedOperation = input.dryRun ? 'gc-preview' : 'gc-apply'
     return run(() =>
       tracked(
-        scriptId,
+        ownerScriptId,
         operation,
         input.dryRun ? '正在预览空间回收' : '正在回收过期资源',
         progressId =>
           request<MaaFWManagedGarbageCollectionResult>(
             MAAFW_MANAGED_ENDPOINTS.garbageCollection,
             {
-              scriptId,
+              scriptId: ownerScriptId,
               ...input,
               confirmation: input.dryRun ? undefined : 'DELETE UNUSED',
               progressId,

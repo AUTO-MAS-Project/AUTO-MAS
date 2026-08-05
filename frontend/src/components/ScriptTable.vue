@@ -338,6 +338,7 @@ import { parseStatusTagList } from '@/composables/useStatusTag'
 import type { StatusTag } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
 import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/utils/scriptRegistry'
+import { getMaaFWProjectLabel, isMaaFWProjectType } from '@/utils/maafwProjectLabel'
 
 interface Props {
   scripts: Script[]
@@ -543,22 +544,8 @@ const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
-const getProjectLabel = (script: Script) => {
-  const config = script.config as { Info?: { ProjectLabel?: string } } | undefined
-  const raw = config?.Info?.ProjectLabel?.trim() || ''
-  if (!raw) return ''
-  return raw
-    .split('@', 1)[0]
-    .replace(/\s+(?:版本号\s*[:：]?\s*)?v?\d+(?:\.\d+)+(?:[-+][\w.]+)?$/i, '')
-    .trim()
-}
-
 const getScriptTypeLabel = (script: Script) => {
-  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged' || script.type === 'M9A') {
-    return getProjectLabel(script) || 'MaaFramework 项目'
-  }
-  if (script.type === 'OkScript')
-    return getProjectLabel(script) || script.displayName || script.type
+  if (isMaaFWProjectType(script.type)) return getMaaFWProjectLabel(script)
   return script.displayName || script.type
 }
 

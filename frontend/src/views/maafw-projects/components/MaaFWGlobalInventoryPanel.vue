@@ -64,6 +64,141 @@
         </a-col>
       </a-row>
 
+      <section id="maafw-global-gc" class="inventory-section gc-section">
+        <div class="section-heading">
+          <div>
+            <h3>孤儿资源回收</h3>
+            <p>先预览 Project Store、checkout 与 Runtime Pool 候选，再由服务端复核后执行。</p>
+          </div>
+          <a-tag :color="gcAvailable ? 'green' : 'orange'">
+            {{ gcAvailable ? '可预览与回收' : '当前不可用' }}
+          </a-tag>
+        </div>
+
+        <a-alert
+          v-if="!gcAvailable"
+          type="warning"
+          show-icon
+          message="全局孤儿回收暂不可用"
+          :description="gcUnavailableReason || '当前 Managed 插件未提供安全回收契约。'"
+        />
+
+        <template v-else>
+          <a-row :gutter="16">
+            <a-col :xs="24" :md="8">
+              <a-form-item label="项目范围">
+                <a-input
+                  v-model:value="gcForm.projectId"
+                  :disabled="gcOperationRunning"
+                  allow-clear
+                  placeholder="全部托管项目"
+                  @change="invalidateGcPreview"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :md="8">
+              <a-form-item label="本次宽限期（天）">
+                <a-input-number
+                  v-model:value="gcForm.graceDays"
+                  :min="0"
+                  :max="3650"
+                  :disabled="gcOperationRunning"
+                  style="width: 100%"
+                  @change="invalidateGcPreview"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :md="8">
+              <a-form-item label="本次额外保留最新数量">
+                <a-input-number
+                  v-model:value="gcForm.keepLatest"
+                  :min="0"
+                  :max="100"
+                  :disabled="gcOperationRunning"
+                  style="width: 100%"
+                  @change="invalidateGcPreview"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-space wrap>
+            <a-button
+              :loading="gcLoading && gcProgress.operation === 'gc-preview'"
+              :disabled="gcOperationRunning"
+              @click="previewGarbageCollection"
+            >
+              预览回收
+            </a-button>
+            <a-button
+              danger
+              :loading="gcLoading && gcProgress.operation === 'gc-apply'"
+              :disabled="gcOperationRunning || !gcPreviewReady"
+              @click="confirmGarbageCollection"
+            >
+              执行预览中的回收
+            </a-button>
+          </a-space>
+
+          <a-alert
+            v-if="gcProgress.status !== 'idle'"
+            class="gc-progress-alert"
+            :type="gcProgress.status === 'error' ? 'error' : 'info'"
+            show-icon
+            :message="gcProgressLabel"
+          >
+            <template #action>
+              <a-tag :color="gcProgressColor">
+                {{ gcProgress.status === 'running' ? '处理中' : gcProgress.status }}
+              </a-tag>
+            </template>
+          </a-alert>
+          <a-alert
+            v-if="gcError"
+            class="gc-progress-alert"
+            type="error"
+            show-icon
+            message="全局孤儿回收失败"
+            :description="gcError"
+          />
+
+          <a-card v-if="gcPreview" size="small" class="gc-preview-card">
+            <template #title>空间回收预览</template>
+            <template #extra>
+              <a-tag color="blue">{{ gcPreviewSummary }}</a-tag>
+            </template>
+            <a-row :gutter="[12, 12]">
+              <a-col v-for="section in gcPreviewSections" :key="section.key" :xs="24" :md="8">
+                <div class="gc-preview-stat">
+                  <strong>{{ section.label }}</strong>
+                  <span>可回收候选：{{ section.candidates }}</span>
+                  <span>保守保留：{{ section.kept.length }}</span>
+                </div>
+              </a-col>
+            </a-row>
+            <a-alert
+              v-if="!gcPreviewComplete"
+              class="gc-progress-alert"
+              type="warning"
+              show-icon
+              message="预览发现盘点不完整"
+              description="当前结果不能作为删除依据，执行按钮已禁用。请修复盘点错误后重新预览。"
+            />
+            <div v-if="gcKeptReasonCounts.length" class="gc-reasons">
+              <strong>不可回收原因</strong>
+              <div class="compact-values">
+                <a-tag
+                  v-for="([reason, count], index) in gcKeptReasonCounts"
+                  :key="`${reason}-${index}`"
+                >
+                  {{ formatGcReason(reason) }}：{{ count }} 个
+                </a-tag>
+              </div>
+            </div>
+          </a-card>
+        </template>
+      </section>
+
       <section class="inventory-section">
         <h3>存储位置</h3>
         <a-alert
@@ -150,6 +285,8 @@
           </div>
         </div>
       </section>
+
+      <MaaFWManagedResourceGraph :inventory="inventory" />
 
       <section class="inventory-section">
         <div class="section-heading">
@@ -363,26 +500,30 @@
       <a-alert
         type="info"
         show-icon
-        message="全局盘点不提供删除操作"
-        description="删除、切换、升级和回收仍需选择脚本上下文，由后端按绑定、引用、固定状态和租约再次校验。"
+        message="资源关系图和盘点表仍为只读"
+        description="孤儿回收仅通过上方“预览回收→执行预览中的回收”流程进行；其他删除、切换和升级仍需选择脚本上下文。"
       />
     </template>
   </a-card>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, type PropType } from 'vue'
+import { computed, defineComponent, h, reactive, type PropType } from 'vue'
 import { useRouter } from 'vue-router'
 import { ReloadOutlined } from '@ant-design/icons-vue'
-import { Typography } from 'ant-design-vue'
+import { Modal, Typography } from 'ant-design-vue'
 import type {
+  MaaFWManagedGarbageCollectionInput,
   MaaFWManagedGlobalInventory,
   MaaFWManagedCheckout,
   MaaFWManagedInventoryError,
   MaaFWManagedProjectVersion,
+  MaaFWManagedGarbageCollectionResult,
+  MaaFWManagedProgress,
   MaaFWManagedRuntime,
   MaaFWManagedStorageInfo,
 } from '@/composables/useMaaFWManagedApi'
+import MaaFWManagedResourceGraph from './MaaFWManagedResourceGraph.vue'
 
 defineOptions({ name: 'MaaFWGlobalInventoryPanel' })
 
@@ -390,11 +531,21 @@ const props = defineProps<{
   inventory: MaaFWManagedGlobalInventory | null
   loading: boolean
   error: string
+  gcAvailable: boolean
+  gcUnavailableReason: string
+  gcLoading: boolean
+  gcError: string
+  gcPreview: MaaFWManagedGarbageCollectionResult | null
+  gcPreviewInput: MaaFWManagedGarbageCollectionInput | null
+  gcProgress: MaaFWManagedProgress
 }>()
 const router = useRouter()
 
 const emit = defineEmits<{
   refresh: []
+  'gc-preview': [input: MaaFWManagedGarbageCollectionInput]
+  'gc-apply': [input: MaaFWManagedGarbageCollectionInput]
+  'gc-reset': []
 }>()
 
 const ReferenceList = defineComponent({
@@ -495,6 +646,173 @@ const checkoutRows = computed<CheckoutRow[]>(() =>
     activeLeaseIds: Array.isArray(item.activeLeaseIds) ? item.activeLeaseIds : [],
   }))
 )
+
+const gcForm = reactive({
+  projectId: '',
+  graceDays: 0,
+  keepLatest: 0,
+})
+
+const gcOperationRunning = computed(
+  () =>
+    props.gcLoading ||
+    props.gcProgress.status === 'running' ||
+    props.gcProgress.status === 'unknown'
+)
+
+const gcPreviewReady = computed(
+  () =>
+    props.gcAvailable &&
+    props.gcPreview !== null &&
+    props.gcPreviewInput !== null &&
+    props.inventory?.complete === true &&
+    gcPreviewComplete.value
+)
+
+const gcPreviewComplete = computed(() => {
+  if (!props.gcPreview) return false
+  const projectStore = asRecord(props.gcPreview.projectStore)
+  const runtimePool = asRecord(props.gcPreview.runtimePool)
+  return projectStore.complete !== false && runtimePool.complete !== false
+})
+
+const gcPreviewSections = computed(() => {
+  const projectStore = asRecord(props.gcPreview?.projectStore)
+  const checkout = asRecord(projectStore.checkoutGarbageCollection)
+  const runtimePool = asRecord(props.gcPreview?.runtimePool)
+  return [
+    {
+      key: 'project',
+      label: 'Project Store 项目版本',
+      candidates: listRecords(projectStore.candidates).length,
+      kept: listRecords(projectStore.kept),
+    },
+    {
+      key: 'checkout',
+      label: '脱壳 checkout',
+      candidates: listRecords(checkout.candidates).length,
+      kept: listRecords(checkout.kept),
+    },
+    {
+      key: 'runtime',
+      label: 'Runtime Pool 运行时',
+      candidates: listRecords(runtimePool.candidates).length,
+      kept: listRecords(runtimePool.kept),
+    },
+  ]
+})
+
+const gcKeptReasonCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const section of gcPreviewSections.value) {
+    for (const item of section.kept) {
+      const reasons = Array.isArray(item.reasons) ? item.reasons : ['unknown']
+      for (const reason of reasons) {
+        const key = typeof reason === 'string' && reason.trim() ? reason : 'unknown'
+        counts.set(key, (counts.get(key) || 0) + 1)
+      }
+    }
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])
+})
+
+const gcCandidateTotal = computed(() =>
+  gcPreviewSections.value.reduce((total, section) => total + section.candidates, 0)
+)
+
+const gcKeptTotal = computed(() =>
+  gcPreviewSections.value.reduce((total, section) => total + section.kept.length, 0)
+)
+
+const gcPreviewSummary = computed(() => {
+  if (!props.gcPreview) return ''
+  return `候选 ${gcCandidateTotal.value} 个，保守保留 ${gcKeptTotal.value} 个；预计释放 ${formatBytes(totalReclaimedBytes.value)}`
+})
+
+const totalReclaimedBytes = computed(() => {
+  const projectStore = asRecord(props.gcPreview?.projectStore)
+  const checkout = asRecord(projectStore.checkoutGarbageCollection)
+  const runtimePool = asRecord(props.gcPreview?.runtimePool)
+  return [projectStore, checkout, runtimePool].reduce(
+    (total, value) => total + numberOrZero(value.reclaimedBytes),
+    0
+  )
+})
+
+const gcProgressLabel = computed(() => {
+  if (props.gcProgress.status === 'success') return '全局回收操作已完成'
+  if (props.gcProgress.status === 'error') return '全局回收操作失败'
+  if (props.gcProgress.status === 'unknown') return '全局回收结果待核对'
+  return props.gcProgress.message || '正在执行全局回收操作'
+})
+
+const gcProgressColor = computed(() => {
+  if (props.gcProgress.status === 'success') return 'green'
+  if (props.gcProgress.status === 'error') return 'red'
+  if (props.gcProgress.status === 'unknown') return 'orange'
+  return 'blue'
+})
+
+type LooseRecord = Record<string, unknown>
+
+const asRecord = (value: unknown): LooseRecord =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as LooseRecord) : {}
+
+const listRecords = (value: unknown): LooseRecord[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is LooseRecord => Boolean(item && typeof item === 'object'))
+    : []
+
+const numberOrZero = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : 0
+
+const formatGcReason = (reason: string) => {
+  const labels: Record<string, string> = {
+    current: '当前版本指针保护',
+    pinned: '资源已固定',
+    referenced: '仍存在项目引用',
+    leased: '存在活跃租约',
+    'keep-latest': '保留最新版本',
+    keep_latest: '保留最新版本',
+    'grace-period': '仍在宽限期内',
+    grace_period: '仍在宽限期内',
+    'managed-script-binding': '仍由脚本绑定',
+    'active-operation': '存在活动操作',
+    'active-lease': '存在活跃租约',
+    'checkout-lease-unavailable': '无法确认 checkout 租约，保守保留',
+    'checkout-context-unavailable': '无法读取 checkout 上下文，保守保留',
+    'orphan-state-unknown': '孤儿状态无法确认，保守保留',
+    'explicit-confirmation-required': '需要执行确认',
+    unknown: '后端返回未识别原因，保守保留',
+  }
+  return labels[reason] || reason
+}
+
+const previewGarbageCollection = () => {
+  emit('gc-preview', {
+    dryRun: true,
+    projectId: gcForm.projectId.trim() || undefined,
+    graceDays: gcForm.graceDays,
+    keepLatest: gcForm.keepLatest,
+  })
+}
+
+const invalidateGcPreview = () => {
+  if (props.gcPreview || props.gcPreviewInput) emit('gc-reset')
+}
+
+const confirmGarbageCollection = () => {
+  const input = props.gcPreviewInput
+  if (!gcPreviewReady.value || !input) return
+  Modal.confirm({
+    title: '执行全局孤儿资源回收？',
+    content: `${gcPreviewSummary.value}。执行前服务端会再次校验引用、固定状态、租约和目录完整性；确认串为 DELETE UNUSED。`,
+    okText: '确认回收',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => emit('gc-apply', input),
+  })
+}
 
 const checkoutOrphanLabel = (reason: string) => {
   if (reason === 'managed-script-missing') return '脚本已删除，待 GC 评估'
@@ -628,6 +946,41 @@ const formatBytes = (value: number) => {
 
 .inventory-section {
   margin-top: 24px;
+}
+
+.gc-section {
+  padding: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.gc-progress-alert,
+.gc-preview-card {
+  margin-top: 16px;
+}
+
+.gc-preview-stat {
+  display: flex;
+  min-height: 84px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text-secondary);
+}
+
+.gc-preview-stat strong {
+  color: var(--ant-color-text);
+}
+
+.gc-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .inventory-section h3 {

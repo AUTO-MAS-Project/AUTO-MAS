@@ -25,7 +25,17 @@
       :inventory="inventory"
       :loading="inventoryLoading"
       :error="inventoryError"
+      :gc-available="globalGcAvailable"
+      :gc-unavailable-reason="globalGcUnavailableReason"
+      :gc-loading="managedApi.loading.value"
+      :gc-error="globalGcError"
+      :gc-preview="globalGcPreview"
+      :gc-preview-input="globalGcPreviewInput"
+      :gc-progress="managedApi.progress.value"
       @refresh="loadInventory"
+      @gc-preview="previewGlobalGarbageCollection"
+      @gc-apply="applyGlobalGarbageCollection"
+      @gc-reset="resetGlobalGarbageCollectionPreview"
     />
 
     <a-alert
@@ -111,11 +121,16 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, EditOutlined } from '@ant-design/icons-vue'
 import {
+  getMaaFWManagedMutationUnavailableReason,
+  hasMaaFWManagedSafeMutationContract,
   useMaaFWManagedApi,
+  type MaaFWManagedGarbageCollectionInput,
+  type MaaFWManagedGarbageCollectionResult,
   type MaaFWManagedGlobalInventory,
 } from '@/composables/useMaaFWManagedApi'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type { ScriptRecord } from '@/types/scriptRegistry'
+import { getMaaFWProjectLabel } from '@/utils/maafwProjectLabel'
 import MaaFWGlobalInventoryPanel from './components/MaaFWGlobalInventoryPanel.vue'
 import MaaFWProjectManagerWorkspace from './components/MaaFWProjectManagerWorkspace.vue'
 
@@ -132,6 +147,9 @@ const maafwScripts = ref<ScriptRecord[]>([])
 const inventory = ref<MaaFWManagedGlobalInventory | null>(null)
 const inventoryLoading = ref(false)
 const inventoryError = ref('')
+const globalGcError = ref('')
+const globalGcPreview = ref<MaaFWManagedGarbageCollectionResult | null>(null)
+const globalGcPreviewInput = ref<MaaFWManagedGarbageCollectionInput | null>(null)
 const selectedScriptId = ref('')
 const scriptListLoading = ref(false)
 const scriptListError = ref('')
@@ -140,6 +158,17 @@ const workspaceBusy = ref(false)
 const operationRunning = ref(false)
 let contextRefreshPromise: Promise<void> | null = null
 let pendingInternalScriptId = ''
+
+const globalGcAvailable = computed(
+  () =>
+    hasMaaFWManagedSafeMutationContract(managedApi.capabilities.value) &&
+    managedApi.capabilities.value?.features.garbageCollection === true
+)
+const globalGcUnavailableReason = computed(() =>
+  globalGcAvailable.value
+    ? ''
+    : getMaaFWManagedMutationUnavailableReason(managedApi.capabilities.value)
+)
 
 const selectedScript = computed(
   () => maafwScripts.value.find(script => script.id === selectedScriptId.value) || null
@@ -165,19 +194,13 @@ const asRecord = (value: unknown): Record<string, unknown> =>
     : {}
 
 const getScriptLabel = (script: ScriptRecord) => {
-  const info = asRecord(script.config?.Info)
-  const projectLabel = typeof info.ProjectLabel === 'string' ? info.ProjectLabel.trim() : ''
-  const normalizedProjectLabel = projectLabel
-    .split('@', 1)[0]
-    .replace(/\s+(?:版本号\s*[:：]?\s*)?v?\d+(?:\.\d+)+(?:[-+][\w.]+)?$/i, '')
-    .trim()
-  return normalizedProjectLabel || script.name || 'MaaFW 项目'
+  return getMaaFWProjectLabel(script)
 }
 
 const getScriptContextLabel = (script: ScriptRecord) => {
   if (script.type === 'MaaFWManaged') return '托管项目'
   if (script.type === 'MaaFW') return '普通项目'
-  return 'MaaFW 项目'
+  return 'MFW 项目'
 }
 
 const shortId = (scriptId: string) =>
@@ -250,7 +273,20 @@ const loadScripts = async () => {
 const loadInventory = async () => {
   inventoryLoading.value = true
   inventoryError.value = ''
+  globalGcError.value = ''
+  globalGcPreview.value = null
+  globalGcPreviewInput.value = null
   try {
+    const capabilities = await managedApi.getCapabilities()
+    if (hasMaaFWManagedSafeMutationContract(capabilities)) {
+      try {
+        await managedApi.resumeProgress('')
+      } catch (caught) {
+        logger.warn(
+          `恢复全局 MaaFW 回收进度失败：${caught instanceof Error ? caught.message : String(caught)}`
+        )
+      }
+    }
     inventory.value = await managedApi.getInventory()
   } catch (caught) {
     const reason = caught instanceof Error ? caught.message : '读取 MaaFW 全局资源盘点失败'
@@ -258,6 +294,57 @@ const loadInventory = async () => {
     logger.error(`读取 MaaFW 全局资源盘点失败: ${reason}`)
   } finally {
     inventoryLoading.value = false
+  }
+}
+
+const previewGlobalGarbageCollection = async (input: MaaFWManagedGarbageCollectionInput) => {
+  if (!globalGcAvailable.value) return
+  globalGcError.value = ''
+  globalGcPreview.value = null
+  globalGcPreviewInput.value = null
+  try {
+    const preview = await managedApi.collectGarbage(undefined, input)
+    if (preview) {
+      globalGcPreview.value = preview
+      globalGcPreviewInput.value = input
+      return
+    }
+    globalGcError.value =
+      managedApi.progress.value.status === 'unknown'
+        ? '全局回收预览请求中断，结果待核对；请刷新盘点后重试。'
+        : '全局回收预览完成但未返回结果，请刷新盘点后重试。'
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : '全局回收预览失败'
+    globalGcError.value = reason
+    logger.error(`全局回收预览失败：${reason}`)
+  }
+}
+
+const resetGlobalGarbageCollectionPreview = () => {
+  globalGcPreview.value = null
+  globalGcPreviewInput.value = null
+  globalGcError.value = ''
+}
+
+const applyGlobalGarbageCollection = async (input: MaaFWManagedGarbageCollectionInput) => {
+  if (!globalGcAvailable.value) return
+  globalGcError.value = ''
+  try {
+    const result = await managedApi.collectGarbage(undefined, { ...input, dryRun: false })
+    if (!result && managedApi.progress.value.status !== 'success') {
+      globalGcError.value =
+        managedApi.progress.value.status === 'unknown'
+          ? '全局回收结果待核对；请刷新盘点后确认资源状态。'
+          : '全局回收未返回结果，请刷新盘点后重试。'
+      return
+    }
+    globalGcPreview.value = null
+    globalGcPreviewInput.value = null
+    await loadInventory()
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : '执行全局回收失败'
+    globalGcError.value = reason
+    logger.error(`执行全局回收失败：${reason}`)
   }
 }
 

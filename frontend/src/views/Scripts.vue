@@ -496,7 +496,7 @@ import {
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { MaaFWScriptConfig, Script, ScriptType, User } from '@/types/script'
+import type { Script, ScriptType, User } from '@/types/script'
 import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
 import {
   createScriptTypeOptions,
@@ -524,6 +524,7 @@ import {
   handleScriptIconError,
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
+import { getMaaFWProjectLabel, isMaaFWProjectType } from '@/utils/maafwProjectLabel'
 import MarkdownIt from 'markdown-it'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
 
@@ -602,15 +603,8 @@ const releaseActiveConnection = (scriptId: string): boolean => {
   return true
 }
 
-const getMaaFWProjectLabel = (script: Script) => {
-  const config = script.config as Partial<MaaFWScriptConfig> | undefined
-  return config?.Info?.ProjectLabel?.trim() || 'MaaFW'
-}
-
 const getScriptDisplayLabel = (script: Script) => {
-  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged' || script.type === 'M9A') {
-    return getMaaFWProjectLabel(script) || 'MaaFramework 项目'
-  }
+  if (isMaaFWProjectType(script.type)) return getMaaFWProjectLabel(script)
   return script.displayName || script.type
 }
 

@@ -55,7 +55,7 @@
       <a-card :title="`${projectDisplayName} 项目引导`" :loading="pageLoading" class="wizard-card">
         <template #extra>
           <a-tag color="geekblue" class="type-tag">
-            {{ formData.type === 'MaaFWManaged' ? 'MaaFramework 项目' : formData.type }}
+            {{ isMaaFWProjectType(formData.type) ? 'MFW 项目' : formData.type }}
           </a-tag>
         </template>
 
@@ -354,6 +354,7 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
+import { getMaaFWProjectLabel, isMaaFWProjectType } from '@/utils/maafwProjectLabel'
 import { useMaaFWScriptConfig } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWConfigurationApplyResult } from '@/composables/useMaaFWConfigurationReuse'
 import MaaFWConfigurationReusePanel from '@/components/MaaFWConfigurationReusePanel.vue'
@@ -482,15 +483,18 @@ const isManagedProject = computed(
 )
 
 const projectDisplayName = computed(() => {
-  const candidates = [
-    previewProjectTitle.value,
-    maafwConfig.Info.ProjectLabel,
-    maafwConfig.Info.Name,
-  ]
-  return (
-    candidates.find(value => typeof value === 'string' && value.trim())?.trim() ||
-    (formData.type === 'M9A' ? 'M9A' : 'MaaFW')
-  )
+  if (isMaaFWProjectType(formData.type)) {
+    return getMaaFWProjectLabel({
+      config: {
+        Info: {
+          ProjectLabel: previewProjectTitle.value,
+          Name: maafwConfig.Info.Name,
+        },
+        Managed: maafwConfig.Managed,
+      },
+    })
+  }
+  return maafwConfig.Info.Name?.trim() || formData.type || 'MFW 项目'
 })
 
 const isStepZeroReady = computed(

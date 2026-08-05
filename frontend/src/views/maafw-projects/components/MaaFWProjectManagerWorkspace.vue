@@ -75,6 +75,25 @@
       </a-collapse>
     </div>
 
+    <a-alert
+      v-if="conversionSuccess"
+      class="conversion-success-alert"
+      type="success"
+      show-icon
+      message="转换完成：资源已复制到托管存储，原目录仍保留"
+    >
+      <template #description>
+        <div class="conversion-success-description">
+          <span>{{ conversionSourcePathDescription }}</span>
+          <a-space v-if="conversionOriginalPath" class="conversion-source-path">
+            <a-typography-text code>{{ conversionOriginalPath }}</a-typography-text>
+            <a-button size="small" @click="copyConversionOriginalPath">复制原目录路径</a-button>
+          </a-space>
+          <span v-else class="conversion-source-path-missing">原目录路径暂未读取到。</span>
+        </div>
+      </template>
+    </a-alert>
+
     <div v-if="initialLoading" class="manager-loading">
       <a-spin size="large" tip="正在读取 MaaFW 托管能力与资源" />
     </div>
@@ -308,6 +327,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message, Modal, type ModalFuncProps } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import {
   getMaaFWManagedMutationUnavailableReason,
   hasMaaFWManagedSafeMutationContract,
@@ -355,6 +375,7 @@ const emit = defineEmits<{
 
 const api = useMaaFWManagedApi()
 const { getSettings, updateSettings } = useSettingsApi()
+const registryApi = useScriptRegistryApi()
 type ConfirmHandle = ReturnType<typeof Modal.confirm>
 const activeConfirmHandles = new Set<ConfirmHandle>()
 let disposed = false
@@ -376,6 +397,8 @@ const gcPreviewInput = ref<{
   keepLatest: number
 } | null>(null)
 const mutationFinalizing = ref(false)
+const conversionSuccess = ref(false)
+const conversionOriginalPath = ref('')
 const gcForm = reactive({
   projectId: '',
   graceDays: 0,
@@ -527,6 +550,12 @@ const gcPreviewSummary = computed(() => {
   return `候选项目版本 ${projectCandidates} 个，脱壳目录 ${checkoutCandidates} 个，共享运行时 ${runtimeCandidates} 个，预计释放 ${formatBytes(reclaimed)}`
 })
 
+const conversionSourcePathDescription = computed(() =>
+  conversionOriginalPath.value
+    ? '确认没有其他程序正在使用原目录后，可以自行删除；系统不会自动删除。'
+    : '资源已复制到托管存储，原目录仍保留。请确认没有其他程序正在使用原目录后自行处理；系统不会自动删除。'
+)
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -547,6 +576,35 @@ const reportFailure = (caught: unknown, fallback: string) => {
   const reason = caught instanceof Error ? caught.message : fallback
   pageError.value = reason
   message.error(reason)
+}
+
+const loadOriginalProjectPath = async (loadSequence: number, scriptId: string) => {
+  try {
+    const records = await registryApi.getScripts(scriptId)
+    if (!isCurrentManagerContext(loadSequence, scriptId)) return
+    const info = asRecord(records[0]?.config?.Info)
+    conversionOriginalPath.value = typeof info.Path === 'string' ? info.Path.trim() : ''
+  } catch {
+    // The manager remains usable when the registry read is unavailable; the
+    // conversion alert will explain that the source path could not be read.
+    if (isCurrentManagerContext(loadSequence, scriptId)) {
+      conversionOriginalPath.value = ''
+    }
+  }
+}
+
+const copyConversionOriginalPath = async () => {
+  const path = conversionOriginalPath.value
+  if (!path) {
+    message.warning('原目录路径暂不可用，请从脚本配置中查看')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(path)
+    message.success('原目录路径已复制')
+  } catch {
+    message.error('复制原目录路径失败，请手动选择复制')
+  }
 }
 
 const showManagedConfirm = (config: ModalFuncProps) => {
@@ -878,6 +936,10 @@ const loadManager = async () => {
   const scriptId = props.scriptId
   const contextChanged = Boolean(managerContextScriptId && managerContextScriptId !== scriptId)
   managerContextScriptId = scriptId
+  if (contextChanged) {
+    conversionSuccess.value = false
+    conversionOriginalPath.value = ''
+  }
   const previousManaged = binding.value?.managed
   const previousLoadedScriptId = loadedScriptId
   const wasFinalizing = mutationFinalizing.value
@@ -908,6 +970,7 @@ const loadManager = async () => {
     const [, capabilities] = await Promise.all([
       loadManagedUpdateSettings(loadSequence, scriptId),
       api.getCapabilities(),
+      loadOriginalProjectPath(loadSequence, scriptId),
     ])
     if (!isCurrentManagerContext(loadSequence, scriptId) || !capabilities.available) return
     const progressPromise = hasMaaFWManagedSafeMutationContract(capabilities)
@@ -1223,6 +1286,8 @@ const confirmConvert = (input: {
   version?: string
   runtimeConstraint?: string
 }) => {
+  const sourcePath = conversionOriginalPath.value
+  const wasOrdinaryProject = binding.value?.managed === false
   showManagedConfirm({
     title: '转换为托管 MaaFW 项目？',
     content:
@@ -1234,7 +1299,12 @@ const confirmConvert = (input: {
         () => api.convert({ scriptId: props.scriptId, ...input }),
         '已转换为托管 MaaFW 项目'
       ).then(result => {
-        if (result && (result.converted || result.idempotent)) {
+        if (
+          (result && (result.converted || result.idempotent)) ||
+          (!result && wasOrdinaryProject && binding.value?.managed === true)
+        ) {
+          conversionSuccess.value = true
+          conversionOriginalPath.value = sourcePath
           activeTab.value = 'resources'
         }
       })
@@ -1568,6 +1638,32 @@ onBeforeUnmount(() => {
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   background: var(--ant-color-fill-quaternary);
+}
+
+.conversion-success-alert {
+  margin-bottom: 16px;
+}
+
+.conversion-success-description {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conversion-source-path {
+  align-items: center;
+  max-width: 100%;
+}
+
+.conversion-source-path :deep(.ant-typography) {
+  max-width: min(720px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversion-source-path-missing {
+  color: var(--ant-color-text-secondary);
 }
 
 .progress-heading,
