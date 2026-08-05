@@ -44,7 +44,7 @@
       @visibility-change="setHomeModuleShown"
     />
 
-    <div v-if="layoutReady" class="home-content">
+    <div v-if="layoutReady && !isBootstrapping" class="home-content">
       <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
