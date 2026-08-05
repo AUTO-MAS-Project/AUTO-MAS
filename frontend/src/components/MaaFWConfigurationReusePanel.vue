@@ -25,6 +25,7 @@
         </span>
       </button>
       <button
+        v-if="allowExternal"
         type="button"
         :class="['source-mode-card', { selected: selectedMode === 'external' }]"
         @click="selectMode('external')"
@@ -60,15 +61,15 @@
           mode === 'first-user' ? '不会扫描或修改任何外部目录。' : '创建后会进入 MaaFW 用户编辑页。'
         "
       >
-        <template #extra>
+        <template v-if="mode !== 'first-user'" #extra>
           <a-button type="primary" size="large" :loading="loading" @click="handleBlank">
-            {{ mode === 'first-user' ? '确认并继续' : '创建空白用户' }}
+            创建空白用户
           </a-button>
         </template>
       </a-result>
     </div>
 
-    <div v-else-if="selectedMode === 'external'" class="action-surface">
+    <div v-else-if="allowExternal && selectedMode === 'external'" class="action-surface">
       <div class="surface-heading">
         <div>
           <h3>选择配置文件或目录</h3>
@@ -245,10 +246,15 @@ const props = withDefaults(
   defineProps<{
     scriptId: string
     mode: 'first-user' | 'new-user'
+    allowExternal?: boolean
     defaultSourcePath?: string
     existingUsers?: ScriptUserRecord[]
   }>(),
   {
+    // External import is part of the supported MaaFW onboarding flow.  Keep
+    // it enabled by default so a caller cannot accidentally recreate the old
+    // "temporarily disabled" state by omitting the optional prop.
+    allowExternal: true,
     defaultSourcePath: '',
     existingUsers: () => [],
   }
@@ -257,6 +263,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   blank: []
   skipped: []
+  pending: []
   applied: [result: MaaFWConfigurationApplyResult]
 }>()
 
@@ -274,8 +281,12 @@ const plan = ref<MaaFWConfigurationPlan | null>(null)
 
 const panelDescription = computed(() =>
   props.mode === 'first-user'
-    ? '可把游戏、控制、资源和具体任务配置导入当前项目；具体任务会创建为第一个用户。'
-    : '创建记录前先选择空白配置、外部 MaaFW 配置，或复制当前脚本中的已有用户。'
+    ? props.allowExternal
+      ? '可把游戏、控制、资源和具体任务配置导入当前项目；具体任务会创建为第一个用户。'
+      : '先使用当前项目 schema 的默认值创建第一个用户，之后可在用户编辑页继续配置。'
+    : props.allowExternal
+      ? '创建记录前先选择空白配置、外部 MaaFW 配置，或复制当前脚本中的已有用户。'
+      : '创建记录前先选择空白配置，或复制当前脚本中的已有用户。'
 )
 
 const selectedSource = computed(
@@ -297,6 +308,14 @@ watch(selectedMode, () => {
 const selectMode = (mode: ReuseMode) => {
   if (mode === 'copy' && props.existingUsers.length === 0) return
   selectedMode.value = mode
+  if (props.mode === 'first-user' && mode === 'blank') {
+    // “暂不导入” is a complete choice for the wizard step.  Do not leave a
+    // second confirmation action that can strand the user on this page.
+    emit('skipped')
+  } else {
+    // Selecting another source re-opens the step until its preview is applied.
+    emit('pending')
+  }
 }
 
 const scanSource = async (path: string) => {

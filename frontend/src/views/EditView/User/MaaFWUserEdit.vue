@@ -26,6 +26,7 @@
           v-if="!isEdit"
           :script-id="scriptId"
           mode="new-user"
+          :allow-external="true"
           :default-source-path="scriptPath"
           :existing-users="existingUsers"
           @blank="createUserImmediately"
@@ -897,6 +898,15 @@ const reloadInterface = async (showMessage = true) => {
   const data = await previewInterface(scriptPath.value)
   if (data) {
     previewData.value = markRaw(data)
+    const project = data.project as {
+      title?: string | null
+      label?: string | null
+      name?: string | null
+    }
+    const interfaceProjectName = [project.title, project.label, project.name]
+      .map(value => (typeof value === 'string' ? value.trim() : ''))
+      .find(Boolean)
+    if (interfaceProjectName) scriptName.value = interfaceProjectName
     taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data)
     await syncControllerResourceSelection()
     await nextTick()

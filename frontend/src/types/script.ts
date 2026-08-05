@@ -259,6 +259,11 @@ export interface MaaFWScriptConfig {
     WeeklyOnceTasks: string | string[]
     MonthlyOnceTasks: string | string[]
   }
+  Managed?: {
+    ProjectId?: string
+    Version?: string
+    Status?: string
+  }
 }
 
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>

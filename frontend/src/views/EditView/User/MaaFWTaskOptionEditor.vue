@@ -280,7 +280,10 @@ const visibleOptions = computed(() => {
     seen.add(optionName)
 
     const option = optionMap.value.get(optionName)
-    if (!option || !isOptionActive(option)) continue
+    // Hotkeys are owned by the MaaFW project itself.  MAS does not capture or
+    // persist them, so omit them from the editor instead of presenting a
+    // misleading "unsupported option" warning.
+    if (!option || option.type === 'hotkey' || !isOptionActive(option)) continue
     result.push(option)
   }
   return result

@@ -10,7 +10,7 @@
       show-icon
       message="当前脚本未声明版本，无法判断更新"
     />
-    <a-row :gutter="24" class="update-config-row">
+    <a-row v-if="!isManagedProject" :gutter="24" class="update-config-row">
       <a-col :span="8">
         <a-form-item label="更新源">
           <a-select
@@ -54,34 +54,30 @@
       </a-col>
     </a-row>
     <a-alert
-      v-if="maafwConfig.Update.Source === ''"
+      v-if="!isManagedProject && maafwConfig.Update.Source === 'GitHub'"
       class="update-alert"
       type="info"
       show-icon
-      message="自动选择更新源"
-      description="有项目 CDK 或 MAS 全局 CDK 时优先使用 MirrorChyan；没有 CDK 时先发现版本，再由 GitHub 安装同版本资源。"
+      message="GitHub 更新源会自动读取项目 interface.json 中声明的仓库，并按项目与平台规则匹配可安装的 Release ZIP；无法唯一匹配时会明确报错。"
     />
     <a-alert
-      v-else-if="maafwConfig.Update.Source === 'GitHub'"
-      class="update-alert"
-      type="info"
-      show-icon
-      message="GitHub 更新源会自动读取项目 interface.json 中声明的仓库，默认拉取最新 Release 的第一个 .zip 资产，无需额外填写。"
-    />
-    <a-alert
-      v-else-if="projectUpdateMirrorSourceBlocked"
+      v-else-if="!isManagedProject && projectUpdateMirrorSourceBlocked"
       class="update-alert"
       type="warning"
       show-icon
       message="MirrorChyan 当前只能发现版本，不能安装更新"
-      description="请填写项目 Mirror 酱 CDK，或在 MAS 全局更新设置中配置 CDK；也可以随时改用 GitHub 更新源。"
+      description="当前仍可执行手动检查；安装需要项目或 MAS 全局 Mirror 酱 CDK，缺少时会显示后端返回的实际错误。"
     />
     <a-row :gutter="24" class="update-action-row">
       <a-col :span="8">
         <a-form-item>
           <template #label>
             <a-tooltip
-              title="运行 MaaFW 任务前先检查项目更新，更新完成后再读取 interface 与加载资源"
+              :title="
+                isManagedProject
+                  ? '运行任务前检查新版本；可无损迁移时自动切换，否则保留当前版本并生成待确认计划'
+                  : '运行 MaaFW 任务前先检查项目更新，更新完成后再读取 interface 与加载资源'
+              "
             >
               <span class="form-label">
                 运行前自动更新
@@ -99,7 +95,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="手动更新">
+        <a-form-item :label="isManagedProject ? '手动管理' : '手动更新'">
           <a-button
             type="primary"
             size="large"
@@ -111,7 +107,13 @@
             <template #icon>
               <SyncOutlined />
             </template>
-            立即更新资源
+            {{
+              isManagedProject
+                ? '打开项目与依赖'
+                : projectUpdateAction === 'apply'
+                  ? '开始更新资源'
+                  : '检查更新'
+            }}
           </a-button>
         </a-form-item>
       </a-col>
@@ -121,7 +123,10 @@
             class="project-update-progress"
             :class="`project-update-progress-${projectUpdateStatus}`"
           >
-            <div v-if="projectUpdateStatus === 'idle'" class="project-update-progress-idle">
+            <div v-if="isManagedProject" class="project-update-progress-idle">
+              运行前自动更新结果写入本次运行日志；手动升级进度请在项目管理页查看
+            </div>
+            <div v-else-if="projectUpdateStatus === 'idle'" class="project-update-progress-idle">
               尚未开始更新
             </div>
             <template v-else>
@@ -158,6 +163,12 @@
               >
                 {{ projectUpdateMessage }}
               </div>
+              <div
+                v-if="projectUpdateProviderErrorCode != null"
+                class="project-update-progress-message"
+              >
+                更新源错误码：{{ projectUpdateProviderErrorCode }}
+              </div>
             </template>
           </div>
         </a-form-item>
@@ -172,25 +183,29 @@
         {{ log }}
       </div>
     </div>
-    <div v-if="previewData" class="update-info-grid">
+    <div v-if="previewData || isManagedProject" class="update-info-grid">
       <div class="update-info-item">
         <div class="update-info-label">当前版本</div>
-        <div class="update-info-value">{{ previewData.project.version || '未声明' }}</div>
+        <div class="update-info-value">
+          {{ maafwConfig.Managed?.Version || previewData?.project.version || '未声明' }}
+        </div>
       </div>
       <div class="update-info-item">
         <div class="update-info-label">GitHub</div>
-        <div class="update-info-value">{{ previewData.project.github || '未声明' }}</div>
+        <div class="update-info-value">
+          {{ previewData?.project.github || maafwConfig.Update.GitHubRepo || '未声明' }}
+        </div>
       </div>
       <div class="update-info-item">
         <div class="update-info-label">MirrorChyan RID</div>
         <div class="update-info-value">
-          {{ previewData.project.mirrorchyanRid || '未声明' }}
+          {{ previewData?.project.mirrorchyanRid || '未声明' }}
         </div>
       </div>
       <div class="update-info-item">
         <div class="update-info-label">多平台</div>
         <div class="update-info-value">
-          {{ previewData.project.mirrorchyanMultiplatform ? '是' : '否' }}
+          {{ previewData?.project.mirrorchyanMultiplatform ? '是' : '否' }}
         </div>
       </div>
     </div>
@@ -206,6 +221,8 @@ import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/scrip
 const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
+  isManagedProject?: boolean
+  projectUpdateAction?: 'check' | 'apply'
   isAutoUpdateDisabled: boolean
   projectUpdateLoading: boolean
   projectUpdateDisabled: boolean
@@ -217,6 +234,7 @@ const props = defineProps<{
   projectUpdateDownloadedBytes: number | null
   projectUpdateTotalBytes: number | null
   projectUpdateMessage: string
+  projectUpdateProviderErrorCode?: number | null
   projectUpdateDiscoveredVersion: string
   projectUpdateMetadataSource: string
   projectUpdatePackageSource: string

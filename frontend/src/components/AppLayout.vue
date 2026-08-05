@@ -20,7 +20,7 @@
     >
       <div class="sider-content">
         <a-menu
-          v-model:selected-keys="selectedKeys"
+          :selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           :items="declaredMainMenuItems"
@@ -29,7 +29,7 @@
         <!-- 测试路由分隔区域 -->
         <a-menu
           v-if="isDevelopment"
-          v-model:selected-keys="selectedKeys"
+          :selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="dev-menu"
@@ -37,7 +37,7 @@
           @click="onMenuClick"
         />
         <a-menu
-          v-model:selected-keys="selectedKeys"
+          :selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="bottom-menu"

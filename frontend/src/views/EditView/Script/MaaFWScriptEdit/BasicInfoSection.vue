@@ -23,16 +23,25 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="16">
+      <a-col v-if="isManagedProject" :span="16">
+        <div class="managed-project-card">
+          <DatabaseOutlined class="managed-project-icon" aria-hidden="true" />
+          <div class="managed-project-copy">
+            <strong>{{
+              maafwConfig.Info.ProjectLabel || maafwConfig.Managed?.ProjectId || '已托管 MaaFW 项目'
+            }}</strong>
+            <span v-if="maafwConfig.Managed?.Version">
+              当前项目版本 {{ maafwConfig.Managed.Version }}
+            </span>
+            <span v-else>项目路径与运行依赖由 MAS 自动解析</span>
+            <small v-if="maafwConfig.Managed?.Status">{{ maafwConfig.Managed.Status }}</small>
+          </div>
+        </div>
+      </a-col>
+      <a-col v-else :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip
-              :title="
-                isManagedProject
-                  ? '托管项目目录由 MAS 的不可变 Project Store 维护'
-                  : '选择包含 interface.json 的 MaaFramework 项目目录'
-              "
-            >
+            <a-tooltip title="选择包含 interface.json 的 MaaFramework 项目目录">
               <span class="form-label">
                 项目目录
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -51,18 +60,13 @@
             <a-button
               size="large"
               class="path-button"
-              :disabled="
-                isManagedProject ||
-                interfaceLoading ||
-                isAgentEnvPreparing ||
-                isProjectUpdateRunning
-              "
+              :disabled="interfaceLoading || isAgentEnvPreparing || isProjectUpdateRunning"
               @click="emit('select-path')"
             >
               <template #icon>
                 <FolderOpenOutlined />
               </template>
-              {{ isManagedProject ? '由 MAS 托管' : '选择文件夹' }}
+              选择文件夹
             </a-button>
           </a-input-group>
           <div v-if="!isSetupMode" class="path-secondary-actions">
@@ -93,14 +97,14 @@
               <template #icon>
                 <ToolOutlined />
               </template>
-              准备运行环境
+              更新运行环境
             </a-button>
           </div>
         </a-form-item>
       </a-col>
     </a-row>
 
-    <div v-if="isSetupMode && maafwConfig.Info.Path" class="setup-checklist">
+    <div v-if="isSetupMode && !isManagedProject && maafwConfig.Info.Path" class="setup-checklist">
       <div class="setup-check-item">
         <span class="setup-check-status">
           <LoadingOutlined v-if="interfaceLoading" spin class="setup-icon-pending" />
@@ -135,7 +139,7 @@
           <ExclamationCircleOutlined v-else class="setup-icon-todo" />
         </span>
         <div class="setup-check-copy">
-          <div class="setup-check-title">第 2 步 · 准备运行环境</div>
+          <div class="setup-check-title">第 2 步 · 更新运行环境</div>
           <div class="setup-check-desc">{{ agentEnvChecklistDescription }}</div>
         </div>
         <a-button
@@ -150,7 +154,7 @@
           "
           @click="emit('prepare-agent-env')"
         >
-          {{ isAgentEnvReady ? '重新准备' : isAgentEnvFailed ? '重试准备' : '准备运行环境' }}
+          {{ isAgentEnvReady ? '更新运行环境' : isAgentEnvFailed ? '重试更新' : '更新运行环境' }}
         </a-button>
       </div>
     </div>
@@ -181,6 +185,11 @@
           description="请稍候，正在解析 interface.json 中的控制器、资源、任务和选项定义"
         />
       </a-spin>
+    </div>
+    <div v-else-if="isManagedProject" class="interface-guide-card managed-project-state">
+      <CheckCircleOutlined class="interface-guide-icon managed-project-ready" aria-hidden="true" />
+      <h3>项目已由 MAS 托管</h3>
+      <p>运行时会按当前项目版本解析资源与共享依赖；导入、升级、切换和回退请使用“项目与依赖”。</p>
     </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
@@ -334,6 +343,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   CopyOutlined,
+  DatabaseOutlined,
   ExclamationCircleOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
@@ -462,6 +472,41 @@ const agentEnvDownloadSummary = computed(() => {
 
 .modern-input {
   border-radius: 8px;
+}
+
+.managed-project-card {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--ant-color-primary-border);
+  border-radius: 10px;
+  background: var(--ant-color-primary-bg);
+}
+
+.managed-project-icon {
+  flex: none;
+  color: var(--ant-color-primary);
+  font-size: 28px;
+}
+
+.managed-project-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.managed-project-copy strong {
+  color: var(--ant-color-text);
+  font-size: 16px;
+}
+
+.managed-project-copy span,
+.managed-project-copy small {
+  overflow-wrap: anywhere;
+  color: var(--ant-color-text-secondary);
 }
 
 .path-input-group {
@@ -653,6 +698,15 @@ const agentEnvDownloadSummary = computed(() => {
 .interface-guide-icon {
   color: var(--ant-color-primary);
   font-size: 64px;
+}
+
+.managed-project-state {
+  border-color: var(--ant-color-success-border);
+  background: var(--ant-color-success-bg);
+}
+
+.managed-project-ready {
+  color: var(--ant-color-success);
 }
 
 .interface-guide-link {

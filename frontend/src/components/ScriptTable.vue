@@ -122,7 +122,11 @@
                     size="middle"
                     class="action-button"
                     :loading="props.copyingScriptId === script.id"
-                    :disabled="Boolean(props.copyingScriptId) || !isScriptOperable(script)"
+                    :disabled="
+                      Boolean(props.copyingScriptId) ||
+                      Boolean(props.deletingScriptIds?.has(script.id)) ||
+                      !isScriptOperable(script)
+                    "
                   >
                     <template #icon>
                       <EllipsisOutlined />
@@ -140,9 +144,14 @@
                         复制脚本
                       </a-menu-item>
                       <a-menu-divider />
-                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
+                      <a-menu-item
+                        key="delete"
+                        danger
+                        :disabled="props.deletingScriptIds?.has(script.id)"
+                        @click="handleDeleteConfirm(script)"
+                      >
                         <DeleteOutlined />
-                        删除脚本
+                        {{ props.deletingScriptIds?.has(script.id) ? '正在删除…' : '删除脚本' }}
                       </a-menu-item>
                     </a-menu>
                   </template>
@@ -334,6 +343,7 @@ interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
+  deletingScriptIds?: ReadonlySet<string>
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
   searching?: boolean
@@ -535,11 +545,16 @@ const handleToggleUserStatus = (user: User) => {
 
 const getProjectLabel = (script: Script) => {
   const config = script.config as { Info?: { ProjectLabel?: string } } | undefined
-  return config?.Info?.ProjectLabel?.trim()
+  const raw = config?.Info?.ProjectLabel?.trim() || ''
+  if (!raw) return ''
+  return raw
+    .split('@', 1)[0]
+    .replace(/\s+(?:版本号\s*[:：]?\s*)?v?\d+(?:\.\d+)+(?:[-+][\w.]+)?$/i, '')
+    .trim()
 }
 
 const getScriptTypeLabel = (script: Script) => {
-  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged') {
+  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged' || script.type === 'M9A') {
     return getProjectLabel(script) || 'MaaFramework 项目'
   }
   if (script.type === 'OkScript')

@@ -88,10 +88,8 @@
             一键展开
           </a-button>
         </a-tooltip>
-        <a-tooltip
-          :title="hasMaaFWProjects ? '统一管理 MaaFW 项目与运行依赖' : '请先创建 MaaFW 项目'"
-        >
-          <a-button size="large" :disabled="!hasMaaFWProjects" @click="openMaaFWProjects">
+        <a-tooltip title="统一管理 MaaFW 项目、项目包与运行依赖">
+          <a-button size="large" @click="openMaaFWProjects">
             <template #icon>
               <DatabaseOutlined />
             </template>
@@ -165,6 +163,7 @@
     :searching="isSearching"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
+    :deleting-script-ids="deletingScriptIds"
     :all-plans-data="allPlansData"
     @edit="handleEditScript"
     @copy="handleCopyScript"
@@ -551,9 +550,6 @@ const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
 const filteredScripts = computed(() =>
   filterScriptsByKeyword(scripts.value, scriptSearchKeyword.value)
 )
-const hasMaaFWProjects = computed(() =>
-  scripts.value.some(script => script.type === 'MaaFW' || script.type === 'MaaFWManaged')
-)
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 const scriptTypeDescriptors = ref<ScriptTypeDescriptor[]>([])
 const scriptListError = ref<string | null>(null)
@@ -563,6 +559,7 @@ const loadedOnce = ref(false)
 const allPlansData = ref<Record<string, Record<string, any>>>({})
 const scriptCreateVisible = ref(false)
 const copyingScriptId = ref<string | null>(null)
+const deletingScriptIds = ref<Set<string>>(new Set())
 const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
 const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
 const typeSelectVisible = ref(false)
@@ -611,7 +608,7 @@ const getMaaFWProjectLabel = (script: Script) => {
 }
 
 const getScriptDisplayLabel = (script: Script) => {
-  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged') {
+  if (script.type === 'MaaFW' || script.type === 'MaaFWManaged' || script.type === 'M9A') {
     return getMaaFWProjectLabel(script) || 'MaaFramework 项目'
   }
   return script.displayName || script.type
@@ -751,7 +748,6 @@ const handleAddScript = () => {
 }
 
 const openMaaFWProjects = () => {
-  if (!hasMaaFWProjects.value) return
   void router.push({ name: 'MaaFWProjects', query: { from: 'scripts' } })
 }
 
@@ -989,12 +985,23 @@ const handleEditScript = (script: Script) => {
 }
 
 const handleDeleteScript = async (script: Script) => {
+  if (deletingScriptIds.value.has(script.id)) return
+  const pending = new Set(deletingScriptIds.value)
+  pending.add(script.id)
+  deletingScriptIds.value = pending
   try {
     await registryApi.deleteScript(script.id)
+    scripts.value = scripts.value.filter(item => item.id !== script.id)
+    message.success(`已删除脚本「${script.name}」`)
     await loadScripts()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除脚本失败: ${errorMsg}`)
+    message.error(`删除脚本失败: ${errorMsg}`)
+  } finally {
+    const next = new Set(deletingScriptIds.value)
+    next.delete(script.id)
+    deletingScriptIds.value = next
   }
 }
 

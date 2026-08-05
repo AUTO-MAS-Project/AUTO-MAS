@@ -198,6 +198,7 @@ export interface WSMaaFWProjectUpdateProgressData {
   stage: WSMaaFWProjectUpdateStage
   status?: string
   message?: string
+  provider_error_code?: number | null
   version?: string | null
   metadata_source?: string | null
   package_source?: string | null

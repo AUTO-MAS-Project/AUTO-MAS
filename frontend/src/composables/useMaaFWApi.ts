@@ -176,6 +176,7 @@ type MaaFWAgentEnvPrepareOut = {
 type MaaFWRequestLifecycle = {
   isActive?: () => boolean
   notify?: boolean
+  cacheOnly?: boolean
 }
 
 export function useMaaFWApi() {
@@ -261,13 +262,20 @@ export function useMaaFWApi() {
         method: 'POST',
         url: '/api/scripts/maafw/agent-env/prepare',
         body: { path, scriptId },
-        headers: scriptId ? { 'X-MaaFW-Progress-Id': scriptId } : undefined,
+        headers:
+          scriptId || lifecycle?.cacheOnly
+            ? {
+                ...(scriptId ? { 'X-MaaFW-Progress-Id': scriptId } : {}),
+                ...(lifecycle?.cacheOnly ? { 'X-MaaFW-Cache-Only': '1' } : {}),
+              }
+            : undefined,
         mediaType: 'application/json',
         errors: {
           422: 'Validation Error',
         },
       })
 
+      if (lifecycle?.cacheOnly && response.code === 404) return null
       if (response.code !== 200 || !response.data) {
         const errorMsg = response.message || '准备 MaaFW 运行环境失败'
         if (shouldNotify()) message.error(errorMsg)
@@ -293,7 +301,8 @@ export function useMaaFWApi() {
   }
 
   const updateProjectResources = async (
-    scriptId: string
+    scriptId: string,
+    apply = false
   ): Promise<ApiMaaFWProjectUpdateOut | null> => {
     loading.value = true
     error.value = null
@@ -301,6 +310,7 @@ export function useMaaFWApi() {
     try {
       const response = await MaaFwService.updateMaafwProjectApiScriptsMaafwProjectUpdatePost({
         scriptId,
+        apply,
       })
 
       if (response.code !== 200) {

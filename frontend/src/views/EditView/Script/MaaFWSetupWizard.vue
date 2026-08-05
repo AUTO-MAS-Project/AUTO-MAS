@@ -16,7 +16,7 @@
                 class="breadcrumb-logo"
                 @error="event => handleScriptIconError(event, formData.type)"
               />
-              项目引导
+              {{ projectDisplayName }} 项目引导
             </div>
           </a-breadcrumb-item>
         </a-breadcrumb>
@@ -52,11 +52,7 @@
     </div>
 
     <div class="wizard-content">
-      <a-card
-        :title="formData.type === 'M9A' ? 'M9A 项目引导' : 'MaaFramework 项目引导'"
-        :loading="pageLoading"
-        class="wizard-card"
-      >
+      <a-card :title="`${projectDisplayName} 项目引导`" :loading="pageLoading" class="wizard-card">
         <template #extra>
           <a-tag color="geekblue" class="type-tag">
             {{ formData.type === 'MaaFWManaged' ? 'MaaFramework 项目' : formData.type }}
@@ -115,8 +111,10 @@
                 key="configuration-reuse"
                 :script-id="scriptId"
                 mode="first-user"
+                :allow-external="true"
                 :default-source-path="maafwConfig.Info.Path"
                 @skipped="handleReuseSkipped"
+                @pending="handleReusePending"
                 @applied="handleReuseApplied"
               />
               <ControlConfigSection
@@ -126,6 +124,7 @@
                 :preview-data="previewData"
                 :interface-loading="interfaceLoading"
                 :emulator-loading="emulatorLoading"
+                :emulator-options-ready="emulatorOptionsReady"
                 :emulator-device-loading="emulatorDeviceLoading"
                 :emulator-options="emulatorOptions"
                 :emulator-device-options="emulatorDeviceOptions"
@@ -149,13 +148,22 @@
                 @select-game-path="selectGamePath"
               />
               <UpdateSettingsSection
-                v-else-if="currentStep === 3 && formData.type !== 'MaaFWManaged'"
+                v-else-if="currentStep === 3"
                 key="update"
                 :maafw-config="maafwConfig"
                 :preview-data="previewData"
-                :is-auto-update-disabled="isAutoUpdateDisabled"
+                :is-managed-project="isManagedProject"
+                :is-auto-update-disabled="isManagedProject ? false : isAutoUpdateDisabled"
                 :project-update-loading="projectUpdateLoading"
-                :project-update-disabled="projectUpdateDisabled"
+                :project-update-action="projectUpdateAction"
+                :project-update-disabled="
+                  isManagedProject
+                    ? isInitializing ||
+                      saveStatus === 'saving' ||
+                      hasUnsavedChanges ||
+                      isProjectUpdateRunning
+                    : projectUpdateDisabled
+                "
                 :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
                 :project-update-status="projectUpdateStatus"
                 :project-update-stage="projectUpdateStage"
@@ -164,6 +172,7 @@
                 :project-update-downloaded-bytes="projectUpdateDownloadedBytes"
                 :project-update-total-bytes="projectUpdateTotalBytes"
                 :project-update-message="projectUpdateMessage"
+                :project-update-provider-error-code="projectUpdateProviderErrorCode"
                 :project-update-discovered-version="projectUpdateDiscoveredVersion"
                 :project-update-metadata-source="projectUpdateMetadataSource"
                 :project-update-package-source="projectUpdatePackageSource"
@@ -171,27 +180,20 @@
                 :update-source-options="updateSourceOptions"
                 :update-channel-options="updateChannelOptions"
                 @change="handleChange"
-                @manual-update="handleManualProjectUpdate"
-              />
-              <a-alert
-                v-else-if="currentStep === 3"
-                type="info"
-                show-icon
-                message="项目资源由 MAS 托管"
-                description="托管项目的目录、版本、更新和运行依赖只能通过统一项目管理页维护。"
+                @manual-update="handleWizardProjectUpdateAction"
               />
               <section v-else-if="currentStep === 4" key="managed" class="managed-step">
                 <a-alert
                   type="info"
                   show-icon
                   :message="
-                    formData.type === 'MaaFW'
+                    formData.type === 'MaaFW' || formData.type === 'M9A'
                       ? '是否将当前 MaaFW 项目转为托管项目？'
                       : '当前项目包保持普通模式'
                   "
                   :description="
-                    formData.type === 'MaaFW'
-                      ? '托管后仍使用当前脚本、用户与任务配置；MAS 会保存不可变项目版本，并统一管理项目资源、运行依赖、升级、切换与回收。'
+                    formData.type === 'MaaFW' || formData.type === 'M9A'
+                      ? '托管后仍使用当前脚本、用户与任务配置；MAS 会按版本保护项目内容，并统一管理项目资源、运行依赖、升级、切换、回退与回收。'
                       : `${formData.type} 的资源升级由对应项目包插件维护，当前不会转换为通用 MaaFWManaged。`
                   "
                 />
@@ -404,6 +406,7 @@ const {
   projectUpdateDownloadedBytes,
   projectUpdateTotalBytes,
   projectUpdateMessage,
+  projectUpdateProviderErrorCode,
   projectUpdateDiscoveredVersion,
   projectUpdateMetadataSource,
   projectUpdatePackageSource,
@@ -416,7 +419,9 @@ const {
   interfaceLoading,
   agentEnvLoading,
   projectUpdateLoading,
+  projectUpdateAction,
   emulatorLoading,
+  emulatorOptionsReady,
   emulatorDeviceLoading,
   emulatorOptions,
   emulatorDeviceOptions,
@@ -470,6 +475,24 @@ const {
   dispose,
 } = useMaaFWScriptConfig(scriptId)
 
+const isManagedProject = computed(
+  () =>
+    formData.type === 'MaaFWManaged' ||
+    Boolean(maafwConfig.Managed?.ProjectId || maafwConfig.Managed?.Version)
+)
+
+const projectDisplayName = computed(() => {
+  const candidates = [
+    previewProjectTitle.value,
+    maafwConfig.Info.ProjectLabel,
+    maafwConfig.Info.Name,
+  ]
+  return (
+    candidates.find(value => typeof value === 'string' && value.trim())?.trim() ||
+    (formData.type === 'M9A' ? 'M9A' : 'MaaFW')
+  )
+})
+
 const isStepZeroReady = computed(
   () =>
     isInterfaceReady.value &&
@@ -498,13 +521,13 @@ const managedOperationRunning = computed(
 )
 const managedConversionAvailable = computed(
   () =>
-    formData.type === 'MaaFW' &&
+    (formData.type === 'MaaFW' || formData.type === 'M9A') &&
     managedApi.capabilities.value?.available === true &&
     managedApi.capabilities.value.features.inPlaceConversion === true &&
     hasMaaFWManagedSafeMutationContract(managedApi.capabilities.value)
 )
 const managedUnavailableReason = computed(() => {
-  if (formData.type !== 'MaaFW') {
+  if (formData.type !== 'MaaFW' && formData.type !== 'M9A') {
     return `${formData.type} 项目包暂不支持转换为通用托管项目；请保持普通项目，并使用其项目包提供的升级能力。`
   }
   const mutationUnavailableReason = getMaaFWManagedMutationUnavailableReason(
@@ -567,10 +590,22 @@ const handleReuseSkipped = () => {
   reuseComplete.value = true
 }
 
+const handleReusePending = () => {
+  reuseComplete.value = false
+}
+
 const handleReuseApplied = async (result: MaaFWConfigurationApplyResult) => {
   importedUserId.value = result.createdUser.id
   reuseComplete.value = true
   await loadScript()
+}
+
+const handleWizardProjectUpdateAction = () => {
+  if (isManagedProject.value) {
+    openManagedProjectManager()
+    return
+  }
+  void handleManualProjectUpdate()
 }
 
 const rereadInterface = async () => {
@@ -589,7 +624,7 @@ const rereadInterface = async () => {
 const loadManagedDecision = async () => {
   managedCapabilitiesLoaded.value = false
   try {
-    if (formData.type !== 'MaaFW' && formData.type !== 'MaaFWManaged') {
+    if (formData.type !== 'MaaFW' && formData.type !== 'M9A' && formData.type !== 'MaaFWManaged') {
       managedDecision.value = 'ordinary'
       return
     }

@@ -31,13 +31,16 @@ const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
 }
 
 type MaaFWProjectUpdateSource = MaaFWScriptConfig['Update']['Source']
+type MaaFWExplicitUpdateSource = Exclude<MaaFWProjectUpdateSource, ''>
 type MaaFWConcreteUpdateChannel = Exclude<MaaFWScriptConfig['Update']['Channel'], ''>
 
-const MAAFW_UPDATE_SOURCES: MaaFWProjectUpdateSource[] = ['', 'MirrorChyan', 'GitHub']
+const DEFAULT_MAAFW_UPDATE_SOURCE: MaaFWExplicitUpdateSource = 'MirrorChyan'
+const MAAFW_UPDATE_SOURCES: MaaFWExplicitUpdateSource[] = ['MirrorChyan', 'GitHub']
 const MAAFW_UPDATE_CHANNELS: MaaFWConcreteUpdateChannel[] = ['stable', 'beta']
 const MAAFW_DIRECT_CONTROLLER_TYPES = ['Adb', 'Win32'] as const
 
 export type MaaFWProjectUpdateStatus = 'idle' | 'running' | 'completed' | 'failed'
+export type MaaFWProjectUpdateAction = 'check' | 'apply'
 export type MaaFWAgentEnvProgressStatus = 'idle' | 'running' | 'completed' | 'failed'
 
 type MaaFWPendingSave = {
@@ -103,17 +106,16 @@ export const getAgentRuntimeColor = (runtimeKind?: string | null) => {
   return 'default'
 }
 
-const isMaaFWUpdateSource = (value: string): value is MaaFWProjectUpdateSource =>
-  MAAFW_UPDATE_SOURCES.includes(value as MaaFWProjectUpdateSource)
+const isMaaFWUpdateSource = (value: string): value is MaaFWExplicitUpdateSource =>
+  MAAFW_UPDATE_SOURCES.includes(value as MaaFWExplicitUpdateSource)
 
 const isMaaFWUpdateChannel = (value: string): value is MaaFWConcreteUpdateChannel =>
   MAAFW_UPDATE_CHANNELS.includes(value as MaaFWConcreteUpdateChannel)
 
 const updateSourceOptions = [
-  { label: '自动', value: '' },
   { label: 'MirrorChyan', value: 'MirrorChyan' },
   { label: 'GitHub', value: 'GitHub' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateSource }>
+] satisfies Array<{ label: string; value: MaaFWExplicitUpdateSource }>
 
 const updateChannelOptions = [
   { label: '稳定版', value: 'stable' as MaaFWConcreteUpdateChannel },
@@ -153,7 +155,7 @@ const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Update: {
     IfAutoUpdate: true,
-    Source: '',
+    Source: DEFAULT_MAAFW_UPDATE_SOURCE,
     Channel: 'stable',
     MirrorChyanCDK: '',
     GitHubRepo: '',
@@ -168,6 +170,7 @@ const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     WeeklyOnceTasks: '[ ]',
     MonthlyOnceTasks: '[ ]',
   },
+  Managed: {},
 })
 
 /**
@@ -202,12 +205,14 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const agentEnvProgressTotalBytes = ref<number | null>(null)
   const projectUpdateLogs = ref<string[]>([])
   const projectUpdateStatus = ref<MaaFWProjectUpdateStatus>('idle')
+  const projectUpdateAction = ref<MaaFWProjectUpdateAction>('check')
   const projectUpdateStage = ref('')
   const projectUpdateProgress = ref<number | null>(null)
   const projectUpdateDownloadPercent = ref<number | null>(null)
   const projectUpdateDownloadedBytes = ref<number | null>(null)
   const projectUpdateTotalBytes = ref<number | null>(null)
   const projectUpdateMessage = ref('')
+  const projectUpdateProviderErrorCode = ref<number | null>(null)
   const projectUpdateDiscoveredVersion = ref('')
   const projectUpdateMetadataSource = ref('')
   const projectUpdatePackageSource = ref('')
@@ -216,6 +221,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const dailyOnceTasks = ref<string[]>([])
   const weeklyOnceTasks = ref<string[]>([])
   const monthlyOnceTasks = ref<string[]>([])
+  const globalUpdateSource = ref<string>('')
   const globalUpdateChannel = ref<string>('')
   const globalMirrorChyanCDK = ref<string>('')
   const pendingSaves: MaaFWPendingSave[] = []
@@ -235,6 +241,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
   } | null = null
 
   const emulatorLoading = ref(false)
+  const emulatorOptionsReady = ref(false)
   const emulatorDeviceLoading = ref(false)
   const emulatorOptions = ref<ComboBoxItem[]>([])
   const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
@@ -286,7 +293,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       Boolean(String(globalMirrorChyanCDK.value || '').trim())
   )
   const projectUpdateMirrorSourceBlocked = computed(
-    () => maafwConfig.Update.Source === 'MirrorChyan' && !hasEffectiveMirrorChyanCDK.value
+    () => !hasEffectiveMirrorChyanCDK.value && maafwConfig.Update.Source === 'MirrorChyan'
   )
   const isProjectUpdateRunning = computed(
     () => projectUpdateStatus.value === 'running' || projectUpdateLoading.value
@@ -301,8 +308,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       hasUnsavedChanges.value ||
       interfaceLoading.value ||
       isAgentEnvPreparing.value ||
-      isProjectUpdateRunning.value ||
-      projectUpdateMirrorSourceBlocked.value
+      isProjectUpdateRunning.value
   )
 
   const periodTaskOptions = computed(() =>
@@ -385,7 +391,13 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const resolveUpdateSource = (value?: string | null): MaaFWProjectUpdateSource => {
     const source = value ?? ''
     if (isMaaFWUpdateSource(source)) return source
-    return ''
+    if (isMaaFWUpdateSource(globalUpdateSource.value)) {
+      return globalUpdateSource.value
+    }
+    // The host updater also supports sources that MaaFW cannot consume.
+    // Keep the MaaFW fallback deterministic while preserving the persisted
+    // blank value as "inherit" on the backend.
+    return DEFAULT_MAAFW_UPDATE_SOURCE
   }
 
   const resolveUpdateChannel = (value?: string | null): MaaFWConcreteUpdateChannel => {
@@ -413,6 +425,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
       Game: { ...defaults.Game, ...config?.Game },
       Update: normalizeUpdateConfig({ ...defaults.Update, ...config?.Update }),
       Run: { ...defaults.Run, ...config?.Run },
+      Managed: { ...defaults.Managed, ...config?.Managed },
     }
   }
 
@@ -443,6 +456,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     Object.assign(maafwConfig.Game, normalized.Game)
     Object.assign(maafwConfig.Update, normalized.Update)
     Object.assign(maafwConfig.Run, normalized.Run)
+    maafwConfig.Managed = { ...normalized.Managed }
     dailyOnceTasks.value = parseTaskNameList(normalized.Run.DailyOnceTasks)
     weeklyOnceTasks.value = parseTaskNameList(normalized.Run.WeeklyOnceTasks)
     monthlyOnceTasks.value = parseTaskNameList(normalized.Run.MonthlyOnceTasks)
@@ -537,6 +551,10 @@ export function useMaaFWScriptConfig(scriptId: string) {
   ) => {
     if (disposed) return false
     if (!force && isInitializing.value) return true
+
+    if (category === 'Update' || (category === 'Info' && key === 'Path')) {
+      projectUpdateAction.value = 'check'
+    }
 
     const revision = ++latestSaveRevision
     pendingSaves.push({ revision, category, key, value })
@@ -817,6 +835,9 @@ export function useMaaFWScriptConfig(scriptId: string) {
         ? `正在准备运行环境${data.message ? ` · ${data.message}` : ''}`
         : PROJECT_UPDATE_STAGE_LABELS[stage] || data.message || stage || '正在更新项目资源'
     projectUpdateMessage.value = data.message || ''
+    if (typeof data.provider_error_code === 'number') {
+      projectUpdateProviderErrorCode.value = data.provider_error_code
+    }
     if (data.version) projectUpdateDiscoveredVersion.value = data.version
     if (data.metadata_source) projectUpdateMetadataSource.value = data.metadata_source
     if (data.package_source) projectUpdatePackageSource.value = data.package_source
@@ -924,12 +945,13 @@ export function useMaaFWScriptConfig(scriptId: string) {
 
   const resetProjectUpdateProgress = () => {
     projectUpdateStatus.value = 'running'
-    projectUpdateStage.value = '正在保存更新设置'
+    projectUpdateStage.value = '正在准备更新检查'
     projectUpdateProgress.value = null
     projectUpdateDownloadPercent.value = null
     projectUpdateDownloadedBytes.value = null
     projectUpdateTotalBytes.value = null
     projectUpdateMessage.value = ''
+    projectUpdateProviderErrorCode.value = null
     projectUpdateDiscoveredVersion.value = ''
     projectUpdateMetadataSource.value = ''
     projectUpdatePackageSource.value = ''
@@ -940,6 +962,40 @@ export function useMaaFWScriptConfig(scriptId: string) {
     projectUpdateStatus.value = 'failed'
     projectUpdateStage.value = '项目更新失败'
     projectUpdateMessage.value = reason
+  }
+
+  const clearAgentEnvUiState = () => {
+    agentEnvResult.value = null
+    agentEnvProgressStatus.value = 'idle'
+    agentEnvProgressStage.value = ''
+    agentEnvProgressPercent.value = null
+    agentEnvProgressMessage.value = ''
+    agentEnvProgressLogs.value = []
+    agentEnvProgressDownloadedBytes.value = null
+    agentEnvProgressTotalBytes.value = null
+  }
+
+  const restorePreparedAgentEnv = async () => {
+    if (disposed || !scriptId) return false
+    const data = await prepareAgentEnv(maafwConfig.Info.Path, scriptId, {
+      isActive: () => !disposed,
+      notify: false,
+      cacheOnly: true,
+    })
+    if (!data || disposed) return false
+
+    if (formData.type === 'MaaFWManaged' && data.path && data.path !== maafwConfig.Info.Path) {
+      maafwConfig.Info.Path = data.path
+      await refreshPreviewIfPossible()
+      if (disposed) return false
+    }
+    agentEnvResult.value = data
+    agentEnvProgressStatus.value = 'completed'
+    agentEnvProgressStage.value = '运行环境准备完成'
+    agentEnvProgressPercent.value = 100
+    agentEnvProgressMessage.value = data.message || '复用已准备的 MaaFW 运行环境'
+    agentEnvProgressLogs.value = [...data.logs]
+    return true
   }
 
   // ---- Action handlers ----
@@ -969,12 +1025,22 @@ export function useMaaFWScriptConfig(scriptId: string) {
   const handlePrepareAgentEnv = async () => {
     if (disposed) return
     if (isProjectUpdateRunning.value) return
-    if (!maafwConfig.Info.Path) {
+    const isManagedProject = formData.type === 'MaaFWManaged'
+    if (!maafwConfig.Info.Path && !isManagedProject) {
       message.warning('请先选择 MaaFramework 项目目录')
       return
     }
 
     const targetPath = maafwConfig.Info.Path
+    const readyPath = agentEnvResult.value?.path || ''
+    if (
+      agentEnvResult.value &&
+      agentEnvResult.value.status !== 'error' &&
+      readyPath &&
+      normalizeProgressPath(readyPath) === normalizeProgressPath(targetPath)
+    ) {
+      return
+    }
     while (agentEnvPrepareRequest) {
       const activeRequest = agentEnvPrepareRequest
       await activeRequest.promise
@@ -986,7 +1052,11 @@ export function useMaaFWScriptConfig(scriptId: string) {
 
     const generation = ++agentEnvGeneration
     const isRequestAlive = () => !disposed && generation === agentEnvGeneration
-    const isCurrentRequest = () => isRequestAlive() && maafwConfig.Info.Path === targetPath
+    const isCurrentRequest = () =>
+      isRequestAlive() &&
+      (isManagedProject
+        ? !targetPath || maafwConfig.Info.Path === targetPath
+        : maafwConfig.Info.Path === targetPath)
 
     agentEnvResult.value = null
     ensureAgentEnvProgressSubscription()
@@ -1020,6 +1090,11 @@ export function useMaaFWScriptConfig(scriptId: string) {
         return
       }
 
+      if (isManagedProject && data.path && data.path !== maafwConfig.Info.Path) {
+        maafwConfig.Info.Path = data.path
+        await refreshPreviewIfPossible()
+        if (disposed) return
+      }
       agentEnvResult.value = data
       agentEnvProgressLogs.value = [...data.logs]
       if (data.status === 'error') {
@@ -1069,41 +1144,43 @@ export function useMaaFWScriptConfig(scriptId: string) {
     ) {
       return
     }
-    if (projectUpdateMirrorSourceBlocked.value) {
-      message.warning('MirrorChyan 安装需要项目 CDK 或全局 CDK；也可以改用 GitHub 更新源')
-      return
-    }
-
     ensureProjectUpdateSubscription()
+    const applyUpdate = projectUpdateAction.value === 'apply'
     resetProjectUpdateProgress()
     try {
-      const saved = await updateScriptConfig({
-        Update: { ...maafwConfig.Update },
-      })
-      if (!saved) {
-        markProjectUpdateFailed('保存更新设置失败')
-        return
-      }
-
-      projectUpdateStage.value = '正在检查版本并更新项目资源'
-      const response = await updateProjectResources(scriptId)
+      projectUpdateStage.value = applyUpdate ? '正在检查并应用项目资源更新' : '正在检查项目资源更新'
+      const response = await updateProjectResources(scriptId, applyUpdate)
       projectUpdateLogs.value = response?.data?.logs ?? []
       const updateData = response?.data
+      projectUpdateProviderErrorCode.value =
+        typeof updateData?.providerErrorCode === 'number' ? updateData.providerErrorCode : null
+      if (updateData?.updated) clearAgentEnvUiState()
       if (updateData?.latestVersion) {
         projectUpdateDiscoveredVersion.value = updateData.latestVersion
       }
-      if (updateData?.source) projectUpdatePackageSource.value = updateData.source
+      if (updateData?.source && (updateData.updated || updateData.installable)) {
+        projectUpdatePackageSource.value = updateData.source
+      }
 
       if (updateData?.updated) {
+        const updatedWithWarning = response?.code !== 200 || response?.status !== 'success'
+        projectUpdateAction.value = 'check'
         projectUpdateStage.value = '项目已更新，正在刷新 interface'
         const refreshed = await refreshPreviewIfPossible(true, updateData.latestVersion)
+        await restorePreparedAgentEnv()
         projectUpdateStatus.value = 'completed'
-        projectUpdateStage.value = refreshed
-          ? '项目资源与 interface 已刷新'
-          : '项目资源已更新，interface 已按返回版本刷新'
+        projectUpdateStage.value = updatedWithWarning
+          ? '项目资源已更新，运行环境需要处理'
+          : refreshed
+            ? '项目资源与 interface 已刷新'
+            : '项目资源已更新，interface 已按返回版本刷新'
         projectUpdateProgress.value = 100
         projectUpdateMessage.value = response?.message || 'MaaFW 项目资源已更新'
-        message.success('MaaFW 项目资源已更新')
+        if (updatedWithWarning) {
+          message.warning(projectUpdateMessage.value)
+        } else {
+          message.success('MaaFW 项目资源已更新')
+        }
         return
       }
 
@@ -1112,7 +1189,24 @@ export function useMaaFWScriptConfig(scriptId: string) {
         return
       }
 
+      if (!applyUpdate && updateData.checked) {
+        projectUpdateAction.value =
+          updateData.updateAvailable && updateData.installable ? 'apply' : 'check'
+        await refreshPreviewIfPossible()
+        projectUpdateStatus.value = 'completed'
+        projectUpdateStage.value = updateData.updateAvailable
+          ? updateData.installable
+            ? '已发现可安装更新，请再次点击“开始更新”'
+            : '已发现更新，但当前来源没有可安装包'
+          : '项目更新检查已完成'
+        projectUpdateProgress.value = 100
+        projectUpdateMessage.value = response.message || 'MaaFW 项目更新检查已完成'
+        message.info(projectUpdateMessage.value)
+        return
+      }
+
       await refreshPreviewIfPossible()
+      projectUpdateAction.value = 'check'
       projectUpdateStatus.value = 'completed'
       projectUpdateStage.value = '项目更新检查已完成'
       projectUpdateProgress.value = 100
@@ -1158,16 +1252,21 @@ export function useMaaFWScriptConfig(scriptId: string) {
 
   const loadGlobalUpdateDefaults = async () => {
     const settings = await getSettings()
+    globalUpdateSource.value = settings?.Update?.Source || ''
     globalUpdateChannel.value = settings?.Update?.Channel || ''
     globalMirrorChyanCDK.value = settings?.Update?.MirrorChyanCDK || ''
   }
 
   const loadEmulatorOptions = async () => {
-    if (emulatorOptionsLoaded) return
+    if (emulatorOptionsLoaded) {
+      emulatorOptionsReady.value = true
+      return
+    }
     if (emulatorOptionsPromise) return emulatorOptionsPromise
 
     const request = (async () => {
       emulatorLoading.value = true
+      emulatorOptionsReady.value = false
       let comboLoaded = false
       let detailLoaded = false
       try {
@@ -1188,10 +1287,22 @@ export function useMaaFWScriptConfig(scriptId: string) {
           emulatorTypeById.value = typeMap
           detailLoaded = true
         }
+        if (comboLoaded) {
+          // Warm every emulator's instance list while the script page is
+          // loading.  Opening either selector is then a local read instead of
+          // a visible network wait; the selected emulator still updates the
+          // bound options in loadEmulatorDeviceOptions().
+          const emulatorIds = emulatorOptions.value
+            .map(item => String(item.value || '').trim())
+            .filter((value): value is string => Boolean(value && value !== '-'))
+          await Promise.all(emulatorIds.map(emulatorId => loadEmulatorDeviceOptions(emulatorId)))
+        }
         emulatorOptionsLoaded = comboLoaded && detailLoaded
+        emulatorOptionsReady.value = emulatorOptionsLoaded
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`加载模拟器选项失败: ${errorMsg}`)
+        emulatorOptionsReady.value = false
       } finally {
         emulatorLoading.value = false
       }
@@ -1339,6 +1450,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
         await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
       }
       await refreshPreviewIfPossible()
+      await restorePreparedAgentEnv()
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本失败: ${errorMsg}`)
@@ -1391,6 +1503,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     agentEnvProgressDownloadedBytes,
     agentEnvProgressTotalBytes,
     projectUpdateLogs,
+    projectUpdateAction,
     projectUpdateStatus,
     projectUpdateStage,
     projectUpdateProgress,
@@ -1398,6 +1511,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     projectUpdateDownloadedBytes,
     projectUpdateTotalBytes,
     projectUpdateMessage,
+    projectUpdateProviderErrorCode,
     projectUpdateDiscoveredVersion,
     projectUpdateMetadataSource,
     projectUpdatePackageSource,
@@ -1414,6 +1528,7 @@ export function useMaaFWScriptConfig(scriptId: string) {
     agentEnvLoading,
     projectUpdateLoading,
     emulatorLoading,
+    emulatorOptionsReady,
     emulatorDeviceLoading,
     // emulator state
     emulatorOptions,

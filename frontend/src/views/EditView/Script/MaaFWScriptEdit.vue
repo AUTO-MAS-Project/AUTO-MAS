@@ -15,7 +15,7 @@
               class="breadcrumb-logo"
               @error="event => handleScriptIconError(event, formData.type)"
             />
-            项目配置
+            {{ projectDisplayName }} 项目配置
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -38,7 +38,9 @@
 
     <a-space size="middle">
       <a-tooltip
-        v-if="formData.type === 'MaaFW' || formData.type === 'MaaFWManaged'"
+        v-if="
+          formData.type === 'MaaFW' || formData.type === 'MaaFWManaged' || formData.type === 'M9A'
+        "
         :title="
           hasUnsavedChanges || isSaving
             ? '请等待当前配置自动保存完成'
@@ -68,11 +70,7 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card
-      :title="formData.type === 'M9A' ? 'M9A 项目配置' : 'MaaFramework 项目配置'"
-      :loading="pageLoading"
-      class="config-card"
-    >
+    <a-card :title="`${projectDisplayName} 项目配置`" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="geekblue" class="type-tag">
           {{ formData.type === 'MaaFWManaged' ? 'MaaFramework 项目' : formData.type }}
@@ -98,7 +96,7 @@
           :is-agent-env-preparing="isAgentEnvPreparing"
           :is-project-update-running="isProjectUpdateRunning"
           :is-setup-mode="false"
-          :is-managed-project="formData.type === 'MaaFWManaged'"
+          :is-managed-project="isManagedProject"
           :preview-project-title="previewProjectTitle"
           :interface-stats="interfaceStats"
           :is-interface-ready="isInterfaceReady"
@@ -120,6 +118,7 @@
           :preview-data="previewData"
           :interface-loading="interfaceLoading"
           :emulator-loading="emulatorLoading"
+          :emulator-options-ready="emulatorOptionsReady"
           :emulator-device-loading="emulatorDeviceLoading"
           :emulator-options="emulatorOptions"
           :emulator-device-options="emulatorDeviceOptions"
@@ -144,20 +143,25 @@
         />
 
         <a-alert
-          v-if="formData.type === 'MaaFWManaged'"
+          v-if="isManagedProject"
           type="info"
           show-icon
           message="项目资源由 MAS 托管"
-          description="托管项目的目录、版本、更新和运行依赖只能通过“项目与依赖”管理，以保护不可变版本。"
+          description="当前版本内容受保护；运行前自动更新会安全导入新版本并生成配置计划，可无损迁移时自动切换。手动导入、切换、回退和删除请使用“项目与依赖”。"
         />
 
         <UpdateSettingsSection
-          v-else
           :maafw-config="maafwConfig"
           :preview-data="previewData"
-          :is-auto-update-disabled="isAutoUpdateDisabled"
+          :is-managed-project="isManagedProject"
+          :is-auto-update-disabled="isManagedProject ? false : isAutoUpdateDisabled"
           :project-update-loading="projectUpdateLoading"
-          :project-update-disabled="projectUpdateDisabled"
+          :project-update-action="projectUpdateAction"
+          :project-update-disabled="
+            isManagedProject
+              ? isSaving || hasUnsavedChanges || isAgentEnvPreparing || isProjectUpdateRunning
+              : projectUpdateDisabled
+          "
           :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
           :project-update-status="projectUpdateStatus"
           :project-update-stage="projectUpdateStage"
@@ -166,6 +170,7 @@
           :project-update-downloaded-bytes="projectUpdateDownloadedBytes"
           :project-update-total-bytes="projectUpdateTotalBytes"
           :project-update-message="projectUpdateMessage"
+          :project-update-provider-error-code="projectUpdateProviderErrorCode"
           :project-update-discovered-version="projectUpdateDiscoveredVersion"
           :project-update-metadata-source="projectUpdateMetadataSource"
           :project-update-package-source="projectUpdatePackageSource"
@@ -173,7 +178,7 @@
           :update-source-options="updateSourceOptions"
           :update-channel-options="updateChannelOptions"
           @change="handleChange"
-          @manual-update="handleManualProjectUpdate"
+          @manual-update="handleProjectUpdateAction"
         />
 
         <RunConfigSection
@@ -216,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
@@ -263,6 +268,7 @@ const {
   projectUpdateDownloadedBytes,
   projectUpdateTotalBytes,
   projectUpdateMessage,
+  projectUpdateProviderErrorCode,
   projectUpdateDiscoveredVersion,
   projectUpdateMetadataSource,
   projectUpdatePackageSource,
@@ -277,7 +283,9 @@ const {
   interfaceLoading,
   agentEnvLoading,
   projectUpdateLoading,
+  projectUpdateAction,
   emulatorLoading,
+  emulatorOptionsReady,
   emulatorDeviceLoading,
   emulatorOptions,
   emulatorDeviceOptions,
@@ -331,8 +339,36 @@ const {
   dispose,
 } = useMaaFWScriptConfig(scriptId)
 
+// Keep the managed layout authoritative while the registry response catches
+// up with a just-completed in-place conversion.
+const isManagedProject = computed(
+  () =>
+    formData.type === 'MaaFWManaged' ||
+    Boolean(maafwConfig.Managed?.ProjectId || maafwConfig.Managed?.Version)
+)
+
+const projectDisplayName = computed(() => {
+  const candidates = [
+    previewProjectTitle.value,
+    maafwConfig.Info.ProjectLabel,
+    maafwConfig.Info.Name,
+  ]
+  return (
+    candidates.find(value => typeof value === 'string' && value.trim())?.trim() ||
+    (formData.type === 'M9A' ? 'M9A' : 'MaaFW')
+  )
+})
+
 const openProjectManager = () => {
   void router.push({ name: 'MaaFWProjects', query: { scriptId, from: 'edit' } })
+}
+
+const handleProjectUpdateAction = () => {
+  if (isManagedProject.value) {
+    openProjectManager()
+    return
+  }
+  void handleManualProjectUpdate()
 }
 
 const handleCancel = () => {
@@ -360,7 +396,10 @@ onMounted(async () => {
     return
   }
   isInitializing.value = false
-  if (maafwConfig.Info.Path && previewData.value) {
+  // Old Managed records affected by the former external-folder validator may
+  // have an empty cached checkout path. Repair only those records once; normal
+  // page entry never prepares an already-ready environment again.
+  if (isManagedProject.value && !maafwConfig.Info.Path) {
     void handlePrepareAgentEnv()
   }
 })
