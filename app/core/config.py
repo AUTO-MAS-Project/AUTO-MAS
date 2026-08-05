@@ -3979,9 +3979,46 @@ class AppConfig(GlobalConfig):
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
 
     def _get_script_combox_label(self, script: ConfigBase) -> str:
-        script_name = script.get("Info", "Name")
-        if isinstance(script, MaaFWConfig):
-            return script_name or "MaaFW"
+        def get_text(group: str, name: str) -> str:
+            try:
+                value = script.get(group, name)
+            except AttributeError:
+                return ""
+            return value.strip() if isinstance(value, str) else ""
+
+        script_name = get_text("Info", "Name")
+        project_label = get_text("Info", "ProjectLabel")
+
+        # PluginScriptConfig keeps the provider's real form payload in JSON;
+        # read its project label without depending on the concrete plugin class.
+        if not project_label:
+            try:
+                raw_config = script.get("PluginData", "Config")
+            except AttributeError:
+                raw_config = None
+            if isinstance(raw_config, str):
+                try:
+                    raw_config = json.loads(raw_config)
+                except json.JSONDecodeError:
+                    raw_config = None
+            if isinstance(raw_config, Mapping):
+                info = raw_config.get("Info")
+                if isinstance(info, Mapping):
+                    project_label = (
+                        info.get("ProjectLabel", "").strip()
+                        if isinstance(info.get("ProjectLabel"), str)
+                        else ""
+                    )
+                    if not script_name and isinstance(info.get("Name"), str):
+                        script_name = info["Name"].strip()
+
+        try:
+            type_key = str(self._resolve_record_provider(script).type_key or "").strip()
+        except Exception:
+            type_key = ""
+        if type_key in {"MaaFW", "MaaFWManaged", "M9A"}:
+            return project_label or script_name or "MaaFW"
+
         type_label = self._resolve_script_type_label(script)
         return f"{type_label} - {script_name}"
 

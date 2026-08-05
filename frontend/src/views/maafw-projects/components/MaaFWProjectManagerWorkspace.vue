@@ -111,11 +111,11 @@
     >
       <template #title>托管项目统一更新设置</template>
       <template #extra>
-        <a-tag color="blue">全局来源 · 当前项目渠道</a-tag>
+        <a-tag color="blue">全局来源</a-tag>
       </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
-          <a-col :xs="24" :md="6">
+          <a-col :xs="24" :md="8">
             <a-form-item label="更新源">
               <a-select
                 v-model:value="managedUpdateSettings.source"
@@ -128,23 +128,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :xs="24" :md="6">
-            <a-form-item label="当前项目渠道" extra="每个托管项目独立选择稳定版或测试版">
-              <a-select
-                v-model:value="managedUpdateSettings.channel"
-                :disabled="
-                  globalUpdateSettingsLoading ||
-                  operationRunning ||
-                  !binding.managed ||
-                  api.capabilities.value?.features.remoteSettings !== true
-                "
-              >
-                <a-select-option value="stable">稳定版</a-select-option>
-                <a-select-option value="beta">测试版</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="12">
+          <a-col :xs="24" :md="16">
             <a-form-item label="Mirror酱 CDK" extra="托管项目的 MirrorChyan 检查和安装统一继承此值">
               <a-input-password
                 v-model:value="managedUpdateSettings.mirrorChyanCDK"
@@ -175,8 +159,7 @@
             保存统一设置
           </a-button>
           <a-typography-text type="secondary">
-            MirrorChyan/GitHub 用于托管远程资源；AutoSite/CNB 是普通 AUTO-MAS 来源，保存项目渠道
-            不会改动它。
+            MirrorChyan/GitHub 用于托管远程资源；AutoSite/CNB 是普通 AUTO-MAS 来源。
           </a-typography-text>
         </a-space>
       </a-form>
@@ -406,11 +389,9 @@ const gcForm = reactive({
 })
 const managedUpdateSettings = reactive<{
   source: MaaFWManagedGlobalUpdateSource
-  channel: 'stable' | 'beta'
   mirrorChyanCDK: string
 }>({
   source: DEFAULT_MANAGED_UPDATE_SOURCE,
-  channel: 'stable',
   mirrorChyanCDK: '',
 })
 const globalUpdateSettingsLoading = ref(false)
@@ -649,7 +630,6 @@ type GlobalUpdateSettingsPatch = {
 type ManagedUpdateSettingsSnapshot = {
   source: MaaFWManagedGlobalUpdateSource
   mirrorChyanCDK: string
-  channel: 'stable' | 'beta'
 }
 
 const normalizeGlobalUpdateSource = (value: unknown): MaaFWManagedGlobalUpdateSource => {
@@ -710,19 +690,10 @@ const rollbackManagedUpdateSettings = async (
   previous: ManagedUpdateSettingsSnapshot,
   globalPatch: GlobalUpdateSettingsPatch,
   globalWriteAttempted: boolean,
-  channelWriteAttempted: boolean,
   settingsRequestSequence: number,
   loadSequence: number
 ) => {
   const rollbackErrors: string[] = []
-
-  if (channelWriteAttempted) {
-    try {
-      await api.updateRemoteSettings(scriptId, previous.channel)
-    } catch (caught) {
-      rollbackErrors.push(caught instanceof Error ? caught.message : '当前项目渠道回滚失败')
-    }
-  }
 
   if (globalWriteAttempted && Object.keys(globalPatch).length) {
     const rollbackPatch: GlobalUpdateSettingsPatch = {}
@@ -778,11 +749,7 @@ const saveManagedUpdateSettings = async () => {
   const scriptId = props.scriptId
   const saveLoadSequence = managerLoadSequence
   const wasManaged = binding.value?.managed === true
-  const previous: ManagedUpdateSettingsSnapshot = {
-    ...previousGlobal,
-    channel: binding.value?.updateChannel === 'beta' ? 'beta' : 'stable',
-  }
-  const requestedChannel = managedUpdateSettings.channel
+  const previous: ManagedUpdateSettingsSnapshot = previousGlobal
   const currentMirrorChyanCDK = managedUpdateSettings.mirrorChyanCDK.trim()
   managedUpdateSettings.mirrorChyanCDK = currentMirrorChyanCDK
   const globalPatch: GlobalUpdateSettingsPatch = {}
@@ -793,24 +760,8 @@ const saveManagedUpdateSettings = async () => {
     globalPatch.MirrorChyanCDK = currentMirrorChyanCDK
   }
 
-  const channelChanged =
-    wasManaged &&
-    api.capabilities.value?.features.remoteSettings === true &&
-    requestedChannel !== previous.channel
-  if (
-    wasManaged &&
-    requestedChannel !== previous.channel &&
-    api.capabilities.value?.features.remoteSettings !== true
-  ) {
-    managedUpdateSettings.source = previous.source
-    managedUpdateSettings.mirrorChyanCDK = previous.mirrorChyanCDK
-    managedUpdateSettings.channel = previous.channel
-    message.error('当前 Managed 插件不支持保存项目更新渠道，请刷新后重试')
-    return
-  }
-
   const hasGlobalChanges = Object.keys(globalPatch).length > 0
-  if (!hasGlobalChanges && !channelChanged) {
+  if (!hasGlobalChanges) {
     message.info('更新设置没有变化')
     return
   }
@@ -824,17 +775,11 @@ const saveManagedUpdateSettings = async () => {
   })
   managedUpdateSettingsSavePromise = saveCompletion
   let globalWriteAttempted = false
-  let channelWriteAttempted = false
   try {
     if (hasGlobalChanges) {
       globalWriteAttempted = true
       const saved = await updateSettings({ Update: globalPatch })
       if (!saved) throw new Error('全局更新来源或 MirrorChyan CDK 保存失败')
-    }
-
-    if (channelChanged) {
-      channelWriteAttempted = true
-      await api.updateRemoteSettings(scriptId, requestedChannel)
     }
 
     const settings = await getSettings()
@@ -854,9 +799,6 @@ const saveManagedUpdateSettings = async () => {
     }
     if (wasManaged) {
       const refreshedBinding = await api.getCurrentBinding(scriptId)
-      if (channelChanged && refreshedBinding.updateChannel !== requestedChannel) {
-        throw new Error('当前项目更新渠道刷新后与请求不一致')
-      }
       if (isCurrentManagerContext(saveLoadSequence, scriptId)) binding.value = refreshedBinding
     }
 
@@ -865,11 +807,7 @@ const saveManagedUpdateSettings = async () => {
       settingsRequestSequence === globalUpdateSettingsRequestSequence
     ) {
       pageError.value = ''
-      const savedParts = [
-        hasGlobalChanges ? '全局更新设置' : '',
-        channelChanged ? '当前项目渠道' : '',
-      ].filter(Boolean)
-      message.success(`${savedParts.join('、')}已保存并刷新`)
+      message.success('全局更新设置已保存并刷新')
     }
   } catch (caught) {
     let rollbackErrors: string[] = []
@@ -880,7 +818,6 @@ const saveManagedUpdateSettings = async () => {
         previous,
         globalPatch,
         globalWriteAttempted,
-        channelWriteAttempted,
         settingsRequestSequence,
         saveLoadSequence
       )
@@ -1021,14 +958,6 @@ const loadManager = async () => {
 watch(
   () => props.scriptId,
   () => void loadManager(),
-  { immediate: true }
-)
-
-watch(
-  () => binding.value?.updateChannel,
-  channel => {
-    managedUpdateSettings.channel = channel === 'beta' ? 'beta' : 'stable'
-  },
   { immediate: true }
 )
 
