@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import json
 import shlex
 import shutil
 import uuid
@@ -54,6 +55,7 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
 _OKWW_REL_EXE = "ok-ww.exe"
+_OKWW_REL_APP_JSON = "data/apps/ok-ww/app.json"
 _OKWW_REL_CONFIG_DIR = "data/apps/ok-ww/working/configs"
 _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
@@ -67,6 +69,26 @@ def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
     return shlex.split(value, posix=False) if value else []
 
+
+def _enable_okww_auto_start(script_root_path: Path) -> None:
+    app_json_path = script_root_path / _OKWW_REL_APP_JSON
+    if not app_json_path.is_file():
+        return
+
+    app_config = json.loads(app_json_path.read_text(encoding="utf-8"))
+    if not isinstance(app_config, dict):
+        raise ValueError("OK-WW app.json 格式错误")
+    if app_config.get("auto_start") is True:
+        return
+
+    app_config["auto_start"] = True
+    temporary_path = app_json_path.with_suffix(".json.tmp")
+    temporary_path.write_text(
+        json.dumps(app_config, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(app_json_path)
+    logger.info("已启用 OK-WW 启动器自动启动")
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -176,6 +198,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info("开始配置 OK-WW 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
+        _enable_okww_auto_start(self.script_root_path)
 
         mas_config_dir = self._okww_mas_config_dir()
         tmp_dst = self.script_config_path.with_name(
