@@ -888,7 +888,7 @@ class _PluginManager:
             # declaration free of legacy wiring.  Existing installations may
             # nevertheless still hold the old host-owned M9AConfig record;
             # discover that one compatibility binding here so the host can run
-            # the pack's explicit migration before Managed conversion.
+            # the pack's explicit migration before provider-owned operations.
             if "M9A" in adapter_type_keys:
                 raw_bindings = [
                     {

@@ -1403,7 +1403,7 @@ class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(..., description="MaaFW project root path")
     scriptId: Optional[str] = Field(
         default=None,
-        description="Script ID used to resolve an authoritative managed runtime route",
+        description="Script ID used to correlate a MaaFW prewarm cache/progress identity",
     )
 
 

@@ -19,8 +19,6 @@ from app.models.script_api import (
     ScriptUserRecordUpdateIn,
 )
 
-from .script_resource_cleanup import delete_script_with_resource_cleanup
-
 router = APIRouter(prefix="/api/scripts2", tags=["通用脚本管理"])
 
 
@@ -78,7 +76,7 @@ async def update_script(script: ScriptRecordUpdateIn = Body(...)) -> OutBase:
 @router.post("/delete", summary="删除脚本", response_model=OutBase)
 async def delete_script(script: ScriptRecordDeleteIn = Body(...)) -> OutBase:
     try:
-        await delete_script_with_resource_cleanup(script.scriptId)
+        await Config.del_script(script.scriptId)
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()

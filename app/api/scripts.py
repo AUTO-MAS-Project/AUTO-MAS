@@ -35,8 +35,6 @@ from pydantic import BaseModel
 from app.core import Config
 from app.models.schema import *
 
-from .script_resource_cleanup import delete_script_with_resource_cleanup
-
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
 
@@ -52,11 +50,6 @@ _MAAFW_IMAGE_SUFFIXES = {
     ".webp",
 }
 _MAAFW_RUNTIME_POOL_SERVICE = "maafw.runtime_pool.v1"
-_MAAFW_MANAGED_ENVIRONMENT_SERVICE = "maafw.managed.environment.v1"
-
-
-class _ManagedScriptIdentityError(RuntimeError):
-    """The explicit script ID could not be resolved authoritatively."""
 
 
 async def _run_to_thread_with_cancellation_drain(
@@ -152,239 +145,71 @@ def _maafw_runtime_pool_entry(runtime_id: str) -> dict[str, str] | None:
     return identity
 
 
-async def _prepare_managed_maafw_environment(
-    script_id: str,
-    requested_path: str,
-    *,
-    send_log: Any,
-    progress: Any,
-) -> dict[str, Any] | None:
-    """Delegate Managed prewarm to its owning plugin service."""
-
-    normalized_script_id = script_id.strip()
-    if not normalized_script_id:
-        return None
-    if await _managed_maafw_binding_identity(normalized_script_id) is None:
-        return None
-
-    from app.plugins.manager import PluginManager
-
-    service = PluginManager.service.get(_MAAFW_MANAGED_ENVIRONMENT_SERVICE)
-    prepare = getattr(service, "prepare_script_environment", None)
-    if not callable(prepare):
-        raise RuntimeError(
-            "MaaFWManaged 脚本缺少 maafw.managed.environment.v1 预热服务"
-        )
-    result = await prepare(
-        normalized_script_id,
-        requested_path,
-        send_log=send_log,
-        progress=progress,
-    )
-    if not isinstance(result, Mapping):
-        raise RuntimeError("MaaFW Managed 预热服务必须返回对象")
-    return dict(result)
-
-
-def _maafw_binding_text(value: Any) -> str:
-    """Normalize one cache identity field without coercing arbitrary JSON."""
-
-    return value.strip() if isinstance(value, str) else ""
-
-
-async def _managed_maafw_binding_identity(script_id: str) -> dict[str, str] | None:
-    """Resolve Managed ownership and its authoritative resource binding.
-
-    Managed scripts do not expose their checkout path in the public form
-    configuration.  Cache lookups therefore have to be keyed by ``scriptId``
-    first; otherwise a stale/empty ``Info.Path`` from the editor makes every
-    page reopen look like a cache miss and starts a second preparation.
-    """
-
-    normalized_script_id = str(script_id or "").strip()
-    if not normalized_script_id:
-        return None
-    try:
-        records = await Config.get_script_records(normalized_script_id)
-    except Exception as exc:
-        raise _ManagedScriptIdentityError(
-            f"无法读取 MaaFW 缓存所属脚本 {normalized_script_id}"
-        ) from exc
-    if len(records) != 1:
-        raise _ManagedScriptIdentityError(
-            f"无法唯一读取 MaaFW 缓存所属脚本 {normalized_script_id}"
-        )
-    record = records[0]
-    script_type = (
-        record.get("type")
-        if isinstance(record, Mapping)
-        else getattr(record, "type", None)
-    )
-    if script_type != "MaaFWManaged":
-        return None
-    config = (
-        record.get("config")
-        if isinstance(record, Mapping)
-        else getattr(record, "config", None)
-    )
-    config = config if isinstance(config, Mapping) else {}
-    managed = config.get("Managed")
-    managed = managed if isinstance(managed, Mapping) else {}
-    runtime = config.get("ManagedRuntime")
-    runtime = runtime if isinstance(runtime, Mapping) else {}
-    manifest = managed.get("ProjectManifest")
-    manifest = manifest if isinstance(manifest, Mapping) else {}
-    raw_manifest_project_id = manifest.get("projectId")
-    raw_manifest_version = manifest.get("version")
-    manifest_project_id = _maafw_binding_text(raw_manifest_project_id)
-    manifest_version = _maafw_binding_text(raw_manifest_version)
-    project_id = (
-        ""
-        if raw_manifest_project_id is not None
-        and not isinstance(raw_manifest_project_id, str)
-        else manifest_project_id or _maafw_binding_text(managed.get("ProjectId"))
-    )
-    version = (
-        ""
-        if raw_manifest_version is not None
-        and not isinstance(raw_manifest_version, str)
-        else manifest_version or _maafw_binding_text(managed.get("Version"))
-    )
-    return {
-        "projectId": project_id,
-        "version": version,
-        "storeId": _maafw_binding_text(managed.get("StoreId")),
-        "runRootId": _maafw_binding_text(managed.get("RunRootId")),
-        "runtimeId": _maafw_binding_text(runtime.get("RuntimeId")),
-        "poolId": _maafw_binding_text(runtime.get("PoolId")),
-    }
-
-
-def _normalise_maafw_prepared_binding(
-    value: Any,
-) -> dict[str, str] | None:
-    if not isinstance(value, Mapping):
-        return None
-    identity = {
-        key: _maafw_binding_text(value.get(key))
-        for key in (
-            "projectId",
-            "version",
-            "storeId",
-            "runRootId",
-            "runtimeId",
-            "poolId",
-        )
-    }
-    return identity if all(identity.values()) else None
-
-
 async def _save_maafw_agent_env_state_if_current(
     script_id: str,
     project_path: str | Path,
     data: Mapping[str, Any],
     *,
     expected_fingerprint: str,
-    expected_binding: Mapping[str, str] | None,
-    prepared_binding: Mapping[str, str] | None = None,
-    require_prepared_binding: bool = False,
 ) -> bool:
-    """Save preparation state only when its binding is still authoritative."""
+    """Save preparation state only when the project fingerprint is current."""
 
-    if require_prepared_binding and prepared_binding is None:
-        return False
-    binding_to_save = (
-        prepared_binding if prepared_binding is not None else expected_binding
-    )
     from app.core.maafw_agent_env_state import save_maafw_agent_env_state
 
-    async def save_if_current() -> bool:
-        current_binding = await _managed_maafw_binding_identity(script_id)
-        if current_binding != binding_to_save:
-            return False
-        return await _run_to_thread_with_cancellation_drain(
-            save_maafw_agent_env_state,
-            script_id,
-            project_path,
-            data,
-            expected_fingerprint=expected_fingerprint,
-            binding_identity=binding_to_save,
-        )
-
-    # Keep the identity read and the state-file replacement in the same
-    # maintenance transaction.  Otherwise a version switch can happen after
-    # the read and let an older preparation overwrite a newer cache entry.
-    transaction = getattr(Config, "script_config_transaction", None)
-    if not callable(transaction):
-        return await save_if_current()
-    async with transaction(
+    return await _run_to_thread_with_cancellation_drain(
+        save_maafw_agent_env_state,
         script_id,
-        owner=f"maafw-agent-env-cache:{script_id}",
-    ):
-        return await save_if_current()
+        project_path,
+        data,
+        expected_fingerprint=expected_fingerprint,
+    )
 
 
 async def _load_maafw_agent_env_state_for_request(
     script_id: str,
     requested_path: str | Path,
-) -> tuple[dict[str, str] | None, dict[str, Any] | None]:
-    """Read cache and binding under one script configuration snapshot."""
+) -> dict[str, Any] | None:
+    """Read the ordinary directory/script environment cache."""
 
     from app.core.maafw_agent_env_state import load_maafw_agent_env_state
-
-    async def load_for_current_binding() -> tuple[
-        dict[str, str] | None,
-        dict[str, Any] | None,
-    ]:
-        managed_binding = await _managed_maafw_binding_identity(script_id)
+    try:
         cached_data = await _run_to_thread_with_cancellation_drain(
             load_maafw_agent_env_state,
             script_id,
-            None if managed_binding is not None else requested_path,
-            expected_binding=managed_binding,
+            requested_path,
         )
-        if cached_data is not None:
-            cached_runtime_id = _maafw_binding_text(cached_data.get("runtimeId"))
-            cached_pool_id = _maafw_binding_text(cached_data.get("poolId"))
-            if not cached_runtime_id or not cached_pool_id:
-                cached_data = None
-            else:
-                _, current_pool_id = await _run_to_thread_with_cancellation_drain(
-                    _maafw_runtime_pool_route
-                )
-                runtime_entry = await _run_to_thread_with_cancellation_drain(
-                    _maafw_runtime_pool_entry,
-                    cached_runtime_id,
-                )
-                cached_python = Path(str(cached_data["pythonExecutable"])).resolve()
-                cached_venv = Path(str(cached_data["venvPath"])).resolve()
-                if (
-                    cached_pool_id != current_pool_id
-                    or runtime_entry is None
-                    or runtime_entry["runtimeId"] != cached_runtime_id
-                    or runtime_entry["poolId"] != cached_pool_id
-                    or Path(runtime_entry["pythonExecutable"]).resolve()
-                    != cached_python
-                    or Path(runtime_entry["venvPath"]).resolve() != cached_venv
-                ):
-                    cached_data = None
-        return managed_binding, cached_data
-
-    transaction = getattr(Config, "script_config_transaction", None)
-    if not script_id or not callable(transaction):
-        return await load_for_current_binding()
-    try:
-        async with transaction(
-            script_id,
-            owner=f"maafw-agent-env-cache-read:{script_id}",
-        ):
-            return await load_for_current_binding()
-    except _ManagedScriptIdentityError:
-        raise
     except Exception:
-        # Cache reuse is advisory, but ownership is not. A failed script
-        # snapshot must never fall through to a same-ID ordinary path cache.
-        return None, None
+        # Cache validation is advisory. The authoritative prepare path below
+        # reports service or project failures with its structured response.
+        return None
+    if cached_data is None:
+        return None
+
+    raw_runtime_id = cached_data.get("runtimeId")
+    raw_pool_id = cached_data.get("poolId")
+    cached_runtime_id = raw_runtime_id.strip() if isinstance(raw_runtime_id, str) else ""
+    cached_pool_id = raw_pool_id.strip() if isinstance(raw_pool_id, str) else ""
+    if not cached_runtime_id or not cached_pool_id:
+        return None
+    _, current_pool_id = await _run_to_thread_with_cancellation_drain(
+        _maafw_runtime_pool_route
+    )
+    runtime_entry = await _run_to_thread_with_cancellation_drain(
+        _maafw_runtime_pool_entry,
+        cached_runtime_id,
+    )
+    cached_python = Path(str(cached_data["pythonExecutable"])).resolve()
+    cached_venv = Path(str(cached_data["venvPath"])).resolve()
+    if (
+        cached_pool_id != current_pool_id
+        or runtime_entry is None
+        or runtime_entry["runtimeId"] != cached_runtime_id
+        or runtime_entry["poolId"] != cached_pool_id
+        or Path(runtime_entry["pythonExecutable"]).resolve() != cached_python
+        or Path(runtime_entry["venvPath"]).resolve() != cached_venv
+    ):
+        return None
+    return cached_data
 
 
 def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
@@ -544,19 +369,6 @@ def _is_maafw_framework_script(script_config: Any) -> bool:
         return config_class_name in {"MaaFWConfig", "M9AConfig"}
 
 
-def _is_maafw_managed_script(script_config: Any) -> bool:
-    """Return whether a plugin record is the immutable Managed MaaFW type."""
-
-    try:
-        from app.models.plugin_script_config import PluginScriptConfig
-
-        return isinstance(script_config, PluginScriptConfig) and str(
-            script_config.get("Meta", "PluginTypeKey") or ""
-        ).strip() == "MaaFWManaged"
-    except Exception:
-        return False
-
-
 async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
     """解析 MaaFW 框架脚本的表单态配置（插件形态与 legacy 均适用）。
 
@@ -699,7 +511,7 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
 
     try:
-        await delete_script_with_resource_cleanup(script.scriptId)
+        await Config.del_script(script.scriptId)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -1253,19 +1065,6 @@ async def update_maafw_project(
 
     try:
         script_config = Config.ScriptConfig[script_uuid]
-        if _is_maafw_managed_script(script_config):
-            append_log("托管 MaaFW 项目必须通过统一项目管理页更新")
-            return MaaFWProjectUpdateOut(
-                code=409,
-                status="error",
-                message="托管 MaaFW 项目不能使用普通目录更新；请打开“项目与依赖”管理版本",
-                data=MaaFWProjectUpdateData(
-                    checked=False,
-                    updated=False,
-                    currentVersion=current_version,
-                    logs=logs,
-                ),
-            )
         if not _is_maafw_framework_script(script_config):
             append_log("指定脚本不是 MaaFW 项目")
             return MaaFWProjectUpdateOut(
@@ -1279,7 +1078,6 @@ async def update_maafw_project(
                     logs=logs,
                 ),
             )
-        cache_binding = await _managed_maafw_binding_identity(payload.scriptId)
 
         # 插件形态脚本的 Info.Path/Update.* 藏在 PluginData.Config，需先解码成表单态
         script_form = await _resolve_maafw_script_form(script_config)
@@ -1641,7 +1439,6 @@ async def update_maafw_project(
                                 project_path,
                                 prepared_data.model_dump(mode="json"),
                                 expected_fingerprint=prepared_fingerprint,
-                                expected_binding=cache_binding,
                             )
                             if not saved:
                                 record_environment_warning(
@@ -1848,38 +1645,10 @@ async def prepare_maafw_agent_env(
 
         prepare_loop.call_soon_threadsafe(schedule)
 
-    def managed_identity_failure(
-        identity_error: _ManagedScriptIdentityError,
-    ) -> MaaFWAgentEnvPrepareOut:
-        identity_code = 503 if identity_error.__cause__ is not None else 409
-        message = str(identity_error)
-        publish_prepare_progress(
-            {
-                "stage": "failed",
-                "status": "identity_unavailable",
-                "message": message,
-                "percent": None,
-            }
-        )
-        return MaaFWAgentEnvPrepareOut(
-            code=identity_code,
-            status="error",
-            message=message,
-            data=MaaFWAgentEnvPrepareData(
-                path=str(root_path or Path(payload.path)),
-                agentCount=0,
-                agents=[],
-                logs=logs,
-            ),
-        )
-
-    try:
-        cache_binding, cached_data = await _load_maafw_agent_env_state_for_request(
-            script_id,
-            payload.path,
-        )
-    except _ManagedScriptIdentityError as identity_error:
-        return managed_identity_failure(identity_error)
+    cached_data = await _load_maafw_agent_env_state_for_request(
+        script_id,
+        payload.path,
+    )
     if cached_data is not None:
         root_path = Path(str(cached_data["path"])).resolve()
         data = MaaFWAgentEnvPrepareData(**cached_data)
@@ -1904,72 +1673,53 @@ async def prepare_maafw_agent_env(
         )
 
     try:
-        prepared_binding: dict[str, str] | None = None
-        managed_result = await _prepare_managed_maafw_environment(
-            script_id,
-            payload.path,
+        root_path = Path(payload.path).resolve()
+        reservation_key = await try_reserve_project_path(root_path)
+        if reservation_key is None:
+            message = "MaaFW 项目正在运行、更新或准备环境，请稍后重试"
+            publish_prepare_progress(
+                {
+                    "stage": "failed",
+                    "status": "busy",
+                    "message": message,
+                    "percent": None,
+                }
+            )
+            return MaaFWAgentEnvPrepareOut(
+                code=409,
+                status="error",
+                message=message,
+                data=MaaFWAgentEnvPrepareData(
+                    path=str(root_path),
+                    agentCount=0,
+                    agents=[],
+                    logs=logs,
+                ),
+            )
+        publish_prepare_progress(
+            {
+                "stage": "resolving",
+                "status": "running",
+                "message": "正在解析 MaaFW 项目运行环境",
+                "percent": 2.0,
+            }
+        )
+        interface = await _run_to_thread_with_cancellation_drain(
+            MaaFWInterfaceService().load,
+            root_path,
+        )
+        runtime_pool_root, runtime_pool_id = await _run_to_thread_with_cancellation_drain(
+            _maafw_runtime_pool_route
+        )
+        prepare_result = await _run_to_thread_with_cancellation_drain(
+            MaaFWRunnerService().prepare_project_environment,
+            root_path,
+            interface,
+            runtime_pool_root=runtime_pool_root,
+            runtime_pool_id=runtime_pool_id,
             send_log=logs.append,
             progress=publish_prepare_progress,
         )
-        if managed_result is not None:
-            managed_project_path = str(
-                managed_result.get("projectPath") or ""
-            ).strip()
-            prepare_result = managed_result.get("prepareResult")
-            if not managed_project_path or not isinstance(prepare_result, Mapping):
-                raise RuntimeError("MaaFW Managed 预热结果缺少 projectPath/prepareResult")
-            root_path = Path(managed_project_path).resolve()
-            prepared_binding = _normalise_maafw_prepared_binding(
-                managed_result.get("bindingIdentity")
-            )
-        else:
-            root_path = Path(payload.path).resolve()
-            reservation_key = await try_reserve_project_path(root_path)
-            if reservation_key is None:
-                message = "MaaFW 项目正在运行、更新或准备环境，请稍后重试"
-                publish_prepare_progress(
-                    {
-                        "stage": "failed",
-                        "status": "busy",
-                        "message": message,
-                        "percent": None,
-                    }
-                )
-                return MaaFWAgentEnvPrepareOut(
-                    code=409,
-                    status="error",
-                    message=message,
-                    data=MaaFWAgentEnvPrepareData(
-                        path=str(root_path),
-                        agentCount=0,
-                        agents=[],
-                        logs=logs,
-                    ),
-                )
-            publish_prepare_progress(
-                {
-                    "stage": "resolving",
-                    "status": "running",
-                    "message": "正在解析 MaaFW 项目运行环境",
-                    "percent": 2.0,
-                }
-            )
-            interface = await _run_to_thread_with_cancellation_drain(
-                MaaFWInterfaceService().load,
-                root_path,
-            )
-            runtime_pool_root, runtime_pool_id = await _run_to_thread_with_cancellation_drain(
-                _maafw_runtime_pool_route
-            )
-            prepare_result = await _run_to_thread_with_cancellation_drain(
-                MaaFWRunnerService().prepare_project_environment,
-                root_path,
-                interface,
-                runtime_pool_root=runtime_pool_root,
-                runtime_pool_id=runtime_pool_id,
-                send_log=logs.append,
-                progress=publish_prepare_progress,
-            )
         agent_result = prepare_result.get("agents")
         agent_result = agent_result if isinstance(agent_result, dict) else {}
         raw_agent_plans = agent_result.get("plans")
@@ -1992,15 +1742,10 @@ async def prepare_maafw_agent_env(
                     root_path,
                     data.model_dump(mode="json"),
                     expected_fingerprint=prepared_fingerprint,
-                    expected_binding=cache_binding,
-                    prepared_binding=prepared_binding,
-                    require_prepared_binding=(
-                        managed_result is not None or cache_binding is not None
-                    ),
                 )
                 if not saved:
                     logs.append(
-                        "[警告] MaaFW 身份或项目输入已在预热期间变化，"
+                        "[警告] MaaFW 项目输入已在预热期间变化，"
                         "已丢弃旧预热缓存"
                     )
             except Exception as state_error:
@@ -2009,8 +1754,6 @@ async def prepare_maafw_agent_env(
                     f"{type(state_error).__name__}: {state_error}"
                 )
         data.logs = list(logs)
-    except _ManagedScriptIdentityError as identity_error:
-        return managed_identity_failure(identity_error)
     except MaaFWInterfaceLoadError as e:
         if not prepare_terminal_published:
             publish_prepare_progress(

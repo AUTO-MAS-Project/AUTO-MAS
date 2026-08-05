@@ -2,8 +2,7 @@
 
 The editor is intentionally not the owner of preparation state.  This small
 sidecar lets the backend answer a repeated prepare request by ``scriptId`` and
-the current project fingerprint, including Managed records whose public
-configuration does not expose the checkout path.
+the current project fingerprint.
 """
 
 from __future__ import annotations
@@ -30,14 +29,6 @@ _PROJECT_INPUTS = (
     "uv.lock",
 )
 _STATE_LOCK = threading.RLock()
-_MANAGED_BINDING_KEYS = (
-    "projectId",
-    "version",
-    "storeId",
-    "runRootId",
-    "runtimeId",
-    "poolId",
-)
 
 
 def _state_path() -> Path:
@@ -52,35 +43,6 @@ def _normalise_path(value: str | Path) -> str:
     return os.path.normcase(
         str(Path(value).expanduser().resolve(strict=False))
     )
-
-
-def _normalise_binding_identity(value: Mapping[str, Any] | None) -> dict[str, str] | None:
-    if value is None:
-        return None
-    if not isinstance(value, Mapping):
-        return None
-    normalized: dict[str, str] = {}
-    for key in _MANAGED_BINDING_KEYS:
-        raw = value.get(key, "")
-        if not isinstance(raw, str):
-            return None
-        normalized[key] = raw.strip()
-    return normalized
-
-
-def _is_complete_binding_identity(value: Mapping[str, str] | None) -> bool:
-    return value is not None and all(value.get(key) for key in _MANAGED_BINDING_KEYS)
-
-
-def _is_cached_data_bound_to_identity(
-    data: Mapping[str, Any],
-    binding_identity: Mapping[str, str],
-) -> bool:
-    for key in ("runtimeId", "poolId"):
-        raw = data.get(key)
-        if not isinstance(raw, str) or raw.strip() != binding_identity[key]:
-            return False
-    return True
 
 
 def _read_state() -> dict[str, Any] | None:
@@ -174,9 +136,9 @@ def _is_cached_data_valid(data: Mapping[str, Any], project_path: Path) -> bool:
                     return False
                 if key == "isolatedVenvPath" and not candidate.is_dir():
                     return False
-    # Every prepared MaaFW plan is tied to an immutable Runtime Pool entry.
-    # A project fingerprint alone cannot prove that entry still exists after
-    # GC or a pool relocation, so every cache requires its identity and paths.
+    # Every prepared MaaFW plan is tied to a Runtime Pool entry.  A project
+    # fingerprint alone cannot prove that entry still exists after a pool
+    # relocation, so every cache requires its identity and paths.
     runtime_keys = ("runtimeId", "poolId", "pythonExecutable", "venvPath")
     runtime_values = tuple(data.get(key) for key in runtime_keys)
     if not all(isinstance(value, str) and value.strip() for value in runtime_values):
@@ -196,8 +158,6 @@ def _is_cached_data_valid(data: Mapping[str, Any], project_path: Path) -> bool:
 def load_maafw_agent_env_state(
     script_id: str,
     requested_path: str | Path | None = None,
-    *,
-    expected_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Return a ready result when the backend-owned state is still valid."""
 
@@ -220,27 +180,11 @@ def load_maafw_agent_env_state(
         if requested_path and str(requested_path).strip():
             if _normalise_path(requested_path) != _normalise_path(project_path):
                 return None
-        normalized_expected_binding = _normalise_binding_identity(expected_binding)
-        if normalized_expected_binding is None:
-            # A Managed cache must never be reused after the caller loses the
-            # ability to resolve its current binding (including a type switch).
-            if "bindingIdentity" in entry:
-                return None
-        else:
-            if not _is_complete_binding_identity(normalized_expected_binding):
-                return None
-            cached_binding = _normalise_binding_identity(
-                entry.get("bindingIdentity")
-            )
-            if (
-                cached_binding != normalized_expected_binding
-                or not _is_complete_binding_identity(cached_binding)
-                or not _is_cached_data_bound_to_identity(
-                    data,
-                    normalized_expected_binding,
-                )
-            ):
-                return None
+        # Entries written by the retired Managed host bridge carry a resource
+        # binding that an ordinary directory cache cannot authoritatively
+        # validate. Treat them as stale instead of reusing them by path alone.
+        if "bindingIdentity" in entry:
+            return None
         if project_fingerprint(project_path) != fingerprint:
             return None
         if not _is_cached_data_valid(data, project_path):
@@ -254,7 +198,6 @@ def save_maafw_agent_env_state(
     data: Mapping[str, Any],
     *,
     expected_fingerprint: str,
-    binding_identity: Mapping[str, Any] | None = None,
 ) -> bool:
     """Atomically save one successful prepare result for a script."""
 
@@ -275,12 +218,6 @@ def save_maafw_agent_env_state(
         return False
     if not _is_cached_data_valid(data, root):
         return False
-    normalized_binding = _normalise_binding_identity(binding_identity)
-    if binding_identity is not None and (
-        not _is_complete_binding_identity(normalized_binding)
-        or not _is_cached_data_bound_to_identity(data, normalized_binding)
-    ):
-        return False
     with _STATE_LOCK:
         fingerprint = project_fingerprint(root)
         if fingerprint != normalized_expected_fingerprint:
@@ -296,8 +233,6 @@ def save_maafw_agent_env_state(
             "data": dict(data),
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
-        if normalized_binding is not None:
-            entry["bindingIdentity"] = normalized_binding
         scripts[normalized_script_id] = entry
         _write_state(state)
         return True

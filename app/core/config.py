@@ -86,6 +86,20 @@ logger = get_logger("配置管理")
 
 GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
 
+# Stable, provider-neutral markers for atomic plugin script type conversion.
+#
+# The old MaaFW Managed plugin used ``maafw.managed-conversion`` markers.  Keep
+# those values in the read compatibility sets below so an interrupted local
+# conversion can still be resumed, but never emit them for a new operation.
+_SCRIPT_TYPE_CONVERSION_KIND = "plugin.script-type-conversion.v1"
+_SCRIPT_TYPE_CONVERSION_TARGET_KIND = f"{_SCRIPT_TYPE_CONVERSION_KIND}.target"
+_LEGACY_SCRIPT_TYPE_CONVERSION_KINDS = frozenset(
+    ("maafw.managed-conversion",)
+)
+_LEGACY_SCRIPT_TYPE_CONVERSION_TARGET_KINDS = frozenset(
+    ("maafw.managed-conversion-target",)
+)
+
 
 def _load_game_sign_result_snapshot(
     path: Path, *, result_date: str
@@ -1684,13 +1698,17 @@ class AppConfig(GlobalConfig):
             raise RuntimeError("脚本转换 target artifact 已损坏")
         expected_identity = {
             "schemaVersion": 1,
-            "kind": "maafw.managed-conversion-target",
             "operationId": operation_id,
             "sourceFingerprint": source_fingerprint,
         }
         for key, value in expected_identity.items():
             if raw.get(key) != value:
                 raise RuntimeError(f"脚本转换 target artifact 冲突: {key}")
+        if raw.get("kind") not in {
+            _SCRIPT_TYPE_CONVERSION_TARGET_KIND,
+            *_LEGACY_SCRIPT_TYPE_CONVERSION_TARGET_KINDS,
+        }:
+            raise RuntimeError("脚本转换 target artifact 冲突: kind")
         ciphertext = raw.get("ciphertext")
         if not isinstance(ciphertext, str) or not ciphertext:
             raise RuntimeError("脚本转换 target artifact 缺少 DPAPI 密文")
@@ -1737,7 +1755,7 @@ class AppConfig(GlobalConfig):
         )
         artifact = {
             "schemaVersion": 1,
-            "kind": "maafw.managed-conversion-target",
+            "kind": _SCRIPT_TYPE_CONVERSION_TARGET_KIND,
             "operationId": operation_id,
             "sourceFingerprint": source_fingerprint,
             "targetFingerprint": target_fingerprint,
@@ -1870,7 +1888,10 @@ class AppConfig(GlobalConfig):
         journal_data = self._conversion_journal_identity(journal)
         if journal_data.get("schemaVersion") != 1:
             raise ValueError("脚本转换 journal.schemaVersion 必须为 1")
-        if journal_data.get("kind") != "maafw.managed-conversion":
+        if journal_data.get("kind") not in {
+            _SCRIPT_TYPE_CONVERSION_KIND,
+            *_LEGACY_SCRIPT_TYPE_CONVERSION_KINDS,
+        }:
             raise ValueError("脚本转换 journal.kind 无效")
         operation_id = str(uuid.UUID(str(journal_data.get("operationId") or "")))
         expected_journal_fields = {
@@ -1925,11 +1946,15 @@ class AppConfig(GlobalConfig):
             for key, expected_value in {
                 **expected_journal_fields,
                 "operationId": operation_id,
-                "kind": "maafw.managed-conversion",
                 "targetFingerprint": target_fingerprint,
             }.items():
                 if persisted_journal.get(key) != expected_value:
                     raise RuntimeError(f"脚本转换 journal 冲突: {key}")
+            if persisted_journal.get("kind") not in {
+                _SCRIPT_TYPE_CONVERSION_KIND,
+                *_LEGACY_SCRIPT_TYPE_CONVERSION_KINDS,
+            }:
+                raise RuntimeError("脚本转换 journal 冲突: kind")
 
         current_fingerprint = self._canonical_payload_fingerprint(
             self._conversion_snapshot_identity(current_snapshot)
@@ -1960,6 +1985,7 @@ class AppConfig(GlobalConfig):
 
         prepared_journal = {
             **journal_data,
+            "kind": _SCRIPT_TYPE_CONVERSION_KIND,
             "operationId": operation_id,
             "sourceFingerprint": source_fingerprint,
             "targetFingerprint": target_fingerprint,
@@ -4013,10 +4039,28 @@ class AppConfig(GlobalConfig):
                         script_name = info["Name"].strip()
 
         try:
-            type_key = str(self._resolve_record_provider(script).type_key or "").strip()
+            provider = self._resolve_record_provider(script)
         except Exception:
-            type_key = ""
-        if type_key in {"MaaFW", "MaaFWManaged", "M9A"}:
+            provider = None
+        metadata = getattr(provider, "metadata", None)
+        if not isinstance(metadata, Mapping):
+            metadata = {}
+        capabilities = metadata.get("capabilities")
+        if not isinstance(capabilities, Mapping):
+            capabilities = {}
+        project_label_capable = bool(
+            metadata.get("project_label")
+            or metadata.get("projectLabel")
+            or metadata.get("project_label_capability")
+            or metadata.get("supports_project_label")
+            or capabilities.get("project_label")
+            or capabilities.get("projectLabel")
+            or capabilities.get("project_label_capability")
+            or capabilities.get("supports_project_label")
+            or str(metadata.get("framework") or "").strip().casefold()
+            == "maafw"
+        )
+        if project_label_capable:
             return project_label or script_name or "MaaFW"
 
         type_label = self._resolve_script_type_label(script)
