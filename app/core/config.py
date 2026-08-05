@@ -2125,6 +2125,32 @@ class AppConfig(GlobalConfig):
 
         return remote_web_config
 
+    def build_history_log_path(
+        self, *, script_name: str, user_name: str, log_time: datetime
+    ) -> Path:
+        """构建带脚本名称前缀的历史日志路径。
+
+        Args:
+            script_name: 脚本名称。
+            user_name: 用户名称。
+            log_time: 日志开始时间。
+
+        Returns:
+            历史日志文件路径。
+        """
+
+        safe_script_name = re.sub(r'[<>:"/\\|?*]', "_", str(script_name or "").strip())
+        safe_script_name = safe_script_name.rstrip(" .") or "空白"
+        time_suffix = f"-{log_time.strftime('%H-%M-%S')}.log"
+        safe_script_name = safe_script_name[: 255 - len(time_suffix)]
+
+        return (
+            self.history_path
+            / log_time.strftime("%Y-%m-%d")
+            / user_name
+            / f"{safe_script_name}{time_suffix}"
+        )
+
     async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """
         保存MAA日志并生成对应统计数据
@@ -2552,9 +2578,10 @@ class AppConfig(GlobalConfig):
                     "general_result",
                     "hsr_result",
                 ]:
+                    history_time = "-".join(json_file.stem.rsplit("-", 3)[-3:])
                     actual_date = (
                         datetime.strptime(
-                            f"{json_file.parent.parent.name} {json_file.stem}",
+                            f"{json_file.parent.parent.name} {history_time}",
                             "%Y-%m-%d %H-%M-%S",
                         )
                         .replace(tzinfo=UTC4)
