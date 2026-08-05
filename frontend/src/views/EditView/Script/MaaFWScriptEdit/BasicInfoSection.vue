@@ -189,7 +189,7 @@
     <div v-else-if="isManagedProject" class="interface-guide-card managed-project-state">
       <CheckCircleOutlined class="interface-guide-icon managed-project-ready" aria-hidden="true" />
       <h3>项目已由 MAS 托管</h3>
-      <p>运行时会按当前项目版本解析资源与共享依赖；导入、升级、切换和回退请使用“项目与依赖”。</p>
+      <p>运行时会按当前项目版本解析资源与共享依赖；脱壳资源管理入口正在重构，暂未开放。</p>
     </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />

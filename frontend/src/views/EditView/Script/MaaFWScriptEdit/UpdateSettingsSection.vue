@@ -109,7 +109,9 @@
             </template>
             {{
               isManagedProject
-                ? '打开项目与依赖'
+                ? MAAFW_MANAGED_UI_ENABLED
+                  ? '打开项目与依赖'
+                  : '托管资源管理暂未开放'
                 : projectUpdateAction === 'apply'
                   ? '开始更新资源'
                   : '检查更新'
@@ -124,7 +126,7 @@
             :class="`project-update-progress-${projectUpdateStatus}`"
           >
             <div v-if="isManagedProject" class="project-update-progress-idle">
-              运行前自动更新结果写入本次运行日志；手动升级进度请在项目管理页查看
+              运行前自动更新结果写入本次运行日志；脱壳资源管理入口正在重构，暂未开放
             </div>
             <div v-else-if="projectUpdateStatus === 'idle'" class="project-update-progress-idle">
               尚未开始更新
@@ -217,6 +219,7 @@ import { computed } from 'vue'
 import { QuestionCircleOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import type { MaaFWProjectUpdateStatus } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
+import { MAAFW_MANAGED_UI_ENABLED } from '@/utils/maafwManagedUi'
 
 const props = defineProps<{
   maafwConfig: MaaFWScriptConfig

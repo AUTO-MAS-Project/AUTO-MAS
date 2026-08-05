@@ -188,12 +188,16 @@
                   show-icon
                   :message="
                     formData.type === 'MaaFW' || formData.type === 'M9A'
-                      ? '是否将当前 MaaFW 项目转为托管项目？'
+                      ? MAAFW_MANAGED_UI_ENABLED
+                        ? '是否将当前 MaaFW 项目转为托管项目？'
+                        : 'MaaFW 托管项目入口暂未开放'
                       : '当前项目包保持普通模式'
                   "
                   :description="
                     formData.type === 'MaaFW' || formData.type === 'M9A'
-                      ? '托管后仍使用当前脚本、用户与任务配置；MAS 会按版本保护项目内容，并统一管理项目资源、运行依赖、升级、切换、回退与回收。'
+                      ? MAAFW_MANAGED_UI_ENABLED
+                        ? '托管后仍使用当前脚本、用户与任务配置；MAS 会按版本保护项目内容，并统一管理项目资源、运行依赖、升级、切换、回退与回收。'
+                        : MAAFW_MANAGED_UI_DISABLED_REASON
                       : `${formData.type} 的资源升级由对应项目包插件维护，当前不会转换为通用 MaaFWManaged。`
                   "
                 />
@@ -215,12 +219,12 @@
                     type="button"
                     :class="[
                       'managed-choice-card',
-                      { 'managed-choice-card-selected': managedDecision === 'managed' },
+                      {
+                        'managed-choice-card-selected':
+                          managedDecision === 'managed' && MAAFW_MANAGED_UI_ENABLED,
+                      },
                     ]"
-                    :disabled="
-                      !managerWorkspaceActive &&
-                      (!managedConversionAvailable || managedOperationRunning)
-                    "
+                    :disabled="true"
                     @click="openManagedProjectManager"
                   >
                     <span class="managed-choice-title">
@@ -228,15 +232,17 @@
                         managerWorkspaceActive
                           ? '查看托管操作'
                           : managedDecision === 'managed'
-                            ? '已转为托管项目'
-                            : '转为托管项目'
+                            ? '已转为托管项目（管理暂未开放）'
+                            : '转为托管项目（暂未开放）'
                       }}
                     </span>
                     <span>
                       {{
                         managerWorkspaceActive
                           ? '项目状态核验、后台操作或最终状态对账仍在进行，点击重新打开查看。'
-                          : '导入当前资源版本，并在统一页面管理项目版本与运行依赖。'
+                          : MAAFW_MANAGED_UI_ENABLED
+                            ? '导入当前资源版本，并在统一页面管理项目版本与运行依赖。'
+                            : MAAFW_MANAGED_UI_DISABLED_REASON
                       }}
                     </span>
                   </button>
@@ -246,7 +252,11 @@
                   v-if="managedCapabilitiesLoaded && !managedConversionAvailable"
                   type="warning"
                   show-icon
-                  message="当前插件版本暂不支持原地转换"
+                  :message="
+                    MAAFW_MANAGED_UI_ENABLED
+                      ? '当前插件版本暂不支持原地转换'
+                      : 'MaaFW 托管资源管理暂未开放'
+                  "
                   :description="managedUnavailableReason"
                 />
                 <a-alert
@@ -256,7 +266,7 @@
                   message="将保持普通 MaaFW 项目"
                   :description="
                     formData.type === 'MaaFW'
-                      ? '这不会影响当前配置；完成向导后可随时打开“项目与依赖”进行转换。'
+                      ? '这不会影响当前配置；托管资源管理入口正在重构，暂未开放。'
                       : `${formData.type} 继续使用对应项目包插件提供的资源升级能力。`
                   "
                 />
@@ -268,9 +278,7 @@
                   description="脚本 ID、全部用户和任务配置保持不变；可以继续设置运行参数。"
                 >
                   <template #action>
-                    <a-button size="small" @click="openManagedProjectManager">
-                      管理项目与依赖
-                    </a-button>
+                    <a-button size="small" :disabled="true"> 托管资源管理暂未开放 </a-button>
                   </template>
                 </a-alert>
                 <div v-else-if="managedCapabilitiesLoading" class="managed-capability-loading">
@@ -355,6 +363,7 @@ import {
 } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
 import { getMaaFWProjectLabel, isMaaFWProjectType } from '@/utils/maafwProjectLabel'
+import { MAAFW_MANAGED_UI_DISABLED_REASON, MAAFW_MANAGED_UI_ENABLED } from '@/utils/maafwManagedUi'
 import { useMaaFWScriptConfig } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWConfigurationApplyResult } from '@/composables/useMaaFWConfigurationReuse'
 import MaaFWConfigurationReusePanel from '@/components/MaaFWConfigurationReusePanel.vue'
@@ -525,12 +534,14 @@ const managedOperationRunning = computed(
 )
 const managedConversionAvailable = computed(
   () =>
+    MAAFW_MANAGED_UI_ENABLED &&
     (formData.type === 'MaaFW' || formData.type === 'M9A') &&
     managedApi.capabilities.value?.available === true &&
     managedApi.capabilities.value.features.inPlaceConversion === true &&
     hasMaaFWManagedSafeMutationContract(managedApi.capabilities.value)
 )
 const managedUnavailableReason = computed(() => {
+  if (!MAAFW_MANAGED_UI_ENABLED) return MAAFW_MANAGED_UI_DISABLED_REASON
   if (formData.type !== 'MaaFW' && formData.type !== 'M9A') {
     return `${formData.type} 项目包暂不支持转换为通用托管项目；请保持普通项目，并使用其项目包提供的升级能力。`
   }
@@ -628,6 +639,10 @@ const rereadInterface = async () => {
 const loadManagedDecision = async () => {
   managedCapabilitiesLoaded.value = false
   try {
+    if (!MAAFW_MANAGED_UI_ENABLED) {
+      managedDecision.value = formData.type === 'MaaFWManaged' ? 'managed' : 'ordinary'
+      return
+    }
     if (formData.type !== 'MaaFW' && formData.type !== 'M9A' && formData.type !== 'MaaFWManaged') {
       managedDecision.value = 'ordinary'
       return
@@ -649,6 +664,7 @@ const chooseOrdinaryProject = () => {
 }
 
 const openManagedProjectManager = () => {
+  if (!MAAFW_MANAGED_UI_ENABLED) return
   if (
     !managerWorkspaceActive.value &&
     managedDecision.value !== 'managed' &&

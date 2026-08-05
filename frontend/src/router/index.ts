@@ -3,6 +3,7 @@ import type { RouteLocationGeneric } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
+import { MAAFW_MANAGED_UI_ENABLED } from '@/utils/maafwManagedUi'
 import { createPageRoutes, FALLBACK_PAGE_DECLARATIONS } from './pageDeclarations'
 
 const logger = window.electronAPI.getLogger('\u8def\u7531\u7ba1\u7406')
@@ -247,6 +248,13 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   logger.info(`\u8def\u7531\u5b88\u536b: ${JSON.stringify({ to: to.path, from: from.path })}`)
+
+  // Keep the unfinished detached-resource manager out of the application even
+  // when a stale bookmark or a manually entered URL targets the route.
+  if (to.name === 'MaaFWProjects' && !MAAFW_MANAGED_UI_ENABLED) {
+    next({ name: 'Scripts' })
+    return
+  }
 
   const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 

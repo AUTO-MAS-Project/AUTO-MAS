@@ -42,22 +42,30 @@
           formData.type === 'MaaFW' || formData.type === 'MaaFWManaged' || formData.type === 'M9A'
         "
         :title="
-          hasUnsavedChanges || isSaving
-            ? '请等待当前配置自动保存完成'
-            : isProjectUpdateRunning || isAgentEnvPreparing
-              ? '请等待当前项目更新或运行环境准备完成'
-              : '管理项目资源与运行依赖'
+          !MAAFW_MANAGED_UI_ENABLED
+            ? MAAFW_MANAGED_UI_DISABLED_REASON
+            : hasUnsavedChanges || isSaving
+              ? '请等待当前配置自动保存完成'
+              : isProjectUpdateRunning || isAgentEnvPreparing
+                ? '请等待当前项目更新或运行环境准备完成'
+                : '管理项目资源与运行依赖'
         "
       >
         <a-button
           size="large"
-          :disabled="hasUnsavedChanges || isSaving || isProjectUpdateRunning || isAgentEnvPreparing"
+          :disabled="
+            !MAAFW_MANAGED_UI_ENABLED ||
+            hasUnsavedChanges ||
+            isSaving ||
+            isProjectUpdateRunning ||
+            isAgentEnvPreparing
+          "
           @click="openProjectManager"
         >
           <template #icon>
             <DatabaseOutlined />
           </template>
-          项目与依赖
+          {{ MAAFW_MANAGED_UI_ENABLED ? '项目与依赖' : '项目与依赖（暂未开放）' }}
         </a-button>
       </a-tooltip>
       <a-button size="large" class="cancel-button" @click="handleCancel">
@@ -147,7 +155,7 @@
           type="info"
           show-icon
           message="项目资源由 MAS 托管"
-          description="当前版本内容受保护；运行前自动更新会安全导入新版本并生成配置计划，可无损迁移时自动切换。手动导入、切换、回退和删除请使用“项目与依赖”。"
+          description="当前版本内容受保护；运行前自动更新会安全导入新版本并生成配置计划，可无损迁移时自动切换。脱壳资源管理入口正在重构，暂未开放。"
         />
 
         <UpdateSettingsSection
@@ -159,7 +167,11 @@
           :project-update-action="projectUpdateAction"
           :project-update-disabled="
             isManagedProject
-              ? isSaving || hasUnsavedChanges || isAgentEnvPreparing || isProjectUpdateRunning
+              ? !MAAFW_MANAGED_UI_ENABLED ||
+                isSaving ||
+                hasUnsavedChanges ||
+                isAgentEnvPreparing ||
+                isProjectUpdateRunning
               : projectUpdateDisabled
           "
           :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
@@ -233,6 +245,7 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons-vue'
 import { getScriptIcon, handleScriptIconError } from '@/utils/scriptRegistry'
+import { MAAFW_MANAGED_UI_DISABLED_REASON, MAAFW_MANAGED_UI_ENABLED } from '@/utils/maafwManagedUi'
 import { useMaaFWScriptConfig } from '@/composables/useMaaFWScriptConfig'
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
@@ -360,10 +373,12 @@ const projectDisplayName = computed(() => {
 })
 
 const openProjectManager = () => {
+  if (!MAAFW_MANAGED_UI_ENABLED) return
   void router.push({ name: 'MaaFWProjects', query: { scriptId, from: 'edit' } })
 }
 
 const handleProjectUpdateAction = () => {
+  if (isManagedProject.value && !MAAFW_MANAGED_UI_ENABLED) return
   if (isManagedProject.value) {
     openProjectManager()
     return

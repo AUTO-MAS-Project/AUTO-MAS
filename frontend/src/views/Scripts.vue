@@ -88,14 +88,6 @@
             一键展开
           </a-button>
         </a-tooltip>
-        <a-tooltip title="统一管理 MaaFW 项目、项目包与运行依赖">
-          <a-button size="large" @click="openMaaFWProjects">
-            <template #icon>
-              <DatabaseOutlined />
-            </template>
-            MaaFW 项目
-          </a-button>
-        </a-tooltip>
         <a-button
           type="primary"
           size="large"
@@ -483,7 +475,6 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
-  DatabaseOutlined,
   DownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
@@ -739,10 +730,6 @@ const handleExpandAll = () => {
 
 const handleAddScript = () => {
   scriptCreateVisible.value = true
-}
-
-const openMaaFWProjects = () => {
-  void router.push({ name: 'MaaFWProjects', query: { from: 'scripts' } })
 }
 
 const navigateToCreatedScript = (result: { id: string; type: string; editor_kind: string }) => {
