@@ -12,7 +12,6 @@ supported-markers = [
 members = [
     "auto-mas",
     "auto-mas-core",
-    "automas-plugin-ok-script-adapter",
     "automas-plugin-okww-adapter",
 ]
 
@@ -148,7 +147,6 @@ dev = [
 ]
 plugins = [
     { name = "auto-mas-core" },
-    { name = "automas-plugin-ok-script-adapter" },
     { name = "automas-plugin-okww-adapter" },
 ]
 
@@ -189,7 +187,6 @@ requires-dist = [
 dev = [{ name = "auto-mas-core", editable = "plugins/auto_mas_core" }]
 plugins = [
     { name = "auto-mas-core", editable = "plugins/auto_mas_core" },
-    { name = "automas-plugin-ok-script-adapter", editable = "plugins/ok_script_adapter" },
     { name = "automas-plugin-okww-adapter", editable = "plugins/okww_adapter" },
 ]
 
@@ -197,11 +194,6 @@ plugins = [
 name = "auto-mas-core"
 version = "5.2.0"
 source = { editable = "plugins/auto_mas_core" }
-
-[[package]]
-name = "automas-plugin-ok-script-adapter"
-version = "0.1.0"
-source = { editable = "plugins/ok_script_adapter" }
 
 [[package]]
 name = "automas-plugin-okww-adapter"

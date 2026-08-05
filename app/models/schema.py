@@ -1508,12 +1508,11 @@ class ScriptCreateIn(BaseModel):
         "SRC",
         "General",
         "Okww",
-        "OkScript",
         "MaaEnd",
         "M9A",
         "MaaFW",
     ] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本"
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"

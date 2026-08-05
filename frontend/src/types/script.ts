@@ -22,44 +22,11 @@ import type { SchemaDefinition } from './schemaForm'
  * type_key），因此 ScriptType 为 string；BuiltinScriptType 保留内建类型的
  * 字面量枚举供需要穷举内建类型的场景使用。
  */
-export type BuiltinScriptType =
-  | 'MAA'
-  | 'General'
-  | 'Okww'
-  | 'OkScript'
-  | 'SRC'
-  | 'MaaEnd'
-  | 'M9A'
-  | 'MaaFW'
+export type BuiltinScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A' | 'MaaFW'
 
 export type ScriptType = string
 
 export type OkwwScriptConfig = OkwwConfig
-export interface OkScriptScriptConfig {
-  Info: {
-    Name: string
-    ResourceName?: string
-    ProjectLabel?: string
-    RootPath: string
-  }
-  Script: Record<string, never>
-  Game: {
-    Enabled: boolean
-    Path: string
-    Arguments: string
-    WaitTime: number
-  }
-  Run: {
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-  }
-  SubConfigsInfo?: {
-    UserData: {
-      instances: any[]
-    }
-  }
-}
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -620,7 +587,6 @@ export interface Script {
     | MaaConfig
     | GeneralConfig
     | OkwwConfig
-    | OkScriptScriptConfig
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
@@ -763,7 +729,6 @@ export interface AddScriptResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
-    | OkScriptScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -796,7 +761,6 @@ export interface GetScriptsResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
-    | OkScriptScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -815,7 +779,6 @@ export interface ScriptDetail {
     | MaaConfig
     | GeneralConfig
     | OkwwConfig
-    | OkScriptScriptConfig
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
