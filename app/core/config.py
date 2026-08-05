@@ -4067,7 +4067,20 @@ class AppConfig(GlobalConfig):
         return f"{type_label} - {script_name}"
 
     def _get_task_combox_label(self, script: ConfigBase) -> str:
-        return f"脚本 - {self._get_script_combox_label(script)}"
+        script_label = self._get_script_combox_label(script)
+        user_names: list[str] = []
+        user_data = getattr(script, "UserData", None)
+        if user_data is not None:
+            for user in user_data.values():
+                try:
+                    user_name = user.get("Info", "Name")
+                except AttributeError:
+                    continue
+                if isinstance(user_name, str) and user_name.strip():
+                    user_names.append(user_name.strip())
+        if not user_names:
+            return f"脚本 - {script_label}"
+        return f"脚本 - {script_label} - {'、'.join(user_names)}"
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
