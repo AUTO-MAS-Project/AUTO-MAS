@@ -39,7 +39,7 @@ logger = get_logger("MaaEnd 脚本设置")
 def normalize_maaend_config(
     maaend_set: dict[str, Any],
     controller_type: str,
-    template_set: dict[str, Any] | None = None,
+    fallback_set: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """将 MaaEnd 配置收束为 AUTO-MAS 单实例配置"""
 
@@ -61,8 +61,8 @@ def normalize_maaend_config(
         return None
 
     selected_instance = select_instance(maaend_set)
-    if selected_instance is None and template_set is not None:
-        selected_instance = select_instance(template_set)
+    if selected_instance is None and fallback_set is not None:
+        selected_instance = select_instance(fallback_set)
     if selected_instance is None:
         raise ValueError("MaaEnd 配置文件中未找到可用实例")
 
@@ -131,16 +131,12 @@ class ScriptConfigTask(TaskExecuteBase):
         if (self.config_file_path / "mxu-MaaEnd.json").exists():
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             shutil.copytree(self.config_file_path, self.maaend_set_path)
-        else:
-            maaend_template_path = (
-                Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
+        elif self.maaend_set_path.exists():
+            shutil.copytree(
+                self.maaend_set_path,
+                self.config_file_path,
+                dirs_exist_ok=True,
             )
-            if maaend_template_path.exists():
-                shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-                self.maaend_set_path.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(
-                    maaend_template_path, self.maaend_set_path / "mxu-MaaEnd.json"
-                )
 
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
         if not maaend_set_path.exists():
@@ -149,18 +145,9 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         maaend_set = json.loads(maaend_set_path.read_text(encoding="utf-8"))
-        maaend_template_path = (
-            Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
-        )
-        template_config = (
-            json.loads(maaend_template_path.read_text(encoding="utf-8"))
-            if maaend_template_path.exists()
-            else None
-        )
         maaend_set = normalize_maaend_config(
             maaend_set,
             self.script_config.get("Game", "ControllerType"),
-            template_config,
         )
 
         maaend_set_path.write_text(

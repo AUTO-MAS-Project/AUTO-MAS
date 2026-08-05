@@ -300,7 +300,7 @@ class ManualReviewTask(TaskExecuteBase):
                     controller_type=str(
                         self.script_config.get("Game", "ControllerType")
                     ),
-                    template_set=local_config,
+                    fallback_set=local_config,
                 )
                 maaend_instance = maaend_set["instances"][0]
                 maaend_instance["tasks"] = []
