@@ -40,7 +40,18 @@
       </a-breadcrumb>
     </div>
 
-    <a-space size="middle">
+    <a-space size="middle" wrap>
+      <a-button
+        size="large"
+        :loading="exportingIssueReport"
+        :disabled="pageLoading || showMaaEndConfigMask"
+        @click="exportMaaEndIssueReport"
+      >
+        <template #icon>
+          <DownloadOutlined />
+        </template>
+        导出问题包
+      </a-button>
       <a-button
         type="primary"
         size="large"
@@ -91,6 +102,14 @@
           </div>
         </template>
       </a-alert>
+
+      <a-alert
+        message="遇到问题？"
+        description="点击页面顶部“导出问题包”，然后将 ZIP 原文件发送到 AUTO-MAS 官方 QQ 群。"
+        type="info"
+        show-icon
+        class="notice-alert"
+      />
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
@@ -167,6 +186,8 @@
                   v-model:value="maaEndConfig.Game.ControllerType"
                   size="large"
                   :options="controllerOptions"
+                  :loading="maaEndOptionsLoading"
+                  :disabled="maaEndOptionsLoading || isSaving"
                   @change="handleControllerTypeChange"
                 />
               </a-form-item>
@@ -438,10 +459,12 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
+  DownloadOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -451,12 +474,15 @@ const route = useRoute()
 const router = useRouter()
 const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
+const logger = window.electronAPI.getLogger('MaaEnd脚本配置')
+const { exporting: exportingIssueReport, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
 const maaEndSubscriptionId = ref<string | null>(null)
@@ -587,13 +613,18 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
 }
 
 const loadMaaEndOptions = async () => {
-  const response = await getMaaEndOptions(scriptId)
-  if (response?.code !== 200) return
+  maaEndOptionsLoading.value = true
+  try {
+    const response = await getMaaEndOptions(scriptId)
+    if (response?.code !== 200) return
 
-  controllerOptions.value = response.controllers
-  controllerProtocols.value = (
-    response as unknown as { controllerTypes: Record<string, string> }
-  ).controllerTypes
+    controllerOptions.value = response.controllers
+    controllerProtocols.value = (
+      response as unknown as { controllerTypes: Record<string, string> }
+    ).controllerTypes
+  } finally {
+    maaEndOptionsLoading.value = false
+  }
 }
 
 const loadScript = async () => {

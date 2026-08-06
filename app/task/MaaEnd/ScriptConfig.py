@@ -20,7 +20,6 @@
 
 
 import json
-import json5
 import shutil
 import asyncio
 from pathlib import Path
@@ -33,59 +32,9 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from .resource_loader import load_maaend_options
 
 logger = get_logger("MaaEnd 脚本设置")
-
-
-def load_maaend_options(root_path: Path) -> dict[str, list[dict[str, str]]]:
-    root_path = root_path.resolve()
-    config = json5.loads(
-        (root_path / "config/mxu-MaaEnd.json").read_text(encoding="utf-8")
-    )
-    interface_path = root_path / "interface.json"
-    interface = json5.loads(interface_path.read_text(encoding="utf-8"))
-    language = str(config["settings"]["language"])
-    language = (
-        "zh_cn" if language.lower() == "system" else language.lower().replace("-", "_")
-    )
-    locale = json5.loads(
-        (interface_path.parent / interface["languages"][language]).read_text(
-            encoding="utf-8"
-        )
-    )
-
-    def options(cases: list[dict[str, str]]) -> list[dict[str, str]]:
-        return [
-            {
-                "label": locale.get(case["label"][1:], case["name"])
-                if (case.get("label") or "").startswith("$")
-                else case.get("label") or case["name"],
-                "value": case["name"],
-            }
-            for case in cases
-        ]
-
-    task_path = next(
-        (
-            interface_path.parent / path
-            for path in interface["import"]
-            if Path(path).stem == "AutoEssence"
-        ),
-        None,
-    )
-    if task_path is None:
-        raise ValueError(f"MaaEnd Interface 未导入 AutoEssence 任务: {interface_path}")
-
-    task = json5.loads(task_path.read_text(encoding="utf-8"))
-    essence_cases = task["option"]["AutoEssenceChooseLocation"]["cases"]
-
-    return {
-        "controllers": options(interface["controller"]),
-        "controllerTypes": {
-            case["name"]: case["type"] for case in interface["controller"]
-        },
-        "essenceLocations": options(essence_cases),
-    }
 
 
 def normalize_maaend_config(
