@@ -407,8 +407,11 @@ class AutoProxyTask(TaskExecuteBase):
                         "脚本后任务",
                     )
 
-                if "游戏分辨率设置错误" in self.cur_user_log.status:
-                    logger.info("检测到游戏分辨率设置错误，跳过后续重试")
+                if (
+                    "游戏分辨率设置错误" in self.cur_user_log.status
+                    or "颜色识别失败" in self.cur_user_log.status
+                ):
+                    logger.info("检测到游戏画面参数错误，跳过后续重试")
                     break
 
     async def handle_pre_maaend_error(
@@ -816,6 +819,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log or "分辨率不符合要求" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
+        elif "识别颜色失败" in log or "Color identification failed" in log:
+            self.cur_user_log.status = "MaaEnd 颜色识别失败，请关闭滤镜或 HDR"
         elif "任务失败: AccountSwitch" in log:
             self.cur_user_log.status = "MaaEnd 账号切换失败"
         elif (
