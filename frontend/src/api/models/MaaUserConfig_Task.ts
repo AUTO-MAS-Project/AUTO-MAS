@@ -35,5 +35,13 @@ export type MaaUserConfig_Task = {
      * 生息演算
      */
     IfReclamation?: (boolean | null);
+    /**
+     * 库存保持
+     */
+    IfDepotMaintain?: (boolean | null);
+    /**
+     * 库存保持计划 JSON
+     */
+    DepotMaintainPlans?: (string | null);
 };
 

@@ -12,6 +12,20 @@ from app.models.script_api import ScriptTypeGetOut
 router = APIRouter(prefix="/api/script-types", tags=["脚本类型"])
 
 
+def _detect_icon_media_type(content: bytes, relative_path: str) -> str:
+    """根据文件签名识别常用图标格式，扩展名仅作兼容回退。"""
+
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content.startswith((b"\x00\x00\x01\x00", b"\x00\x00\x02\x00")):
+        return "image/x-icon"
+
+    media_type, _ = mimetypes.guess_type(relative_path)
+    return media_type or "application/octet-stream"
+
+
 @router.post("/get", summary="获取脚本类型描述", response_model=ScriptTypeGetOut)
 async def get_script_types() -> ScriptTypeGetOut:
     try:
@@ -55,8 +69,7 @@ async def get_script_type_icon(type_key: str) -> Response:
     except Exception:
         raise HTTPException(status_code=404, detail=f"图标资源不存在: {icon_path}")
 
-    media_type, _ = mimetypes.guess_type(relative_path)
-    if media_type is None:
-        media_type = "application/octet-stream"
-
-    return Response(content=content, media_type=media_type)
+    return Response(
+        content=content,
+        media_type=_detect_icon_media_type(content, relative_path),
+    )

@@ -5,13 +5,6 @@
     </div>
 
     <a-alert
-      v-if="nativeEngineMismatch"
-      type="warning"
-      show-icon
-      style="margin-bottom: 8px"
-      message="体力执行脚本已切换，请重新选择副本。"
-    />
-    <a-alert
       v-if="stageOptionsError && !stageOptionsLoading"
       type="error"
       show-icon
@@ -220,6 +213,7 @@ import type {
   HSRDynamicStageCategory,
   HSRDynamicStageOption,
   HSRDynamicStageOptionsData,
+  HSRPerEngineStageStore,
   HSRScriptStageContainer,
   HSRScriptStagePayload,
   HSRStageEngine,
@@ -260,9 +254,9 @@ type ActiveChannel = 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament'
 
 const emptyNativeStageValue: Record<string, never> = {}
 
-const parseScriptStage = (raw: unknown): HSRScriptStagePayload | null => {
+const parseObject = (raw: unknown): Record<string, unknown> | null => {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    return raw as HSRScriptStagePayload
+    return raw as Record<string, unknown>
   }
   return null
 }
@@ -271,11 +265,30 @@ const payloadMatchesEngine = (payload: HSRScriptStagePayload | null) => {
   return payload?.engine === props.dailyEngine
 }
 
+const readEngineStage = <T extends HSRScriptStagePayload>(raw: unknown): T | null => {
+  const root = parseObject(raw)
+  if (!root) return null
+
+  const byEngine = parseObject(root.byEngine)
+  if (byEngine) {
+    return parseObject(byEngine[props.dailyEngine]) as T | null
+  }
+
+  if (root.engine === props.dailyEngine) return root as T
+
+  const legacyStages = parseObject(root.stages)
+  if (legacyStages) {
+    const containsCurrentEngine = Object.values(legacyStages).some(
+      payload => parseObject(payload)?.engine === props.dailyEngine
+    )
+    if (containsCurrentEngine) return root as T
+  }
+  return null
+}
+
 const scriptStageContainer = computed<HSRScriptStageContainer | null>(() => {
-  const payload = parseScriptStage(
-    props.formData.Stage.ScriptStage
-  ) as HSRScriptStageContainer | null
-  if (!payload?.stages || payload.engine !== props.dailyEngine) return null
+  const payload = readEngineStage<HSRScriptStageContainer>(props.formData.Stage.ScriptStage)
+  if (!payload?.stages) return null
   return payload
 })
 
@@ -313,16 +326,9 @@ const dynamicEowCategory = computed(() => {
   return dynamicCategories.value.find(category => isEowCategory(category.categoryKey)) ?? null
 })
 
-const selectedEowPayload = computed(() => parseScriptStage(props.formData.Stage.ScriptEchoOfWar))
-
-const nativeEngineMismatch = computed(() => {
-  const main = parseScriptStage(props.formData.Stage.ScriptStage) as HSRScriptStageContainer | null
-  const eow = selectedEowPayload.value
-  return (
-    (!!main?.engine && main.engine !== props.dailyEngine) ||
-    (!!eow?.engine && eow.engine !== props.dailyEngine)
-  )
-})
+const selectedEowPayload = computed(() =>
+  readEngineStage<HSRScriptStagePayload>(props.formData.Stage.ScriptEchoOfWar)
+)
 
 const buildDynamicOptionLabel = (option: HSRDynamicStageOption) => {
   return option.detail ? `${option.label} | ${option.detail}` : option.label
@@ -404,6 +410,50 @@ const stageValueByChannel = computed<Record<ActiveChannel, string | undefined>>(
   Ornament: selectedDynamicOptionForChannel('Ornament')?.value,
 }))
 
+const writeEngineStage = <T extends HSRScriptStagePayload>(
+  raw: unknown,
+  value: T | null
+): HSRPerEngineStageStore<T> | Record<string, never> => {
+  const root = parseObject(raw)
+  const existingByEngine = parseObject(root?.byEngine)
+  const byEngine: Partial<Record<HSRStageEngine, T>> = {}
+
+  if (existingByEngine) {
+    for (const engine of ['SRA', 'M7A'] as const) {
+      const payload = parseObject(existingByEngine[engine])
+      if (payload) byEngine[engine] = payload as T
+    }
+  } else if (root?.engine === 'SRA' || root?.engine === 'M7A') {
+    byEngine[root.engine] = root as T
+  } else {
+    const legacyStages = parseObject(root?.stages)
+    if (legacyStages) {
+      for (const engine of ['SRA', 'M7A'] as const) {
+        const stages = Object.fromEntries(
+          Object.entries(legacyStages).filter(([, payload]) => {
+            return parseObject(payload)?.engine === engine
+          })
+        )
+        if (Object.keys(stages).length) {
+          byEngine[engine] = {
+            ...root,
+            engine,
+            stages,
+          } as unknown as T
+        }
+      }
+    }
+  }
+
+  if (value) {
+    byEngine[props.dailyEngine] = value
+  } else {
+    delete byEngine[props.dailyEngine]
+  }
+
+  return Object.keys(byEngine).length ? { version: 2, byEngine } : emptyNativeStageValue
+}
+
 const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOption | null) => {
   const container = scriptStageContainer.value
   const stages: Partial<Record<ActiveChannel, HSRScriptStagePayload>> = {}
@@ -421,15 +471,20 @@ const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOpti
     delete stages[channel]
   }
 
-  const value = Object.keys(stages).length
-    ? { engine: props.dailyEngine, stages }
-    : emptyNativeStageValue
+  const currentValue = Object.keys(stages).length ? { engine: props.dailyEngine, stages } : null
+  const value = writeEngineStage<HSRScriptStageContainer>(
+    props.formData.Stage.ScriptStage,
+    currentValue
+  )
 
   emitSave('Stage.ScriptStage', value)
 }
 
 const saveNativeEchoOfWarStage = (option: HSRDynamicStageOption | null) => {
-  const value = option ? buildNativeStagePayload(option) : emptyNativeStageValue
+  const value = writeEngineStage<HSRScriptStagePayload>(
+    props.formData.Stage.ScriptEchoOfWar,
+    option ? buildNativeStagePayload(option) : null
+  )
   emitSave('Stage.ScriptEchoOfWar', value)
 }
 
@@ -495,7 +550,6 @@ const currentNativePayload = computed(() => {
 // 当前生效关卡显示：副本类型 + 关卡名
 // 格式：拟造花萼（金） 材料：武器经验（以太之蕾 翁法罗斯）
 const currentStageDisplay = computed((): string => {
-  if (nativeEngineMismatch.value) return '请重新选择副本'
   const nativePayload = currentNativePayload.value
   if (nativePayload?.label) {
     return nativePayload.categoryLabel

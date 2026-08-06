@@ -5,6 +5,7 @@
       v-model="localScripts"
       item-key="id"
       :animation="200"
+      :disabled="props.searching"
       ghost-class="script-ghost"
       chosen-class="script-chosen"
       drag-class="script-drag"
@@ -142,15 +143,24 @@
                     </a-menu>
                   </template>
                 </a-dropdown>
-                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
+                <a-tooltip
+                  :title="
+                    props.searching
+                      ? '搜索时自动展开用户'
+                      : isUsersCollapsed(script.id)
+                        ? '展开用户'
+                        : '收起用户'
+                  "
+                >
                   <a-button
                     size="middle"
                     class="action-button"
-                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
+                    :disabled="props.searching"
+                    :aria-label="isUsersCollapsed(script.id) ? '展开用户' : '收起用户'"
                     @click="toggleUsersCollapsed(script.id)"
                   >
                     <template #icon>
-                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
+                      <DownOutlined v-if="isUsersCollapsed(script.id)" />
                       <UpOutlined v-else />
                     </template>
                   </a-button>
@@ -160,7 +170,7 @@
 
             <!-- 用户列表 -->
             <div
-              v-if="!collapsedScriptIds.has(script.id) && script.users && script.users.length > 0"
+              v-if="!isUsersCollapsed(script.id) && script.users && script.users.length > 0"
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->
@@ -168,6 +178,7 @@
                 v-model="script.users"
                 item-key="id"
                 :animation="200"
+                :disabled="props.searching"
                 ghost-class="user-ghost"
                 chosen-class="user-chosen"
                 drag-class="user-drag"
@@ -282,7 +293,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
+            <div v-else-if="!isUsersCollapsed(script.id)" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -321,6 +332,7 @@ interface Props {
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
+  searching?: boolean
 }
 
 interface Emits {
@@ -414,6 +426,9 @@ const saveCollapsedScriptIds = () => {
     // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
   }
 }
+
+const isUsersCollapsed = (scriptId: string) =>
+  !props.searching && collapsedScriptIds.value.has(scriptId)
 
 const toggleUsersCollapsed = (scriptId: string) => {
   const next = new Set(collapsedScriptIds.value)
@@ -517,8 +532,6 @@ const getProjectLabel = (script: Script) => {
 
 const getScriptTypeLabel = (script: Script) => {
   if (script.type === 'MaaFW') return getProjectLabel(script) || 'MaaFW'
-  if (script.type === 'OkScript')
-    return getProjectLabel(script) || script.displayName || script.type
   return script.displayName || script.type
 }
 

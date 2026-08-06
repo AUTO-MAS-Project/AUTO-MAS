@@ -27,6 +27,8 @@ export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_PLUGIN_SYSTEM = 'PluginSystem'
 export const WS_ID_PLUGIN_MARKET = 'PluginMarket'
+export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
+export const WS_ID_ARKNIGHTS_PC_TOOLKIT = 'ArknightsPCToolkit'
 
 // ==================== 消息类别 ====================
 
@@ -71,6 +73,10 @@ export const WS_PLUGIN_UNINSTALL_RESULT = 'plugin.uninstall.result'
 export const WS_PLUGIN_INSTALLED_REQUEST = 'plugin.installed.request'
 export const WS_PLUGIN_INSTALLED_SYNC = 'plugin.installed.sync'
 
+// 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+export const WS_EMULATOR_NOTICE = 'emulator.notice'
+export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
+
 // ==================== 关键消息数据类型 ====================
 
 /** 任务提示消息数据 (type=task.notice) */
@@ -92,6 +98,13 @@ export interface WSTaskScriptInfoData {
   userList: WSTaskUserInfoData[]
 }
 
+export type WSTaskMode = 'AutoProxy' | 'ManualReview' | 'ScriptConfig'
+
+export interface WSTaskScriptIdentityData {
+  scriptId: string
+  scriptType: string
+}
+
 /** 任务信息快照 (type=task.info.updated) */
 export interface WSTaskInfoUpdatedData {
   task_info: WSTaskScriptInfoData[]
@@ -105,12 +118,16 @@ export interface WSTaskLogUpdatedData {
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
   result: string
+  outcome: 'success' | 'error' | 'cancelled'
+  error?: string | null
   task_info: WSTaskScriptInfoData[]
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
   taskId: string
+  mode: WSTaskMode
+  scripts: WSTaskScriptIdentityData[]
   queueId?: string | null
   taskName?: string | null
   taskType?: string | null
@@ -263,6 +280,8 @@ export interface WSMessageDataMap {
   [WS_PLUGIN_INSTALLED_REQUEST]: WSPluginPackageRequestData
   [WS_PLUGIN_INSTALLED_SYNC]: WSPluginInstalledSyncData
   [WS_MARKET_ERROR]: WSMarketErrorData
+  [WS_EMULATOR_NOTICE]: WSTaskNoticeData
+  [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
 }
 
 export type WSKnownMessageType = keyof WSMessageDataMap

@@ -28,7 +28,8 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field
+from datetime import datetime
+from inspect import isawaitable
 
 from app.config import CollectionOrderItem
 from app.config.errors import ConfigAggregateError
@@ -37,56 +38,6 @@ from app.models.config import GameSignAccount, Tools
 from app.models.schema import OutBase
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
-
-CREDENTIAL_FIELDS = ("miyoushe_token", "kuro_token", "skland_token")
-CREDENTIAL_REDACTION = "******"
-
-
-# ==================== 字段（基于 ConfigEntry） ====================
-
-
-class ToolsGetOut(OutBase):
-    data: Tools = Field(default_factory=Tools, description="工具配置")
-
-
-class ToolsUpdateIn(BaseModel):
-    data: Tools = Field(..., description="工具配置补丁（Wire 形状）")
-
-
-class GameSignAccountCreateOut(OutBase):
-    accountId: str = Field(default="", description="账号组 UUID")
-    data: GameSignAccount = Field(
-        default_factory=GameSignAccount, description="账号组配置"
-    )
-
-
-class GameSignAccountGetIn(BaseModel):
-    accountId: str = Field(..., description="账号组 UUID")
-
-
-class GameSignAccountsListOut(OutBase):
-    order: list[CollectionOrderItem] = Field(
-        default_factory=list, description="账号组顺序"
-    )
-    data: dict[str, GameSignAccount] = Field(
-        default_factory=dict, description="账号组数据，key 为 uid"
-    )
-
-
-class GameSignAccountUpdateIn(BaseModel):
-    accountId: str = Field(..., description="账号组 UUID")
-    data: GameSignAccount = Field(..., description="账号组补丁（Wire 形状）")
-
-
-class GameSignAccountDeleteIn(BaseModel):
-    accountId: str = Field(..., description="账号组 UUID")
-
-
-class GameSignAccountReorderIn(BaseModel):
-    order: list[str] = Field(..., description="账号组 UUID 顺序列表")
-
-
-# ==================== 工具配置 ====================
 
 
 @router.post(
@@ -142,15 +93,15 @@ async def manual_game_sign() -> OutBase:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
-            merge_sign_results,
             run_all_sign_in,
         )
 
         results = await run_all_sign_in(force=True)
         formatted = format_sign_results(results)
-        Config.tools._game_sign_result_data = merge_sign_results(
-            Config.tools._game_sign_result_data, formatted, replace=True
-        )
+        # 合并结果（手动签到按 account_uid 替换旧数据）
+        result_update = Config.update_game_sign_results(formatted, replace=True)
+        if isawaitable(result_update):
+            await result_update
 
         today = datetime.now().strftime("%Y-%m-%d")
         all_signed = True
@@ -193,24 +144,10 @@ async def manual_game_sign() -> OutBase:
     status_code=200,
 )
 async def list_game_sign_accounts() -> GameSignAccountsListOut:
-    """获取所有游戏签到账号组（凭据脱敏）。"""
+    """获取所有游戏签到账号组"""
+
     try:
-        col = Config.tools.accounts
-        data: dict[str, GameSignAccount] = {}
-        for uid in col.keys():
-            wire = col[uid].model_dump()
-            info = dict(wire.get("info") or {})
-            for field in CREDENTIAL_FIELDS:
-                info[field] = CREDENTIAL_REDACTION if info.get(field) else ""
-            wire["info"] = info
-            data[str(uid)] = GameSignAccount.model_validate(wire)
-        return GameSignAccountsListOut(
-            order=[
-                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
-                for uid in col.keys()
-            ],
-            data=data,
-        )
+        data = await Config.get_game_sign_accounts()
     except Exception as e:
         return GameSignAccountsListOut(
             code=500,
@@ -231,17 +168,12 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
 async def add_game_sign_account() -> GameSignAccountCreateOut:
     """添加游戏签到账号组。"""
     try:
-        col = Config.tools.accounts
-        uid = col.add(GameSignAccount)
-        await col.commit()
-        wire = col[uid].model_dump()
-        info = dict(wire.get("info") or {})
-        for field in CREDENTIAL_FIELDS:
-            info[field] = CREDENTIAL_REDACTION if info.get(field) else ""
-        wire["info"] = info
-        return GameSignAccountCreateOut(
-            accountId=str(uid), data=GameSignAccount.model_validate(wire)
-        )
+        uid, config = await Config.add_game_sign_account()
+        # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
+        raw = await config.toDict()
+        flat = raw.get("GameSignAccount", raw)
+        data = GameSignAccountGroupConfig(**flat)
+        # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
         return GameSignAccountCreateOut(
             code=500,
@@ -264,14 +196,10 @@ async def get_game_sign_account(
 ) -> GameSignAccountCreateOut:
     """获取游戏签到账号组详情（凭据脱敏）。"""
     try:
-        wire = Config.tools.accounts[UUID(body.accountId)].model_dump()
-        info = dict(wire.get("info") or {})
-        for field in CREDENTIAL_FIELDS:
-            info[field] = CREDENTIAL_REDACTION if info.get(field) else ""
-        wire["info"] = info
-        return GameSignAccountCreateOut(
-            accountId=body.accountId, data=GameSignAccount.model_validate(wire)
-        )
+        raw = await Config.get_game_sign_account(account.accountId)
+        # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
+        flat = raw.get("GameSignAccount", raw)
+        account_data = GameSignAccountGroupConfig(**flat)
     except Exception as e:
         return GameSignAccountCreateOut(
             code=500,
@@ -294,33 +222,10 @@ async def update_game_sign_account(
 ) -> OutBase:
     """更新游戏签到账号组；占位符凭据不写入；凭据变更时重置签到日。"""
     try:
-        account = Config.tools.accounts[UUID(body.accountId)]
-        dump = body.data.model_dump(exclude_unset=True)
-        info = dump.get("info")
-        credential_changed = False
-        if isinstance(info, dict):
-            for field in CREDENTIAL_FIELDS:
-                if info.get(field) == CREDENTIAL_REDACTION:
-                    info.pop(field)
-            credential_changed = any(
-                field in info and info[field] != getattr(account.info, field)
-                for field in CREDENTIAL_FIELDS
-            )
-            if credential_changed:
-                info["last_sign_date"] = "2000-01-01"
-        await account.update(GameSignAccount.model_validate(dump))
-        if credential_changed:
-            result = Config.tools._game_sign_result_data
-            for platform in list(result):
-                result[platform] = [
-                    group
-                    for group in result[platform]
-                    if group.get("account_uid") != body.accountId
-                ]
-                if not result[platform]:
-                    del result[platform]
-    except ConfigAggregateError as e:
-        return OutBase(code=500, status="error", message=str(e))
+        # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
+        flat_data = account.data.model_dump(exclude_unset=True)
+        data = {"GameSignAccount": flat_data}
+        await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

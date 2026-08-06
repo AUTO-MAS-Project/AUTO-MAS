@@ -22,9 +22,6 @@ describe('scriptCreateFlow', () => {
     expect(filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, '1999').map(item => item.value)).toEqual([
       'M9A',
     ])
-    expect(
-      filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, 'ok-script').map(item => item.value)
-    ).toContain('OkScript')
   })
 
   it('places General and MaaFW in the general section', () => {

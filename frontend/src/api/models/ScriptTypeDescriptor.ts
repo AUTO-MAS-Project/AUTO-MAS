@@ -31,6 +31,10 @@ export type ScriptTypeDescriptor = {
      */
     create_group?: ScriptTypeDescriptor.create_group;
     /**
+     * 脚本类型是否显式声明了创建分组
+     */
+    create_group_declared?: boolean;
+    /**
      * 文档地址
      */
     docs_url?: (string | null);

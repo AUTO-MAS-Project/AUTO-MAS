@@ -488,6 +488,10 @@ class MaaUserConfig_Task(BaseModel):
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
+    IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
+    DepotMaintainPlans: Optional[str] = Field(
+        default=None, description="库存保持计划 JSON"
+    )
 
 
 class MaaUserConfig_Notify(BaseModel):
@@ -1470,18 +1474,48 @@ class MaaPlanConfig(BaseModel):
     Sunday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周日")
 
 
+<<<<<<< HEAD
+=======
+class HistoryIndexItem(BaseModel):
+    date: str = Field(..., description="日期")
+    status: Literal["DONE", "ERROR"] = Field(..., description="状态")
+    jsonFile: str = Field(..., description="对应JSON文件")
+
+
+class HistoryData(BaseModel):
+    index: Optional[List[HistoryIndexItem]] = Field(
+        default=None, description="历史记录索引列表"
+    )
+    recruit_statistics: Optional[Dict[str, int]] = Field(
+        default=None, description="公招统计数据, key为星级, value为对应的公招数量"
+    )
+    drop_statistics: Optional[Dict[str, Dict[str, int]]] = Field(
+        default=None,
+        description="掉落统计数据, 格式为 { '关卡号': { '掉落物': 数量 } }",
+    )
+    matrix_statistics: Optional[Dict[str, str]] = Field(
+        default=None, description="基质统计数据, key为技能组合, value为符合武器名称"
+    )
+    error_info: Optional[Dict[str, str]] = Field(
+        default=None, description="报错信息, key为时间戳, value为错误描述"
+    )
+    log_content: Optional[str] = Field(
+        default=None, description="日志内容, 仅在提取单条历史记录数据时返回"
+    )
+
+
+>>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
 class ScriptCreateIn(BaseModel):
     type: Literal[
         "MAA",
         "SRC",
         "General",
         "Okww",
-        "OkScript",
         "MaaEnd",
         "M9A",
         "MaaFW",
     ] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本"
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -2014,6 +2048,13 @@ class WSTaskLogUpdatedData(BaseModel):
     log: str = Field(default="", description="当前脚本日志")
 
 
+class WSTaskScriptIdentityData(BaseModel):
+    """任务关联的脚本静态标识。"""
+
+    scriptId: str = Field(..., description="脚本 ID")
+    scriptType: str = Field(..., description="脚本类型键")
+
+
 class TaskRuntimeSnapshotItem(BaseModel):
     """一个运行中任务的 HTTP 初始快照。"""
 
@@ -2025,6 +2066,9 @@ class TaskRuntimeSnapshotItem(BaseModel):
     scriptId: Optional[str] = Field(default=None, description="脚本 ID")
     userId: Optional[str] = Field(default=None, description="用户 ID")
     stopping: bool = Field(default=False, description="任务是否正在停止")
+    scripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="任务关联的脚本静态标识"
+    )
     task_info: List[WSTaskScriptInfoData] = Field(
         default_factory=list, description="任务脚本与用户状态"
     )
@@ -2032,15 +2076,22 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
 
 class TaskRuntimeSnapshot(BaseModel):
-    """运行中任务 HTTP 初始快照。"""
+    """任务运行与定时队列 HTTP 初始快照。"""
 
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
+    scheduledScripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="已启用定时队列关联的脚本静态标识"
+    )
 
 
 class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
     result: str = Field(..., description="任务结果描述")
+    outcome: Literal["success", "error", "cancelled"] = Field(
+        ..., description="机器可读的任务结果"
+    )
+    error: Optional[str] = Field(default=None, description="任务错误信息")
     task_info: List[WSTaskScriptInfoData] = Field(
         ..., description="任务信息全量快照"
     )
@@ -2050,6 +2101,12 @@ class WSTaskCreatedData(BaseModel):
     """新任务创建通知数据 (id=TaskManager, type=task.created)"""
 
     taskId: str = Field(..., description="新任务ID")
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+        ..., description="任务模式"
+    )
+    scripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="任务关联的脚本静态标识"
+    )
     queueId: Optional[str] = Field(default=None, description="所属调度队列ID")
     taskName: Optional[str] = Field(default=None, description="任务名称")
     taskType: Optional[str] = Field(default=None, description="任务类型")

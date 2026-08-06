@@ -61,15 +61,19 @@ list/
 !/plugins/auto_mas_core/**
 !/plugins/okww_adapter/
 !/plugins/okww_adapter/**
-!/plugins/ok_script_adapter/
-!/plugins/ok_script_adapter/**
 /plugins/**/__pycache__/
 /plugins/**/*.py[oc]
 /plugins/**/*.egg-info/
 /app/core/plugins/_generated/
 
-# Test artifacts
-/test-results/
+# Local test sources are not included in this branch
+/tests/
+**/test_*.py
+**/*_test.py
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
 
 res/docs/ok-series-common-script-report.md
 
