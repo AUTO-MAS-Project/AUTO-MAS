@@ -1993,7 +1993,7 @@ class GeneralUserConfig(ConfigBase):
 
 
 class OkwwUserConfig(ConfigBase):
-    """OK-WW 用户配置（ok-script 线）
+    """OK-WW 用户配置（Okww 插件线）
 
     仅供 v5.3.x 存量数据反序列化与一次性迁移使用，见 OkwwConfig 说明。
     """
@@ -2252,7 +2252,7 @@ class GeneralConfig(ConfigBase):
 
 
 class OkwwConfig(ConfigBase):
-    """OK-WW 配置（ok-script 线）
+    """OK-WW 配置（Okww 插件线）
 
     仅供 v5.3.x 存量 ScriptConfig.json 反序列化与一次性迁移
     （AppConfig._migrate_okww_scripts_to_plugin_storage）使用；

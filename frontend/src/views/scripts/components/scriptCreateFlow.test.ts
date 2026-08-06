@@ -20,9 +20,6 @@ describe('scriptCreateFlow', () => {
 
   it('filters script types by aliases and group', () => {
     expect(filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, '1999')).toEqual([])
-    expect(
-      filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, 'ok-script').map(item => item.value)
-    ).toContain('OkScript')
   })
 
   it('places General and MaaFW in the general section', () => {
@@ -62,6 +59,24 @@ describe('scriptCreateFlow', () => {
         available: false,
       },
       {
+        type_key: 'M9A',
+        display_name: 'M9A 脚本',
+        editor_kind: 'plugin:automas_script_maafw',
+        icon_url: 'https://example.test/m9a.png',
+        supported_modes: [],
+        script_schema: {},
+        user_schema: {},
+        is_builtin: false,
+        available: true,
+        create_group: 'specialized',
+        client: {
+          create: {
+            description: '重返未来：1999 自动化脚本',
+            keywords: ['m9a', '1999', '重返未来'],
+          },
+        },
+      },
+      {
         type_key: 'ReadOnlyScript',
         display_name: '只读脚本',
         editor_kind: 'plugin:readonly',
@@ -85,7 +100,7 @@ describe('scriptCreateFlow', () => {
       },
     ])
 
-    expect(options).toHaveLength(2)
+    expect(options).toHaveLength(3)
     expect(options[0]).toMatchObject({
       value: 'PluginScript',
       title: '插件脚本',
@@ -94,6 +109,14 @@ describe('scriptCreateFlow', () => {
     })
     expect(options[0].keywords).toContain('插件别名')
     expect(options[1]).toMatchObject({
+      value: 'M9A',
+      title: 'M9A 脚本',
+      description: '重返未来：1999 自动化脚本',
+      group: 'specialized',
+      icon: 'https://example.test/m9a.png',
+    })
+    expect(options[1].keywords).toContain('1999')
+    expect(options[2]).toMatchObject({
       value: 'MaaFW',
       group: 'general',
     })

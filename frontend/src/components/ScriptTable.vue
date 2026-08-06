@@ -532,8 +532,6 @@ const getProjectLabel = (script: Script) => {
 
 const getScriptTypeLabel = (script: Script) => {
   if (script.type === 'MaaFW') return getProjectLabel(script) || 'MaaFW'
-  if (script.type === 'OkScript')
-    return getProjectLabel(script) || script.displayName || script.type
   return script.displayName || script.type
 }
 

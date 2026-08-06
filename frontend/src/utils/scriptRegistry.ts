@@ -68,7 +68,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'MaaFW', 'OkScript'])
+export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'MaaFW'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -82,8 +82,6 @@ export const getFallbackScriptIcon = (type: string) => {
       return maaEndIcon
     case 'Okww':
       return okwwIcon
-    case 'OkScript':
-      return autoMasIcon
     case 'HSR':
       return hsrIcon
     default:
@@ -126,7 +124,6 @@ export const getScriptTypeTagColor = (type: string, themeColor?: string | null) 
     case 'MaaFW':
       return 'geekblue'
     case 'Okww':
-    case 'OkScript':
       return 'orange'
     case 'HSR':
       return 'purple'
@@ -142,8 +139,6 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:src': 'src',
   'builtin:maaend': 'maaend',
   'builtin:maafw': 'maafw',
-  'builtin:ok-script': 'ok-script',
-  'builtin:okef': 'ok-script',
 }
 
 const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {

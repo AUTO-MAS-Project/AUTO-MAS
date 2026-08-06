@@ -42,7 +42,6 @@ dev = [
 ]
 plugins = [
     "auto-mas-core",
-    "automas_plugin_ok_script_adapter",
     "automas_plugin_okww_adapter",
 ]
 
@@ -52,7 +51,6 @@ plugins = [
 # 2) 声明固定版本： { name = "automas_script_maa", version = "0.0.5-alpha" }
 # 3) 声明任意版本约束： { name = "automas_script_maa", specifier = ">=0.0.5-alpha,<0.1.0" }
 packages = [
-    "automas_plugin_ok_script_adapter",
     "automas_plugin_okww_adapter",
     { name = "automas-maafw-interface", version = "0.2.0" },
     { name = "automas-maafw-agent-env", version = "0.1.4" },
@@ -71,7 +69,6 @@ environments = ["sys_platform == 'win32'"]
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
-    "plugins/ok_script_adapter",
     "plugins/okww_adapter",
 ]
 exclude = [
@@ -81,5 +78,4 @@ exclude = [
 
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
-"automas_plugin_ok_script_adapter" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }

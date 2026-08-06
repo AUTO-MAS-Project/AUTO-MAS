@@ -61,8 +61,6 @@ list/
 !/plugins/auto_mas_core/**
 !/plugins/okww_adapter/
 !/plugins/okww_adapter/**
-!/plugins/ok_script_adapter/
-!/plugins/ok_script_adapter/**
 /plugins/**/__pycache__/
 /plugins/**/*.py[oc]
 /plugins/**/*.egg-info/

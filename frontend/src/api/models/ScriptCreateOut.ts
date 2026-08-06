@@ -6,7 +6,6 @@ import type { GeneralConfig } from './GeneralConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
 import type { MaaFWConfig } from './MaaFWConfig';
-import type { OkefConfig } from './OkefConfig';
 import type { OkwwConfig } from './OkwwConfig';
 import type { PluginScriptConfig } from './PluginScriptConfig';
 import type { SrcConfig } from './SrcConfig';
@@ -30,5 +29,5 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | MaaFWConfig | PluginScriptConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | MaaEndConfig | MaaFWConfig | PluginScriptConfig);
 };
