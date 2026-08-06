@@ -4,16 +4,16 @@ import { message } from 'ant-design-vue'
 import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useTheme } from '@/composables/useTheme'
-import { showMaaEndIssueReportGuide } from '@/utils/maaEndIssueReport'
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 const logger = window.electronAPI.getLogger('日志查看')
 const { themeMode } = useTheme()
+const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
 
 const logs = ref<string>('')
 const loading = ref(false)
-const exporting = ref(false)
 const logMode = ref<LogMode>('follow')
 const selectedLogFile = ref<'app' | 'frontend'>('app')
 const realTimeEnabled = ref(true)
@@ -135,40 +135,6 @@ const toggleRealTime = () => {
     } else {
         stopRealTimeRefresh()
         message.info('已停止自动更新')
-    }
-}
-
-// 导出 MaaEnd 问题包
-const exportMaaEndIssueReport = async () => {
-    exporting.value = true
-    try {
-        const result = await window.electronAPI?.exportMaaEndIssueReport?.()
-
-        if (!result) {
-            message.error('导出功能未响应，请检查程序')
-            logger.error('导出 MaaEnd 问题包失败: 未收到响应')
-            return
-        }
-
-        if (result?.success) {
-            message.success(result.message || 'MaaEnd 问题包导出成功')
-            logger.info(`MaaEnd 问题包导出成功: ${result.zipPath}`)
-            // 打开文件夹并定位到压缩包
-            if (result.zipPath) {
-                await window.electronAPI?.showItemInFolder?.(result.zipPath)
-            }
-            showMaaEndIssueReportGuide(result.zipPath)
-        } else {
-            const errorMsg = result?.error || 'MaaEnd 问题包导出失败'
-            logger.error(`导出 MaaEnd 问题包失败: ${errorMsg}`)
-            message.error(errorMsg)
-        }
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`导出 MaaEnd 问题包失败: ${errorMsg}`)
-        message.error(`导出问题包异常: ${errorMsg}`)
-    } finally {
-        exporting.value = false
     }
 }
 
