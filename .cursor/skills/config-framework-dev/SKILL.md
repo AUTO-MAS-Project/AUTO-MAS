@@ -7,7 +7,8 @@ description: >-
 # 配置基类开发约定
 
 - 工作区 / 事务见 §3.2、§3.2.1；信号见 §3.3–§3.4。
-- **写路径**：字段 `setattr` / `add` / `remove` / `set_order` → 仅 stage，须显式 `await commit()`；`commit` 经 **`manager.node_commit`**（同 Task 嵌套空过；其它 Task 的 `commit` **等待**；持锁期间其它 Task `_stage` **入 pending**，释放时并入）；入口快照并清空 `_staged_ops`，再用 **`while batch` 排空**；**`send` 后若 `_staged_ops` 非空则 RAISE**（失败 ROLLBACK 本笔）。信号内嵌套 `commit` 须办完当次 stage。入口删/锁拒绝则保留 stage。Cancel 时 `batch` 非空则归还。
+- **写路径**：字段 `setattr` / `add` / `remove` / `set_order` / `add_type` / `remove_type` / `reload_type` → 仅 stage，须显式 `await commit()`；`commit` 经 **`manager.node_commit`**（同 Task 嵌套空过；其它 Task 的 `commit` **等待**；持锁期间其它 Task `_stage` **入 pending**，释放时并入）；入口快照并清空 `_staged_ops`，再用 **`while batch` 排空**；**`send` 后若 `_staged_ops` 非空则 RAISE**（失败 ROLLBACK 本笔）。信号内嵌套 `commit` 须办完当次 stage。入口删/锁拒绝则保留 stage。Cancel 时 `batch` 非空则归还。
+- **类型表**：`add_type` / `remove_type` / `reload_type` 均为单条 StageKind；后两者的多成员变更在 **同一** `manager.transaction()` 内完成（禁止拆成多条 `COLLECTION_REMOVE`/`ADD` 冒充整笔回滚）。`reload_type`：导出 Wire → 删旧实例 → 换类 → 同 uid 原位 `build`+`activate`；不跑 remove_guard、不发中间 `remove`/`add`。规格 §5.4。`_COMMIT` 须写回 `_entry_types`。
 - **`activate`**：外层 `transaction()` + `_build_workspace()`。Entry/Collection 热化统一为 **赋值/结构 API → `commit`**；`_commit_op` 在 `INITIALIZING` 时走 `init_transaction` + `_build_init_workspace`（`ws._workspace`），`ACTIVE` 时走普通事务。Init **嵌套独立 ctx**；**禁止同节点重复建 init 壳**。详见 §3.2.1。
 - **工作区**：普通 `live._workspace`；init 为 `live._workspace._workspace`（`init_workspace` 属性）；无独立 `_init_workspace` 字段。
 - **`_delete`**：内部软删；外部勿直接调用（用 `Collection.remove` / 框架生命周期）。

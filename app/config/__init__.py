@@ -14,7 +14,7 @@ from .core.collection import ConfigCollection
 from .core.entry import ConfigEntry
 from .core.group import ConfigGroup
 from .core.manager import ConfigManager, RootRecord, TransactionContext, config_manager
-from .core.node import ConfigNode, NodeState
+from .core.node import ConfigNode, LockTicket, NodeState
 from .core.staging import StageKind, StagedOp
 from .errors import (
     ConfigAggregateError,
@@ -79,6 +79,7 @@ def write_wire_toml(path: Path, payload: WireDict) -> None:
 __all__ = [
     # 核心
     "ConfigNode",
+    "LockTicket",
     "NodeState",
     "ConfigEntry",
     "ConfigCollection",
