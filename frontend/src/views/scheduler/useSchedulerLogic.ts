@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -6,6 +6,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
@@ -130,10 +131,12 @@ interface StartedTaskTracking {
 // 初始化标志 - 确保某些操作只执行一次
 let _initialized = false
 let _watchInitialized = false
+let maaEndFailureModalOpen = false
 
 export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
+  const { exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
   // TaskManager消息处理函数（供全局WebSocket调用）
   const handleTaskManagerMessage = (wsMessage: any) => {
@@ -577,7 +580,7 @@ export function useSchedulerLogic() {
         break
       case 'Info':
         logger.debug(`处理Info消息: ${JSON.stringify(data)}`)
-        handleInfoMessage(data)
+        handleInfoMessage(tab, data)
         break
       case 'Message':
         logger.debug(`处理Message消息: ${JSON.stringify(data)}`)
@@ -601,7 +604,7 @@ export function useSchedulerLogic() {
           }
           // 尝试处理可能的错误/警告/信息
           if (data.Error || data.Warning || data.Info) {
-            handleInfoMessage(data)
+            handleInfoMessage(tab, data)
           }
         }
     }
@@ -714,11 +717,15 @@ export function useSchedulerLogic() {
     // saveTabsToStorage(schedulerTabs.value)
   }
 
-  const handleInfoMessage = async (data: any) => {
+  const handleInfoMessage = async (tab: SchedulerTab, data: any) => {
     const { playSound } = useAudioPlayer()
 
     if (data.Error) {
       const errorMsg = String(data.Error).toLowerCase()
+      const taskLabel = taskOptions.value.find(item => item.value === tab.selectedTaskId)?.label || ''
+      const isMaaEndTask = [taskLabel, tab.runningTaskLabel, tab.runningModeLabel]
+        .filter(Boolean)
+        .some(value => value?.toLowerCase().includes('maaend') ?? false)
 
       // 根据错误内容匹配具体的 noisy 模式音频
       if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
@@ -740,7 +747,34 @@ export function useSchedulerLogic() {
         await playSound('error_occurred')
       }
 
-      notification.error({ message: '任务错误', description: data.Error })
+      const isMaaEndError = isMaaEndTask || errorMsg.includes('maaend')
+      if (isMaaEndError) {
+        if (!maaEndFailureModalOpen) {
+          maaEndFailureModalOpen = true
+          Modal.error({
+            centered: true,
+            closable: true,
+            maskClosable: true,
+            keyboard: true,
+            title: 'MaaEnd 任务失败',
+            content: h('div', [
+              h('p', String(data.Error)),
+              h('p', '你可以立即导出问题包，并将 ZIP 原文件发送到 MAS 群协助排查。'),
+            ]),
+            okCancel: true,
+            okText: '导出问题包',
+            cancelText: '暂不导出',
+            onOk: () => {
+              void exportMaaEndIssueReport()
+            },
+            afterClose: () => {
+              maaEndFailureModalOpen = false
+            },
+          })
+        }
+      } else {
+        notification.error({ message: '任务错误', description: data.Error })
+      }
     } else if (data.Warning) {
       // 播放异常音频
       await playSound('exception_occurred')
