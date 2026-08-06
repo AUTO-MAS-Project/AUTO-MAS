@@ -24,6 +24,7 @@ from app.config import (
     ConfigGroup,
     CollectionChangeEvent,
     FieldChangeEvent,
+    LockTicket,
     NodeState,
     Trigger,
     Virtual,
@@ -1223,13 +1224,13 @@ async def test_reactive_unbound_raises() -> None:
 async def test_lock() -> None:
     cfg = ExampleWebhook()
     await cfg.activate()
-    await cfg.lock()
+    ticket = await cfg.lock_x()
     try:
         cfg.info.name = "locked"
         _fail("锁定后赋值应失败")
     except ValueError:
         pass
-    await cfg.unlock()
+    await cfg.unlock(ticket)
     cfg.info.name = "unlocked"
     await cfg.commit()
     if cfg.info.name != "unlocked":
@@ -1238,7 +1239,7 @@ async def test_lock() -> None:
     # 已 stage 后加锁：commit 入口拒绝，且不清空 stage
     before = cfg.info.name
     cfg.info.name = "staged-then-locked"
-    await cfg.lock()
+    ticket2 = await cfg.lock_x()
     try:
         await cfg.commit()
         _fail("锁定后 commit 应拒绝已暂存字段写")
@@ -1247,7 +1248,7 @@ async def test_lock() -> None:
     got_name = cast(str, cfg.info.name)
     if got_name != before:
         _fail("锁定拒绝 commit 后字段不应落盘")
-    await cfg.unlock()
+    await cfg.unlock(ticket2)
     await cfg.commit()
     if cfg.info.name != "staged-then-locked":
         _fail("解锁后应能提交先前暂存")
@@ -1285,7 +1286,7 @@ async def test_collection_lock_blocks_commit() -> None:
     col = ConfigCollection([ExampleScript])
     await col.activate()
     uid = col.add(ExampleScript)
-    await col.lock()
+    ticket = await col.lock_x()
     try:
         await col.commit()
         _fail("锁定后 Collection.commit 应拒绝")
@@ -1293,11 +1294,112 @@ async def test_collection_lock_blocks_commit() -> None:
         pass
     if uid in col:
         _fail("锁定拒绝 commit 后成员不应落盘")
-    await col.unlock()
+    await col.unlock(ticket)
     await col.commit()
     if uid not in col:
         _fail("解锁后应能提交先前暂存的 add")
     _ok("Collection 锁定阻止 commit")
+
+
+async def test_lock_s_stacking() -> None:
+    cfg = ExampleWebhook()
+    await cfg.activate()
+    t1 = await cfg.lock_s()
+    t2 = await cfg.lock_s()
+    try:
+        cfg.info.name = "blocked"
+        _fail("S 锁期间应禁写")
+    except ValueError:
+        pass
+    await cfg.unlock(t1)
+    if not cfg.is_locked:
+        _fail("解一层 S 后仍应锁定")
+    try:
+        cfg.info.name = "still-blocked"
+        _fail("仍有一层 S 时应禁写")
+    except ValueError:
+        pass
+    await cfg.unlock(t2)
+    if cfg.is_locked:
+        _fail("全部 S 解开后不应锁定")
+    cfg.info.name = "ok"
+    await cfg.commit()
+    if cfg.info.name != "ok":
+        _fail("S 全解后应可写")
+    _ok("S 锁叠加与逐层解锁")
+
+
+async def test_lock_s_x_mutex() -> None:
+    cfg = ExampleWebhook()
+    await cfg.activate()
+    ts = await cfg.lock_s()
+    try:
+        await cfg.lock_x()
+        _fail("已有 S 时不应再加 X")
+    except ValueError:
+        pass
+    await cfg.unlock(ts)
+    tx = await cfg.lock_x()
+    try:
+        await cfg.lock_s()
+        _fail("已有 X 时不应再加 S")
+    except ValueError:
+        pass
+    await cfg.unlock(tx)
+    _ok("S/X 互斥")
+
+
+async def test_unlock_bad_ticket() -> None:
+    cfg = ExampleWebhook()
+    await cfg.activate()
+    ticket = await cfg.lock_x()
+    fake = LockTicket(mode="x", token=uuid.uuid4(), issuer=cfg.uid)
+    try:
+        await cfg.unlock(fake)
+        _fail("错票应拒绝")
+    except ValueError:
+        pass
+    await cfg.unlock(ticket)
+    try:
+        await cfg.unlock(ticket)
+        _fail("双解应拒绝")
+    except ValueError:
+        pass
+    _ok("错票与双解拒绝")
+
+
+async def test_unlock_wrong_issuer() -> None:
+    col = ConfigCollection([ExampleScript])
+    await col.activate()
+    uid = col.add(ExampleScript)
+    await col.commit()
+    ticket = await col.lock_s()
+    entry = col[uid]
+    try:
+        await entry.unlock(ticket)
+        _fail("子节点不可解父签发票")
+    except ValueError:
+        pass
+    if not entry.is_locked:
+        _fail("错解后子节点仍应持锁")
+    await col.unlock(ticket)
+    if col.is_locked or entry.is_locked:
+        _fail("签发节点解锁后子树应全解")
+    _ok("unlock 须在签发节点")
+
+
+async def test_collection_lock_s_subtree() -> None:
+    col = ConfigCollection([ExampleScript])
+    await col.activate()
+    uid = col.add(ExampleScript)
+    await col.commit()
+    ticket = await col.lock_s()
+    if not col[uid].is_locked:
+        _fail("Collection 加 S 后成员应 is_locked")
+    await col.unlock(ticket)
+    if col[uid].is_locked:
+        _fail("Collection 解锁后成员应解除")
+    _ok("Collection S 锁递归子树")
 
 
 async def test_add_rejects_undeclared_type() -> None:
@@ -1618,6 +1720,11 @@ async def main() -> int:
         test_trigger_field,
         test_reactive_unbound_raises,
         test_lock,
+        test_lock_s_stacking,
+        test_lock_s_x_mutex,
+        test_unlock_bad_ticket,
+        test_unlock_wrong_issuer,
+        test_collection_lock_s_subtree,
         test_commit_cancelled_restores_batch,
         test_collection_lock_blocks_commit,
         test_add_rejects_undeclared_type,

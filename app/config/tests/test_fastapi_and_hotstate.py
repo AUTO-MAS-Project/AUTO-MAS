@@ -397,7 +397,7 @@ async def test_fastapi_update_from_body() -> None:
 async def test_locked_write_guard() -> None:
     e = ExampleWebhook()
     await e.activate()
-    await e.lock()
+    ticket = await e.lock_x()
     try:
         e.info.name = "x"
         _fail("锁定后写入应失败")
@@ -405,7 +405,7 @@ async def test_locked_write_guard() -> None:
         pass
     if e.info.name == "x":
         _fail("锁定写入不应生效")
-    await e.unlock()
+    await e.unlock(ticket)
     e.info.name = "ok"
     await e.commit()
     if e.info.name != "ok":

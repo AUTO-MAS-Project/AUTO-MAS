@@ -5,7 +5,7 @@
 - 运行时私有状态（uid / parent / activation_state / deleted / locked / workspace）
 - 工作区两层 API：读 ``effective`` / 写 ``_build_workspace``
 - blinker 信号：``connect`` / ``disconnect`` / ``send``
-- 生命周期：``activate`` / ``delete`` / ``lock`` / ``to_dict``
+- 生命周期：``activate`` / ``delete`` / ``lock_s`` / ``lock_x`` / ``unlock`` / ``to_dict``
 """
 
 from __future__ import annotations
@@ -13,10 +13,11 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Iterator, Self, cast
+from typing import ClassVar, Literal, Self, cast
 from uuid import UUID, uuid4
 
 from blinker import ANY, Signal
@@ -43,6 +44,15 @@ class NodeState(str, Enum):
     INACTIVE = "inactive"
     INITIALIZING = "initializing"
     ACTIVE = "active"
+
+
+@dataclass(frozen=True)
+class LockTicket:
+    """业务锁凭证；``unlock`` 须原票且在 ``issuer`` 节点调用。"""
+
+    mode: Literal["s", "x"]
+    token: UUID
+    issuer: UUID
 
 
 class _SignalDescriptor:
@@ -169,7 +179,8 @@ class ConfigNode(BaseModel):
     _parent_ref: ParentRef | None = PrivateAttr(default=None)
     _activation_state: NodeState = PrivateAttr(default=NodeState.INACTIVE)
     _deleted: bool = PrivateAttr(default=False)
-    _is_locked: bool = PrivateAttr(default=False)
+    _lock_s: set[UUID] = PrivateAttr(default_factory=set)
+    _lock_x: UUID | None = PrivateAttr(default=None)
     _workspace: "ConfigNode | None" = PrivateAttr(default=None)
     _pending_wire: WireDict | None = PrivateAttr(default=None)
     _is_workspace: bool = PrivateAttr(default=False)
@@ -209,8 +220,8 @@ class ConfigNode(BaseModel):
 
     @property
     def is_locked(self) -> bool:
-        """已激活后的即时锁定（不经工作区）；未激活无锁概念（由 ``INACTIVE`` 禁止热写）。"""
-        return self._is_locked
+        """派生：任一 S 或 X 持有即为真（不经工作区；仅已激活后有意义）。"""
+        return bool(self._lock_s) or self._lock_x is not None
 
     @property
     def is_root(self) -> bool:
@@ -537,15 +548,61 @@ class ConfigNode(BaseModel):
         for child in self.iter_children():
             await child._delete()
 
-    async def lock(self) -> None:
-        self._is_locked = True
-        for child in self.iter_children():
-            await child.lock()
+    async def lock_s(self) -> LockTicket:
+        """共享锁：可叠加；禁一切热写；与 X 互斥。"""
+        if self._lock_x is not None:
+            raise ValueError("已有 X 锁，无法加 S")
+        token = uuid4()
 
-    async def unlock(self) -> None:
-        self._is_locked = False
-        for child in self.iter_children():
-            await child.unlock()
+        def register(node: ConfigNode) -> None:
+            node._lock_s.add(token)
+            for child in node.iter_children():
+                register(child)
+
+        register(self)
+        return LockTicket(mode="s", token=token, issuer=self.uid)
+
+    async def lock_x(self) -> LockTicket:
+        """独占锁：至多一个；禁一切热写；与任一 S 互斥。"""
+        if self._lock_x is not None or self._lock_s:
+            raise ValueError("已有锁，无法加 X")
+        token = uuid4()
+
+        def register(node: ConfigNode) -> None:
+            node._lock_x = token
+            for child in node.iter_children():
+                register(child)
+
+        register(self)
+        return LockTicket(mode="x", token=token, issuer=self.uid)
+
+    async def unlock(self, ticket: LockTicket) -> None:
+        """凭原凭证解锁；须在 ``ticket.issuer`` 节点调用。"""
+        if ticket.issuer != self.uid:
+            raise ValueError("须在签发节点解锁")
+        if ticket.mode == "s":
+            if ticket.token not in self._lock_s:
+                raise ValueError("无效或未持有的 S 锁凭证")
+
+            def unregister(node: ConfigNode) -> None:
+                node._lock_s.discard(ticket.token)
+                for child in node.iter_children():
+                    unregister(child)
+
+            unregister(self)
+            return
+        if ticket.mode == "x":
+            if self._lock_x != ticket.token:
+                raise ValueError("无效或未持有的 X 锁凭证")
+
+            def unregister(node: ConfigNode) -> None:
+                node._lock_x = None
+                for child in node.iter_children():
+                    unregister(child)
+
+            unregister(self)
+            return
+        raise ValueError(f"未知锁模式: {ticket.mode!r}")
 
     def iter_children(self) -> Iterator["ConfigNode"]:
         raise NotImplementedError

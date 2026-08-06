@@ -49,9 +49,19 @@ class FieldChangeEvent:
 class CollectionChangeEvent:
     """Collection 结构变更事件。回调首参 ``sender`` 为发送者 Collection。"""
 
-    kind: Literal["init_add", "add", "remove", "set_order"]
+    kind: Literal[
+        "init_add",
+        "add",
+        "remove",
+        "set_order",
+        "add_type",
+        "remove_type",
+        "reload_type",
+    ]
     collection: ConfigNode
     uid: UUID | None = None
     entry: ConfigNode | None = None
     old_order: list[CollectionOrderItem] | None = None
     order: list[CollectionOrderItem] | None = None
+    entry_type: type | None = None
+    reloaded_uids: tuple[UUID, ...] | None = None
