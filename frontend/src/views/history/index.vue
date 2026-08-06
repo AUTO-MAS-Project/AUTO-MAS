@@ -12,7 +12,7 @@
       :end-date="searchForm.endDate"
       :current-preset="currentPreset"
       :loading="searchLoading"
-      @update:mode="searchForm.mode = $event"
+      @update:mode="handleModeUpdate"
       @update:start-date="searchForm.startDate = $event"
       @update:end-date="searchForm.endDate = $event"
       @quick-select="handleQuickTimeSelect"
@@ -50,6 +50,7 @@
             :error-info="selectedUserData?.error_info || null"
             :recruit-statistics="selectedUserData?.recruit_statistics || null"
             :drop-statistics="selectedUserData?.drop_statistics || null"
+            :matrix-statistics="getMatrixStatistics(selectedUserData)"
             @select-record="handleSelectRecord"
           />
         </div>
@@ -67,6 +68,7 @@
       :error-message="currentErrorMessage"
       :recruit-statistics="currentDetail?.recruit_statistics || null"
       :drop-statistics="currentDetail?.drop_statistics || null"
+      :matrix-statistics="getMatrixStatistics(currentDetail)"
       :font-size="editorConfig.fontSize"
       :font-size-options="fontSizeOptions"
       :editor-theme="editorTheme"
@@ -82,12 +84,17 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { HistoryData } from '@/api'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
 import HistoryDetailPanel from './components/HistoryDetailPanel.vue'
 import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
+
+defineOptions({
+  name: 'HistoryPage',
+})
 
 const {
   // 状态
@@ -127,6 +134,18 @@ const logModalOpen = ref(false)
 const currentRecordDate = ref('')
 const currentRecordStatus = ref('')
 const currentErrorMessage = ref('')
+
+type HistoryDataWithMatrix = HistoryData & {
+  matrix_statistics?: Record<string, string> | null
+}
+
+const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
+  return (data as HistoryDataWithMatrix | null)?.matrix_statistics ?? null
+}
+
+const handleModeUpdate = (mode: string) => {
+  searchForm.mode = mode as typeof searchForm.mode
+}
 
 // 选择记录时打开弹窗
 const handleSelectRecord = async (index: number, record: any) => {

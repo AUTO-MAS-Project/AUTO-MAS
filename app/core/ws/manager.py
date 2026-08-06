@@ -153,15 +153,6 @@ class _MainConnectionManager:
         async with self._connection_lock:
             self._closing = True
 
-    async def close(self, code: int = 1000, reason: str = "正常关闭") -> None:
-        """主动关闭主连接。"""
-        websocket = self._websocket
-        if websocket is None:
-            return
-        self._websocket = None
-        with suppress(Exception):
-            await websocket.close(code=code, reason=reason)
-
     async def wait_until_disconnected(
         self, timeout: float = 10.0, poll_interval: float = 0.05
     ) -> bool:

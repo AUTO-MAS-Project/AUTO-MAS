@@ -47,12 +47,17 @@ from Crypto.Util.Padding import pad
 
 from typing import Dict, Any
 
-from app.core import Config
 from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
 from app.utils.logger import get_logger
 from .skland_response import is_skland_already_signed
 
 logger = get_logger("森空岛签到任务")
+
+
+def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
+    """创建不继承本地环境代理的森空岛 HTTP 客户端。"""
+
+    return httpx.AsyncClient(proxy=proxy, trust_env=False)
 
 
 def md5_hash(data: str) -> str:
@@ -205,7 +210,7 @@ async def get_device_id(proxy: str | None = None) -> str:
 
     devices_info_url = f"{SKLAND_SM_CONFIG['protocol']}://{SKLAND_SM_CONFIG['apiHost']}{SKLAND_SM_CONFIG['apiPath']}"
 
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
+    async with _create_skland_client(proxy) as client:
         response = await client.post(
             devices_info_url,
             json=body,
@@ -339,7 +344,7 @@ async def skland_sign_in(
             "vName": "1.0.0",
         }
 
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.post(
                 cred_code_url,
                 json={"code": grant, "kind": 1},
@@ -354,7 +359,7 @@ async def skland_sign_in(
 
     async def get_grant_code(token_value):
         """通过token获取grant code"""
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.post(
                 grant_code_url,
                 json={"appCode": "4ca99fa6b56cc2ba", "token": token_value, "type": 0},
@@ -375,7 +380,7 @@ async def skland_sign_in(
         """
         code = app_code_override if app_code_override else app_code
         v = []
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.get(
                 binding_url,
                 headers=await get_sign_header(
@@ -403,7 +408,7 @@ async def skland_sign_in(
         query_url = f"{arknights_sign_url}?uid={uid}&gameId={game_id}"
 
         try:
-            async with httpx.AsyncClient(proxy=Config.proxy) as client:
+            async with _create_skland_client(proxy) as client:
                 response = await client.get(
                     query_url,
                     headers=await get_sign_header(
@@ -458,7 +463,7 @@ async def skland_sign_in(
             }
 
             try:
-                async with httpx.AsyncClient(proxy=Config.proxy) as client:
+                async with _create_skland_client(proxy) as client:
                     sign_headers = await get_sign_header(
                         arknights_sign_url,
                         "post",
@@ -509,7 +514,7 @@ async def skland_sign_in(
             }
         )
 
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.post(endfield_sign_url, headers=headers)
             return response.json()
 

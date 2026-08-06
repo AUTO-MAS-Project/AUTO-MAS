@@ -7,7 +7,6 @@ import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaFWUserConfig } from './MaaFWUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
-import type { OkefUserConfig } from './OkefUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
 import type { PluginUserConfig } from './PluginUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
@@ -32,6 +31,6 @@ export type UserGetOut = {
     /**
      * 用户数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | PluginUserConfig)>;
+    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | PluginUserConfig)>;
 };
 

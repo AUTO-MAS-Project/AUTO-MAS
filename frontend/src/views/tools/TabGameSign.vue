@@ -171,15 +171,19 @@ const handleEditModalOk = async () => {
   try {
     const uid = editingAccount.value.uid
     const idx = accounts.value.findIndex(a => a.uid === uid)
+    const accountData = getAccountAllData(editingAccount.value)
+    await updateAccount(uid, accountData)
     if (idx >= 0) {
       accounts.value[idx] = { ...editingAccount.value }
-      await updateAccount(uid, getAccountAllData(editingAccount.value))
-      message.success('Token 已保存')
     }
-  } catch {
+    message.success('Token 已保存')
+    editModalVisible.value = false
+    editingAccount.value = null
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存 Token 失败: ${errorMsg}`)
     message.error('保存失败，请重试')
   }
-  editModalVisible.value = false
 }
 
 // ==================== 米游社扫码登录 ====================
@@ -436,10 +440,10 @@ const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
         status,
         games,
         groups,
-        signedCount: status === 'unsigned' ? 0 : signedCount,
-        totalCount: status === 'unsigned' ? 0 : totalCount,
-        failedCount: status === 'unsigned' ? 0 : failedCount,
-        riskCount: status === 'unsigned' ? 0 : riskCount,
+        signedCount,
+        totalCount,
+        failedCount,
+        riskCount,
       })
     }
     map.set(account.uid, tags)
@@ -462,15 +466,9 @@ const getAccountGroupsForPlatformReactive = (
   return tag?.groups || []
 }
 
-// 标签文字 — 只显示社区名，状态由标签颜色表达
-const getTagText = (tag: {
-  platform: string
-  status: TagStatus
-  signedCount: number
-  totalCount: number
-  failedCount: number
-}) => {
-  return tag.platform
+// 标签文字 — 尚无结果时只显示社区名，执行后显示成功数/总数
+const getTagText = (tag: PlatformTag) => {
+  return tag.totalCount > 0 ? `${tag.platform}${tag.signedCount}/${tag.totalCount}` : tag.platform
 }
 
 // 标签 CSS 类
@@ -713,7 +711,6 @@ onMounted(() => {
                   size="middle"
                   style="width: 100px"
                   :disabled="disabled"
-                  :class="{ 'select-enabled': account.Enabled }"
                   @change="handleAccountFieldSave(account)"
                   @dropdown-visible-change="onSelectVisibleChange"
                 >
@@ -911,10 +908,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* ==================== 选中启用时边框变绿 ==================== */
-.select-enabled :deep(.ant-select-selector) {
-  border-color: var(--ant-color-success) !important;
-}
+/* 用户启用状态通过选项文字表达，保留 Ant Design 默认边框。 */
 
 /* ==================== 用户列表表格 ==================== */
 .user-table-container {
@@ -1335,26 +1329,26 @@ onMounted(() => {
 }
 
 /* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */
-:global(:root.dark) .tag-signed {
+:global(:root.dark .tag-signed) {
   background: rgba(82, 196, 26, 0.16);
   border-color: rgba(82, 196, 26, 0.45);
   color: #95de64;
 }
 
-:global(:root.dark) .tag-unsigned {
+:global(:root.dark .tag-unsigned) {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.18);
   color: var(--ant-color-text-secondary);
 }
 
-:global(:root.dark) .tag-failed {
+:global(:root.dark .tag-failed) {
   background: rgba(255, 77, 79, 0.16);
   border-color: rgba(255, 77, 79, 0.48);
   color: #ff7875;
 }
 
-:global(:root.dark) .tag-risk,
-:global(:root.dark) .tag-partial {
+:global(:root.dark .tag-risk),
+:global(:root.dark .tag-partial) {
   background: rgba(250, 173, 20, 0.16);
   border-color: rgba(250, 173, 20, 0.48);
   color: #ffc53d;

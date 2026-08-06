@@ -74,28 +74,27 @@ class WSDialogsTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(Dialogs._pending), 0)
             self.assertEqual(len(Dialogs._requests), 0)
 
-    async def test_pending_requests_returns_deep_copy_snapshot(self):
-        with patch("app.core.ws.dialogs.Publisher.send", new_callable=AsyncMock) as send:
-            ask_task = asyncio.create_task(Dialogs.ask(title="操作提示", message="等待处理？"))
+    async def test_pending_requests_snapshot_reflects_open_requests(self):
+        """重连后前端通过 HTTP 初始快照读取未完成弹窗（取代已移除的重发机制）。"""
+        with patch("app.core.ws.dialogs.Publisher.send", new_callable=AsyncMock):
+            ask_task = asyncio.create_task(Dialogs.ask(title="操作提示", message="重连后可见？"))
             await asyncio.sleep(0.01)
 
             snapshot = Dialogs.pending_requests()
             self.assertEqual(len(snapshot), 1)
-            self.assertEqual(snapshot[0].title, "操作提示")
-            self.assertEqual(snapshot[0].options, ["是", "否"])
+            self.assertEqual(snapshot[0].message, "重连后可见？")
 
-            snapshot[0].title = "已修改"
-            snapshot[0].options[0] = "确认"
-            current = Dialogs.pending_requests()
-            self.assertEqual(current[0].title, "操作提示")
-            self.assertEqual(current[0].options, ["是", "否"])
-            send.assert_awaited_once()
+            # 快照是深拷贝，外部修改不影响内部等待状态
+            snapshot[0].message = "被外部修改"
+            self.assertEqual(
+                next(iter(Dialogs._requests.values())).message, "重连后可见？"
+            )
 
             Dialogs._on_response(
                 WSEnvelope(
                     id=protocol.ID_MAIN,
                     type=protocol.DIALOG_RESPONSE,
-                    data={"requestId": current[0].requestId, "choice": True},
+                    data={"requestId": snapshot[0].requestId, "choice": True},
                 )
             )
             self.assertTrue(await asyncio.wait_for(ask_task, timeout=1))

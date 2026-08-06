@@ -1,0 +1,38 @@
+:root {
+  --app-scrollbar-size: 8px;
+  --app-scrollbar-track: transparent;
+  --app-scrollbar-thumb: rgba(0, 0, 0, 0.28);
+  --app-scrollbar-thumb-hover: rgba(0, 0, 0, 0.45);
+}
+
+:root.dark {
+  --app-scrollbar-thumb: rgba(255, 255, 255, 0.28);
+  --app-scrollbar-thumb-hover: rgba(255, 255, 255, 0.45);
+}
+
+* {
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--app-scrollbar-thumb);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+  background-clip: content-box;
+}

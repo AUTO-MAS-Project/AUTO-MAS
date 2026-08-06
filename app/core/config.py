@@ -37,10 +37,15 @@ import json
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
+<<<<<<< HEAD
     CLASS_BOOK,
     GameSignAccount,
     GameSignAccountGroup,
     QueueEntry,
+=======
+    MaaConfig,
+    MaaPlanConfig,
+>>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
     QueueConfig,
     QueueItem,
     Setting,
@@ -70,6 +75,7 @@ from app.utils.constants import (
     RESOURCE_STAGE_DROP_INFO,
     TYPE_BOOK,
     RESOURCE_STAGE_DATE_TEXT,
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
 from app.utils import get_logger
 from .script_types import (
@@ -86,6 +92,56 @@ from .script_types import (
 from .script_config_codec import form_to_storage, storage_to_form
 
 logger = get_logger("配置管理")
+
+GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
+
+
+def _load_game_sign_result_snapshot(
+    path: Path, *, result_date: str
+) -> dict[str, Any]:
+    """读取当天的游戏签到结果快照。"""
+
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"读取游戏签到结果快照失败: {e}")
+        return {}
+
+    if not isinstance(payload, dict) or payload.get("date") != result_date:
+        return {}
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        logger.warning("游戏签到结果快照格式无效，已忽略")
+        return {}
+    return result
+
+
+def _save_game_sign_result_snapshot(
+    path: Path | None, result: dict[str, Any], *, result_date: str
+) -> None:
+    """原子保存游戏签到结果快照。"""
+
+    if path is None:
+        return
+
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_text(
+            json.dumps(
+                {"date": result_date, "result": result},
+                ensure_ascii=False,
+                indent=4,
+            ),
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
 class AppConfig:
@@ -137,6 +193,7 @@ class AppConfig:
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
         self._stage_refreshing = False
+        self._game_sign_result_date = ""
 
         self._inject_truststore()
 
@@ -202,10 +259,31 @@ class AppConfig:
             except ConfigAggregateError as exc:
                 logger.warning(f"{label} 配置激活有聚合错误（待 JSON/TOML 迁移）: {exc}")
 
+        # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
+            self.config_path / GAME_SIGN_RESULT_FILENAME,
+            result_date=today,
+        )
+        self._game_sign_result_date = today
+
         # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
+<<<<<<< HEAD
         if self.tools.game_sign.last_sign_date != datetime.now().strftime("%Y-%m-%d"):
             self.tools.game_sign.scheduled_time = ""
             await self.tools.commit()
+=======
+        last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
+        if last_sign_date != today:
+            await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
+
+        from app.services import System
+
+        self.bind("Start", "IfSelfStart", System.set_SelfStart)
+        self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
+        await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+>>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
 
         self.loop = asyncio.get_running_loop()
 
@@ -2046,6 +2124,36 @@ class AppConfig:
 
         return data
 
+    async def get_maa_depot_items(self, script_id: str) -> list[dict[str, str]]:
+        """获取 MAA 库存保持物品选项。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        item_index_path = (
+            Path(script_config.get("Info", "Path")) / "resource" / "item_index.json"
+        )
+        if not item_index_path.exists():
+            raise FileNotFoundError(
+                f"未找到 MAA 物品资源: {item_index_path}，请更新 MAA 后重试"
+            )
+
+        items = json.loads(item_index_path.read_text(encoding="utf-8"))
+        return [
+            {"label": item.get("name") or item_id, "value": item_id}
+            for item_id, item in sorted(
+                (
+                    (item_id, item)
+                    for item_id, item in items.items()
+                    if item_id.isdigit()
+                    and item_id not in MAA_DEPOT_EXCLUDED_ITEM_IDS
+                    and isinstance(item, dict)
+                ),
+                key=lambda entry: int(entry[0]),
+            )
+        ]
+
     async def add_plan(
         self, script: Literal["MaaPlan"]
     ) -> tuple[uuid.UUID, MaaPlanConfig]:
@@ -2259,6 +2367,377 @@ class AppConfig:
 
         await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
 
+<<<<<<< HEAD
+=======
+    async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
+        """添加调度队列"""
+
+        logger.info("添加调度队列")
+
+        return await self.QueueConfig.add(QueueConfig)
+
+    async def get_queue(self, queue_id: Optional[str]) -> tuple[list, dict]:
+        """获取调度队列配置"""
+
+        logger.info(f"获取调度队列配置: {queue_id}")
+
+        if queue_id is None:
+            data = await self.QueueConfig.toDict()
+        else:
+            data = await self.QueueConfig.get(uuid.UUID(queue_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def update_queue(
+        self, queue_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新调度队列配置"""
+
+        logger.info(f"更新调度队列配置: {queue_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await self.QueueConfig[queue_uid].set(group, name, value)
+
+    async def del_queue(self, queue_id: str) -> None:
+        """删除调度队列配置"""
+
+        logger.info(f"删除调度队列配置: {queue_id}")
+
+        await self.QueueConfig.remove(uuid.UUID(queue_id))
+
+    async def reorder_queue(self, index_list: list[str]) -> None:
+        """重新排序调度队列"""
+
+        logger.info(f"重新排序调度队列: {index_list}")
+
+        await self.QueueConfig.setOrder(list(map(uuid.UUID, index_list)))
+
+    async def get_time_set(
+        self, queue_id: str, time_set_id: Optional[str]
+    ) -> tuple[list, dict]:
+        """获取时间设置配置"""
+
+        logger.info(f"获取队列的时间配置: {queue_id} - {time_set_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        if time_set_id is None:
+            data = await self.QueueConfig[queue_uid].TimeSet.toDict()
+        else:
+            data = await self.QueueConfig[queue_uid].TimeSet.get(uuid.UUID(time_set_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, TimeSet]:
+        """添加时间设置配置"""
+
+        logger.info(f"{queue_id} 添加时间设置配置")
+
+        queue_uid = uuid.UUID(queue_id)
+        uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
+
+        return uid, config
+
+    async def update_time_set(
+        self, queue_id: str, time_set_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新时间设置配置"""
+
+        logger.info(f"{queue_id} 更新时间设置配置: {time_set_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        time_set_uid = uuid.UUID(time_set_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await (
+                    self.QueueConfig[queue_uid]
+                    .TimeSet[time_set_uid]
+                    .set(group, name, value)
+                )
+
+    async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
+        """删除时间设置配置"""
+
+        logger.info(f"{queue_id} 删除时间设置配置: {time_set_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        time_set_uid = uuid.UUID(time_set_id)
+
+        await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
+
+    async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
+        """重新排序时间设置"""
+
+        logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        await self.QueueConfig[queue_uid].TimeSet.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+
+    async def get_queue_item(
+        self, queue_id: str, queue_item_id: Optional[str]
+    ) -> tuple[list, dict]:
+        """获取队列项配置"""
+
+        logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        if queue_item_id is None:
+            data = await self.QueueConfig[queue_uid].QueueItem.toDict()
+        else:
+            data = await self.QueueConfig[queue_uid].QueueItem.get(
+                uuid.UUID(queue_item_id)
+            )
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, QueueItem]:
+        """添加队列项配置"""
+
+        logger.info(f"{queue_id} 添加队列项配置")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
+
+        return uid, config
+
+    async def update_queue_item(
+        self, queue_id: str, queue_item_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新队列项配置"""
+
+        logger.info(f"{queue_id} 更新队列项配置: {queue_item_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        queue_item_uid = uuid.UUID(queue_item_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await (
+                    self.QueueConfig[queue_uid]
+                    .QueueItem[queue_item_uid]
+                    .set(group, name, value)
+                )
+
+    async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
+        """删除队列项配置"""
+
+        logger.info(f"{queue_id} 删除队列项配置: {queue_item_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        queue_item_uid = uuid.UUID(queue_item_id)
+
+        await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
+
+    async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
+        """重新排序队列项"""
+
+        logger.info(f"{queue_id} 重新排序队列项: {index_list}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        await self.QueueConfig[queue_uid].QueueItem.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+
+    async def get_tools(self) -> Dict[str, Any]:
+        """获取工具设置"""
+
+        logger.debug("获取工具设置")
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        if self._game_sign_result_date != today:
+            self.ToolsConfig._game_sign_result_data = {}
+            self._game_sign_result_date = today
+
+        return await self.ToolsConfig.toDict()
+
+    async def update_game_sign_results(
+        self, formatted: dict[str, Any], *, replace: bool = False
+    ) -> None:
+        """合并、持久化并广播游戏签到结果。
+
+        Args:
+            formatted: 已按平台和账号分组的签到结果。
+            replace: 是否按账号 UID 替换已有结果。
+        """
+
+        from app.tools.game_sign import merge_sign_results
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        existing = (
+            self.ToolsConfig._game_sign_result_data
+            if self._game_sign_result_date == today
+            else {}
+        )
+        result = merge_sign_results(existing, formatted, replace=replace)
+        self.ToolsConfig._game_sign_result_data = result
+        self._game_sign_result_date = today
+        _save_game_sign_result_snapshot(
+            self.config_path / GAME_SIGN_RESULT_FILENAME,
+            result,
+            result_date=today,
+        )
+
+        try:
+            await self.send_websocket_message(
+                id="GameSign",
+                type="Update",
+                data={"Result": json.dumps(result, ensure_ascii=False)},
+            )
+        except Exception as e:
+            logger.warning(f"广播游戏签到结果失败: {e}")
+
+    async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新工具设置"""
+
+        logger.info("更新工具设置")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await self.ToolsConfig.set(group, name, value)
+
+        logger.success("工具设置更新成功")
+
+    # ==================== 游戏签到账号组 CRUD ====================
+
+    async def get_game_sign_accounts(
+        self, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
+        """获取所有游戏签到账号组"""
+
+        logger.debug("获取所有游戏签到账号组")
+
+        return await self.ToolsConfig.GameSign_Accounts.toDict(
+            if_decrypt=if_decrypt
+        )
+
+    async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
+        """添加游戏签到账号组"""
+
+        logger.info("添加游戏签到账号组")
+
+        uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+            GameSignAccountGroup
+        )
+        return uid, config
+
+    async def get_game_sign_account(
+        self, account_id: str, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
+        """获取游戏签到账号组详情"""
+
+        logger.debug(f"获取游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
+            if_decrypt=if_decrypt
+        )
+
+    def _clear_game_sign_account_results(self, account_id: str) -> None:
+        """清除指定游戏签到账号的结果。"""
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        result = self.ToolsConfig._game_sign_result_data
+        if getattr(self, "_game_sign_result_date", today) != today:
+            result.clear()
+            self._game_sign_result_date = today
+
+        for platform in list(result):
+            result[platform] = [
+                group
+                for group in result[platform]
+                if group.get("account_uid") != account_id
+            ]
+            if not result[platform]:
+                del result[platform]
+
+        tools_file = getattr(self.ToolsConfig, "file", None)
+        snapshot_path = (
+            tools_file.with_name(GAME_SIGN_RESULT_FILENAME)
+            if isinstance(tools_file, Path)
+            else None
+        )
+        _save_game_sign_result_snapshot(
+            snapshot_path,
+            result,
+            result_date=today,
+        )
+
+    async def update_game_sign_account(
+        self, account_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新游戏签到账号组配置"""
+
+        logger.info(f"更新游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        credential_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
+        credential_changed = False
+
+        for group, items in data.items():
+            for name, value in items.items():
+                if (
+                    group == "GameSignAccount"
+                    and name in credential_fields
+                    and account.get(group, name) != value
+                ):
+                    credential_changed = True
+                await account.set(group, name, value)
+
+        if credential_changed:
+            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+            self._clear_game_sign_account_results(account_id)
+
+    async def delete_game_sign_account(self, account_id: str) -> None:
+        """删除游戏签到账号组"""
+
+        logger.info(f"删除游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
+        self._clear_game_sign_account_results(account_id)
+
+    async def reorder_game_sign_accounts(self, order: list[str]) -> None:
+        """调整游戏签到账号组顺序"""
+
+        logger.info("调整游戏签到账号组顺序")
+
+        await self.ToolsConfig.GameSign_Accounts.setOrder(
+            [uuid.UUID(_) for _ in order]
+        )
+
+    async def get_setting(self) -> Dict[str, Any]:
+        """获取全局设置"""
+
+        logger.info("获取全局设置")
+
+        return await self.toDict()
+
+    async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新全局设置"""
+
+        logger.info("更新全局设置")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await self.set(group, name, value)
+
+        logger.success("全局设置更新成功")
+
+>>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
     async def get_webhook(
         self,
         script_id: Optional[str],
@@ -2726,5 +3205,530 @@ class AppConfig:
 
         return remote_web_config
 
+<<<<<<< HEAD
+=======
+    async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
+        """
+        保存MAA日志并生成对应统计数据
+
+        Args:
+            log_path (Path): 日志文件保存路径
+            logs (list): 日志列表
+            maa_result (str): MAA任务结果
+        Returns:
+            bool: 是否存在高资
+        """
+
+        logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
+
+        data = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": defaultdict(dict),
+            "sanity": 0,
+            "sanity_full_at": "",
+            "maa_result": maa_result,
+        }
+
+        if_six_star = False
+
+        # 提取理智相关信息
+        for log_line in logs:
+            # 提取当前理智值：理智: 5/180
+            sanity_match = re.search(r"理智:\s*(\d+)/\d+", log_line)
+            if sanity_match:
+                data["sanity"] = int(sanity_match.group(1))
+
+            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满。(17h 29m 后)
+            sanity_full_match = re.search(
+                r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))",
+                log_line,
+            )
+            if sanity_full_match:
+                data["sanity_full_at"] = sanity_full_match.group(1)
+
+        # 公招统计（仅统计招募到的）
+        confirmed_recruit = False
+        current_star_level = None
+        i = 0
+        while i < len(logs):
+            if "公招识别结果:" in logs[i]:
+                current_star_level = None  # 每次识别公招时清空之前的星级
+                i += 1
+                while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
+                    i += 1
+
+                if i < len(logs) and "Tags" in logs[i]:  # 识别星级
+                    star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
+                    if star_match:
+                        current_star_level = f"{star_match.group(1)}★"
+                        if current_star_level == "6★":
+                            if_six_star = True
+
+            if "已确认招募" in logs[i]:  # 只有确认招募后才统计
+                confirmed_recruit = True
+
+            if confirmed_recruit and current_star_level:
+                data["recruit_statistics"][current_star_level] += 1
+                confirmed_recruit = False  # 重置, 等待下一次公招
+                current_star_level = None  # 清空已处理的星级
+
+            i += 1
+
+        # 掉落统计
+        # 存储所有关卡的掉落统计
+        all_stage_drops = {}
+
+        # 查找所有Fight任务的开始和结束位置
+        fight_tasks = []
+        for i, line in enumerate(logs):
+            if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
+                # 查找对应的任务结束位置
+                end_index = -1
+                for j in range(i + 1, len(logs)):
+                    if "完成任务: Fight" in logs[j] or "完成任务: 理智作战" in logs[j]:
+                        end_index = j
+                        break
+                    # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
+                    if j < len(logs) and (
+                        "开始任务: Fight" in logs[j] or "开始任务: 理智作战" in logs[j]
+                    ):
+                        break
+
+                # 如果找到了结束位置, 记录这个任务的范围
+                if end_index != -1:
+                    fight_tasks.append((i, end_index))
+
+        # 处理每个Fight任务
+        for start_idx, end_idx in fight_tasks:
+            # 提取当前任务的日志
+            task_logs = logs[start_idx : end_idx + 1]
+
+            # 查找任务中的最后一次掉落统计
+            last_drop_stats = {}
+            current_stage = None
+
+            for line in task_logs:
+                # 匹配掉落统计行, 如"1-7 掉落统计:"
+                drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
+                if drop_match:
+                    # 发现新的掉落统计, 重置当前关卡的掉落数据
+                    current_stage = drop_match.group(1)
+                    last_drop_stats = {}
+                    continue
+
+                # 如果已经找到了关卡, 处理掉落物
+                if current_stage:
+                    item_match: List[str] = re.findall(
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
+                        line,
+                        re.M,
+                    )
+                    for item, total in item_match:
+                        total = total.replace(",", "")
+                        if total.lower().endswith("k"):
+                            total = int(total[:-1]) * 1000
+                        else:
+                            total = int(total)
+
+                        # 黑名单
+                        if item not in [
+                            "当前次数",
+                            "理智",
+                            "最快截图耗时",
+                            "专精等级",
+                            "剩余时间",
+                        ]:
+                            last_drop_stats[item] = total
+
+            # 如果任务中有掉落统计, 更新总统计
+            if current_stage and last_drop_stats:
+                if current_stage not in all_stage_drops:
+                    all_stage_drops[current_stage] = {}
+
+                # 累加掉落数据
+                for item, count in last_drop_stats.items():
+                    all_stage_drops[current_stage].setdefault(item, 0)
+                    all_stage_drops[current_stage][item] += count
+
+        # 将累加后的掉落数据保存到结果中
+        data["drop_statistics"] = all_stage_drops
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("".join(logs), encoding="utf-8")
+        # 保存统计数据
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
+
+        return if_six_star
+
+    def parse_maaend_failed_tasks(self, logs: list[str]) -> List[str]:
+        """
+        解析MaaEnd失败任务名称
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            List[str]: 失败任务名称列表
+        """
+
+        failed_tasks: List[str] = []
+        ignored_tasks = {"停止任务", "⛔ 结束进程", "__MXU_KILLPROC__", "StopTask"}
+
+        for log_line in logs:
+            match = re.search(r"任务失败:\s*(.+)", log_line)
+            if match is None:
+                continue
+
+            task_name = match.group(1).strip()
+            if (
+                task_name
+                and task_name not in ignored_tasks
+                and task_name not in failed_tasks
+            ):
+                failed_tasks.append(task_name)
+
+        return failed_tasks
+
+    def parse_maaend_matrix_statistics(
+        self, logs: list[str]
+    ) -> tuple[Optional[Dict[str, str]], bool]:
+        """
+        解析MaaEnd基质刷取统计
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            tuple[Optional[Dict[str, str]], bool]: 基质统计数据与是否识别到基质流程
+        """
+
+        matrix_statistics: Dict[str, str] = {}
+        pending_statistics: Dict[str, str] = {}
+        current_matrix_skill = ""
+        has_matrix_flow = False
+        locked_count = 0
+
+        for log_line in logs:
+            skill_match = re.search(r"OCR到技能：(.+)", log_line)
+            if skill_match:
+                current_matrix_skill = skill_match.group(1).strip()
+                continue
+
+            weapon_match = re.search(r"匹配到武器：(.+)", log_line)
+            if weapon_match and current_matrix_skill:
+                pending_statistics[current_matrix_skill] = (
+                    weapon_match.group(1).strip()
+                )
+                current_matrix_skill = ""
+                continue
+
+            completed_match = re.search(
+                r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
+                log_line,
+            )
+            if completed_match is None:
+                continue
+
+            has_matrix_flow = True
+            current_locked_count = int(completed_match.group(1))
+            locked_count += current_locked_count
+            if current_locked_count > 0:
+                matched_items = list(pending_statistics.items())[
+                    -current_locked_count:
+                ]
+                matrix_statistics.update(matched_items)
+
+            pending_statistics = {}
+            current_matrix_skill = ""
+
+        if not has_matrix_flow:
+            return None, False
+
+        if locked_count == 0:
+            return {}, True
+
+        return (matrix_statistics or None), True
+
+    async def save_maaend_log(
+        self, log_path: Path, logs: list[str], maaend_result: str
+    ) -> None:
+        """
+        Save MaaEnd logs and generate basic statistics data.
+
+        Args:
+            log_path (Path): Target log file path.
+            logs (list[str]): Log lines.
+            maaend_result (str): Result label for this run.
+        """
+
+        logger.info(
+            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
+        )
+
+        failed_tasks = self.parse_maaend_failed_tasks(logs)
+        matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
+
+        if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
+            maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        data: Dict[str, Any] = {"maaend_result": maaend_result}
+        if has_matrix_flow and matrix_statistics is not None:
+            data["matrix_statistics"] = matrix_statistics
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
+    async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
+        """
+        保存SRC日志并生成对应统计数据
+
+        Args:
+            log_path (Path): 日志文件保存路径
+            logs (list): 日志内容列表
+            src_result (str): 待保存的日志结果信息
+        """
+
+        logger.info(f"开始处理SRC日志, 日志长度: {len(logs)}, 日志标记: {src_result}")
+
+        data: Dict[str, str] = {"src_result": src_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
+    async def save_general_log(
+        self, log_path: Path, logs: list, general_result: str
+    ) -> None:
+        """
+        保存通用日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param general_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
+        )
+
+        data: Dict[str, str] = {"general_result": general_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
+    async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
+        """
+        合并指定数据统计信息文件
+
+        Args:
+            statistic_path_list (List[Path]): 数据统计信息文件列表
+
+        Returns:
+            dict: 合并后的数据统计信息
+        """
+
+        data: Dict[str, Any] = {"index": {}}
+        for json_file in statistic_path_list:
+            try:
+                single_data = json.loads(json_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(
+                    f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
+                )
+                continue
+
+            for key in single_data.keys():
+                if key not in data:
+                    data[key] = {}
+
+                # 合并公招统计
+                if key == "recruit_statistics":
+                    for star_level, count in single_data[key].items():
+                        if star_level not in data[key]:
+                            data[key][star_level] = 0
+                        data[key][star_level] += count
+
+                # 合并掉落统计
+                elif key == "drop_statistics":
+                    for stage, drops in single_data[key].items():
+                        if stage not in data[key]:
+                            data[key][stage] = {}  # 初始化关卡
+
+                        for item, count in drops.items():
+                            if item not in data[key][stage]:
+                                data[key][stage][item] = 0
+                            data[key][stage][item] += count
+
+                # 合并基质统计
+                elif key == "matrix_statistics":
+                    for skill, weapon in single_data[key].items():
+                        data[key][skill] = weapon
+
+                # 处理理智相关字段 - 使用最后一个文件的值
+                elif key in ["sanity", "sanity_full_at"]:
+                    data[key] = single_data[key]
+
+                # 录入运行结果
+                elif key in [
+                    "maa_result",
+                    "maaend_result",
+                    "src_result",
+                    "general_result",
+                ]:
+                    actual_date = (
+                        datetime.strptime(
+                            f"{json_file.parent.parent.name} {json_file.stem}",
+                            "%Y-%m-%d %H-%M-%S",
+                        )
+                        .replace(tzinfo=UTC4)
+                        .astimezone()
+                    )
+
+                    success = single_data[key] == "Success!"
+
+                    if not success:
+                        if "error_info" not in data:
+                            data["error_info"] = {}
+                        data["error_info"][
+                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
+                        ] = single_data[key]
+
+                    data["index"][actual_date] = {
+                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        "status": "DONE" if success else "ERROR",
+                        "jsonFile": str(json_file),
+                    }
+
+        data["index"] = [data["index"][_] for _ in sorted(data["index"])]
+
+        # 确保返回的字典始终包含 index 字段，即使为空
+        result = {
+            k: v
+            for k, v in data.items()
+            if v or (k == "matrix_statistics" and isinstance(v, dict))
+        }
+        if "index" not in result:
+            result["index"] = []
+
+        return result
+
+    async def search_history(
+        self,
+        mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
+        start_date: date,
+        end_date: date,
+    ) -> dict:
+        """
+        搜索指定时间范围内的历史记录
+
+        Args:
+            mode (Literal["DAILY", "WEEKLY", "MONTHLY"]): 合并模式
+            start_date (date): 开始日期
+            end_date (date): 结束日期
+        """
+
+        logger.info(
+            f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
+        )
+
+        history_dict = {}
+
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
+
+                if not (start_date <= date <= end_date):
+                    continue  # 只统计在范围内的日期
+
+                if mode == "DAILY":
+                    date_name = date.strftime("%Y-%m-%d")
+                elif mode == "WEEKLY":
+                    date_name = date.strftime("%G-W%V")
+                elif mode == "MONTHLY":
+                    date_name = date.strftime("%Y-%m")
+                else:
+                    raise ValueError("无效的合并模式")
+
+                if date_name not in history_dict:
+                    history_dict[date_name] = {}
+
+                for user_folder in date_folder.iterdir():
+                    if not user_folder.is_dir():
+                        continue  # 只处理用户文件夹
+
+                    if user_folder.stem not in history_dict[date_name]:
+                        history_dict[date_name][user_folder.stem] = list(
+                            user_folder.with_suffix("").glob("*.json")
+                        )
+                    else:
+                        history_dict[date_name][user_folder.stem] += list(
+                            user_folder.with_suffix("").glob("*.json")
+                        )
+
+            except ValueError:
+                logger.exception(f"非日期格式的目录: {date_folder}")
+
+        logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
+
+        return {
+            k: v
+            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
+        }
+
+    async def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("历史记录永久保留, 跳过历史记录清理")
+            return
+
+        logger.info("开始清理超过设定天数的历史记录")
+
+        deleted_count = 0
+
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                # 只检查 `YYYY-MM-DD` 格式的文件夹
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
+                if datetime.now(tz=UTC4).date() - folder_date > timedelta(
+                    days=self.get("Function", "HistoryRetentionTime")
+                ):
+                    shutil.rmtree(date_folder, ignore_errors=True)
+                    deleted_count += 1
+                    logger.debug(f"已删除超期日志目录: {date_folder}")
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        logger.success(f"清理完成: {deleted_count} 个日期目录")
+
+>>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
 
 Config = AppConfig()

@@ -754,6 +754,25 @@ export class Service {
         });
     }
     /**
+     * MAA 库存保持物品可选项
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotItemsApiScriptsMaaDepotItemsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/items',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询 webhook 配置
      * @param requestBody
      * @returns WebhookGetOut Successful Response

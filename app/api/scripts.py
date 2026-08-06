@@ -608,6 +608,25 @@ async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> Comb
 
 
 @router.post(
+    "/maa/depot/items",
+    tags=["Get"],
+    summary="MAA 库存保持物品可选项",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_depot_items(script.scriptId)
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
     "/webhook/get",
     tags=["Get"],
     summary="查询 webhook 配置",

@@ -187,9 +187,7 @@ class Tools(ConfigEntry):
             default="r", description="释放技能键位"
         )
         retreat_key: KeyboardKeyString = Field(default="t", description="撤退键位")
-        next_frame_key: KeyboardKeyString = Field(
-            default="f", description="下一帧键位"
-        )
+        next_frame_key: KeyboardKeyString = Field(default="f", description="下一帧键位")
         another_quit_key: KeyboardKeyString = Field(
             default="space", description="自定义退出、暂停键位"
         )
@@ -197,9 +195,7 @@ class Tools(ConfigEntry):
 
     class GameSign(ConfigGroup):
         enabled: bool = Field(default=False, description="是否启用游戏签到")
-        notify_enabled: bool = Field(
-            default=False, description="签到后是否发送通知"
-        )
+        notify_enabled: bool = Field(default=False, description="签到后是否发送通知")
         window_start: HHMMString = Field(
             default="08:00", description="签到窗口起点 HH:mm"
         )
@@ -323,17 +319,13 @@ class Setting(ConfigEntry):
         send_task_result_time: Literal["不推送", "任何时刻", "仅失败时"] = Field(
             default="不推送", description="任务结果推送时机"
         )
-        if_send_statistic: bool = Field(
-            default=False, description="是否发送统计信息"
-        )
+        if_send_statistic: bool = Field(default=False, description="是否发送统计信息")
         if_send_six_star: bool = Field(
             default=False, description="是否发送公招六星通知"
         )
         if_push_plyer: bool = Field(default=False, description="是否推送系统通知")
         if_send_mail: bool = Field(default=False, description="是否发送邮件通知")
-        if_koishi_support: bool = Field(
-            default=False, description="是否启用Koishi支持"
-        )
+        if_koishi_support: bool = Field(default=False, description="是否启用Koishi支持")
         koishi_server_address: UrlString = Field(
             default="ws://localhost:5140/AUTO_MAS",
             description="Koishi服务器地址",
@@ -349,9 +341,7 @@ class Setting(ConfigEntry):
             default=False, description="是否使用ServerChan推送"
         )
         server_chan_key: str = Field(default="", description="ServerChan推送密钥")
-        test: Trigger = Field(
-            default=False, description="测试通知（写 True 触发一次）"
-        )
+        test: Trigger = Field(default=False, description="测试通知（写 True 触发一次）")
 
     class Updates(ConfigGroup):
         if_auto_update: bool = Field(default=False, description="是否自动更新")

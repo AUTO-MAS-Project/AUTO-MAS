@@ -79,14 +79,6 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: m9aIcon,
   },
   {
-    value: 'OkScript',
-    title: 'ok-script 项目',
-    description: '读取 pyappify.yml 并通过内置表单编辑用户配置',
-    keywords: ['ok-script', 'pyappify', 'ok-ef', 'ok-ww', 'ok-nte'],
-    group: 'specialized',
-    icon: generalIcon,
-  },
-  {
     value: 'MaaFW',
     title: 'MaaFramework 项目',
     description: '读取 interface 并运行 MaaFramework 项目',

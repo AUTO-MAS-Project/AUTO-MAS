@@ -15,6 +15,7 @@
       <UserStatisticsCard
         :recruit-statistics="recruitStatistics"
         :drop-statistics="dropStatistics"
+        :matrix-statistics="matrixStatistics"
       />
 
       <!-- 记录列表 -->
@@ -46,6 +47,7 @@ interface Props {
   errorInfo: Record<string, string> | null
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
+  matrixStatistics: Record<string, string> | null
 }
 
 defineProps<Props>()

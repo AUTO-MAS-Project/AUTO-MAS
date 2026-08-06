@@ -8,10 +8,17 @@ describe('ScriptCreateDialog structure', () => {
     expect(source).not.toContain('<aside class="step-sidebar"')
   })
 
-  it('overrides the global scrollbar hiding with defined theme variables', () => {
-    expect(source).toContain('scrollbar-color: var(--ant-color-border) transparent;')
-    expect(source).toContain('width: 8px !important;')
-    expect(source).toContain('display: block !important;')
-    expect(source).toContain('background: var(--ant-color-border) !important;')
+  it('keeps the modal below the title bar and scrolls content inside short windows', () => {
+    expect(source).toContain(':z-index="900"')
+    expect(source).toContain('top: 64px;')
+    expect(source).toContain('height: min(500px, calc(100vh - 192px));')
+    expect(source.match(/overflow-y: auto;/g)).toHaveLength(1)
+  })
+
+  it('centers template loading in a sized state container', () => {
+    expect(source).toContain('<div v-if="templateLoading" class="template-loading-state">')
+    expect(source).toContain('<a-spin size="large" tip="正在加载配置模板..." />')
+    expect(source).toContain('min-height: 240px;')
+    expect(source).not.toContain('<a-spin :spinning="templateLoading">')
   })
 })
