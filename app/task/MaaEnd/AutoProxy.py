@@ -240,7 +240,7 @@ class AutoProxyTask(TaskExecuteBase):
             controller_type = self.script_config.get("Game", "ControllerType")
             try:
                 if self.emulator_manager is None:
-                    if controller_type != "ADB" and is_process_running("Endfield.exe"):
+                    if is_process_running("Endfield.exe"):
                         logger.info(
                             "检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏"
                         )
@@ -544,9 +544,8 @@ class AutoProxyTask(TaskExecuteBase):
         if device_info is not None:
             from app.core import MaaFWManager
 
-            maaend_instance["savedDevice"] = {
-                "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
-            }
+            adb_device = await MaaFWManager.ensure_adb_connectable(device_info)
+            maaend_instance["savedDevice"] = {"adbDeviceName": adb_device.name}
         maaend_tasks = maaend_instance["tasks"]
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
@@ -744,7 +743,7 @@ class AutoProxyTask(TaskExecuteBase):
                 and target_task_name == "AutoEssence"
             ):
                 task.setdefault("optionValues", {})
-                task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
+                task["optionValues"]["AutoEssenceChooseLocation"] = {
                     "type": "select",
                     "caseName": sanity_task_config["AutoEssenceSpecifiedLocation"],
                 }

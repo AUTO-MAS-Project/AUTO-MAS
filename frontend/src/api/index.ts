@@ -106,6 +106,7 @@ export type { MaaEndConfig } from './models/MaaEndConfig';
 export type { MaaEndConfig_Game } from './models/MaaEndConfig_Game';
 export type { MaaEndConfig_Info } from './models/MaaEndConfig_Info';
 export type { MaaEndConfig_Run } from './models/MaaEndConfig_Run';
+export type { MaaEndOptionsOut } from './models/MaaEndOptionsOut';
 export type { MaaEndUserConfig } from './models/MaaEndUserConfig';
 export type { MaaEndUserConfig_Data } from './models/MaaEndUserConfig_Data';
 export type { MaaEndUserConfig_Info } from './models/MaaEndUserConfig_Info';

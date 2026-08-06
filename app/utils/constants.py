@@ -241,13 +241,6 @@ MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
-    "VFTheHub": "枢纽区",
-    "VFOriginiumSciencePark": "源石研究园",
-    "VFOriginLodespring": "矿脉源区",
-    "VFPowerPlateau": "供能高地",
-    "WLWulingCity": "武陵城区",
-    "WLQingboStockade": "清波寨",
-    "WLMarkerStone": "首墩",
 }
 """MaaEnd理智任务详细选项展示文案"""
 
@@ -271,17 +264,6 @@ MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     ),
 }
 """MaaEnd协议空间任务选项列表"""
-
-MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
-    "VFTheHub",
-    "VFOriginiumSciencePark",
-    "VFOriginLodespring",
-    "VFPowerPlateau",
-    "WLWulingCity",
-    "WLQingboStockade",
-    "WLMarkerStone",
-)
-"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
@@ -347,7 +329,7 @@ MAAEND_SANITY_TASK_DEFAULTS = {
     "WeaponProgression": "WeaponEXP",
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
-    "AutoEssenceSpecifiedLocation": "VFTheHub",
+    "AutoEssenceSpecifiedLocation": "",
 }
 """MaaEnd理智任务字段默认值"""
 

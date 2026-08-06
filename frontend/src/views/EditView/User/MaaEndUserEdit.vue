@@ -61,6 +61,7 @@
             :loading="loading"
             :if-quick-config="formData.Info.IfQuickConfig"
             :controller-type="controllerType"
+            :essence-location-options="essenceLocationOptions"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
@@ -85,6 +86,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -103,7 +105,7 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
-const { getScript, importScriptConfigFile } = useScriptApi()
+const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -125,6 +127,7 @@ const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
+const essenceLocationOptions = ref<ComboBoxItem[]>([])
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -152,7 +155,7 @@ const getDefaultMaaEndUserData = () => ({
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
-    AutoEssenceSpecifiedLocation: 'VFTheHub',
+    AutoEssenceSpecifiedLocation: '',
     IfSanity: true,
     IfAutoUseSpMedication: true,
     IfDijiangRewards: true,
@@ -264,6 +267,13 @@ const loadScriptInfo = async () => {
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
+  }
+}
+
+const loadMaaEndOptions = async () => {
+  const response = await getMaaEndOptions(scriptId)
+  if (response?.code === 200) {
+    essenceLocationOptions.value = response.essenceLocations
   }
 }
 
@@ -427,6 +437,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
+  await loadMaaEndOptions()
 
   if (isEdit.value) {
     await loadUserData()

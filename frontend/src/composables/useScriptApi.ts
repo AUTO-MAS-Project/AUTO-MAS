@@ -10,6 +10,7 @@ import {
   type SrcConfig,
   type HSRConfig,
   type HSRStageOptionsData,
+  type MaaEndOptionsOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
@@ -695,7 +696,7 @@ export function useScriptApi() {
                         AutoEssenceSpecifiedLocation:
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
-                            : 'VFTheHub',
+                            : '',
                         IfSanity:
                           maaEndUserData.Task?.IfSanity != null
                             ? maaEndUserData.Task.IfSanity
@@ -1231,6 +1232,19 @@ export function useScriptApi() {
     }
   }
 
+  const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
+    try {
+      const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
+      if (response?.code !== 200) throw new Error(response?.message || '接口返回异常')
+      return response
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
+      error.value = errorMsg
+      logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
+      return null
+    }
+  }
+
   // 删除脚本
   const deleteScript = async (scriptId: string): Promise<boolean> => {
     loading.value = true
@@ -1337,6 +1351,7 @@ export function useScriptApi() {
     getScriptsWithUsers,
     getScript,
     getHsrStageOptions,
+    getMaaEndOptions,
     deleteScript,
     updateScript,
     reorderScript,

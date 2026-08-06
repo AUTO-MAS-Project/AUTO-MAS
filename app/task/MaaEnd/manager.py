@@ -57,6 +57,7 @@ class MaaEndManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.controller_protocol = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -70,16 +71,19 @@ class MaaEndManager(TaskExecuteBase):
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
-        if (script_config.get("Game", "ControllerType") == "ADB") and (
+        self.controller_protocol = script_config.get("Game", "ControllerProtocol")
+
+        if self.controller_protocol == "Adb" and (
             script_config.get("Game", "EmulatorId") == "-"
             or script_config.get("Game", "EmulatorIndex") in ["", "-"]
         ):
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-        elif (
-            script_config.get("Game", "ControllerType").startswith("Win32")
-            and not Path(script_config.get("Game", "Path")).exists()
-        ):
+        elif self.controller_protocol == "Win32" and not Path(
+            script_config.get("Game", "Path")
+        ).exists():
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+        elif self.controller_protocol not in ("Adb", "Win32"):
+            return "MaaEnd 控制器协议未配置, 请重新选择控制器！"
 
         if self.task_info.mode == "AutoProxy" and not (
             Path(
@@ -106,7 +110,7 @@ class MaaEndManager(TaskExecuteBase):
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
         # 初始化模拟器管理器
-        if self.script_config.get("Game", "ControllerType") == "ADB":
+        if self.controller_protocol == "Adb":
             self.emulator_manager = await EmulatorManager.get_emulator_instance(
                 self.script_config.get("Game", "EmulatorId")
             )

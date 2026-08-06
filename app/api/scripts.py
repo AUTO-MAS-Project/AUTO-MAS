@@ -306,6 +306,34 @@ async def import_script_config_file(
 
 
 @router.post(
+    "/maaend/options",
+    tags=["Get"],
+    summary="获取 MaaEnd 动态选项",
+    response_model=MaaEndOptionsOut,
+    status_code=200,
+)
+async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptionsOut:
+    try:
+        data = await Config.get_maaend_options(options.scriptId)
+        return MaaEndOptionsOut(
+            controllers=[ComboBoxItem(**item) for item in data["controllers"]],
+            controllerTypes=data["controllerTypes"],
+            essenceLocations=[
+                ComboBoxItem(**item) for item in data["essenceLocations"]
+            ],
+        )
+    except Exception as e:
+        return MaaEndOptionsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            controllers=[],
+            controllerTypes={},
+            essenceLocations=[],
+        )
+
+
+@router.post(
     "/user/get",
     tags=["Get"],
     summary="查询用户",

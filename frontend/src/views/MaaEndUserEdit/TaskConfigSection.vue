@@ -121,8 +121,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import type { ComboBoxItem } from '@/api'
 import {
-  AUTO_ESSENCE_LOCATION_OPTIONS,
   MAAEND_CONTROLLER_TASKS,
   MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -147,6 +147,7 @@ const props = withDefaults(
     loading?: boolean
     ifQuickConfig?: boolean
     controllerType?: string | null
+    essenceLocationOptions: ComboBoxItem[]
   }>(),
   {
     loading: false,
@@ -199,7 +200,7 @@ const currentField = computed(
 
 const currentTaskOptions = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') {
-    return AUTO_ESSENCE_LOCATION_OPTIONS
+    return props.essenceLocationOptions
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
 })
@@ -228,8 +229,8 @@ const rewardGroupEnabled = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') return false
   return Boolean(
     currentTaskOption.value &&
-      'rewards' in currentTaskOption.value &&
-      currentTaskOption.value.rewards
+    'rewards' in currentTaskOption.value &&
+    currentTaskOption.value.rewards
   )
 })
 
@@ -324,7 +325,7 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
   if (value === 'Essence') {
     changes.push({
       key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub',
+      value: formData.Task.AutoEssenceSpecifiedLocation ?? '',
     })
   } else {
     changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })

@@ -19,6 +19,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import json
 from ctypes import c_void_p
 from pathlib import Path
@@ -45,7 +46,7 @@ from maa.controller import (
 
 from .config import Config
 from app.models.emulator import DeviceInfo
-from app.utils import get_logger
+from app.utils import get_logger, ProcessRunner
 
 logger = get_logger("MaaFW管理")
 
@@ -145,11 +146,43 @@ class _MaaFWManager:
             RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
         """
 
-        for emulator in Toolkit.find_adb_devices():
+        for emulator in await asyncio.to_thread(Toolkit.find_adb_devices):
             if raw_info.adb_address == emulator.address:
                 return emulator
         else:
             raise RuntimeError("无法找到指定设备")
+
+    @staticmethod
+    async def ensure_adb_connectable(
+        raw_info: DeviceInfo, timeout: float = 30
+    ) -> AdbDevice:
+        """等待目标设备进入 ADB 可连接状态。"""
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        last_error = ""
+        while loop.time() < deadline:
+            try:
+                adb_device = await _MaaFWManager.convert_adb(raw_info)
+                if ":" in adb_device.address:
+                    await ProcessRunner.run_process(
+                        adb_device.adb_path, "connect", adb_device.address, timeout=10
+                    )
+                result = await ProcessRunner.run_process(
+                    adb_device.adb_path,
+                    "-s", adb_device.address, "get-state",
+                    timeout=10,
+                )
+                if result.returncode == 0 and result.stdout.strip() == "device":
+                    logger.success(f"ADB 设备已就绪: {adb_device.address}")
+                    return adb_device
+                last_error = result.stderr.strip() or result.stdout.strip()
+            except Exception as e:
+                last_error = str(e)
+            await asyncio.sleep(1)
+
+        detail = f": {last_error}" if last_error else ""
+        raise RuntimeError(f"ADB 设备连接超时: {raw_info.adb_address}{detail}")
 
     async def get_adb_tasker(
         self,

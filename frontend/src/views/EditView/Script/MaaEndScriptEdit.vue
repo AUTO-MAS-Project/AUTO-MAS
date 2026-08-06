@@ -260,7 +260,7 @@
             </a-col>
           </a-row>
 
-          <a-row v-else :gutter="24">
+          <a-row v-else-if="isAdbController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
@@ -449,7 +449,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -486,7 +486,8 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     AccountSwitchMethod: 'MAS',
   },
   Game: {
-    ControllerType: 'Win32-Front',
+    ControllerType: '',
+    ControllerProtocol: '',
     Path: '',
     Arguments: '',
     WaitTime: 60,
@@ -501,10 +502,8 @@ const rules = {
   path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
 }
 
-const controllerOptions = [
-  { label: '电脑端-前台', value: 'Win32-Front' },
-  { label: '安卓端', value: 'ADB' },
-]
+const controllerOptions = ref<ComboBoxItem[]>([])
+const controllerProtocols = ref<Record<string, string>>({})
 
 const booleanOptions = [
   { label: '是', value: true },
@@ -521,7 +520,8 @@ const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
-const isWinController = computed(() => maaEndConfig.Game.ControllerType !== 'ADB')
+const isWinController = computed(() => maaEndConfig.Game.ControllerProtocol === 'Win32')
+const isAdbController = computed(() => maaEndConfig.Game.ControllerProtocol === 'Adb')
 const showManualEmulatorIndexInput = computed(
   () =>
     emulatorDeviceOptions.value.length === 0 &&
@@ -586,6 +586,16 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   }
 }
 
+const loadMaaEndOptions = async () => {
+  const response = await getMaaEndOptions(scriptId)
+  if (response?.code !== 200) return
+
+  controllerOptions.value = response.controllers
+  controllerProtocols.value = (
+    response as unknown as { controllerTypes: Record<string, string> }
+  ).controllerTypes
+}
+
 const loadScript = async () => {
   pageLoading.value = true
   try {
@@ -616,23 +626,30 @@ const loadScript = async () => {
 }
 
 const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['ControllerType']) => {
+  if (!value) return
+
+  const protocol = controllerProtocols.value[value]
+  if (!protocol) return
+
   isSaving.value = true
   try {
     const gamePayload =
-      value === 'ADB'
+      protocol === 'Adb'
         ? {
             ControllerType: value,
+            ControllerProtocol: protocol,
             Path: '',
             Arguments: '',
             WaitTime: 60,
           }
         : {
             ControllerType: value,
+            ControllerProtocol: protocol,
             EmulatorId: '',
             EmulatorIndex: '',
           }
 
-    if (value !== 'ADB') {
+    if (protocol !== 'Adb') {
       emulatorDeviceOptions.value = []
       maaEndConfig.Game.EmulatorId = ''
       maaEndConfig.Game.EmulatorIndex = ''
@@ -649,7 +666,7 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     isSaving.value = false
   }
 
-  if (value === 'ADB') {
+  if (protocol === 'Adb') {
     await loadEmulatorOptions()
   }
 }
@@ -683,6 +700,7 @@ const selectMaaEndPath = async () => {
   if (!path) return
   maaEndConfig.Info.Path = path
   await handleChange('Info', 'Path', path)
+  await loadMaaEndOptions()
 }
 
 const selectGamePath = async () => {
@@ -791,6 +809,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScript()
+  await loadMaaEndOptions()
   await loadEmulatorOptions()
   isInitializing.value = false
 })

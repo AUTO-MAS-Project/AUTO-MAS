@@ -32,7 +32,6 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
-    MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
@@ -115,7 +114,7 @@ def init_maaend_task_config(config) -> None:
         "Task",
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
-        OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS)),
+        StringValidator(),
     )
 
     for task_name in MAAEND_TASKS:
@@ -980,9 +979,14 @@ class MaaEndUserConfig(ConfigBase):
                 if sanity_task_type == "Essence"
                 else task_config[sanity_task_type]
             )
+            detail_label = (
+                detail_key
+                if sanity_task_type == "Essence"
+                else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
+            )
             tags.append(
                 {
-                    "text": f"详细任务：{MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]}",
+                    "text": f"详细任务：{detail_label}",
                     "color": "blue",
                 }
             )
@@ -1052,13 +1056,12 @@ class MaaEndConfig(ConfigBase):
         self.Game_ControllerType = ConfigItem(
             "Game",
             "ControllerType",
-            "Win32-Front",
-            OptionsValidator(
-                [
-                    "Win32-Front",
-                    "ADB",
-                ]
-            ),
+            "",
+            StringValidator(),
+        )
+        ## 控制器协议类型
+        self.Game_ControllerProtocol = ConfigItem(
+            "Game", "ControllerProtocol", "", StringValidator()
         )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
