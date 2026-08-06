@@ -75,7 +75,7 @@
             <p>
               MaaEnd专项还在积极测试中，如有问题请加入
               <a
-                href="https://qm.qq.com/q/1FKvD6Q8H6"
+                :href="MAS_QQ_GROUP_URL"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click="handleExternalLink"
@@ -439,7 +439,7 @@ import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { handleExternalLink } from '@/utils/openExternal'
+import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
