@@ -250,11 +250,11 @@ def _generate_device_id(cookie: str) -> str:
 def _get_stuid(cookies: Dict[str, str]) -> str:
     """从 cookie 中提取米游社 UID
 
-    按优先级依次检查：stuid, ltuid, account_id, login_uid,
+    按优先级依次检查：stuid, stuid_v2, ltuid, account_id, login_uid,
     ltuid_v2, account_id_v2
     """
     for key in (
-        "stuid", "ltuid", "account_id", "login_uid",
+        "stuid", "stuid_v2", "ltuid", "account_id", "login_uid",
         "ltuid_v2", "account_id_v2",
     ):
         if key in cookies and cookies[key]:
@@ -271,6 +271,20 @@ def _ensure_uid_aliases(cookies: Dict[str, str], uid: str) -> None:
     for key in ("stuid", "ltuid", "account_id", "login_uid"):
         if key not in cookies or not cookies[key]:
             cookies[key] = uid
+
+
+def _ensure_auth_aliases(cookies: Dict[str, str]) -> None:
+    """将 Passport v2 认证字段补齐为签到接口兼容的旧字段名。"""
+    aliases = {
+        "cookie_token_v2": "cookie_token",
+        "stoken_v2": "stoken",
+        "mid_v2": "mid",
+        "ltmid_v2": "mid",
+        "account_mid_v2": "mid",
+    }
+    for source, target in aliases.items():
+        if not cookies.get(target) and cookies.get(source):
+            cookies[target] = cookies[source]
 
 
 # ==================== Token 派生 ====================
@@ -335,8 +349,9 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
 
     支持多种 cookie 认证策略：
     1. cookie_token + UID → 直接使用
-    2. stoken_v2 + mid + UID → 派生 cookie_token 后使用
-    3. stoken_v1 + UID → 暂不支持派生（需 mid），日志提示
+    2. cookie_token_v2 + UID → 兼容 Passport/二维码登录凭据
+    3. stoken_v2 + mid + UID → 派生 cookie_token 后使用
+    4. stoken_v1 + UID → 暂不支持派生（需 mid），日志提示
 
     Args:
         cookie: cookie 字符串，至少包含 UID 字段 + (cookie_token 或 stoken)
@@ -347,6 +362,7 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
     """
     results = []
     cookies = _parse_cookie(cookie)
+    _ensure_auth_aliases(cookies)
     stuid = _get_stuid(cookies)
 
     if not stuid:
@@ -363,11 +379,14 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
     # ---- 认证策略选择 ----
     effective_cookies = cookies.copy()
 
-    if "cookie_token" in cookies:
-        # 策略 1: cookie_token + UID，直接使用
-        logger.debug("使用 cookie_token + UID 认证")
-    elif "stoken" in cookies and "mid" in cookies:
-        # 策略 2: stoken_v2 + mid，派生 cookie_token
+    if cookies.get("cookie_token") or cookies.get("cookie_token_v2"):
+        # 策略 1/2: QR/Passport 可能只返回 cookie_token_v2。
+        # 保留 v2 字段，同时补充旧字段供签到接口和旧配置兼容。
+        if not cookies.get("cookie_token") and cookies.get("cookie_token_v2"):
+            effective_cookies["cookie_token"] = cookies["cookie_token_v2"]
+        logger.debug("使用 cookie_token/cookie_token_v2 + UID 认证")
+    elif cookies.get("stoken") and cookies.get("mid"):
+        # 策略 3: stoken_v2 + mid，派生 cookie_token
         logger.info("缺少 cookie_token，尝试从 stoken 派生")
         try:
             derived_token, derived_uid = await _derive_cookie_token(
@@ -386,8 +405,8 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
                 "reward": "",
                 "reason": f"派生 cookie_token 失败: {e}",
             }]
-    elif "stoken" in cookies:
-        # 策略 3: stoken_v1 无 mid，无法派生
+    elif cookies.get("stoken"):
+        # 策略 4: stoken_v1 无 mid，无法派生
         logger.error("仅有 v1 stoken 但缺少 mid，无法派生 cookie_token，请补充完整 cookie")
         return [{
             "account": f"{stuid}/米游社",

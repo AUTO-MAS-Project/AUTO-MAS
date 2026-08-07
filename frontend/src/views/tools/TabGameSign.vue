@@ -5,6 +5,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SwapOutlined,
   QrcodeOutlined,
 } from '@ant-design/icons-vue'
@@ -16,6 +17,7 @@ import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
 import { Service } from '@/api'
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
+import { handleExternalLink } from '@/utils/openExternal'
 
 const {
   config,
@@ -192,16 +194,31 @@ const handleEditModalOk = async () => {
 
 const qrModalVisible = ref(false)
 const qrLoading = ref(false)
-const qrStatus = ref<'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'error'>(
-  'idle'
-)
+const qrStatus = ref<
+  'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'expired' | 'error'
+>('idle')
 const qrCodeDataUrl = ref('')
 const qrStatusText = ref('')
 const qrTicket = ref('')
 const qrDevice = ref('')
 const qrPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const qrPollInFlight = ref(false)
 
-const qrFetch = async (path: string, body?: any) => {
+interface QrApiResponse {
+  code?: number
+  status?: string
+  message?: string
+  ticket?: string
+  qr_url?: string
+  device?: string
+  cookies_str?: string
+}
+
+const QR_RESPONSE_INVALID_MESSAGE = '二维码状态响应无效，请刷新后重试'
+const isQrExpiredMessage = (messageText: string) =>
+  /二维码|qr|expired|invalid|nonetype.*get|object has no attribute.*get/i.test(messageText)
+
+const qrFetch = async (path: string, body?: Record<string, string>): Promise<QrApiResponse> => {
   const resp = await fetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -209,10 +226,28 @@ const qrFetch = async (path: string, body?: any) => {
   })
   const text = await resp.text()
   if (!text) throw new Error('服务器无响应')
-  const data = JSON.parse(text)
-  logger.debug(`[QR ${path}] ${JSON.stringify(data)}`)
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+  }
+  const response = data as QrApiResponse
+  // Cookie 是登录凭据，禁止写入前端日志；其余字段仍保留便于排查状态流转。
+  const logData = { ...response, cookies_str: undefined }
+  logger.debug(`[QR ${path}] ${JSON.stringify(logData)}`)
   // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
-  return data
+  return response
+}
+
+const markQrExpired = (messageText = '二维码已过期，请刷新后重新扫码') => {
+  stopQrPoll()
+  qrStatus.value = 'expired'
+  qrStatusText.value = messageText
+  qrCodeDataUrl.value = ''
 }
 
 const startQrLogin = async () => {
@@ -221,6 +256,8 @@ const startQrLogin = async () => {
   qrStatus.value = 'loading'
   qrStatusText.value = '正在生成二维码...'
   qrCodeDataUrl.value = ''
+  qrTicket.value = ''
+  qrDevice.value = ''
   qrModalVisible.value = true
 
   try {
@@ -230,8 +267,8 @@ const startQrLogin = async () => {
       qrStatusText.value = data.message || '创建二维码失败'
       return
     }
-    if (!data.qr_url) {
-      throw new Error('创建二维码失败：服务端响应缺少登录地址')
+    if (!data.qr_url || !data.ticket || !data.device) {
+      throw new Error('创建二维码失败：服务端响应缺少登录信息')
     }
     qrCodeDataUrl.value = await QRCode.toDataURL(data.qr_url, {
       width: 240,
@@ -242,7 +279,9 @@ const startQrLogin = async () => {
     qrDevice.value = data.device
     qrStatus.value = 'waiting'
     qrStatusText.value = '请使用米游社 APP 扫描二维码'
-    qrPollTimer.value = setInterval(pollQrStatus, 2000)
+    qrPollTimer.value = setInterval(() => {
+      void pollQrStatus()
+    }, 2000)
   } catch (e) {
     qrStatus.value = 'error'
     qrStatusText.value = e instanceof Error ? e.message : String(e)
@@ -252,14 +291,27 @@ const startQrLogin = async () => {
 }
 
 const pollQrStatus = async () => {
+  if (qrPollInFlight.value || !qrTicket.value || !qrDevice.value) return
+  qrPollInFlight.value = true
   try {
     const data = await qrFetch('/check', { ticket: qrTicket.value, device: qrDevice.value })
 
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      markQrExpired('二维码已失效或服务端返回空响应，请刷新后重试')
+      return
+    }
+
+    const responseMessage = typeof data.message === 'string' ? data.message : ''
+
     // 后端错误响应（code=500 或 status=error）
     if (data.code === 500 || data.status === 'error') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = data.message || '查询状态失败'
+      if (isQrExpiredMessage(responseMessage)) {
+        markQrExpired(responseMessage)
+      } else {
+        stopQrPoll()
+        qrStatus.value = 'error'
+        qrStatusText.value = responseMessage || '查询状态失败'
+      }
       return
     }
 
@@ -268,31 +320,40 @@ const pollQrStatus = async () => {
       qrStatusText.value = '已扫码，等待确认...'
     } else if (data.status === 'Confirmed') {
       stopQrPoll()
-      await handleQrConfirmed(data.cookies_str)
+      await handleQrConfirmed(data.cookies_str || '')
     } else if (data.status === 'Canceled') {
       stopQrPoll()
       qrStatus.value = 'error'
-      qrStatusText.value = '登录已取消'
+      qrStatusText.value = responseMessage || '登录已取消'
     } else if (data.status === 'Expired') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = '二维码已过期，请重新生成'
+      markQrExpired(responseMessage || '二维码已过期，请刷新后重新扫码')
     } else if (data.status === 'Error') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = data.message || '查询状态失败'
+      if (isQrExpiredMessage(responseMessage)) {
+        markQrExpired(responseMessage)
+      } else {
+        stopQrPoll()
+        qrStatus.value = 'error'
+        qrStatusText.value = responseMessage || '查询状态失败'
+      }
     }
     // status === 'Init' 时不更新 UI，继续轮询
   } catch (e) {
-    // 网络错误不停止轮询，但记录日志便于调试
-    logger.warn(`[QR poll] 轮询异常: ${String(e)}`)
+    const errorMessage = e instanceof Error ? e.message : String(e)
+    if (isQrExpiredMessage(errorMessage) || errorMessage === QR_RESPONSE_INVALID_MESSAGE) {
+      markQrExpired('二维码已失效或服务端返回无效状态，请刷新后重试')
+    } else {
+      // 短暂网络错误不停止轮询，但记录日志便于调试。
+      logger.warn(`[QR poll] 轮询异常: ${errorMessage}`)
+    }
+  } finally {
+    qrPollInFlight.value = false
   }
 }
 
 const handleQrConfirmed = async (cookiesStr: string) => {
   if (!cookiesStr) {
     qrStatus.value = 'error'
-    qrStatusText.value = '扫码确认成功但未获取到凭据'
+    qrStatusText.value = '扫码确认成功但未获取到有效认证 Cookie，请重新生成二维码'
     return
   }
 
@@ -340,6 +401,9 @@ const closeQrModal = () => {
   qrModalVisible.value = false
   qrStatus.value = 'idle'
   qrCodeDataUrl.value = ''
+  qrStatusText.value = ''
+  qrTicket.value = ''
+  qrDevice.value = ''
 }
 
 onBeforeUnmount(() => {
@@ -559,15 +623,25 @@ onMounted(() => {
     <div class="form-section">
       <div class="section-header">
         <h3>游戏社区签到</h3>
-        <a-button
-          type="primary"
-          :loading="signLoading"
-          :disabled="disabled || !config.Enabled"
-          @click="handleManualSign"
-        >
-          <template #icon><SwapOutlined /></template>
-          全部签到
-        </a-button>
+        <div class="section-header-actions">
+          <a
+            href="https://doc.auto-mas.top/docs/script-guide/maa.html#%E6%A3%AE%E7%A9%BA%E5%B2%9B%E8%87%AA%E5%8A%A8%E7%AD%BE%E5%88%B0"
+            class="section-doc-link"
+            title="查看森空岛签到配置文档"
+            @click="handleExternalLink"
+          >
+            文档
+          </a>
+          <a-button
+            type="primary"
+            :loading="signLoading"
+            :disabled="disabled || !config.Enabled"
+            @click="handleManualSign"
+          >
+            <template #icon><SwapOutlined /></template>
+            全部签到
+          </a-button>
+        </div>
       </div>
       <a-row :gutter="24">
         <a-col :span="6">
@@ -874,7 +948,10 @@ onMounted(() => {
     >
       <div class="qr-login-container">
         <!-- 二维码 -->
-        <div v-if="qrCodeDataUrl && qrStatus !== 'error'" class="qr-code-wrapper">
+        <div
+          v-if="qrCodeDataUrl && qrStatus !== 'error' && qrStatus !== 'expired'"
+          class="qr-code-wrapper"
+        >
           <img :src="qrCodeDataUrl" alt="扫码登录" class="qr-code-img" />
         </div>
 
@@ -898,12 +975,24 @@ onMounted(() => {
           <span v-else-if="qrStatus === 'done'" class="qr-status-success">
             ✅ {{ qrStatusText }}
           </span>
+          <span v-else-if="qrStatus === 'expired'" class="qr-status-error">
+            ⚠️ {{ qrStatusText }}
+          </span>
           <span v-else-if="qrStatus === 'error'" class="qr-status-error">
             ❌ {{ qrStatusText }}
           </span>
         </div>
 
-        <div class="qr-hint">打开米游社 APP → 左上角扫码 → 扫描上方二维码</div>
+        <div v-if="qrStatus === 'waiting' || qrStatus === 'scanned'" class="qr-hint">
+          打开米游社 APP → 左上角扫码 → 扫描上方二维码
+        </div>
+
+        <div v-if="qrStatus === 'expired' || qrStatus === 'error'" class="qr-actions">
+          <a-button type="primary" size="small" :loading="qrLoading" @click="startQrLogin">
+            <template #icon><ReloadOutlined /></template>
+            重新生成二维码
+          </a-button>
+        </div>
       </div>
     </a-modal>
   </div>
@@ -911,6 +1000,35 @@ onMounted(() => {
 
 <style scoped>
 /* 用户启用状态通过选项文字表达，保留 Ant Design 默认边框。 */
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.section-doc-link {
+  color: var(--ant-color-primary) !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-primary);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-doc-link:hover {
+  color: var(--ant-color-primary-hover) !important;
+  background-color: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+  text-decoration: none;
+}
 
 /* ==================== 用户列表表格 ==================== */
 .user-table-container {
@@ -1328,6 +1446,9 @@ onMounted(() => {
   text-align: center;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
+}
+.qr-actions {
+  margin-top: 4px;
 }
 
 /* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */
