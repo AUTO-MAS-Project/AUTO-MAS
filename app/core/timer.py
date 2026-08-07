@@ -25,6 +25,7 @@ from datetime import datetime
 
 from app.services import Matomo
 from app.MaaFW import ArknightWin32Toolkit
+from app.utils.constants import UTC8
 from app.utils import get_logger
 from .config import Config
 from .task_manager import TaskManager
@@ -79,7 +80,6 @@ class _MainTimer:
             Config.ToolsConfig.get("GameSign", "Enabled")
             and (
                 Config.ToolsConfig.get("GameSign", "RunOnStartup")
-                or Config.ToolsConfig.get("GameSign", "AutoStart")
             )
         ):
             self.schedule_game_sign_for_startup()
@@ -227,7 +227,6 @@ class _MainTimer:
             Config.ToolsConfig.get("GameSign", "Enabled")
             and (
                 Config.ToolsConfig.get("GameSign", "RunOnStartup")
-                or Config.ToolsConfig.get("GameSign", "AutoStart")
             )
         ):
             return
@@ -271,6 +270,10 @@ class _MainTimer:
         if now.second != 0:
             return
 
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC8)
+        else:
+            now = now.astimezone(UTC8)
         today = now.strftime("%Y-%m-%d")
 
         # 没有待处理账号时不派发空签到流程。
@@ -289,7 +292,7 @@ class _MainTimer:
             run_all_sign_in,
         )
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
             logger.info("开始执行游戏社区签到")
@@ -342,7 +345,7 @@ class _MainTimer:
         if not Config.ToolsConfig.get("GameSign", "Enabled"):
             return
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         # 快速检查：是否没有待处理账号
         if _all_game_sign_accounts_signed(

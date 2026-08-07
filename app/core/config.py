@@ -212,7 +212,7 @@ class AppConfig(GlobalConfig):
         )
 
         # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
             self.config_path / GAME_SIGN_RESULT_FILENAME,
             result_date=today,
@@ -1490,7 +1490,7 @@ class AppConfig(GlobalConfig):
 
         logger.debug("获取工具设置")
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         if self._game_sign_result_date != today:
             self.ToolsConfig._game_sign_result_data = {}
             self._game_sign_result_date = today
@@ -1509,7 +1509,7 @@ class AppConfig(GlobalConfig):
 
         from app.tools.game_sign import merge_sign_results
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         existing = (
             self.ToolsConfig._game_sign_result_data
             if self._game_sign_result_date == today
@@ -1578,7 +1578,7 @@ class AppConfig(GlobalConfig):
     def _clear_game_sign_account_results(self, account_id: str) -> None:
         """清除指定游戏签到账号的结果。"""
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         result = self.ToolsConfig._game_sign_result_data
         if getattr(self, "_game_sign_result_date", today) != today:
             result.clear()

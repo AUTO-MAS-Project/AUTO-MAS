@@ -27,6 +27,7 @@ from datetime import datetime
 import httpx
 
 from app.core import Config
+from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from .game_sign_result import build_skland_sign_results
 
@@ -112,7 +113,7 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         签到结果列表，每项包含 account, game, platform, status, reward, reason
     """
     results = []
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
     # 时间校准：偏差过大时跳过本轮签到，避免因时间错误导致 API 失败
     if not await _check_system_time():

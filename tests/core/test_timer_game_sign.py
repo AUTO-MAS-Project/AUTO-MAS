@@ -117,6 +117,23 @@ class GameSignTimerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(timer.game_sign_task)
 
+    async def test_legacy_auto_start_does_not_dispatch_startup_sign(self) -> None:
+        timer = _MainTimer()
+
+        with patch("app.core.timer.Config") as config, patch.object(
+            timer, "try_game_sign_for_task", new_callable=AsyncMock
+        ) as sign_for_task:
+            config.ToolsConfig.get.side_effect = lambda group, key: {
+                "Enabled": True,
+                "RunOnStartup": False,
+                "AutoStart": True,
+            }[key]
+
+            timer.schedule_game_sign_for_startup()
+
+        sign_for_task.assert_not_awaited()
+        self.assertIsNone(timer.game_sign_task)
+
     async def test_background_check_is_guarded_without_blocking_dispatch(self) -> None:
         timer = _MainTimer()
         started = asyncio.Event()
