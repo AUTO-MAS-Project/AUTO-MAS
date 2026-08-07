@@ -13,6 +13,9 @@ class GameSignTimerTest(unittest.IsolatedAsyncioTestCase):
         account.get.side_effect = lambda group, key: {
             "Enabled": True,
             "LastSignDate": "2000-01-01",
+            "MiyousheToken": "miyoushe-token",
+            "KuroToken": "",
+            "SklandToken": "",
         }[key]
         execute = AsyncMock()
 
@@ -32,6 +35,53 @@ class GameSignTimerTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("WindowStart", requested_keys)
         self.assertNotIn("WindowEnd", requested_keys)
         self.assertNotIn("ScheduledTime", requested_keys)
+
+    async def test_scheduled_sign_ignores_accounts_without_credentials(self) -> None:
+        timer = _MainTimer()
+        account = MagicMock()
+        account.get.side_effect = lambda group, key: {
+            "Enabled": True,
+            "LastSignDate": "2000-01-01",
+            "MiyousheToken": "",
+            "KuroToken": "",
+            "SklandToken": "",
+        }[key]
+        execute = AsyncMock()
+
+        with patch("app.core.timer.Config") as config, patch.object(
+            timer, "_execute_game_sign", new=execute
+        ):
+            config.ToolsConfig.get.side_effect = lambda group, key: {
+                "Enabled": True,
+                "ScheduledRun": True,
+            }[key]
+            config.ToolsConfig.GameSign_Accounts = {"account-1": account}
+
+            await timer.check_game_sign(check_time=datetime(2026, 7, 29, 8, 0))
+
+        execute.assert_not_awaited()
+
+    async def test_empty_results_do_not_mark_pending_account_complete(self) -> None:
+        timer = _MainTimer()
+        account = MagicMock()
+        account.get.side_effect = lambda group, key: {
+            "Enabled": True,
+            "LastSignDate": "2000-01-01",
+            "MiyousheToken": "miyoushe-token",
+            "KuroToken": "",
+            "SklandToken": "",
+        }[key]
+
+        with patch("app.core.timer.Config") as config, patch(
+            "app.tools.game_sign.run_all_sign_in", new=AsyncMock(return_value=[])
+        ):
+            config.ToolsConfig.GameSign_Accounts = {"account-1": account}
+            config.ToolsConfig.get.return_value = False
+            config.ToolsConfig.set = AsyncMock()
+
+            await timer._execute_game_sign()
+
+        config.ToolsConfig.set.assert_not_awaited()
 
     async def test_startup_sign_is_dispatched_once(self) -> None:
         timer = _MainTimer()
