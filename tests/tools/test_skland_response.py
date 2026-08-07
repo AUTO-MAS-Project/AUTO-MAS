@@ -16,6 +16,13 @@ class SklandResponseTest(unittest.TestCase):
             is_skland_already_signed({"code": 1, "message": "请勿重复签到！"})
         )
 
+    def test_english_duplicate_message_remains_compatible(self) -> None:
+        self.assertTrue(
+            is_skland_already_signed(
+                {"code": 1, "message": "Please do not sign in again!"}
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
