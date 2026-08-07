@@ -116,7 +116,11 @@ async def manual_game_sign() -> OutBase:
         today = datetime.now().strftime("%Y-%m-%d")
         all_signed = True
         for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            if account.get("GameSignAccount", "Enabled"):
+            has_credentials = any(
+                account.get("GameSignAccount", field)
+                for field in ("MiyousheToken", "KuroToken", "SklandToken")
+            )
+            if account.get("GameSignAccount", "Enabled") and has_credentials:
                 if account.get("GameSignAccount", "LastSignDate") != today:
                     all_signed = False
                     break

@@ -32,6 +32,29 @@ from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
 
+_GAME_SIGN_TOKEN_FIELDS = ("MiyousheToken", "KuroToken", "SklandToken")
+
+
+def _has_pending_game_sign_account(account, today: str) -> bool:
+    """判断账号是否启用、配置了凭据且尚未完成今日签到。"""
+
+    if not account.get("GameSignAccount", "Enabled"):
+        return False
+    if not any(
+        account.get("GameSignAccount", field) for field in _GAME_SIGN_TOKEN_FIELDS
+    ):
+        return False
+    return account.get("GameSignAccount", "LastSignDate") != today
+
+
+def _all_game_sign_accounts_signed(accounts, today: str) -> bool:
+    """判断所有具备凭据的启用账号是否已完成今日签到。"""
+
+    return not any(
+        _has_pending_game_sign_account(account, today)
+        for _, account in accounts.items()
+    )
+
 
 class _MainTimer:
 
@@ -250,15 +273,10 @@ class _MainTimer:
 
         today = now.strftime("%Y-%m-%d")
 
-        # 检查是否所有启用的用户今日都已签到
-        all_users_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            if account.get("GameSignAccount", "Enabled"):
-                if account.get("GameSignAccount", "LastSignDate") != today:
-                    all_users_signed = False
-                    break
-
-        if all_users_signed:
+        # 没有待处理账号时不派发空签到流程。
+        if _all_game_sign_accounts_signed(
+            Config.ToolsConfig.GameSign_Accounts, today
+        ):
             return
 
         await self._execute_game_sign()
@@ -280,7 +298,10 @@ class _MainTimer:
             # 如果所有用户都已签到（无新结果），保留已有结果
             if not results:
                 logger.info("所有用户今日已签到，跳过")
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                if _all_game_sign_accounts_signed(
+                    Config.ToolsConfig.GameSign_Accounts, today
+                ):
+                    await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
                 return
 
             # 格式化并合并结果
@@ -288,13 +309,9 @@ class _MainTimer:
             await Config.update_game_sign_results(formatted)
 
             # 检查是否所有用户都已签到，更新全局 LastSignDate
-            all_signed_after = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                if account.get("GameSignAccount", "Enabled"):
-                    if account.get("GameSignAccount", "LastSignDate") != today:
-                        all_signed_after = False
-                        break
-            if all_signed_after:
+            if _all_game_sign_accounts_signed(
+                Config.ToolsConfig.GameSign_Accounts, today
+            ):
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
 
             logger.success("游戏社区签到执行完成")
@@ -327,14 +344,10 @@ class _MainTimer:
 
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # 快速检查：是否所有用户都已签到
-        all_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            if account.get("GameSignAccount", "Enabled"):
-                if account.get("GameSignAccount", "LastSignDate") != today:
-                    all_signed = False
-                    break
-        if all_signed:
+        # 快速检查：是否没有待处理账号
+        if _all_game_sign_accounts_signed(
+            Config.ToolsConfig.GameSign_Accounts, today
+        ):
             return
 
         from app.tools.game_sign import (
@@ -352,13 +365,9 @@ class _MainTimer:
             await Config.update_game_sign_results(formatted)
 
             # 签到后检查是否所有用户都已完成
-            all_signed_after = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                if account.get("GameSignAccount", "Enabled"):
-                    if account.get("GameSignAccount", "LastSignDate") != today:
-                        all_signed_after = False
-                        break
-            if all_signed_after:
+            if _all_game_sign_accounts_signed(
+                Config.ToolsConfig.GameSign_Accounts, today
+            ):
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
 
             logger.info("任务触发的游戏签到已完成")
