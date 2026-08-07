@@ -202,6 +202,9 @@ const qrTicket = ref('')
 const qrDevice = ref('')
 const qrPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const qrPollInFlight = ref(false)
+let qrSessionId = 0
+let qrAbortController: AbortController | null = null
+let qrCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 interface QrApiResponse {
   code?: number
@@ -217,11 +220,44 @@ const QR_RESPONSE_INVALID_MESSAGE = '二维码状态响应无效，请刷新后�
 const isQrExpiredMessage = (messageText: string) =>
   /二维码|qr|expired|invalid|nonetype.*get|object has no attribute.*get/i.test(messageText)
 
-const qrFetch = async (path: string, body?: Record<string, string>): Promise<QrApiResponse> => {
+const stopQrPoll = () => {
+  if (qrPollTimer.value) {
+    clearInterval(qrPollTimer.value)
+    qrPollTimer.value = null
+  }
+}
+
+const clearQrCloseTimer = () => {
+  if (qrCloseTimer) {
+    clearTimeout(qrCloseTimer)
+    qrCloseTimer = null
+  }
+}
+
+const isCurrentQrSession = (sessionId: number) => sessionId === qrSessionId && qrModalVisible.value
+
+const invalidateQrSession = () => {
+  qrSessionId += 1
+  stopQrPoll()
+  clearQrCloseTimer()
+  qrAbortController?.abort()
+  qrAbortController = null
+  qrPollInFlight.value = false
+  return qrSessionId
+}
+
+const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
+
+const qrFetch = async (
+  path: string,
+  body?: Record<string, string>,
+  signal?: AbortSignal
+): Promise<QrApiResponse> => {
   const resp = await fetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
+    signal,
   })
   const text = await resp.text()
   if (!text) throw new Error('服务器无响应')
@@ -250,7 +286,9 @@ const markQrExpired = (messageText = '二维码已过期，请刷新后重新扫
 }
 
 const startQrLogin = async () => {
-  stopQrPoll()
+  const sessionId = invalidateQrSession()
+  qrAbortController = new AbortController()
+  const { signal } = qrAbortController
   qrLoading.value = true
   qrStatus.value = 'loading'
   qrStatusText.value = '正在生成二维码...'
@@ -260,7 +298,8 @@ const startQrLogin = async () => {
   qrModalVisible.value = true
 
   try {
-    const data = await qrFetch('/create')
+    const data = await qrFetch('/create', undefined, signal)
+    if (!isCurrentQrSession(sessionId)) return
     if (data.code === 500 || data.status === 'error') {
       qrStatus.value = 'error'
       qrStatusText.value = data.message || '创建二维码失败'
@@ -274,26 +313,42 @@ const startQrLogin = async () => {
       margin: 2,
       errorCorrectionLevel: 'M',
     })
+    if (!isCurrentQrSession(sessionId)) return
     qrTicket.value = data.ticket
     qrDevice.value = data.device
     qrStatus.value = 'waiting'
     qrStatusText.value = '请使用米游社 APP 扫描二维码'
     qrPollTimer.value = setInterval(() => {
-      void pollQrStatus()
+      void pollQrStatus(sessionId)
     }, 2000)
   } catch (e) {
+    if (!isCurrentQrSession(sessionId) || isQrAbortError(e)) return
     qrStatus.value = 'error'
     qrStatusText.value = e instanceof Error ? e.message : String(e)
   } finally {
-    qrLoading.value = false
+    if (isCurrentQrSession(sessionId)) {
+      qrLoading.value = false
+    }
   }
 }
 
-const pollQrStatus = async () => {
-  if (qrPollInFlight.value || !qrTicket.value || !qrDevice.value) return
+const pollQrStatus = async (sessionId: number) => {
+  if (
+    !isCurrentQrSession(sessionId) ||
+    qrPollInFlight.value ||
+    !qrTicket.value ||
+    !qrDevice.value
+  ) {
+    return
+  }
+  const ticket = qrTicket.value
+  const device = qrDevice.value
+  const signal = qrAbortController?.signal
+  if (!signal) return
   qrPollInFlight.value = true
   try {
-    const data = await qrFetch('/check', { ticket: qrTicket.value, device: qrDevice.value })
+    const data = await qrFetch('/check', { ticket, device }, signal)
+    if (!isCurrentQrSession(sessionId)) return
 
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
       markQrExpired('二维码已失效或服务端返回空响应，请刷新后重试')
@@ -319,7 +374,7 @@ const pollQrStatus = async () => {
       qrStatusText.value = '已扫码，等待确认...'
     } else if (data.status === 'Confirmed') {
       stopQrPoll()
-      await handleQrConfirmed(data.cookies_str || '')
+      await handleQrConfirmed(data.cookies_str || '', sessionId, signal)
     } else if (data.status === 'Canceled') {
       stopQrPoll()
       qrStatus.value = 'error'
@@ -337,6 +392,7 @@ const pollQrStatus = async () => {
     }
     // status === 'Init' 时不更新 UI，继续轮询
   } catch (e) {
+    if (!isCurrentQrSession(sessionId) || isQrAbortError(e)) return
     const errorMessage = e instanceof Error ? e.message : String(e)
     if (isQrExpiredMessage(errorMessage) || errorMessage === QR_RESPONSE_INVALID_MESSAGE) {
       markQrExpired('二维码已失效或服务端返回无效状态，请刷新后重试')
@@ -345,11 +401,14 @@ const pollQrStatus = async () => {
       logger.warn(`[QR poll] 轮询异常: ${errorMessage}`)
     }
   } finally {
-    qrPollInFlight.value = false
+    if (isCurrentQrSession(sessionId)) {
+      qrPollInFlight.value = false
+    }
   }
 }
 
-const handleQrConfirmed = async (cookiesStr: string) => {
+const handleQrConfirmed = async (cookiesStr: string, sessionId: number, signal: AbortSignal) => {
+  if (!isCurrentQrSession(sessionId)) return
   if (!cookiesStr) {
     qrStatus.value = 'error'
     qrStatusText.value = '扫码确认成功但未获取到有效认证 Cookie，请重新生成二维码'
@@ -357,22 +416,34 @@ const handleQrConfirmed = async (cookiesStr: string) => {
   }
 
   // Passport 模式：cookies 直接从响应头获取，无需 exchange
-  if (editingAccount.value) {
-    editingAccount.value.MiyousheToken = cookiesStr
+  const accountId = editingAccount.value?.uid
+  if (accountId) {
+    qrStatus.value = 'exchanging'
+    qrStatusText.value = '正在保存登录凭据...'
     try {
-      const accountId = editingAccount.value.uid
-      const saveResponse = await qrFetch('/save', {
-        account_uid: accountId,
-        cookie: cookiesStr,
-      })
+      const saveResponse = await qrFetch(
+        '/save',
+        {
+          account_uid: accountId,
+          cookie: cookiesStr,
+        },
+        signal
+      )
+      if (!isCurrentQrSession(sessionId)) return
       if (saveResponse.code !== 200 || saveResponse.status === 'error') {
         throw new Error(saveResponse.message || '保存 Token 失败')
       }
+      if (editingAccount.value?.uid === accountId) {
+        editingAccount.value.MiyousheToken = cookiesStr
+      }
       await loadAccounts()
+      if (!isCurrentQrSession(sessionId)) return
       if (onRefreshConfig) {
         await onRefreshConfig()
       }
+      if (!isCurrentQrSession(sessionId)) return
     } catch (error) {
+      if (!isCurrentQrSession(sessionId) || isQrAbortError(error)) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`扫码保存 Token 失败: ${errorMsg}`)
       message.error('扫码成功，但保存 Token 失败')
@@ -385,19 +456,17 @@ const handleQrConfirmed = async (cookiesStr: string) => {
   qrStatusText.value = '登录成功！Token 已自动填入'
   message.success('米游社扫码登录成功')
   // 延迟关闭弹窗，让用户看到成功提示
-  setTimeout(() => closeQrModal(), 1200)
-}
-
-const stopQrPoll = () => {
-  if (qrPollTimer.value) {
-    clearInterval(qrPollTimer.value)
-    qrPollTimer.value = null
-  }
+  clearQrCloseTimer()
+  qrCloseTimer = setTimeout(() => {
+    qrCloseTimer = null
+    if (isCurrentQrSession(sessionId)) closeQrModal()
+  }, 1200)
 }
 
 const closeQrModal = () => {
-  stopQrPoll()
+  invalidateQrSession()
   qrModalVisible.value = false
+  qrLoading.value = false
   qrStatus.value = 'idle'
   qrCodeDataUrl.value = ''
   qrStatusText.value = ''
@@ -406,7 +475,7 @@ const closeQrModal = () => {
 }
 
 onBeforeUnmount(() => {
-  stopQrPoll()
+  invalidateQrSession()
 })
 
 // ==================== 签到结果解析（按用户绑定） ====================
