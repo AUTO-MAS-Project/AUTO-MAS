@@ -55,7 +55,7 @@ class QrCheckIn(BaseModel):
 
 
 class QrCheckOut(OutBase):
-    status: str = Field(default="", description="Init/Scanned/Confirmed/Error")
+    status: str = Field(default="", description="Init/Scanned/Confirmed/Expired/Canceled/Error")
     cookies_str: str = Field(default="", description="确认后返回的完整 cookie 字符串")
 
 
@@ -74,24 +74,53 @@ async def qr_create() -> QrCreateOut:
         result = await create_qr_login()
     except Exception as e:
         return QrCreateOut(code=500, status="error", message=str(e))
-    if "error" in result:
-        return QrCreateOut(code=500, status="error", message=result["error"])
+    if not isinstance(result, dict):
+        return QrCreateOut(code=500, status="error", message="二维码服务返回格式无效")
+    error = result.get("error")
+    if error:
+        return QrCreateOut(
+            code=500,
+            status="error",
+            message=error if isinstance(error, str) else "创建二维码失败",
+        )
+    if not all(isinstance(result.get(key), str) and result[key] for key in ("ticket", "qr_url", "device")):
+        return QrCreateOut(code=500, status="error", message="二维码服务返回数据不完整")
     return QrCreateOut(ticket=result["ticket"], qr_url=result["qr_url"], device=result["device"])
 
 
 @router.post("/check", summary="轮询扫码状态", response_model=QrCheckOut)
 async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
-    """轮询状态，确认后 cookies 直接从响应头获取"""
+    """轮询状态，确认后返回从 Passport 响应提取的 cookies。"""
     try:
         from app.tools.miyoushe_qr import check_qr_status
         result = await check_qr_status(body.ticket, body.device)
     except Exception as e:
         return QrCheckOut(code=500, status="error", message=str(e))
-    if "error" in result:
-        return QrCheckOut(code=500, status="error", message=result["error"])
+    if not isinstance(result, dict):
+        return QrCheckOut(code=500, status="error", message="二维码状态响应格式无效")
+    error = result.get("error")
+    if error:
+        error_status = result.get("status")
+        if not isinstance(error_status, str) or not error_status:
+            error_status = "error"
+        return QrCheckOut(
+            code=500,
+            status=error_status,
+            message=error if isinstance(error, str) else "查询二维码状态失败",
+        )
+    status = result.get("status")
+    if not isinstance(status, str):
+        status = ""
+    cookies_str = result.get("cookies_str")
+    if not isinstance(cookies_str, str):
+        cookies_str = ""
+    message = result.get("message")
+    if not isinstance(message, str):
+        message = ""
     return QrCheckOut(
-        status=result.get("status", ""),
-        cookies_str=result.get("cookies_str", ""),
+        status=status,
+        cookies_str=cookies_str,
+        message=message,
     )
 
 
