@@ -691,9 +691,27 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        for group, items in data.items():
+        script_config = self.ScriptConfig[uid]
+        update_data = {group: dict(items) for group, items in data.items()}
+        if isinstance(script_config, OkwwConfig):
+            game_data = update_data.get("Game")
+            if game_data is not None and "Path" in game_data:
+                from app.services.wuthering_waves import (
+                    resolve_wuthering_waves_process_path,
+                )
+
+                launcher_path = str(game_data.get("Path") or "").strip()
+                game_data["ProcessPath"] = (
+                    resolve_wuthering_waves_process_path(
+                        Path(launcher_path)
+                    ).resolve().as_posix()
+                    if launcher_path
+                    else ""
+                )
+
+        for group, items in update_data.items():
             for name, value in items.items():
-                await self.ScriptConfig[uid].set(group, name, value)
+                await script_config.set(group, name, value)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -930,6 +948,16 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
         elif isinstance(script_config, OkwwConfig):
             uid, config = await script_config.UserData.add(OkwwUserConfig)
+            try:
+                await self.ensure_okww_user_config(
+                    script_id=script_id,
+                    user_id=str(uid),
+                    mode=str(config.get("Info", "Mode") or "简洁"),
+                )
+            except Exception:
+                # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
+                await script_config.UserData.remove(uid)
+                raise
         elif isinstance(script_config, OkNteConfig):
             uid, config = await script_config.UserData.add(OkNteUserConfig)
         elif isinstance(script_config, MaaEndConfig):
@@ -942,6 +970,72 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         return uid, config
+
+    async def ensure_okww_user_config(
+        self,
+        script_id: str,
+        user_id: str,
+        mode: str,
+    ) -> Path:
+        """从 OK-WW 脚本当前配置初始化 MAS 用户配置目录。
+
+        已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
+        简洁模式使用脚本共享目录，详细模式使用当前用户独立目录。
+
+        Args:
+            script_id: OK-WW 脚本 ID。
+            user_id: OK-WW 用户 ID。
+            mode: 配置模式，支持“简洁”或“详细”。
+
+        Returns:
+            MAS 用户配置目录路径。
+
+        Raises:
+            TypeError: 脚本不是 OK-WW 类型。
+            ValueError: 配置模式非法或目标路径冲突。
+            FileNotFoundError: OK-WW 默认配置目录不存在或为空。
+        """
+
+        script_uid = uuid.UUID(script_id)
+        script_config = self.ScriptConfig[script_uid]
+        if not isinstance(script_config, OkwwConfig):
+            raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
+        if mode not in ("简洁", "详细"):
+            raise ValueError(f"不支持的 OK-WW 配置模式: {mode}")
+
+        owner = "Default" if mode == "简洁" else user_id
+        target_config_dir = Path.cwd() / "data" / script_id / owner / "ConfigFile"
+        if target_config_dir.exists() and not target_config_dir.is_dir():
+            raise ValueError(f"OK-WW 用户配置路径不是目录: {target_config_dir}")
+        if target_config_dir.is_dir() and any(
+            item.is_file() for item in target_config_dir.rglob("*")
+        ):
+            return target_config_dir
+
+        script_root = Path(script_config.get("Info", "RootPath")).expanduser()
+        source_config_dir = script_root / "data/apps/ok-ww/working/configs"
+        if not source_config_dir.is_dir() or not any(
+            item.is_file() for item in source_config_dir.rglob("*")
+        ):
+            raise FileNotFoundError(
+                "未找到 OK-WW 默认设置，请先运行一次 OK-WW 并保存设置"
+            )
+
+        temporary_path = target_config_dir.with_name(
+            f".{target_config_dir.name}.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            shutil.copytree(source_config_dir, temporary_path)
+            target_config_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(target_config_dir, ignore_errors=True)
+            temporary_path.rename(target_config_dir)
+        finally:
+            shutil.rmtree(temporary_path, ignore_errors=True)
+
+        logger.info(
+            f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}"
+        )
+        return target_config_dir
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]

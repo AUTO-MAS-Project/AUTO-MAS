@@ -81,6 +81,30 @@
     </div>
   </div>
 
+  <div v-if="showOkwwConfigMask" class="maa-config-mask">
+    <div class="mask-content">
+      <div class="mask-icon">
+        <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
+      </div>
+      <h2 class="mask-title">正在进行 ok-ww 设置</h2>
+      <p class="mask-description">
+        请在 ok-ww 界面完成设置。
+        <br />
+        完成后点击“保存设置”结束本次会话。
+      </p>
+      <div class="mask-actions">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveOkwwConfig(currentConfigScript)"
+        >
+          保存设置
+        </a-button>
+      </div>
+    </div>
+  </div>
+
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
@@ -168,6 +192,7 @@
     @start-maa-end-config="handleStartMaaEndConfig"
     @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @save-maa-end-config="handleSaveMaaEndConfig"
+    @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
     @pass-check-user="handlePassCheckUser"
   />
@@ -594,7 +619,7 @@ import {
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { Script, ScriptType, User } from '@/types/script'
+import type { OkwwScriptConfig, Script, ScriptType, User } from '@/types/script'
 import {
   getScriptEditSegment,
   type ScriptCreateRequest,
@@ -659,6 +684,7 @@ const appliedSearchKeyword = ref('')
 const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
 const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
+const showOkwwConfigMask = ref(false) // 控制ok-ww配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 const currentMaaEndConfigUser = ref<User | null>(null)
 
@@ -1518,6 +1544,99 @@ const handleSaveMaaEndConfig = async (script: Script) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
     message.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
+  }
+}
+
+const clearOkwwConfigSession = (scriptId: string, subscriptionId?: string) => {
+  if (subscriptionId) unsubscribe(subscriptionId)
+  activeConnections.value.delete(scriptId)
+  showOkwwConfigMask.value = false
+  currentConfigScript.value = null
+}
+
+const handleStartOkwwConfig = async (script: Script) => {
+  const rootPath = String((script.config as OkwwScriptConfig).Info?.RootPath || '').trim()
+  const normalizedRoot = rootPath.replace(/[\\/]+$/g, '')
+  if (
+    !rootPath ||
+    rootPath === '.' ||
+    !(await window.electronAPI.fileExists(`${normalizedRoot}/ok-ww.exe`)) ||
+    !(await window.electronAPI.fileExists(`${normalizedRoot}/data/apps/ok-ww/app.json`))
+  ) {
+    message.warning('请先在脚本编辑页设置有效的 ok-ww 路径')
+    await router.push(`/scripts/${script.id}/edit/okww`)
+    return
+  }
+  if (activeConnections.value.has(script.id)) {
+    message.warning('该脚本已在设置中，请先保存当前设置')
+    return
+  }
+
+  try {
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: script.id,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+    if (response.code !== 200 || !response.taskId) {
+      throw new Error(response.message || '启动 ok-ww 设置失败')
+    }
+
+    showOkwwConfigMask.value = true
+    currentConfigScript.value = script
+    let sessionEnded = false
+    let subscriptionId = ''
+    subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+      if (wsMessage.type === 'error') {
+        sessionEnded = true
+        message.error(`ok-ww 设置连接失败: ${String(wsMessage.data)}`)
+        clearOkwwConfigSession(script.id, subscriptionId)
+        return
+      }
+      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+        message.error(`ok-ww 设置失败: ${String(wsMessage.data.Error)}`)
+        return
+      }
+      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        sessionEnded = true
+        clearOkwwConfigSession(script.id, subscriptionId)
+      }
+    })
+    if (sessionEnded) {
+      unsubscribe(subscriptionId)
+      return
+    }
+    activeConnections.value.set(script.id, {
+      subscriptionId,
+      websocketId: response.taskId,
+    })
+    message.success(`已打开 ${script.name} 的 ok-ww 设置`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动 ok-ww 设置失败: ${errorMsg}`)
+    message.error(`启动 ok-ww 设置失败: ${errorMsg}`)
+  }
+}
+
+const handleSaveOkwwConfig = async (script: Script) => {
+  const connection = activeConnections.value.get(script.id)
+  if (!connection) {
+    message.error('未找到活动的设置会话')
+    return
+  }
+
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({
+      taskId: connection.websocketId,
+    })
+    if (response.code !== 200) {
+      throw new Error(response.message || '保存设置失败')
+    }
+    clearOkwwConfigSession(script.id, connection.subscriptionId)
+    message.success(`${script.name} 的设置已保存`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
+    message.error(`保存 ok-ww 设置失败: ${errorMsg}`)
   }
 }
 

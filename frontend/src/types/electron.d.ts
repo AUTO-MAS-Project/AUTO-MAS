@@ -1,9 +1,19 @@
 // Electron API 类型定义
+export interface PathDiscoveryResult {
+  success: boolean
+  path?: string
+  source?: 'uninstall-registry' | 'kuro-launcher-registry' | 'wegame'
+  channel?: 'China' | 'Global' | 'WeGame'
+  error?: string
+}
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string[]>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
+  discoverOkwwPath: () => Promise<PathDiscoveryResult>
+  discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 
   // 窗口控制
   windowMinimize: () => Promise<void>
