@@ -101,41 +101,43 @@ async def manual_game_sign() -> OutBase:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
+            game_sign_flow,
             run_all_sign_in,
         )
 
-        results = await run_all_sign_in(force=True)
+        async with game_sign_flow():
+            results = await run_all_sign_in(force=True)
 
-        # 格式化并存储结果
-        formatted = format_sign_results(results)
-        # 合并结果（手动签到按 account_uid 替换旧数据）
-        result_update = Config.update_game_sign_results(formatted, replace=True)
-        if isawaitable(result_update):
-            await result_update
+            # 格式化并存储结果
+            formatted = format_sign_results(results)
+            # 合并结果（手动签到按 account_uid 替换旧数据）
+            result_update = Config.update_game_sign_results(formatted, replace=True)
+            if isawaitable(result_update):
+                await result_update
 
-        # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-        all_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            has_credentials = any(
-                account.get("GameSignAccount", field)
-                for field in ("MiyousheToken", "KuroToken", "SklandToken")
-            )
-            if account.get("GameSignAccount", "Enabled") and has_credentials:
-                if account.get("GameSignAccount", "LastSignDate") != today:
-                    all_signed = False
-                    break
-        if all_signed:
-            await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-        if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-            from app.tools.game_sign_notify import push_game_sign_notification
-
-            failed_channels = await push_game_sign_notification(results)
-            if failed_channels:
-                return OutBase(
-                    status="warning",
-                    message=f"签到完成，但部分通知发送失败：{'、'.join(failed_channels)}",
+            # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
+            today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+            all_signed = True
+            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+                has_credentials = any(
+                    account.get("GameSignAccount", field)
+                    for field in ("MiyousheToken", "KuroToken", "SklandToken")
                 )
+                if account.get("GameSignAccount", "Enabled") and has_credentials:
+                    if account.get("GameSignAccount", "LastSignDate") != today:
+                        all_signed = False
+                        break
+            if all_signed:
+                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+            if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+                from app.tools.game_sign_notify import push_game_sign_notification
+
+                failed_channels = await push_game_sign_notification(results)
+                if failed_channels:
+                    return OutBase(
+                        status="warning",
+                        message=f"签到完成，但部分通知发送失败：{'、'.join(failed_channels)}",
+                    )
 
     except GameSignInProgressError as e:
         return OutBase(code=409, status="error", message=str(e))

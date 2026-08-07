@@ -9,6 +9,7 @@ from app.api.tools import (
     update_game_sign_account,
 )
 from app.core.config import AppConfig
+from app.models.config import MaaConfig, MaaEndConfig
 from app.models.schema import (
     GameSignAccountGetIn,
     GameSignAccountGroupConfig,
@@ -171,6 +172,40 @@ class GameSignAccountConfigTest(unittest.IsolatedAsyncioTestCase):
             tools_config._game_sign_result_data,
             {"米游社": [{"account_uid": account_id}]},
         )
+class LegacyUserSklandCredentialTest(unittest.IsolatedAsyncioTestCase):
+    async def _assert_token_change_resets_date(self, script_config_type) -> None:
+        script_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        values = {
+            ("Info", "SklandToken"): "old-token",
+            ("Data", "LastSklandDate"): "2026-08-07",
+        }
+        user_config = MagicMock()
+        user_config.get.side_effect = lambda group, name: values[(group, name)]
+
+        async def set_value(group: str, name: str, value: str) -> None:
+            values[(group, name)] = value
+
+        user_config.set = AsyncMock(side_effect=set_value)
+        script_config = script_config_type()
+        script_config.UserData = {user_id: user_config}
+
+        config = SimpleNamespace(ScriptConfig={script_id: script_config})
+        await AppConfig.update_user(
+            config,
+            str(script_id),
+            str(user_id),
+            {"Info": {"SklandToken": "new-token"}},
+        )
+
+        user_config.set.assert_any_await("Info", "SklandToken", "new-token")
+        user_config.set.assert_any_await("Data", "LastSklandDate", "2000-01-01")
+
+    async def test_maa_token_change_resets_skland_date(self) -> None:
+        await self._assert_token_change_resets_date(MaaConfig)
+
+    async def test_maaend_token_change_resets_skland_date(self) -> None:
+        await self._assert_token_change_resets_date(MaaEndConfig)
 
 
 if __name__ == "__main__":
