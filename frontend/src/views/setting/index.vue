@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
+import type { CursorEffect } from '@/types/cursorEffect'
+import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
+import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { Service, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('设置')
 
@@ -21,6 +24,7 @@ import TabOthers from './TabOthers.vue'
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
+const cursorEffectStore = useCursorEffectStore()
 const {
   restartPolling,
   updateVisible,
@@ -99,6 +103,12 @@ const themeColorOptions = Object.entries(themeColors).map(([key, color]) => ({
   value: key,
   color,
 }))
+
+const cursorEffectOptions: { label: string; value: CursorEffect }[] = [
+  { label: '关闭', value: 'none' },
+  { label: '流线光标', value: 'sleek-line' },
+  { label: '流体光标（炫酷RGB！）', value: 'fluid' },
+]
 
 // 加载和保存
 const loadSettings = async () => {
@@ -211,6 +221,41 @@ const handleThemeColorChange = (value: SelectValue) => {
   if (typeof value === 'string') setThemeColor(value as ThemeColor)
 }
 
+const confirmFluidCursor = () =>
+  new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: '确认开启流体光标？',
+      content: '该效果会持续进行 WebGL 流体渲染，可能增加 GPU 使用率。确认后立即应用。',
+      okText: '确认开启',
+      cancelText: '取消',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    })
+  })
+
+const handleCursorEffectChange = async (value: SelectValue) => {
+  if (typeof value !== 'string') {
+    return
+  }
+
+  const nextEffect = normalizeCursorEffect(value)
+  if (nextEffect === cursorEffectStore.effect) {
+    return
+  }
+
+  if (nextEffect === 'fluid' && !(await confirmFluidCursor())) {
+    return
+  }
+
+  try {
+    await cursorEffectStore.setEffect(nextEffect)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存光标效果失败: ${errorMsg}`)
+    message.error('光标效果保存失败')
+  }
+}
+
 // 其他操作
 const openDevTools = () => window.electronAPI?.openDevTools?.()
 
@@ -266,6 +311,7 @@ const testNotify = async () => {
 }
 
 onMounted(() => {
+  void cursorEffectStore.load()
   loadSettings()
   getBackendVersion()
 })
@@ -281,8 +327,9 @@ onMounted(() => {
         <a-tab-pane key="basic" tab="界面设置">
           <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
             :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
+            :cursor-effect="cursorEffectStore.effect" :cursor-effect-options="cursorEffectOptions"
             :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
-            :handle-setting-change="handleSettingChange" />
+            :handle-cursor-effect-change="handleCursorEffectChange" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
           <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"

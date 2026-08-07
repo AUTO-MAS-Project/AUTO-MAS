@@ -1,5 +1,6 @@
 import '@/utils/browserDevElectronAPI'
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import '@/styles/inspira.css'
 import App from './App.vue'
 import router from './router/index.ts'
@@ -54,6 +55,7 @@ if (window.electronAPI?.getApiEndpoint) {
 const app = createApp(App)
 
 // 注册插件
+app.use(createPinia())
 app.use(Antd)
 app.use(router)
 

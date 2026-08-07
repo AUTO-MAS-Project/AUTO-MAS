@@ -1,9 +1,24 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
+import type { CursorEffect } from '@/types/cursorEffect'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
+
+interface TabBasicProps {
+  settings: GlobalConfig
+  themeMode: ThemeMode | 'system'
+  themeColor: ThemeColor
+  themeModeOptions: { label: string; value: string }[]
+  themeColorOptions: { label: string; value: string; color: string }[]
+  cursorEffect: CursorEffect
+  cursorEffectOptions: { label: string; value: CursorEffect }[]
+  handleThemeModeChange(value: SelectValue): void
+  handleThemeColorChange(value: SelectValue): void
+  handleCursorEffectChange(value: SelectValue): Promise<void>
+  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
+}
 
 const {
   settings,
@@ -11,19 +26,13 @@ const {
   themeColor,
   themeModeOptions,
   themeColorOptions,
+  cursorEffect,
+  cursorEffectOptions,
   handleThemeModeChange,
   handleThemeColorChange,
+  handleCursorEffectChange,
   handleSettingChange,
-} = defineProps<{
-  settings: GlobalConfig
-  themeMode: ThemeMode | 'system'
-  themeColor: ThemeColor
-  themeModeOptions: { label: string; value: string }[]
-  themeColorOptions: { label: string; value: string; color: string }[]
-  handleThemeModeChange: (value: SelectValue) => void
-  handleThemeColorChange: (value: SelectValue) => void
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
-}>()
+} = defineProps<TabBasicProps>()
 </script>
 
 <template>
@@ -89,6 +98,31 @@ const {
                 </div>
               </a-select-option>
             </a-select>
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>光标效果</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">光标动画</span>
+              <a-tooltip title="选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="cursorEffect"
+              :options="cursorEffectOptions"
+              size="large"
+              style="width: 100%"
+              @change="handleCursorEffectChange"
+            />
           </div>
         </a-col>
       </a-row>
