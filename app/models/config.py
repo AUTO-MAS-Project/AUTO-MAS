@@ -24,7 +24,7 @@ import json
 import calendar
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from typing import Any, Callable
 
 from app.utils.constants import (
     UTC4,
@@ -2242,19 +2242,23 @@ class GeneralUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+class OkwwTaskIndexValidator(OptionsValidator):
+    """兼容旧版中以序号 2 保存的多账号日常任务。"""
+
+    def __init__(self) -> None:
+        super().__init__([1, 7])
+
+    def correct(self, value: Any) -> Any:
+        return 7 if value == 2 else super().correct(value)
+
+
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
 
     # 用户卡 Tag 仅展示中文简称（与编辑页下拉的 English（中文） 区分）
     OKWW_TASK_BOOK: dict[int, str] = {
         1: "日常",
-        2: "多账号日常",
-        3: "刷声骸",
-        4: "半自动肉鸽",
-        5: "凝素领域",
-        6: "梦魇巢穴",
-        7: "模拟领域",
-        8: "无音区",
+        7: "多账号日常",
     }
 
     def __init__(self) -> None:
@@ -2265,13 +2269,13 @@ class OkwwUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Resource = ConfigItem(
-            "Info", "Resource", "官服", OptionsValidator(["官服"])
+            "Info", "Resource", "官服", OptionsValidator(["官服", "国际服"])
         )
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "详细", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2291,8 +2295,53 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # ok-ww.exe -t N -e
-        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 1, RangeValidator(1, 8))
+        # MAS 仅接管 DailyTask / MultiAccountDailyTask 及 DailyTask 高频设置。
+        ## 启动任务序号
+        self.Task_TaskIndex = ConfigItem(
+            "Task", "TaskIndex", 1, OkwwTaskIndexValidator()
+        )
+        ## 每日任务体力用途
+        self.Task_WhichToFarm = ConfigItem(
+            "Task",
+            "WhichToFarm",
+            "Tacet Suppression",
+            OptionsValidator(
+                ["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
+            ),
+        )
+        ## 无音区序号
+        self.Task_WhichTacetSuppressionToFarm = ConfigItem(
+            "Task", "WhichTacetSuppressionToFarm", 1, RangeValidator(1, 99)
+        )
+        ## 凝素领域序号
+        self.Task_WhichForgeryChallengeToFarm = ConfigItem(
+            "Task", "WhichForgeryChallengeToFarm", 1, RangeValidator(1, 99)
+        )
+        ## 模拟领域材料
+        self.Task_MaterialSelection = ConfigItem(
+            "Task",
+            "MaterialSelection",
+            "Shell Credit",
+            OptionsValidator(["Resonator EXP", "Weapon EXP", "Shell Credit"]),
+        )
+        ## 使用梦魇巢穴完成日常声骸
+        self.Task_FarmNightmareNestForDailyEcho = ConfigItem(
+            "Task", "FarmNightmareNestForDailyEcho", True, BoolValidator()
+        )
+        ## 每日任务后运行的附加任务
+        self.Task_AdditionalTasks = ConfigItem(
+            "Task",
+            "AdditionalTasks",
+            ["Check Weekly Garden"],
+            MultipleOptionsValidator(
+                [
+                    "Check Weekly Garden",
+                    "Auto Farm all Nightmare Nest",
+                    "Merge Echo If discarded > 1000",
+                    "Teleport and Farm 4C Echo",
+                ]
+            ),
+        )
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2644,7 +2693,10 @@ class OkwwConfig(ConfigBase):
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
+        ## 游戏启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 鸣潮客户端进程路径（由 MAS 从启动器缓存自动读取，不在前端展示）
+        self.Game_ProcessPath = ConfigItem("Game", "ProcessPath", "", FileValidator())
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## Run -------------------------------------------------------------

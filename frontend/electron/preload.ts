@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
+  discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
+  discoverWutheringWavesPath: () =>
+    ipcRenderer.invoke('okww-path-discovery:discover-wuthering-waves'),
 
   // 窗口控制
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
