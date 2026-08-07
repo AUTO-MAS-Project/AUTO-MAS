@@ -22,6 +22,7 @@
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 import httpx
@@ -34,10 +35,25 @@ from .game_sign_result import build_skland_sign_results
 logger = get_logger("游戏社区签到")
 
 _game_sign_lock = asyncio.Lock()
+_game_sign_flow_lock = asyncio.Lock()
 
 
 class GameSignInProgressError(RuntimeError):
     """游戏社区签到已在执行。"""
+
+
+@asynccontextmanager
+async def game_sign_flow():
+    """串行保护一次完整签到流程，包括结果持久化和通知。"""
+
+    if _game_sign_flow_lock.locked():
+        raise GameSignInProgressError("游戏社区签到正在执行，请稍后重试")
+
+    await _game_sign_flow_lock.acquire()
+    try:
+        yield
+    finally:
+        _game_sign_flow_lock.release()
 
 
 def _all_enabled_platforms_signed(
@@ -97,8 +113,11 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
     if _game_sign_lock.locked():
         raise GameSignInProgressError("游戏社区签到正在执行，请稍后重试")
 
-    async with _game_sign_lock:
+    await _game_sign_lock.acquire()
+    try:
         return await _run_all_sign_in(force=force)
+    finally:
+        _game_sign_lock.release()
 
 
 async def _run_all_sign_in(force: bool = False) -> list[dict]:

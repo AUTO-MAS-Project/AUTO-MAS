@@ -168,7 +168,7 @@ class GameSignTimerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(timer.game_sign_task)
 
-    async def test_non_boundary_second_does_not_dispatch(self) -> None:
+    async def test_non_boundary_second_dispatches_once_per_minute(self) -> None:
         timer = _MainTimer()
         check_time = datetime(2026, 7, 29, 8, 0, 1)
 
@@ -183,8 +183,12 @@ class GameSignTimerTest(unittest.IsolatedAsyncioTestCase):
             mocked_datetime.now.return_value = check_time
 
             timer._schedule_game_sign_check()
+            task = timer.game_sign_task
+            self.assertIsNotNone(task)
+            await task
+            timer._schedule_game_sign_check()
 
-        check_game_sign.assert_not_awaited()
+        check_game_sign.assert_awaited_once_with(check_time=check_time)
         self.assertIsNone(timer.game_sign_task)
 
     async def test_task_trigger_uses_same_background_guard(self) -> None:

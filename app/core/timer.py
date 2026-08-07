@@ -64,6 +64,7 @@ class _MainTimer:
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
         self.game_sign_task: asyncio.Task[None] | None = None
+        self._last_game_sign_check_minute: str | None = None
 
     async def start(self):
         """启动定时器"""
@@ -103,6 +104,7 @@ class _MainTimer:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
             logger.info("主业务定时器已关闭")
+        self._last_game_sign_check_minute = None
 
     async def second_task(self):
         """每秒定期任务"""
@@ -192,13 +194,15 @@ class _MainTimer:
         ):
             return
 
-        check_time = datetime.now()
-        if check_time.second != 0:
+        check_time = datetime.now(tz=UTC8)
+        minute_key = check_time.strftime("%Y-%m-%d %H:%M")
+        if self._last_game_sign_check_minute == minute_key:
             return
 
         if self.game_sign_task is not None and not self.game_sign_task.done():
             return
 
+        self._last_game_sign_check_minute = minute_key
         task = asyncio.create_task(self.check_game_sign(check_time=check_time))
         self.game_sign_task = task
         task.add_done_callback(self._on_game_sign_check_done)
@@ -266,9 +270,7 @@ class _MainTimer:
         ):
             return
 
-        now = check_time or datetime.now()
-        if now.second != 0:
-            return
+        now = check_time or datetime.now(tz=UTC8)
 
         if now.tzinfo is None:
             now = now.replace(tzinfo=UTC8)
@@ -289,45 +291,47 @@ class _MainTimer:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
+            game_sign_flow,
             run_all_sign_in,
         )
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
-            logger.info("开始执行游戏社区签到")
-            results = await run_all_sign_in(force=False)
+            async with game_sign_flow():
+                logger.info("开始执行游戏社区签到")
+                results = await run_all_sign_in(force=False)
 
-            # 如果所有用户都已签到（无新结果），保留已有结果
-            if not results:
-                logger.info("所有用户今日已签到，跳过")
+                # 如果所有用户都已签到（无新结果），保留已有结果
+                if not results:
+                    logger.info("所有用户今日已签到，跳过")
+                    if _all_game_sign_accounts_signed(
+                        Config.ToolsConfig.GameSign_Accounts, today
+                    ):
+                        await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                    return
+
+                # 格式化并合并结果
+                formatted = format_sign_results(results)
+                await Config.update_game_sign_results(formatted)
+
+                # 检查是否所有用户都已签到，更新全局 LastSignDate
                 if _all_game_sign_accounts_signed(
                     Config.ToolsConfig.GameSign_Accounts, today
                 ):
                     await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-                return
 
-            # 格式化并合并结果
-            formatted = format_sign_results(results)
-            await Config.update_game_sign_results(formatted)
+                logger.success("游戏社区签到执行完成")
 
-            # 检查是否所有用户都已签到，更新全局 LastSignDate
-            if _all_game_sign_accounts_signed(
-                Config.ToolsConfig.GameSign_Accounts, today
-            ):
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                # 如果启用通知，发送签到结果
+                if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+                    from app.tools.game_sign_notify import push_game_sign_notification
 
-            logger.success("游戏社区签到执行完成")
-
-            # 如果启用通知，发送签到结果
-            if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-                from app.tools.game_sign_notify import push_game_sign_notification
-
-                failed_channels = await push_game_sign_notification(results)
-                if failed_channels:
-                    logger.warning(
-                        f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
-                    )
+                    failed_channels = await push_game_sign_notification(results)
+                    if failed_channels:
+                        logger.warning(
+                            f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
+                        )
 
         except GameSignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")
@@ -356,33 +360,35 @@ class _MainTimer:
         from app.tools.game_sign import (
             GameSignInProgressError,
             format_sign_results,
+            game_sign_flow,
             run_all_sign_in,
         )
 
         try:
-            results = await run_all_sign_in(force=False)
-            if not results:
-                return
+            async with game_sign_flow():
+                results = await run_all_sign_in(force=False)
+                if not results:
+                    return
 
-            formatted = format_sign_results(results)
-            await Config.update_game_sign_results(formatted)
+                formatted = format_sign_results(results)
+                await Config.update_game_sign_results(formatted)
 
-            # 签到后检查是否所有用户都已完成
-            if _all_game_sign_accounts_signed(
-                Config.ToolsConfig.GameSign_Accounts, today
-            ):
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                # 签到后检查是否所有用户都已完成
+                if _all_game_sign_accounts_signed(
+                    Config.ToolsConfig.GameSign_Accounts, today
+                ):
+                    await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
 
-            logger.info("任务触发的游戏签到已完成")
+                logger.info("任务触发的游戏签到已完成")
 
-            if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-                from app.tools.game_sign_notify import push_game_sign_notification
+                if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+                    from app.tools.game_sign_notify import push_game_sign_notification
 
-                failed_channels = await push_game_sign_notification(results)
-                if failed_channels:
-                    logger.warning(
-                        f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
-                    )
+                    failed_channels = await push_game_sign_notification(results)
+                    if failed_channels:
+                        logger.warning(
+                            f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
+                        )
 
         except GameSignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")

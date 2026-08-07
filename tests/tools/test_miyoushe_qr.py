@@ -105,6 +105,37 @@ class MiyousheQrTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("stuid=10001", result["cookies_str"])
         self.assertIn("mid=mid-v2", result["cookies_str"])
 
+    async def test_nested_qr_cookie_payload_keeps_authentication_fields(self) -> None:
+        response = httpx.Response(
+            200,
+            json={
+                "retcode": 0,
+                "data": {
+                    "status": "Confirmed",
+                    "cookies": {
+                        "cookie_token_v2": "nested-token",
+                        "stoken_v2": "nested-stoken",
+                        "ltuid_v2": "10002",
+                        "mid_v2": "nested-mid",
+                    },
+                },
+            },
+            request=httpx.Request("POST", "https://example.com"),
+        )
+
+        with patch(
+            "app.tools.miyoushe_qr.httpx.AsyncClient",
+            return_value=_mock_client(response),
+        ):
+            result = await check_qr_status("ticket", "device")
+
+        self.assertEqual(result["status"], "Confirmed")
+        cookie = result["cookies_str"]
+        self.assertIn("cookie_token=nested-token", cookie)
+        self.assertIn("stoken=nested-stoken", cookie)
+        self.assertIn("stuid=10002", cookie)
+        self.assertIn("mid=nested-mid", cookie)
+
     async def test_confirmed_without_auth_cookie_is_rejected(self) -> None:
         response = httpx.Response(
             200,

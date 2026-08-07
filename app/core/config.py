@@ -1024,14 +1024,26 @@ class AppConfig(GlobalConfig):
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
+        script_config = self.ScriptConfig[script_uid]
+        user_config = script_config.UserData[user_uid]
+
+        # A replaced Skland credential must be allowed to sign again today.
+        reset_skland_date = isinstance(script_config, (MaaConfig, MaaEndConfig))
+        skland_token_changed = False
+        if reset_skland_date:
+            info_data = data.get("Info", {})
+            if isinstance(info_data, dict) and "SklandToken" in info_data:
+                skland_token_changed = (
+                    user_config.get("Info", "SklandToken")
+                    != info_data["SklandToken"]
+                )
 
         for group, items in data.items():
             for name, value in items.items():
-                await (
-                    self.ScriptConfig[script_uid]
-                    .UserData[user_uid]
-                    .set(group, name, value)
-                )
+                await user_config.set(group, name, value)
+
+        if skland_token_changed:
+            await user_config.set("Data", "LastSklandDate", "2000-01-01")
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
