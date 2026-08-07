@@ -34,10 +34,9 @@ const toolsConfig = reactive<ToolsConfig>({
     GameSign: {
         Enabled: false,
         NotifyEnabled: false,
-        WindowStart: '08:00',
-        WindowEnd: '22:00',
+        RunOnStartup: false,
+        ScheduledRun: true,
         LastSignDate: '2000-01-01',
-        ScheduledTime: '',
         Status: '-',
         Result: '{}',
     },
@@ -58,10 +57,9 @@ const editingConfig = reactive<ToolsConfig>({
     GameSign: {
         Enabled: false,
         NotifyEnabled: false,
-        WindowStart: '08:00',
-        WindowEnd: '22:00',
+        RunOnStartup: false,
+        ScheduledRun: true,
         LastSignDate: '2000-01-01',
-        ScheduledTime: '',
         Status: '-',
         Result: '{}',
     },
@@ -189,10 +187,9 @@ const loadTools = async () => {
             data.GameSign = {
                 Enabled: false,
                 NotifyEnabled: false,
-                WindowStart: '08:00',
-                WindowEnd: '22:00',
+                RunOnStartup: false,
+                ScheduledRun: true,
                 LastSignDate: '2000-01-01',
-                ScheduledTime: '',
                 Status: '-',
                 Result: '{}',
             }

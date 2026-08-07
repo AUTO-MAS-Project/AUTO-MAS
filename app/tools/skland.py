@@ -47,9 +47,11 @@ from Crypto.Util.Padding import pad
 
 from typing import Dict, Any
 
-from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
+from app.utils.constants import BROWSER_ENV, DES_RULE, SKLAND_SM_CONFIG, UTC8
 from app.utils.logger import get_logger
 from .skland_response import is_skland_already_signed
+
+_skland_sign_lock = asyncio.Lock()
 
 logger = get_logger("森空岛签到任务")
 
@@ -58,6 +60,15 @@ def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
     """创建不继承本地环境代理的森空岛 HTTP 客户端。"""
 
     return httpx.AsyncClient(proxy=proxy, trust_env=False)
+
+
+def _parse_json_object(response: httpx.Response) -> dict[str, Any]:
+    """解析森空岛响应，并拒绝空值或非对象 JSON。"""
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("森空岛接口返回格式无效")
+    return payload
 
 
 def md5_hash(data: str) -> str:
@@ -217,12 +228,15 @@ async def get_device_id(proxy: str | None = None) -> str:
             headers={"Content-Type": "application/json"},
             timeout=30.0,
         )
-        resp = response.json()
+        resp = _parse_json_object(response)
 
     if resp.get("code") != 1100:
         raise Exception(f"设备ID计算失败: {resp}")
 
-    return f"B{resp['detail']['deviceId']}"
+    detail = resp.get("detail")
+    if not isinstance(detail, dict) or not detail.get("deviceId"):
+        raise ValueError("设备ID响应格式无效")
+    return f"B{detail['deviceId']}"
 
 
 _cached_device_id = None
@@ -241,6 +255,21 @@ async def get_cached_device_id(proxy: str | None = None) -> str:
 
 
 async def skland_sign_in(
+    token: str,
+    app_code: str = "arknights",
+    proxy: str | None = None,
+) -> dict:
+    """串行执行森空岛签到，协调旧用户链路与工具链路。"""
+
+    async with _skland_sign_lock:
+        return await _run_skland_sign_in(
+            token,
+            app_code=app_code,
+            proxy=proxy,
+        )
+
+
+async def _run_skland_sign_in(
     token: str,
     app_code: str = "arknights",
     proxy: str | None = None,
@@ -350,11 +379,14 @@ async def skland_sign_in(
                 json={"code": grant, "kind": 1},
                 headers=web_headers,
             )
-            rsp = response.json()
-        if rsp["code"] != 0:
+            rsp = _parse_json_object(response)
+        if rsp.get("code") != 0:
             raise Exception(f"获得cred失败: {rsp.get('message')}")
-        sign_token = rsp["data"]["token"]
-        cred = rsp["data"]["cred"]
+        data = rsp.get("data")
+        if not isinstance(data, dict) or not data.get("token") or not data.get("cred"):
+            raise ValueError("cred响应格式无效")
+        sign_token = data["token"]
+        cred = data["cred"]
         return cred, sign_token
 
     async def get_grant_code(token_value):
@@ -365,12 +397,15 @@ async def skland_sign_in(
                 json={"appCode": "4ca99fa6b56cc2ba", "token": token_value, "type": 0},
                 headers=header_login,
             )
-            rsp = response.json()
-        if rsp["status"] != 0:
+            rsp = _parse_json_object(response)
+        if rsp.get("status") != 0:
             raise Exception(
                 f"使用token: {token_value[:3]}******{token_value[-3:]} 获得认证代码失败: {rsp.get('msg')}"
             )
-        return rsp["data"]["code"]
+        data = rsp.get("data")
+        if not isinstance(data, dict) or not data.get("code"):
+            raise ValueError("认证代码响应格式无效")
+        return data["code"]
 
     async def get_binding_list(cred, sign_token, app_code_override: str | None = None):
         """查询已绑定的角色列表
@@ -391,16 +426,23 @@ async def skland_sign_in(
                     sign_token,
                 ),
             )
-            rsp = response.json()
-        if rsp["code"] != 0:
-            logger.error(f"请求角色列表出现问题: {rsp['message']}")
+            rsp = _parse_json_object(response)
+        if rsp.get("code") != 0:
+            logger.error(f"请求角色列表出现问题: {rsp.get('message')}")
             if rsp.get("message") == "用户未登录":
                 logger.error("用户登录可能失效了, 请重新登录！")
                 return v
-        for item in rsp["data"]["list"]:
+        data = rsp.get("data") or {}
+        if not isinstance(data, dict):
+            return v
+        for item in data.get("list") or []:
+            if not isinstance(item, dict):
+                continue
             if item.get("appCode") != code:
                 continue
-            v.extend(item.get("bindingList"))
+            binding_list = item.get("bindingList") or []
+            if isinstance(binding_list, list):
+                v.extend(entry for entry in binding_list if isinstance(entry, dict))
         return v
 
     async def check_attendance_today(cred, sign_token, uid, game_id) -> bool:
@@ -419,16 +461,21 @@ async def skland_sign_in(
                         sign_token,
                     ),
                 )
-                rsp = response.json()
+                rsp = _parse_json_object(response)
 
-            if rsp["code"] != 0:
+            if rsp.get("code") != 0:
                 logger.warning(f"检查签到状态失败: {rsp.get('message')}")
                 return False
 
-            records = rsp["data"].get("records", [])
-            today = time.time() // 86400 * 86400
+            data = rsp.get("data") or {}
+            records = data.get("records", []) if isinstance(data, dict) else []
+            now = datetime.now(tz=UTC8)
+            today = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
-            for record in records:
+            record_list = records if isinstance(records, list) else []
+            for record in record_list:
+                if not isinstance(record, dict):
+                    continue
                 record_time = int(record.get("ts", 0))
                 if record_time >= today:
                     return True
@@ -476,9 +523,9 @@ async def skland_sign_in(
                         headers=sign_headers,
                         content=json.dumps(body),
                     )
-                    rsp = response.json()
+                    rsp = _parse_json_object(response)
 
-                if rsp["code"] != 0:
+                if rsp.get("code") != 0:
                     if is_skland_already_signed(rsp):
                         result["重复"].append(character_name)
                         logger.info(f"{character_name} 重复签到")
@@ -516,7 +563,7 @@ async def skland_sign_in(
 
         async with _create_skland_client(proxy) as client:
             response = await client.post(endfield_sign_url, headers=headers)
-            return response.json()
+            return _parse_json_object(response)
 
     async def sign_for_endfield(cred, sign_token) -> dict:
         """终末地签到"""
@@ -525,6 +572,9 @@ async def skland_sign_in(
 
         for character in characters:
             roles = character.get("roles") or []
+            if not isinstance(roles, list):
+                roles = []
+            roles = [role for role in roles if isinstance(role, dict)]
             game_name = character.get("gameName")
             channel_name = character.get("channelName")
             result["总计"] += len(roles)
@@ -543,18 +593,31 @@ async def skland_sign_in(
                             logger.info(f"{character_name} 重复签到")
                         else:
                             result["失败"].append(character_name)
-                            logger.error(f"{character_name} 签到失败: {message}")
+                            logger.error(
+                                f"{character_name} 签到失败: {rsp.get('message')}"
+                            )
                     else:
-                        award_ids = rsp.get("data", {}).get("awardIds", [])
-                        resource_map = rsp.get("data", {}).get("resourceInfoMap", {})
+                        data = rsp.get("data") or {}
+                        if not isinstance(data, dict):
+                            data = {}
+                        award_ids = data.get("awardIds", [])
+                        resource_map = data.get("resourceInfoMap", {})
                         awards = []
-                        for award in award_ids:
+                        award_list = award_ids if isinstance(award_ids, list) else []
+                        for award in award_list:
+                            if not isinstance(award, dict):
+                                continue
                             award_id = award.get("id")
-                            if award_id and award_id in resource_map:
+                            if (
+                                award_id
+                                and isinstance(resource_map, dict)
+                                and award_id in resource_map
+                            ):
                                 resource = resource_map[award_id]
-                                awards.append(
-                                    f'{resource["name"]}x{resource.get("count", 1)}'
-                                )
+                                if isinstance(resource, dict) and resource.get("name"):
+                                    awards.append(
+                                        f'{resource["name"]}x{resource.get("count", 1)}'
+                                    )
                         if awards:
                             logger.info(
                                 f"[{game_name}] {character_name} 签到成功: {'、'.join(awards)}"

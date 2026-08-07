@@ -21,8 +21,7 @@
 
 import asyncio
 import json
-import random
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.services import Matomo
 from app.MaaFW import ArknightWin32Toolkit
@@ -49,9 +48,19 @@ class _MainTimer:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
-        self.second_timer = asyncio.create_task(MainTimer.second_task())
-        self.hour_timer = asyncio.create_task(MainTimer.hour_task())
+        self.second_timer = asyncio.create_task(self.second_task())
+        self.hour_timer = asyncio.create_task(self.hour_task())
         self.started = True
+
+        if (
+            Config.ToolsConfig.get("GameSign", "Enabled")
+            and (
+                Config.ToolsConfig.get("GameSign", "RunOnStartup")
+                or Config.ToolsConfig.get("GameSign", "AutoStart")
+            )
+        ):
+            self.schedule_game_sign_for_startup()
+
         logger.info("主业务定时器启动")
 
     async def stop(self):
@@ -154,7 +163,10 @@ class _MainTimer:
     def _schedule_game_sign_check(self) -> None:
         """派发签到检查，不阻塞每秒调度循环。"""
 
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+        if not (
+            Config.ToolsConfig.get("GameSign", "Enabled")
+            and Config.ToolsConfig.get("GameSign", "ScheduledRun")
+        ):
             return
 
         check_time = datetime.now()
@@ -170,6 +182,32 @@ class _MainTimer:
 
     def schedule_game_sign_for_task(self) -> None:
         """派发任务生命周期签到，并与定时签到共享任务守卫。"""
+
+        if self.game_sign_task is not None and not self.game_sign_task.done():
+            logger.debug("游戏社区签到后台任务正在执行，跳过重复派发")
+            return
+
+        if not (
+            Config.ToolsConfig.get("GameSign", "Enabled")
+            and Config.ToolsConfig.get("GameSign", "ScheduledRun")
+        ):
+            return
+
+        task = asyncio.create_task(self.try_game_sign_for_task())
+        self.game_sign_task = task
+        task.add_done_callback(self._on_game_sign_check_done)
+
+    def schedule_game_sign_for_startup(self) -> None:
+        """Schedule one background sign-in after application startup."""
+
+        if not (
+            Config.ToolsConfig.get("GameSign", "Enabled")
+            and (
+                Config.ToolsConfig.get("GameSign", "RunOnStartup")
+                or Config.ToolsConfig.get("GameSign", "AutoStart")
+            )
+        ):
+            return
 
         if self.game_sign_task is not None and not self.game_sign_task.done():
             logger.debug("游戏社区签到后台任务正在执行，跳过重复派发")
@@ -195,13 +233,15 @@ class _MainTimer:
     async def check_game_sign(
         self, *, check_time: datetime | None = None
     ) -> None:
-        """检查并执行游戏社区签到
+        """检查并执行定时游戏社区签到。
 
-        启用签到 + 时间窗口内随机时刻执行，窗口外补签。
         仅在整分钟时执行（秒数 != 0 时跳过），因为调度精度为分钟级。
         """
 
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+        if not (
+            Config.ToolsConfig.get("GameSign", "Enabled")
+            and Config.ToolsConfig.get("GameSign", "ScheduledRun")
+        ):
             return
 
         now = check_time or datetime.now()
@@ -221,49 +261,7 @@ class _MainTimer:
         if all_users_signed:
             return
 
-        # 解析签到窗口
-        try:
-            window_start_str = Config.ToolsConfig.get("GameSign", "WindowStart")
-            window_end_str = Config.ToolsConfig.get("GameSign", "WindowEnd")
-            window_start = datetime.strptime(window_start_str, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day
-            )
-            window_end = datetime.strptime(window_end_str, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day
-            )
-        except (ValueError, TypeError):
-            return
-
-        # 如果在窗口开始之前，跳过
-        if now < window_start:
-            return
-
-        # 如果在窗口结束之后，立即补签
-        if now > window_end:
-            await self._execute_game_sign()
-            return
-
-        # 确定计划签到时间
-        scheduled_time_str = Config.ToolsConfig.get("GameSign", "ScheduledTime")
-
-        if not scheduled_time_str:
-            # 首次进入窗口：计算今天的随机时间
-            remaining_seconds = int((window_end - now).total_seconds())
-            if remaining_seconds <= 0:
-                await self._execute_game_sign()
-                return
-            random_offset = random.randint(0, remaining_seconds)
-            scheduled_time = now + timedelta(seconds=random_offset)
-            await Config.ToolsConfig.set(
-                "GameSign", "ScheduledTime", scheduled_time.strftime("%H:%M")
-            )
-            return
-
-        # 检查是否到达计划时间（分钟精度）
-        if now.strftime("%H:%M") == scheduled_time_str:
-            await self._execute_game_sign()
-            # Prevent duplicate trigger within same minute
-            await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+        await self._execute_game_sign()
 
     async def _execute_game_sign(self) -> None:
         """执行游戏签到并处理结果"""
@@ -283,15 +281,11 @@ class _MainTimer:
             if not results:
                 logger.info("所有用户今日已签到，跳过")
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-                await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
                 return
 
             # 格式化并合并结果
             formatted = format_sign_results(results)
             await Config.update_game_sign_results(formatted)
-
-            # 清除计划时间
-            await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
             # 检查是否所有用户都已签到，更新全局 LastSignDate
             all_signed_after = True
@@ -366,7 +360,6 @@ class _MainTimer:
                         break
             if all_signed_after:
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-                await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
             logger.info("任务触发的游戏签到已完成")
 

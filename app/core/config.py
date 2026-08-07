@@ -219,11 +219,6 @@ class AppConfig(GlobalConfig):
         )
         self._game_sign_result_date = today
 
-        # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
-        last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
-        if last_sign_date != today:
-            await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
-
         from app.services import System
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)

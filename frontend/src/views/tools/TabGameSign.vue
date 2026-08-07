@@ -10,7 +10,6 @@ import {
   QrcodeOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
-import dayjs from 'dayjs'
 import QRCode from 'qrcode'
 import draggable from 'vuedraggable'
 import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
@@ -540,26 +539,6 @@ const getTagText = (tag: PlatformTag) => {
 // 标签 CSS 类
 const getTagClass = (status: TagStatus) => `tag-${status}`
 
-// ==================== 时间选择器 ====================
-
-const windowStartValue = computed(() => {
-  if (config.WindowStart) return dayjs(config.WindowStart, 'HH:mm')
-  return null
-})
-
-const windowEndValue = computed(() => {
-  if (config.WindowEnd) return dayjs(config.WindowEnd, 'HH:mm')
-  return null
-})
-
-const handleTimeChange = (key: string, dayjsValue: any) => {
-  if (dayjsValue) {
-    handleChange(key, dayjsValue.format('HH:mm'))
-  } else {
-    handleChange(key, '')
-  }
-}
-
 // ==================== 通用变更处理 ====================
 
 const handleChange = async (key: string, value: any) => {
@@ -589,6 +568,12 @@ const handleManualSign = async () => {
   signLoading.value = true
   try {
     const response = await Service.manualGameSignApiToolsSignPost()
+    if (response.code === 409) {
+      const warning = response.message || '自动签到正在执行，请稍后再试'
+      logger.warn(`手动签到被拒绝: ${warning}`)
+      message.warning(warning)
+      return
+    }
     if (response.code !== 200 && response.code !== 0) {
       throw new Error(response.message || '签到失败')
     }
@@ -690,38 +675,34 @@ onMounted(() => {
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">窗口起点</span>
-              <a-tooltip title="每日签到的最早时间">
+              <span class="form-label">启动时签到</span>
+              <a-tooltip title="应用启动后立即执行一次签到">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-time-picker
-              :value="windowStartValue"
-              format="HH:mm"
-              placeholder="08:00"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              :checked="config.RunOnStartup"
               :disabled="disabled"
-              @change="handleTimeChange('WindowStart', $event)"
+              checked-children="开"
+              un-checked-children="关"
+              @change="handleChange('RunOnStartup', $event)"
             />
           </div>
         </a-col>
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">窗口终点</span>
-              <a-tooltip title="每日签到的最晚时间">
+              <span class="form-label">自动签到</span>
+              <a-tooltip title="按分钟调度每日自动签到">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-time-picker
-              :value="windowEndValue"
-              format="HH:mm"
-              placeholder="22:00"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              :checked="config.ScheduledRun"
               :disabled="disabled"
-              @change="handleTimeChange('WindowEnd', $event)"
+              checked-children="开"
+              un-checked-children="关"
+              @change="handleChange('ScheduledRun', $event)"
             />
           </div>
         </a-col>

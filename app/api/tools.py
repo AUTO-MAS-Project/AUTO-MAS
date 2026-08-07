@@ -122,9 +122,6 @@ async def manual_game_sign() -> OutBase:
                     break
         if all_signed:
             await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-        # 清除计划时间
-        await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
-
         if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
             from app.tools.game_sign_notify import push_game_sign_notification
 

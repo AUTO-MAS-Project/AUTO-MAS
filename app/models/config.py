@@ -2876,11 +2876,11 @@ class ToolsConfig(ConfigBase):
         self.GameSign_NotifyEnabled = ConfigItem(
             "GameSign", "NotifyEnabled", False, BoolValidator()
         )
-        ## GameSign - 签到窗口起点 (HH:mm)
+        ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowStart = ConfigItem(
             "GameSign", "WindowStart", "08:00", DateTimeValidator("%H:%M")
         )
-        ## GameSign - 签到窗口终点 (HH:mm)
+        ## GameSign - 旧版签到窗口终点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowEnd = ConfigItem(
             "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
         )
@@ -2902,7 +2902,7 @@ class ToolsConfig(ConfigBase):
         self.GameSign_LastSignDate = ConfigItem(
             "GameSign", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## GameSign - 今日签到随机时间点 (HH:mm)
+        ## GameSign - 旧版今日随机签到时间（保留用于读取历史配置，不参与调度）
         self.GameSign_ScheduledTime = ConfigItem(
             "GameSign", "ScheduledTime", "", StringValidator()
         )

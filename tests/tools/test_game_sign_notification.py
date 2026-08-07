@@ -142,6 +142,19 @@ class GameSignConcurrencyTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ManualGameSignTest(unittest.IsolatedAsyncioTestCase):
+    async def test_manual_sign_reports_automatic_sign_conflict(self) -> None:
+        from app.tools.game_sign import GameSignInProgressError
+
+        with patch(
+            "app.tools.game_sign.run_all_sign_in",
+            new=AsyncMock(side_effect=GameSignInProgressError("自动签到正在执行")),
+        ):
+            response = await manual_game_sign()
+
+        self.assertEqual(response.code, 409)
+        self.assertEqual(response.status, "error")
+        self.assertIn("自动签到正在执行", response.message)
+
     async def test_manual_sign_sends_notification_and_reports_partial_failure(
         self,
     ) -> None:
