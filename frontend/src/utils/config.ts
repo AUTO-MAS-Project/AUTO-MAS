@@ -1,4 +1,5 @@
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
+import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeLayoutConfig } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('配置管理')
@@ -7,6 +8,7 @@ export interface FrontendConfig {
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
+  cursorEffect?: CursorEffect
 
   // 镜像源设置
   selectedGitMirror: string
@@ -20,6 +22,7 @@ export interface FrontendConfig {
 const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
+  cursorEffect: 'none',
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',
