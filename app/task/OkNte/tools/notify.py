@@ -32,7 +32,8 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果" and (
-        Config.get("Notify", "SendTaskResultTime") == "任何时刻"
+        message.get("game_sign_summary", False)
+        or Config.get("Notify", "SendTaskResultTime") == "任何时刻"
         or (
             Config.get("Notify", "SendTaskResultTime") == "仅失败时"
             and message["uncompleted_count"] != 0

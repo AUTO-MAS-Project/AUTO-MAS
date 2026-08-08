@@ -109,7 +109,7 @@ class ScriptItem:
 
         if not self.user_list:
             return "用户未加载"
-        return "\n".join([f"{user.name}：{user.result}" for user in self.user_list])
+        return "\n".join([f"{user.name}: {user.result}" for user in self.user_list])
 
 
 @dataclass

@@ -80,22 +80,20 @@ def _result_identity(item: dict) -> str:
     return game
 
 
-def _notification_items(items: list[dict]) -> list[dict]:
-    """过滤仅用于表示平台无可签到角色的占位结果。"""
+def _notification_results(results: list[dict]) -> list[dict]:
+    """过滤没有实际签到角色的平台占位结果。"""
 
-    return [item for item in items if not item.get("_notification_only")]
+    return [item for item in results if not item.get("_notification_only")]
 
 
-def _ordered_platforms(
-    grouped: dict[str, list[dict]], *, include_empty: bool = False
-) -> list[str]:
+def _ordered_platforms(grouped: dict[str, list[dict]]) -> list[str]:
     """按通知模板固定社区顺序，并保留未知平台结果。"""
 
     return [
         *[
             platform
             for platform in _PLATFORM_ORDER
-            if include_empty or platform in grouped
+            if platform in grouped
         ],
         *[platform for platform in grouped if platform not in _PLATFORM_ORDER],
     ]
@@ -103,9 +101,6 @@ def _ordered_platforms(
 
 def _format_notification_item(item: dict) -> str:
     """格式化通知列表中的一条签到结果。"""
-
-    if item.get("_notification_only"):
-        return "失败"
 
     platform = str(item.get("platform", "未知") or "未知")
     status = _result_status_text(item)
@@ -119,8 +114,9 @@ def _format_notification_item(item: dict) -> str:
 
 
 def format_game_sign_notification(results: list[dict]) -> str:
-    """按社区分组生成手动/启动时签到通知正文。"""
+    """按社区分组生成手动/启动时签到通知正文（不含通知标题）。"""
 
+    results = _notification_results(results)
     if not results:
         return ""
 
@@ -129,29 +125,28 @@ def format_game_sign_notification(results: list[dict]) -> str:
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)
 
-    lines = ["社区签到通知："]
-    for platform in _ordered_platforms(grouped, include_empty=True):
-        items = grouped.get(platform, [])
-        display_items = _notification_items(items)
-        total = len(display_items)
+    lines: list[str] = []
+    for platform in _ordered_platforms(grouped):
+        items = grouped[platform]
+        total = len(items)
         success_count = sum(
-            1 for item in display_items if item.get("status") in _SUCCESS_STATUSES
+            1 for item in items if item.get("status") in _SUCCESS_STATUSES
         )
         marker = "✅" if total and success_count == total else "❌"
-        lines.append(f"{marker}{platform}（{success_count}/{total}）：")
-        if items:
-            for item in items:
-                lines.append(f"- {_format_notification_item(item)}")
-        else:
-            lines.append("- 失败")
+        if lines:
+            lines.append("")
+        lines.extend([f"{marker}{platform}({success_count}/{total}):", ""])
+        for item in items:
+            lines.append(f"- {_format_notification_item(item)}")
 
-    lines.append("AUTO-MAS 敬上")
+    lines.extend(["", "AUTO-MAS 敬上"])
     return "\n".join(lines)
 
 
 def format_game_sign_task_summary(results: list[dict]) -> str:
     """生成附加到 MAS 任务报告末尾的一行签到汇总。"""
 
+    results = _notification_results(results)
     if not results:
         return ""
 
@@ -165,29 +160,21 @@ def format_game_sign_task_summary(results: list[dict]) -> str:
     for platform in _ordered_platforms(grouped):
         for item in grouped[platform]:
             platform_prefix = f"{platform}-" if platform != previous_platform else ""
-            if item.get("_notification_only"):
-                label = platform_prefix.rstrip("-") or platform
-                status = "失败"
-            else:
-                label = f"{platform_prefix}{_result_identity(item)}"
-                status = _result_status_text(item)
-                if platform != "森空岛":
-                    game = str(item.get("game", "") or "").strip()
-                    if game:
-                        label = f"{label} {game}"
-            separator = (
-                ":"
-                if platform == "森空岛" and not item.get("_notification_only")
-                else " "
-            )
+            label = f"{platform_prefix}{_result_identity(item)}"
+            status = _result_status_text(item)
+            if platform != "森空岛":
+                game = str(item.get("game", "") or "").strip()
+                if game:
+                    label = f"{label} {game}"
+            separator = ":" if platform == "森空岛" else " "
             parts.append(f"{label}{separator}{status}")
             previous_platform = platform
 
-    return "签到情况：" + "丨".join(parts)
+    return "签到情况: " + " | ".join(parts)
 
 
-def consume_task_game_sign_summary(task_info: object) -> str:
-    """消费一次任务签到汇总，避免多脚本任务重复附加。"""
+def get_task_game_sign_summary(task_info: object) -> str:
+    """读取尚未发送的任务签到汇总。"""
 
     if getattr(task_info, "game_sign_summary_consumed", False):
         return ""
@@ -196,29 +183,22 @@ def consume_task_game_sign_summary(task_info: object) -> str:
     if not results:
         return ""
 
-    try:
-        setattr(task_info, "game_sign_summary_consumed", True)
-    except Exception:
-        pass
     return format_game_sign_task_summary(results)
 
 
-def append_task_game_sign_summary(
-    task_info: object, result: str, *, uncompleted_count: int
-) -> str:
-    """在本次任务报告会发送时附加并消费签到汇总。"""
+def mark_task_game_sign_summary_consumed(task_info: object) -> None:
+    """在任务报告发送完成后标记签到汇总已消费。"""
+
+    setattr(task_info, "game_sign_summary_consumed", True)
+
+
+def append_task_game_sign_summary(task_info: object, result: str) -> str:
+    """将尚未发送的签到汇总附加到任务报告。"""
 
     if not Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
         return result
 
-    result_time_setting = Config.get("Notify", "SendTaskResultTime")
-    should_send = result_time_setting == "任何时刻" or (
-        result_time_setting == "仅失败时" and uncompleted_count != 0
-    )
-    if not should_send:
-        return result
-
-    summary = consume_task_game_sign_summary(task_info)
+    summary = get_task_game_sign_summary(task_info)
     return f"{result}\n\n{summary}" if summary else result
 
 
@@ -244,10 +224,11 @@ async def _send_notification_channel(
 
 async def push_game_sign_notification(results: list[dict]) -> list[str]:
     """推送手动或启动时触发的游戏签到结果通知。"""
+    results = _notification_results(results)
     if not results:
         return []
 
-    title = "社区签到通知"
+    title = "社区签到通知:"
     plain_text = format_game_sign_notification(results)
 
     # 邮件按同一正文生成 HTML，角色名和原因均需要转义。
@@ -256,26 +237,22 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)
 
-    html_lines = ["<p><strong>社区签到通知：</strong></p>"]
-    for platform in _ordered_platforms(grouped, include_empty=True):
-        items = grouped.get(platform, [])
-        display_items = _notification_items(items)
-        total = len(display_items)
+    html_lines = []
+    for platform in _ordered_platforms(grouped):
+        items = grouped[platform]
+        total = len(items)
         success_count = sum(
-            1 for item in display_items if item.get("status") in _SUCCESS_STATUSES
+            1 for item in items if item.get("status") in _SUCCESS_STATUSES
         )
         marker = "✅" if total and success_count == total else "❌"
         html_lines.append(
-            f"<p><strong>{marker}{escape(platform)}（{success_count}/{total}）：</strong></p>"
+            f"<p><strong>{marker}{escape(platform)}({success_count}/{total}):</strong></p>"
         )
         html_lines.append('<ul>')
-        if items:
-            for item in items:
-                html_lines.append(
-                    f"<li>{escape(_format_notification_item(item))}</li>"
-                )
-        else:
-            html_lines.append("<li>失败</li>")
+        for item in items:
+            html_lines.append(
+                f"<li>{escape(_format_notification_item(item))}</li>"
+            )
         html_lines.append('</ul>')
     html_lines.append("<p>AUTO-MAS 敬上</p>")
     html_content = "".join(html_lines)
@@ -348,7 +325,7 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
     if Config.get(
         "Notify", "IfKoishiSupport"
     ) and not await _send_notification_channel(
-        "Koishi", lambda: Notify.send_koishi(plain_text)
+        "Koishi", lambda: Notify.send_koishi(f"{title}\n{plain_text}")
     ):
         failed_channels.append("Koishi")
 

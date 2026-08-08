@@ -406,7 +406,7 @@ def format_sign_results(results: list[dict]) -> dict:
     按平台分组，平台内按账号 UID 聚合
 
     Returns:
-        {platform: [{account_alias, account_uid, games: [{game, status, reward, reason}]}]}
+        {platform: [{account_alias, account_uid, games: [{account, game, status, reward, reason}]}]}
     """
     platforms: dict[str, dict[str, dict]] = {}
 
@@ -431,6 +431,7 @@ def format_sign_results(results: list[dict]) -> dict:
             }
 
         platforms[platform][group_key]["games"].append({
+            "account": account,
             "game": item.get("game", "未知"),
             "status": item.get("status", "失败"),
             "reward": item.get("reward", ""),

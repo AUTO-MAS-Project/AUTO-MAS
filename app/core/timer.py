@@ -301,10 +301,6 @@ class _MainTimer:
         if source == "startup":
             if not Config.ToolsConfig.get("GameSign", "RunOnStartup"):
                 return []
-        elif source in _TASK_GAME_SIGN_SOURCES and not Config.ToolsConfig.get(
-            "GameSign", "ScheduledRun"
-        ):
-            return []
         elif source not in _TASK_GAME_SIGN_SOURCES:
             return []
 
