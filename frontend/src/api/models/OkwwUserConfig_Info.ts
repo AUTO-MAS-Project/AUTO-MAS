@@ -51,12 +51,12 @@ export type OkwwUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 用户配置模式（OK-WW 固定为详细模式）
+     * 用户配置模式（简洁共用，详细独立）
      */
     Mode?: ('简洁' | '详细' | null);
     /**
      * 游戏资源
      */
-    Resource?: (string | null);
+    Resource?: ('官服' | '国际服' | null);
 };
 

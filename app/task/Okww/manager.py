@@ -28,7 +28,13 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.utils import get_logger, ProcessManager
 
-from .AutoProxy import AutoProxyTask, _OKWW_REL_CONFIG_DIR
+from .AutoProxy import (
+    AutoProxyTask,
+    _OKWW_REL_APP_JSON,
+    _OKWW_REL_CONFIG_DIR,
+    _OKWW_REL_EXE,
+)
+from .ScriptConfig import ScriptConfigTask
 
 logger = get_logger("OK-WW 调度器")
 
@@ -51,11 +57,29 @@ class OkwwManager(TaskExecuteBase):
         self.had_original_script_config = False
 
     async def check(self) -> str:
-        if self.task_info.mode != "AutoProxy":
+        if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
             return "不支持的任务模式, 请检查任务配置！"
 
-        if not isinstance(Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], OkwwConfig):
+        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if not isinstance(script_config, OkwwConfig):
             return "脚本配置类型错误, 不是 OK-WW 类型"
+
+        if self.task_info.mode == "ScriptConfig":
+            root_path = Path(script_config.get("Info", "RootPath"))
+            if (
+                not root_path.is_dir()
+                or not (root_path / _OKWW_REL_EXE).is_file()
+                or not (root_path / _OKWW_REL_APP_JSON).is_file()
+            ):
+                return "请先设置有效的 OK-WW 脚本路径"
+            target_user_id = self.task_info.user_id or "Default"
+            if target_user_id != "Default":
+                try:
+                    target_user_uid = uuid.UUID(target_user_id)
+                except ValueError:
+                    return "OK-WW 用户不存在，请刷新后重试"
+                if target_user_uid not in script_config.UserData:
+                    return "OK-WW 用户不存在，请刷新后重试"
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
@@ -87,22 +111,48 @@ class OkwwManager(TaskExecuteBase):
         if not isinstance(self.script_config, OkwwConfig):
             raise TypeError("脚本配置类型错误")
 
-        # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
-        self.script_info.user_list = [
-            UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
-            for uid, config in self.user_config.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
-        ]
+        if self.task_info.mode == "ScriptConfig":
+            target_user_id = self.task_info.user_id or "Default"
+            target_user_name = "OK-WW 设置"
+            with suppress(ValueError):
+                target_user_uid = uuid.UUID(target_user_id)
+                if target_user_uid in self.user_config:
+                    target_user_name = self.user_config[target_user_uid].get(
+                        "Info", "Name"
+                    )
+            self.script_info.user_list = [
+                UserItem(
+                    user_id=target_user_id,
+                    name=target_user_name,
+                    status="等待",
+                )
+            ]
+        else:
+            self.script_info.user_list = [
+                UserItem(
+                    user_id=str(uid),
+                    name=config.get("Info", "Name"),
+                    status="等待",
+                )
+                for uid, config in self.user_config.items()
+                if config.get("Info", "Status")
+                and config.get("Info", "RemainedDay") != 0
+            ]
 
         # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
         self.game_manager: ProcessManager | None = None
-        if self.script_config.get("Game", "Enabled"):
+        if self.task_info.mode == "AutoProxy" and self.script_config.get(
+            "Game", "Enabled"
+        ):
             self.game_manager = ProcessManager()
 
-        if self.task_info.mode == "AutoProxy":
-            self.script_config_path = Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
+        if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
+            self.script_config_path = (
+                Path(self.script_config.get("Info", "RootPath"))
+                / _OKWW_REL_CONFIG_DIR
+            )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            shutil.rmtree(self.temp_path, ignore_errors=True)
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 self.had_original_script_config = True
@@ -112,7 +162,7 @@ class OkwwManager(TaskExecuteBase):
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
-            self.task_info.mode == "AutoProxy"
+            self.task_info.mode in ("AutoProxy", "ScriptConfig")
             and self.temp_path
             and self.temp_path.exists()
             and self.script_config_path
@@ -142,6 +192,17 @@ class OkwwManager(TaskExecuteBase):
             return
 
         await self.prepare()
+
+        if self.task_info.mode == "ScriptConfig":
+            self.script_info.current_index = 0
+            await self.spawn(
+                ScriptConfigTask(
+                    self.script_info,
+                    self.script_config,
+                    self.user_config,
+                )
+            )
+            return
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             method = AutoProxyTask(

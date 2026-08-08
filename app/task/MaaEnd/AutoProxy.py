@@ -544,8 +544,9 @@ class AutoProxyTask(TaskExecuteBase):
         if device_info is not None:
             from app.core import MaaFWManager
 
-            adb_device = await MaaFWManager.ensure_adb_connectable(device_info)
-            maaend_instance["savedDevice"] = {"adbDeviceName": adb_device.name}
+            maaend_instance["savedDevice"] = {
+                "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
+            }
         maaend_tasks = maaend_instance["tasks"]
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()

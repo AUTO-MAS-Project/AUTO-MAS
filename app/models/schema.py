@@ -603,7 +603,34 @@ class GeneralUserConfig(BaseModel):
 
 
 class OkwwUserConfig_Task(BaseModel):
-    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
+    TaskIndex: Optional[Literal[1, 7]] = Field(
+        default=None, description="启动任务：1=DailyTask，7=MultiAccountDailyTask"
+    )
+    WhichToFarm: Optional[
+        Literal["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
+    ] = Field(default=None, description="每日任务体力用途")
+    WhichTacetSuppressionToFarm: Optional[int] = Field(
+        default=None, description="F2 列表中的无音区序号"
+    )
+    WhichForgeryChallengeToFarm: Optional[int] = Field(
+        default=None, description="F2 列表中的凝素领域序号"
+    )
+    MaterialSelection: Optional[
+        Literal["Resonator EXP", "Weapon EXP", "Shell Credit"]
+    ] = Field(default=None, description="模拟领域材料")
+    FarmNightmareNestForDailyEcho: Optional[bool] = Field(
+        default=None, description="需要时使用梦魇巢穴完成日常声骸"
+    )
+    AdditionalTasks: Optional[
+        List[
+            Literal[
+                "Check Weekly Garden",
+                "Auto Farm all Nightmare Nest",
+                "Merge Echo If discarded > 1000",
+                "Teleport and Farm 4C Echo",
+            ]
+        ]
+    ] = Field(default=None, description="每日任务后运行的附加任务")
 
 
 class OkwwUserConfig_Info(GeneralUserConfig_Info):
@@ -612,9 +639,11 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式（OK-WW 固定为详细模式）"
+        default=None, description="用户配置模式（简洁共用，详细独立）"
     )
-    Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
+    Resource: Optional[Literal["官服", "国际服"]] = Field(
+        default=None, description="游戏资源"
+    )
 
 
 class OkwwUserConfig_Data(GeneralUserConfig_Data):
@@ -761,7 +790,7 @@ class OkwwConfig_Game(BaseModel):
     LaunchBeforeTask: Optional[bool] = Field(
         default=None, description="任务开始前是否由 MAS 启动游戏"
     )
-    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Path: Optional[str] = Field(default=None, description="游戏启动器路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
 
