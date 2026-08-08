@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -37,6 +38,19 @@ class ProcessManagerStub(ProcessManager):
         self.searched_process_name = target.name
         self.searched_process_exe = target.exe
         self.events.append("track-game")
+
+
+def make_log_task(*, is_running: bool) -> AutoProxyTask:
+    task = AutoProxyTask.__new__(AutoProxyTask)
+    task.cur_user_log = SimpleNamespace(content=[], status="")
+    task.cur_user_item = SimpleNamespace(status="运行")
+    task.script_info = SimpleNamespace(log="")
+    task.script_config = ConfigStub({("Run", "RunTimeLimit"): 60})
+    task.okww_process_manager = SimpleNamespace(
+        is_running=AsyncMock(return_value=is_running)
+    )
+    task.wait_event = asyncio.Event()
+    return task
 
 
 def test_okww_launches_decoded_game_process_directly(monkeypatch) -> None:
@@ -95,3 +109,27 @@ def test_okww_force_kill_uses_resolved_game_process_path(monkeypatch) -> None:
     asyncio.run(task._kill_game_process())
 
     kill_process.assert_awaited_once_with(task.game_process_path)
+
+
+def test_okww_window_closed_log_marks_success_before_process_exit() -> None:
+    task = make_log_task(is_running=True)
+
+    asyncio.run(
+        task.check_log(
+            ["MainWindow:Window closed exit_event.is_set\n"], datetime.now()
+        )
+    )
+
+    assert task.cur_user_log.status == "Success!"
+    assert task.cur_user_item.status == "完成"
+    assert task.wait_event.is_set()
+
+
+def test_okww_process_exit_without_window_closed_log_is_error() -> None:
+    task = make_log_task(is_running=False)
+
+    asyncio.run(task.check_log(["TaskExecutor:Executor destroy\n"], datetime.now()))
+
+    assert task.cur_user_log.status == "OK-WW 在完成任务前退出"
+    assert task.cur_user_item.status == "异常"
+    assert task.wait_event.is_set()
