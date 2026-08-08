@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,6 +8,7 @@ from app.tools.game_sign import (
     _run_all_sign_in,
     format_sign_results,
 )
+from app.utils.constants import UTC8
 
 
 class GameSignCompletionTest(unittest.TestCase):
@@ -121,6 +123,66 @@ class GameSignCredentialReadOnlyTest(unittest.IsolatedAsyncioTestCase):
             account.set.await_args.args[:2],
             ("GameSignAccount", "LastSignDate"),
         )
+
+
+class GameSignAutomaticAttemptTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def make_account() -> MagicMock:
+        account = MagicMock()
+        values = {
+            ("GameSignAccount", "Name"): "测试用户",
+            ("GameSignAccount", "Enabled"): True,
+            ("GameSignAccount", "LastSignDate"): "2000-01-01",
+            ("GameSignAccount", "MiyousheToken"): "",
+            ("GameSignAccount", "KuroToken"): "",
+            ("GameSignAccount", "SklandToken"): "skland-token",
+        }
+        account.get.side_effect = lambda group, name: values[(group, name)]
+        account.set = AsyncMock()
+        return account
+
+    async def test_automatic_failure_is_not_retried_same_day(self) -> None:
+        account = self.make_account()
+        config = SimpleNamespace(
+            ToolsConfig=SimpleNamespace(GameSign_Accounts={"account-1": account})
+        )
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+
+        with (
+            patch("app.tools.game_sign.Config", config),
+            patch(
+                "app.tools.game_sign._check_system_time",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "app.tools.skland.skland_sign_in",
+                new=AsyncMock(side_effect=RuntimeError("offline")),
+            ),
+        ):
+            await _run_all_sign_in(force=False)
+
+        account.set.assert_awaited_once_with("GameSignAccount", "LastSignDate", today)
+
+    async def test_manual_failure_does_not_mark_date(self) -> None:
+        account = self.make_account()
+        config = SimpleNamespace(
+            ToolsConfig=SimpleNamespace(GameSign_Accounts={"account-1": account})
+        )
+
+        with (
+            patch("app.tools.game_sign.Config", config),
+            patch(
+                "app.tools.game_sign._check_system_time",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "app.tools.skland.skland_sign_in",
+                new=AsyncMock(side_effect=RuntimeError("offline")),
+            ),
+        ):
+            await _run_all_sign_in(force=True)
+
+        account.set.assert_not_awaited()
 
 
 class GameSignResultFormattingTest(unittest.TestCase):

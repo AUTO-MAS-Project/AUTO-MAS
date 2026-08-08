@@ -32,6 +32,7 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.services import Notify
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.tools.game_sign_notify import append_task_game_sign_summary
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ManualReview import ManualReviewTask
@@ -223,7 +224,11 @@ class MaaManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": len(over_user),
                 "uncompleted_count": len(error_user) + len(wait_user),
-                "result": self.script_info.result,
+                "result": append_task_game_sign_summary(
+                    self.task_info,
+                    self.script_info.result,
+                    uncompleted_count=len(error_user) + len(wait_user),
+                ),
             }
 
             await Notify.push_plyer(

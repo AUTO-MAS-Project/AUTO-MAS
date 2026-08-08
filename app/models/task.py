@@ -28,6 +28,13 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Literal
 
 
+TaskTriggerSource = Literal[
+    "scheduled_task",
+    "manual_task",
+    "startup_task",
+]
+
+
 @dataclass
 class LogRecord:
 
@@ -117,6 +124,9 @@ class TaskItem(ABC):
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
+    game_sign_results: list[dict] = field(default_factory=list, repr=False)
+    game_sign_summary_consumed: bool = field(default=False, repr=False)
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
