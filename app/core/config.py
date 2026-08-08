@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 import os
+import re
 import sys
 import copy
 import httpx
@@ -30,42 +31,27 @@ import uvicorn
 import sqlite3
 import truststore
 from pathlib import Path
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
-from app.models.config import (
-<<<<<<< HEAD
+from app.models.config import QueueEntry, Setting, Tools
+from app.config import ConfigCollection
+from app.models.config_legacy import (
     CLASS_BOOK,
-    GameSignAccount,
-    GameSignAccountGroup,
-    QueueEntry,
-=======
-    MaaConfig,
-    MaaPlanConfig,
->>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
-    QueueConfig,
-    QueueItem,
-    Setting,
-    TimeSet,
-    Tools,
-    ToolsConfig,
-    Webhook,
-)
-from app.config import ConfigCollection, config_manager
-# 脚本 / 计划 / 模拟器本阶段未迁入；旧方法签名仍引用 legacy 类型
-from app.models.config_legacy import (  # noqa: F401
     EmulatorConfig,
-    GeneralConfig,
-    M9AConfig,
+    GlobalConfig,
+    GameSignAccountGroup,
     MaaConfig,
-    MaaEndConfig,
     MaaFWConfig,
     MaaPlanConfig,
-    OkwwConfig,
-    SrcConfig,
+    QueueConfig,
+    QueueItem,
+    TimeSet,
+    Webhook,
 )
 from app.models.script_api import ScriptRecord, ScriptTypeDescriptor, ScriptUserRecord
 from app.utils.constants import (
@@ -144,14 +130,13 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
-class AppConfig:
+class AppConfig(GlobalConfig):
     VERSION = "v5.4.0-beta.1"
 
-    setting: Setting
-    queues: ConfigCollection[QueueEntry]
-    tools: Tools
-
     def __init__(self) -> None:
+        super().__init__()
+        apply_script_type_registry_to_global_config(self)
+
         logger.info("")
         logger.info("===================================")
         logger.info("AUTO-MAS 后端应用程序")
@@ -162,17 +147,18 @@ class AppConfig:
         self.log_path = Path.cwd() / "debug/app.log"
         self.database_path = Path.cwd() / "data/data.db"
         self.config_path = Path.cwd() / "config"
+        self.history_path = Path.cwd() / "history"
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
+        self.history_path.mkdir(parents=True, exist_ok=True)
 
-        # 新基类配置根（TOML）
+        # 新配置根供已迁移的 setting/queue/tools API 使用；脚本相关配置仍由 legacy 根承载。
         self.setting = Setting.build(file=self.config_path / "setting.toml")
         self.queues = ConfigCollection[QueueEntry].build(
             [QueueEntry],
             file=self.config_path / "queues.toml",
-            name="queues",
         )
         self.tools = Tools.build(file=self.config_path / "tools.toml")
 
@@ -245,8 +231,6 @@ class AppConfig:
 
         await self.check_data()
 
-        # 激活新基类配置根（Setting / 调度队列 / 工具）
-        # 现有 TOML 可能仍是旧 PascalCase Wire，字段对不齐时以默认值热化并记日志
         from app.config.errors import ConfigAggregateError
 
         for label, node in (
@@ -259,6 +243,30 @@ class AppConfig:
             except ConfigAggregateError as exc:
                 logger.warning(f"{label} 配置激活有聚合错误（待 JSON/TOML 迁移）: {exc}")
 
+        await asyncio.gather(
+            self.connect(self.config_path / "Config.json"),
+            self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json"),
+            self.PlanConfig.connect(self.config_path / "PlanConfig.json"),
+            self.ScriptConfig.connect(self.config_path / "ScriptConfig.json"),
+            self.QueueConfig.connect(self.config_path / "QueueConfig.json"),
+            self.ToolsConfig.connect(self.config_path / "ToolsConfig.json"),
+            self.PluginConfig.connect(self.config_path / "PluginConfig.json"),
+        )
+
+        migration_marker = self.config_path / ".migrated_script_storage"
+        if not migration_marker.exists():
+            await self._migrate_general_scripts_to_plugin_storage()
+            await self._migrate_okww_scripts_to_plugin_storage()
+            try:
+                migration_marker.touch()
+            except OSError:
+                logger.warning("无法创建迁移标记文件，下次启动仍会检查迁移")
+
+        # 游戏签到：连接账号组 MultipleConfig
+        await self.ToolsConfig.GameSign_Accounts.connect(
+            self.config_path / "GameSignAccounts.json"
+        )
+
         # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
         today = datetime.now().strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
@@ -268,11 +276,6 @@ class AppConfig:
         self._game_sign_result_date = today
 
         # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
-<<<<<<< HEAD
-        if self.tools.game_sign.last_sign_date != datetime.now().strftime("%Y-%m-%d"):
-            self.tools.game_sign.scheduled_time = ""
-            await self.tools.commit()
-=======
         last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
         if last_sign_date != today:
             await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
@@ -283,7 +286,6 @@ class AppConfig:
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
->>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
 
         self.loop = asyncio.get_running_loop()
 
@@ -2367,8 +2369,6 @@ class AppConfig:
 
         await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
 
-<<<<<<< HEAD
-=======
     async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""
 
@@ -2737,52 +2737,67 @@ class AppConfig:
 
         logger.success("全局设置更新成功")
 
->>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
     async def get_webhook(
         self,
         script_id: Optional[str],
         user_id: Optional[str],
         webhook_id: Optional[str],
     ) -> tuple[list, dict]:
-        """获取脚本用户 webhook 配置（全局 webhook 见 Config.setting.custom_webhooks）。"""
+        """获取webhook配置"""
 
-        if not script_id or not user_id:
-            raise ValueError("脚本 webhook 须提供 script_id 与 user_id")
+        if script_id is None and user_id is None:
+            logger.info(f"获取全局webhook设置: {webhook_id}")
 
-        logger.info(f"获取webhook设置: {script_id} - {user_id} - {webhook_id}")
-        script_uid = uuid.UUID(script_id)
-        user_uid = uuid.UUID(user_id)
-        if webhook_id is None:
-            data = (
-                await self.ScriptConfig[script_uid]
-                .UserData[user_uid]
-                .Notify_CustomWebhooks.toDict()
-            )
+            if webhook_id is None:
+                data = await self.Notify_CustomWebhooks.toDict()
+            else:
+                data = await self.Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
+
         else:
-            data = (
-                await self.ScriptConfig[script_uid]
-                .UserData[user_uid]
-                .Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
-            )
+            logger.info(f"获取webhook设置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            if webhook_id is None:
+                data = (
+                    await self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .Notify_CustomWebhooks.toDict()
+                )
+            else:
+                data = (
+                    await self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
+                )
+
         index = data.pop("instances", [])
         return list(index), data
 
     async def add_webhook(
         self, script_id: Optional[str], user_id: Optional[str]
     ) -> tuple[uuid.UUID, Webhook]:
-        """添加脚本用户 webhook 配置。"""
+        """添加webhook配置"""
 
-        if not script_id or not user_id:
-            raise ValueError("脚本 webhook 须提供 script_id 与 user_id")
+        if script_id is None and user_id is None:
+            logger.info("添加全局webhook配置")
 
-        logger.info(f"添加webhook配置: {script_id} - {user_id}")
-        script_uid = uuid.UUID(script_id)
-        user_uid = uuid.UUID(user_id)
-        return await (
-            self.ScriptConfig[script_uid]
-            .UserData[user_uid]
-            .Notify_CustomWebhooks.add(Webhook)
-        )
+            uid, config = await self.Notify_CustomWebhooks.add(Webhook)
+            return uid, config
+
+        else:
+            logger.info(f"添加webhook配置: {script_id} - {user_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            uid, config = (
+                await self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.add(Webhook)
+            )
+            return uid, config
 
     async def update_webhook(
         self,
@@ -2791,53 +2806,79 @@ class AppConfig:
         webhook_id: str,
         data: Dict[str, Dict[str, Any]],
     ) -> None:
-        """更新脚本用户 webhook 配置。"""
+        """更新 webhook 配置"""
 
-        if not script_id or not user_id:
-            raise ValueError("脚本 webhook 须提供 script_id 与 user_id")
-
-        logger.info(f"更新 webhook 配置: {script_id} - {user_id} - {webhook_id}")
-        script_uid = uuid.UUID(script_id)
-        user_uid = uuid.UUID(user_id)
         webhook_uid = uuid.UUID(webhook_id)
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.ScriptConfig[script_uid]
-                    .UserData[user_uid]
-                    .Notify_CustomWebhooks[webhook_uid]
-                    .set(group, name, value)
-                )
+
+        if script_id is None and user_id is None:
+            logger.info(f"更新 webhook 全局配置: {webhook_id}")
+
+            for group, items in data.items():
+                for name, value in items.items():
+                    await self.Notify_CustomWebhooks[webhook_uid].set(
+                        group, name, value
+                    )
+
+        else:
+            logger.info(f"更新 webhook 配置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            for group, items in data.items():
+                for name, value in items.items():
+                    await (
+                        self.ScriptConfig[script_uid]
+                        .UserData[user_uid]
+                        .Notify_CustomWebhooks[webhook_uid]
+                        .set(group, name, value)
+                    )
 
     async def del_webhook(
         self, script_id: Optional[str], user_id: Optional[str], webhook_id: str
     ) -> None:
-        """删除脚本用户 webhook 配置。"""
+        """删除 webhook 配置"""
 
-        if not script_id or not user_id:
-            raise ValueError("脚本 webhook 须提供 script_id 与 user_id")
+        webhook_uid = uuid.UUID(webhook_id)
 
-        logger.info(f"删除 webhook 配置: {script_id} - {user_id} - {webhook_id}")
-        await (
-            self.ScriptConfig[uuid.UUID(script_id)]
-            .UserData[uuid.UUID(user_id)]
-            .Notify_CustomWebhooks.remove(uuid.UUID(webhook_id))
-        )
+        if script_id is None and user_id is None:
+            logger.info(f"删除全局 webhook 配置: {webhook_id}")
+
+            await self.Notify_CustomWebhooks.remove(webhook_uid)
+
+        else:
+            logger.info(f"删除 webhook 配置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.remove(webhook_uid)
+            )
 
     async def reorder_webhook(
         self, script_id: Optional[str], user_id: Optional[str], index_list: list[str]
     ) -> None:
-        """重新排序脚本用户 webhook。"""
+        """重新排序 webhook"""
 
-        if not script_id or not user_id:
-            raise ValueError("脚本 webhook 须提供 script_id 与 user_id")
+        if script_id is None and user_id is None:
+            logger.info(f"重新排序全局 webhook: {index_list}")
 
-        logger.info(f"重新排序 webhook: {script_id} - {user_id} - {index_list}")
-        await (
-            self.ScriptConfig[uuid.UUID(script_id)]
-            .UserData[uuid.UUID(user_id)]
-            .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
-        )
+            await self.Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+
+        else:
+            logger.info(f"重新排序 webhook: {script_id} - {user_id} - {index_list}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+            )
 
     @property
     def proxy(self) -> Optional[httpx.Proxy]:
@@ -3205,8 +3246,6 @@ class AppConfig:
 
         return remote_web_config
 
-<<<<<<< HEAD
-=======
     async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """
         保存MAA日志并生成对应统计数据
@@ -3729,6 +3768,5 @@ class AppConfig:
 
         logger.success(f"清理完成: {deleted_count} 个日期目录")
 
->>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
 
 Config = AppConfig()

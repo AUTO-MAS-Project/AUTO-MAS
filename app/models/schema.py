@@ -1474,8 +1474,6 @@ class MaaPlanConfig(BaseModel):
     Sunday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周日")
 
 
-<<<<<<< HEAD
-=======
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
     status: Literal["DONE", "ERROR"] = Field(..., description="状态")
@@ -1504,7 +1502,6 @@ class HistoryData(BaseModel):
     )
 
 
->>>>>>> b6cc0fcb801f11febc3cd9cc10eb015d39756fdd
 class ScriptCreateIn(BaseModel):
     type: Literal[
         "MAA",
