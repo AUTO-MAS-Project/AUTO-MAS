@@ -19,6 +19,7 @@
             :flip-delay-ms="500"
           />
         </div>
+        <div v-if="!isBootstrapping" class="command-author">—— {{ commandAuthor }}</div>
       </div>
 
       <div class="scheduler-launcher">
@@ -77,6 +78,7 @@ import { useTheme } from '@/composables/useTheme'
 const props = defineProps<{
   isBootstrapping: boolean
   commandTitle: string
+  commandAuthor: string
   schedulerTaskOptions: ComboBoxItem[]
   schedulerTasksLoading: boolean
   startingHomeTask: boolean
@@ -119,6 +121,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 .command-main {
   min-width: 0;
   position: relative;
+  padding-bottom: 24px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -146,6 +149,17 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 
 .command-title :deep(.command-title-encrypted) {
   color: var(--ant-color-text-secondary);
+}
+
+.command-author {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .scheduler-launcher {
