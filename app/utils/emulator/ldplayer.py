@@ -87,10 +87,10 @@ class LDManager(DeviceBase):
 
         result = await ProcessRunner.run_process(
             self.emulator_path,
-            "launch",
+            "launchex" if package_name else "launch",
             "--index",
             idx,
-            *(["--packagename", f'"{package_name}"'] if package_name else []),
+            *(["--packagename", package_name] if package_name else []),
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
@@ -293,7 +293,9 @@ class LDManager(DeviceBase):
             if result.returncode == 0:
                 logger.success(f"已禁用广告包: {package}")
             else:
-                logger.warning(f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}")
+                logger.warning(
+                    f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+                )
 
     async def get_adb_ports(self, pid: int) -> int:
         """使用psutil获取adb端口"""
