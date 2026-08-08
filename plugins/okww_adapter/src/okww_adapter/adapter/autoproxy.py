@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 import shutil
 import uuid
@@ -32,25 +33,19 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.services import Notify, System
-from app.utils import (
-    ProcessInfo,
-    ProcessManager,
-    get_logger,
-    get_path_runtime_lock,
-    is_process_running,
-)
+from app.utils import get_logger, get_path_runtime_lock
 from app.utils.LogMonitor import LogMonitor
+from app.utils.ProcessManager import ProcessInfo, ProcessManager, is_process_running
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
+
+from ..wuthering_waves import resolve_wuthering_waves_process_path
 
 logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 
-
-def _yes_no(value: bool) -> str:
-    return "是" if value else "否"
 
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # 对齐 MaaEnd：专项内置日志片段，Okww 不向用户暴露成功/失败日志关键词配置。
@@ -59,14 +54,18 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("游戏更新成功, 游戏即将重启", "游戏更新成功，即将重启任务"),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
+_OKWW_SUCCESS_LOG = "Window closed exit_event.is_set"
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
 _OKWW_REL_EXE = "ok-ww.exe"
+_OKWW_REL_APP_JSON = "data/apps/ok-ww/app.json"
 _OKWW_REL_CONFIG_DIR = "data/apps/ok-ww/working/configs"
 _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
+_OKWW_PROFILE_BY_RESOURCE = {"官服": "China", "国际服": "Global"}
+_OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
@@ -76,6 +75,111 @@ def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
     return shlex.split(value, posix=False) if value else []
 
+
+
+def _okww_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
+    if mode not in ("简洁", "详细"):
+        raise ValueError(f"不支持的 OK-WW 配置模式: {mode}")
+    script_uid = str(uuid.UUID(str(script_id)))
+    owner = "Default" if mode == "简洁" else str(uuid.UUID(str(user_id)))
+    return Path.cwd() / "data" / script_uid / owner / "ConfigFile"
+
+
+def _has_config_files(path: Path) -> bool:
+    return path.is_dir() and any(item.is_file() for item in path.rglob("*"))
+
+
+def _ensure_okww_user_config(
+    script_root: Path,
+    script_id: str,
+    user_id: str,
+    mode: str,
+) -> Path:
+    target = _okww_mas_config_dir(script_id, user_id, mode)
+    if _has_config_files(target):
+        return target
+
+    source = script_root / _OKWW_REL_CONFIG_DIR
+    if mode == "简洁":
+        legacy_user_dir = (
+            target.parent.parent / str(uuid.UUID(str(user_id))) / "ConfigFile"
+        )
+        if _has_config_files(legacy_user_dir):
+            source = legacy_user_dir
+    if not _has_config_files(source):
+        raise FileNotFoundError(
+            "未找到 OK-WW 默认设置，请先运行一次 OK-WW 并保存设置"
+        )
+
+    temporary_path = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copytree(source, temporary_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(target, ignore_errors=True)
+        temporary_path.rename(target)
+    finally:
+        shutil.rmtree(temporary_path, ignore_errors=True)
+    return target
+
+
+def _update_json(path: Path, values: dict[str, object]) -> None:
+    data: object = {}
+    if path.is_file():
+        data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"OK-WW 配置文件格式错误: {path.name}")
+    data.update(values)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=4) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+
+
+def _configure_okww_launcher(
+    script_root_path: Path,
+    resource: str | None = None,
+) -> None:
+    app_json_path = script_root_path / _OKWW_REL_APP_JSON
+    if not app_json_path.is_file():
+        return
+
+    app_config = json.loads(app_json_path.read_text(encoding="utf-8"))
+    if not isinstance(app_config, dict):
+        raise ValueError("OK-WW app.json 格式错误")
+
+    profile = app_config.get("current_profile")
+    if resource is not None:
+        profile = _OKWW_PROFILE_BY_RESOURCE.get(resource)
+        if profile is None:
+            raise ValueError(f"不支持的 OK-WW 游戏资源: {resource}")
+    available_profiles = {
+        item.get("name")
+        for item in (app_config.get("profiles") or [])
+        if isinstance(item, dict)
+    }
+    if resource is not None and available_profiles and profile not in available_profiles:
+        raise ValueError(f"当前 OK-WW 安装不支持{resource}资源")
+    if (
+        app_config.get("auto_start") is True
+        and app_config.get("current_profile") == profile
+        and app_config.get("update_method") == _OKWW_UPDATE_METHOD
+    ):
+        return
+
+    app_config["auto_start"] = True
+    if resource is not None:
+        app_config["current_profile"] = profile
+    app_config["update_method"] = _OKWW_UPDATE_METHOD
+    temporary_path = app_json_path.with_suffix(".json.tmp")
+    temporary_path.write_text(
+        json.dumps(app_config, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(app_json_path)
+    logger.info("已设置 OK-WW 自动启动与正式版更新策略")
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -101,7 +205,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item: UserItem = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: ConfigBase = self.user_config[self.cur_user_uid]
-        self.manual_stop_requested = False
+        self.game_process_path: Path | None = None
         self.script_root_lock: asyncio.Lock | None = None
         self.script_root_lock_acquired = False
 
@@ -110,6 +214,8 @@ class AutoProxyTask(TaskExecuteBase):
         if not root.is_dir():
             return "请设置ok-ww脚本路径"
         if not (root / _OKWW_REL_EXE).is_file():
+            return "请设置ok-ww脚本路径"
+        if not (root / _OKWW_REL_APP_JSON).is_file():
             return "请设置ok-ww脚本路径"
         if (
             self.script_config.get("Run", "ProxyTimesLimit") != 0
@@ -122,20 +228,30 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
-        if (
-            self._game_management_enabled()
-            and not Path(self.script_config.get("Game", "Path")).is_file()
-        ):
-            return "请设置鸣潮游戏路径"
-
-        mas_config_dir = self._okww_mas_config_dir()
-        if not (mas_config_dir.is_dir() and any(
-            item.is_file() for item in mas_config_dir.rglob("*")
-        )):
-            return (
-                f"用户 {self.cur_user_item.name} 未完成 OK-WW 配置，"
-                "请先在用户编辑页保存配置"
+        if self._game_management_enabled():
+            launcher_path = Path(
+                str(self.script_config.get("Game", "Path") or "").strip()
             )
+            try:
+                self.game_process_path = resolve_wuthering_waves_process_path(
+                    launcher_path
+                )
+            except (FileNotFoundError, ValueError) as error:
+                return str(error)
+
+        try:
+            _ensure_okww_user_config(
+                script_root=root,
+                script_id=self.script_info.script_id,
+                user_id=str(self.cur_user_uid),
+                mode=str(self.cur_user_config.get("Info", "Mode") or "简洁"),
+            )
+        except FileNotFoundError as error:
+            logger.warning(f"初始化 OK-WW 用户默认配置失败: {error}")
+            return str(error)
+        except (OSError, TypeError, ValueError) as error:
+            logger.warning(f"初始化 OK-WW 用户默认配置失败: {error}")
+            return "无法读取 OK-WW 默认配置，请检查 OK-WW 脚本路径"
         return "Pass"
 
     async def prepare(self):
@@ -173,19 +289,42 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
-        # 游戏配置（对齐通用脚本逻辑）
-        self.game_path = Path(self.script_config.get("Game", "Path"))
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
         self.run_book = False
 
     def _okww_mas_config_dir(self) -> Path:
-        return (
-            Path.cwd()
-            / "data"
-            / self.script_info.script_id
-            / str(self.cur_user_uid)
-            / "ConfigFile"
+        return _okww_mas_config_dir(
+            self.script_info.script_id,
+            str(self.cur_user_uid),
+            str(self.cur_user_config.get("Info", "Mode") or "简洁"),
+        )
+
+    def _apply_mas_overrides(self) -> None:
+        _update_json(
+            self.script_config_path / "DailyTask.json",
+            {
+                "Which to Farm": self.cur_user_config.get("Task", "WhichToFarm"),
+                "Which Tacet Suppression to Farm": self.cur_user_config.get(
+                    "Task", "WhichTacetSuppressionToFarm"
+                ),
+                "Which Forgery Challenge to Farm": self.cur_user_config.get(
+                    "Task", "WhichForgeryChallengeToFarm"
+                ),
+                "Material Selection": self.cur_user_config.get(
+                    "Task", "MaterialSelection"
+                ),
+                "Farm Nightmare Nest for Daily Echo": self.cur_user_config.get(
+                    "Task", "FarmNightmareNestForDailyEcho"
+                ),
+                "Additional Tasks to Run After Daily Task": self.cur_user_config.get(
+                    "Task", "AdditionalTasks"
+                ),
+            },
+        )
+        _update_json(
+            self.script_config_path / "Basic Options.json",
+            {"Exit App when Game Exits": True},
         )
 
     async def set_okww(self) -> None:
@@ -193,6 +332,10 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info("开始配置 OK-WW 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
+        _configure_okww_launcher(
+            self.script_root_path,
+            str(self.cur_user_config.get("Info", "Resource")),
+        )
 
         mas_config_dir = self._okww_mas_config_dir()
         tmp_dst = self.script_config_path.with_name(
@@ -202,32 +345,8 @@ class AutoProxyTask(TaskExecuteBase):
         shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
         shutil.rmtree(self.script_config_path, ignore_errors=True)
         tmp_dst.rename(self.script_config_path)
+        self._apply_mas_overrides()
         logger.info(f"OK-WW 运行参数配置完成: 自动代理")
-
-    async def update_config(self) -> None:
-        """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
-
-        mas_config_dir = self._okww_mas_config_dir()
-        tmp_dst = mas_config_dir.with_name(mas_config_dir.name + ".tmp")
-        shutil.rmtree(tmp_dst, ignore_errors=True)
-        shutil.copytree(self.script_config_path, tmp_dst, dirs_exist_ok=True)
-        shutil.rmtree(mas_config_dir, ignore_errors=True)
-        tmp_dst.rename(mas_config_dir)
-        logger.success("OK-WW 配置文件已更新")
-
-    def _game_config_summary_lines(self) -> list[str]:
-        """游戏配置摘要行（调度台展示用）。"""
-
-        game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
-        game_enabled = bool(self.script_config.get("Game", "Enabled"))
-        close_on_manual_stop = bool(self.script_config.get("Game", "CloseOnManualStop"))
-        return [
-            f"[游戏配置] 用户: {self.cur_user_item.name}",
-            f"  启用游戏配置: {_yes_no(game_enabled)}",
-            f"  由 MAS 启动并关闭游戏: {_yes_no(game_enabled)}",
-            f"  手动终止时关闭游戏: {_yes_no(game_enabled and close_on_manual_stop)}",
-            f"  启动参数: {game_args or '（无）'}",
-        ]
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -236,40 +355,38 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
-    async def _log_game_config_summary(self) -> None:
-        """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
-
-        self.script_info.log = "\n".join(self._game_config_summary_lines())
-        await asyncio.sleep(0)
-
     async def _mas_launch_game_before_task(self) -> None:
-        """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
-
-        await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
-
+        """使用从启动器元数据解码出的客户端路径直接启动游戏。"""
         if isinstance(self.game_manager, ProcessManager):
-            await self._push_dispatch_log(
-                f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
-            )
             if is_process_running(_WUWA_CLIENT_PROCESS):
                 logger.info(
                     "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
                 )
-                await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                with suppress(RuntimeError):
+                    await self.game_manager.search_process(
+                        self._game_process_info(),
+                        datetime.now() + timedelta(seconds=3),
+                    )
                 return
 
-            await self._push_dispatch_log("未检测到运行中的客户端，正在拉起游戏...")
+            if self.game_process_path is None:
+                raise RuntimeError("鸣潮客户端路径尚未解析")
             await self.game_manager.open_process(
-                self.game_path,
+                self.game_process_path,
                 *_split_args(self.script_config.get("Game", "Arguments")),
             )
-            wait_time = int(self.script_config.get("Game", "WaitTime"))
-            await self._push_dispatch_log(
-                f"正在等待游戏完成启动（{wait_time}s）..."
-            )
-            await asyncio.sleep(wait_time)
-            await self._push_dispatch_log("游戏启动完成")
-            return
+            wait_time = max(int(self.script_config.get("Game", "WaitTime")), 0)
+            if wait_time:
+                await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
+                await asyncio.sleep(wait_time)
+
+    def _game_process_info(self) -> ProcessInfo:
+        if self.game_process_path is None:
+            raise RuntimeError("鸣潮客户端路径尚未解析")
+        return ProcessInfo(
+            name=_WUWA_CLIENT_PROCESS,
+            exe=str(self.game_process_path),
+        )
 
     async def main_task(self):
         await self.prepare()
@@ -297,8 +414,6 @@ class AutoProxyTask(TaskExecuteBase):
                     Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
                     "脚本前任务",
                 )
-
-            await self._log_game_config_summary()
 
             # 启用游戏配置时始终由 MAS 拉起游戏
             if self._game_management_enabled() and self.game_manager is not None:
@@ -367,7 +482,6 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
                 await self._wait_okww_exit(timeout=30)
-                await self.update_config()
                 if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                     await execute_script_task(
                         Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
@@ -394,7 +508,6 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception:
                 pass
-            await self.update_config()
             if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                 await execute_script_task(
                     Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
@@ -410,14 +523,10 @@ class AutoProxyTask(TaskExecuteBase):
         return bool(self.script_config.get("Game", "Enabled"))
 
     def _should_close_game_after_finish(self) -> bool:
-        if not self._game_management_enabled():
-            return False
-        if self.manual_stop_requested:
-            return bool(self.script_config.get("Game", "CloseOnManualStop"))
-        return True
+        return self._game_management_enabled()
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """失败靠内置日志关键词；成功靠进程窗口关闭（-e 自然退出）。"""
+        """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log[-4000:] if len(log) > 4000 else log
@@ -431,9 +540,12 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item_status = "异常"
                 break
         else:
-            if not await self.okww_process_manager.is_running():
+            if _OKWW_SUCCESS_LOG in log:
                 log_status = "Success!"
                 user_item_status = "完成"
+            elif not await self.okww_process_manager.is_running():
+                log_status = "OK-WW 在完成任务前退出"
+                user_item_status = "异常"
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
@@ -580,13 +692,25 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def _kill_game_process(self) -> None:
         """结束游戏：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
-        try:
-            if isinstance(self.game_manager, ProcessManager):
+        if self.game_process_path is None:
+            return
+        if isinstance(self.game_manager, ProcessManager):
+            if self.game_manager.target_process is None:
+                try:
+                    await self.game_manager.search_process(
+                        self._game_process_info(),
+                        datetime.now() + timedelta(seconds=1),
+                    )
+                except RuntimeError:
+                    logger.debug("未找到待关闭的鸣潮客户端进程")
+            try:
                 await self.game_manager.kill()
-            if self.game_path.is_file():
-                await System.kill_process(self.game_path)
+            except Exception as e:
+                logger.exception(f"通过进程管理器关闭鸣潮客户端失败: {e}")
+        try:
+            await System.kill_process(self.game_process_path)
         except Exception as e:
-            logger.exception(f"关闭游戏进程失败: {e}")
+            logger.exception(f"兜底强杀鸣潮客户端失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏"""

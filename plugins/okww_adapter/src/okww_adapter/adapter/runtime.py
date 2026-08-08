@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import shutil
 import uuid
 from contextlib import suppress
@@ -14,14 +13,26 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.services import System
-from app.utils import ProcessManager, get_logger
+from app.utils import get_logger
+from app.utils.ProcessManager import ProcessManager
 
-from .autoproxy import AutoProxyTask, _OKWW_REL_CONFIG_DIR
+from .autoproxy import (
+    AutoProxyTask,
+    _OKWW_REL_APP_JSON,
+    _OKWW_REL_CONFIG_DIR,
+    _OKWW_REL_EXE,
+)
+from .script_config import ScriptConfigTask
 
 logger = get_logger("OK-WW 插件适配")
 
 
-def _cfg_get(config: ConfigBase | None, group: str, name: str, default: Any = None) -> Any:
+def _cfg_get(
+    config: ConfigBase | None,
+    group: str,
+    name: str,
+    default: Any = None,
+) -> Any:
     if config is None:
         return default
     try:
@@ -46,22 +57,18 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
         self.inner = inner
 
     async def main_task(self) -> None:
-        try:
-            result = await self.inner.check()
-            if result != "Pass":
-                current_user = self.inner.cur_user_item
-                if current_user.status == "等待":
-                    current_user.status = "异常"
-                await Publisher.send(
-                    id=self.inner.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=result),
-                )
-                return
-            await self.inner.main_task()
-        except asyncio.CancelledError:
-            self.inner.manual_stop_requested = True
-            raise
+        result = await self.inner.check()
+        if result != "Pass":
+            current_user = self.inner.cur_user_item
+            if current_user.status == "等待":
+                current_user.status = "异常"
+            await Publisher.send(
+                id=self.inner.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=result),
+            )
+            return
+        await self.inner.main_task()
 
     async def final_task(self) -> None:
         await self.inner.final_task()
@@ -72,8 +79,26 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
 
 class OkwwAdapterHooks(ScriptAdapterHooks):
     async def check(self, runtime: ScriptAdapterRuntime) -> str:
-        if runtime.mode != "AutoProxy":
-            return "OK-WW 插件仅支持 AutoProxy 模式"
+        if runtime.mode not in ("AutoProxy", "ScriptConfig"):
+            return "OK-WW 插件仅支持 AutoProxy 和 ScriptConfig 模式"
+        if runtime.mode == "ScriptConfig":
+            script_config = await runtime.build_script_model()
+            root_path = Path(_cfg_get(script_config, "Info", "RootPath", ""))
+            if (
+                not root_path.is_dir()
+                or not (root_path / _OKWW_REL_EXE).is_file()
+                or not (root_path / _OKWW_REL_APP_JSON).is_file()
+            ):
+                return "请先设置有效的 OK-WW 脚本路径"
+
+            target_user_id = runtime.task_info.user_id or "Default"
+            if target_user_id != "Default":
+                try:
+                    target_user_uid = uuid.UUID(target_user_id)
+                except ValueError:
+                    return "OK-WW 用户不存在，请刷新后重试"
+                if target_user_uid not in runtime.get_storage_script_config().UserData:
+                    return "OK-WW 用户不存在，请刷新后重试"
         return "Pass"
 
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
@@ -99,26 +124,59 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         )
 
         runtime.extra["user_config"] = user_config
-        runtime.script_info.user_list = [
-            UserItem(
-                user_id=user_id,
-                name=_user_name(model if isinstance(model, ConfigBase) else None, user_id),
-                status="等待",
+        if runtime.mode == "ScriptConfig":
+            target_user_id = runtime.task_info.user_id or "Default"
+            target_model = next(
+                (model for user_id, model in user_pairs if user_id == target_user_id),
+                None,
             )
-            for user_id, model in user_pairs
-            if isinstance(model, ConfigBase) and _user_enabled(model)
-        ]
+            runtime.script_info.user_list = [
+                UserItem(
+                    user_id=target_user_id,
+                    name=(
+                        "OK-WW 设置"
+                        if target_user_id == "Default"
+                        else _user_name(
+                            (
+                                target_model
+                                if isinstance(target_model, ConfigBase)
+                                else None
+                            ),
+                            target_user_id,
+                        )
+                    ),
+                    status="等待",
+                )
+            ]
+        else:
+            runtime.script_info.user_list = [
+                UserItem(
+                    user_id=user_id,
+                    name=_user_name(
+                        model if isinstance(model, ConfigBase) else None,
+                        user_id,
+                    ),
+                    status="等待",
+                )
+                for user_id, model in user_pairs
+                if isinstance(model, ConfigBase) and _user_enabled(model)
+            ]
 
-        game_enabled = bool(_cfg_get(runtime.script_config, "Game", "Enabled", False))
+        game_enabled = runtime.mode == "AutoProxy" and bool(
+            _cfg_get(runtime.script_config, "Game", "Enabled", False)
+        )
         runtime.extra["game_manager"] = ProcessManager() if game_enabled else None
         runtime.extra["temp_path"] = None
         runtime.extra["script_config_path"] = None
         runtime.extra["had_original_script_config"] = False
 
-        root_path = str(_cfg_get(runtime.script_config, "Info", "RootPath", "") or "").strip()
+        root_path = str(
+            _cfg_get(runtime.script_config, "Info", "RootPath", "") or ""
+        ).strip()
         if root_path:
             script_config_path = Path(root_path) / _OKWW_REL_CONFIG_DIR
             temp_path = Path.cwd() / f"data/{runtime.script_info.script_id}/Temp"
+            shutil.rmtree(temp_path, ignore_errors=True)
             temp_path.mkdir(parents=True, exist_ok=True)
             runtime.extra["script_config_path"] = script_config_path
             runtime.extra["temp_path"] = temp_path
@@ -127,8 +185,12 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
                 shutil.copytree(script_config_path, temp_path, dirs_exist_ok=True)
 
     async def finalize(self, runtime: ScriptAdapterRuntime) -> None:
-        await self._restore_script_config_from_temp(runtime)
-        await self._write_back_user_config(runtime)
+        try:
+            await self._restore_script_config_from_temp(runtime)
+            if runtime.mode == "AutoProxy":
+                await self._write_back_user_config(runtime)
+        finally:
+            await self._unlock_script_config(runtime)
         if any(user.status == "异常" for user in runtime.script_info.user_list):
             runtime.script_info.status = "异常"
             return
@@ -137,9 +199,15 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
     async def on_crash(self, runtime: ScriptAdapterRuntime, error: Exception) -> None:
         runtime.script_info.status = "异常"
         logger.exception(f"OK-WW 插件任务出现异常: {error}")
-        await self._restore_script_config_from_temp(runtime)
-        with suppress(Exception):
-            await self._write_back_user_config(runtime)
+        try:
+            with suppress(Exception):
+                await self._restore_script_config_from_temp(runtime)
+            if runtime.mode == "AutoProxy":
+                with suppress(Exception):
+                    await self._write_back_user_config(runtime)
+        finally:
+            with suppress(Exception):
+                await self._unlock_script_config(runtime)
         await Publisher.send(
             id=runtime.task_info.task_id,
             type=protocol.TASK_NOTICE,
@@ -159,6 +227,21 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
             game_manager=runtime.extra.get("game_manager"),
         )
         return _CheckedAutoProxyTask(inner)
+
+    def run_script_config(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
+        user_config = runtime.extra.get("user_config")
+        if not isinstance(user_config, MultipleConfig):
+            raise RuntimeError("OK-WW 用户配置未准备完成")
+        return ScriptConfigTask(
+            script_info=runtime.script_info,
+            script_config=runtime.script_config,
+            user_config=user_config,
+        )
+
+    async def _unlock_script_config(self, runtime: ScriptAdapterRuntime) -> None:
+        script_cfg = runtime.get_storage_script_config()
+        if script_cfg.is_locked:
+            await script_cfg.unlock()
 
     async def _write_back_user_config(self, runtime: ScriptAdapterRuntime) -> None:
         script_uid = uuid.UUID(runtime.script_info.script_id)
@@ -192,4 +275,7 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
             tmp_dst.rename(script_config_path)
         shutil.rmtree(temp_path, ignore_errors=True)
         with suppress(Exception):
-            await System.kill_process(Path(_cfg_get(runtime.script_config, "Info", "RootPath", "")) / "ok-ww.exe")
+            root_path = Path(
+                _cfg_get(runtime.script_config, "Info", "RootPath", "")
+            )
+            await System.kill_process(root_path / _OKWW_REL_EXE)
