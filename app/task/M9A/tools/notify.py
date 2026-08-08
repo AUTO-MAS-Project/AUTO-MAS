@@ -417,7 +417,7 @@ async def push_version_update(title: str, message: dict) -> None:
 async def _push_proxy_result(title: str, message: dict) -> None:
     """推送全局代理结果通知"""
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
-    if result_time_setting != "任何时刻" and (
+    if not message.get("game_sign_summary", False) and result_time_setting != "任何时刻" and (
         result_time_setting != "仅失败时" or message["uncompleted_count"] == 0
     ):
         logger.debug("当前 SendTaskResultTime 配置不满足推送条件，跳过")

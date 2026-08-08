@@ -481,6 +481,7 @@ onBeforeUnmount(() => {
 // ==================== 签到结果解析（按用户绑定） ====================
 
 interface GameItem {
+  account?: string
   game: string
   status: string
   reward: string
@@ -600,6 +601,27 @@ const getAccountGroupsForPlatformReactive = (
   return tag?.groups || []
 }
 
+const getSignDetailAlias = (group: AccountGroup, game: GameItem): string => {
+  const account = game.account?.trim() || ''
+  const alias = account.split('/', 1)[0]?.trim()
+  if (alias && alias !== '未知' && alias !== '未知用户') return alias
+  return group.account_alias?.trim() || '未知用户'
+}
+
+const getSignStatusText = (status: string): string => {
+  if (status === '成功' || status === '已签到') return '已签'
+  if (status === '风控') return '风控'
+  if (status === '失败') return '失败'
+  return '未签'
+}
+
+const getSignDetailClass = (status: string): string => {
+  if (status === '成功' || status === '已签到') return 'tt-signed'
+  if (status === '风控') return 'tt-risk'
+  if (status === '失败') return 'tt-failed'
+  return 'tt-unsigned'
+}
+
 // 标签文字 — 尚无结果时只显示社区名，执行后显示成功数/总数
 const getTagText = (tag: PlatformTag) => {
   return tag.totalCount > 0 ? `${tag.platform}${tag.signedCount}/${tag.totalCount}` : tag.platform
@@ -698,7 +720,7 @@ onMounted(() => {
         </div>
       </div>
       <a-row :gutter="24">
-        <a-col :span="6">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">启用签到</span>
@@ -719,7 +741,7 @@ onMounted(() => {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="6">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">签到后通知</span>
@@ -741,7 +763,7 @@ onMounted(() => {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="6">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">启动时签到</span>
@@ -760,23 +782,6 @@ onMounted(() => {
               <a-select-option :value="true">启用</a-select-option>
               <a-select-option :value="false">禁用</a-select-option>
             </a-select>
-          </div>
-        </a-col>
-        <a-col :span="6">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">自动签到</span>
-              <a-tooltip title="运行 MAS 定时、手动或启动时代理任务时执行每日自动签到">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-switch
-              :checked="config.ScheduledRun"
-              :disabled="disabled"
-              checked-children="开"
-              un-checked-children="关"
-              @change="handleChange('ScheduledRun', $event)"
-            />
           </div>
         </a-col>
       </a-row>
@@ -854,6 +859,7 @@ onMounted(() => {
                   <a-tooltip
                     v-for="tag in getUserPlatformTagsReactive(account)"
                     :key="tag.platform"
+                    overlay-class-name="game-sign-tooltip-overlay"
                   >
                     <template #title>
                       <div class="sign-tooltip">
@@ -865,37 +871,21 @@ onMounted(() => {
                           )"
                           :key="gIdx"
                         >
-                          <div class="sign-tooltip-alias">{{ group.account_alias }}</div>
-                          <div
+                          <template
                             v-for="game in group.games"
-                            :key="game.game"
-                            class="sign-tooltip-row"
+                            :key="`${game.account || group.account_alias}-${game.game}`"
                           >
-                            <span>{{ game.game }}</span>
-                            <span
-                              :class="
-                                game.status === '成功' || game.status === '已签到'
-                                  ? 'tt-signed'
-                                  : game.status === '风控'
-                                    ? 'tt-risk'
-                                    : game.status === '失败'
-                                      ? 'tt-failed'
-                                      : 'tt-unsigned'
-                              "
-                            >
-                              ●
-                              {{
-                                game.status === '成功' || game.status === '已签到'
-                                  ? '已签'
-                                  : game.status === '风控'
-                                    ? '风控'
-                                    : game.status === '失败'
-                                      ? '失败'
-                                      : '未签'
-                              }}
-                            </span>
-                            <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
-                          </div>
+                            <div class="sign-tooltip-alias">
+                              {{ getSignDetailAlias(group, game) }}
+                            </div>
+                            <div class="sign-tooltip-row">
+                              <span>{{ game.game }}</span>
+                              <span :class="getSignDetailClass(game.status)">
+                                ● {{ getSignStatusText(game.status) }}
+                              </span>
+                              <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
+                            </div>
+                          </template>
                         </template>
                         <div v-if="tag.games.length === 0" class="sign-tooltip-empty">
                           暂无签到数据
@@ -1351,8 +1341,19 @@ onMounted(() => {
 }
 
 /* ==================== Tooltip 签到详情 ==================== */
+:global(.game-sign-tooltip-overlay.ant-tooltip) {
+  max-width: min(480px, calc(100vw - 32px));
+}
+
+:global(.game-sign-tooltip-overlay .ant-tooltip-inner) {
+  box-sizing: border-box;
+  min-width: min(320px, calc(100vw - 32px));
+  max-width: 100%;
+}
+
 .sign-tooltip {
-  min-width: 220px;
+  width: 100%;
+  min-width: 0;
   color: rgba(255, 255, 255, 0.85);
 }
 .sign-tooltip-title {
@@ -1369,17 +1370,27 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.95);
   padding: 4px 0 2px;
   margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 .sign-tooltip-alias:first-of-type {
   margin-top: 0;
 }
 .sign-tooltip-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   padding: 2px 0;
   font-size: 13px;
   gap: 12px;
+  overflow-wrap: anywhere;
+}
+.sign-tooltip-row > span:first-child {
+  min-width: 0;
+}
+.sign-tooltip-row > span:nth-child(2) {
+  white-space: nowrap;
 }
 .tt-signed {
   color: #52c41a;
@@ -1394,6 +1405,7 @@ onMounted(() => {
   color: #f5222d;
 }
 .tt-reward {
+  grid-column: 1 / -1;
   color: rgba(255, 255, 255, 0.55);
   font-size: 12px;
 }
