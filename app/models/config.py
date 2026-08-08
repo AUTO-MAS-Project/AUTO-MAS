@@ -2695,8 +2695,6 @@ class OkwwConfig(ConfigBase):
         )
         ## 游戏启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 鸣潮客户端进程路径（由 MAS 从启动器缓存自动读取，不在前端展示）
-        self.Game_ProcessPath = ConfigItem("Game", "ProcessPath", "", FileValidator())
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## Run -------------------------------------------------------------

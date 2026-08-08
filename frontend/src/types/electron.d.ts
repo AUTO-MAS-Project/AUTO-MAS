@@ -1,8 +1,13 @@
 // Electron API 类型定义
+export interface PathDiscoveryCandidate {
+  path: string
+  channel?: 'China' | 'Global' | 'WeGame'
+}
+
 export interface PathDiscoveryResult {
   success: boolean
+  candidates?: PathDiscoveryCandidate[]
   path?: string
-  source?: 'uninstall-registry' | 'kuro-launcher-registry' | 'wegame'
   channel?: 'China' | 'Global' | 'WeGame'
   error?: string
 }

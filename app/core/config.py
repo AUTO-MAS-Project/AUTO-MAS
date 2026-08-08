@@ -692,24 +692,7 @@ class AppConfig(GlobalConfig):
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
         script_config = self.ScriptConfig[uid]
-        update_data = {group: dict(items) for group, items in data.items()}
-        if isinstance(script_config, OkwwConfig):
-            game_data = update_data.get("Game")
-            if game_data is not None and "Path" in game_data:
-                from app.services.wuthering_waves import (
-                    resolve_wuthering_waves_process_path,
-                )
-
-                launcher_path = str(game_data.get("Path") or "").strip()
-                game_data["ProcessPath"] = (
-                    resolve_wuthering_waves_process_path(
-                        Path(launcher_path)
-                    ).resolve().as_posix()
-                    if launcher_path
-                    else ""
-                )
-
-        for group, items in update_data.items():
+        for group, items in data.items():
             for name, value in items.items():
                 await script_config.set(group, name, value)
 

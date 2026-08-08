@@ -1,20 +1,26 @@
 import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { promisify } from 'util'
 
-export type PathDiscoverySource = 'uninstall-registry' | 'kuro-launcher-registry' | 'wegame'
+const execFileAsync = promisify(execFile)
 
 export type WutheringWavesChannel = 'China' | 'Global' | 'WeGame'
 
+export interface PathDiscoveryCandidate {
+  path: string
+  channel?: WutheringWavesChannel
+}
+
 export interface PathDiscoveryResult {
   success: boolean
+  candidates?: PathDiscoveryCandidate[]
   path?: string
-  source?: PathDiscoverySource
   channel?: WutheringWavesChannel
   error?: string
 }
 
-interface UninstallRegistryEntry {
+export interface UninstallRegistryEntry {
   keyPath: string
   displayName: string | null
   publisher: string | null
@@ -23,12 +29,12 @@ interface UninstallRegistryEntry {
   uninstallString: string | null
 }
 
-interface KuroLauncherRegistryEntry {
+export interface KuroLauncherRegistryEntry {
   keyPath: string
   installPath: string | null
 }
 
-interface RegistrySnapshot {
+export interface RegistrySnapshot {
   uninstallEntries: UninstallRegistryEntry[]
   kuroLaunchers: KuroLauncherRegistryEntry[]
 }
@@ -82,7 +88,7 @@ ConvertTo-Json -InputObject $result -Compress -Depth 5
 
 const OKWW_RELATIVE_SENTINELS = ['ok-ww.exe', 'data/apps/ok-ww/app.json']
 const OFFICIAL_LAUNCHER_EXECUTABLE = 'launcher.exe'
-const WEGAME_LAUNCHER_EXECUTABLES = ['wegame.exe', 'WeGame.exe']
+const WEGAME_LAUNCHER_EXECUTABLE = 'wegame.exe'
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -164,6 +170,44 @@ function uniquePaths(paths: string[]): string[] {
   })
 }
 
+function uniqueCandidates(candidates: PathDiscoveryCandidate[]): PathDiscoveryCandidate[] {
+  const grouped = new Map<string, PathDiscoveryCandidate[]>()
+
+  for (const candidate of candidates) {
+    const normalizedPath = path.win32.normalize(candidate.path)
+    const key = normalizedPath.toLowerCase()
+    const group = grouped.get(key) || []
+    group.push({ ...candidate, path: normalizedPath })
+    grouped.set(key, group)
+  }
+
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, group]) => {
+      const sorted = [...group].sort(
+        (left, right) =>
+          left.path.localeCompare(right.path) ||
+          (left.channel || '').localeCompare(right.channel || '')
+      )
+      const candidate = sorted[0]
+      const channels = [...new Set(group.map(item => item.channel).filter(Boolean))]
+      return {
+        ...candidate,
+        channel: channels.length === 1 ? channels[0] : undefined,
+      }
+    })
+}
+
+function successResult(candidates: PathDiscoveryCandidate[]): PathDiscoveryResult {
+  const [candidate] = candidates
+  return {
+    success: true,
+    candidates,
+    path: candidate.path,
+    channel: candidate.channel,
+  }
+}
+
 function rootsFromRegistryPath(value: string | null, ancestorLimit: number): string[] {
   const parsed = parseRegistryPath(value)
   if (!parsed) return []
@@ -211,11 +255,14 @@ async function isFile(filePath: string): Promise<boolean> {
   }
 }
 
-async function isValidOkwwRoot(rootPath: string): Promise<boolean> {
+async function isValidOkwwRoot(
+  rootPath: string,
+  fileExists: (filePath: string) => Promise<boolean> = isFile
+): Promise<boolean> {
   const sentinels = OKWW_RELATIVE_SENTINELS.map(relativePath =>
     path.win32.join(rootPath, relativePath)
   )
-  return (await Promise.all(sentinels.map(isFile))).every(Boolean)
+  return (await Promise.all(sentinels.map(fileExists))).every(Boolean)
 }
 
 function channelFromLauncherKey(keyPath: string): WutheringWavesChannel | undefined {
@@ -225,27 +272,14 @@ function channelFromLauncherKey(keyPath: string): WutheringWavesChannel | undefi
   return undefined
 }
 
-function runRegistryQuery(): Promise<RegistrySnapshot> {
+async function runRegistryQuery(): Promise<RegistrySnapshot> {
   const encodedCommand = Buffer.from(POWERSHELL_REGISTRY_QUERY, 'utf16le').toString('base64')
-
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedCommand],
-      { encoding: 'utf8', windowsHide: true, timeout: 15_000, maxBuffer: 5 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(stderr.trim() || error.message))
-          return
-        }
-        try {
-          resolve(parseRegistrySnapshot(stdout))
-        } catch (parseError) {
-          reject(parseError)
-        }
-      }
-    )
-  })
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedCommand],
+    { encoding: 'utf8', windowsHide: true, timeout: 15_000, maxBuffer: 5 * 1024 * 1024 }
+  )
+  return parseRegistrySnapshot(stdout)
 }
 
 export async function discoverOkwwPath(): Promise<PathDiscoveryResult> {
@@ -261,17 +295,8 @@ export async function discoverOkwwPath(): Promise<PathDiscoveryResult> {
   }
 
   const matchingEntries = snapshot.uninstallEntries.filter(isOkwwEntry)
-  for (const entry of matchingEntries) {
-    for (const candidateRoot of uninstallEntryRoots(entry)) {
-      if (await isValidOkwwRoot(candidateRoot)) {
-        return {
-          success: true,
-          path: path.win32.normalize(candidateRoot),
-          source: 'uninstall-registry',
-        }
-      }
-    }
-  }
+  const candidates = await findOkwwCandidates(snapshot)
+  if (candidates.length > 0) return successResult(candidates)
 
   return {
     success: false,
@@ -281,22 +306,22 @@ export async function discoverOkwwPath(): Promise<PathDiscoveryResult> {
   }
 }
 
-async function discoverOfficialLauncher(
-  launchers: KuroLauncherRegistryEntry[]
-): Promise<PathDiscoveryResult | null> {
+async function findOfficialLauncherCandidates(
+  launchers: KuroLauncherRegistryEntry[],
+  fileExists: (filePath: string) => Promise<boolean>
+): Promise<PathDiscoveryCandidate[]> {
+  const candidates: PathDiscoveryCandidate[] = []
   for (const launcher of launchers) {
     for (const launcherRoot of rootsFromRegistryPath(launcher.installPath, 1)) {
       const launcherPath = path.win32.join(launcherRoot, OFFICIAL_LAUNCHER_EXECUTABLE)
-      if (!(await isFile(launcherPath))) continue
-      return {
-        success: true,
+      if (!(await fileExists(launcherPath))) continue
+      candidates.push({
         path: launcherPath,
-        source: 'kuro-launcher-registry',
         channel: channelFromLauncherKey(launcher.keyPath),
-      }
+      })
     }
   }
-  return null
+  return candidates
 }
 
 function weGameLauncherCandidates(entry: UninstallRegistryEntry): string[] {
@@ -304,27 +329,59 @@ function weGameLauncherCandidates(entry: UninstallRegistryEntry): string[] {
     .map(parseRegistryPath)
     .filter((candidate): candidate is string => candidate !== null)
     .filter(candidate => path.win32.basename(candidate).toLowerCase() === 'wegame.exe')
-  const rootExecutables = uninstallEntryRoots(entry, 3).flatMap(root =>
-    WEGAME_LAUNCHER_EXECUTABLES.map(executable => path.win32.join(root, executable))
+  const rootExecutables = uninstallEntryRoots(entry, 3).map(root =>
+    path.win32.join(root, WEGAME_LAUNCHER_EXECUTABLE)
   )
   return uniquePaths([...directExecutables, ...rootExecutables])
 }
 
-async function discoverWeGameLauncher(
-  uninstallEntries: UninstallRegistryEntry[]
-): Promise<PathDiscoveryResult | null> {
+async function findWeGameLauncherCandidates(
+  uninstallEntries: UninstallRegistryEntry[],
+  fileExists: (filePath: string) => Promise<boolean>
+): Promise<PathDiscoveryCandidate[]> {
+  const candidates: PathDiscoveryCandidate[] = []
   for (const entry of uninstallEntries.filter(isWeGameEntry)) {
     for (const launcherPath of weGameLauncherCandidates(entry)) {
-      if (!(await isFile(launcherPath))) continue
-      return {
-        success: true,
+      if (!(await fileExists(launcherPath))) continue
+      candidates.push({
         path: launcherPath,
-        source: 'wegame',
         channel: 'WeGame',
-      }
+      })
     }
   }
-  return null
+  return candidates
+}
+
+export async function findOkwwCandidates(
+  snapshot: RegistrySnapshot,
+  fileExists: (filePath: string) => Promise<boolean> = isFile
+): Promise<PathDiscoveryCandidate[]> {
+  const roots = uniquePaths(
+    snapshot.uninstallEntries.filter(isOkwwEntry).flatMap(entry => uninstallEntryRoots(entry))
+  )
+  const candidates = await Promise.all(
+    roots.map(async rootPath =>
+      (await isValidOkwwRoot(rootPath, fileExists))
+        ? {
+            path: rootPath,
+          }
+        : null
+    )
+  )
+  return uniqueCandidates(
+    candidates.filter((candidate): candidate is PathDiscoveryCandidate => candidate !== null)
+  )
+}
+
+export async function findWutheringWavesCandidates(
+  snapshot: RegistrySnapshot,
+  fileExists: (filePath: string) => Promise<boolean> = isFile
+): Promise<PathDiscoveryCandidate[]> {
+  const [officialCandidates, weGameCandidates] = await Promise.all([
+    findOfficialLauncherCandidates(snapshot.kuroLaunchers, fileExists),
+    findWeGameLauncherCandidates(snapshot.uninstallEntries, fileExists),
+  ])
+  return uniqueCandidates([...officialCandidates, ...weGameCandidates])
 }
 
 export async function discoverWutheringWavesPath(): Promise<PathDiscoveryResult> {
@@ -339,11 +396,8 @@ export async function discoverWutheringWavesPath(): Promise<PathDiscoveryResult>
     return { success: false, error: '读取 Windows 启动器信息失败，请使用“选择目录”手动导入' }
   }
 
-  const officialResult = await discoverOfficialLauncher(snapshot.kuroLaunchers)
-  if (officialResult) return officialResult
-
-  const weGameResult = await discoverWeGameLauncher(snapshot.uninstallEntries)
-  if (weGameResult) return weGameResult
+  const candidates = await findWutheringWavesCandidates(snapshot)
+  if (candidates.length > 0) return successResult(candidates)
 
   const hasLauncherEvidence =
     snapshot.kuroLaunchers.length > 0 || snapshot.uninstallEntries.some(isWeGameEntry)

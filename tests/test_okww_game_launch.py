@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 from app.task.Okww.AutoProxy import (
     AutoProxyTask,
     _WUWA_CLIENT_PROCESS,
-    _match_wuwa_update_required_log,
 )
 from app.utils import ProcessManager
 
@@ -84,7 +83,7 @@ def test_okww_tracks_running_game_by_decoded_path(monkeypatch) -> None:
     assert task.game_manager.searched_process_exe == str(task.game_process_path)
 
 
-def test_okww_force_kill_uses_hidden_game_process_path(monkeypatch) -> None:
+def test_okww_force_kill_uses_resolved_game_process_path(monkeypatch) -> None:
     task = AutoProxyTask.__new__(AutoProxyTask)
     task.game_manager = None
     task.game_process_path = Path(
@@ -96,16 +95,3 @@ def test_okww_force_kill_uses_hidden_game_process_path(monkeypatch) -> None:
     asyncio.run(task._kill_game_process())
 
     kill_process.assert_awaited_once_with(task.game_process_path)
-
-
-def test_game_update_log_hook_matches_configured_marker(monkeypatch) -> None:
-    monkeypatch.setattr(
-        okww_auto_proxy,
-        "_WUWA_UPDATE_REQUIRED_LOG_MARKERS",
-        ("client version is too old",),
-    )
-
-    assert (
-        _match_wuwa_update_required_log("Client version is too old, please update")
-        == "client version is too old"
-    )

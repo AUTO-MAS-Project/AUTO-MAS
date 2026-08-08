@@ -30,6 +30,7 @@ from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
+from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
@@ -39,8 +40,6 @@ logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
-# 预留给后续版本：加入 OK-WW OCR 日志中能确认客户端需要更新的稳定字段。
-_WUWA_UPDATE_REQUIRED_LOG_MARKERS: tuple[str, ...] = ()
 
 
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
@@ -69,20 +68,6 @@ _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
     return shlex.split(value, posix=False) if value else []
-
-
-def _match_wuwa_update_required_log(log: str) -> str | None:
-    """返回命中的游戏更新日志字段；当前版本不执行更新操作。"""
-
-    normalized_log = log.casefold()
-    return next(
-        (
-            marker
-            for marker in _WUWA_UPDATE_REQUIRED_LOG_MARKERS
-            if marker.casefold() in normalized_log
-        ),
-        None,
-    )
 
 
 def _okww_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
@@ -197,11 +182,15 @@ class AutoProxyTask(TaskExecuteBase):
             return "用户剩余天数为 0, 跳过该用户"
 
         if self.script_config.get("Game", "Enabled"):
-            process_path = str(
-                self.script_config.get("Game", "ProcessPath") or ""
-            ).strip()
-            if not process_path or not Path(process_path).is_file():
-                return "请重新一键导入鸣潮启动器"
+            launcher_path = Path(
+                str(self.script_config.get("Game", "Path") or "").strip()
+            )
+            try:
+                self.game_process_path = resolve_wuthering_waves_process_path(
+                    launcher_path
+                )
+            except (FileNotFoundError, ValueError) as e:
+                return str(e)
 
         try:
             await Config.ensure_okww_user_config(
@@ -247,10 +236,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
-        # 游戏配置（对齐通用脚本逻辑）
-        self.game_process_path = Path(
-            self.script_config.get("Game", "ProcessPath")
-        )
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
         self.run_book = False
@@ -492,25 +477,20 @@ class AutoProxyTask(TaskExecuteBase):
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
 
-        update_marker = _match_wuwa_update_required_log(log)
-        if update_marker is not None:
-            log_status = "检测到鸣潮客户端需要更新，请通过启动器完成更新"
-            user_item_status = "异常"
+        for needle, msg in _OKWW_BUILTIN_FATAL:
+            if needle in log:
+                log_status = msg
+                user_item_status = "异常"
+                break
         else:
-            for needle, msg in _OKWW_BUILTIN_FATAL:
-                if needle in log:
-                    log_status = msg
-                    user_item_status = "异常"
-                    break
-            else:
-                if not await self.okww_process_manager.is_running():
-                    log_status = "Success!"
-                    user_item_status = "完成"
-                elif datetime.now() - latest_time > timedelta(
-                    minutes=self.script_config.get("Run", "RunTimeLimit")
-                ):
-                    log_status = "OK-WW 运行超时"
-                    user_item_status = "异常"
+            if not await self.okww_process_manager.is_running():
+                log_status = "Success!"
+                user_item_status = "完成"
+            elif datetime.now() - latest_time > timedelta(
+                minutes=self.script_config.get("Run", "RunTimeLimit")
+            ):
+                log_status = "OK-WW 运行超时"
+                user_item_status = "异常"
 
         self.cur_user_log.status = log_status
         if user_item_status is not None:

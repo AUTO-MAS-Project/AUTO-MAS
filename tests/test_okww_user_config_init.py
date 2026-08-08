@@ -12,8 +12,9 @@ from app.api import scripts as scripts_api
 from app.core.config import AppConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.schema import OkwwConfig_Game, UserInBase
+from app.models.schema import UserInBase
 from app.models.task import UserItem
+from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.task.Okww.AutoProxy import AutoProxyTask, _OKWW_REL_APP_JSON, _OKWW_REL_EXE
 
 
@@ -117,7 +118,7 @@ class OkwwUserConfigInitTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(self.script_config.UserData), 0)
 
-    async def test_reimport_launcher_refreshes_hidden_game_process_path(self) -> None:
+    async def test_resolver_reads_current_launcher_process_path(self) -> None:
         launcher_root = self.workspace / "launcher"
         launcher_path = launcher_root / "launcher.exe"
         launcher_path.parent.mkdir()
@@ -132,13 +133,9 @@ class OkwwUserConfigInitTest(unittest.IsolatedAsyncioTestCase):
         first_process_path.touch()
         self._write_launcher_preference(launcher_root, first_game_root)
 
-        await self.manager.update_script(
-            str(self.script_uid),
-            {"Game": {"Path": str(launcher_path)}},
-        )
         self.assertEqual(
-            self.script_config.get("Game", "ProcessPath"),
-            first_process_path.resolve().as_posix(),
+            resolve_wuthering_waves_process_path(launcher_path),
+            first_process_path,
         )
 
         second_game_root = self.workspace / "game-b"
@@ -150,13 +147,9 @@ class OkwwUserConfigInitTest(unittest.IsolatedAsyncioTestCase):
         second_process_path.touch()
         self._write_launcher_preference(launcher_root, second_game_root)
 
-        await self.manager.update_script(
-            str(self.script_uid),
-            {"Game": {"Path": str(launcher_path)}},
-        )
         self.assertEqual(
-            self.script_config.get("Game", "ProcessPath"),
-            second_process_path.resolve().as_posix(),
+            resolve_wuthering_waves_process_path(launcher_path),
+            second_process_path,
         )
 
     @staticmethod
@@ -206,7 +199,7 @@ class OkwwTaskConfigSelfHealTest(unittest.IsolatedAsyncioTestCase):
                 mode="简洁",
             )
 
-    async def test_check_uses_saved_process_path_without_launcher(self) -> None:
+    async def test_check_resolves_game_process_from_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             script_root = root / "ok-ww"
@@ -216,12 +209,19 @@ class OkwwTaskConfigSelfHealTest(unittest.IsolatedAsyncioTestCase):
             app_json_path.parent.mkdir(parents=True)
             app_json_path.write_text("{}", encoding="utf-8")
 
-            game_path = root / "Client-Win64-Shipping.exe"
+            launcher_root = root / "launcher"
+            launcher_path = launcher_root / "launcher.exe"
+            launcher_root.mkdir()
+            launcher_path.touch()
+            game_root = root / "game"
+            game_path = game_root / "Client/Binaries/Win64/Client-Win64-Shipping.exe"
+            game_path.parent.mkdir(parents=True)
             game_path.touch()
+            OkwwUserConfigInitTest._write_launcher_preference(launcher_root, game_root)
             script_config = OkwwConfig()
             await script_config.set("Info", "RootPath", str(script_root))
             await script_config.set("Game", "Enabled", True)
-            await script_config.set("Game", "ProcessPath", str(game_path))
+            await script_config.set("Game", "Path", str(launcher_path))
 
             user_config = OkwwUserConfig()
             user_uid = uuid.uuid4()
@@ -243,6 +243,7 @@ class OkwwTaskConfigSelfHealTest(unittest.IsolatedAsyncioTestCase):
                 result = await task.check()
 
             self.assertEqual(result, "Pass")
+            self.assertEqual(task.game_process_path, game_path)
 
 
 class OkwwAddUserApiErrorTest(unittest.IsolatedAsyncioTestCase):
@@ -259,14 +260,5 @@ class OkwwAddUserApiErrorTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.code, 409)
         self.assertEqual(response.message, message)
-
-
-class OkwwGameConfigSchemaTest(unittest.TestCase):
-    def test_hidden_process_path_is_not_exposed_by_api_schema(self) -> None:
-        properties = OkwwConfig_Game.model_json_schema()["properties"]
-
-        self.assertNotIn("ProcessPath", properties)
-
-
 if __name__ == "__main__":
     unittest.main()
