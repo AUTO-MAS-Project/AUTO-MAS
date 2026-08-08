@@ -135,15 +135,33 @@ export class PluginBootstrapService {
 
       if (!forceInstall && !checkResult.needsInstall) {
         const state = this.loadState()
+        const failedPackages = Array.isArray(state?.failedPackages) ? state.failedPackages : []
+        const warnings = Array.isArray(state?.warnings) ? state.warnings : []
+        if (failedPackages.length > 0 || warnings.length > 0) {
+          const error =
+            'Plugin bootstrap state is incomplete; previous package failures or warnings require a retry'
+          logger.warn(error)
+          return {
+            success: false,
+            skipped: true,
+            installedPackages: Array.isArray(state?.installedPackages)
+              ? state.installedPackages
+              : [],
+            failedPackages,
+            warnings,
+            error,
+            summary: error,
+          }
+        }
         logger.info(
           'Plugin bootstrap state is unchanged and system packages are present, skipping install'
         )
         return {
           success: true,
           skipped: true,
-          installedPackages: state?.installedPackages || [],
-          failedPackages: state?.failedPackages || [],
-          warnings: state?.warnings || [],
+          installedPackages: Array.isArray(state?.installedPackages) ? state.installedPackages : [],
+          failedPackages,
+          warnings,
           summary: 'Plugin bootstrap state is unchanged, skipped',
         }
       }
@@ -207,11 +225,13 @@ export class PluginBootstrapService {
         },
       })
 
+      const success = failedPackages.length === 0
       return {
-        success: true,
+        success,
         installedPackages,
         failedPackages,
         warnings,
+        error: success ? undefined : summary,
         summary,
       }
     } catch (error) {
@@ -235,15 +255,18 @@ export class PluginBootstrapService {
     const currentHash = this.calculateHash(allPackages)
     const lastState = this.loadState()
     const lastHash = lastState?.hash
-    const hasFailedPackages = (lastState?.failedPackages.length || 0) > 0
+    const hasFailedPackages = (lastState?.failedPackages?.length || 0) > 0
+    const hasWarnings = (lastState?.warnings?.length || 0) > 0
+    const arePackagesInstalled = allPackages.every(item => this.isBootstrapPackageInstalled(item))
 
     return {
       packages,
       currentHash,
       lastHash,
       needsInstall:
-        !this.areSystemPackagesInstalled() ||
+        !arePackagesInstalled ||
         hasFailedPackages ||
+        hasWarnings ||
         lastHash == null ||
         lastHash !== currentHash,
     }
@@ -468,25 +491,26 @@ export class PluginBootstrapService {
 
   private loadDeclaredPackageSpecs(): DeclaredBootstrapPackage[] {
     if (!fs.existsSync(this.pyprojectPath)) {
-      logger.warn(
-        `pyproject.toml does not exist, skipping declared plugin bootstrap packages: ${this.pyprojectPath}`
-      )
-      return []
+      const message = `Required plugin bootstrap declaration is missing: ${this.pyprojectPath}`
+      logger.error(message)
+      throw new Error(message)
     }
 
     try {
       const content = fs.readFileSync(this.pyprojectPath, 'utf-8')
       const sectionBody = this.extractBootstrapSection(content)
       if (sectionBody == null) {
-        logger.warn(
-          `Missing ${PYPROJECT_BOOTSTRAP_SECTION}, skipping declared plugin bootstrap packages`
-        )
-        return []
+        const message = `Required ${PYPROJECT_BOOTSTRAP_SECTION} declaration is missing`
+        logger.error(message)
+        throw new Error(message)
       }
       return this.extractDeclaredPackages(sectionBody)
     } catch (error) {
-      logger.warn(`Failed to read pyproject plugin bootstrap packages; using empty list: ${error}`)
-      return []
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`Failed to read pyproject plugin bootstrap packages: ${errorMsg}`)
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to read pyproject plugin bootstrap packages: ${errorMsg}`)
     }
   }
 
@@ -506,25 +530,41 @@ export class PluginBootstrapService {
   private extractDeclaredPackages(sectionBody: string): DeclaredBootstrapPackage[] {
     const packagesMatch = sectionBody.match(/^\s*packages\s*=\s*\[([\s\S]*?)\]/m)
     if (!packagesMatch) {
-      return []
+      throw new Error(
+        `Required ${PYPROJECT_BOOTSTRAP_SECTION}.packages array is missing or malformed`
+      )
     }
 
     const arrayBody = packagesMatch[1]
     const items = this.splitTopLevelArrayItems(arrayBody)
+    if (items.length === 0) {
+      throw new Error(
+        `Required ${PYPROJECT_BOOTSTRAP_SECTION}.packages array must contain at least one package`
+      )
+    }
     const packages: DeclaredBootstrapPackage[] = []
     const seen = new Set<string>()
 
     for (const rawItem of items) {
       const parsed = this.parseDeclaredPackageItem(rawItem)
       if (parsed == null) {
-        continue
+        throw new Error(`Malformed plugin bootstrap package declaration: ${rawItem}`)
       }
       const dedupeKey = this.normalizeDistributionName(parsed.name)
+      if (!dedupeKey) {
+        throw new Error(`Plugin bootstrap package declaration has an empty name: ${rawItem}`)
+      }
       if (seen.has(dedupeKey)) {
         continue
       }
       seen.add(dedupeKey)
       packages.push(parsed)
+    }
+
+    if (packages.length === 0) {
+      throw new Error(
+        `Required ${PYPROJECT_BOOTSTRAP_SECTION}.packages array contains no valid packages`
+      )
     }
 
     return packages
@@ -605,7 +645,7 @@ export class PluginBootstrapService {
       (item.startsWith("'") && item.endsWith("'"))
     ) {
       const name = this.decodeTomlStringLiteral(item).trim()
-      if (!name) {
+      if (!name || !this.isValidDistributionName(name)) {
         return null
       }
       return {
@@ -631,16 +671,20 @@ export class PluginBootstrapService {
 
     const entries = this.splitTopLevelArrayItems(body)
     const fields = new Map<string, string>()
+    const allowedFields = new Set(['name', 'version', 'specifier'])
 
     for (const entry of entries) {
       const eqIndex = entry.indexOf('=')
       if (eqIndex <= 0) {
-        continue
+        return null
       }
       const key = entry.slice(0, eqIndex).trim()
       const rawValue = entry.slice(eqIndex + 1).trim()
-      if (!key || !rawValue) {
-        continue
+      if (!key || !rawValue || !allowedFields.has(key) || fields.has(key)) {
+        return null
+      }
+      if (!this.isTomlStringLiteral(rawValue)) {
+        return null
       }
       fields.set(key, this.decodeTomlStringLiteral(rawValue))
     }
@@ -649,8 +693,15 @@ export class PluginBootstrapService {
     const version = (fields.get('version') || '').trim()
     const specifier = (fields.get('specifier') || '').trim()
 
-    if (!name) {
+    if (!name || !this.isValidDistributionName(name)) {
       logger.warn(`Plugin bootstrap package object is missing name, skipped: ${rawTable}`)
+      return null
+    }
+
+    if ((fields.has('version') && !version) || (fields.has('specifier') && !specifier)) {
+      logger.warn(
+        `Plugin bootstrap package object has an empty version or specifier field, skipped: ${rawTable}`
+      )
       return null
     }
 
@@ -689,6 +740,18 @@ export class PluginBootstrapService {
         .trim()
     }
     return value
+  }
+
+  private isTomlStringLiteral(value: string): boolean {
+    const trimmed = value.trim()
+    return (
+      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    )
+  }
+
+  private isValidDistributionName(name: string): boolean {
+    return /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name.trim())
   }
 
   private loadState(): PluginBootstrapState | null {
@@ -782,9 +845,17 @@ export class PluginBootstrapService {
       return { success: false, error: result.error }
     }
 
+    const hasPluginEntryPoint = this.hasPluginEntryPoint(declaredPackage.name)
+    if (hasPluginEntryPoint && !this.isPackageVersionSatisfied(declaredPackage)) {
+      return {
+        success: false,
+        error: this.describeVersionValidationFailure(declaredPackage),
+      }
+    }
+
     return {
       success: true,
-      hasPluginEntryPoint: this.hasPluginEntryPoint(declaredPackage.name),
+      hasPluginEntryPoint,
     }
   }
 
@@ -851,70 +922,104 @@ export class PluginBootstrapService {
     })
   }
 
-  private areSystemPackagesInstalled(): boolean {
-    return SYSTEM_BOOTSTRAP_PACKAGES.every(item => this.isSystemPackageInstalled(item))
+  private isSystemPackageInstalled(systemPackage: DeclaredBootstrapPackage): boolean {
+    return this.isBootstrapPackageInstalled(systemPackage)
   }
 
-  private isSystemPackageInstalled(systemPackage: DeclaredBootstrapPackage): boolean {
-    if (!this.hasPluginEntryPoint(systemPackage.name)) {
+  private isBootstrapPackageInstalled(declaredPackage: DeclaredBootstrapPackage): boolean {
+    const matchedDistInfos = this.findDistributionInfoDirs(declaredPackage.name)
+    if (matchedDistInfos.length === 0) {
       return false
     }
 
-    const minimumVersion = this.parseMinimumVersion(systemPackage.specifier)
-    if (minimumVersion == null) {
+    const exactVersion = this.getExactVersionRequirement(declaredPackage)
+    const minimumVersion = this.parseMinimumVersion(declaredPackage.specifier)
+
+    if (exactVersion != null && matchedDistInfos.length !== 1) {
+      return false
+    }
+
+    return matchedDistInfos.some(distInfo => {
+      const installedVersion = this.getDistributionInfoVersion(distInfo, declaredPackage.name)
+      if (exactVersion != null && installedVersion !== exactVersion) {
+        return false
+      }
+      if (
+        exactVersion == null &&
+        minimumVersion != null &&
+        (installedVersion == null || this.compareVersions(installedVersion, minimumVersion) < 0)
+      ) {
+        return false
+      }
+      return this.hasPluginEntryPointInDistribution(distInfo)
+    })
+  }
+
+  private isPackageVersionSatisfied(declaredPackage: DeclaredBootstrapPackage): boolean {
+    const exactVersion = this.getExactVersionRequirement(declaredPackage)
+    const minimumVersion = this.parseMinimumVersion(declaredPackage.specifier)
+
+    if (exactVersion == null && minimumVersion == null) {
       return true
     }
 
-    const installedVersion = this.getInstalledDistributionVersion(systemPackage.name)
-    if (installedVersion == null) {
+    const matchedDistInfos = this.findDistributionInfoDirs(declaredPackage.name)
+    if (exactVersion != null && matchedDistInfos.length !== 1) {
       return false
     }
 
-    return this.compareVersions(installedVersion, minimumVersion) >= 0
+    return matchedDistInfos.some(distInfo => {
+      const installedVersion = this.getDistributionInfoVersion(distInfo, declaredPackage.name)
+      if (installedVersion == null) {
+        return false
+      }
+      if (exactVersion != null) {
+        return installedVersion === exactVersion && this.hasPluginEntryPointInDistribution(distInfo)
+      }
+      return (
+        this.compareVersions(installedVersion, minimumVersion as string) >= 0 &&
+        this.hasPluginEntryPointInDistribution(distInfo)
+      )
+    })
+  }
+
+  private getExactVersionRequirement(declaredPackage: DeclaredBootstrapPackage): string | null {
+    if (!declaredPackage.specifier && declaredPackage.version) {
+      return declaredPackage.version
+    }
+
+    if (!declaredPackage.specifier) {
+      return null
+    }
+
+    const match = declaredPackage.specifier.match(/^\s*==\s*([A-Za-z0-9_.!+-]+)\s*$/)
+    return match?.[1] || null
+  }
+
+  private describeVersionValidationFailure(declaredPackage: DeclaredBootstrapPackage): string {
+    const requirement = declaredPackage.specifier || `==${declaredPackage.version}`
+    return `Installed plugin package ${declaredPackage.name} does not satisfy declared version requirement ${requirement}`
   }
 
   private hasPluginEntryPoint(packageName: string): boolean {
     const matchedDistInfos = this.findDistributionInfoDirs(packageName)
 
-    for (const distInfo of matchedDistInfos) {
-      const entryPointsPath = path.join(this.pluginTargetDir, distInfo.name, 'entry_points.txt')
-      if (!fs.existsSync(entryPointsPath)) {
-        continue
-      }
-      const content = fs.readFileSync(entryPointsPath, 'utf-8')
-      if (ENTRY_POINT_GROUPS.some(group => content.includes(`[${group}]`))) {
-        return true
-      }
-    }
-
-    return false
+    return matchedDistInfos.some(distInfo => this.hasPluginEntryPointInDistribution(distInfo))
   }
 
-  private getInstalledDistributionVersion(packageName: string): string | null {
-    const distInfo = this.findDistributionInfoDirs(packageName)[0]
-    if (distInfo == null) {
-      return null
+  private hasPluginEntryPointInDistribution(distInfo: fs.Dirent): boolean {
+    const entryPointsPath = path.join(this.pluginTargetDir, distInfo.name, 'entry_points.txt')
+    if (!fs.existsSync(entryPointsPath)) {
+      return false
     }
 
-    const metadataPath = path.join(this.pluginTargetDir, distInfo.name, 'METADATA')
-    if (fs.existsSync(metadataPath)) {
-      const metadata = fs.readFileSync(metadataPath, 'utf-8')
-      const versionMatch = metadata.match(/^Version:\s*(.+)$/m)
-      if (versionMatch) {
-        return versionMatch[1].trim()
-      }
+    try {
+      const content = fs.readFileSync(entryPointsPath, 'utf-8')
+      return ENTRY_POINT_GROUPS.some(group => content.includes(`[${group}]`))
+    } catch (error) {
+      logger.warn(`Failed to read plugin entry point metadata: ${entryPointsPath}; ${error}`)
+      return false
     }
-
-    const normalizedPackageName = this.normalizeDistributionName(packageName)
-    const normalizedDistName = this.normalizeDistributionName(
-      distInfo.name.replace(/\.dist-info$/i, '')
-    )
-    const prefix = `${normalizedPackageName}_`
-    if (normalizedDistName.startsWith(prefix)) {
-      return normalizedDistName.slice(prefix.length)
-    }
-
-    return null
   }
 
   private findDistributionInfoDirs(packageName: string): fs.Dirent[] {
@@ -929,8 +1034,66 @@ export class PluginBootstrapService {
         return false
       }
       const distName = this.normalizeDistributionName(entry.name.replace(/\.dist-info$/i, ''))
-      return distName === normalizedPackageName || distName.startsWith(`${normalizedPackageName}_`)
+      if (distName === normalizedPackageName) {
+        return true
+      }
+
+      const metadataName = this.getDistributionMetadataName(entry)
+      if (metadataName != null) {
+        return this.normalizeDistributionName(metadataName) === normalizedPackageName
+      }
+
+      const prefix = `${normalizedPackageName}_`
+      if (!distName.startsWith(prefix)) {
+        return false
+      }
+
+      return /^[v]?\d/.test(distName.slice(prefix.length))
     })
+  }
+
+  private getDistributionMetadataName(distInfo: fs.Dirent): string | null {
+    const metadataPath = path.join(this.pluginTargetDir, distInfo.name, 'METADATA')
+    if (!fs.existsSync(metadataPath)) {
+      return null
+    }
+
+    try {
+      const metadata = fs.readFileSync(metadataPath, 'utf-8')
+      const nameMatch = metadata.match(/^Name:\s*(.+)$/m)
+      return nameMatch?.[1]?.trim() || null
+    } catch (error) {
+      logger.warn(`Failed to read plugin distribution metadata: ${metadataPath}; ${error}`)
+      return null
+    }
+  }
+
+  private getDistributionInfoVersion(distInfo: fs.Dirent, packageName: string): string | null {
+    const metadataPath = path.join(this.pluginTargetDir, distInfo.name, 'METADATA')
+    if (fs.existsSync(metadataPath)) {
+      try {
+        const metadata = fs.readFileSync(metadataPath, 'utf-8')
+        const versionMatch = metadata.match(/^Version:\s*(.+)$/m)
+        if (versionMatch?.[1]) {
+          return versionMatch[1].trim()
+        }
+      } catch (error) {
+        logger.warn(`Failed to read plugin distribution metadata: ${metadataPath}; ${error}`)
+      }
+    }
+
+    const normalizedPackageName = this.normalizeDistributionName(packageName)
+    const normalizedDistName = this.normalizeDistributionName(
+      distInfo.name.replace(/\.dist-info$/i, '')
+    )
+    const prefix = `${normalizedPackageName}_`
+    if (!normalizedDistName.startsWith(prefix)) {
+      return null
+    }
+
+    const suffix = normalizedDistName.slice(prefix.length)
+    const versionMatch = suffix.match(/^[v]?\d+(?:_\d+)*(?:[a-z]+\d*)?/i)
+    return versionMatch?.[0]?.replace(/_/g, '.') || null
   }
 
   private parseMinimumVersion(specifier?: string): string | null {
