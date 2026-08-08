@@ -49,6 +49,7 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("游戏更新成功, 游戏即将重启", "游戏更新成功，即将重启任务"),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
+_OKWW_SUCCESS_LOG = "Window closed exit_event.is_set"
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
@@ -469,7 +470,7 @@ class AutoProxyTask(TaskExecuteBase):
         return bool(self.script_config.get("Game", "Enabled"))
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """失败靠内置日志关键词；成功靠进程窗口关闭（-e 自然退出）。"""
+        """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log[-4000:] if len(log) > 4000 else log
@@ -483,9 +484,12 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item_status = "异常"
                 break
         else:
-            if not await self.okww_process_manager.is_running():
+            if _OKWW_SUCCESS_LOG in log:
                 log_status = "Success!"
                 user_item_status = "完成"
+            elif not await self.okww_process_manager.is_running():
+                log_status = "OK-WW 在完成任务前退出"
+                user_item_status = "异常"
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
