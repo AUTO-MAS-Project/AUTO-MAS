@@ -108,6 +108,23 @@ async def _check_system_time() -> bool:
         return True
 
 
+def _empty_platform_result(
+    *, account_name: str, account_uid: str, platform: str
+) -> dict:
+    """为没有返回可签到角色的平台保留通知占位，不写入前端结果列表。"""
+
+    return {
+        "account": account_name,
+        "account_uid": account_uid,
+        "game": "",
+        "platform": platform,
+        "status": "失败",
+        "reward": "",
+        "reason": "未获取到可签到角色",
+        "_notification_only": True,
+    }
+
+
 async def run_all_sign_in(force: bool = False) -> list[dict]:
     """串行执行游戏社区签到，避免重复签到和重复通知。"""
     if _game_sign_lock.locked():
@@ -161,6 +178,7 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         if skland_token:
             enabled_platforms.append("森空岛")
             logger.info(f"[{account_name}] 开始森空岛签到")
+            platform_result_start = len(results)
             try:
                 from .skland import skland_sign_in
 
@@ -216,6 +234,14 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                             "reward": "",
                             "reason": "签到失败",
                         })
+                if len(results) == platform_result_start:
+                    results.append(
+                        _empty_platform_result(
+                            account_name=account_name,
+                            account_uid=account_uid,
+                            platform="森空岛",
+                        )
+                    )
 
             except Exception as e:
                 logger.error(f"[{account_name}] 森空岛签到异常: {e}")
@@ -234,14 +260,25 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         if miyoushe_token:
             enabled_platforms.append("米游社")
             logger.info(f"[{account_name}] 开始米游社签到")
+            platform_result_start = len(results)
             try:
                 from .miyoushe import miyoushe_sign_in
 
                 miyoushe_results = await miyoushe_sign_in(miyoushe_token)
                 for item in miyoushe_results:
-                    item["account"] = account_name
+                    # 签到适配器返回的角色名/UID比工具账号别名更具体，优先保留它。
+                    if not item.get("account"):
+                        item["account"] = account_name
                     item["account_uid"] = account_uid
                 results.extend(miyoushe_results)
+                if len(results) == platform_result_start:
+                    results.append(
+                        _empty_platform_result(
+                            account_name=account_name,
+                            account_uid=account_uid,
+                            platform="米游社",
+                        )
+                    )
             except Exception as e:
                 logger.error(f"[{account_name}] 米游社签到异常: {e}")
                 results.append({
@@ -259,14 +296,24 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         if kuro_token:
             enabled_platforms.append("库街区")
             logger.info(f"[{account_name}] 开始库街区签到")
+            platform_result_start = len(results)
             try:
                 from .kuro import kuro_sign_in
 
                 kuro_results = await kuro_sign_in(kuro_token)
                 for item in kuro_results:
-                    item["account"] = account_name
+                    if not item.get("account"):
+                        item["account"] = account_name
                     item["account_uid"] = account_uid
                 results.extend(kuro_results)
+                if len(results) == platform_result_start:
+                    results.append(
+                        _empty_platform_result(
+                            account_name=account_name,
+                            account_uid=account_uid,
+                            platform="库街区",
+                        )
+                    )
             except Exception as e:
                 logger.error(f"[{account_name}] 库街区签到异常: {e}")
                 results.append({
@@ -279,16 +326,33 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                     "reason": str(e),
                 })
 
-        # 每个已配置平台的全部角色或游戏均完成后，才标记该用户今日已签到
-        if _all_enabled_platforms_signed(
+        # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
+        # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。
+        all_platforms_signed = _all_enabled_platforms_signed(
             results,
             account_uid=account_uid,
             enabled_platforms=enabled_platforms,
-        ):
+        )
+        should_mark_signed = bool(enabled_platforms) and (not force or all_platforms_signed)
+        if should_mark_signed:
             try:
                 await account.set("GameSignAccount", "LastSignDate", today)
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
+
+        if "森空岛" in enabled_platforms and _all_enabled_platforms_signed(
+            results,
+            account_uid=account_uid,
+            enabled_platforms=["森空岛"],
+        ):
+            sync_legacy_date = getattr(
+                Config, "_sync_legacy_skland_sign_date", None
+            )
+            if callable(sync_legacy_date):
+                try:
+                    await sync_legacy_date(token=skland_token, sign_date=today)
+                except Exception as e:
+                    logger.warning(f"[{account_name}] 回写旧用户森空岛日期失败: {e}")
 
     if not results:
         logger.info("没有配置任何签到平台")
@@ -347,6 +411,8 @@ def format_sign_results(results: list[dict]) -> dict:
     platforms: dict[str, dict[str, dict]] = {}
 
     for item in results:
+        if item.get("_notification_only"):
+            continue
         platform = item.get("platform", "未知")
         account = str(item.get("account", "未知"))
         account_uid = str(item.get("account_uid", ""))

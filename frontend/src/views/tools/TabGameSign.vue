@@ -749,20 +749,24 @@ onMounted(() => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="config.RunOnStartup"
+            <a-select
+              :value="config.RunOnStartup"
+              size="large"
+              style="width: 100%"
               :disabled="disabled"
-              checked-children="开"
-              un-checked-children="关"
               @change="handleChange('RunOnStartup', $event)"
-            />
+              @dropdown-visible-change="onSelectVisibleChange"
+            >
+              <a-select-option :value="true">启用</a-select-option>
+              <a-select-option :value="false">禁用</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">自动签到</span>
-              <a-tooltip title="按分钟调度每日自动签到">
+              <a-tooltip title="运行 MAS 定时、手动或启动时代理任务时执行每日自动签到">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>

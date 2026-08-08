@@ -33,6 +33,7 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
+from app.tools.game_sign_notify import append_task_game_sign_summary
 from .AutoProxy import HSRAutoProxyTask
 from .ManualReview import HSRManualReviewTask
 from .tools.run_model import CompletionWriteback, HSRRuntimeState
@@ -671,7 +672,11 @@ class HSRManager(TaskExecuteBase):
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": len(over_user),
             "uncompleted_count": uncompleted_count,
-            "result": self.script_info.result,
+            "result": append_task_game_sign_summary(
+                self.task_info,
+                self.script_info.result,
+                uncompleted_count=uncompleted_count,
+            ),
         }
 
         try:

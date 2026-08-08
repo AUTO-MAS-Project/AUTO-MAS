@@ -34,6 +34,7 @@ from app.models.config import M9AConfig, M9AUserConfig
 from app.services import Notify, System
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.tools.game_sign_notify import append_task_game_sign_summary
 from .tools import push_notification, push_version_update
 from .AutoProxy import AutoProxyTask
 from .task_loader import M9ATaskLoader
@@ -329,7 +330,11 @@ class M9AManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": len(over_user),
                 "uncompleted_count": len(error_user) + len(wait_user),
-                "result": self.script_info.result,
+                "result": append_task_game_sign_summary(
+                    self.task_info,
+                    self.script_info.result,
+                    uncompleted_count=len(error_user) + len(wait_user),
+                ),
             }
 
             await Notify.push_plyer(
