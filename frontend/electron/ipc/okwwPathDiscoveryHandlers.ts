@@ -12,7 +12,7 @@ export function registerOkwwPathDiscoveryHandlers(): void {
   ipcMain.handle('okww-path-discovery:discover-okww', async () => {
     const result = await discoverOkwwPath()
     if (result.success) {
-      logger.info(`已发现 OK-WW 安装目录: ${result.path}`)
+      logger.info(`已发现 ${result.candidates?.length || 0} 个 OK-WW 安装目录`)
     } else {
       logger.warn(`未发现 OK-WW 安装目录: ${result.error}`)
     }
@@ -22,7 +22,7 @@ export function registerOkwwPathDiscoveryHandlers(): void {
   ipcMain.handle('okww-path-discovery:discover-wuthering-waves', async () => {
     const result = await discoverWutheringWavesPath()
     if (result.success) {
-      logger.info(`已发现鸣潮启动器路径: ${result.path}`)
+      logger.info(`已发现 ${result.candidates?.length || 0} 个鸣潮启动器路径`)
     } else {
       logger.warn(`未发现鸣潮启动器路径: ${result.error}`)
     }

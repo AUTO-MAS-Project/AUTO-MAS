@@ -459,12 +459,11 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { Service } from '@/api'
+import { Service, type OkwwUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type { OkwwScriptConfig } from '@/types/script'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
@@ -488,8 +487,6 @@ const okwwSubscriptionId = ref<string | null>(null)
 const okwwWebsocketId = ref<string | null>(null)
 const showOkwwConfigMask = ref(false)
 let okwwConfigTimeout: number | null = null
-
-const OKWW_TASK_INDEXES = [1, 7]
 
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
@@ -520,52 +517,14 @@ const additionalTaskOptions = [
   { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
 ]
 
-interface OkwwUserInfoForm {
-  Name: string
-  Status: boolean
-  Id: string
-  Password: string
-  Mode: '简洁' | '详细'
-  Resource: '官服' | '国际服'
-  RemainedDay: number
-  IfScriptBeforeTask: boolean
-  ScriptBeforeTask: string
-  IfScriptAfterTask: boolean
-  ScriptAfterTask: string
-  Notes: string
-}
+type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
-interface OkwwUserTaskForm {
-  TaskIndex: number
-  WhichToFarm: 'Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge'
-  WhichTacetSuppressionToFarm: number
-  WhichForgeryChallengeToFarm: number
-  MaterialSelection: 'Resonator EXP' | 'Weapon EXP' | 'Shell Credit'
-  FarmNightmareNestForDailyEcho: boolean
-  AdditionalTasks: string[]
-}
-
-interface OkwwUserNotifyForm {
-  Enabled: boolean
-  IfSendStatistic: boolean
-  IfSendMail: boolean
-  ToAddress: string
-  IfServerChan: boolean
-  ServerChanKey: string
-  CustomWebhooks: any[]
-}
-
-interface OkwwUserDataForm {
-  LastProxyDate: string
-  ProxyTimes: number
-}
-
-interface OkwwUserFormData {
+type OkwwUserFormData = {
   userName: string
-  Info: OkwwUserInfoForm
-  Task: OkwwUserTaskForm
-  Notify: OkwwUserNotifyForm
-  Data: OkwwUserDataForm
+  Info: FormSection<NonNullable<OkwwUserConfig['Info']>>
+  Task: FormSection<NonNullable<OkwwUserConfig['Task']>>
+  Notify: FormSection<NonNullable<OkwwUserConfig['Notify']>>
+  Data: FormSection<NonNullable<OkwwUserConfig['Data']>>
 }
 
 const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
@@ -582,6 +541,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
     Notes: '',
+    Tag: '',
   },
   Task: {
     TaskIndex: 1,
@@ -599,11 +559,12 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     ToAddress: '',
     IfServerChan: false,
     ServerChanKey: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    LastProxyStatus: '',
+    LastTaskIndex: 0,
   },
 })
 
@@ -700,7 +661,7 @@ const saveTaskConfig = async () => {
   })
 }
 
-const handleTaskIndexChange = async (value: number) => {
+const handleTaskIndexChange = async (value: 1 | 7) => {
   formData.Task.TaskIndex = value
   try {
     await saveTaskConfig()
@@ -775,18 +736,6 @@ const loadScriptInfo = async (): Promise<boolean> => {
   }
 
   scriptName.value = detail.name
-  const rootPath = String((detail.config as OkwwScriptConfig).Info?.RootPath || '').trim()
-  const normalizedRoot = rootPath.replace(/[\\/]+$/g, '')
-  if (
-    !rootPath ||
-    rootPath === '.' ||
-    !(await window.electronAPI.fileExists(`${normalizedRoot}/ok-ww.exe`)) ||
-    !(await window.electronAPI.fileExists(`${normalizedRoot}/data/apps/ok-ww/app.json`))
-  ) {
-    message.warning('请先设置有效的 ok-ww 路径，再添加或编辑用户')
-    await router.replace(`/scripts/${scriptId}/edit/okww`)
-    return false
-  }
   return true
 }
 
@@ -803,7 +752,7 @@ const loadUser = async () => {
       throw new Error('用户不存在或加载失败')
     }
 
-    const userData = data as Partial<OkwwUserFormData>
+    const userData = data as OkwwUserConfig
 
     Object.assign(formData, {
       Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
@@ -811,21 +760,6 @@ const loadUser = async () => {
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
       Data: { ...getDefaultUserData().Data, ...(userData.Data || {}) },
     })
-    const taskIndex = Number(formData.Task.TaskIndex)
-    let shouldPersistTaskIndex = false
-    if (!OKWW_TASK_INDEXES.includes(taskIndex)) {
-      formData.Task.TaskIndex = 1
-      shouldPersistTaskIndex = true
-    }
-    const patch: Record<string, any> = {}
-    if (shouldPersistTaskIndex) {
-      patch.Task = {
-        TaskIndex: formData.Task.TaskIndex,
-      }
-    }
-    if (Object.keys(patch).length > 0) {
-      await updateUser(scriptId, userId.value, patch)
-    }
     await nextTick()
     formData.userName = formData.Info.Name || ''
   } catch (e) {

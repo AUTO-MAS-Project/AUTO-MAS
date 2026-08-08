@@ -619,7 +619,7 @@ import {
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { OkwwScriptConfig, Script, ScriptType, User } from '@/types/script'
+import type { Script, ScriptType, User } from '@/types/script'
 import {
   getScriptEditSegment,
   type ScriptCreateRequest,
@@ -1407,6 +1407,81 @@ const handleSaveSRCConfig = async (script: Script) => {
   }
 }
 
+const clearConfigSession = (
+  targetId: string,
+  subscriptionId: string | undefined,
+  clearState: () => void
+) => {
+  if (subscriptionId) unsubscribe(subscriptionId)
+  activeConnections.value.delete(targetId)
+  clearState()
+}
+
+const startConfigSession = async (
+  targetId: string,
+  label: string,
+  setActiveState: () => void,
+  clearState: () => void
+) => {
+  if (activeConnections.value.has(targetId)) {
+    message.warning('该配置目标已在配置中，请先保存当前配置')
+    return false
+  }
+
+  const response = await Service.addTaskApiDispatchStartPost({
+    taskId: targetId,
+    mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+  })
+  if (response.code !== 200 || !response.taskId) {
+    throw new Error(response.message || `启动 ${label} 配置失败`)
+  }
+
+  setActiveState()
+  let sessionEnded = false
+  let subscriptionId = ''
+  subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+    if (wsMessage.type === 'error') {
+      sessionEnded = true
+      message.error(`${label} 配置连接失败: ${String(wsMessage.data)}`)
+      clearConfigSession(targetId, subscriptionId, clearState)
+      return
+    }
+    if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+      message.error(`${label} 配置失败: ${String(wsMessage.data.Error)}`)
+      return
+    }
+    if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+      sessionEnded = true
+      clearConfigSession(targetId, subscriptionId, clearState)
+    }
+  })
+  if (sessionEnded) {
+    unsubscribe(subscriptionId)
+    return false
+  }
+  activeConnections.value.set(targetId, {
+    subscriptionId,
+    websocketId: response.taskId,
+  })
+  return true
+}
+
+const stopConfigSession = async (targetId: string, label: string, clearState: () => void) => {
+  const connection = activeConnections.value.get(targetId)
+  if (!connection) {
+    message.error('未找到活动的配置会话')
+    return false
+  }
+  const response = await Service.stopTaskApiDispatchStopPost({
+    taskId: connection.websocketId,
+  })
+  if (response.code !== 200) {
+    throw new Error(response.message || `保存 ${label} 配置失败`)
+  }
+  clearConfigSession(targetId, connection.subscriptionId, clearState)
+  return true
+}
+
 const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {
     const controllerType = (script.config as any).Game?.ControllerType
@@ -1416,91 +1491,41 @@ const handleStartMaaEndConfig = async (script: Script, user: User | null = null)
     }
 
     const targetId = user?.id ?? script.id
-    const existingConnection = activeConnections.value.get(targetId)
-    if (existingConnection) {
-      message.warning('该配置目标已在配置中，请先保存当前配置')
-      return
+    const clearState = () => {
+      showMaaEndConfigMask.value = false
+      currentConfigScript.value = null
+      currentMaaEndConfigUser.value = null
     }
+    const started = await startConfigSession(
+      targetId,
+      'MaaEnd',
+      () => {
+        showMaaEndConfigMask.value = true
+        currentConfigScript.value = script
+        currentMaaEndConfigUser.value = user
+      },
+      clearState
+    )
+    if (!started) return
 
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: targetId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (response.code === 200) {
-      showMaaEndConfigMask.value = true
-      currentConfigScript.value = script
-      currentMaaEndConfigUser.value = user
-
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`MaaEnd 配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(targetId)
-          showMaaEndConfigMask.value = false
-          currentConfigScript.value = null
-          currentMaaEndConfigUser.value = null
-          return
-        }
-
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`MaaEnd 配置失败: ${errorMsg}`)
-          return
-        }
-
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
-          unsubscribe(subscriptionId)
-          activeConnections.value.delete(targetId)
-          showMaaEndConfigMask.value = false
-          currentConfigScript.value = null
-          currentMaaEndConfigUser.value = null
-        }
-      })
-
-      activeConnections.value.set(targetId, {
-        subscriptionId,
-        websocketId: response.taskId,
-      })
-      message.success(
-        user
-          ? `已启动 ${script.name} / ${user.Info.Name} 的 MaaEnd 配置`
-          : `已启动 ${script.name} 的 MaaEnd 配置`
-      )
-
-      setTimeout(
-        () => {
-          if (activeConnections.value.has(targetId)) {
-            const connection = activeConnections.value.get(targetId)
-            if (connection) {
-              unsubscribe(connection.subscriptionId)
-            }
-            activeConnections.value.delete(targetId)
-            showMaaEndConfigMask.value = false
-            currentConfigScript.value = null
-            currentMaaEndConfigUser.value = null
-            message.info(
-              user
-                ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
-                : `${script.name} 配置会话已超时断开`
-            )
-          }
-        },
-        30 * 60 * 1000
-      )
-    } else {
-      message.error(response.message || '启动 MaaEnd 配置失败')
-    }
+    message.success(
+      user
+        ? `已启动 ${script.name} / ${user.Info.Name} 的 MaaEnd 配置`
+        : `已启动 ${script.name} 的 MaaEnd 配置`
+    )
+    setTimeout(
+      () => {
+        const connection = activeConnections.value.get(targetId)
+        if (!connection) return
+        clearConfigSession(targetId, connection.subscriptionId, clearState)
+        message.info(
+          user
+            ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
+            : `${script.name} 配置会话已超时断开`
+        )
+      },
+      30 * 60 * 1000
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 MaaEnd 配置失败: ${errorMsg}`)
@@ -1515,30 +1540,18 @@ const handleStartMaaEndUserConfig = async (script: Script, user: User) => {
 const handleSaveMaaEndConfig = async (script: Script) => {
   try {
     const targetId = currentMaaEndConfigUser.value?.id ?? script.id
-    const connection = activeConnections.value.get(targetId)
-    if (!connection) {
-      message.error('未找到活动的配置会话')
-      return
-    }
-
-    const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
-    })
-
-    if (response.code === 200) {
-      unsubscribe(connection.subscriptionId)
-      activeConnections.value.delete(targetId)
+    const currentUser = currentMaaEndConfigUser.value
+    const saved = await stopConfigSession(targetId, 'MaaEnd', () => {
       showMaaEndConfigMask.value = false
       currentConfigScript.value = null
-      const currentUser = currentMaaEndConfigUser.value
       currentMaaEndConfigUser.value = null
+    })
+    if (saved) {
       message.success(
         currentUser
           ? `${script.name} / ${currentUser.Info.Name} 的配置已保存`
           : `${script.name} 的配置已保存`
       )
-    } else {
-      message.error(response.message || '保存配置失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -1547,69 +1560,21 @@ const handleSaveMaaEndConfig = async (script: Script) => {
   }
 }
 
-const clearOkwwConfigSession = (scriptId: string, subscriptionId?: string) => {
-  if (subscriptionId) unsubscribe(subscriptionId)
-  activeConnections.value.delete(scriptId)
-  showOkwwConfigMask.value = false
-  currentConfigScript.value = null
-}
-
 const handleStartOkwwConfig = async (script: Script) => {
-  const rootPath = String((script.config as OkwwScriptConfig).Info?.RootPath || '').trim()
-  const normalizedRoot = rootPath.replace(/[\\/]+$/g, '')
-  if (
-    !rootPath ||
-    rootPath === '.' ||
-    !(await window.electronAPI.fileExists(`${normalizedRoot}/ok-ww.exe`)) ||
-    !(await window.electronAPI.fileExists(`${normalizedRoot}/data/apps/ok-ww/app.json`))
-  ) {
-    message.warning('请先在脚本编辑页设置有效的 ok-ww 路径')
-    await router.push(`/scripts/${script.id}/edit/okww`)
-    return
-  }
-  if (activeConnections.value.has(script.id)) {
-    message.warning('该脚本已在设置中，请先保存当前设置')
-    return
-  }
-
   try {
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: script.id,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-    if (response.code !== 200 || !response.taskId) {
-      throw new Error(response.message || '启动 ok-ww 设置失败')
-    }
-
-    showOkwwConfigMask.value = true
-    currentConfigScript.value = script
-    let sessionEnded = false
-    let subscriptionId = ''
-    subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        sessionEnded = true
-        message.error(`ok-ww 设置连接失败: ${String(wsMessage.data)}`)
-        clearOkwwConfigSession(script.id, subscriptionId)
-        return
+    const started = await startConfigSession(
+      script.id,
+      'ok-ww',
+      () => {
+        showOkwwConfigMask.value = true
+        currentConfigScript.value = script
+      },
+      () => {
+        showOkwwConfigMask.value = false
+        currentConfigScript.value = null
       }
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`ok-ww 设置失败: ${String(wsMessage.data.Error)}`)
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        sessionEnded = true
-        clearOkwwConfigSession(script.id, subscriptionId)
-      }
-    })
-    if (sessionEnded) {
-      unsubscribe(subscriptionId)
-      return
-    }
-    activeConnections.value.set(script.id, {
-      subscriptionId,
-      websocketId: response.taskId,
-    })
-    message.success(`已打开 ${script.name} 的 ok-ww 设置`)
+    )
+    if (started) message.success(`已打开 ${script.name} 的 ok-ww 设置`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 ok-ww 设置失败: ${errorMsg}`)
@@ -1618,21 +1583,12 @@ const handleStartOkwwConfig = async (script: Script) => {
 }
 
 const handleSaveOkwwConfig = async (script: Script) => {
-  const connection = activeConnections.value.get(script.id)
-  if (!connection) {
-    message.error('未找到活动的设置会话')
-    return
-  }
-
   try {
-    const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
+    const saved = await stopConfigSession(script.id, 'ok-ww', () => {
+      showOkwwConfigMask.value = false
+      currentConfigScript.value = null
     })
-    if (response.code !== 200) {
-      throw new Error(response.message || '保存设置失败')
-    }
-    clearOkwwConfigSession(script.id, connection.subscriptionId)
-    message.success(`${script.name} 的设置已保存`)
+    if (saved) message.success(`${script.name} 的设置已保存`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
