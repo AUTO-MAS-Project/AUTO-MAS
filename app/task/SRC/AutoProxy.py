@@ -34,7 +34,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, strptime
+from app.utils import get_logger, LogMonitor, ProcessManager, ProcessRunner, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from .tools import login, push_notification, poor_yaml_read, poor_yaml_write
 from app.task.general.tools import execute_script_task
@@ -329,6 +329,12 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置前关闭可能未正常退出的脚本进程
         await self.src_process_manager.kill()
         await System.kill_process(self.src_exe_path)
+        await ProcessRunner.run_process(
+            self.src_root_path / "toolkit/python.exe",
+            "-m",
+            "deploy.Windows.alas",
+            cwd=self.src_root_path,
+        )
 
         # 基础配置内容
         if self.cur_user_config.get("Info", "Mode") == "简洁":
@@ -457,7 +463,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        if "Request human takeover" in log:
+        if any(" | CRITICAL | Request human takeover" in line for line in log_content):
             self.cur_user_log.status = "SRC 无法继续执行任务, 需要用户接管"
         elif "Close game during wait" in log:
             self.cur_user_log.status = "Success!"
