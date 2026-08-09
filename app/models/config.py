@@ -1514,6 +1514,13 @@ class HSRUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "", EncryptValidator())
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 新契约 SRA 账号字段，旧数据从 Info.Id / Info.Password 回退
+        self.SRA_Id = ConfigItem(
+            "SRA", "Id", "", EncryptValidator(), "Info", "Id"
+        )
+        self.SRA_Password = ConfigItem(
+            "SRA", "Password", "", EncryptValidator(), "Info", "Password"
+        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -1666,6 +1673,37 @@ class HSRUserConfig(ConfigBase):
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
+        ## Control / Managed / Direct ------------------------------------
+        ## 兼容插件版的托管/直连配置形状。内置 HSRManager 按模式读取
+        ## 这些字段；普通用户 API 只返回非敏感元数据。
+        self.Control_Mode = ConfigItem(
+            "Control", "Mode", "managed", OptionsValidator(["managed", "direct"])
+        )
+        self.Control_SRA = ConfigItem("Control", "SRA", False, BoolValidator())
+        self.Control_M7A = ConfigItem("Control", "M7A", False, BoolValidator())
+        self.Managed_TaskMapping = ConfigItem(
+            "Managed", "TaskMapping", "{ }", JSONValidator()
+        )
+        self.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
+        self.Direct_SRAConfig = ConfigItem(
+            "Direct", "SRAConfig", "", EncryptValidator()
+        )
+        self.Direct_M7AConfig = ConfigItem(
+            "Direct", "M7AConfig", "", EncryptValidator()
+        )
+        self.Direct_SRAImportedAt = ConfigItem("Direct", "SRAImportedAt", "")
+        self.Direct_M7AImportedAt = ConfigItem("Direct", "M7AImportedAt", "")
+        self.Direct_SRASource = ConfigItem("Direct", "SRASource", "")
+        self.Direct_M7ASource = ConfigItem("Direct", "M7ASource", "")
+
+        ## 兑换码状态指纹（仅状态信息，不保存兑换码明文）
+        self.Data_SRARedeemCodeFingerprint = ConfigItem(
+            "Data", "SRARedeemCodeFingerprint", ""
+        )
+        self.Data_M7ARedeemCodeFingerprint = ConfigItem(
+            "Data", "M7ARedeemCodeFingerprint", ""
+        )
+
         super().__init__()
 
     def getTags(self) -> str:
@@ -1723,7 +1761,6 @@ class HSRUserConfig(ConfigBase):
         now = datetime.now(tz=UTC8)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
-        current_month = now.strftime("%Y-%m")
 
         eow_done = (
             bool(self.get("Data", "EchoOfWarCompletedThisWeek"))
@@ -1753,17 +1790,6 @@ class HSRUserConfig(ConfigBase):
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
 
-        abyss_done = (
-            bool(self.get("Data", "AbyssCompletedThisMonth"))
-            and self.get("Data", "AbyssLastResetMonth") == current_month
-        )
-        tags.append(
-            {
-                "text": "三深渊：已完成" if abyss_done else "三深渊：未完成",
-                "color": "green" if abyss_done else "orange",
-            }
-        )
-
         notes = self.get("Info", "Notes")
         tags.append(
             {
@@ -1791,6 +1817,155 @@ class HSRConfig(ConfigBase):
         self.Info_M7APath = ConfigItem("Info", "M7APath", "", FolderValidator())
         ## SRA 路径
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
+
+        ## Control ---------------------------------------------------------
+        ## 运行模式。old dev 仍由内置 HSRManager 调度，并保留旧字段回退。
+        self.Control_Direct = ConfigItem(
+            "Control", "Direct", False, BoolValidator()
+        )
+        self.Control_Engine = ConfigItem(
+            "Control", "Engine", "SRA", OptionsValidator(["M7A", "SRA"])
+        )
+        self.Control_TimeoutMinutes = ConfigItem(
+            "Control", "TimeoutMinutes", 120, RangeValidator(1, 1440)
+        )
+
+        ## SRA / M7A -------------------------------------------------------
+        ## 新契约路径使用显式旧字段回退，确保 ScriptConfig.json 中原有
+        ## Info.SRAPath / Info.M7APath 永不丢失。
+        self.SRA_Path = ConfigItem(
+            "SRA", "Path", "", FolderValidator(), "Info", "SRAPath"
+        )
+        self.SRA_Config = ConfigItem("SRA", "Config", "", StringValidator())
+        self.M7A_Path = ConfigItem(
+            "M7A", "Path", "", FolderValidator(), "Info", "M7APath"
+        )
+        self.M7A_LowPerformanceMode = ConfigItem(
+            "M7A",
+            "LowPerformanceMode",
+            False,
+            BoolValidator(),
+            "Run",
+            "LowPerformanceMode",
+        )
+
+        ## SRA 动态任务选项（兼容插件契约，由托管运行时按需覆盖）
+        for name, default in {
+            "TrailblazerProfile": True,
+            "Assignments": True,
+            "Mail": True,
+            "DailyTraining": True,
+            "NamelessHonor": True,
+            "GiftOfOdyssey": True,
+            "RedeemCode": True,
+        }.items():
+            self.__setattr__(
+                f"SRAReceiveRewards_{name}",
+                ConfigItem("SRAReceiveRewards", name, default, BoolValidator()),
+            )
+        self.SRADivergentUniverse_RunTimes = ConfigItem(
+            "SRADivergentUniverse", "RunTimes", 20, RangeValidator(1, 999)
+        )
+        self.SRADivergentUniverse_UseTechnique = ConfigItem(
+            "SRADivergentUniverse", "UseTechnique", False, BoolValidator()
+        )
+        self.SRADivergentUniverse_PointRewards = ConfigItem(
+            "SRADivergentUniverse", "PointRewards", True, BoolValidator()
+        )
+        self.SRACurrencyWars_Mode = ConfigItem(
+            "SRACurrencyWars", "Mode", "normal", OptionsValidator(["normal", "overclock"])
+        )
+        self.SRACurrencyWars_Difficulty = ConfigItem(
+            "SRACurrencyWars", "Difficulty", "lowest", OptionsValidator(["lowest", "highest"])
+        )
+        self.SRACurrencyWars_RunTimes = ConfigItem(
+            "SRACurrencyWars", "RunTimes", 1, RangeValidator(1, 999)
+        )
+
+        ## M7A 动态任务选项（兼容插件契约，由托管运行时按需覆盖）
+        for name, default in {
+            "RunDailyTraining": True,
+            "UseSynthesis": True,
+            "UseHimekoTrial": False,
+            "UseMemoryOne": False,
+            "DailyCheckIn": True,
+            "Dispatch": True,
+            "Mail": True,
+            "Support": True,
+            "DailyTrainingReward": True,
+            "NamelessHonor": True,
+            "RedeemCode": True,
+            "Achievement": False,
+            "Messages": False,
+        }.items():
+            self.__setattr__(
+                f"M7AReceiveRewards_{name}",
+                ConfigItem("M7AReceiveRewards", name, default, BoolValidator()),
+            )
+        self.M7ADivergentUniverse_Mode = ConfigItem(
+            "M7ADivergentUniverse", "Mode", "cycle", OptionsValidator(["normal", "cycle"])
+        )
+        self.M7ADivergentUniverse_Level = ConfigItem(
+            "M7ADivergentUniverse", "Level", 5, RangeValidator(1, 6)
+        )
+        self.M7ADivergentUniverse_BonusEnabled = ConfigItem(
+            "M7ADivergentUniverse", "BonusEnabled", True, BoolValidator()
+        )
+        self.M7ACurrencyWars_Mode = ConfigItem(
+            "M7ACurrencyWars", "Mode", "normal", OptionsValidator(["normal", "overclock"])
+        )
+        self.M7ACurrencyWars_RankDifficulty = ConfigItem(
+            "M7ACurrencyWars", "RankDifficulty", "lowest", OptionsValidator(["lowest", "current", "highest"])
+        )
+        self.M7ACurrencyWars_Strategy = ConfigItem(
+            "M7ACurrencyWars", "Strategy", "aglaea", OptionsValidator(["default", "aglaea", "seele"])
+        )
+        self.M7ACurrencyWars_RestartOnSpecialTags = ConfigItem(
+            "M7ACurrencyWars", "RestartOnSpecialTags", True, BoolValidator()
+        )
+        self.M7ACurrencyWars_FastMode = ConfigItem(
+            "M7ACurrencyWars", "FastMode", False, BoolValidator()
+        )
+        self.M7ACurrencyWars_BonusEnabled = ConfigItem(
+            "M7ACurrencyWars", "BonusEnabled", True, BoolValidator()
+        )
+
+        ## 新宿主可选游戏启动字段；旧字段与默认行为继续保留。
+        self.Game_Backend = ConfigItem(
+            "Game",
+            "Backend",
+            "local",
+            OptionsValidator(["local", "mas_cloud", "native_owned"]),
+        )
+        self.Game_ForceResolution1920x1080 = ConfigItem(
+            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        )
+        self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
+            "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
+        )
+
+        ## 养成目标兼容选项
+        self.CultivationTarget_Enabled = ConfigItem(
+            "CultivationTarget", "Enabled", False, BoolValidator()
+        )
+        self.CultivationTarget_M7ARecognitionScheme = ConfigItem(
+            "CultivationTarget",
+            "M7ARecognitionScheme",
+            "instance",
+            OptionsValidator(["instance", "drop"]),
+        )
+        self.CultivationTarget_M7AOrnamentWeeklyCount = ConfigItem(
+            "CultivationTarget",
+            "M7AOrnamentWeeklyCount",
+            1,
+            RangeValidator(0, 7),
+        )
+        self.CultivationTarget_M7AUseUserStageWhenOnlyRelics = ConfigItem(
+            "CultivationTarget",
+            "M7AUseUserStageWhenOnlyRelics",
+            False,
+            BoolValidator(),
+        )
 
         ## Game ------------------------------------------------------------
         ## 游戏路径
@@ -1826,8 +2001,6 @@ class HSRConfig(ConfigBase):
         from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
 
         for module in _HSR_TASK_MODULES:
-            if module.key == "ForgottenHall":
-                continue
             self.__setattr__(
                 f"TaskMapping_{module.key}",
                 ConfigItem(
