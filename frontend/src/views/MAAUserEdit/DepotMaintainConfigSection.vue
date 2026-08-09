@@ -7,7 +7,7 @@
         <a-switch
           v-model:checked="enabled"
           :disabled="loading"
-          @change="emitSave('Task.IfDepotMaintain', enabled)"
+          @change="emitSave('Task.IfDepotMaintain', $event)"
         />
       </a-space>
     </div>
