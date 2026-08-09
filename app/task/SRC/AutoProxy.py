@@ -329,12 +329,17 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置前关闭可能未正常退出的脚本进程
         await self.src_process_manager.kill()
         await System.kill_process(self.src_exe_path)
-        await ProcessRunner.run_process(
-            self.src_root_path / "toolkit/python.exe",
-            "-m",
-            "deploy.Windows.alas",
-            cwd=self.src_root_path,
-        )
+        try:
+            result = await ProcessRunner.run_process(
+                self.src_root_path / "toolkit/python.exe",
+                "-m",
+                "deploy.Windows.alas",
+                cwd=self.src_root_path,
+            )
+            if result.returncode != 0:
+                logger.warning(f"SRC内置进程清理失败, 返回码: {result.returncode}")
+        except Exception as e:
+            logger.warning(f"调用SRC内置进程清理失败, 跳过清理: {e}")
 
         # 基础配置内容
         if self.cur_user_config.get("Info", "Mode") == "简洁":
