@@ -4,9 +4,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.config import AppConfig
-from app.models.config import OkwwConfig, OkwwUserConfig
+from app.models.config import OkwwConfig, OkwwUserConfig, QueueEntry, Setting, Tools
+from app.models.config_legacy import GlobalConfig as LegacyGlobalConfig
 from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
+
+
+class AppConfigConfigRootTest(unittest.TestCase):
+    def test_new_config_root_is_kept_separate_from_legacy_root(self) -> None:
+        app_config = AppConfig()
+
+        self.assertNotIsInstance(app_config, LegacyGlobalConfig)
+        self.assertIsInstance(app_config.setting, Setting)
+        self.assertIsInstance(app_config.queues, ConfigCollection)
+        self.assertIs(
+            app_config.queues.effective._entry_types[QueueEntry.__name__], QueueEntry
+        )
+        self.assertIsInstance(app_config.tools, Tools)
+        self.assertIs(app_config.ScriptConfig, app_config._legacy.ScriptConfig)
 
 
 class OkwwPluginMigrationTest(unittest.IsolatedAsyncioTestCase):

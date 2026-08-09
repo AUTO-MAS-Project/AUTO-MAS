@@ -39,11 +39,11 @@ import json
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import QueueEntry, Setting, Tools
-from app.config import ConfigCollection
+from app.config import ConfigCollection, config_manager
 from app.models.config_legacy import (
     CLASS_BOOK,
     EmulatorConfig,
-    GlobalConfig,
+    GlobalConfig as LegacyGlobalConfig,
     GameSignAccountGroup,
     MaaConfig,
     MaaFWConfig,
@@ -130,12 +130,24 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
-class AppConfig(GlobalConfig):
+class AppConfig:
+    """应用配置根。
+
+    ``setting`` / ``queues`` / ``tools`` 由新配置基类持有；尚未迁移的脚本、
+    计划和模拟器配置通过显式的 legacy bridge 访问，避免再次把旧根混入
+    AppConfig 的继承关系。
+    """
+
     VERSION = "v5.4.0-beta.1"
 
+    _legacy: LegacyGlobalConfig
+    setting: Setting
+    queues: ConfigCollection[QueueEntry]
+    tools: Tools
+
     def __init__(self) -> None:
-        super().__init__()
-        apply_script_type_registry_to_global_config(self)
+        self._legacy = LegacyGlobalConfig()
+        apply_script_type_registry_to_global_config(self._legacy)
 
         logger.info("")
         logger.info("===================================")
@@ -156,9 +168,18 @@ class AppConfig(GlobalConfig):
 
         # 新配置根供已迁移的 setting/queue/tools API 使用；脚本相关配置仍由 legacy 根承载。
         self.setting = Setting.build(file=self.config_path / "setting.toml")
+        queue_name: str | None = "queues"
+        try:
+            config_manager.get_collection(queue_name)
+        except LookupError:
+            pass
+        else:
+            queue_name = None
+
         self.queues = ConfigCollection[QueueEntry].build(
             [QueueEntry],
             file=self.config_path / "queues.toml",
+            name=queue_name,
         )
         self.tools = Tools.build(file=self.config_path / "tools.toml")
 
@@ -182,6 +203,17 @@ class AppConfig(GlobalConfig):
         self._game_sign_result_date = ""
 
         self._inject_truststore()
+
+    def __getattr__(self, name: str) -> Any:
+        """兼容尚未迁移到新配置根的调用方。"""
+
+        legacy = self.__dict__.get("_legacy")
+        if legacy is not None:
+            try:
+                return getattr(legacy, name)
+            except AttributeError:
+                pass
+        raise AttributeError(name)
 
     @staticmethod
     def _inject_truststore() -> None:
