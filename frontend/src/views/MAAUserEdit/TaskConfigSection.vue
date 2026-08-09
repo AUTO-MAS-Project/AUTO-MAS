@@ -79,7 +79,7 @@
           <a-switch
             v-model:checked="activityFirst"
             :disabled="loading"
-            @change="emitSave('Task.IfActivityFirst', activityFirst)"
+            @change="emitSave('Task.IfActivityFirst', $event)"
           />
         </a-form-item>
       </a-col>
