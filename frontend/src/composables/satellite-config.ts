@@ -9,12 +9,15 @@ export interface SatelliteModule {
   instanceCount: number
 }
 
-const iconModules = import.meta.glob<{ default: string }>('@/assets/satellite-icons/*.png', {
-  eager: true,
-  query: 'url',
-})
+const iconModules = import.meta.glob<{ default: string }>(
+  ['@/assets/satellite-icons/*.png', '!@/assets/satellite-icons/M9A.png'],
+  {
+    eager: true,
+    query: 'url',
+  }
+)
 
-// 仅为尚未声明 icon_url 的旧内置类型保留；插件图标始终使用注册表资源。
+// 未声明 icon_url 时，仅回退到旧内置类型的本地图标。
 const legacyBuiltinIconFiles: Record<string, string> = {
   MAA: 'MAA.png',
   SRC: 'SRC.png',

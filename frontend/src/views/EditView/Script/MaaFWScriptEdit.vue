@@ -15,7 +15,7 @@
               class="breadcrumb-logo"
               @error="event => handleScriptIconError(event, formData.type)"
             />
-            项目配置
+            {{ projectDisplayName }} 项目配置
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -47,11 +47,7 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card
-      :title="formData.type === 'M9A' ? 'M9A 项目配置' : 'MaaFramework 项目配置'"
-      :loading="pageLoading"
-      class="config-card"
-    >
+    <a-card :title="`${projectDisplayName} 项目配置`" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="geekblue" class="type-tag">{{ formData.type }}</a-tag>
       </template>
@@ -63,8 +59,17 @@
           :rules="rules"
           :preview-data="previewData"
           :agent-env-result="agentEnvResult"
+          :agent-env-progress-status="agentEnvProgressStatus"
+          :agent-env-progress-stage="agentEnvProgressStage"
+          :agent-env-progress-percent="agentEnvProgressPercent"
+          :agent-env-progress-message="agentEnvProgressMessage"
+          :agent-env-progress-logs="agentEnvProgressLogs"
+          :agent-env-progress-downloaded-bytes="agentEnvProgressDownloadedBytes"
+          :agent-env-progress-total-bytes="agentEnvProgressTotalBytes"
           :interface-loading="interfaceLoading"
           :agent-env-loading="agentEnvLoading"
+          :is-agent-env-preparing="isAgentEnvPreparing"
+          :is-project-update-running="isProjectUpdateRunning"
           :is-setup-mode="false"
           :preview-project-title="previewProjectTitle"
           :interface-stats="interfaceStats"
@@ -87,6 +92,7 @@
           :preview-data="previewData"
           :interface-loading="interfaceLoading"
           :emulator-loading="emulatorLoading"
+          :emulator-options-ready="emulatorOptionsReady"
           :emulator-device-loading="emulatorDeviceLoading"
           :emulator-options="emulatorOptions"
           :emulator-device-options="emulatorDeviceOptions"
@@ -116,6 +122,19 @@
           :is-auto-update-disabled="isAutoUpdateDisabled"
           :project-update-loading="projectUpdateLoading"
           :project-update-disabled="projectUpdateDisabled"
+          :project-update-mirror-source-blocked="projectUpdateMirrorSourceBlocked"
+          :project-update-action="projectUpdateAction"
+          :project-update-status="projectUpdateStatus"
+          :project-update-stage="projectUpdateStage"
+          :project-update-progress="projectUpdateProgress"
+          :project-update-download-percent="projectUpdateDownloadPercent"
+          :project-update-downloaded-bytes="projectUpdateDownloadedBytes"
+          :project-update-total-bytes="projectUpdateTotalBytes"
+          :project-update-message="projectUpdateMessage"
+          :project-update-provider-error-code="projectUpdateProviderErrorCode"
+          :project-update-discovered-version="projectUpdateDiscoveredVersion"
+          :project-update-metadata-source="projectUpdateMetadataSource"
+          :project-update-package-source="projectUpdatePackageSource"
           :project-update-logs="projectUpdateLogs"
           :update-source-options="updateSourceOptions"
           :update-channel-options="updateChannelOptions"
@@ -163,7 +182,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
@@ -194,7 +213,26 @@ const {
   rules,
   previewData,
   agentEnvResult,
+  agentEnvProgressStatus,
+  agentEnvProgressStage,
+  agentEnvProgressPercent,
+  agentEnvProgressMessage,
+  agentEnvProgressLogs,
+  agentEnvProgressDownloadedBytes,
+  agentEnvProgressTotalBytes,
   projectUpdateLogs,
+  projectUpdateAction,
+  projectUpdateStatus,
+  projectUpdateStage,
+  projectUpdateProgress,
+  projectUpdateDownloadPercent,
+  projectUpdateDownloadedBytes,
+  projectUpdateTotalBytes,
+  projectUpdateMessage,
+  projectUpdateProviderErrorCode,
+  projectUpdateDiscoveredVersion,
+  projectUpdateMetadataSource,
+  projectUpdatePackageSource,
   scriptEditHint,
   scriptIconUrl,
   pageLoading,
@@ -206,6 +244,7 @@ const {
   interfaceLoading,
   agentEnvLoading,
   projectUpdateLoading,
+  emulatorOptionsReady,
   emulatorLoading,
   emulatorDeviceLoading,
   emulatorOptions,
@@ -218,6 +257,9 @@ const {
   isInterfaceReady,
   isAgentEnvReady,
   isAgentEnvFailed,
+  isAgentEnvPreparing,
+  projectUpdateMirrorSourceBlocked,
+  isProjectUpdateRunning,
   projectUpdateDisabled,
   periodTaskOptions,
   previewProjectTitle,
@@ -257,6 +299,17 @@ const {
   dispose,
 } = useMaaFWScriptConfig(scriptId)
 
+const projectDisplayName = computed(() => {
+  const candidates = [
+    previewProjectTitle.value,
+    maafwConfig.Info.ProjectLabel,
+    maafwConfig.Info.Name,
+  ]
+  return (
+    candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MaaFramework'
+  )
+})
+
 const handleCancel = () => {
   if (hasUnsavedChanges.value || isSaving.value) {
     Modal.confirm({
@@ -274,15 +327,17 @@ const handleCancel = () => {
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   try {
-    await loadScript()
+    await Promise.all([loadScript(), loadEmulatorOptions()])
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
     router.replace('/scripts')
     return
   }
-  await loadEmulatorOptions()
   isInitializing.value = false
+  if (maafwConfig.Info.Path && previewData.value) {
+    void handlePrepareAgentEnv()
+  }
 })
 
 onBeforeUnmount(() => {
