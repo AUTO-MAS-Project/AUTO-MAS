@@ -24,10 +24,11 @@ from app.models.config import HSRUserConfig
 from app.models.task import UserItem
 from app.utils import ProcessManager
 
+from .game_resolution import HSRGameResolutionOverride
 from .m7a_runtime import M7ARunner
 from .sra_runtime import SRAProcessRegistry
 
-HSRPhase = Literal["daily", "weekly", "monthly"]
+HSRPhase = Literal["daily", "weekly"]
 HSRScriptRunner = Literal["M7A", "SRA"]
 HSRLoginMode = Literal["sra_switch", "sra_remembered", "m7a_fallback"]
 HSRModuleResultStatus = Literal["completed", "failed", "incomplete", "skipped"]
@@ -122,6 +123,9 @@ class HSRRuntimeState:
     game_launch_checked: bool = False
     game_started_by_mas: bool = False
     game_exe_path: Path | None = None
+    # 非空表示本次运行已在 Windows 注册表写入临时 1920×1080 覆盖，
+    # final_task 必须在关闭游戏后恢复并清空。
+    game_resolution_override: HSRGameResolutionOverride | None = None
     last_external_script: HSRScriptRunner | None = None
     game_session_clean: bool = False
     game_transitioning: bool = False

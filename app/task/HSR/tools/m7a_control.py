@@ -83,7 +83,6 @@ class HSRM7AControl:
         module_timeout_seconds: Callable[[str], int],
         queue_eow_completion: Callable[[str, str, bool, object, str], None],
         queue_weekly_completion: Callable[[str, str, str], None],
-        queue_abyss_completion: Callable[[str, str], None],
         record_module_result: Callable[..., None],
     ) -> None:
         self.script_config = script_config
@@ -92,7 +91,6 @@ class HSRM7AControl:
         self._module_timeout_seconds = module_timeout_seconds
         self._queue_eow_completion = queue_eow_completion
         self._queue_weekly_completion = queue_weekly_completion
-        self._queue_abyss_completion = queue_abyss_completion
         self._record_module_result = record_module_result
 
     async def run_m7a_command(
@@ -171,6 +169,7 @@ class HSRM7AControl:
         m7a_path: str,
         m7a_runner: M7ARunner,
         daily_eow_enabled: bool,
+        redeem_codes_enabled: bool = True,
         timeout_seconds: int | None = None,
     ):
         """执行 M7A Daily 模块。"""
@@ -178,11 +177,26 @@ class HSRM7AControl:
         m7a_config_path = Path(m7a_path) / "config.yaml"
         main_stage = resolve_m7a_main_stage(user_cfg)
 
+        cultivation_target = {
+            "Enabled": self.script_config.get("CultivationTarget", "Enabled"),
+            "M7ARecognitionScheme": self.script_config.get(
+                "CultivationTarget", "M7ARecognitionScheme"
+            ),
+            "M7AOrnamentWeeklyCount": self.script_config.get(
+                "CultivationTarget", "M7AOrnamentWeeklyCount"
+            ),
+            "M7AUseUserStageWhenOnlyRelics": self.script_config.get(
+                "CultivationTarget", "M7AUseUserStageWhenOnlyRelics"
+            ),
+        }
+
         daily_patch = m7a.build_m7a_daily_patch(
             user_cfg,
             daily_eow_enabled=daily_eow_enabled,
             main_stage=main_stage,
             eow_name=resolve_m7a_eow_stage(user_cfg),
+            script_config=self.script_config,
+            cultivation_target=cultivation_target,
         )
         self.write_m7a_patch(m7a_config_path, daily_patch)
         last_result: object | None = None
@@ -265,83 +279,6 @@ class HSRM7AControl:
             on_success=on_success,
         )
 
-    def create_monthly_item(
-        self,
-        *,
-        user_item: UserItem,
-        user_cfg: HSRUserConfig,
-        user_name: str,
-        uid: str,
-        module: HSRTaskModule,
-        m7a_path: str,
-        m7a_runner: M7ARunner,
-    ) -> HSRRunItem:
-        """创建三深渊月常队列项。"""
-
-        timeout_seconds = self._module_timeout_seconds(module.key)
-        m7a_config_path = Path(m7a_path) / "config.yaml"
-        abyss_runs: list[tuple[str, str, str]] = []
-        abyss_patch: dict = {"cloud_game_enable": False}
-        for abyss_type, command, label in m7a.ABYSS_RUN_SEQUENCE:
-            try:
-                single_patch = m7a.build_single_abyss_patch(user_cfg, abyss_type)
-            except Exception as e:
-                raise RuntimeError(
-                    f"用户「{user_name}」三深渊「{label}」快照无效，"
-                    f"三深渊未执行：{e}"
-                ) from e
-            abyss_patch.update(single_patch)
-            abyss_runs.append((abyss_type, command, label))
-
-        abyss_patch["forgottenhall_enable"] = True
-        abyss_patch["purefiction_enable"] = True
-        abyss_patch["apocalyptic_enable"] = True
-
-        order_text = " → ".join(label for _, _, label in abyss_runs)
-        description = f"M7A 三深渊：{order_text}（使用已导入快照）"
-
-        async def run_m7a_monthly():
-            if not m7a_config_path.exists():
-                raise RuntimeError(f"M7A config.yaml 不存在: {m7a_config_path}")
-
-            self.write_m7a_patch(
-                m7a_config_path,
-                abyss_patch,
-                whitelist=m7a.M7A_FORGOTTEN_HALL_PATCH_WHITELIST,
-            )
-            last_result: object | None = None
-            for _, command, label in abyss_runs:
-                result = await self.run_m7a_command(
-                    m7a_runner,
-                    user_name,
-                    label,
-                    command,
-                    timeout_seconds=timeout_seconds,
-                )
-                last_result = result
-                if not result.success:
-                    return result
-
-            return last_result
-
-        return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
-            user_name=user_name,
-            user_id=uid,
-            phase="monthly",
-            module_key=module.key,
-            module_name=module.name,
-            script="M7A",
-            description=description,
-            timeout_seconds=timeout_seconds,
-            run=run_m7a_monthly,
-            on_success=lambda _result, uid=uid, user_name=user_name: self._queue_abyss_completion(
-                uid,
-                user_name,
-            ),
-        )
-
     def create_module_item(
         self,
         *,
@@ -354,6 +291,7 @@ class HSRM7AControl:
         m7a_path: str,
         m7a_runner: M7ARunner,
         daily_eow_enabled: bool,
+        redeem_codes_enabled: bool = True,
     ) -> HSRRunItem | None:
         """创建一个 M7A 模块队列项。"""
 
@@ -414,7 +352,11 @@ class HSRM7AControl:
                 phase=phase,
                 m7a_path=m7a_path,
                 m7a_runner=m7a_runner,
-                patch=m7a.build_receive_rewards_patch(user_cfg),
+                patch=m7a.build_receive_rewards_patch(
+                    user_cfg,
+                    script_config=self.script_config,
+                    redeem_codes_enabled=redeem_codes_enabled,
+                ),
                 whitelist=m7a.M7A_RECEIVE_REWARDS_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
                 description=f"M7A routine：{module.description}",
@@ -466,6 +408,7 @@ class HSRM7AControl:
                 patch=m7a.build_currency_wars_patch(
                     user_cfg,
                     ornament_stage_name=resolve_m7a_ornament_stage(user_cfg),
+                    script_config=self.script_config,
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
@@ -483,17 +426,6 @@ class HSRM7AControl:
                         self._record_module_result,
                     )
                 ),
-            )
-
-        if module.key == "ForgottenHall":
-            return self.create_monthly_item(
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                uid=uid,
-                module=module,
-                m7a_path=m7a_path,
-                m7a_runner=m7a_runner,
             )
 
         return None
