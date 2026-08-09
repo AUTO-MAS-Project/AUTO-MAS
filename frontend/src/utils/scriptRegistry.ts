@@ -68,7 +68,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'M9A', 'MaaFW'])
+export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'MaaFW'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -138,18 +138,17 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:maa': 'maa',
   'builtin:src': 'src',
   'builtin:maaend': 'maaend',
-  'builtin:m9a': 'm9a',
   'builtin:maafw': 'maafw',
 }
 
 const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
   MaaFW: 'maafw',
-  M9A: 'maafw',
   // ok-ww 使用专属编辑页（/edit/okww 等），与 PR #287/#288 的视觉与配置字段保持一致
   Okww: 'okww',
 }
 
 const PLUGIN_EDITOR_SEGMENTS: Record<string, string> = {
+  'plugin:automas_script_maafw': 'maafw',
   'plugin:automas_script_hsr': 'hsr',
 }
 

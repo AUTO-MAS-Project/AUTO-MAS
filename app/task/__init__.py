@@ -26,7 +26,6 @@ from typing import Any
 __all__ = [
     "MaaManager",
     "SrcManager",
-    "M9AManager",
     "GeneralManager",
     "MaaEndManager",
 ]
@@ -34,7 +33,6 @@ __all__ = [
 _LAZY_EXPORTS = {
     "MaaManager": ("app.task.MAA.manager", "MaaManager"),
     "SrcManager": ("app.task.SRC.manager", "SrcManager"),
-    "M9AManager": ("app.task.M9A.manager", "M9AManager"),
     "GeneralManager": ("app.task.general.manager", "GeneralManager"),
     "MaaEndManager": ("app.task.MaaEnd.manager", "MaaEndManager"),
 }

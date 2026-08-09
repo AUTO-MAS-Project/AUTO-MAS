@@ -5,7 +5,6 @@ import type {
   OkwwConfig,
   SrcConfig,
   MaaEndConfig,
-  M9AConfig,
   MaaFWConfig as ApiMaaFWConfig,
 } from '@/api'
 import type {
@@ -22,7 +21,7 @@ import type { SchemaDefinition } from './schemaForm'
  * type_key），因此 ScriptType 为 string；BuiltinScriptType 保留内建类型的
  * 字面量枚举供需要穷举内建类型的场景使用。
  */
-export type BuiltinScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A' | 'MaaFW'
+export type BuiltinScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'MaaFW'
 
 export type ScriptType = string
 
@@ -149,31 +148,6 @@ export interface MaaEndScriptConfig {
     EmulatorId: string
     EmulatorIndex: string
     CloseOnFinish: boolean
-  }
-}
-
-// M9A脚本配置
-export interface M9AScriptConfig {
-  Info: {
-    Name: string
-    Path: string
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
-  Run: {
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-    IfAutoUpdateAfterQueue: boolean
-    IfPsychubeDailyOnce: boolean
-    IfSleepDreamMonthlyOnce: boolean
-  }
-  SubConfigsInfo: {
-    UserData: {
-      instances: any[]
-    }
   }
 }
 
@@ -589,7 +563,6 @@ export interface Script {
     | OkwwConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | ApiMaaFWConfig
     | MaaFWScriptConfig
     | HSRScriptConfig
@@ -731,7 +704,6 @@ export interface AddScriptResponse {
     | OkwwScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
-    | M9AScriptConfig
     | ApiMaaFWConfig
     | MaaFWScriptConfig
     | HSRScriptConfig
@@ -740,14 +712,7 @@ export interface AddScriptResponse {
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type:
-    | 'MaaConfig'
-    | 'GeneralConfig'
-    | 'OkwwConfig'
-    | 'SrcConfig'
-    | 'MaaEndConfig'
-    | 'M9AConfig'
-    | 'MaaFWConfig'
+  type: 'MaaConfig' | 'GeneralConfig' | 'OkwwConfig' | 'SrcConfig' | 'MaaEndConfig' | 'MaaFWConfig'
 }
 
 // 获取脚本API响应
@@ -763,7 +728,6 @@ export interface GetScriptsResponse {
     | OkwwScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
-    | M9AScriptConfig
     | ApiMaaFWConfig
     | MaaFWScriptConfig
     | HSRScriptConfig
@@ -781,7 +745,6 @@ export interface ScriptDetail {
     | OkwwConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | ApiMaaFWConfig
     | MaaFWScriptConfig
     | HSRScriptConfig
@@ -794,21 +757,6 @@ export interface DeleteScriptResponse {
   code: number
   status: string
   message: string
-}
-
-// M9A 任务选项类型
-export interface M9ATaskOption {
-  name: string
-  index: number
-  sub_options?: M9ATaskOption[]
-  input_values?: Record<string, string | number>
-  selected_cases?: string[]
-}
-
-// M9A 任务队列项类型
-export interface M9ATaskQueueItem {
-  name: string
-  options: M9ATaskOption[]
 }
 
 // 更新脚本API响应

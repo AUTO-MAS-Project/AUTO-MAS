@@ -1,14 +1,13 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import axios from 'axios'
 import {
   MaaFwService,
   OpenAPI,
   type MaaFWInterfacePreviewData as ApiMaaFWInterfacePreviewData,
-  type MaaFWProjectUpdateOut as ApiMaaFWProjectUpdateOut,
   type MaaFWTaskSnapshot as ApiMaaFWTaskSnapshot,
   type MaaFWWindowPreviewData as ApiMaaFWWindowPreviewData,
 } from '@/api'
-import { request as apiRequest } from '@/api/core/request'
 import type {
   MaaFWControlCapabilitiesInfo,
   MaaFWAgentEnvPrepareData,
@@ -20,6 +19,65 @@ import type {
 } from '@/types/script'
 
 const logger = window.electronAPI.getLogger('MaaFW接口')
+
+type PluginRouteEnvelope<T> = {
+  code: number
+  status: string
+  message: string
+  data: T | null
+}
+
+type MaaFWPluginProjectUpdateData = {
+  checked: boolean
+  updated: boolean
+  updateAvailable?: boolean
+  installable?: boolean
+  currentVersion: string
+  latestVersion?: string | null
+  source?: string | null
+  providerErrorCode?: number | null
+  logs?: string[]
+}
+
+type MaaFWPluginAgentEnvPrepareData = {
+  path: string
+  agentCount?: number
+  agents?: MaaFWAgentEnvPrepareData['agents']
+  logs?: string[]
+  status?: string
+  message?: string
+}
+
+const MAAFW_PLUGIN_ROUTE_PREFIX = '/maafw'
+
+const resolvePluginRouteUrl = (path: string): string => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const baseUrl = (OpenAPI.BASE || '').replace(/\/+$/, '')
+  return `${baseUrl}/plugin${normalizedPath}`
+}
+
+type PluginHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS'
+
+const requestPluginRoute = async <T>(
+  path: string,
+  payload: Record<string, unknown> = {},
+  method: PluginHttpMethod = 'POST'
+): Promise<PluginRouteEnvelope<T>> => {
+  try {
+    const response = await axios.request<PluginRouteEnvelope<T>>({
+      method,
+      url: resolvePluginRouteUrl(path),
+      params: method === 'GET' ? payload : undefined,
+      data: method === 'GET' ? undefined : payload,
+    })
+    return response.data
+  } catch (error) {
+    if (axios.isAxiosError<PluginRouteEnvelope<T>>(error) && error.response?.data) {
+      return error.response.data
+    }
+    throw error
+  }
+}
 
 export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) => {
   if (!rawPath || !rootPath) return ''
@@ -154,7 +212,7 @@ const normalizeWindowPreviewData = (data: ApiMaaFWWindowPreviewData): MaaFWWindo
 })
 
 const normalizeAgentEnvPrepareData = (
-  data: MaaFWAgentEnvPrepareData,
+  data: MaaFWPluginAgentEnvPrepareData,
   status?: string,
   responseMessage?: string
 ): MaaFWAgentEnvPrepareData => ({
@@ -165,13 +223,6 @@ const normalizeAgentEnvPrepareData = (
   status: status || data.status,
   message: responseMessage || data.message,
 })
-
-type MaaFWAgentEnvPrepareOut = {
-  code?: number
-  status?: string
-  message?: string
-  data?: MaaFWAgentEnvPrepareData | null
-}
 
 export function useMaaFWApi() {
   const loading = ref(false)
@@ -239,20 +290,20 @@ export function useMaaFWApi() {
     }
   }
 
-  const prepareAgentEnv = async (path: string): Promise<MaaFWAgentEnvPrepareData | null> => {
+  const prepareAgentEnv = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWAgentEnvPrepareData | null> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await apiRequest<MaaFWAgentEnvPrepareOut>(OpenAPI, {
-        method: 'POST',
-        url: '/api/scripts/maafw/agent-env/prepare',
-        body: { path },
-        mediaType: 'application/json',
-        errors: {
-          422: 'Validation Error',
-        },
-      })
+      const payload: Record<string, unknown> = { path }
+      if (scriptId) payload.scriptId = scriptId
+      const response = await requestPluginRoute<MaaFWPluginAgentEnvPrepareData>(
+        `${MAAFW_PLUGIN_ROUTE_PREFIX}/agent-env/prepare`,
+        payload
+      )
 
       if (response.code !== 200 || !response.data) {
         const errorMsg = response.message || '准备 MaaFW 运行环境失败'
@@ -279,15 +330,17 @@ export function useMaaFWApi() {
   }
 
   const updateProjectResources = async (
-    scriptId: string
-  ): Promise<ApiMaaFWProjectUpdateOut | null> => {
+    scriptId: string,
+    apply = false
+  ): Promise<PluginRouteEnvelope<MaaFWPluginProjectUpdateData> | null> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await MaaFwService.updateMaafwProjectApiScriptsMaafwProjectUpdatePost({
-        scriptId,
-      })
+      const response = await requestPluginRoute<MaaFWPluginProjectUpdateData>(
+        `${MAAFW_PLUGIN_ROUTE_PREFIX}/project/update`,
+        { scriptId, apply }
+      )
 
       if (response.code !== 200) {
         const errorMsg = response.message || 'MaaFW 项目更新失败'

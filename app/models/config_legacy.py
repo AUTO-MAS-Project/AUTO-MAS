@@ -2997,7 +2997,6 @@ class GlobalConfig(ConfigBase):
                 MaaConfig,
                 MaaEndConfig,
                 SrcConfig,
-                M9AConfig,
                 MaaFWConfig,
                 GeneralConfig,
                 OkwwConfig,
@@ -3013,7 +3012,6 @@ class GlobalConfig(ConfigBase):
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
@@ -3088,7 +3086,6 @@ CLASS_BOOK = {
     "MaaPlan": MaaPlanConfig,
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
-    "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,

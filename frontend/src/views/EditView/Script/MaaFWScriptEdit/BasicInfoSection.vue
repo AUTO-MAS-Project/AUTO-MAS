@@ -42,7 +42,12 @@
               readonly
               aria-readonly="true"
             />
-            <a-button size="large" class="path-button" @click="emit('select-path')">
+            <a-button
+              size="large"
+              class="path-button"
+              :disabled="interfaceLoading || isAgentEnvPreparing || isProjectUpdateRunning"
+              @click="emit('select-path')"
+            >
               <template #icon>
                 <FolderOpenOutlined />
               </template>
@@ -54,7 +59,7 @@
               size="middle"
               class="path-button"
               :loading="interfaceLoading"
-              :disabled="!maafwConfig.Info.Path"
+              :disabled="!maafwConfig.Info.Path || isAgentEnvPreparing || isProjectUpdateRunning"
               @click="emit('preview-interface')"
             >
               <template #icon>
@@ -66,7 +71,12 @@
               size="middle"
               class="path-button"
               :loading="agentEnvLoading"
-              :disabled="!maafwConfig.Info.Path"
+              :disabled="
+                !maafwConfig.Info.Path ||
+                interfaceLoading ||
+                isAgentEnvPreparing ||
+                isProjectUpdateRunning
+              "
               @click="emit('prepare-agent-env')"
             >
               <template #icon>
@@ -100,7 +110,7 @@
           :type="isInterfaceReady ? 'default' : 'primary'"
           size="large"
           :loading="interfaceLoading"
-          :disabled="!maafwConfig.Info.Path"
+          :disabled="!maafwConfig.Info.Path || isAgentEnvPreparing || isProjectUpdateRunning"
           @click="emit('preview-interface')"
         >
           {{ isInterfaceReady ? '重新读取' : '读取 interface' }}
@@ -121,7 +131,12 @@
           :type="isAgentEnvReady ? 'default' : 'primary'"
           size="large"
           :loading="agentEnvLoading"
-          :disabled="!maafwConfig.Info.Path"
+          :disabled="
+            !maafwConfig.Info.Path ||
+            interfaceLoading ||
+            isAgentEnvPreparing ||
+            isProjectUpdateRunning
+          "
           @click="emit('prepare-agent-env')"
         >
           {{ isAgentEnvReady ? '重新准备' : isAgentEnvFailed ? '重试准备' : '准备运行环境' }}
@@ -160,7 +175,12 @@
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
       <h3>开始配置 MaaFW 项目</h3>
       <p>选择一个包含 interface.json 的项目目录，系统将自动解析可用的控制器、资源、任务和选项。</p>
-      <a-button type="primary" size="large" @click="emit('select-path')">
+      <a-button
+        type="primary"
+        size="large"
+        :disabled="interfaceLoading || isAgentEnvPreparing || isProjectUpdateRunning"
+        @click="emit('select-path')"
+      >
         <template #icon>
           <FolderOpenOutlined />
         </template>
@@ -169,87 +189,136 @@
       <a href="#" class="interface-guide-link" @click.prevent>如何获取 interface.json</a>
     </div>
 
-    <div v-if="agentEnvLoading || agentEnvResult" class="agent-env-panel">
-      <a-spin :spinning="agentEnvLoading" tip="正在准备 MaaFW 运行环境…">
-        <a-alert
-          v-if="agentEnvLoading"
-          type="info"
-          show-icon
-          message="正在准备 MaaFW 运行环境"
-          description="将预热 AUTO-MAS Runner 隔离 venv，并检查或准备项目 Agent Python 环境。"
+    <div
+      v-if="isAgentEnvPreparing || agentEnvProgressStatus !== 'idle' || agentEnvResult"
+      class="agent-env-panel"
+    >
+      <div class="agent-env-progress" :class="`agent-env-progress-${agentEnvProgressStatus}`">
+        <div class="agent-env-progress-header">
+          <span>{{ agentEnvProgressStage || '正在准备 MaaFW 运行环境' }}</span>
+          <span v-if="agentEnvDisplayPercent !== null">{{ agentEnvDisplayPercent }}%</span>
+        </div>
+        <a-progress
+          v-if="agentEnvDisplayPercent !== null"
+          :percent="agentEnvDisplayPercent"
+          :status="agentEnvAntProgressStatus"
+          :show-info="false"
+          :stroke-width="8"
         />
-        <template v-else-if="agentEnvResult">
-          <a-alert
-            :type="agentEnvAlertType"
-            show-icon
-            :message="agentEnvSummary"
-            :description="agentEnvDescription"
-          />
-          <a-collapse
-            v-if="agentEnvResult.agents.length"
-            class="agent-env-collapse"
-            :default-active-key="agentEnvResult.agents.map((_, index) => String(index))"
-          >
-            <a-collapse-panel v-for="(agent, index) in agentEnvResult.agents" :key="String(index)">
-              <template #header>
-                <div class="agent-env-agent-header">
-                  <span class="agent-env-agent-title">{{ agent.childExec }}</span>
-                  <a-tag :color="getAgentRuntimeColor(agent.runtimeKind)">
-                    {{ getAgentRuntimeLabel(agent.runtimeKind) }}
-                  </a-tag>
-                </div>
-              </template>
-              <a-descriptions size="small" :column="1">
-                <a-descriptions-item label="解释器">
-                  <span class="copyable-code">
-                    <code>{{ agent.executable }}</code>
-                    <a-button
-                      type="text"
-                      size="small"
-                      aria-label="复制解释器路径"
-                      @click="emit('copy', agent.executable)"
-                    >
-                      <template #icon><CopyOutlined /></template>
-                    </a-button>
-                  </span>
-                </a-descriptions-item>
-                <a-descriptions-item v-if="agent.isolatedVenvPath" label="隔离 venv">
-                  <span class="copyable-code">
-                    <code>{{ agent.isolatedVenvPath }}</code>
-                    <a-button
-                      type="text"
-                      size="small"
-                      aria-label="复制隔离 venv 路径"
-                      @click="emit('copy', agent.isolatedVenvPath || '')"
-                    >
-                      <template #icon><CopyOutlined /></template>
-                    </a-button>
-                  </span>
-                </a-descriptions-item>
-                <a-descriptions-item v-if="agent.fallbackReason" label="准备说明">
-                  {{ agent.fallbackReason }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </a-collapse-panel>
-          </a-collapse>
-          <a-empty v-else description="当前项目没有声明 Agent" />
-          <div v-if="agentEnvResult.logs.length" class="agent-env-log-box">
-            <div class="agent-env-log-header">
-              <span>准备日志</span>
-              <a-button size="small" @click="emit('copy', agentEnvResult.logs.join('\n'))">
-                <template #icon><CopyOutlined /></template>
-                复制日志
-              </a-button>
-            </div>
-            <pre>{{ agentEnvResult.logs.join('\n') }}</pre>
+        <div
+          v-else-if="isAgentEnvPreparing"
+          class="agent-env-indeterminate-track"
+          aria-label="环境准备进行中，暂时没有可用的进度百分比"
+        >
+          <span />
+        </div>
+        <div v-else-if="agentEnvProgressStatus === 'failed'" class="agent-env-failure-track" />
+        <div v-if="agentEnvProgressMessage" class="agent-env-progress-message">
+          {{ agentEnvProgressMessage }}
+        </div>
+        <div v-if="agentEnvDownloadSummary" class="agent-env-progress-message">
+          {{ agentEnvDownloadSummary }}
+        </div>
+      </div>
+      <a-alert
+        v-if="agentEnvProgressStatus === 'failed'"
+        type="error"
+        show-icon
+        :message="agentEnvProgressStage || 'MaaFW 运行环境准备失败'"
+        :description="agentEnvProgressMessage || '请查看准备日志后重试'"
+      />
+      <a-alert
+        v-else-if="isAgentEnvPreparing"
+        type="info"
+        show-icon
+        message="正在准备 MaaFW 运行环境"
+        description="将预热 AUTO-MAS Runner 隔离 venv，并检查或准备项目 Agent Python 环境。"
+      />
+      <div
+        v-if="agentEnvProgressLogs.length && (isAgentEnvPreparing || !agentEnvResult?.logs.length)"
+        class="agent-env-log-box"
+      >
+        <div class="agent-env-log-header">
+          <span>实时准备日志</span>
+          <a-button size="small" @click="emit('copy', agentEnvProgressLogs.join('\n'))">
+            <template #icon><CopyOutlined /></template>
+            复制日志
+          </a-button>
+        </div>
+        <pre>{{ agentEnvProgressLogs.join('\n') }}</pre>
+      </div>
+      <template v-if="!isAgentEnvPreparing && agentEnvResult">
+        <a-alert
+          :type="agentEnvAlertType"
+          show-icon
+          :message="agentEnvSummary"
+          :description="agentEnvDescription"
+        />
+        <a-collapse
+          v-if="agentEnvResult.agents.length"
+          class="agent-env-collapse"
+          :default-active-key="agentEnvResult.agents.map((_, index) => String(index))"
+        >
+          <a-collapse-panel v-for="(agent, index) in agentEnvResult.agents" :key="String(index)">
+            <template #header>
+              <div class="agent-env-agent-header">
+                <span class="agent-env-agent-title">{{ agent.childExec }}</span>
+                <a-tag :color="getAgentRuntimeColor(agent.runtimeKind)">
+                  {{ getAgentRuntimeLabel(agent.runtimeKind) }}
+                </a-tag>
+              </div>
+            </template>
+            <a-descriptions size="small" :column="1">
+              <a-descriptions-item label="解释器">
+                <span class="copyable-code">
+                  <code>{{ agent.executable }}</code>
+                  <a-button
+                    type="text"
+                    size="small"
+                    aria-label="复制解释器路径"
+                    @click="emit('copy', agent.executable)"
+                  >
+                    <template #icon><CopyOutlined /></template>
+                  </a-button>
+                </span>
+              </a-descriptions-item>
+              <a-descriptions-item v-if="agent.isolatedVenvPath" label="隔离 venv">
+                <span class="copyable-code">
+                  <code>{{ agent.isolatedVenvPath }}</code>
+                  <a-button
+                    type="text"
+                    size="small"
+                    aria-label="复制隔离 venv 路径"
+                    @click="emit('copy', agent.isolatedVenvPath || '')"
+                  >
+                    <template #icon><CopyOutlined /></template>
+                  </a-button>
+                </span>
+              </a-descriptions-item>
+              <a-descriptions-item v-if="agent.fallbackReason" label="准备说明">
+                {{ agent.fallbackReason }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-collapse-panel>
+        </a-collapse>
+        <a-empty v-else description="当前项目没有声明 Agent" />
+        <div v-if="agentEnvResult.logs.length" class="agent-env-log-box">
+          <div class="agent-env-log-header">
+            <span>准备日志</span>
+            <a-button size="small" @click="emit('copy', agentEnvResult.logs.join('\n'))">
+              <template #icon><CopyOutlined /></template>
+              复制日志
+            </a-button>
           </div>
-        </template>
-      </a-spin>
+          <pre>{{ agentEnvResult.logs.join('\n') }}</pre>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -263,6 +332,7 @@ import {
   ToolOutlined,
 } from '@ant-design/icons-vue'
 import { getAgentRuntimeColor, getAgentRuntimeLabel } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWAgentEnvProgressStatus } from '@/composables/useMaaFWScriptConfig'
 import type {
   MaaFWAgentEnvPrepareData,
   MaaFWInterfacePreviewData,
@@ -270,14 +340,23 @@ import type {
   ScriptType,
 } from '@/types/script'
 
-defineProps<{
+const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
   formData: { type: ScriptType; name: string; path: string }
   rules: { name: unknown[]; path: unknown[] }
   previewData: MaaFWInterfacePreviewData | null
   agentEnvResult: MaaFWAgentEnvPrepareData | null
+  agentEnvProgressStatus: MaaFWAgentEnvProgressStatus
+  agentEnvProgressStage: string
+  agentEnvProgressPercent: number | null
+  agentEnvProgressMessage: string
+  agentEnvProgressLogs: string[]
+  agentEnvProgressDownloadedBytes: number | null
+  agentEnvProgressTotalBytes: number | null
   interfaceLoading: boolean
   agentEnvLoading: boolean
+  isAgentEnvPreparing: boolean
+  isProjectUpdateRunning: boolean
   isSetupMode: boolean
   previewProjectTitle: string
   interfaceStats: Array<{ label: string; value: number }>
@@ -297,6 +376,34 @@ const emit = defineEmits<{
   'prepare-agent-env': []
   copy: [text: string]
 }>()
+
+const agentEnvDisplayPercent = computed(() => {
+  if (props.agentEnvProgressPercent === null) return null
+  return Math.round(Math.min(Math.max(props.agentEnvProgressPercent, 0), 100))
+})
+
+const agentEnvAntProgressStatus = computed<'active' | 'success' | 'exception'>(() => {
+  if (props.agentEnvProgressStatus === 'completed') return 'success'
+  if (props.agentEnvProgressStatus === 'failed') return 'exception'
+  return 'active'
+})
+
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const base = 1024
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(base)), units.length - 1)
+  return `${Number((bytes / Math.pow(base, unitIndex)).toFixed(2))} ${units[unitIndex]}`
+}
+
+const agentEnvDownloadSummary = computed(() => {
+  if (props.agentEnvProgressDownloadedBytes === null) return ''
+  const downloaded = formatBytes(props.agentEnvProgressDownloadedBytes)
+  if (props.agentEnvProgressTotalBytes !== null && props.agentEnvProgressTotalBytes > 0) {
+    return `${downloaded} / ${formatBytes(props.agentEnvProgressTotalBytes)}`
+  }
+  return `已下载 ${downloaded}`
+})
 </script>
 
 <style scoped>
@@ -552,6 +659,73 @@ const emit = defineEmits<{
 
 .agent-env-panel {
   margin-top: 16px;
+}
+
+.agent-env-progress {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.agent-env-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--ant-color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-env-progress-completed .agent-env-progress-header {
+  color: var(--ant-color-success);
+}
+
+.agent-env-progress-failed .agent-env-progress-header,
+.agent-env-progress-failed .agent-env-progress-message {
+  color: var(--ant-color-error);
+}
+
+.agent-env-progress-message {
+  margin-top: 5px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agent-env-indeterminate-track,
+.agent-env-failure-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ant-color-fill-secondary);
+}
+
+.agent-env-indeterminate-track span {
+  position: absolute;
+  inset-block: 0;
+  width: 38%;
+  border-radius: inherit;
+  background: var(--ant-color-primary);
+  animation: agent-env-indeterminate 1.2s ease-in-out infinite;
+}
+
+.agent-env-failure-track {
+  border: 1px solid var(--ant-color-error-border);
+  background: var(--ant-color-error-bg);
+}
+
+@keyframes agent-env-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(280%);
+  }
 }
 
 .agent-env-collapse {
