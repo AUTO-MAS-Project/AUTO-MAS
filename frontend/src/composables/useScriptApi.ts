@@ -4,7 +4,6 @@ import {
   type GeneralConfig,
   type MaaConfig,
   type MaaEndConfig,
-  type M9AConfig,
   type MaaFWConfig,
   type OkwwConfig,
   type PluginScriptConfig,
@@ -26,7 +25,6 @@ type ScriptListConfig =
   | OkwwConfig
   | SrcConfig
   | MaaEndConfig
-  | M9AConfig
   | MaaFWConfig
   | PluginScriptConfig
 
@@ -34,7 +32,6 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   MAA: ScriptCreateIn.type.MAA,
   SRC: ScriptCreateIn.type.SRC,
   MaaEnd: ScriptCreateIn.type.MAA_END,
-  M9A: ScriptCreateIn.type.M9A,
   MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   General: ScriptCreateIn.type.GENERAL,
@@ -45,7 +42,6 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.SRC_CONFIG]: 'SRC',
   [ScriptIndexItem.type.OKWW_CONFIG]: 'Okww',
   [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
-  [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
 }
 
@@ -826,104 +822,6 @@ export function useScriptApi() {
                           maaEndUserData.Data?.LastProxyStatus !== undefined
                             ? maaEndUserData.Data.LastProxyStatus
                             : '未知',
-                      },
-                    }
-                  } else if (userIndex.type === 'M9AUserConfig' && userData) {
-                    const m9aUserData = userData as any
-                    return {
-                      id: userIndex.uid,
-                      name: m9aUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          m9aUserData.Info?.Name !== undefined
-                            ? m9aUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          m9aUserData.Info?.Status !== undefined ? m9aUserData.Info.Status : true,
-                        RemainedDay:
-                          m9aUserData.Info?.RemainedDay !== undefined
-                            ? m9aUserData.Info.RemainedDay
-                            : -1,
-                        Notes: m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
-                        Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
-                        Resource:
-                          m9aUserData.Info?.Resource !== undefined
-                            ? m9aUserData.Info.Resource
-                            : '官服',
-                        Account:
-                          m9aUserData.Info?.Account !== undefined ? m9aUserData.Info.Account : '',
-                        EmulatorId:
-                          m9aUserData.Info?.EmulatorId !== undefined
-                            ? m9aUserData.Info.EmulatorId
-                            : '',
-                        EmulatorIndex:
-                          m9aUserData.Info?.EmulatorIndex !== undefined
-                            ? m9aUserData.Info.EmulatorIndex
-                            : 0,
-                      },
-                      Task: {
-                        AvailableTasks:
-                          m9aUserData.Task?.AvailableTasks !== undefined
-                            ? m9aUserData.Task.AvailableTasks
-                            : '[]',
-                        Queue:
-                          m9aUserData.Task?.Queue !== undefined ? m9aUserData.Task.Queue : '[]',
-                      },
-                      Notify: {
-                        Enabled:
-                          m9aUserData.Notify?.Enabled !== undefined
-                            ? m9aUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          m9aUserData.Notify?.IfSendStatistic !== undefined
-                            ? m9aUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          m9aUserData.Notify?.IfSendMail !== undefined
-                            ? m9aUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          m9aUserData.Notify?.ToAddress !== undefined
-                            ? m9aUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          m9aUserData.Notify?.IfServerChan !== undefined
-                            ? m9aUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          m9aUserData.Notify?.ServerChanKey !== undefined
-                            ? m9aUserData.Notify.ServerChanKey
-                            : '',
-                        CustomWebhooks:
-                          m9aUserData.Notify?.CustomWebhooks !== undefined
-                            ? m9aUserData.Notify.CustomWebhooks
-                            : [],
-                      },
-                      Data: {
-                        LastProxyDate:
-                          m9aUserData.Data?.LastProxyDate !== undefined
-                            ? m9aUserData.Data.LastProxyDate
-                            : '',
-                        LastPsychubeDate:
-                          m9aUserData.Data?.LastPsychubeDate !== undefined
-                            ? m9aUserData.Data.LastPsychubeDate
-                            : '',
-                        LastLimboMonth:
-                          m9aUserData.Data?.LastLimboMonth !== undefined
-                            ? m9aUserData.Data.LastLimboMonth
-                            : '',
-                        LastLucidscapeMonth:
-                          m9aUserData.Data?.LastLucidscapeMonth !== undefined
-                            ? m9aUserData.Data.LastLucidscapeMonth
-                            : '',
-                        ProxyTimes:
-                          m9aUserData.Data?.ProxyTimes !== undefined
-                            ? m9aUserData.Data.ProxyTimes
-                            : 0,
-                        IfPassCheck:
-                          m9aUserData.Data?.IfPassCheck !== undefined
-                            ? m9aUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (userIndex.type === UserIndexItem.type.MAA_FWUSER_CONFIG && userData) {

@@ -99,7 +99,6 @@ SCRIPT_BOOK: dict[str, type[BaseModel]] = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
     "MaaEndConfig": MaaEndConfig,
-    "M9AConfig": M9AConfig,
     "MaaFWConfig": MaaFWConfig,
     "GeneralConfig": GeneralConfig,
     "PluginScriptConfig": PluginScriptConfig,
@@ -108,7 +107,6 @@ USER_BOOK: dict[str, type[BaseModel]] = {
     "MaaConfig": MaaUserConfig,
     "SrcConfig": SrcUserConfig,
     "MaaEndConfig": MaaEndUserConfig,
-    "M9AConfig": M9AUserConfig,
     "MaaFWConfig": MaaFWUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "PluginScriptConfig": PluginUserConfig,
@@ -157,7 +155,7 @@ def _plugin_provider(type_key: str):
 
 
 def _is_maafw_framework_script(script_config: Any) -> bool:
-    """判定脚本配置是否属于 MaaFW 框架运行链路（含 M9A 等 pack 形态）。"""
+    """判定脚本配置是否属于 MaaFW 框架运行链路。"""
 
     from app.core.script_types import script_type_registry
 
@@ -181,7 +179,7 @@ def _is_maafw_framework_script(script_config: Any) -> bool:
         return provider.metadata.get("framework") == "maafw"
     except Exception:
         # 注册表未就绪或类名未注册时，回退到已知 legacy 类名。
-        return config_class_name in {"MaaFWConfig", "M9AConfig"}
+        return config_class_name == "MaaFWConfig"
 
 
 async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
@@ -189,7 +187,7 @@ async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
 
     插件形态脚本统一存为 PluginScriptConfig，真实配置在 PluginData.Config
     （JSON 字符串），须经 storage_to_form 解码后才有 Info.Path / Update.* 字段；
-    legacy MaaFWConfig/M9AConfig 直接 toDict 即为表单态。
+    legacy MaaFWConfig 直接 toDict 即为表单态。
     """
     from app.models.plugin_script_config import PluginScriptConfig
 

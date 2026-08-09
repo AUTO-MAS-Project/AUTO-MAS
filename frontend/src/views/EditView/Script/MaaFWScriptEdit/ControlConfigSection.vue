@@ -86,6 +86,7 @@
                 size="large"
                 placeholder="请选择模拟器"
                 :loading="emulatorLoading"
+                :disabled="!emulatorOptionsReady"
                 @change="(value: string | number) => emit('emulator-select-change', String(value))"
               >
                 <a-select-option value="-">不指定</a-select-option>
@@ -120,6 +121,7 @@
                 size="large"
                 placeholder="请输入模拟器实例索引"
                 class="modern-input"
+                :disabled="!emulatorOptionsReady"
                 @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
               />
               <a-select
@@ -128,7 +130,12 @@
                 size="large"
                 placeholder="请先选择模拟器"
                 :loading="emulatorDeviceLoading"
-                :disabled="!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-'"
+                :disabled="
+                  !emulatorOptionsReady ||
+                  emulatorDeviceLoading ||
+                  !maafwConfig.Emulator.Id ||
+                  maafwConfig.Emulator.Id === '-'
+                "
                 @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
               >
                 <a-select-option value="-">不指定</a-select-option>
@@ -278,6 +285,7 @@ defineProps<{
   previewData: MaaFWInterfacePreviewData | null
   interfaceLoading: boolean
   emulatorLoading: boolean
+  emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
   emulatorDeviceOptions: ComboBoxItem[]
