@@ -19,6 +19,7 @@
 import uuid
 import shutil
 from contextlib import suppress
+from datetime import datetime
 
 from pathlib import Path
 
@@ -26,7 +27,13 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.services import Notify
+from app.tools.game_sign_notify import (
+    append_task_game_sign_summary,
+    mark_task_game_sign_summary_consumed,
+)
 from app.utils import get_logger, ProcessManager
+from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -35,6 +42,7 @@ from .AutoProxy import (
     _OKWW_REL_EXE,
 )
 from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
 
 logger = get_logger("OK-WW 调度器")
 
@@ -55,6 +63,7 @@ class OkwwManager(TaskExecuteBase):
         self.temp_path: Path | None = None
         self.script_config_path: Path | None = None
         self.had_original_script_config = False
+        self.begin_time = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
@@ -191,6 +200,7 @@ class OkwwManager(TaskExecuteBase):
             )
             return
 
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
 
         if self.task_info.mode == "ScriptConfig":
@@ -253,6 +263,66 @@ class OkwwManager(TaskExecuteBase):
                 self.script_info.status = "异常"
             else:
                 self.script_info.status = "完成"
+
+            if self.task_info.mode == "AutoProxy":
+                error_user = [
+                    user.name
+                    for user in self.script_info.user_list
+                    if user.status == "异常"
+                ]
+                over_user = [
+                    user.name
+                    for user in self.script_info.user_list
+                    if user.status == "完成"
+                ]
+                wait_user = [
+                    user.name
+                    for user in self.script_info.user_list
+                    if user.status == "等待"
+                ]
+                task_mode = TASK_MODE_ZH[self.task_info.mode]
+                title = (
+                    f"{datetime.now().strftime('%m-%d')} | "
+                    f"{self.script_info.name or '空白'}的{task_mode}任务报告"
+                )
+                task_result = append_task_game_sign_summary(
+                    self.task_info, self.script_info.result
+                )
+                has_game_sign_summary = task_result != self.script_info.result
+                result = {
+                    "title": f"{task_mode}任务报告",
+                    "script_name": self.script_info.name or "空白",
+                    "start_time": self.begin_time,
+                    "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "completed_count": len(over_user),
+                    "uncompleted_count": len(error_user) + len(wait_user),
+                    "result": task_result,
+                    "game_sign_summary": has_game_sign_summary,
+                }
+
+                await Notify.push_plyer(
+                    title.replace("报告", "已完成！"),
+                    (
+                        f"已完成用户数: {len(over_user)}, "
+                        f"未完成用户数: {len(error_user) + len(wait_user)}"
+                    ),
+                    (
+                        f"已完成用户数: {len(over_user)}, "
+                        f"未完成用户数: {len(error_user) + len(wait_user)}"
+                    ),
+                    10,
+                )
+                try:
+                    await push_notification("代理结果", title, result)
+                    if has_game_sign_summary:
+                        mark_task_game_sign_summary_consumed(self.task_info)
+                except Exception as e:
+                    logger.exception(f"推送代理结果时出现异常: {e}")
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                    )
         finally:
             if script_cfg.is_locked:
                 with suppress(Exception):

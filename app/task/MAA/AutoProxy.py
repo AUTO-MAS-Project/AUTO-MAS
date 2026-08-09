@@ -221,56 +221,61 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
-        # 森空岛签到
-        if (
-            self.cur_user_config.get("Info", "IfSkland")
-            and self.cur_user_config.get("Info", "SklandToken")
-            and self.cur_user_config.get("Data", "LastSklandDate")
-            != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-        ):
-            self.script_info.log = "正在执行森空岛签到"
-            skland_result = await skland_sign_in(
-                self.cur_user_config.get("Info", "SklandToken"),
-                app_code="arknights",
-            )
-            for t, user_list in skland_result.items():
-                if t != "总计" and len(user_list) > 0:
-                    logger.info(
-                        f"用户: {self.cur_user_uid} - 森空岛签到{t}: {'、'.join(user_list)}"
-                    )
+        # 兼容 5.3.1 旧用户：签到工具未启用时继续使用专项内置森空岛签到。
+        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+            if (
+                self.cur_user_config.get("Info", "IfSkland")
+                and self.cur_user_config.get("Info", "SklandToken")
+                and self.cur_user_config.get("Data", "LastSklandDate")
+                != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+            ):
+                self.script_info.log = "正在执行森空岛签到"
+                skland_result = await skland_sign_in(
+                    self.cur_user_config.get("Info", "SklandToken"),
+                    app_code="arknights",
+                )
+                for result_type, user_list in skland_result.items():
+                    if result_type != "总计" and len(user_list) > 0:
+                        logger.info(
+                            f"用户: {self.cur_user_uid} - 森空岛签到{result_type}: {'、'.join(user_list)}"
+                        )
+                        await Config.send_websocket_message(
+                            id=self.task_info.task_id,
+                            type="Info",
+                            data={
+                                (
+                                    "Info" if result_type != "失败" else "Error"
+                                ): f"用户 {self.cur_user_item.name} 森空岛签到{result_type}: {'、'.join(user_list)}"
+                            },
+                        )
+                if skland_result["总计"] == 0:
+                    logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
-                        data={
-                            (
-                                "Info" if t != "失败" else "Error"
-                            ): f"用户 {self.cur_user_item.name} 森空岛签到{t}: {'、'.join(user_list)}"
-                        },
+                        data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
                     )
-            if skland_result["总计"] == 0:
-                logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
+                if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
+                    await self.cur_user_config.set(
+                        "Data",
+                        "LastSklandDate",
+                        datetime.now(tz=UTC8).strftime("%Y-%m-%d"),
+                    )
+            elif self.cur_user_config.get(
+                "Info", "IfSkland"
+            ) and self.cur_user_config.get("Data", "LastSklandDate") != datetime.now(
+                tz=UTC8
+            ).strftime("%Y-%m-%d"):
+                logger.warning(
+                    f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
+                )
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
-                    data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
+                    data={
+                        "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
+                    },
                 )
-            if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
-                await self.cur_user_config.set(
-                    "Data", "LastSklandDate", datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-                )
-        elif self.cur_user_config.get("Info", "IfSkland") and self.cur_user_config.get(
-            "Data", "LastSklandDate"
-        ) != datetime.now(tz=UTC8).strftime("%Y-%m-%d"):
-            logger.warning(
-                f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
-            )
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Info",
-                data={
-                    "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
-                },
-            )
 
         # 执行任务前脚本（每用户仅一次）
         if self.cur_user_config.get("Info", "IfScriptBeforeTask"):

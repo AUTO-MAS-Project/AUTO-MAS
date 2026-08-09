@@ -52,6 +52,7 @@
             v-model:selected-task-id="selectedHomeTaskId"
             :is-bootstrapping="isBootstrapping"
             :command-title="commandTitle"
+            :command-author="commandAuthor"
             :scheduler-task-options="schedulerTaskOptions"
             :scheduler-tasks-loading="schedulerTasksLoading"
             :starting-home-task="startingHomeTask"
@@ -121,6 +122,7 @@ const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfi
   useHomeNotice()
 const {
   commandTitle,
+  commandAuthor,
   schedulerTasksLoading,
   startingHomeTask,
   schedulerTaskOptions,
