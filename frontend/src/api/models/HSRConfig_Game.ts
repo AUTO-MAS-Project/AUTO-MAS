@@ -15,5 +15,13 @@ export type HSRConfig_Game = {
      * 等待时间（秒）
      */
     WaitTime?: (number | null);
+    /**
+     * 是否强制 1920x1080
+     */
+    ForceResolution1920x1080?: (boolean | null);
+    /**
+     * 仅在兑换码变化时执行兑换
+     */
+    RedeemCodesOnlyWhenChanged?: (boolean | null);
 };
 

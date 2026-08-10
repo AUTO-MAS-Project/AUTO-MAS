@@ -1,5 +1,5 @@
 <template>
-  <div class="form-section">
+  <div class="form-section form-section-flat">
     <div class="section-header">
       <h3>体力配置</h3>
     </div>
@@ -41,7 +41,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.CalyxGolden"
             allow-clear
-            @change="value => handleStageSelectChange('CalyxGolden', value)"
+            @change="handleStageSelectChange('CalyxGolden', $event)"
           />
         </a-form-item>
       </a-col>
@@ -65,7 +65,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.CalyxCrimson"
             allow-clear
-            @change="value => handleStageSelectChange('CalyxCrimson', value)"
+            @change="handleStageSelectChange('CalyxCrimson', $event)"
           />
         </a-form-item>
       </a-col>
@@ -89,7 +89,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.Relic"
             allow-clear
-            @change="value => handleStageSelectChange('Relic', value)"
+            @change="handleStageSelectChange('Relic', $event)"
           />
         </a-form-item>
       </a-col>
@@ -113,7 +113,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.Ornament"
             allow-clear
-            @change="value => handleStageSelectChange('Ornament', value)"
+            @change="handleStageSelectChange('Ornament', $event)"
           />
         </a-form-item>
       </a-col>
@@ -220,6 +220,7 @@ import type {
   HSRDynamicStageCategory,
   HSRDynamicStageOption,
   HSRDynamicStageOptionsData,
+  HSRPerEngineStageStore,
   HSRScriptStageContainer,
   HSRScriptStagePayload,
   HSRStageEngine,
@@ -258,31 +259,52 @@ const emitSave = (key: string, value: unknown) => {
 
 type ActiveChannel = 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament'
 
-const emptyNativeStageValue = '{ }'
+const emptyNativeStageValue: Record<string, never> = {}
 
-const parseScriptStage = (raw: unknown): HSRScriptStagePayload | null => {
-  if (!raw || typeof raw !== 'string') return null
-  const text = raw.trim()
-  if (!text || text === '{}' || text === '{ }') return null
-  try {
-    const data = JSON.parse(text)
-    return data && typeof data === 'object' && !Array.isArray(data)
-      ? (data as HSRScriptStagePayload)
-      : null
-  } catch {
-    return null
+const parseObject = (raw: unknown): Record<string, unknown> | null => {
+  if (typeof raw === 'string') {
+    const text = raw.trim()
+    if (!text || text === '{}' || text === '{ }') return null
+    try {
+      raw = JSON.parse(text)
+    } catch {
+      return null
+    }
   }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>
+  }
+  return null
 }
 
 const payloadMatchesEngine = (payload: HSRScriptStagePayload | null) => {
   return payload?.engine === props.dailyEngine
 }
 
+const readEngineStage = <T extends HSRScriptStagePayload>(raw: unknown): T | null => {
+  const root = parseObject(raw)
+  if (!root) return null
+
+  const byEngine = parseObject(root.byEngine)
+  if (byEngine) {
+    return parseObject(byEngine[props.dailyEngine]) as T | null
+  }
+
+  if (root.engine === props.dailyEngine) return root as T
+
+  const legacyStages = parseObject(root.stages)
+  if (legacyStages) {
+    const containsCurrentEngine = Object.values(legacyStages).some(
+      payload => parseObject(payload)?.engine === props.dailyEngine
+    )
+    if (containsCurrentEngine) return root as T
+  }
+  return null
+}
+
 const scriptStageContainer = computed<HSRScriptStageContainer | null>(() => {
-  const payload = parseScriptStage(
-    props.formData.Stage.ScriptStage
-  ) as HSRScriptStageContainer | null
-  if (!payload?.stages || payload.engine !== props.dailyEngine) return null
+  const payload = readEngineStage<HSRScriptStageContainer>(props.formData.Stage.ScriptStage)
+  if (!payload?.stages) return null
   return payload
 })
 
@@ -320,11 +342,14 @@ const dynamicEowCategory = computed(() => {
   return dynamicCategories.value.find(category => isEowCategory(category.categoryKey)) ?? null
 })
 
-const selectedEowPayload = computed(() => parseScriptStage(props.formData.Stage.ScriptEchoOfWar))
+const selectedEowPayload = computed(() =>
+  readEngineStage<HSRScriptStagePayload>(props.formData.Stage.ScriptEchoOfWar)
+)
 
 const nativeEngineMismatch = computed(() => {
-  const main = parseScriptStage(props.formData.Stage.ScriptStage) as HSRScriptStageContainer | null
-  const eow = selectedEowPayload.value
+  const main = parseObject(props.formData.Stage.ScriptStage)
+  const eow = parseObject(props.formData.Stage.ScriptEchoOfWar)
+  if (main?.byEngine || eow?.byEngine) return false
   return (
     (!!main?.engine && main.engine !== props.dailyEngine) ||
     (!!eow?.engine && eow.engine !== props.dailyEngine)
@@ -411,6 +436,50 @@ const stageValueByChannel = computed<Record<ActiveChannel, string | undefined>>(
   Ornament: selectedDynamicOptionForChannel('Ornament')?.value,
 }))
 
+const writeEngineStage = <T extends HSRScriptStagePayload>(
+  raw: unknown,
+  value: T | null
+): HSRPerEngineStageStore<T> | Record<string, never> => {
+  const root = parseObject(raw)
+  const existingByEngine = parseObject(root?.byEngine)
+  const byEngine: Partial<Record<HSRStageEngine, T>> = {}
+
+  if (existingByEngine) {
+    for (const engine of ['SRA', 'M7A'] as const) {
+      const payload = parseObject(existingByEngine[engine])
+      if (payload) byEngine[engine] = payload as T
+    }
+  } else if (root?.engine === 'SRA' || root?.engine === 'M7A') {
+    byEngine[root.engine] = root as T
+  } else {
+    const legacyStages = parseObject(root?.stages)
+    if (legacyStages) {
+      for (const engine of ['SRA', 'M7A'] as const) {
+        const stages = Object.fromEntries(
+          Object.entries(legacyStages).filter(([, payload]) => {
+            return parseObject(payload)?.engine === engine
+          })
+        )
+        if (Object.keys(stages).length) {
+          byEngine[engine] = {
+            ...root,
+            engine,
+            stages,
+          } as unknown as T
+        }
+      }
+    }
+  }
+
+  if (value) {
+    byEngine[props.dailyEngine] = value
+  } else {
+    delete byEngine[props.dailyEngine]
+  }
+
+  return Object.keys(byEngine).length ? { version: 2, byEngine } : emptyNativeStageValue
+}
+
 const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOption | null) => {
   const container = scriptStageContainer.value
   const stages: Partial<Record<ActiveChannel, HSRScriptStagePayload>> = {}
@@ -428,15 +497,20 @@ const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOpti
     delete stages[channel]
   }
 
-  const value = Object.keys(stages).length
-    ? JSON.stringify({ engine: props.dailyEngine, stages })
-    : emptyNativeStageValue
+  const currentValue = Object.keys(stages).length ? { engine: props.dailyEngine, stages } : null
+  const value = writeEngineStage<HSRScriptStageContainer>(
+    props.formData.Stage.ScriptStage,
+    currentValue
+  )
 
   emitSave('Stage.ScriptStage', value)
 }
 
 const saveNativeEchoOfWarStage = (option: HSRDynamicStageOption | null) => {
-  const value = option ? JSON.stringify(buildNativeStagePayload(option)) : emptyNativeStageValue
+  const value = writeEngineStage<HSRScriptStagePayload>(
+    props.formData.Stage.ScriptEchoOfWar,
+    option ? buildNativeStagePayload(option) : null
+  )
   emitSave('Stage.ScriptEchoOfWar', value)
 }
 
@@ -531,10 +605,7 @@ const handleEowWeekdayChange = (value: string) => {
   emitSave('TaskOpt.EchoOfWarWeekday', value)
 }
 
-const filterOption = (
-  input: unknown,
-  option?: { label?: unknown; children?: unknown }
-) => {
+const filterOption = (input: unknown, option?: { label?: unknown; children?: unknown }) => {
   const text = (option?.label ?? option?.children ?? '').toString()
   return text.toLowerCase().includes(String(input ?? '').toLowerCase())
 }

@@ -32,6 +32,7 @@ from app.utils import get_logger
 from app.utils.constants import UTC8
 from .tools.run_model import HSRRuntimeState
 from .tools.account_switch import HSRAccountSwitcher, check_user_credentials
+from .tools.native_control import resolve_script_path
 from .tools.sra_runtime import cleanup_sra_temp_config
 
 
@@ -120,7 +121,7 @@ class HSRManualReviewTask(TaskExecuteBase):
     async def check(self) -> str:
         """校验当前用户是否可以执行 SRA 登录/切号。"""
 
-        sra_path = self.script_config.get("Info", "SRAPath")
+        sra_path = resolve_script_path(self.script_config, "SRA")
         if not sra_path:
             return "人工排查需要先设置 SRA 路径"
 
@@ -205,7 +206,7 @@ class HSRManualReviewTask(TaskExecuteBase):
         await self.prepare()
         self._start_user_log()
 
-        sra_exe_path = Path(self.script_config.get("Info", "SRAPath")) / "SRA-cli.exe"
+        sra_exe_path = Path(resolve_script_path(self.script_config, "SRA")) / "SRA-cli.exe"
         while True:
             self._append_log(f"正在启动游戏并切换到用户「{self.cur_user_item.name}」")
             await self._account_switcher.prepare_game_for_account_switch(
