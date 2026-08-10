@@ -177,26 +177,12 @@ class HSRM7AControl:
         m7a_config_path = Path(m7a_path) / "config.yaml"
         main_stage = resolve_m7a_main_stage(user_cfg)
 
-        cultivation_target = {
-            "Enabled": self.script_config.get("CultivationTarget", "Enabled"),
-            "M7ARecognitionScheme": self.script_config.get(
-                "CultivationTarget", "M7ARecognitionScheme"
-            ),
-            "M7AOrnamentWeeklyCount": self.script_config.get(
-                "CultivationTarget", "M7AOrnamentWeeklyCount"
-            ),
-            "M7AUseUserStageWhenOnlyRelics": self.script_config.get(
-                "CultivationTarget", "M7AUseUserStageWhenOnlyRelics"
-            ),
-        }
-
         daily_patch = m7a.build_m7a_daily_patch(
             user_cfg,
             daily_eow_enabled=daily_eow_enabled,
             main_stage=main_stage,
             eow_name=resolve_m7a_eow_stage(user_cfg),
             script_config=self.script_config,
-            cultivation_target=cultivation_target,
         )
         self.write_m7a_patch(m7a_config_path, daily_patch)
         last_result: object | None = None
@@ -299,9 +285,6 @@ class HSRM7AControl:
 
         if module.key == "Daily":
             daily_main_stage = resolve_m7a_main_stage(user_cfg)
-            if daily_main_stage is None and not daily_eow_enabled:
-                self._append_log(f"用户「{user_name}」体力模块无可执行副本，跳过")
-                return None
 
             async def run_m7a_daily():
                 return await self.execute_m7a_daily(
@@ -324,7 +307,7 @@ class HSRM7AControl:
                 module_name=module.name,
                 script="M7A",
                 description=(
-                    f"M7A routine：主关卡={'已配置' if daily_main_stage else '未配置'}，"
+                    f"M7A routine：主关卡={'已配置' if daily_main_stage else '使用原生动态配置'}，"
                     f"历战余响本周尝试={'是' if daily_eow_enabled else '否'}"
                 ),
                 timeout_seconds=timeout_seconds,

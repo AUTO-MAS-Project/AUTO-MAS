@@ -189,8 +189,7 @@ const engineOptions = computed(() =>
     : []
 )
 
-const phaseLabel = (phase: string) =>
-  phase === 'monthly' ? '月常' : phase === 'weekly' ? '周常' : '日常'
+const phaseLabel = (phase: string) => (phase === 'weekly' ? '周常' : '日常')
 const engineLabel = (engine?: HSREngine) =>
   engine === 'M7A' ? '三月七' : engine === 'SRA' ? 'SRA' : '不可用'
 const engineColor = (engine?: HSREngine) =>

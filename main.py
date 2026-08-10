@@ -95,7 +95,6 @@ def main():
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
             from app.MaaFW import ArknightWin32Toolkit
-            from app.api.scripts import close_hsr_configurator_sessions
 
             await Config.init_config()
             await Config.get_stage()
@@ -123,7 +122,6 @@ def main():
             yield
 
             await TaskManager.stop_task("ALL")
-            await close_hsr_configurator_sessions()
 
             await MainTimer.stop()
 

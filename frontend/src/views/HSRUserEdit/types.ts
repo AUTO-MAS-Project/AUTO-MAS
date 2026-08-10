@@ -2,7 +2,6 @@ import type {
   HSRDynamicStageCategory,
   HSRDynamicStageOption,
   HSRStageOptionsData,
-  HSRUserConfig_Abyss,
   HSRUserConfig_Data,
   HSRUserConfig_Info,
   HSRUserConfig_Notify,
@@ -47,16 +46,7 @@ export type HSRPerEngineStageStore<T> = {
   byEngine?: Partial<Record<HSRStageEngine, T>>
 }
 
-export type HSRUserConfigAbyss = HSRUserConfig_Abyss & {
-  Snapshots?: string | null
-}
-
 export type HSRUserControlMode = 'managed' | 'direct'
-
-export type HSRUserSRAConfig = {
-  Id?: string | null
-  Password?: string | null
-}
 
 export type HSRUserControl = {
   Mode?: HSRUserControlMode | null
@@ -86,7 +76,6 @@ export type HSRUserConfigData = {
     Password?: string | null
     Tag?: string | null
   }
-  SRA: HSRUserSRAConfig
   Stage: Omit<HSRUserConfig_Stage, 'ScriptStage' | 'ScriptEchoOfWar'> & {
     ScriptStage?: HSRLegacyOrDynamicStage
     ScriptEchoOfWar?: HSRLegacyOrDynamicStage
@@ -94,7 +83,6 @@ export type HSRUserConfigData = {
   TaskSwitch: HSRUserConfig_TaskSwitch
   TaskOpt: HSRUserConfig_TaskOpt
   Data: HSRUserConfig_Data
-  Abyss: HSRUserConfigAbyss
   Notify?: HSRUserConfig_Notify
   Control: HSRUserControl
   Managed: HSRUserManagedConfig

@@ -656,12 +656,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="Daily",
             user_cfg=user_cfg,
         )
-        try:
-            legacy_target = bool(self.script_config.get("CultivationTarget", "Enabled"))
-        except (AttributeError, KeyError, TypeError):
-            legacy_target = False
         if assigned_script == "SRA":
-            return bool(values.get("useBuildTarget", legacy_target)), bool(
+            return bool(values.get("useBuildTarget", False)), bool(
                 values.get("activity.enabled", False)
             )
         activity_enabled = bool(values.get("activity_enable", False)) and any(
@@ -676,7 +672,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 "activity_journey_highlights_notification_enable",
             }
         )
-        return bool(values.get("build_target_enable", legacy_target)), activity_enabled
+        return bool(values.get("build_target_enable", False)), activity_enabled
 
     def _resolve_redeem_code_policy(
         self,
