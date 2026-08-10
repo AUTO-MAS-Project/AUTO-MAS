@@ -363,7 +363,7 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     Arguments: '',
     WaitTime: 60,
   },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 60 },
+  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })
 
 const rules = {
