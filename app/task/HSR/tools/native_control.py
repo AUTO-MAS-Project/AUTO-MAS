@@ -1,14 +1,12 @@
-"""HSR 原生配置与脚本直控的旧 dev 兼容层。
+"""HSR 原生配置与脚本直控的 old-dev 兼容层。
 
-插件版 HSR 把原生配置器/CLI 抽象成了宿主插件服务。旧 dev 没有 Plugin V2
-substrate，因此这里保留同一组小而稳定的领域对象，直接复用旧的
-``ConfigBase``、``ProcessManager`` 和 SRA/M7A runner。所有配置读取都带有
-旧字段回退，插件新增的 ``Control``/``Direct`` 分组不存在时仍按托管模式运行。
+old-dev 只保存脚本 ``Info.M7APath``/``Info.SRAPath`` 和用户 ``Info`` 凭据。
+本模块不启动原生编辑器；provider 仅负责检查、导出/导入快照以及运行直控
+会话，外部配置文件的写回由 HSRManager 的备份/恢复区负责。
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 import shutil
@@ -31,32 +29,15 @@ HSREngine = Literal["SRA", "M7A"]
 
 
 @dataclass(frozen=True, slots=True)
-class HSRNativeConfigOption:
-    id: str
-    label: str
-    path: str
+class HSRNativeControlSnapshot:
+    engine: HSREngine
+    import_ready: bool
+    import_reason: str
+    direct_run_ready: bool
+    direct_run_reason: str
 
     def asdict(self) -> dict[str, Any]:
         return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class HSRNativeControlSnapshot:
-    engine: HSREngine
-    configurator_ready: bool
-    direct_run_ready: bool
-    configurator_reason: str
-    direct_run_reason: str
-    launcher_path: str
-    selected_config: str
-    configs: tuple[HSRNativeConfigOption, ...] = ()
-    running: bool = False
-    pid: int | None = None
-
-    def asdict(self) -> dict[str, Any]:
-        data = asdict(self)
-        data["configs"] = [item.asdict() for item in self.configs]
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +76,7 @@ class HSRRunResult:
 
 
 def _config_value(config: Any, group: str, key: str, default: Any = None) -> Any:
-    """Read both ConfigBase and dict-like models without leaking secrets."""
+    """Read one value from old-dev ConfigBase or a plain mapping."""
 
     if config is None:
         return default
@@ -108,20 +89,14 @@ def _config_value(config: Any, group: str, key: str, default: Any = None) -> Any
     try:
         value = config.get(group, key)
     except (AttributeError, KeyError, TypeError):
-        section = getattr(config, group, None)
-        if isinstance(section, dict):
-            value = section.get(key, default)
-        else:
-            value = getattr(section, key, default)
+        value = default
     return default if value is None else value
 
 
 def _script_path(config: Any, engine: HSREngine) -> str:
-    group = "SRA" if engine == "SRA" else "M7A"
-    value = _config_value(config, group, "Path", None)
-    if value in (None, ""):
-        value = _config_value(config, "Info", f"{engine}Path", "")
-    return str(value or "").strip()
+    """Resolve an engine root from the old-dev script Info group only."""
+
+    return str(_config_value(config, "Info", f"{engine}Path", "") or "").strip()
 
 
 def resolve_script_path(config: Any, engine: HSREngine) -> str:
@@ -146,25 +121,11 @@ def resolve_user_control(
         for engine in ("SRA", "M7A")
         if bool(_config_value(user_config, "Control", engine, False))
     )  # type: ignore[assignment]
-    try:
-        timeout_minutes = int(
-            _config_value(script_config, "Control", "TimeoutMinutes", 120)
-        )
-    except (TypeError, ValueError):
-        timeout_minutes = 120
-    timeout_minutes = max(1, min(timeout_minutes, 1440))
     return HSRUserControlSettings(
         mode=mode,
         engines=engines,
-        timeout_seconds=timeout_minutes * 60,
+        timeout_seconds=120 * 60,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class HSRDirectControlSettings:
-    enabled: bool
-    engine: HSREngine
-    timeout_seconds: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,70 +140,6 @@ def get_user_direct_config(user_config: Any, engine: HSREngine) -> str:
 
     value = _config_value(user_config, "Direct", f"{engine}Config", "")
     return str(value or "")
-
-
-def resolve_direct_control(config: Any) -> HSRDirectControlSettings:
-    raw_engine = str(_config_value(config, "Control", "Engine", "SRA")).upper()
-    engine: HSREngine = "M7A" if raw_engine == "M7A" else "SRA"
-    try:
-        timeout_minutes = int(_config_value(config, "Control", "TimeoutMinutes", 120))
-    except (TypeError, ValueError):
-        timeout_minutes = 120
-    timeout_minutes = max(1, min(timeout_minutes, 1440))
-    return HSRDirectControlSettings(
-        enabled=bool(_config_value(config, "Control", "Direct", False)),
-        engine=engine,
-        timeout_seconds=timeout_minutes * 60,
-    )
-
-
-class HSRConfiguratorProcessSession:
-    """Own exactly one native configurator process."""
-
-    def __init__(self, process: asyncio.subprocess.Process) -> None:
-        self._process = process
-        self._closed = False
-
-    @property
-    def pid(self) -> int | None:
-        return self._process.pid
-
-    @property
-    def running(self) -> bool:
-        return self._process.returncode is None
-
-    async def wait(self) -> int:
-        return int(await self._process.wait())
-
-    async def close(self) -> None:
-        if self._closed:
-            return
-        if self.running:
-            try:
-                self._process.terminate()
-            except ProcessLookupError:
-                pass
-            try:
-                await asyncio.wait_for(self._process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                try:
-                    self._process.kill()
-                except ProcessLookupError:
-                    pass
-                await self._process.wait()
-        self._closed = True
-
-
-async def open_configurator_process(
-    executable: str | Path,
-    *,
-    cwd: str | Path,
-) -> HSRConfiguratorProcessSession:
-    executable_path = Path(executable)
-    if not executable_path.is_file():
-        raise FileNotFoundError(f"原生配置器不存在：{executable_path}")
-    process = await asyncio.create_subprocess_exec(str(executable_path), cwd=str(Path(cwd)))
-    return HSRConfiguratorProcessSession(process)
 
 
 class SRADirectControlSession:
@@ -291,61 +188,44 @@ class SRANativeControlProvider:
     def inspect(self, script_config: Any) -> HSRNativeControlSnapshot:
         raw_root = _script_path(script_config, "SRA")
         root = self._root(script_config)
-        launcher = root / "SRA.exe"
         cli = root / "SRA-cli.exe"
         config_root = get_sra_app_data_dir() / "configs"
-        configs = tuple(
-            HSRNativeConfigOption(path.stem, path.stem, str(path))
-            for path in sorted(config_root.glob("*.json"), key=lambda item: item.name.casefold())
-            if path.is_file()
-        ) if config_root.is_dir() else ()
-        selected_id, selected_profile = resolve_sra_profile(
-            script_config,
-            config_root=config_root,
-        )
-        selected_path = next((item for item in configs if item.id == selected_id), None)
         if not raw_root:
-            configurator_reason = "请先设置 SRA 路径"
-            direct_reason = configurator_reason
+            import_reason = "请先设置 SRA 路径"
+            direct_reason = "请先设置 SRA 路径"
         else:
-            configurator_reason = "" if launcher.is_file() else f"SRA 路径中未找到 SRA.exe：{launcher}"
+            selected_id, selected_profile = resolve_sra_profile(
+                script_config,
+                config_root=config_root,
+            )
+            import_reason = ""
+            if not selected_profile.is_file():
+                import_reason = f"SRA 原生配置不存在：{selected_id}"
             if not cli.is_file():
                 direct_reason = f"SRA 路径中未找到 SRA-cli.exe：{cli}"
-            elif not configs:
-                direct_reason = "SRA 尚无原生配置，请先打开 SRA 完成配置"
-            elif selected_path is None or selected_profile != Path(selected_path.path):
-                direct_reason = f"SRA 原生配置不存在或已更名：{selected_id}"
             else:
                 direct_reason = ""
         return HSRNativeControlSnapshot(
             engine="SRA",
-            configurator_ready=not configurator_reason,
+            import_ready=not import_reason,
+            import_reason=import_reason,
             direct_run_ready=not direct_reason,
-            configurator_reason=configurator_reason,
             direct_run_reason=direct_reason,
-            launcher_path=str(launcher),
-            selected_config=selected_id,
-            configs=configs,
         )
 
     def export_config(self, script_config: Any) -> tuple[Path, str]:
-        snapshot = self.inspect(script_config)
-        if not snapshot.direct_run_ready:
-            raise RuntimeError(snapshot.direct_run_reason)
-        selected = next(item for item in snapshot.configs if item.id == snapshot.selected_config)
-        content = Path(selected.path).read_text(encoding="utf-8-sig")
+        config_root = get_sra_app_data_dir() / "configs"
+        _selected_id, selected_path = resolve_sra_profile(
+            script_config,
+            config_root=config_root,
+        )
+        if not selected_path.is_file():
+            raise RuntimeError(f"SRA 原生配置不存在：{selected_path.stem}")
+        content = selected_path.read_text(encoding="utf-8-sig")
         parsed = json.loads(content)
         if not isinstance(parsed, dict):
-            raise ValueError(f"SRA 原生配置顶层必须是对象：{selected.path}")
-        return Path(selected.path), content
-
-    async def open_configurator(self, *, script_config: Any, log) -> HSRConfiguratorProcessSession:
-        snapshot = self.inspect(script_config)
-        if not snapshot.configurator_ready:
-            raise RuntimeError(snapshot.configurator_reason)
-        log("正在打开 SRA 原生配置器")
-        root = self._root(script_config)
-        return await open_configurator_process(root / "SRA.exe", cwd=root)
+            raise ValueError(f"SRA 原生配置顶层必须是对象：{selected_path}")
+        return selected_path, content
 
     async def open_direct_session(self, *, script_config: Any, config_content: str, session_id: str, log) -> SRADirectControlSession:
         root = self._root(script_config)
@@ -439,50 +319,34 @@ class M7ANativeControlProvider:
     def inspect(self, script_config: Any) -> HSRNativeControlSnapshot:
         raw_root = _script_path(script_config, "M7A")
         root = self._root(script_config)
-        launcher = root / "March7th Launcher.exe"
         executable = root / "March7th Assistant.exe"
         config_path = root / "config.yaml"
         if not raw_root:
-            configurator_reason = "请先设置三月七助手路径"
-            direct_reason = configurator_reason
+            import_reason = "请先设置三月七助手路径"
+            direct_reason = "请先设置三月七助手路径"
         else:
-            configurator_reason = "" if launcher.is_file() else f"三月七助手路径中未找到 March7th Launcher.exe：{launcher}"
+            import_reason = "" if config_path.is_file() else f"三月七助手原生配置不存在：{config_path}"
             if not executable.is_file():
                 direct_reason = f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
-            elif not config_path.is_file():
-                direct_reason = f"三月七助手原生配置不存在：{config_path}，请先打开配置器"
             else:
                 direct_reason = ""
-        configs = (HSRNativeConfigOption("config.yaml", "config.yaml", str(config_path)),) if config_path.is_file() else ()
         return HSRNativeControlSnapshot(
             engine="M7A",
-            configurator_ready=not configurator_reason,
+            import_ready=not import_reason,
+            import_reason=import_reason,
             direct_run_ready=not direct_reason,
-            configurator_reason=configurator_reason,
             direct_run_reason=direct_reason,
-            launcher_path=str(launcher),
-            selected_config="config.yaml" if configs else "",
-            configs=configs,
         )
 
     def export_config(self, script_config: Any) -> tuple[Path, str]:
-        snapshot = self.inspect(script_config)
-        if not snapshot.direct_run_ready:
-            raise RuntimeError(snapshot.direct_run_reason)
         path = self._root(script_config) / "config.yaml"
+        if not path.is_file():
+            raise RuntimeError(f"三月七助手原生配置不存在：{path}")
         content = path.read_text(encoding="utf-8-sig")
         parsed = yaml.safe_load(content) or {}
         if not isinstance(parsed, dict):
             raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
         return path, content
-
-    async def open_configurator(self, *, script_config: Any, log) -> HSRConfiguratorProcessSession:
-        snapshot = self.inspect(script_config)
-        if not snapshot.configurator_ready:
-            raise RuntimeError(snapshot.configurator_reason)
-        log("正在打开三月七助手原生配置器")
-        root = self._root(script_config)
-        return await open_configurator_process(root / "March7th Launcher.exe", cwd=root)
 
     async def open_direct_session(self, *, script_config: Any, config_content: str, session_id: str, log) -> M7ADirectControlSession:
         root = self._root(script_config)
@@ -504,10 +368,7 @@ def native_provider(engine: str):
 
 
 __all__ = [
-    "HSRConfiguratorProcessSession",
-    "HSRDirectControlSettings",
     "HSREngine",
-    "HSRNativeConfigOption",
     "HSRNativeControlSnapshot",
     "HSRRunResult",
     "HSRUserControlSettings",
@@ -517,8 +378,6 @@ __all__ = [
     "SRANativeControlProvider",
     "get_user_direct_config",
     "native_provider",
-    "open_configurator_process",
-    "resolve_direct_control",
     "resolve_script_path",
     "resolve_user_control",
 ]

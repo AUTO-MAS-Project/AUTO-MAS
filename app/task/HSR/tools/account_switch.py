@@ -48,32 +48,22 @@ HSR_GAME_PROCESS_NAME = "StarRail.exe"
 
 
 def _script_path(script_config: Any, engine: str) -> str:
-    """Read new engine group first, then legacy Info path."""
+    """Resolve the old-dev engine root from ``Info`` only."""
 
     try:
-        value = script_config.get(engine, "Path")
+        value = script_config.get("Info", f"{engine}Path")
     except (AttributeError, KeyError, TypeError):
-        value = None
-    if value in (None, ""):
-        try:
-            value = script_config.get("Info", f"{engine}Path")
-        except (AttributeError, KeyError, TypeError):
-            value = ""
+        value = ""
     return str(value or "").strip()
 
 
 def _user_credential(user_config: Any, key: str) -> str:
-    """Read the new SRA account group, falling back to legacy Info fields."""
+    """Read the old-dev account credential from ``Info``."""
 
     try:
-        value = user_config.get("SRA", key)
+        value = user_config.get("Info", key)
     except (AttributeError, KeyError, TypeError):
-        value = None
-    if value in (None, ""):
-        try:
-            value = user_config.get("Info", key)
-        except (AttributeError, KeyError, TypeError):
-            value = ""
+        value = ""
     return str(value or "")
 
 
@@ -185,11 +175,7 @@ def user_needs_account_switch(user_config: Any) -> bool:
 def check_user_credentials(user_config: Any, user_name: str) -> str:
     """校验账号密码密文可读；空账号密码时交给 SRA 当前登录态。"""
 
-    try:
-        credential_group = "SRA" if "SRA" in user_config._config_item_index else "Info"
-    except AttributeError:
-        credential_group = "Info"
-    if not _is_config_value_readable(user_config, credential_group, "Id"):
+    if not _is_config_value_readable(user_config, "Info", "Id"):
         return (
             f"用户「{user_name}」的账号密文损坏或当前 Windows 用户无法解密，"
             "请重新设置账号"
@@ -201,7 +187,7 @@ def check_user_credentials(user_config: Any, user_name: str) -> str:
         )
         return "Pass"
 
-    if not _is_config_value_readable(user_config, credential_group, "Password"):
+    if not _is_config_value_readable(user_config, "Info", "Password"):
         return (
             f"用户「{user_name}」的密码密文损坏或当前 Windows 用户无法解密，"
             "请重新设置密码"

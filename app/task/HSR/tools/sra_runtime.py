@@ -63,18 +63,8 @@ SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
 SRA_CACHE_NO_NOTIFY_KEY = "NoNotifyForShortcut"
 
 
-def _script_option(script_config: Any, group: str, key: str, default: Any) -> Any:
-    """Read one optional script-level adapter setting with old-field fallback."""
-
-    try:
-        value = script_config.get(group, key)
-    except (AttributeError, KeyError, TypeError):
-        value = None
-    return default if value is None else value
-
-
 def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
-    """Read Managed.Options from ConfigBase (JSON string) or plugin-like dict."""
+    """读取 ConfigBase JSONValidator 的 Managed.Options（字符串或对象）。"""
 
     try:
         raw = user_config.get("Managed", "Options")
@@ -94,27 +84,39 @@ def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
     return dict(module) if isinstance(module, dict) else {}
 
 
-def _selected_sra_native_config(script_config: Any) -> dict[str, Any]:
-    """Load the selected SRA config only for dynamic option overlay."""
+def load_sra_native_config(script_config: Any) -> tuple[Path, dict[str, Any]]:
+    """Load the selected SRA profile used by forms and runtime overlays."""
 
     _selected_id, path = resolve_sra_profile(script_config)
     try:
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    except OSError as exc:
+        raise FileNotFoundError(f"SRA 原生配置不存在：{path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"SRA 原生配置不是有效 JSON：{path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"SRA 原生配置顶层必须是对象：{path}")
+    return path, payload
 
 
-def _native_managed_options(module_key: str, script_config: Any) -> tuple[dict[str, Any], str]:
-    payload = _selected_sra_native_config(script_config)
+def discover_sra_managed_options(
+    module_key: str,
+    script_config: Any,
+) -> tuple[dict[str, Any], str]:
+    """Discover native fields for one HSR module without applying overrides."""
+
     if module_key == "Daily":
         section_name = "trailblazePower"
-        predicate = lambda key: key not in {"enabled", "tasklist"}
     elif module_key == "ReceiveRewards":
         section_name = "receiveRewards"
-        predicate = lambda key: key not in {"enabled", "redeemCodes"}
     else:
         section_name = "cosmicStrife"
+    _source, payload = load_sra_native_config(script_config)
+    if module_key == "Daily":
+        predicate = lambda key: key not in {"enabled", "tasklist"}
+    elif module_key == "ReceiveRewards":
+        predicate = lambda key: key not in {"enabled", "redeemCodes"}
+    else:
         if module_key == "DivergentUniverse":
             predicate = lambda key: (
                 key == "pointRewards.enabled"
@@ -147,22 +149,36 @@ def _same_value_kind(value: Any, reference: Any) -> bool:
     return isinstance(value, str) if isinstance(reference, str) else True
 
 
+def resolve_sra_managed_options(
+    module_key: str,
+    script_config: Any,
+    user_config: Any,
+) -> dict[str, Any]:
+    """Return native SRA values overlaid with a user's Managed.Options."""
+
+    native, _section_name = discover_sra_managed_options(module_key, script_config)
+    overrides = _managed_options(user_config, module_key)
+    unknown = sorted(set(overrides).difference(native))
+    if unknown:
+        raise ValueError(
+            f"SRA {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}"
+        )
+    effective = dict(native)
+    for key, value in overrides.items():
+        if not _same_value_kind(value, native[key]):
+            raise ValueError(f"SRA {module_key}.{key} 的值类型与原生配置不一致")
+        effective[key] = value
+    return effective
+
+
 def _apply_managed_options(
     config: dict[str, Any],
     module_key: str,
     script_config: Any,
     user_config: Any,
 ) -> None:
-    native, section_name = _native_managed_options(module_key, script_config)
-    overrides = _managed_options(user_config, module_key)
-    unknown = sorted(set(overrides).difference(native))
-    if unknown:
-        raise ValueError(f"SRA {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}")
-    effective = dict(native)
-    for key, value in overrides.items():
-        if not _same_value_kind(value, native[key]):
-            raise ValueError(f"SRA {module_key}.{key} 的值类型与原生配置不一致")
-        effective[key] = value
+    _native, section_name = discover_sra_managed_options(module_key, script_config)
+    effective = resolve_sra_managed_options(module_key, script_config, user_config)
     section = config.get(section_name)
     if not isinstance(section, dict):
         raise ValueError(f"SRA 临时配置缺少 {section_name} 对象")
@@ -260,13 +276,11 @@ def build_sra_start_game_config(
         return config
 
     def _cipher(key: str) -> str:
-        for group in ("SRA", "Info"):
-            try:
-                item = user_config._config_item_index[group][key]
-            except (AttributeError, KeyError):
-                continue
-            return str(item.getValue(if_decrypt=False) or "")
-        return ""
+        try:
+            item = user_config._config_item_index["Info"][key]
+        except (AttributeError, KeyError):
+            return ""
+        return str(item.getValue(if_decrypt=False) or "")
 
     username_cipher = _cipher("Id")
     password_cipher = _cipher("Password")
@@ -319,75 +333,74 @@ def build_sra_module_config(
         config["trailblazePower"]["replenish.times"] = 0
 
     elif module.key == "ReceiveRewards":
-        # 不接管 SRA 自己维护的兑换码内容，只打开领取开关。
+        # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
+        native_options = resolve_sra_managed_options(
+            module.key, script_config, user_config
+        )
         config["receiveRewards"]["rewards"] = [
-            bool(_script_option(script_config, "SRAReceiveRewards", "TrailblazerProfile", True)),
-            bool(_script_option(script_config, "SRAReceiveRewards", "Assignments", True)),
-            bool(_script_option(script_config, "SRAReceiveRewards", "Mail", True)),
-            bool(_script_option(script_config, "SRAReceiveRewards", "DailyTraining", True)),
-            bool(_script_option(script_config, "SRAReceiveRewards", "NamelessHonor", True)),
-            bool(_script_option(script_config, "SRAReceiveRewards", "GiftOfOdyssey", True)),
-            bool(_script_option(script_config, "SRAReceiveRewards", "RedeemCode", True))
+            bool(native_options.get("rewards.0", True)),
+            bool(native_options.get("rewards.1", True)),
+            bool(native_options.get("rewards.2", True)),
+            bool(native_options.get("rewards.3", True)),
+            bool(native_options.get("rewards.4", True)),
+            bool(native_options.get("rewards.5", True)),
+            bool(native_options.get("rewards.6", True))
             and bool(redeem_codes_enabled),
         ]
 
     elif module.key == "DivergentUniverse":
+        native_options = resolve_sra_managed_options(
+            module.key, script_config, user_config
+        )
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
-        config["cosmicStrife"]["divergentUniverse.mode"] = SRA_DIVERGENT_UNIVERSE_MODE
+        config["cosmicStrife"]["divergentUniverse.mode"] = int(
+            native_options.get(
+                "divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE
+            )
+        )
         config["cosmicStrife"]["divergentUniverse.runtimes"] = int(
-            _script_option(
-                script_config,
-                "SRADivergentUniverse",
-                "RunTimes",
-                SRA_DIVERGENT_UNIVERSE_RUNTIMES,
+            native_options.get(
+                "divergentUniverse.runtimes", SRA_DIVERGENT_UNIVERSE_RUNTIMES
             )
         )
         config["cosmicStrife"]["divergentUniverse.useTechnique"] = bool(
-            _script_option(
-                script_config,
-                "SRADivergentUniverse",
-                "UseTechnique",
-                SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE,
+            native_options.get(
+                "divergentUniverse.useTechnique", SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE
             )
         )
         config["cosmicStrife"]["pointRewards.enabled"] = bool(
-            _script_option(
-                script_config,
-                "SRADivergentUniverse",
-                "PointRewards",
-                SRA_DIVERGENT_UNIVERSE_POINT_REWARDS,
+            native_options.get(
+                "pointRewards.enabled", SRA_DIVERGENT_UNIVERSE_POINT_REWARDS
             )
         )
 
     elif module.key == "CurrencyWars":
+        native_options = resolve_sra_managed_options(
+            module.key, script_config, user_config
+        )
         username = str(user_config.get("Info", "Name") or "").strip()
         config["cosmicStrife"]["currencyWars.enabled"] = True
-        mode = str(_script_option(script_config, "SRACurrencyWars", "Mode", "normal"))
-        difficulty = str(
-            _script_option(script_config, "SRACurrencyWars", "Difficulty", "lowest")
+        mode = native_options.get("currencyWars.mode", SRA_CURRENCY_WARS_MODE)
+        difficulty = native_options.get(
+            "currencyWars.difficulty", SRA_CURRENCY_WARS_DIFFICULTY
         )
         config["cosmicStrife"]["currencyWars.mode"] = {
-            "normal": 0,
-            "overclock": 1,
+            "normal": 0, "overclock": 1, 0: 0, 1: 1,
         }.get(mode, SRA_CURRENCY_WARS_MODE)
         config["cosmicStrife"]["currencyWars.difficulty"] = {
-            "lowest": 0,
-            "highest": 1,
+            "lowest": 0, "highest": 1, 0: 0, 1: 1,
         }.get(difficulty, SRA_CURRENCY_WARS_DIFFICULTY)
         config["cosmicStrife"]["currencyWars.policy"] = 0
-        config["cosmicStrife"]["currencyWars.strategy"] = (
-            _resolve_sra_currency_wars_strategy(script_config)
+        config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
+            "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
         )
-        config["cosmicStrife"]["currencyWars.strategyIndex"] = (
-            SRA_CURRENCY_WARS_STRATEGY_INDEX
+        config["cosmicStrife"]["currencyWars.strategyIndex"] = int(
+            native_options.get(
+                "currencyWars.strategyIndex", SRA_CURRENCY_WARS_STRATEGY_INDEX
+            )
         )
         config["cosmicStrife"]["currencyWars.runtimes"] = int(
-            _script_option(
-                script_config,
-                "SRACurrencyWars",
-                "RunTimes",
-                SRA_CURRENCY_WARS_RUNTIMES,
-            )
+            native_options.get("currencyWars.runtimes", SRA_CURRENCY_WARS_RUNTIMES)
         )
         config["cosmicStrife"]["currencyWars.username"] = username
 
@@ -438,18 +451,11 @@ def resolve_sra_profile(
 ) -> tuple[str, Path]:
     """Resolve the one SRA native profile shared by inspect, forms and runtime.
 
-    An explicit ``SRA.Config`` wins.  When it is absent, the conventional
-    ``Default.json`` is preferred if present; otherwise the first profile in
-    stable filename order is selected.  The returned path may not exist when
-    an explicit profile is stale, allowing callers to report that exact id.
+    The conventional ``Default.json`` is preferred when present; otherwise
+    the first profile in stable filename order is selected.
     """
 
     root = Path(config_root) if config_root is not None else get_sra_app_data_dir() / "configs"
-    explicit = str(_script_option(script_config, "SRA", "Config", "") or "").strip()
-    if explicit:
-        path = root / (explicit if explicit.lower().endswith(".json") else f"{explicit}.json")
-        return path.stem, path
-
     default_path = root / "Default.json"
     if default_path.is_file():
         return "Default", default_path
@@ -852,9 +858,7 @@ def _build_sra_trailblaze_tasklist(
 def _resolve_sra_currency_wars_strategy(script_config) -> str:
     """优先使用 SRA 本地货币战争攻略 json。"""
 
-    raw_path = str(_script_option(script_config, "SRA", "Path", "") or "").strip()
-    if not raw_path:
-        raw_path = str(_script_option(script_config, "Info", "SRAPath", "") or "").strip()
+    raw_path = str(script_config.get("Info", "SRAPath") or "").strip()
     if not raw_path:
         return SRA_CURRENCY_WARS_STRATEGY
     path = Path(raw_path)

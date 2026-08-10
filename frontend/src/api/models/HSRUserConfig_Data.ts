@@ -40,16 +40,12 @@ export type HSRUserConfig_Data = {
      */
     WeeklyLastResetWeek?: (string | null);
     /**
-     * 本月是否已完成三深渊
+     * SRA 兑换码指纹
      */
-    AbyssCompletedThisMonth?: (boolean | null);
+    SRARedeemCodeFingerprint?: (string | null);
     /**
-     * 三深渊上次重置自然月（形如 2025-06）
+     * M7A 兑换码指纹
      */
-    AbyssLastResetMonth?: (string | null);
-    /**
-     * 三深渊最近一次完成日期
-     */
-    AbyssLastCompletionDate?: (string | null);
+    M7ARedeemCodeFingerprint?: (string | null);
 };
 

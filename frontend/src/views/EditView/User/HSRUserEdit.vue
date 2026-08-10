@@ -86,11 +86,11 @@
                     <span class="form-label">账号</span>
                   </template>
                   <a-input
-                    v-model:value="formData.SRA.Id"
+                    v-model:value="formData.Info.Id"
                     placeholder="请输入账号"
                     size="large"
                     class="modern-input"
-                    @blur="handleFieldSave('SRA.Id', formData.SRA.Id)"
+                    @blur="handleFieldSave('Info.Id', formData.Info.Id)"
                   />
                 </a-form-item>
               </a-col>
@@ -101,11 +101,11 @@
                   </template>
                   <!-- 用 input-class 把 modern-input 挂到内部 <input>，避免 a-input-password 外层嵌套 div -->
                   <a-input-password
-                    v-model:value="formData.SRA.Password"
+                    v-model:value="formData.Info.Password"
                     placeholder="请输入密码"
                     size="large"
                     :input-class="'modern-input'"
-                    @blur="handleFieldSave('SRA.Password', formData.SRA.Password)"
+                    @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
               </a-col>
@@ -219,13 +219,10 @@
               :available-engines="[...effectiveEngines]"
               :control="formData.Control"
               :direct="formData.Direct"
-              :native-controls="nativeControls"
               :saving="isSaving"
               :importing-engine="importingDirectEngine"
-              :opening-engine="openingConfiguratorEngine"
               @toggle="handleDirectEngineToggle"
               @import-config="handleDirectConfigImport"
-              @open-configurator="handleOpenNativeConfigurator"
             />
           </div>
 
@@ -307,7 +304,6 @@ import {
   useHSRPluginApi,
   type HSRCapabilitySnapshot,
   type HSRManagedConfigSnapshot,
-  type HSRNativeControlSnapshot,
   type HSREngine,
 } from '@/composables/useHSRPluginApi'
 import type { HSRConfig_TaskMapping } from '@/api'
@@ -360,7 +356,6 @@ const formData = reactive<HSRUserConfigData>({
     RemainedDay: -1,
     Notes: '',
   },
-  SRA: { Id: '', Password: '' },
   Stage: {
     Channel: 'CalyxGolden',
     ScriptStage: '{ }',
@@ -371,7 +366,6 @@ const formData = reactive<HSRUserConfigData>({
     ReceiveRewards: false,
     DivergentUniverse: false,
     CurrencyWars: false,
-    ForgottenHall: false,
   },
   TaskOpt: {
     EchoOfWarWeekday: 'Monday',
@@ -383,12 +377,6 @@ const formData = reactive<HSRUserConfigData>({
     WeeklyCompletedThisWeek: false,
     WeeklyLastResetWeek: '',
     WeeklyLastCompletionDate: '',
-    AbyssCompletedThisMonth: false,
-    AbyssLastResetMonth: '',
-    AbyssLastCompletionDate: '',
-  },
-  Abyss: {
-    Snapshots: '{}',
   },
   Control: {
     Mode: 'managed',
@@ -421,9 +409,7 @@ const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
 const managedConfigLoading = ref(false)
-const nativeControls = reactive<Partial<Record<HSREngine, HSRNativeControlSnapshot>>>({})
 const importingDirectEngine = ref<HSREngine | null>(null)
-const openingConfiguratorEngine = ref<HSREngine | null>(null)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
@@ -552,33 +538,12 @@ const controlMode = computed<'managed' | 'direct'>(() =>
 )
 const dailyStageEngine = computed(() => getTaskMapping('Daily'))
 
-// 三深渊属于旧版专用能力；不在插件基准的动态任务面板中展示。
-const HIDDEN_MANAGED_TASK_KEYS = new Set(['ForgottenHall', 'PureFiction', 'Apocalyptic'])
-
-const refreshNativeControls = async () => {
-  await Promise.all(
-    [...effectiveEngines.value].map(async engine => {
-      try {
-        nativeControls[engine] = await hsrPluginApi.getNativeConfigs(scriptId, engine)
-      } catch (error) {
-        logger.warn(`读取 ${engine} 原生配置状态失败: ${String(error)}`)
-      }
-    })
-  )
-}
-
 const loadManagedConfig = async () => {
   if (!userId) return
   managedConfigLoading.value = true
   try {
     const snapshot = await hsrPluginApi.getManagedConfig(scriptId, userId)
-    managedConfigSnapshot.value = {
-      ...snapshot,
-      tasks: snapshot.tasks.filter(task => !HIDDEN_MANAGED_TASK_KEYS.has(task.key)),
-      task_mapping: Object.fromEntries(
-        Object.entries(snapshot.task_mapping).filter(([key]) => !HIDDEN_MANAGED_TASK_KEYS.has(key))
-      ) as Record<string, HSREngine>,
-    }
+    managedConfigSnapshot.value = snapshot
     formData.Managed = {
       TaskMapping: {
         ...(managedConfigSnapshot.value.task_mapping ?? {}),
@@ -618,7 +583,6 @@ const handleControlModeChange = async (value: string | number) => {
     return
   }
   if (value === 'managed') await loadManagedConfig()
-  else await refreshNativeControls()
 }
 
 const handleManagedMappingChange = async (task: string, engine: HSREngine) => {
@@ -674,21 +638,6 @@ const handleDirectConfigImport = async (engine: HSREngine) => {
     )
   } finally {
     importingDirectEngine.value = null
-  }
-}
-
-const handleOpenNativeConfigurator = async (engine: HSREngine) => {
-  if (openingConfiguratorEngine.value) return
-  openingConfiguratorEngine.value = engine
-  try {
-    nativeControls[engine] = await hsrPluginApi.openNativeConfigurator(scriptId, engine)
-    message.info(`已打开 ${engine} 配置器；保存并关闭后，再点击“从脚本原有配置导入”`)
-  } catch (error) {
-    message.error(
-      `${engine} 配置器打开失败：${error instanceof Error ? error.message : String(error)}`
-    )
-  } finally {
-    openingConfiguratorEngine.value = null
   }
 }
 
@@ -809,12 +758,6 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
   }
   localTarget[parts[parts.length - 1]] = value
 
-  // The old HSR schema stores SRA credentials under Info. Keep the new
-  // adapter-shaped SRA fields mirrored so either editor surface can be used.
-  if (parts[0] === 'SRA' && (parts[1] === 'Id' || parts[1] === 'Password')) {
-    ;(formData.Info as MutableRecord)[parts[1]] = value
-  }
-
   if (isInitializing.value || isSaving.value || !userId) return true
   isSaving.value = true
   try {
@@ -834,10 +777,6 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
         ? JSON.stringify(value ?? {})
         : value
     current[parts[parts.length - 1]] = persistedValue
-    if (parts[0] === 'SRA' && (parts[1] === 'Id' || parts[1] === 'Password')) {
-      current = userData
-      current.Info = { [parts[1]]: value }
-    }
     const saved = await updateUser(scriptId, userId, userData)
     if (saved) {
       logger.info(`用户配置已保存: ${key}`)
@@ -902,7 +841,6 @@ onMounted(async () => {
     scriptName.value = script.name
     scriptConfig.value = script.config as HSRScriptConfig
     await loadCapabilities()
-    await refreshNativeControls()
     await loadHsrStageOptions()
 
     if (isEdit.value) {
@@ -952,13 +890,11 @@ const loadUserData = async () => {
       const userData = users?.[userId]
       if (userData) {
         if (userData.Info) formData.Info = { ...formData.Info, ...userData.Info }
-        if (userData.SRA) formData.SRA = { ...(formData.SRA ?? {}), ...userData.SRA }
         if (userData.Stage) formData.Stage = { ...formData.Stage, ...userData.Stage }
         if (userData.TaskSwitch)
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
         if (userData.TaskOpt) formData.TaskOpt = { ...formData.TaskOpt, ...userData.TaskOpt }
         if (userData.Data) formData.Data = { ...formData.Data, ...userData.Data }
-        if (userData.Abyss) formData.Abyss = { ...formData.Abyss, ...userData.Abyss }
         if (userData.Control)
           formData.Control = { ...(formData.Control ?? {}), ...userData.Control }
         if (userData.Managed) {
@@ -974,15 +910,6 @@ const loadUserData = async () => {
           }
         }
         if (userData.Direct) formData.Direct = { ...(formData.Direct ?? {}), ...userData.Direct }
-        // The built-in old-dev contract stores credentials in Info; the
-        // plugin-shaped SRA group is an additive view with explicit fallback
-        // in both directions so either editor surface preserves old users.
-        if (formData.Info.Id && !formData.SRA?.Id) formData.SRA.Id = formData.Info.Id
-        if (formData.Info.Password && !formData.SRA?.Password)
-          formData.SRA.Password = formData.Info.Password
-        if (formData.SRA?.Id && !formData.Info.Id) formData.Info.Id = formData.SRA.Id
-        if (formData.SRA?.Password && !formData.Info.Password)
-          formData.Info.Password = formData.SRA.Password
         logger.info('用户数据加载成功')
       } else {
         message.error('用户不存在')

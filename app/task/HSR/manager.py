@@ -54,7 +54,9 @@ from .tools.account_switch import (
 from .tools.sra_runtime import (
     disable_sra_windows_notifications,
     get_sra_app_data_dir,
+    load_sra_native_config,
 )
+from .tools.m7a_config import load_m7a_native_config
 from .tools.native_control import (
     get_user_direct_config,
     native_provider,
@@ -328,6 +330,7 @@ class HSRManager(TaskExecuteBase):
 
         has_executable_user = False
         has_direct_user = False
+        m7a_needed = False
         sra_needed = False
         enabled_module_keys: set[str] = set()
 
@@ -347,8 +350,6 @@ class HSRManager(TaskExecuteBase):
                 if not control.engines:
                     return f"用户「{user_name}」尚未启用任何直控脚本"
                 for engine in control.engines:
-                    provider = native_provider(engine)
-                    snapshot = provider.inspect(script_config)
                     # 已导入快照可脱离当前原生配置文件运行；这里只要求
                     # 当前 CLI/Assistant 可执行，避免配置器改名后误阻断直控。
                     script_root = resolve_script_path(script_config, engine)
@@ -359,8 +360,10 @@ class HSRManager(TaskExecuteBase):
                         / ("SRA-cli.exe" if engine == "SRA" else "March7th Assistant.exe")
                     )
                     if not executable.is_file():
-                        reason = snapshot.direct_run_reason or f"原生执行文件不存在：{executable}"
-                        return f"用户「{user_name}」{engine} 直控不可用：{reason}"
+                        return (
+                            f"用户「{user_name}」{engine} 直控不可用："
+                            f"原生执行文件不存在：{executable}"
+                        )
                     if not get_user_direct_config(user_config, engine).strip():
                         return f"用户「{user_name}」尚未导入 {engine} 原生配置快照"
                 # 直控快照包含完整原生计划，跳过 MAS 模块队列和凭证检查。
@@ -376,6 +379,8 @@ class HSRManager(TaskExecuteBase):
                     )
                     if assigned == "SRA":
                         sra_needed = True
+                    if assigned == "M7A":
+                        m7a_needed = True
                     if assigned == "M7A" and not m7a_available:
                         return f"用户「{user_name}」模块「{module.name}」分配给了 M7A，但 M7A 路径不可用"
                     if assigned == "SRA" and not sra_available:
@@ -393,6 +398,14 @@ class HSRManager(TaskExecuteBase):
 
         if sra_needed and not sra_available:
             return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+
+        try:
+            if m7a_needed:
+                load_m7a_native_config(script_config)
+            if sra_needed:
+                load_sra_native_config(script_config)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return f"HSR 原生配置不可用：{exc}"
 
         if sra_available:
             return self._validate_sra_user_credentials(

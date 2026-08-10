@@ -4,7 +4,7 @@
     <a-alert
       type="info"
       show-icon
-      message="MAS 只负责先启动游戏、跟踪/停止脚本进程和最终游戏清理；登录、任务、兑换码及完成后动作均按导入的原生配置执行。"
+      message="请先在 SRA / 三月七助手中完成原生配置，再一键导入；MAS 只负责启动游戏、跟踪/停止脚本进程和最终清理。"
       class="direct-alert"
     />
 
@@ -38,13 +38,6 @@
 
         <a-space wrap>
           <a-button
-            :disabled="saving || !configuratorReady(engine)"
-            :loading="openingEngine === engine"
-            @click="emit('openConfigurator', engine)"
-          >
-            重新配置
-          </a-button>
-          <a-button
             type="primary"
             :disabled="saving"
             :loading="importingEngine === engine"
@@ -53,9 +46,6 @@
             一键从源配置导入
           </a-button>
         </a-space>
-        <a-typography-text v-if="configuratorReason(engine)" type="secondary" class="reason">
-          {{ configuratorReason(engine) }}
-        </a-typography-text>
       </div>
     </div>
 
@@ -89,23 +79,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CheckCircleOutlined, InfoCircleOutlined, LockOutlined } from '@ant-design/icons-vue'
-import type { HSREngine, HSRNativeControlSnapshot } from '@/composables/useHSRPluginApi'
+import type { HSREngine } from '@/composables/useHSRPluginApi'
 import type { HSRUserConfigData } from '@/views/HSRUserEdit/types'
 
 const props = defineProps<{
   availableEngines: HSREngine[]
   control: NonNullable<HSRUserConfigData['Control']>
   direct: NonNullable<HSRUserConfigData['Direct']>
-  nativeControls: Partial<Record<HSREngine, HSRNativeControlSnapshot>>
   saving: boolean
   importingEngine: HSREngine | null
-  openingEngine: HSREngine | null
 }>()
 
 const emit = defineEmits<{
   toggle: [engine: HSREngine, enabled: boolean]
   importConfig: [engine: HSREngine]
-  openConfigurator: [engine: HSREngine]
 }>()
 
 const selectedEngines = computed(() =>
@@ -119,10 +106,6 @@ const importedAt = (engine: HSREngine) =>
   String(props.direct[`${engine}ImportedAt` as keyof HSRUserConfigData['Direct']] || '')
 const source = (engine: HSREngine) =>
   String(props.direct[`${engine}Source` as keyof HSRUserConfigData['Direct']] || '')
-const configuratorReady = (engine: HSREngine) =>
-  props.nativeControls[engine]?.configurator_ready !== false
-const configuratorReason = (engine: HSREngine) =>
-  props.nativeControls[engine]?.configurator_reason || ''
 </script>
 
 <style scoped>
@@ -189,7 +172,6 @@ const configuratorReason = (engine: HSREngine) =>
 
 .engine-description,
 .import-meta,
-.reason,
 .mask-copy span {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
@@ -214,11 +196,6 @@ const configuratorReason = (engine: HSREngine) =>
   margin-top: 3px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.reason {
-  display: block;
-  margin-top: 10px;
 }
 
 .bottom-alert {

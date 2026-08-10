@@ -4,25 +4,6 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 /** Engines exposed by the built-in HSR adapter. */
 export type HSREngine = 'SRA' | 'M7A'
 
-export interface HSRNativeConfigOption {
-  id: string
-  label: string
-  path?: string | null
-}
-
-export interface HSRNativeControlSnapshot {
-  engine: HSREngine
-  configurator_ready: boolean
-  direct_run_ready: boolean
-  configurator_reason?: string | null
-  direct_run_reason?: string | null
-  launcher_path?: string | null
-  selected_config?: string | null
-  configs: HSRNativeConfigOption[]
-  running?: boolean
-  pid?: number | null
-}
-
 export interface HSRBrowserCapability {
   service: string
   handoff_protocol?: string
@@ -46,13 +27,12 @@ export interface HSRAdapterCapability {
   capabilities: string[] | Record<string, unknown>
   ready?: boolean | null
   ready_reason?: string
-  native_control?: HSRNativeControlSnapshot
 }
 
 export interface HSRTaskCapability {
   key: string
   name: string
-  phase: 'daily' | 'weekly' | 'monthly'
+  phase: 'daily' | 'weekly'
   description: string
   engines: HSREngine[]
   strategies?: Partial<Record<HSREngine, string[]>>
@@ -272,60 +252,10 @@ export function useHSRPluginApi() {
     )
   }
 
-  const getNativeConfigs = async (
-    scriptId: string,
-    engine: HSREngine
-  ): Promise<HSRNativeControlSnapshot> => {
-    return requestPluginData(
-      axios.get<PluginEnvelope<HSRNativeControlSnapshot>>(url('/native-configs'), {
-        params: { scriptId, engine },
-      })
-    )
-  }
-
-  const openNativeConfigurator = async (
-    scriptId: string,
-    engine: HSREngine
-  ): Promise<HSRNativeControlSnapshot> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<HSRNativeControlSnapshot>>(url('/native-config/open'), {
-        scriptId,
-        engine,
-      })
-    )
-  }
-
-  const getNativeConfiguratorStatus = async (
-    scriptId: string,
-    engine: HSREngine
-  ): Promise<HSRNativeControlSnapshot> => {
-    return requestPluginData(
-      axios.get<PluginEnvelope<HSRNativeControlSnapshot>>(url('/native-config/status'), {
-        params: { scriptId, engine },
-      })
-    )
-  }
-
-  const stopNativeConfigurator = async (
-    scriptId: string,
-    engine: HSREngine
-  ): Promise<{ engine: HSREngine; running: boolean; pid?: number | null }> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<{ engine: HSREngine; running: boolean; pid?: number | null }>>(
-        url('/native-config/stop'),
-        { scriptId, engine }
-      )
-    )
-  }
-
   return {
     getCapabilities,
     getStageOptions,
     getManagedConfig,
     importDirectConfig,
-    getNativeConfigs,
-    openNativeConfigurator,
-    getNativeConfiguratorStatus,
-    stopNativeConfigurator,
   }
 }

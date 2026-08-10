@@ -1514,13 +1514,6 @@ class HSRUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "", EncryptValidator())
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 新契约 SRA 账号字段，旧数据从 Info.Id / Info.Password 回退
-        self.SRA_Id = ConfigItem(
-            "SRA", "Id", "", EncryptValidator(), "Info", "Id"
-        )
-        self.SRA_Password = ConfigItem(
-            "SRA", "Password", "", EncryptValidator(), "Info", "Password"
-        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -1580,21 +1573,6 @@ class HSRUserConfig(ConfigBase):
         self.Data_WeeklyLastResetWeek = ConfigItem(
             "Data", "WeeklyLastResetWeek", "2000-W01"
         )
-        ## HSR 三深渊月度（每月一次）—— 三深渊最近一次完成日期
-        self.Data_AbyssLastCompletionDate = ConfigItem(
-            "Data",
-            "AbyssLastCompletionDate",
-            "2000-01-01",
-            DateTimeValidator("%Y-%m-%d"),
-        )
-        ## HSR 三深渊月度（每月一次）—— 本月是否已完成三深渊（仅依据 Data 字段判断）
-        self.Data_AbyssCompletedThisMonth = ConfigItem(
-            "Data", "AbyssCompletedThisMonth", False, BoolValidator()
-        )
-        ## HSR 三深渊月度（每月一次）—— 三深渊上次重置自然月（形如 "2025-06"）
-        self.Data_AbyssLastResetMonth = ConfigItem(
-            "Data", "AbyssLastResetMonth", "2000-01"
-        )
         ## TaskSwitch ------------------------------------------------------
         ## 模块执行开关
         self.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
@@ -1607,10 +1585,6 @@ class HSRUserConfig(ConfigBase):
         self.TaskSwitch_CurrencyWars = ConfigItem(
             "TaskSwitch", "CurrencyWars", False, BoolValidator()
         )
-        self.TaskSwitch_ForgottenHall = ConfigItem(
-            "TaskSwitch", "ForgottenHall", False, BoolValidator()
-        )
-
         ## Stage -----------------------------------------------------------
         ## 关卡通道
         self.Stage_Channel = ConfigItem(
@@ -1646,10 +1620,6 @@ class HSRUserConfig(ConfigBase):
                 ]
             ),
         )
-
-        ## Abyss (三深渊) ---------------------------------------------------
-        ## 三深渊快照集合（从 M7A config.yaml 导入的 JSON 对象）
-        self.Abyss_Snapshots = ConfigItem("Abyss", "Snapshots", "{}", JSONValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -1818,155 +1788,6 @@ class HSRConfig(ConfigBase):
         ## SRA 路径
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
 
-        ## Control ---------------------------------------------------------
-        ## 运行模式。old dev 仍由内置 HSRManager 调度，并保留旧字段回退。
-        self.Control_Direct = ConfigItem(
-            "Control", "Direct", False, BoolValidator()
-        )
-        self.Control_Engine = ConfigItem(
-            "Control", "Engine", "SRA", OptionsValidator(["M7A", "SRA"])
-        )
-        self.Control_TimeoutMinutes = ConfigItem(
-            "Control", "TimeoutMinutes", 120, RangeValidator(1, 1440)
-        )
-
-        ## SRA / M7A -------------------------------------------------------
-        ## 新契约路径使用显式旧字段回退，确保 ScriptConfig.json 中原有
-        ## Info.SRAPath / Info.M7APath 永不丢失。
-        self.SRA_Path = ConfigItem(
-            "SRA", "Path", "", FolderValidator(), "Info", "SRAPath"
-        )
-        self.SRA_Config = ConfigItem("SRA", "Config", "", StringValidator())
-        self.M7A_Path = ConfigItem(
-            "M7A", "Path", "", FolderValidator(), "Info", "M7APath"
-        )
-        self.M7A_LowPerformanceMode = ConfigItem(
-            "M7A",
-            "LowPerformanceMode",
-            False,
-            BoolValidator(),
-            "Run",
-            "LowPerformanceMode",
-        )
-
-        ## SRA 动态任务选项（兼容插件契约，由托管运行时按需覆盖）
-        for name, default in {
-            "TrailblazerProfile": True,
-            "Assignments": True,
-            "Mail": True,
-            "DailyTraining": True,
-            "NamelessHonor": True,
-            "GiftOfOdyssey": True,
-            "RedeemCode": True,
-        }.items():
-            self.__setattr__(
-                f"SRAReceiveRewards_{name}",
-                ConfigItem("SRAReceiveRewards", name, default, BoolValidator()),
-            )
-        self.SRADivergentUniverse_RunTimes = ConfigItem(
-            "SRADivergentUniverse", "RunTimes", 20, RangeValidator(1, 999)
-        )
-        self.SRADivergentUniverse_UseTechnique = ConfigItem(
-            "SRADivergentUniverse", "UseTechnique", False, BoolValidator()
-        )
-        self.SRADivergentUniverse_PointRewards = ConfigItem(
-            "SRADivergentUniverse", "PointRewards", True, BoolValidator()
-        )
-        self.SRACurrencyWars_Mode = ConfigItem(
-            "SRACurrencyWars", "Mode", "normal", OptionsValidator(["normal", "overclock"])
-        )
-        self.SRACurrencyWars_Difficulty = ConfigItem(
-            "SRACurrencyWars", "Difficulty", "lowest", OptionsValidator(["lowest", "highest"])
-        )
-        self.SRACurrencyWars_RunTimes = ConfigItem(
-            "SRACurrencyWars", "RunTimes", 1, RangeValidator(1, 999)
-        )
-
-        ## M7A 动态任务选项（兼容插件契约，由托管运行时按需覆盖）
-        for name, default in {
-            "RunDailyTraining": True,
-            "UseSynthesis": True,
-            "UseHimekoTrial": False,
-            "UseMemoryOne": False,
-            "DailyCheckIn": True,
-            "Dispatch": True,
-            "Mail": True,
-            "Support": True,
-            "DailyTrainingReward": True,
-            "NamelessHonor": True,
-            "RedeemCode": True,
-            "Achievement": False,
-            "Messages": False,
-        }.items():
-            self.__setattr__(
-                f"M7AReceiveRewards_{name}",
-                ConfigItem("M7AReceiveRewards", name, default, BoolValidator()),
-            )
-        self.M7ADivergentUniverse_Mode = ConfigItem(
-            "M7ADivergentUniverse", "Mode", "cycle", OptionsValidator(["normal", "cycle"])
-        )
-        self.M7ADivergentUniverse_Level = ConfigItem(
-            "M7ADivergentUniverse", "Level", 5, RangeValidator(1, 6)
-        )
-        self.M7ADivergentUniverse_BonusEnabled = ConfigItem(
-            "M7ADivergentUniverse", "BonusEnabled", True, BoolValidator()
-        )
-        self.M7ACurrencyWars_Mode = ConfigItem(
-            "M7ACurrencyWars", "Mode", "normal", OptionsValidator(["normal", "overclock"])
-        )
-        self.M7ACurrencyWars_RankDifficulty = ConfigItem(
-            "M7ACurrencyWars", "RankDifficulty", "lowest", OptionsValidator(["lowest", "current", "highest"])
-        )
-        self.M7ACurrencyWars_Strategy = ConfigItem(
-            "M7ACurrencyWars", "Strategy", "aglaea", OptionsValidator(["default", "aglaea", "seele"])
-        )
-        self.M7ACurrencyWars_RestartOnSpecialTags = ConfigItem(
-            "M7ACurrencyWars", "RestartOnSpecialTags", True, BoolValidator()
-        )
-        self.M7ACurrencyWars_FastMode = ConfigItem(
-            "M7ACurrencyWars", "FastMode", False, BoolValidator()
-        )
-        self.M7ACurrencyWars_BonusEnabled = ConfigItem(
-            "M7ACurrencyWars", "BonusEnabled", True, BoolValidator()
-        )
-
-        ## 新宿主可选游戏启动字段；旧字段与默认行为继续保留。
-        self.Game_Backend = ConfigItem(
-            "Game",
-            "Backend",
-            "local",
-            OptionsValidator(["local", "mas_cloud", "native_owned"]),
-        )
-        self.Game_ForceResolution1920x1080 = ConfigItem(
-            "Game", "ForceResolution1920x1080", False, BoolValidator()
-        )
-        self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
-            "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
-        )
-
-        ## 养成目标兼容选项
-        self.CultivationTarget_Enabled = ConfigItem(
-            "CultivationTarget", "Enabled", False, BoolValidator()
-        )
-        self.CultivationTarget_M7ARecognitionScheme = ConfigItem(
-            "CultivationTarget",
-            "M7ARecognitionScheme",
-            "instance",
-            OptionsValidator(["instance", "drop"]),
-        )
-        self.CultivationTarget_M7AOrnamentWeeklyCount = ConfigItem(
-            "CultivationTarget",
-            "M7AOrnamentWeeklyCount",
-            1,
-            RangeValidator(0, 7),
-        )
-        self.CultivationTarget_M7AUseUserStageWhenOnlyRelics = ConfigItem(
-            "CultivationTarget",
-            "M7AUseUserStageWhenOnlyRelics",
-            False,
-            BoolValidator(),
-        )
-
         ## Game ------------------------------------------------------------
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -1974,6 +1795,14 @@ class HSRConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
+        self.Game_ForceResolution1920x1080 = ConfigItem(
+            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        )
+        ## 仅在原生兑换码内容变化时执行兑换
+        self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
+            "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
+        )
 
         ## Run -------------------------------------------------------------
         ## 失败任务最大尝试次数
@@ -1987,10 +1816,6 @@ class HSRConfig(ConfigBase):
         ## 周常任务超时限制（分钟）
         self.Run_WeeklyTimeLimit = ConfigItem(
             "Run", "WeeklyTimeLimit", 60, RangeValidator(1, 9999)
-        )
-        ## 月常任务超时限制（分钟）
-        self.Run_MonthlyTimeLimit = ConfigItem(
-            "Run", "MonthlyTimeLimit", 60, RangeValidator(1, 9999)
         )
         ## 低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）
         self.Run_LowPerformanceMode = ConfigItem(

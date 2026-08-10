@@ -25,7 +25,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -267,13 +266,13 @@ def build_m7a_daily_patch(
     eow_name: str | None = None,
     *,
     script_config: Any | None = None,
-    cultivation_target: Mapping[str, Any] | None = None,
 ) -> dict:
-    """构造 M7A routine 的运行配置 patch。"""
+    """构造 M7A routine patch from native config plus Managed.Options."""
     eow_enabled = bool(daily_eow_enabled)
-    cultivation_enabled = bool(
-        cultivation_target is not None and cultivation_target.get("Enabled")
+    native_options = resolve_m7a_managed_options(
+        script_config, user_config, "Daily"
     )
+    cultivation_enabled = bool(native_options.get("build_target_enable", False))
 
     # 配置不完整时直接报错，避免刷错副本。
     if eow_enabled and eow_name is None:
@@ -349,11 +348,10 @@ def build_m7a_daily_patch(
         patch["instance_names_challenge_count"] = new_instance_counts
 
     if cultivation_enabled:
-        assert cultivation_target is not None
-        scheme = cultivation_target.get("M7ARecognitionScheme") or "instance"
+        scheme = native_options.get("build_target_scheme") or "instance"
         if scheme not in ("instance", "drop"):
             raise ValueError(f"build_target_scheme 非法: {scheme!r}")
-        ornament_count = cultivation_target.get("M7AOrnamentWeeklyCount")
+        ornament_count = native_options.get("build_target_ornament_weekly_count", 1)
         if (
             not isinstance(ornament_count, int)
             or isinstance(ornament_count, bool)
@@ -367,7 +365,12 @@ def build_m7a_daily_patch(
         patch["build_target_ornament_weekly_count"] = ornament_count
         patch[
             "build_target_use_user_instance_when_only_erosion_and_ornament"
-        ] = bool(cultivation_target.get("M7AUseUserStageWhenOnlyRelics"))
+        ] = bool(
+            native_options.get(
+                "build_target_use_user_instance_when_only_erosion_and_ornament",
+                False,
+            )
+        )
 
     return _apply_managed_patch(
         patch,
@@ -431,28 +434,42 @@ M7A_CURRENCY_WARS_FAST_MODE: bool = False
 M7A_CURRENCY_WARS_BONUS_ENABLE: bool = True  # 积分奖励启用
 
 
-def _script_option(script_config: Any, group: str, key: str, default: Any) -> Any:
+def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
+    """Load the M7A config.yaml referenced by old-dev Info.M7APath."""
+
     if script_config is None:
-        return default
+        raise ValueError("缺少 HSR 脚本配置")
     try:
-        value = script_config.get(group, key)
+        raw_root = script_config.get("Info", "M7APath")
     except (AttributeError, KeyError, TypeError):
-        value = None
-    return default if value is None else value
-
-
-def _load_native_config_for_managed(script_config: Any) -> dict[str, Any]:
-    raw_root = _script_option(script_config, "M7A", "Path", "")
-    if not raw_root:
-        raw_root = _script_option(script_config, "Info", "M7APath", "")
-    path = Path(str(raw_root or "").strip()) / "config.yaml"
+        raw_root = ""
+    root = str(raw_root or "").strip()
+    if not root:
+        raise FileNotFoundError("请先设置 M7A 路径")
+    path = Path(root) / "config.yaml"
     if not path.is_file():
-        return {}
+        raise FileNotFoundError(f"三月七助手原生配置不存在：{path}")
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
-    except (OSError, yaml.YAMLError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    except OSError as exc:
+        raise FileNotFoundError(f"无法读取三月七助手原生配置：{path}") from exc
+    except yaml.YAMLError as exc:
+        raise ValueError(f"三月七助手原生配置不是有效 YAML：{path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
+    return data
+
+
+def resolve_m7a_managed_options(
+    script_config: Any,
+    user_config: Any,
+    module_key: str,
+) -> dict[str, Any]:
+    """Load native M7A values and apply one user's Managed.Options."""
+
+    return resolve_managed_options(
+        load_m7a_native_config(script_config), user_config, module_key
+    )
 
 
 def _apply_managed_patch(
@@ -465,7 +482,7 @@ def _apply_managed_patch(
 ) -> dict[str, Any]:
     """Apply only dynamic fields accepted by the module's existing whitelist."""
 
-    native = _load_native_config_for_managed(script_config)
+    native = load_m7a_native_config(script_config)
     if not native:
         return patch
     effective = resolve_managed_options(native, user_config, module_key)
@@ -482,38 +499,38 @@ def build_receive_rewards_patch(
     script_config=None,
     redeem_codes_enabled: bool = True,
 ) -> dict[str, Any]:
-    """构建 M7A 领取奖励 patch。"""
-    run_daily_training = bool(
-        _script_option(script_config, "M7AReceiveRewards", "RunDailyTraining", True)
+    """构建 M7A 领取奖励 patch from native values."""
+    native_options = resolve_m7a_managed_options(
+        script_config, user_config, "ReceiveRewards"
+    )
+    run_daily_training = any(
+        bool(native_options.get(key, default))
+        for key, default in (
+            ("daily_material_enable", True),
+            ("daily_himeko_try_enable", False),
+            ("daily_memory_one_enable", False),
+        )
     )
     daily_check_in = bool(
-        _script_option(script_config, "M7AReceiveRewards", "DailyCheckIn", True)
+        native_options.get(
+            "activity_dailycheckin_enable",
+            native_options.get("activity_enable", True),
+        )
     )
     rewards = {
-        "reward_dispatch_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "Dispatch", True)
-        ),
-        "reward_mail_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "Mail", True)
-        ),
-        "reward_assist_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "Support", True)
-        ),
-        "reward_quest_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "DailyTrainingReward", True)
-        ),
-        "reward_srpass_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "NamelessHonor", True)
-        ),
+        "reward_dispatch_enable": bool(native_options.get("reward_dispatch_enable", True)),
+        "reward_mail_enable": bool(native_options.get("reward_mail_enable", True)),
+        "reward_assist_enable": bool(native_options.get("reward_assist_enable", True)),
+        "reward_quest_enable": bool(native_options.get("reward_quest_enable", True)),
+        "reward_srpass_enable": bool(native_options.get("reward_srpass_enable", True)),
         "reward_redemption_code_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "RedeemCode", True)
-        )
-        and bool(redeem_codes_enabled),
+            native_options.get("reward_redemption_code_enable", True)
+        ) and bool(redeem_codes_enabled),
         "reward_achievement_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "Achievement", False)
+            native_options.get("reward_achievement_enable", False)
         ),
         "reward_message_enable": bool(
-            _script_option(script_config, "M7AReceiveRewards", "Messages", False)
+            native_options.get("reward_message_enable", False)
         ),
     }
     patch = {
@@ -522,12 +539,15 @@ def build_receive_rewards_patch(
         "build_target_enable": False,
         "cloud_game_enable": False,
         "daily_enable": run_daily_training,
-        "daily_material_enable": run_daily_training
-        and bool(_script_option(script_config, "M7AReceiveRewards", "UseSynthesis", True)),
-        "daily_himeko_try_enable": run_daily_training
-        and bool(_script_option(script_config, "M7AReceiveRewards", "UseHimekoTrial", False)),
-        "daily_memory_one_enable": run_daily_training
-        and bool(_script_option(script_config, "M7AReceiveRewards", "UseMemoryOne", False)),
+        "daily_material_enable": bool(
+            native_options.get("daily_material_enable", True)
+        ),
+        "daily_himeko_try_enable": bool(
+            native_options.get("daily_himeko_try_enable", False)
+        ),
+        "daily_memory_one_enable": bool(
+            native_options.get("daily_memory_one_enable", False)
+        ),
         "activity_enable": daily_check_in,
         "activity_dailycheckin_enable": daily_check_in,
         "activity_gardenofplenty_enable": False,
@@ -578,7 +598,13 @@ def build_divergent_universe_patch(
 ) -> dict[str, Any]:
     """构建 M7A 差分宇宙 patch。"""
 
-    low_perf_value = _script_option(script_config, "Run", "LowPerformanceMode", None)
+    native_options = resolve_m7a_managed_options(
+        script_config, user_config, "DivergentUniverse"
+    )
+    try:
+        low_perf_value = script_config.get("Run", "LowPerformanceMode")
+    except (AttributeError, KeyError, TypeError):
+        low_perf_value = None
     low_perf_mode = (
         M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT
         if low_perf_value is None
@@ -589,13 +615,16 @@ def build_divergent_universe_patch(
         "cloud_game_enable": False,
         "weekly_divergent_enable": True,
         "weekly_divergent_type": str(
-            _script_option(script_config, "M7ADivergentUniverse", "Mode", M7A_WEEKLY_DIVERGENT_TYPE)
+            native_options.get("weekly_divergent_type", M7A_WEEKLY_DIVERGENT_TYPE)
         ),
         "weekly_divergent_level": int(
-            _script_option(script_config, "M7ADivergentUniverse", "Level", M7A_WEEKLY_DIVERGENT_LEVEL)
+            native_options.get("weekly_divergent_level", M7A_WEEKLY_DIVERGENT_LEVEL)
         ),
         "weekly_divergent_bonus_enable": bool(
-            _script_option(script_config, "M7ADivergentUniverse", "BonusEnabled", M7A_WEEKLY_DIVERGENT_BONUS_ENABLE)
+            native_options.get(
+                "weekly_divergent_bonus_enable",
+                M7A_WEEKLY_DIVERGENT_BONUS_ENABLE,
+            )
         ),
         "weekly_divergent_stable_mode": low_perf_mode,
     }
@@ -620,17 +649,39 @@ def build_currency_wars_patch(
 ) -> dict[str, Any]:
     """构建 M7A 货币战争 patch。"""
     username = str(user_config.get("Info", "Name") or "").strip()
+    native_options = resolve_m7a_managed_options(
+        script_config, user_config, "CurrencyWars"
+    )
 
     patch = {
         "cloud_game_enable": False,
         "currencywars_enable": True,
-        "currencywars_type": str(_script_option(script_config, "M7ACurrencyWars", "Mode", M7A_CURRENCY_WARS_TYPE)),
-        "currencywars_rank_difficulty": str(_script_option(script_config, "M7ACurrencyWars", "RankDifficulty", M7A_CURRENCY_WARS_RANK_DIFFICULTY)),
-        "currencywars_strategy": str(_script_option(script_config, "M7ACurrencyWars", "Strategy", M7A_CURRENCY_WARS_STRATEGY)),
-        "currencywars_strategy_restart_on_special_tags": bool(_script_option(script_config, "M7ACurrencyWars", "RestartOnSpecialTags", M7A_CURRENCY_WARS_STRATEGY_RESTART_ON_SPECIAL_TAGS)),
-        "currencywars_fast_mode": bool(_script_option(script_config, "M7ACurrencyWars", "FastMode", M7A_CURRENCY_WARS_FAST_MODE)),
+        "currencywars_type": str(
+            native_options.get("currencywars_type", M7A_CURRENCY_WARS_TYPE)
+        ),
+        "currencywars_rank_difficulty": str(
+            native_options.get(
+                "currencywars_rank_difficulty", M7A_CURRENCY_WARS_RANK_DIFFICULTY
+            )
+        ),
+        "currencywars_strategy": str(
+            native_options.get("currencywars_strategy", M7A_CURRENCY_WARS_STRATEGY)
+        ),
+        "currencywars_strategy_restart_on_special_tags": bool(
+            native_options.get(
+                "currencywars_strategy_restart_on_special_tags",
+                M7A_CURRENCY_WARS_STRATEGY_RESTART_ON_SPECIAL_TAGS,
+            )
+        ),
+        "currencywars_fast_mode": bool(
+            native_options.get("currencywars_fast_mode", M7A_CURRENCY_WARS_FAST_MODE)
+        ),
         "currencywars_remembrance_trailblazer_name": username,
-        "currencywars_bonus_enable": bool(_script_option(script_config, "M7ACurrencyWars", "BonusEnabled", M7A_CURRENCY_WARS_BONUS_ENABLE)),
+        "currencywars_bonus_enable": bool(
+            native_options.get(
+                "currencywars_bonus_enable", M7A_CURRENCY_WARS_BONUS_ENABLE
+            )
+        ),
     }
     if patch["currencywars_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -689,62 +740,3 @@ M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset({
     "reward_message_enable",
     "cloud_game_enable",
 })
-
-
-# 保留旧 API 的一次性导入契约。三深渊已不再注册为任务，也不会进入运行队列；
-# 这里只读取旧配置字段，供历史用户页导入接口继续返回兼容数据。
-_LEGACY_ABYSS_PREFIX_MAP: dict[str, str] = {
-    "ForgottenHall": "forgottenhall",
-    "PureFiction": "purefiction",
-    "Apocalyptic": "apocalyptic",
-}
-_LEGACY_ABYSS_CONFIG_KEYS: frozenset[str] = frozenset(
-    f"{prefix}_{suffix}"
-    for prefix in _LEGACY_ABYSS_PREFIX_MAP.values()
-    for suffix in ("enable", "level", "team1", "team2", "team3")
-)
-
-
-def read_m7a_abyss_snapshots(
-    config_path: Path,
-) -> tuple[dict[str, dict], list[dict[str, Any]]]:
-    """读取历史三深渊配置快照（仅供旧导入 API，非执行路径）。"""
-
-    full_config = yaml.safe_load(config_path.read_text(encoding="utf-8-sig")) or {}
-    if not isinstance(full_config, dict):
-        raise ValueError("M7A config.yaml 顶层必须是对象")
-
-    snapshots: dict[str, dict] = {}
-    items: list[dict[str, Any]] = []
-    for group, prefix in _LEGACY_ABYSS_PREFIX_MAP.items():
-        key_prefix = f"{prefix}_"
-        snapshot = {
-            key: full_config[key]
-            for key in _LEGACY_ABYSS_CONFIG_KEYS
-            if key.startswith(key_prefix) and key in full_config
-        }
-        if not snapshot:
-            continue
-
-        snapshots[group] = snapshot
-        level_value = snapshot.get(f"{prefix}_level")
-        team_keys = sorted(
-            {
-                key.removeprefix(f"{prefix}_")
-                for key in snapshot
-                if re.fullmatch(rf"{re.escape(prefix)}_team\d+", str(key))
-            },
-            key=lambda key: int(key.removeprefix("team")),
-        )
-        items.append(
-            {
-                "snapshotKey": group,
-                "success": True,
-                "level": level_value if isinstance(level_value, list) else None,
-                "teamKeys": team_keys,
-            }
-        )
-
-    if not snapshots:
-        raise ValueError("未从 M7A config.yaml 读取到任何历史三深渊快照")
-    return snapshots, items

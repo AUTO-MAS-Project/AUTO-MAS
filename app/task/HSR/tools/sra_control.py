@@ -180,10 +180,11 @@ class HSRSRAControl:
                 redeem_codes_enabled=redeem_codes_enabled,
             )
             tasklist = cfg.get("trailblazePower", {}).get("tasklist") or []
-            if not tasklist:
-                self._append_log(f"用户「{user_name}」体力模块无可执行副本，跳过")
-                return None
-            description = f"SRA TrailblazePowerTask：{build_sra_tasklist_description(tasklist)}"
+            description = (
+                f"SRA TrailblazePowerTask：{build_sra_tasklist_description(tasklist)}"
+                if tasklist
+                else "SRA TrailblazePowerTask：按原生培养目标/活动配置执行"
+            )
         else:
             cfg = build_sra_module_config(
                 module,
