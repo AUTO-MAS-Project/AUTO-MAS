@@ -2702,7 +2702,7 @@ class OkwwConfig(ConfigBase):
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
