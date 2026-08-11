@@ -384,6 +384,24 @@
             </a-col>
           </a-row>
 
+          <a-row :gutter="24">
+            <a-col :span="24">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="按关键字采集任务进程信息（如：理智作战|任务出错: 仓库识别），任务结束后会追加到推送报告的任务进程信息中，便于直观了解本次运行的关键过程">
+                    <span class="form-label">
+                      推送日志
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input v-model:value="generalConfig.Script.PushLog" placeholder="请输入要采集并推送的日志关键字，以「 | 」进行分割" size="large"
+                  class="modern-input" @blur="handleChange('Script', 'PushLog', generalConfig.Script.PushLog)" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24"></a-row>
 
           <div class="section-header">
@@ -1077,6 +1095,7 @@ const generalConfig = reactive<GeneralScriptConfig>({
     LogTimeFormat: '%Y-%m-%d %H:%M:%S',
     ScriptPath: '.',
     SuccessLog: '',
+    PushLog: '',
     UpdateConfigMode: 'Never',
   },
   SubConfigsInfo: {
