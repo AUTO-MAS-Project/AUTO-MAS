@@ -329,6 +329,12 @@ class GeneralManager(TaskExecuteBase):
                 self.task_info, self.script_info.result
             )
             has_game_sign_summary = task_result != self.script_info.result
+            # 聚合各用户采集的推送日志：`用户名：时间 - 内容` 以「 | 」连接
+            push_log_text = " | ".join(
+                f"{u.name}：" + " | ".join(u.push_log)
+                for u in self.script_info.user_list
+                if u.push_log
+            )
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -338,6 +344,7 @@ class GeneralManager(TaskExecuteBase):
                 "uncompleted_count": len(error_user) + len(wait_user),
                 "result": task_result,
                 "game_sign_summary": has_game_sign_summary,
+                "push_log": push_log_text,
             }
 
             await Notify.push_plyer(

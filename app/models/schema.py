@@ -770,6 +770,7 @@ class GeneralConfig_Script(BaseModel):
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+    PushLog: Optional[str] = Field(default=None, description="推送日志匹配")
 
 
 class GeneralConfig_Game(BaseModel):

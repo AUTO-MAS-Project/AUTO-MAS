@@ -67,5 +67,9 @@ export type GeneralConfig_Script = {
      * 错误时日志
      */
     ErrorLog?: (string | null);
+    /**
+     * 推送日志匹配
+     */
+    PushLog?: (string | null);
 };
 

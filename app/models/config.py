@@ -2865,6 +2865,8 @@ class GeneralConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+        ## 推送日志匹配
+        self.Script_PushLog = ConfigItem("Script", "PushLog", "")
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏

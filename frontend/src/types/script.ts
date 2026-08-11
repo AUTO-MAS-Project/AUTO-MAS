@@ -86,6 +86,7 @@ export interface GeneralScriptConfig {
     LogTimeEnd: number
     LogTimeStart: number
     LogTimeFormat: string
+    PushLog: string
     ScriptPath: string
     SuccessLog: string
     UpdateConfigMode: string
