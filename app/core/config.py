@@ -2746,6 +2746,53 @@ class AppConfig(GlobalConfig):
 
         return (matrix_statistics or None), True
 
+    def parse_maaend_pull_count_statistics(
+        self, logs: list[str]
+    ) -> Optional[Dict[str, int]]:
+        """解析 MaaEnd 抽数计算任务输出的统计结果。"""
+
+        content = "".join(logs)
+        field_patterns = {
+            "resource_pulls": (
+                r'"ResourcePulls"\s*:\s*(\d+)',
+                r"资源折算[：:]\s*(\d+)\s*抽",
+            ),
+            "carry_over_pulls": (
+                r'"CarryToNextPulls"\s*:\s*(\d+)',
+                r"可留到下版本的券[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_shop_pulls": (
+                r'"NextPoolShopPulls"\s*:\s*(\d+)',
+                r"下版本商店[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_signin_pulls": (
+                r'"NextPoolSigninPulls"\s*:\s*(\d+)',
+                r"下版本签到[：:]\s*(\d+)\s*抽",
+            ),
+            "current_pool_total": (
+                r'"CurrentPoolTotal"\s*:\s*(\d+)',
+                r"当前池可用[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_total": (
+                r'"NextPoolTotal"\s*:\s*(\d+)',
+                r"下版本池子总计[：:]\s*(\d+)\s*抽",
+            ),
+        }
+
+        statistics: Dict[str, int] = {}
+        for field, patterns in field_patterns.items():
+            matches = [
+                match for pattern in patterns for match in re.finditer(pattern, content)
+            ]
+            if matches:
+                statistics[field] = int(matches[-1].group(1))
+
+        required_fields = {"current_pool_total", "next_pool_total"}
+        if not required_fields.issubset(statistics):
+            return None
+
+        return statistics
+
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
     ) -> None:
@@ -2764,6 +2811,7 @@ class AppConfig(GlobalConfig):
 
         failed_tasks = self.parse_maaend_failed_tasks(logs)
         matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
+        pull_count_statistics = self.parse_maaend_pull_count_statistics(logs)
 
         if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
             maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
@@ -2771,6 +2819,8 @@ class AppConfig(GlobalConfig):
         data: Dict[str, Any] = {"maaend_result": maaend_result}
         if has_matrix_flow and matrix_statistics is not None:
             data["matrix_statistics"] = matrix_statistics
+        if pull_count_statistics is not None:
+            data["pull_count_statistics"] = pull_count_statistics
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2917,6 +2967,10 @@ class AppConfig(GlobalConfig):
                 elif key == "matrix_statistics":
                     for skill, weapon in single_data[key].items():
                         data[key][skill] = weapon
+
+                # 抽数是当前资源快照，合并时使用最新一条记录
+                elif key == "pull_count_statistics":
+                    data[key] = single_data[key]
 
                 # 处理理智相关字段 - 使用最后一个文件的值
                 elif key in ["sanity", "sanity_full_at"]:
