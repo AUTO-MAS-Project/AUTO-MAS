@@ -5,7 +5,7 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
-export type WutheringWavesChannel = 'China' | 'Global' | 'WeGame'
+export type WutheringWavesChannel = 'China' | 'Global'
 
 export interface PathDiscoveryCandidate {
   path: string
@@ -88,7 +88,6 @@ ConvertTo-Json -InputObject $result -Compress -Depth 5
 
 const OKWW_RELATIVE_SENTINELS = ['ok-ww.exe', 'data/apps/ok-ww/app.json']
 const OFFICIAL_LAUNCHER_EXECUTABLE = 'launcher.exe'
-const WEGAME_LAUNCHER_EXECUTABLE = 'wegame.exe'
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -243,10 +242,6 @@ function isOkwwEntry(entry: UninstallRegistryEntry): boolean {
   return normalizedIdentity(entry.keyPath, entry.displayName, entry.publisher).includes('okww')
 }
 
-function isWeGameEntry(entry: UninstallRegistryEntry): boolean {
-  return normalizedIdentity(entry.keyPath, entry.displayName, entry.publisher).includes('wegame')
-}
-
 async function isFile(filePath: string): Promise<boolean> {
   try {
     return (await fs.stat(filePath)).isFile()
@@ -324,34 +319,6 @@ async function findOfficialLauncherCandidates(
   return candidates
 }
 
-function weGameLauncherCandidates(entry: UninstallRegistryEntry): string[] {
-  const directExecutables = [entry.installLocation, entry.displayIcon, entry.uninstallString]
-    .map(parseRegistryPath)
-    .filter((candidate): candidate is string => candidate !== null)
-    .filter(candidate => path.win32.basename(candidate).toLowerCase() === 'wegame.exe')
-  const rootExecutables = uninstallEntryRoots(entry, 3).map(root =>
-    path.win32.join(root, WEGAME_LAUNCHER_EXECUTABLE)
-  )
-  return uniquePaths([...directExecutables, ...rootExecutables])
-}
-
-async function findWeGameLauncherCandidates(
-  uninstallEntries: UninstallRegistryEntry[],
-  fileExists: (filePath: string) => Promise<boolean>
-): Promise<PathDiscoveryCandidate[]> {
-  const candidates: PathDiscoveryCandidate[] = []
-  for (const entry of uninstallEntries.filter(isWeGameEntry)) {
-    for (const launcherPath of weGameLauncherCandidates(entry)) {
-      if (!(await fileExists(launcherPath))) continue
-      candidates.push({
-        path: launcherPath,
-        channel: 'WeGame',
-      })
-    }
-  }
-  return candidates
-}
-
 export async function findOkwwCandidates(
   snapshot: RegistrySnapshot,
   fileExists: (filePath: string) => Promise<boolean> = isFile
@@ -377,11 +344,8 @@ export async function findWutheringWavesCandidates(
   snapshot: RegistrySnapshot,
   fileExists: (filePath: string) => Promise<boolean> = isFile
 ): Promise<PathDiscoveryCandidate[]> {
-  const [officialCandidates, weGameCandidates] = await Promise.all([
-    findOfficialLauncherCandidates(snapshot.kuroLaunchers, fileExists),
-    findWeGameLauncherCandidates(snapshot.uninstallEntries, fileExists),
-  ])
-  return uniqueCandidates([...officialCandidates, ...weGameCandidates])
+  const candidates = await findOfficialLauncherCandidates(snapshot.kuroLaunchers, fileExists)
+  return uniqueCandidates(candidates)
 }
 
 export async function discoverWutheringWavesPath(): Promise<PathDiscoveryResult> {
@@ -399,12 +363,11 @@ export async function discoverWutheringWavesPath(): Promise<PathDiscoveryResult>
   const candidates = await findWutheringWavesCandidates(snapshot)
   if (candidates.length > 0) return successResult(candidates)
 
-  const hasLauncherEvidence =
-    snapshot.kuroLaunchers.length > 0 || snapshot.uninstallEntries.some(isWeGameEntry)
+  const hasLauncherEvidence = snapshot.kuroLaunchers.length > 0
   return {
     success: false,
     error: hasLauncherEvidence
       ? '已找到鸣潮启动器信息，但启动器程序不存在，请重新安装或手动选择目录'
-      : '未检测到鸣潮官方启动器或 WeGame，请先安装启动器，或使用“选择目录”手动导入',
+      : '未检测到鸣潮官方启动器，请先安装启动器，或使用“选择目录”手动导入',
   }
 }
