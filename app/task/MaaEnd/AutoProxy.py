@@ -593,31 +593,6 @@ class AutoProxyTask(TaskExecuteBase):
                         if sanity_task_config["OperatorProgression"] == "OperatorEXP":
                             task["optionValues"]["OperatorEXPRewardsSetOption"] = {
                                 "type": "select",
-                                "caseName": "AdvancedCombatRecord",
-                            }
-                        elif sanity_task_config["OperatorProgression"] == "Promotions":
-                            task["optionValues"]["PromotionsRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protodisk",
-                            }
-                        elif sanity_task_config["OperatorProgression"] == "SkillUp":
-                            task["optionValues"]["SkillUpRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protoprism",
-                            }
-                    elif (
-                        sanity_task_type == "WeaponProgression"
-                        and sanity_task_config["WeaponProgression"] == "WeaponTune"
-                    ):
-                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
-                            "type": "select",
-                            "caseName": "CastDie",
-                        }
-                elif reward_option == "RewardsSetB":
-                    if sanity_task_type == "OperatorProgression":
-                        if sanity_task_config["OperatorProgression"] == "OperatorEXP":
-                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
-                                "type": "select",
                                 "caseName": "CognitiveCarriers",
                             }
                         elif sanity_task_config["OperatorProgression"] == "Promotions":
@@ -638,15 +613,43 @@ class AutoProxyTask(TaskExecuteBase):
                             "type": "select",
                             "caseName": "HeavyCastDie",
                         }
+                elif reward_option == "RewardsSetB":
+                    if sanity_task_type == "OperatorProgression":
+                        if sanity_task_config["OperatorProgression"] == "OperatorEXP":
+                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "AdvancedCombatRecord",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "Promotions":
+                            task["optionValues"]["PromotionsRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protodisk",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "SkillUp":
+                            task["optionValues"]["SkillUpRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protoprism",
+                            }
+                    elif (
+                        sanity_task_type == "WeaponProgression"
+                        and sanity_task_config["WeaponProgression"] == "WeaponTune"
+                    ):
+                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
+                            "type": "select",
+                            "caseName": "CastDie",
+                        }
             elif (
                 if_quick_config
                 and task["taskName"] == target_task_name
                 and target_task_name == "AutoEssence"
             ):
                 task.setdefault("optionValues", {})
-                task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
-                    "type": "select",
-                    "caseName": sanity_task_config["AutoEssenceSpecifiedLocation"],
+                task["optionValues"].pop("AutoEssenceSpecifiedLocation", None)
+                task["optionValues"]["AutoEssenceChooseLocation"] = {
+                    "type": "checkbox",
+                    "caseNames": [
+                        sanity_task_config["AutoEssenceSpecifiedLocation"]
+                    ],
                 }
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
