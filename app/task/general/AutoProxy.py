@@ -209,6 +209,14 @@ class AutoProxyTask(TaskExecuteBase):
         self.error_log = [
             _.strip() for _ in self.script_config.get("Script", "ErrorLog").split("|")
         ]
+        # 推送日志匹配：按关键字采集任务进程信息，用于任务结束后追加到推送信息
+        self.push_log_keywords = [
+            _.strip()
+            for _ in self.script_config.get("Script", "PushLog").split("|")
+            if _.strip()
+        ]
+        self.push_log_buffer: list[str] = []
+        self._push_log_processed = 0
         self.general_log_monitor = LogMonitor(
             self.log_time_range,
             self.script_config.get("Script", "LogTimeFormat"),
@@ -253,6 +261,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
                 LogRecord()
             )
+            # 重置推送日志采集状态：每次重试只保留当次尝试采集的进程信息
+            self.push_log_buffer.clear()
+            self._push_log_processed = 0
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -552,12 +563,43 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info(f"脚本运行参数配置完成: 自动代理")
 
+    def _format_push_log(self, line: str, latest_time: datetime) -> str:
+        """从单行日志中提取时间戳并剥离时间前缀，生成推送用日志片段。
+
+        时间戳按 LogTimeStart/LogTimeEnd 与 LogTimeFormat 解析，展示为「HH:MM」；
+        解析失败时降级为整行日志内容。
+        """
+        time_text = ""
+        try:
+            parsed = strptime(
+                line[self.log_time_range[0] : self.log_time_range[1]],
+                self.script_config.get("Script", "LogTimeFormat"),
+                latest_time,
+            )
+            time_text = parsed.strftime("%H:%M")
+        except (IndexError, ValueError):
+            pass
+
+        content = (
+            line[: self.log_time_range[0]] + line[self.log_time_range[1] :]
+        ).strip()
+        content = content or line.strip()
+
+        return f"{time_text} - {content}" if time_text else content
+
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
+
+        # 按推送日志关键字采集任务进程信息
+        if self.push_log_keywords:
+            for line in log_content[self._push_log_processed:]:
+                if any(sign in line for sign in self.push_log_keywords):
+                    self.push_log_buffer.append(self._format_push_log(line, latest_time))
+            self._push_log_processed = len(log_content)
 
         for success_sign in self.success_log:
             if success_sign in log:
@@ -616,6 +658,9 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+        # 将本次采集的推送日志回写到用户项，供调度器聚合到推送报告
+        self.cur_user_item.push_log = self.push_log_buffer
 
         statistics = await Config.merge_statistic_info(user_logs_list)
         statistics["user_info"] = self.cur_user_item.name

@@ -51,6 +51,7 @@ class UserItem:
     log_record: dict[datetime, LogRecord] = field(
         default_factory=dict
     )  # 用户本次代理的全部日志记录
+    push_log: list[str] = field(default_factory=list)  # 用户本次代理采集的推送日志
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
