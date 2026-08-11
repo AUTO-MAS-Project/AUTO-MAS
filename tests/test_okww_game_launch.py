@@ -5,10 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from app.task.Okww.AutoProxy import (
-    AutoProxyTask,
-    _WUWA_CLIENT_PROCESS,
-)
+from app.task.Okww.AutoProxy import AutoProxyTask, _WUWA_CLIENT_PROCESS
 from app.utils import ProcessManager
 
 okww_auto_proxy = importlib.import_module("app.task.Okww.AutoProxy")
