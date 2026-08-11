@@ -82,6 +82,20 @@
               </a-button>
             </a-popover>
             <a-tag v-else-if="matrixStatistics !== null" color="default">无合适的基质</a-tag>
+            <a-popover v-if="pullCountStatistics" placement="bottomLeft" trigger="hover">
+              <template #content>
+                <div class="pull-count-popover">
+                  <span>资源折算：{{ pullCountStatistics.resource_pulls }} 抽</span>
+                  <span>可留到下版本：{{ pullCountStatistics.carry_over_pulls }} 抽</span>
+                  <span>下版本商店：{{ pullCountStatistics.next_pool_shop_pulls }} 抽</span>
+                  <span>下版本签到：{{ pullCountStatistics.next_pool_signin_pulls }} 抽</span>
+                </div>
+              </template>
+              <a-button size="small" class="drop-btn">
+                当前 {{ pullCountStatistics.current_pool_total }} 抽 · 下版本
+                {{ pullCountStatistics.next_pool_total }} 抽
+              </a-button>
+            </a-popover>
           </div>
         </div>
 
@@ -169,6 +183,7 @@ import {
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
+import type { PullCountStatistics } from '@/types/history'
 
 interface Props {
   open: boolean
@@ -181,6 +196,7 @@ interface Props {
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
+  pullCountStatistics: PullCountStatistics | null
   fontSize: number
   fontSizeOptions: number[]
   editorTheme: string
@@ -356,6 +372,14 @@ const displayLogContent = computed(() => {
   max-width: 300px;
   max-height: 300px;
   overflow-y: auto;
+}
+
+.pull-count-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 .drop-stage {

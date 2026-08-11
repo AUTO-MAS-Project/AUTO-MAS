@@ -925,6 +925,7 @@ class MaaEndUserConfig_Task(BaseModel):
     IfResourceRecycleStation: Optional[bool] = Field(
         default=None, description="资源回收站"
     )
+    IfPullCountCalculator: Optional[bool] = Field(default=None, description="抽数计算")
 
 
 class MaaEndUserConfig_Notify(BaseModel):
@@ -1525,6 +1526,15 @@ class HistoryIndexItem(BaseModel):
     jsonFile: str = Field(..., description="对应JSON文件")
 
 
+class PullCountStatistics(BaseModel):
+    resource_pulls: int = Field(..., description="资源折算抽数")
+    carry_over_pulls: int = Field(..., description="可留到下版本的凭证抽数")
+    next_pool_shop_pulls: int = Field(..., description="下版本商店抽数")
+    next_pool_signin_pulls: int = Field(..., description="下版本签到抽数")
+    current_pool_total: int = Field(..., description="当前卡池可用抽数")
+    next_pool_total: int = Field(..., description="下版本卡池预计总抽数")
+
+
 class HistoryData(BaseModel):
     index: Optional[List[HistoryIndexItem]] = Field(
         default=None, description="历史记录索引列表"
@@ -1538,6 +1548,9 @@ class HistoryData(BaseModel):
     )
     matrix_statistics: Optional[Dict[str, str]] = Field(
         default=None, description="基质统计数据, key为技能组合, value为符合武器名称"
+    )
+    pull_count_statistics: Optional[PullCountStatistics] = Field(
+        default=None, description="MaaEnd 抽数计算统计"
     )
     error_info: Optional[Dict[str, str]] = Field(
         default=None, description="报错信息, key为时间戳, value为错误描述"
