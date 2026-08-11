@@ -1,14 +1,14 @@
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
   path: string
-  channel?: 'China' | 'Global' | 'WeGame'
+  channel?: 'China' | 'Global'
 }
 
 export interface PathDiscoveryResult {
   success: boolean
   candidates?: PathDiscoveryCandidate[]
   path?: string
-  channel?: 'China' | 'Global' | 'WeGame'
+  channel?: 'China' | 'Global'
   error?: string
 }
 
