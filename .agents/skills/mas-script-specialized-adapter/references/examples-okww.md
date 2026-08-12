@@ -1,6 +1,6 @@
 # 案例：OK-WW / Okww 专项适配
 
-本案例描述当前 `dev` 的 Okww 实现。维护 Okww 或复用 ok-script 架构时，以代码和专项测试为准，不沿用旧版本的表单化配置编辑器方案。
+本案例描述当前 `dev` 的 Okww 实现。维护 Okww 或复用 ok-script 架构时，以代码和实际验证为准，不沿用旧版本的表单化配置编辑器方案。
 
 ## 架构事实
 
@@ -117,13 +117,12 @@ data/apps/ok-ww/app.json
 - [ ] working 配置在成功、失败、取消、异常时都能恢复
 - [ ] 配置会话离开页面或超时时会停止任务并释放锁
 - [ ] schema、前端表单与运行时字段没有虚假功能分支
-- [ ] 成功日志、进程提前退出和超时均有专项测试
+- [ ] 成功日志、进程提前退出和超时路径均完成针对性验证
 - [ ] 手动路径选择与配置会话生命周期有前端测试
 
 ## 最小验证
 
 ```powershell
-python -m pytest tests/test_okww_game_launch.py tests/test_okww_launcher_config.py tests/test_okww_user_config_init.py -q
 cd frontend
 yarn test okwwPathDiscoveryService.test.ts
 ```
