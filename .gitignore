@@ -69,7 +69,9 @@ list/
 /app/core/plugins/_generated/
 
 # Test artifacts
-/tests/
 /test-results/
 
 res/docs/ok-series-common-script-report.md
+
+# 强制加入的测试源产生的字节码不纳入版本库
+tests/**/__pycache__/

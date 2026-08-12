@@ -43,7 +43,7 @@ description: >-
 3. 对照自动发现、手动选择和后端 `check()` 的路径判定；同一资源必须使用同一组哨兵文件。
 4. 对照配置会话的启动、WebSocket 状态、停止、超时、卸载和异常路径；确保任务结束、进程退出、锁释放、配置写回。
 5. 对照 `final_task` / `on_crash` 的原子配置恢复、用户状态落盘和独立进程清理。
-6. 运行最小验证；验证缺口写进对应案例的检查清单，不编造验证结果。
+6. 运行最小专项测试；测试缺口写进对应案例的检查清单，不编造验证结果。
 
 ## Okww 当前基线
 
@@ -64,6 +64,7 @@ Okww 已落地为 `ok-script` 专项，当前不是表单化 JSON 编辑器方�
 按改动范围选择最小命令：
 
 ```powershell
+python -m pytest tests/scripts/okww -q --basetemp=test-results/okww
 cd frontend
 yarn test okwwPathDiscoveryService.test.ts
 yarn lint

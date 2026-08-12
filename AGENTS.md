@@ -15,7 +15,7 @@
 - `frontend` 指本仓库前端目录和前端任务；涉及 `frontend`、Vue、UI、组件、路由或前端 API 时，按 `.agents/skills` 中的前端 Skill 执行。
 - 除非用户明确要求，不要创建提交、推送分支、发布 Issue/PR，或切换到会丢失当前工作的分支。
 - 后端 schema 变更后只能通过生成器更新前端 API 代码；不要手改 OpenAPI 生成文件。
-- 不新增或提交后端 `tests/` 文件；临时测试仅用于本地验证并保持未跟踪。
+- 后端测试按 [tests/README.md](tests/README.md) 准入和选测；局部改动默认只运行受影响的文件或功能域，不要自动运行全量测试。
 
 ## 分支与 PR
 
