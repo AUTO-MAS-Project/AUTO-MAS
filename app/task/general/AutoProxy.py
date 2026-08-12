@@ -585,6 +585,12 @@ class AutoProxyTask(TaskExecuteBase):
         ).strip()
         content = content or line.strip()
 
+        # 剥离 OneDragon 风格的日志元数据前缀（如 `[] [operation.py 429] [INFO]: `），
+        # 仅保留指令、节点与返回状态等有效信息
+        content = re.sub(
+            r"^(?:\[\]\s*)?\[[^\]]+\]\s*\[\w+\]:\s*", "", content
+        )
+
         return f"{time_text} - {content}" if time_text else content
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:

@@ -263,9 +263,9 @@ class GeneralManager(TaskExecuteBase):
                 self.task_info, self.script_info.result
             )
             has_game_sign_summary = task_result != self.script_info.result
-            # 聚合各用户采集的推送日志：`用户名：时间 - 内容` 以「 | 」连接
-            push_log_text = " | ".join(
-                f"{u.name}：" + " | ".join(u.push_log)
+            # 聚合各用户采集的推送日志：每条进程信息独占一行，不附加用户名
+            push_log_text = "\n".join(
+                "\n".join(u.push_log)
                 for u in self.script_info.user_list
                 if u.push_log
             )
