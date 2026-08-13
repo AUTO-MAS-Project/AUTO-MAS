@@ -1,13 +1,18 @@
 <template>
   <div class="statistics-card">
-    <div v-if="hasMultipleStatistics" class="statistics-switch">
-      <a-segmented
-        :value="activeStatistics"
-        :options="availableStatistics"
-        size="small"
-        @change="handleStatisticsChange"
+    <a-tabs
+      v-if="hasMultipleStatistics"
+      v-model:active-key="activeStatistics"
+      :animated="false"
+      class="statistics-tabs"
+      size="small"
+    >
+      <a-tab-pane
+        v-for="option in availableStatistics"
+        :key="option.value"
+        :tab="option.label"
       />
-    </div>
+    </a-tabs>
 
     <div class="card-content">
       <template v-if="activeStatistics === 'maa' && hasMaaStatistics">
@@ -214,9 +219,6 @@ watch(
   { immediate: true }
 )
 
-const handleStatisticsChange = (value: string | number) => {
-  activeStatistics.value = value as StatisticsType
-}
 </script>
 
 <style scoped>
@@ -228,10 +230,16 @@ const handleStatisticsChange = (value: string | number) => {
   border: 1px solid var(--ant-color-border-secondary);
 }
 
-.statistics-switch {
-  display: flex;
-  justify-content: flex-end;
+.statistics-tabs {
+  margin: -4px 0 12px;
+}
+
+.statistics-tabs :deep(.ant-tabs-nav) {
   margin-bottom: 12px;
+}
+
+.statistics-tabs :deep(.ant-tabs-tab) {
+  padding: 8px 4px;
 }
 
 .card-content {
