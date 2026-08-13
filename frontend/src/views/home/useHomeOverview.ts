@@ -2,11 +2,13 @@ import { ref } from 'vue'
 import { Service } from '@/api/services/Service'
 import {
   createEmptyEndfieldActivityOverview,
+  createEmptyStarRailActivityOverview,
   type ActivityItem,
   type EndfieldActivityOverview,
   type HomeOverviewResponse,
   type ProxyInfo,
   type ResourceItem,
+  type StarRailActivityOverview,
 } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('首页')
@@ -18,6 +20,7 @@ export const useHomeOverview = () => {
   const resourceData = ref<ResourceItem[]>([])
   const proxyData = ref<Record<string, ProxyInfo>>({})
   const endfieldData = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
+  const starRailData = ref<StarRailActivityOverview>(createEmptyStarRailActivityOverview())
 
   const clearOverviewError = () => {
     error.value = ''
@@ -40,6 +43,7 @@ export const useHomeOverview = () => {
           proxyData.value = data.Proxy
         }
         endfieldData.value = data.Endfield
+        starRailData.value = data.StarRail
       } else {
         error.value = response.message || '获取数据失败'
         logger.warn(`获取首页概览失败: ${error.value}`)
@@ -61,6 +65,7 @@ export const useHomeOverview = () => {
     resourceData,
     proxyData,
     endfieldData,
+    starRailData,
     clearOverviewError,
     fetchOverviewData,
   }
