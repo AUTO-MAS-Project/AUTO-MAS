@@ -39,15 +39,7 @@ export const useHomeOverview = () => {
         if (data.Proxy) {
           proxyData.value = data.Proxy
         }
-        const endfieldOverview = data.Endfield
-        endfieldData.value = endfieldOverview
-          ? {
-              ...createEmptyEndfieldActivityOverview(),
-              ...endfieldOverview,
-              Pools: endfieldOverview.Pools || [],
-              Activities: endfieldOverview.Activities || [],
-            }
-          : createEmptyEndfieldActivityOverview()
+        endfieldData.value = data.Endfield
       } else {
         error.value = response.message || '获取数据失败'
         logger.warn(`获取首页概览失败: ${error.value}`)

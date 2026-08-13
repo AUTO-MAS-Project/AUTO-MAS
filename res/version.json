@@ -1,6 +1,17 @@
 {
-    "version": "v5.4.0-beta.6",
+    "version": "v5.4.0-beta.7",
     "version_info": {
+        "v5.4.0-beta.7": {
+             "新增功能": [
+                "MaaEnd专项 首页活动信息Banner"
+             ],
+             "程序优化": [
+
+             ],
+             "修复BUG": [
+                
+            ]
+        },
         "v5.4.0-beta.6": {
             "新增功能": [
                 "HSR专项 支持 MAS 管控与脚本直控双模式、SRA/M7A 原生配置导入",

@@ -2,7 +2,7 @@
   <a-card class="endfield-card" :loading="loading">
     <template #title>
       <div class="card-title">
-        <span>终末地卡池与活动</span>
+        <span>终末地活动信息</span>
         <a-tag v-if="overview.Stale" color="orange">缓存数据</a-tag>
       </div>
     </template>
@@ -155,15 +155,8 @@ const emptyDescription = computed(() =>
   props.overview.Available ? '暂无进行中的卡池或活动' : '暂无终末地活动数据'
 )
 
-const parseTime = (timeString: string) => {
-  const date = new Date(timeString)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
 const formatTime = (timeString: string) => {
-  const date = parseTime(timeString)
-  if (!date) return timeString
-  return date.toLocaleString('zh-CN', {
+  return new Date(timeString).toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -173,9 +166,7 @@ const formatTime = (timeString: string) => {
 }
 
 const formatShortTime = (timeString: string) => {
-  const date = parseTime(timeString)
-  if (!date) return timeString
-  return date.toLocaleString('zh-CN', {
+  return new Date(timeString).toLocaleString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -183,7 +174,7 @@ const formatShortTime = (timeString: string) => {
   })
 }
 
-const getCountdownValue = (timeString: string) => parseTime(timeString)?.getTime() ?? Date.now()
+const getCountdownValue = (timeString: string) => new Date(timeString).getTime()
 
 const handleImageError = (itemId: string) => {
   failedImageIds.value.add(itemId)
