@@ -72,6 +72,13 @@
             :proxy-data="proxyData"
           />
 
+          <HomeEndfieldOverview
+            v-else-if="moduleKey === 'endfield'"
+            :loading="loading"
+            :overview="endfieldData"
+            @refresh="fetchOverviewData"
+          />
+
           <HomeArknightsOverview
             v-else-if="moduleKey === 'arknights'"
             :loading="loading"
@@ -95,6 +102,7 @@ import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
+import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
@@ -137,6 +145,7 @@ const {
   activityData,
   resourceData,
   proxyData,
+  endfieldData,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()

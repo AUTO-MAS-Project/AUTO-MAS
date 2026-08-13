@@ -2,8 +2,15 @@
     "version": "v5.4.0-beta.7",
     "version_info": {
         "v5.4.0-beta.7": {
-            "新增功能": [
-                "任务调度 支持通过 Ctrl+Shift+Alt+M 全局快捷键停止所有任务"
+             "新增功能": [
+                "任务调度 支持通过 Ctrl+Shift+Alt+M 全局快捷键停止所有任务",
+                "MaaEnd专项 首页活动信息Banner"
+             ],
+             "程序优化": [
+
+             ],
+             "修复BUG": [
+                
             ]
         },
         "v5.4.0-beta.6": {
