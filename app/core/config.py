@@ -688,7 +688,7 @@ class AppConfig(GlobalConfig):
         if not root_path:
             raise ValueError("MaaEnd 路径未配置")
 
-        return await script_config.load_resource()
+        return script_config.get_loaded_resource()
 
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]

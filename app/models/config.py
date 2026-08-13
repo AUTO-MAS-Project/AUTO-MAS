@@ -23,6 +23,7 @@ import asyncio
 import uuid
 import json
 import calendar
+from functools import partial
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -1121,18 +1122,28 @@ class MaaEndConfig(ConfigBase):
                 logger.warning(f"MaaEnd 动态资源加载失败: {error}")
         return is_dirty
 
-    async def load_resource(self) -> dict[str, Any]:
+    async def load_resource(self, force_reload: bool = False) -> dict[str, Any]:
         """加载并缓存 MaaEnd 动态资源。"""
 
         from app.task.MaaEnd.resource_loader import load_maaend_options
 
         resource = await asyncio.to_thread(
-            load_maaend_options,
-            Path(self.get("Info", "Path")),
+            partial(
+                load_maaend_options,
+                Path(self.get("Info", "Path")),
+                force_reload=force_reload,
+            )
         )
         for user_config in self.UserData.values():
             user_config.cache_maaend_resource(resource)
         return resource
+
+    def get_loaded_resource(self) -> dict[str, Any]:
+        """读取已经载入内存的 MaaEnd 动态资源。"""
+
+        from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
+
+        return get_loaded_maaend_options(Path(self.get("Info", "Path")))
 
 
 class SrcUserConfig(ConfigBase):
