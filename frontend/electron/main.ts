@@ -3,10 +3,12 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
   nativeTheme,
+  Notification,
   screen,
   shell,
   Tray,
@@ -16,7 +18,11 @@ import {
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import {
+  registerInitializationHandlers,
+  cleanupInitializationResources,
+  getLocalApiEndpoint,
+} from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 
@@ -27,6 +33,70 @@ import AdmZip = require('adm-zip')
 initializeLogger()
 
 const logger = getLogger('主进程')
+const STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+M'
+let isStoppingAllTasks = false
+
+interface ApiResult {
+  code?: number
+  message?: string
+}
+
+function showShortcutNotification(title: string, body: string): void {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show()
+  }
+}
+
+async function stopAllTasksByShortcut(): Promise<void> {
+  if (isStoppingAllTasks) {
+    logger.info('全部任务正在停止中，忽略重复快捷键')
+    return
+  }
+
+  isStoppingAllTasks = true
+  logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
+
+  try {
+    const apiUrl = `${getLocalApiEndpoint()}/api/dispatch/stop`
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ taskId: 'ALL' }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`停止请求返回错误: ${response.status}`)
+    }
+
+    const result = (await response.json()) as ApiResult
+    if (result.code !== undefined && result.code !== 200) {
+      throw new Error(result.message || `停止请求失败: ${result.code}`)
+    }
+
+    logger.info('所有任务已停止')
+    showShortcutNotification('AUTO-MAS', '所有任务已停止')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`全局快捷键停止所有任务失败: ${errorMsg}`)
+    showShortcutNotification('AUTO-MAS', `停止所有任务失败: ${errorMsg}`)
+  } finally {
+    isStoppingAllTasks = false
+  }
+}
+
+function registerStopAllTasksShortcut(): void {
+  const registered = globalShortcut.register(STOP_ALL_TASKS_SHORTCUT, () => {
+    void stopAllTasksByShortcut()
+  })
+
+  if (registered) {
+    logger.info(`全局停止任务快捷键已注册: ${STOP_ALL_TASKS_SHORTCUT}`)
+  } else {
+    logger.error(`全局停止任务快捷键注册失败: ${STOP_ALL_TASKS_SHORTCUT}`)
+  }
+}
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -1351,6 +1421,10 @@ app.on('second-instance', () => {
   }
 })
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
 app.on('before-quit', async event => {
   // 只处理一次，避免多重触发
   if (!isQuitting) {
@@ -1446,6 +1520,8 @@ app.whenReady().then(async () => {
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
   logger.info('OK-WW 路径发现处理器已注册')
+
+  registerStopAllTasksShortcut()
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {

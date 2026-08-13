@@ -41,6 +41,10 @@ function getBackendService(): BackendService {
   return backendService
 }
 
+export function getLocalApiEndpoint(): string {
+  return getInitService().getMirrorService().getApiEndpoint('local')
+}
+
 /**
  * 注册所有初始化相关的 IPC 处理器
  */
