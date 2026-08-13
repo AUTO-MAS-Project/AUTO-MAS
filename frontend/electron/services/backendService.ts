@@ -98,7 +98,7 @@ export class BackendService {
       this.backendProcess = spawn(pythonExe, [mainPy], {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        env: this.createBackendEnvironment(),
       })
 
       this.startTime = new Date()
@@ -456,6 +456,24 @@ export class BackendService {
     this.startupStdout = ''
     this.startupStderr = ''
     this.isCapturingStartupLogs = false
+  }
+
+  private createBackendEnvironment(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env }
+    const inheritedPath = process.env.PATH || process.env.Path
+
+    for (const key of Object.keys(env)) {
+      if (key.toLowerCase() === 'path') {
+        delete env[key]
+      }
+    }
+
+    if (inheritedPath !== undefined) {
+      env[process.platform === 'win32' ? 'Path' : 'PATH'] = inheritedPath
+    }
+    env.PYTHONIOENCODING = 'utf-8'
+    env.AUTO_MAS_DEV = '1'
+    return env
   }
 
   /**

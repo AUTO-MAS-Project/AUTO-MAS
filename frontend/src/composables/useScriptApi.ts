@@ -1077,10 +1077,6 @@ export function useScriptApi() {
                           hsrUserData.TaskSwitch?.CurrencyWars !== undefined
                             ? hsrUserData.TaskSwitch.CurrencyWars
                             : false,
-                        ForgottenHall:
-                          hsrUserData.TaskSwitch?.ForgottenHall !== undefined
-                            ? hsrUserData.TaskSwitch.ForgottenHall
-                            : false,
                       },
                       TaskOpt: {
                         EchoOfWarWeekday:

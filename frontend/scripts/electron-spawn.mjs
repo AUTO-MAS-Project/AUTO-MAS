@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Wrapper script to spawn Electron with ELECTRON_RUN_AS_NODE unset.
+ * Wrapper script to spawn Electron with a normalized development environment.
  *
  * In some environments (CI, IDE terminals, global npm config),
  * ELECTRON_RUN_AS_NODE=1 is persisted, causing electron.exe to run
  * as plain Node.js instead of the Electron runtime. This script
- * explicitly deletes the variable before spawning the Electron CLI.
+ * explicitly deletes the variable before spawning the Electron CLI. Windows
+ * environment keys are case-insensitive, so PATH variants are normalized too.
  *
  * Usage: node scripts/electron-spawn.mjs [-- <extra electron args>]
  */
@@ -17,7 +18,19 @@ const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 
 const env = { ...process.env }
-delete env.ELECTRON_RUN_AS_NODE
+const inheritedPath = env.PATH || env.Path
+
+for (const key of Object.keys(env)) {
+  const normalizedKey = key.toLowerCase()
+  if (normalizedKey === 'electron_run_as_node' || normalizedKey === 'path') {
+    delete env[key]
+  }
+}
+
+if (inheritedPath !== undefined) {
+  env[process.platform === 'win32' ? 'Path' : 'PATH'] = inheritedPath
+}
+env.NODE_ENV = 'development'
 
 const args = process.argv.slice(2)
 

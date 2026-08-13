@@ -26,7 +26,11 @@ from typing import Any
 from . import m7a_config as m7a
 
 
-def read_native_stage(user_config: Any, field: str) -> dict[str, Any] | None:
+def read_native_stage(
+    user_config: Any,
+    field: str,
+    engine: str | None = None,
+) -> dict[str, Any] | None:
     """读取用户配置中保存的脚本原生副本字段。"""
 
     raw = user_config.get("Stage", field)
@@ -47,23 +51,28 @@ def read_native_stage(user_config: Any, field: str) -> dict[str, Any] | None:
 
     if not isinstance(data, dict) or not data:
         return None
-    return data
+    return _select_engine_stage(data, engine)
 
 
-def read_native_main_stage(user_config: Any) -> dict[str, Any] | None:
+def read_native_main_stage(
+    user_config: Any,
+    engine: str | None = None,
+) -> dict[str, Any] | None:
     return read_native_stage_for_channel(
         user_config,
         str(user_config.get("Stage", "Channel") or "CalyxGolden"),
+        engine,
     )
 
 
 def read_native_stage_for_channel(
     user_config: Any,
     channel: str,
+    engine: str | None = None,
 ) -> dict[str, Any] | None:
     """读取用户配置中指定体力类型保存的脚本原生副本字段。"""
 
-    data = read_native_stage(user_config, "ScriptStage")
+    data = read_native_stage(user_config, "ScriptStage", engine)
     if data is None:
         return None
 
@@ -100,21 +109,25 @@ def get_sra_native_stage(data: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def resolve_m7a_main_stage(user_config: Any) -> tuple[str, str] | None:
-    native = _get_m7a_native_stage(read_native_main_stage(user_config))
+    native = _get_m7a_native_stage(read_native_main_stage(user_config, "M7A"))
     if native is not None and native[0] in m7a.M7A_INSTANCE_TYPES_DAILY:
         return native
     return None
 
 
 def resolve_m7a_ornament_stage(user_config: Any) -> str | None:
-    native = _get_m7a_native_stage(read_native_stage_for_channel(user_config, "Ornament"))
+    native = _get_m7a_native_stage(
+        read_native_stage_for_channel(user_config, "Ornament", "M7A")
+    )
     if native is not None and native[0] == m7a.M7A_INSTANCE_TYPE_ORNAMENT:
         return native[1]
     return None
 
 
 def resolve_m7a_eow_stage(user_config: Any) -> str | None:
-    native = _get_m7a_native_stage(read_native_stage(user_config, "ScriptEchoOfWar"))
+    native = _get_m7a_native_stage(
+        read_native_stage(user_config, "ScriptEchoOfWar", "M7A")
+    )
     if native is not None and native[0] == m7a.M7A_EOW_INSTANCE_NAME_KEY:
         return native[1]
     return None
@@ -141,6 +154,36 @@ def _matches_native_engine(data: dict[str, Any] | None, expected: str) -> bool:
         return False
     engine = str(data.get("engine") or "").strip().upper()
     return engine == expected
+
+
+def _select_engine_stage(
+    data: dict[str, Any],
+    engine: str | None,
+) -> dict[str, Any] | None:
+    """选择新版分引擎 stage 容器，同时兼容旧版单引擎对象。"""
+
+    if engine is None:
+        return data
+
+    normalized = str(engine).strip().upper()
+    by_engine = data.get("byEngine")
+    if isinstance(by_engine, dict):
+        selected = by_engine.get(normalized)
+        return selected if isinstance(selected, dict) and selected else None
+
+    stored_engine = str(data.get("engine") or "").strip().upper()
+    if stored_engine:
+        return data if stored_engine == normalized else None
+
+    # 早期版本只在各 selected stage 上记录 engine 标记；迁移期间继续支持。
+    stages = data.get("stages")
+    if isinstance(stages, dict):
+        for payload in stages.values():
+            if isinstance(payload, dict) and _matches_native_engine(
+                payload, normalized
+            ):
+                return data
+    return None
 
 
 def _safe_int(value: Any) -> int | None:

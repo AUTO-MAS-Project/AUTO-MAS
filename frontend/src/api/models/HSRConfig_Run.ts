@@ -16,10 +16,6 @@ export type HSRConfig_Run = {
      */
     WeeklyTimeLimit?: (number | null);
     /**
-     * 月常任务超时限制（分钟）
-     */
-    MonthlyTimeLimit?: (number | null);
-    /**
      * 低性能兼容模式（仅三月七差分宇宙）
      */
     LowPerformanceMode?: (boolean | null);

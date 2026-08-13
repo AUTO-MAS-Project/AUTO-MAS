@@ -2,7 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
@@ -27,6 +26,10 @@ import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
+import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
+import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
+import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
+import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
@@ -87,7 +90,6 @@ import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
-import type { UserImportAbyssSnapshotIn } from '../models/UserImportAbyssSnapshotIn';
 import type { UserInBase } from '../models/UserInBase';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
@@ -521,26 +523,6 @@ export class Service {
         });
     }
     /**
-     * 从 M7A config.yaml 导入三深渊快照
-     * 从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。
-     * @param requestBody
-     * @returns AbyssSnapshotImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importM7AAbyssSnapshotApiScriptsUserImportM7AAbyssSnapshotPost(
-        requestBody: UserImportAbyssSnapshotIn,
-    ): CancelablePromise<AbyssSnapshotImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/import-m7a-abyss-snapshot',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 删除用户
      * @param requestBody
      * @returns OutBase Successful Response
@@ -762,15 +744,22 @@ export class Service {
     }
     /**
      * 获取 HSR 体力副本动态选项
-     * 按体力执行脚本返回 M7A / SRA 原生副本字段。
+     * 返回 M7A/SRA 原生副本字段。
+     *
+     * ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+     * 按引擎统一返回，不按 slot 生成不同结果。
      * @param scriptId
      * @param engine
+     * @param userId
+     * @param slot
      * @returns HSRStageOptionsOut Successful Response
      * @throws ApiError
      */
     public static getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
         scriptId?: (string | null),
         engine: 'M7A' | 'SRA' = 'M7A',
+        userId?: (string | null),
+        slot: 'main' | 'eow' = 'main',
     ): CancelablePromise<HSRStageOptionsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -778,7 +767,73 @@ export class Service {
             query: {
                 'scriptId': scriptId,
                 'engine': engine,
+                'userId': userId,
+                'slot': slot,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取内置 HSR 能力快照
+     * 返回内置 HSR 的能力快照，不暴露原生编辑器会话。
+     * @param scriptId
+     * @returns HSRCapabilitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrCapabilitiesApiApiScriptsHsrCapabilitiesGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<HSRCapabilitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/capabilities',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 HSR 托管配置字段
+     * 返回原生动态托管字段；用户 ID 只负责归属校验。
+     * @param scriptId
+     * @param userId
+     * @returns HSRManagedConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrManagedConfigApiApiScriptsHsrManagedConfigGet(
+        scriptId?: (string | null),
+        userId?: (string | null),
+    ): CancelablePromise<HSRManagedConfigOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/managed-config',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 导入 HSR 原生配置快照
+     * @param requestBody
+     * @returns HSRDirectConfigImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importHsrDirectConfigApiApiScriptsHsrDirectConfigImportPost(
+        requestBody: HSRDirectConfigImportIn,
+    ): CancelablePromise<HSRDirectConfigImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/direct-config/import',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

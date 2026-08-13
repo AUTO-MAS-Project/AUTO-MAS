@@ -30,6 +30,8 @@ from pathlib import Path
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
+if __name__ == "__main__":
+    os.chdir(current_dir)
 
 from app.utils import get_logger, sanitize_log_message
 
@@ -63,9 +65,25 @@ def is_admin() -> bool:
         return False
 
 
+def is_development_environment() -> bool:
+    """识别显式开发模式或仓库内的标准 .venv。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+
+    return (current_dir / ".git").exists() and Path(sys.prefix).resolve() == (
+        current_dir / ".venv"
+    ).resolve()
+
+
 @logger.catch
 def main():
-    if is_admin():
+    development_environment = is_development_environment()
+    if development_environment:
+        os.environ["AUTO_MAS_DEV"] = "1"
+
+    if is_admin() or development_environment:
         import asyncio
         import uvicorn
         from fastapi import FastAPI

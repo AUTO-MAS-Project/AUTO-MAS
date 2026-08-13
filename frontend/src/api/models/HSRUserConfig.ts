@@ -2,9 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HSRUserConfig_Abyss } from './HSRUserConfig_Abyss';
+import type { HSRUserConfig_Control } from './HSRUserConfig_Control';
 import type { HSRUserConfig_Data } from './HSRUserConfig_Data';
+import type { HSRUserConfig_Direct } from './HSRUserConfig_Direct';
 import type { HSRUserConfig_Info } from './HSRUserConfig_Info';
+import type { HSRUserConfig_Managed } from './HSRUserConfig_Managed';
 import type { HSRUserConfig_Notify } from './HSRUserConfig_Notify';
 import type { HSRUserConfig_Stage } from './HSRUserConfig_Stage';
 import type { HSRUserConfig_TaskOpt } from './HSRUserConfig_TaskOpt';
@@ -35,8 +37,16 @@ export type HSRUserConfig = {
      */
     Notify?: (HSRUserConfig_Notify | null);
     /**
-     * 三深渊配置
+     * 控制配置
      */
-    Abyss?: (HSRUserConfig_Abyss | null);
+    Control?: (HSRUserConfig_Control | null);
+    /**
+     * 托管配置
+     */
+    Managed?: (HSRUserConfig_Managed | null);
+    /**
+     * 直连快照
+     */
+    Direct?: (HSRUserConfig_Direct | null);
 };
 

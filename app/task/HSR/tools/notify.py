@@ -35,7 +35,8 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果" and (
-        Config.get("Notify", "SendTaskResultTime") == "任何时刻"
+        message.get("game_sign_summary", False)
+        or Config.get("Notify", "SendTaskResultTime") == "任何时刻"
         or (
             Config.get("Notify", "SendTaskResultTime") == "仅失败时"
             and message["uncompleted_count"] != 0
@@ -51,12 +52,12 @@ async def push_notification(
         )
         serverchan_message = message_text.replace("\n", "\n\n")
 
-        if Config.get("Notify", "IfSendMail"):
+        if Config.get("Notify", "IfSendMail") and Config.get("Notify", "ToAddress"):
             await Notify.send_mail(
                 "网页", title, message_html, Config.get("Notify", "ToAddress")
             )
 
-        if Config.get("Notify", "IfServerChan"):
+        if Config.get("Notify", "IfServerChan") and Config.get("Notify", "ServerChanKey"):
             await Notify.ServerChanPush(
                 title,
                 f"{serverchan_message}\n\nAUTO-MAS 敬上",
@@ -81,12 +82,12 @@ async def push_notification(
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendStatistic"):
-            if Config.get("Notify", "IfSendMail"):
+            if Config.get("Notify", "IfSendMail") and Config.get("Notify", "ToAddress"):
                 await Notify.send_mail(
                     "网页", title, message_html, Config.get("Notify", "ToAddress")
                 )
 
-            if Config.get("Notify", "IfServerChan"):
+            if Config.get("Notify", "IfServerChan") and Config.get("Notify", "ServerChanKey"):
                 await Notify.ServerChanPush(
                     title,
                     f"{serverchan_message}\n\nAUTO-MAS 敬上",
