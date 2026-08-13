@@ -89,6 +89,30 @@
                   </template>
                   正在配置
                 </a-button>
+                <a-button
+                  v-if="script.type === 'Okww' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  @click="handleStartOkwwConfig(script)"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置ok-ww
+                </a-button>
+                <a-button
+                  v-if="script.type === 'Okww' && props.activeConnections.has(script.id)"
+                  type="default"
+                  size="middle"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
@@ -394,6 +418,8 @@ interface Emits {
 
   (e: 'saveMaaEndConfig', script: Script): void
 
+  (e: 'startOkwwConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'passCheckUser', user: User): void
@@ -571,6 +597,10 @@ const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
 
 const handleSaveMaaEndConfig = (script: Script) => {
   emit('saveMaaEndConfig', script)
+}
+
+const handleStartOkwwConfig = (script: Script) => {
+  emit('startOkwwConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {

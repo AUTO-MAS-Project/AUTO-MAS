@@ -18,6 +18,7 @@ import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
@@ -1466,6 +1467,10 @@ app.whenReady().then(async () => {
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
+
+  // 注册 OK-WW 与鸣潮安装路径发现处理器
+  registerOkwwPathDiscoveryHandlers()
+  logger.info('OK-WW 路径发现处理器已注册')
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {

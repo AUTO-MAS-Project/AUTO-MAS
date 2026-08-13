@@ -87,6 +87,7 @@
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
             :disabled="optionControlsDisabled"
+            :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
             size="large"
             @change="handleTaskOptionChange"
           />
@@ -148,11 +149,13 @@ const props = withDefaults(
     ifQuickConfig?: boolean
     controllerType?: string | null
     essenceLocationOptions: ComboBoxItem[]
+    optionsLoading?: boolean
   }>(),
   {
     loading: false,
     ifQuickConfig: true,
     controllerType: null,
+    optionsLoading: false,
   }
 )
 
@@ -186,7 +189,7 @@ const controlsDisabled = computed(() => {
   return props.loading || !props.ifQuickConfig
 })
 
-const optionControlsDisabled = computed(() => controlsDisabled.value)
+const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
 
 const normalizedSanityTaskType = computed<SanityTaskType>(() =>
   SANITY_TASK_TYPE_OPTIONS.some(option => option.value === formData.Task.SanityTaskType)
@@ -196,6 +199,11 @@ const normalizedSanityTaskType = computed<SanityTaskType>(() =>
 
 const currentField = computed(
   () => PROTOCOL_SPACE_TASK_FIELD_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
+)
+const currentTaskSaveKey = computed(() =>
+  normalizedSanityTaskType.value === 'Essence'
+    ? 'Task.AutoEssenceSpecifiedLocation'
+    : `Task.${currentField.value}`
 )
 
 const currentTaskOptions = computed(() => {
@@ -296,13 +304,14 @@ const emitSaveBatch = (changes: FieldChange[]) => {
   emit('saveBatch', changes)
 }
 
-const ensureCurrentTaskValue = () => {
-  if (optionControlsDisabled.value) return
+const ensureCurrentTaskValue = (): FieldChange | null => {
+  if (optionControlsDisabled.value) return null
   const options = currentTaskOptions.value
-  if (!options.length) return
-  if (!options.some(option => option.value === currentTaskValue.value)) {
-    currentTaskValue.value = options[0].value
-  }
+  if (!options.length) return null
+  if (options.some(option => option.value === currentTaskValue.value)) return null
+
+  currentTaskValue.value = options[0].value
+  return { key: currentTaskSaveKey.value, value: currentTaskValue.value }
 }
 
 const normalizeRewardGroupState = (): FieldChange | null => {
@@ -316,20 +325,12 @@ const normalizeRewardGroupState = (): FieldChange | null => {
 const handleSanityTaskTypeChange = (value: SanityTaskType) => {
   if (optionControlsDisabled.value) return
   formData.Task.SanityTaskType = value
-  ensureCurrentTaskValue()
+  const taskValueChange = ensureCurrentTaskValue()
 
   const changes: FieldChange[] = [
     { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
+    taskValueChange ?? { key: currentTaskSaveKey.value, value: currentTaskValue.value },
   ]
-
-  if (value === 'Essence') {
-    changes.push({
-      key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation ?? '',
-    })
-  } else {
-    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
-  }
 
   const rewardGroupChange = normalizeRewardGroupState()
   if (rewardGroupChange) {
@@ -341,16 +342,7 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
 
 const handleTaskOptionChange = () => {
   if (optionControlsDisabled.value) return
-  const changes: FieldChange[] = []
-
-  if (normalizedSanityTaskType.value === 'Essence') {
-    changes.push({
-      key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation,
-    })
-  } else {
-    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
-  }
+  const changes: FieldChange[] = [{ key: currentTaskSaveKey.value, value: currentTaskValue.value }]
 
   const rewardGroupChange = normalizeRewardGroupState()
   if (rewardGroupChange) {
@@ -361,7 +353,12 @@ const handleTaskOptionChange = () => {
 }
 
 watch(
-  () => formData.Task.SanityTaskType,
+  [
+    () => props.loading,
+    () => props.optionsLoading,
+    () => formData.Task.SanityTaskType,
+    () => props.essenceLocationOptions,
+  ],
   () => {
     if (optionControlsDisabled.value) return
     const changes: FieldChange[] = []
@@ -369,7 +366,10 @@ watch(
       formData.Task.SanityTaskType = normalizedSanityTaskType.value
       changes.push({ key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType })
     }
-    ensureCurrentTaskValue()
+    const taskValueChange = ensureCurrentTaskValue()
+    if (taskValueChange) {
+      changes.push(taskValueChange)
+    }
     const rewardGroupChange = normalizeRewardGroupState()
     if (rewardGroupChange) {
       changes.push(rewardGroupChange)

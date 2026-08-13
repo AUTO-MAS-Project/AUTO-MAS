@@ -1,155 +1,74 @@
 ---
 name: mas-script-specialized-adapter
 description: >-
-  Guide specialized AUTO-MAS integration by script frontend architecture (MAA / SRC /
-  MXU-line like MaaEnd / MFAA-line like M9A / ok-script like Okww). Before coding: run
-  script-architecture intake (prefer repo URL). Surfaces first, then backend. Code norms:
-  references/adapter-code-norms.md.
+  Review, add, or refactor AUTO-MAS specialized script adapters by upstream
+  architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, and
+  ok-script adapters such as Okww. Use for ScriptType registration, task
+  lifecycle, config ownership, ScriptConfig sessions, Electron integration,
+  frontend edit surfaces, and adapter verification.
 ---
 
-# 专项适配（前端表面优先）
+# 专项适配
 
-## 使用前：脚本架构问诊 → 再开工（必做）
+## 开工顺序
 
-专项适配**按脚本前端架构区分**。加载本 Skill 后、**写任何实现前**：
+1. 获取上游仓库或发行版信息，确认 CLI、进程、日志、配置目录和配置 UI。
+2. 对照 [脚本前端架构](references/script-frontend-architectures.md) 归类，并让用户确认架构线与展示文案。
+3. 读取 [专项适配代码规范](references/adapter-code-norms.md) 和对应案例：
+   - SRC：[examples-src.md](references/examples-src.md)
+   - MaaEnd / MXU：[examples-maaend.md](references/examples-maaend.md)
+   - M9A / MFAA：[examples-m9a.md](references/examples-m9a.md)
+   - Okww / ok-script：[examples-okww.md](references/examples-okww.md)
+4. 检查相邻实现与所有注册调用者，再决定最小改动。不要从旧 Skill 文案推断当前行为。
 
-1. **请用户提供脚本/Git 仓库链接**（多仓可都要）。
-2. **Agent 研判** README、目录信号，对照下表归纳架构线。
-3. **请用户确认**后再写代码；无仓库则口述 + [script-frontend-architectures.md](references/script-frontend-architectures.md) 问诊项。
+前端任务同时加载 `mas-frontend-standards`；涉及 UI、表单、遮罩或反馈时再加载 `mas-frontend-ui`。
 
-### UI 开工前必问
+## 完整落点
 
-- 图标来源与落地路径（`frontend/src/assets/<slug>.ico`）、替换入口（列表/弹窗/编辑页）。
-- 用户可见文案统一写法（如 `ok-ww`）vs 技术标识（`Okww`、`ScriptType`、OpenAPI 名）。
+新增或维护 `ScriptType` 时，按实际需要核对以下切面：
 
-### 落地流程（ok-script 等）
+- 配置与 schema：`app/models/config.py`、`app/models/schema.py`
+- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
+- 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
+- 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
+- Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
+- 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
 
-- **先验证**：`General` 跑通启动、日志（可临时预设）。
-- **再专项**：新增 `ScriptType`，迁移默认值到专项页。
-- **最后清理**：删除 General 临时入口。
+不要机械要求所有类型拥有相同文件。先确认架构契约，再补齐真实调用链。
 
-### 流程与验证
+## 审查方法
 
-- **C 策略**：不新增跨模块 helper；规则写入 [adapter-code-norms.md](references/adapter-code-norms.md) 与 `examples-*.md`，**勿**写「现象→根因」排查长文。
-- 默认值：`POST /api/scripts/get`；General 临时预设验证后删除；OpenAPI 见 [adapter-code-norms §1](references/adapter-code-norms.md#1-注册与-api)。
+1. 从 `ScriptType`、任务注册和 UI 入口反查全部调用者。
+2. 对照运行时读取的字段检查 config、schema、生成类型和表单；schema 中存在但运行时未消费的字段不代表有效功能。
+3. 对照自动发现、手动选择和后端 `check()` 的路径判定；同一资源必须使用同一组哨兵文件。
+4. 对照配置会话的启动、WebSocket 状态、停止、超时、卸载和异常路径；确保任务结束、进程退出、锁释放、配置写回。
+5. 对照 `final_task` / `on_crash` 的原子配置恢复、用户状态落盘和独立进程清理。
+6. 运行最小专项测试；测试缺口写进对应案例的检查清单，不编造验证结果。
 
----
+## Okww 当前基线
 
-## 代码规范（必遵守，替代排查叙事）
+Okww 已落地为 `ok-script` 专项，当前不是表单化 JSON 编辑器方案：
 
-全仓新增 `ScriptType`：[adapter-code-norms.md](references/adapter-code-norms.md)（注册、前端表面、任务模块、代码质量、Manager 规范、check() 消息、General 对齐原则）。
+- 自动代理使用 `ok-ww.exe -t N -e`，MAS 只开放任务 `1` 和 `7`，并覆盖 DailyTask 的少量高频字段。
+- 配置使用 `ScriptConfig.py` 无参数启动本体 GUI，通过 WebSocket 遮罩会话保存。
+- 用户配置支持简洁/详细：简洁归 `Default/ConfigFile`，详细归 `{userId}/ConfigFile`。
+- `Game.Enabled` 是当前 UI/运行时的游戏启停总开关；不要从兼容字段推断独立启动或关闭行为。
+- ok-ww 根目录必须同时存在 `ok-ww.exe` 与 `data/apps/ok-ww/app.json`。
+- Electron 一键导入与手动选择必须使用相同哨兵；鸣潮保存启动器路径，后端再解析实际客户端路径。
+- 成功判定使用内置窗口关闭日志；进程在成功标记前退出视为异常。
 
-**Okww 增量**：[examples-okww.md · 实现规范](references/examples-okww.md#实现规范okww-必遵守)。
+完整实现与审查点见 [examples-okww.md](references/examples-okww.md)。
 
-**通用代码质量规范**（所有适配通用，见 [adapter-code-norms §6-9](references/adapter-code-norms.md#6-任务模块代码质量通用所有专项适配)）：
-- hasattr() 消除 → 显式 `__init__` 初始化
-- 原子化文件操作（tmp + rename）
-- DRY 提取共用恢复逻辑
-- 独立 try/except 每操作
-- unlock-then-write 顺序
-- check() 消息用户可操作
+## 验证
 
-### 架构线速查（细节 [script-frontend-architectures.md](references/script-frontend-architectures.md)）
+按改动范围选择最小命令：
 
-| 架构线 | 含义 | 本仓 `ScriptType` |
-|--------|------|-------------------|
-| MAA 线 | MAA 系配置会话、计划表 | `MAA` |
-| SRC 线 | 大表单 + Section | `SRC` |
-| MXU 线 | MaaEnd + MXU、`mxu-*.json` | `MaaEnd` |
-| MFAA 线 | M9A 队列 JSON，无 ScriptConfig 壳 | `M9A` |
-| General | 通用路径/进程/日志 | `General` |
-| ok-script | `-t`/`-e` CLI + 表单化配置编辑器（纯内置判态，AutoProxy 唯一模式） | `Okww` |
+```powershell
+python -m pytest tests/test_okww_game_launch.py tests/test_okww_launcher_config.py tests/test_okww_user_config_init.py -q
+cd frontend
+yarn test okwwPathDiscoveryService.test.ts
+yarn lint
+yarn typecheck
+```
 
-确认架构后读上游 **自启动**（argv vs 写盘）与 **配置落盘**（表单编辑器 vs ScriptConfig GUI vs 仅写 JSON）。MFAA 见 [examples-m9a.md](references/examples-m9a.md)；MXU 见 [examples-maaend.md](references/examples-maaend.md)；ok-script 见 [examples-okww.md](references/examples-okww.md)。
-
----
-
-## 架构取向
-
-**主要对象是前端表面**（`EditView/`、`Scripts.vue`、Section）；后端 `app/task/Xxx/` 同 PR 补齐。先加载 `mas-skills`，配合 `mas-module-boundary`、`mas-data-model`、`mas-api-contract`、`mas-code-standards`。
-
-### 前端表面清单
-
-| 表面 | 要点 |
-|------|------|
-| Hub | `Scripts.vue` / `ScriptTable.vue`：`ScriptType` → URL 片段 |
-| 脚本/用户编辑 | `EditView/Script/`、`EditView/User/`；Section 单职责 + `@save` |
-| 映射 | `types/script.ts`、`useScriptApi.ts`（**含 UserConfig→users[]**） |
-| 路由 | `router/index.ts` 与 Hub 片段一致 |
-| 配置入口 | ok-script 线：**表单化编辑器**（非 ScriptConfig GUI）；Okww: 全内置判态，无 SuccessLog/ErrorLog；MXU/MAA：ScriptConfig `teleport` 遮罩 + WebSocket |
-| 配置 Schema | 表单化编辑器需 `config_schema.py`（字段类型/选项/翻译）+ API 端点 + 前端 Service |
-
-### 后端切面
-
-`XxxConfig` / `XxxUserConfig`、`SCRIPT_BOOK`、`task_manager`、`app/task/Xxx/`（`Manager`、`AutoProxy`；按需 `config_schema.py` 或 `ScriptConfig`；须实现 `final_task` / `on_crash`）。
-
----
-
-## UI 分段（默认）
-
-脚本编辑三段：基本信息 / 游戏配置 / 运行配置。用户编辑三段：基本 / 任务 / 通知。Okww 游戏段：`Enabled`、`LaunchBeforeTask`、`CloseOnFinish` **独立**；见 [examples-okww · 实现规范](references/examples-okww.md#实现规范okww-必遵守)。
-
----
-
-## 完整开发工作流（Agent 执行清单）
-
-以下为 Agent 接到「新增 ScriptType」任务时的标准流程：
-
-### 阶段 1：架构确认
-1. 获取上游仓库 URL → 读 README、CLI 参数、配置方式
-2. 对照 [script-frontend-architectures.md](references/script-frontend-architectures.md) 确认架构线
-3. 与用户确认架构线 + UI 文案（如 `ok-ww` vs `Okww`）
-
-### 阶段 2：前端表面
-4. `Scripts.vue`：新增 `ScriptType` Hub 分支（handleEditScript / handleAddUser / handleEditUser / handleConfirmAddScript）
-5. `ScriptTable.vue`：卡片图标 + 操作按钮
-6. `router/index.ts`：新增 URL 片段路由
-7. `types/script.ts`：`ScriptType` 枚举、默认 config 结构
-8. `useScriptApi.ts`：类型判断 + UserConfig→users[] 两处分支
-9. `OkwwScriptEdit.vue`：脚本编辑三段
-10. `OkwwUserEdit.vue`：用户编辑 + 配置编辑器（按架构线选型）
-11. 图标：`frontend/src/assets/<slug>.ico`
-
-### 阶段 3：后端注册
-12. `app/models/config.py`：`XxxConfig` / `XxxUserConfig`
-13. `app/models/schema.py`：schema 注册
-14. `app/core/config.py`：`isinstance` 分支
-15. `app/api/scripts.py`：`SCRIPT_BOOK` / `USER_BOOK`
-16. `app/utils/constants.py`：`TYPE_BOOK` 展示文案
-17. `yarn openapi` → 确认 `openapi.json` 含新类型
-
-### 阶段 4：任务模块
-18. `app/task/Okww/__init__.py`
-19. `app/task/Okww/manager.py`：METHOD_BOOK、check/prepare/main_task/final_task/on_crash
-20. `app/task/Okww/AutoProxy.py`：__init__、check、prepare、main_task、final_task、on_crash、进程/日志/游戏管理
-21. 按需：`config_schema.py` 或 `ScriptConfig.py`
-22. `app/core/task_manager.py`：注册
-
-### 阶段 5：自检与清理
-23. 对照 [adapter-code-norms.md §10](references/adapter-code-norms.md#10-提交前自检) 逐项检查
-24. 对照对应 `examples-*.md` 实现规范
-25. 删除 General 临时预设入口（如有）
-
----
-
-## 原则
-
-- **Agent 必须修改所有相关文件**，不遗漏任何分支（Hub 四处分支、useScriptApi 两处分支、TYPE_BOOK 等）
-- 对齐最接近的表面模板；一次打通 Hub + 编辑 + 后端；勿手改 `frontend/src/api/models/*`
-- 通用代码质量规范（hasattr 消除、原子 I/O、DRY、独立 try/except）对所有专项适配生效
-
----
-
-## 进一步阅读
-
-- [**专项适配代码规范**](references/adapter-code-norms.md)（含 §6 代码质量、§7 Manager 规范、§8 check() 消息、§9 General 对齐）
-- [脚本前端架构](references/script-frontend-architectures.md)
-- [表面目录与检查清单](references/guide.md)
-- [多类型表面对照](references/examples-frontend-surfaces.md)
-- [SRC](references/examples-src.md) · [MaaEnd](references/examples-maaend.md) · [M9A](references/examples-m9a.md) · [OK-WW](references/examples-okww.md)
-
----
-
-## 提交前自检
-
-对照 [adapter-code-norms.md](references/adapter-code-norms.md)；Okww 另对照 [examples-okww · 实现规范](references/examples-okww.md#实现规范okww-必遵守)。
+文档修改至少运行 Skill 校验，并用 `rg` 确认不存在相互冲突的旧规则。

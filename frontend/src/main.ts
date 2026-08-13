@@ -1,5 +1,6 @@
 import '@/utils/browserDevElectronAPI'
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import '@/styles/inspira.css'
 import App from './App.vue'
 import router from './router/index.ts'
@@ -8,11 +9,17 @@ import { configureLocalMonaco } from '@/utils/monaco'
 
 configureLocalMonaco()
 
-import Antd from 'ant-design-vue'
+import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
+
+const TITLE_BAR_HEIGHT = 32
+const MESSAGE_TOP_GAP = 8
+
+// 静态 message 默认从窗口顶部 8px 开始，会覆盖无边框窗口的标题栏。
+message.config({ top: `${TITLE_BAR_HEIGHT + MESSAGE_TOP_GAP}px` })
 
 // 导入日志系统
 const logger = window.electronAPI.getLogger('前端主入口')
@@ -54,6 +61,7 @@ if (window.electronAPI?.getApiEndpoint) {
 const app = createApp(App)
 
 // 注册插件
+app.use(createPinia())
 app.use(Antd)
 app.use(router)
 

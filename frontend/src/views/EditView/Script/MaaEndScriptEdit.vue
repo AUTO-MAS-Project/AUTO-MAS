@@ -186,6 +186,8 @@
                   v-model:value="maaEndConfig.Game.ControllerType"
                   size="large"
                   :options="controllerOptions"
+                  :loading="maaEndOptionsLoading"
+                  :disabled="maaEndOptionsLoading || isSaving"
                   @change="handleControllerTypeChange"
                 />
               </a-form-item>
@@ -480,6 +482,7 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
 const maaEndSubscriptionId = ref<string | null>(null)
@@ -610,13 +613,18 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
 }
 
 const loadMaaEndOptions = async () => {
-  const response = await getMaaEndOptions(scriptId)
-  if (response?.code !== 200) return
+  maaEndOptionsLoading.value = true
+  try {
+    const response = await getMaaEndOptions(scriptId)
+    if (response?.code !== 200) return
 
-  controllerOptions.value = response.controllers
-  controllerProtocols.value = (
-    response as unknown as { controllerTypes: Record<string, string> }
-  ).controllerTypes
+    controllerOptions.value = response.controllers
+    controllerProtocols.value = (
+      response as unknown as { controllerTypes: Record<string, string> }
+    ).controllerTypes
+  } finally {
+    maaEndOptionsLoading.value = false
+  }
 }
 
 const loadScript = async () => {

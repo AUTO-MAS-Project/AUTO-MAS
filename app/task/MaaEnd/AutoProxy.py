@@ -22,7 +22,6 @@
 import re
 import uuid
 import json
-import json5
 import shutil
 import asyncio
 from pathlib import Path
@@ -38,6 +37,7 @@ from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
 from .tools import login, push_notification, replace_account_switch_task
+from .resource_loader import load_maaend_task_i18n
 from app.task.general.tools import execute_script_task
 
 logger = get_logger("MaaEnd 自动代理")
@@ -544,8 +544,9 @@ class AutoProxyTask(TaskExecuteBase):
         if device_info is not None:
             from app.core import MaaFWManager
 
-            adb_device = await MaaFWManager.ensure_adb_connectable(device_info)
-            maaend_instance["savedDevice"] = {"adbDeviceName": adb_device.name}
+            maaend_instance["savedDevice"] = {
+                "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
+            }
         maaend_tasks = maaend_instance["tasks"]
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
@@ -561,25 +562,11 @@ class AutoProxyTask(TaskExecuteBase):
         settings = maaend_set["settings"]
         if settings["language"] == "system":
             settings["language"] = "zh-CN"
-        maaend_i18n_raw = json.loads(
-            (
-                self.maaend_root_path
-                / f"locales/interface/{settings['language'].lower().replace('-', '_')}.json"
-            ).read_text(encoding="utf-8")
+        maaend_i18n = await asyncio.to_thread(
+            load_maaend_task_i18n,
+            self.maaend_root_path,
+            str(settings["language"]),
         )
-
-        maaend_i18n: dict[str, str] = {}
-        for task_definition_file in self.maaend_root_path.glob("tasks/*.json"):
-            task_definition = json5.loads(  # type: ignore
-                task_definition_file.read_text(encoding="utf-8")
-            )["task"][0]
-            if task_definition["label"].startswith("$"):
-                locale_text = maaend_i18n_raw.get(task_definition["label"].lstrip("$"))
-                if locale_text is None:
-                    raise RuntimeError("MaaEnd 文件不完整，卸载后重新安装MaaEnd")
-                maaend_i18n[task_definition["name"]] = locale_text
-            else:
-                maaend_i18n[task_definition["name"]] = task_definition["label"]
 
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
 

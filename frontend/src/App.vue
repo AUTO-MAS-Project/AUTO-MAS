@@ -15,6 +15,8 @@ import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
+import CursorEffectLayer from './components/CursorEffectLayer.vue'
+import { useCursorEffectStore } from './stores/cursorEffect'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 const logger = window.electronAPI.getLogger('App组件')
@@ -25,6 +27,7 @@ const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdat
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
 const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
+const cursorEffectStore = useCursorEffectStore()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -36,6 +39,8 @@ onMounted(async () => {
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
+  await cursorEffectStore.load()
+  logger.info(`光标效果初始化完成: ${cursorEffectStore.effect}`)
   logger.info(`初始化状态:
     isInitializationPage: ${isInitializationPage.value},
     isInitialized: ${isInitialized.value}
@@ -97,6 +102,7 @@ onMounted(async () => {
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
     <BackendStartupOverlay :visible="isBootstrapping" />
+    <CursorEffectLayer v-if="isAppReady" />
   </ConfigProvider>
 </template>
 

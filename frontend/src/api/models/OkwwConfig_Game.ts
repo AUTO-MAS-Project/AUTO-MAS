@@ -15,7 +15,7 @@ export type OkwwConfig_Game = {
      */
     LaunchBeforeTask?: (boolean | null);
     /**
-     * 游戏程序路径
+     * 游戏启动器路径
      */
     Path?: (string | null);
     /**
