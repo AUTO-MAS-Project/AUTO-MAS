@@ -1,9 +1,15 @@
 import type { Event, Stacktrace } from '@sentry/vue'
 
+import * as Sentry from '@sentry/vue'
+import type { App } from 'vue'
+import type { Router } from 'vue-router'
+
 const PRIVATE_REQUEST_FIELDS = ['cookies', 'data', 'env', 'headers', 'query_string'] as const
 const LOCAL_PATH_PATTERN = /^(?:file:\/\/|[a-zA-Z]:[\\/])/
 const PRIVATE_SPAN_DATA_PATTERN = /(?:^|[._-])(body|cookie|header|query)(?:$|[._-])/i
 const URL_SPAN_DATA_PATTERN = /(?:^|[._-])(file|filename|path|uri|url)(?:$|[._-])/i
+
+let sentryContext: { app: App; router: Router } | undefined
 
 const stripUrlDetails = (value: string) => value.split(/[?#]/, 1)[0]
 
@@ -11,7 +17,7 @@ const sanitizePath = (value: string) => {
   const sanitized = stripUrlDetails(value)
   if (!LOCAL_PATH_PATTERN.test(sanitized)) return sanitized
 
-  const normalized = sanitized.replaceAll('\\', '/')
+  const normalized = sanitized.replace(/\\/g, '/')
   return normalized.slice(normalized.lastIndexOf('/') + 1) || '<local-file>'
 }
 
@@ -28,7 +34,7 @@ const sanitizeStacktrace = (stacktrace?: Stacktrace) => {
   }
 }
 
-export const sanitizeSentryEvent = (event: Event) => {
+export const sanitizeSentryEvent = <T extends Event>(event: T): T => {
   delete event.user
   delete event.extra
   delete event.server_name
@@ -71,4 +77,70 @@ export const sanitizeSentryEvent = (event: Event) => {
   }
 
   return event
+}
+
+const startSentry = () => {
+  if (!sentryContext) return
+
+  Sentry.init({
+    app: sentryContext.app,
+    dsn: 'https://6ad15803ac77e44f24f46f2dfa599def@o4511881138733056.ingest.us.sentry.io/4511902510678016',
+    release: `auto-mas@${import.meta.env.VITE_APP_VERSION}`,
+    environment: import.meta.env.DEV ? 'development' : 'production',
+    sendDefaultPii: false,
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: false,
+        response: false,
+      },
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: {
+        document: false,
+        variables: false,
+      },
+      genAI: {
+        inputs: false,
+        outputs: false,
+      },
+      databaseQueryData: false,
+      stackFrameVariables: false,
+      frameContextLines: 0,
+    },
+    attachProps: false,
+    integrations: [
+      Sentry.browserTracingIntegration({ router: sentryContext.router }),
+      Sentry.breadcrumbsIntegration({
+        console: false,
+        dom: false,
+        history: false,
+      }),
+    ],
+    tracesSampleRate: 0.1,
+    tracePropagationTargets: [/^http:\/\/(?:localhost|127\.0\.0\.1):36163\//],
+    beforeSend: sanitizeSentryEvent,
+    beforeSendTransaction: sanitizeSentryEvent,
+  })
+}
+
+export const setTelemetryEnabled = (enabled: boolean) => {
+  const client = Sentry.getClient()
+
+  if (!enabled) {
+    if (client) client.getOptions().enabled = false
+    return
+  }
+
+  if (client) {
+    client.getOptions().enabled = true
+  } else {
+    startSentry()
+  }
+}
+
+export const configureSentry = (app: App, router: Router, enabled: boolean) => {
+  sentryContext = { app, router }
+  setTelemetryEnabled(enabled)
 }

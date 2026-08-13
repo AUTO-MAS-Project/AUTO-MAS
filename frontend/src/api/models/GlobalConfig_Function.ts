@@ -23,5 +23,9 @@ export type GlobalConfig_Function = {
      * 屏蔽模拟器广告
      */
     IfBlockAd?: (boolean | null);
+    /**
+     * 启用匿名错误与性能遥测
+     */
+    IfEnableTelemetry?: (boolean | null);
 };
 
