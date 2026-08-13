@@ -127,12 +127,7 @@ export interface MaaEndTaskSwitchGroup {
   tasks: MaaEndTaskSwitchItem[]
 }
 
-// 保留旧别名，避免历史引用爆炸
 export type ProtocolSpaceConfig = MaaEndSanityConfig
-
-export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
-  'Win32-Front': MAAEND_TASK_GROUPS.flatMap(group => group.tasks.map(task => task.name)),
-}
 
 export const PROTOCOL_SPACE_TASK_FIELD_MAP: Record<ProtocolSpaceTab, CurrentTaskField> = {
   OperatorProgression: 'OperatorProgression',

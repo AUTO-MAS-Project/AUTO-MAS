@@ -65,7 +65,7 @@
           </template>
           <a-select
             v-model:value="formData.Task.SanityTaskType"
-            :options="SANITY_TASK_TYPE_OPTIONS"
+            :options="sanityTaskTypeOptions"
             :disabled="optionControlsDisabled"
             size="large"
             @change="handleSanityTaskTypeChange"
@@ -124,7 +124,6 @@ import { computed, ref, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
 import {
-  MAAEND_CONTROLLER_TASKS,
   MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
@@ -147,15 +146,15 @@ const props = withDefaults(
     formData: any
     loading?: boolean
     ifQuickConfig?: boolean
-    controllerType?: string | null
     essenceLocationOptions: ComboBoxItem[]
     optionsLoading?: boolean
+    optionsLoaded?: boolean
   }>(),
   {
     loading: false,
     ifQuickConfig: true,
-    controllerType: null,
     optionsLoading: false,
+    optionsLoaded: false,
   }
 )
 
@@ -168,16 +167,7 @@ const formData = props.formData
 const optionColumnSpan = 12
 const activeGroupKey = ref('')
 const showManagedTaskConfig = computed(() => props.ifQuickConfig)
-const supportedTaskNames = computed(
-  () => new Set(MAAEND_CONTROLLER_TASKS[props.controllerType ?? ''] ?? [])
-)
-const showSanityOptions = computed(() => supportedTaskNames.value.has('Sanity'))
-const visibleTaskGroups = computed(() =>
-  MAAEND_TASK_GROUPS.map(group => ({
-    ...group,
-    tasks: group.tasks.filter(task => supportedTaskNames.value.has(task.name)),
-  })).filter(group => group.tasks.length > 0)
-)
+const visibleTaskGroups = computed(() => MAAEND_TASK_GROUPS)
 const activeGroup = computed(
   () => visibleTaskGroups.value.find(group => group.key === activeGroupKey.value) ?? null
 )
@@ -191,8 +181,15 @@ const controlsDisabled = computed(() => {
 
 const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
 
+const sanityTaskTypeOptions = computed(() =>
+  SANITY_TASK_TYPE_OPTIONS.filter(
+    option =>
+      option.value !== 'Essence' || !props.optionsLoaded || props.essenceLocationOptions.length > 0
+  )
+)
+
 const normalizedSanityTaskType = computed<SanityTaskType>(() =>
-  SANITY_TASK_TYPE_OPTIONS.some(option => option.value === formData.Task.SanityTaskType)
+  sanityTaskTypeOptions.value.some(option => option.value === formData.Task.SanityTaskType)
     ? formData.Task.SanityTaskType
     : 'OperatorProgression'
 )
@@ -267,11 +264,7 @@ const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
   Boolean(formData.Task[taskSwitchKey(taskName)])
 
 const showSanityDetail = computed(
-  () =>
-    props.ifQuickConfig &&
-    activeGroupHasSanity.value &&
-    showSanityOptions.value &&
-    isTaskEnabled('Sanity')
+  () => props.ifQuickConfig && activeGroupHasSanity.value && isTaskEnabled('Sanity')
 )
 const showRewardGroupSelect = computed(() => showSanityDetail.value && rewardGroupEnabled.value)
 

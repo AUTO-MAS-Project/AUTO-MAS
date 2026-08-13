@@ -490,7 +490,6 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
   },
   Game: {
     ControllerType: '',
-    ControllerProtocol: '',
     Path: '',
     Arguments: '',
     WaitTime: 60,
@@ -507,10 +506,6 @@ const rules = {
 
 const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
-const legacyControllerProtocols: Record<string, string> = {
-  ADB: 'Adb',
-  'Win32-Front': 'Win32',
-}
 
 const booleanOptions = [
   { label: '是', value: true },
@@ -527,8 +522,11 @@ const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
-const isWinController = computed(() => maaEndConfig.Game.ControllerProtocol === 'Win32')
-const isAdbController = computed(() => maaEndConfig.Game.ControllerProtocol === 'Adb')
+const controllerProtocol = computed(
+  () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
+)
+const isWinController = computed(() => controllerProtocol.value === 'Win32')
+const isAdbController = computed(() => controllerProtocol.value === 'Adb')
 const showManualEmulatorIndexInput = computed(
   () =>
     emulatorDeviceOptions.value.length === 0 &&
@@ -556,11 +554,6 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
-
-  if (!maaEndConfig.Game.ControllerProtocol && maaEndConfig.Game.ControllerType) {
-    maaEndConfig.Game.ControllerProtocol =
-      legacyControllerProtocols[maaEndConfig.Game.ControllerType] ?? ''
-  }
 }
 
 const refreshScript = async () => {
@@ -605,9 +598,7 @@ const loadMaaEndOptions = async () => {
     if (response?.code !== 200) return
 
     controllerOptions.value = response.controllers
-    controllerProtocols.value = (
-      response as unknown as { controllerTypes: Record<string, string> }
-    ).controllerTypes
+    controllerProtocols.value = response.controllerTypes
   } finally {
     maaEndOptionsLoading.value = false
   }
@@ -654,14 +645,12 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
       protocol === 'Adb'
         ? {
             ControllerType: value,
-            ControllerProtocol: protocol,
             Path: '',
             Arguments: '',
             WaitTime: 60,
           }
         : {
             ControllerType: value,
-            ControllerProtocol: protocol,
             EmulatorId: '',
             EmulatorIndex: '',
           }

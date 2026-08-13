@@ -19,6 +19,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import uuid
 import json
 import calendar
@@ -762,6 +763,8 @@ class MaaEndUserConfig(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
+        self._maaend_essence_location_labels: dict[str, str] = {}
+        self._maaend_essence_location_label = ""
 
         ## Info ------------------------------------------------------------
         ## 用户名称
@@ -887,6 +890,28 @@ class MaaEndUserConfig(ConfigBase):
             _normalize_maaend_sanity_task_type(task_data)
         await super().load(data)
 
+    def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
+        """缓存 MaaEnd 基质刷取地点资源。"""
+
+        self._maaend_essence_location_labels = {
+            str(item["value"]): str(item["label"])
+            for item in resource["essenceLocations"]
+        }
+        self._maaend_essence_location_label = self._get_maaend_location_label(
+            self.get("Task", "AutoEssenceSpecifiedLocation")
+        )
+
+    def _get_maaend_location_label(self, value: str) -> str:
+        return self._maaend_essence_location_labels[value] if value else ""
+
+    async def set(self, group: str, name: str, value: Any) -> None:
+        location_label = None
+        if group == "Task" and name == "AutoEssenceSpecifiedLocation":
+            location_label = self._get_maaend_location_label(str(value))
+        await super().set(group, name, value)
+        if location_label is not None:
+            self._maaend_essence_location_label = location_label
+
     def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
         """获取当前生效的理智任务配置"""
 
@@ -980,7 +1005,7 @@ class MaaEndUserConfig(ConfigBase):
                 else task_config[sanity_task_type]
             )
             detail_label = (
-                detail_key
+                self._maaend_essence_location_label
                 if sanity_task_type == "Essence"
                 else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
             )
@@ -1059,10 +1084,6 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
-        ## 控制器协议类型
-        self.Game_ControllerProtocol = ConfigItem(
-            "Game", "ControllerProtocol", "", StringValidator()
-        )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 终末地游戏启动参数
@@ -1088,6 +1109,30 @@ class MaaEndConfig(ConfigBase):
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        is_dirty = await super().load(data)
+        root_path_value = str(self.get("Info", "Path")).strip()
+        resource_config_path = Path(root_path_value) / "config/mxu-MaaEnd.json"
+        if root_path_value and resource_config_path.is_file():
+            try:
+                await self.load_resource()
+            except Exception as error:
+                logger.warning(f"MaaEnd 动态资源加载失败: {error}")
+        return is_dirty
+
+    async def load_resource(self) -> dict[str, Any]:
+        """加载并缓存 MaaEnd 动态资源。"""
+
+        from app.task.MaaEnd.resource_loader import load_maaend_options
+
+        resource = await asyncio.to_thread(
+            load_maaend_options,
+            Path(self.get("Info", "Path")),
+        )
+        for user_config in self.UserData.values():
+            user_config.cache_maaend_resource(resource)
+        return resource
 
 
 class SrcUserConfig(ConfigBase):

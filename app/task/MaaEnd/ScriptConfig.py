@@ -32,8 +32,6 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
-from .resource_loader import load_maaend_options
-
 logger = get_logger("MaaEnd 脚本设置")
 
 

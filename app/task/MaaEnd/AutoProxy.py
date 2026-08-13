@@ -35,7 +35,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
-from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
+from app.utils.constants import UTC4, UTC8, MAAEND_TASKS
 from .tools import login, push_notification, replace_account_switch_task
 from .resource_loader import (
     load_maaend_interface_i18n,
@@ -78,7 +78,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
         self.account_switch_task_name = ""
-        self.color_match_failed_message = ""
+        self.color_match_failed_message: str | None = None
         self.retryable = True
 
     async def check(self) -> str:
@@ -826,7 +826,10 @@ class AutoProxyTask(TaskExecuteBase):
         elif "resolution check failed" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
             self.retryable = False
-        elif self.color_match_failed_message in log:
+        elif (
+            self.color_match_failed_message
+            and self.color_match_failed_message in log
+        ):
             self.cur_user_log.status = "MaaEnd 颜色识别失败，请关闭滤镜或 HDR"
             self.retryable = False
         elif f"任务失败: {self.account_switch_task_name}" in log:

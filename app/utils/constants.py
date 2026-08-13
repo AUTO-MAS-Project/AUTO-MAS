@@ -321,9 +321,6 @@ MAAEND_TASKS = tuple(
 )
 """MaaEnd托管任务列表"""
 
-MAAEND_CONTROLLER_TASKS = {"Win32-Front": MAAEND_TASKS}
-"""MaaEnd控制器支持的托管任务列表"""
-
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",
     "OperatorProgression": "OperatorEXP",

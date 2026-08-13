@@ -974,7 +974,6 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_Game(BaseModel):
     ControllerType: Optional[str] = Field(default=None, description="控制器类型")
-    ControllerProtocol: Optional[str] = Field(default=None, description="控制器协议类型")
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")

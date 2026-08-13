@@ -368,9 +368,9 @@ function buildIssueTemplate(archiveName: string, autoMasVersion?: string): strin
 实际行为：
 
 复现步骤：
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## 日志文件
 

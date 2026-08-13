@@ -39,6 +39,7 @@ from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ManualReview import ManualReviewTask
 from .ScriptConfig import ScriptConfigTask
+from .resource_loader import load_maaend_controller_protocol
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -47,9 +48,6 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]
     "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
-
-LEGACY_CONTROLLER_PROTOCOLS = {"ADB": "Adb", "Win32-Front": "Win32"}
-
 
 class MaaEndManager(TaskExecuteBase):
     """MaaEnd 控制器"""
@@ -77,15 +75,13 @@ class MaaEndManager(TaskExecuteBase):
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
-        self.controller_protocol = script_config.get("Game", "ControllerProtocol")
-        if not self.controller_protocol:
-            self.controller_protocol = LEGACY_CONTROLLER_PROTOCOLS.get(
-                script_config.get("Game", "ControllerType"), ""
+        try:
+            self.controller_protocol = load_maaend_controller_protocol(
+                Path(script_config.get("Info", "Path")),
+                script_config.get("Game", "ControllerType"),
             )
-            if self.controller_protocol:
-                await script_config.set(
-                    "Game", "ControllerProtocol", self.controller_protocol
-                )
+        except (OSError, KeyError, ValueError) as error:
+            return f"MaaEnd 控制器配置读取失败: {error}"
 
         if self.controller_protocol == "Adb" and (
             script_config.get("Game", "EmulatorId") == "-"
@@ -96,9 +92,6 @@ class MaaEndManager(TaskExecuteBase):
             script_config.get("Game", "Path")
         ).exists():
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
-        elif self.controller_protocol not in ("Adb", "Win32"):
-            return "MaaEnd 控制器协议未配置, 请重新选择控制器！"
-
         if self.task_info.mode == "AutoProxy" and not (
             Path(
                 Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
@@ -203,6 +196,7 @@ class MaaEndManager(TaskExecuteBase):
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
+            await self.script_config.load_resource()
             await Config.ScriptConfig.save()
 
             error_user = [

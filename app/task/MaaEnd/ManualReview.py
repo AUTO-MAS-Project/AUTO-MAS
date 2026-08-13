@@ -303,11 +303,11 @@ class ManualReviewTask(TaskExecuteBase):
                     ),
                     fallback_set=local_config,
                 )
-                settings = maaend_set.get("settings", {})
+                settings = maaend_set["settings"]
                 task_i18n = await asyncio.to_thread(
                     load_maaend_task_i18n,
                     self.maaend_root_path,
-                    str(settings.get("language", "system")),
+                    str(settings["language"]),
                 )
                 account_switch_task_name = task_i18n["AccountSwitch"]
                 maaend_instance = maaend_set["instances"][0]

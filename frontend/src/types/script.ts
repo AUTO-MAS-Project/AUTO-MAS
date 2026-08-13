@@ -140,7 +140,6 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
-    ControllerProtocol: string | null
     Path: string
     Arguments: string
     WaitTime: number

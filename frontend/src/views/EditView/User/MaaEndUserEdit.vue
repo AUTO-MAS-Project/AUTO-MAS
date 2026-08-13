@@ -60,9 +60,9 @@
             :form-data="formData"
             :loading="loading"
             :if-quick-config="formData.Info.IfQuickConfig"
-            :controller-type="controllerType"
             :essence-location-options="essenceLocationOptions"
             :options-loading="maaEndOptionsLoading"
+            :options-loaded="maaEndOptionsLoaded"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
@@ -105,21 +105,23 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers } = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const isInitializing = ref(true)
-const loading = computed(() => isInitializing.value)
+const isSaving = ref(false)
+const loading = computed(() => isInitializing.value || userLoading.value)
 const maaEndOptionsLoading = ref(false)
+const maaEndOptionsLoaded = ref(false)
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
-const presetSupported = computed(() => controllerType.value === 'Win32-Front')
+const presetSupported = ref(true)
 
 const maaEndConfigLoading = ref(false)
 const maaEndImportLoading = ref(false)
@@ -129,8 +131,6 @@ const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
-const pendingFieldSaves = new Map<string, any>()
-let fieldSavePromise: Promise<boolean> | null = null
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -228,45 +228,29 @@ const setNestedValue = (target: Record<string, any>, path: string, value: any) =
   current[parts[parts.length - 1]] = value
 }
 
-const saveUserFields = async (changes: FieldChange[]): Promise<boolean> => {
-  if (isInitializing.value || !userId || !changes.length) return false
+const saveUserFields = async (changes: FieldChange[]) => {
+  if (isInitializing.value || isSaving.value || !userId || !changes.length) return
 
-  changes.forEach(change => {
-    if (change.key === 'userName') {
-      syncUserName()
-      pendingFieldSaves.set('Info.Name', formData.Info.Name)
-      return
-    }
-    pendingFieldSaves.set(change.key, change.value)
-  })
+  isSaving.value = true
+  try {
+    const userData: Record<string, any> = {}
 
-  if (fieldSavePromise) return fieldSavePromise
-
-  const savePromise = (async (): Promise<boolean> => {
-    try {
-      while (pendingFieldSaves.size > 0) {
-        const pendingChanges = Array.from(pendingFieldSaves.entries())
-        pendingFieldSaves.clear()
-        const userData: Record<string, any> = {}
-        pendingChanges.forEach(([key, value]) => setNestedValue(userData, key, value))
-
-        const success = await updateUser(scriptId, userId, userData)
-        if (!success) {
-          pendingFieldSaves.clear()
-          return false
-        }
+    changes.forEach(change => {
+      if (change.key === 'userName') {
+        syncUserName()
+        setNestedValue(userData, 'Info.Name', formData.Info.Name)
+        return
       }
-      return true
-    } catch (error) {
-      pendingFieldSaves.clear()
-      logger.error(`保存用户字段失败: ${error instanceof Error ? error.message : String(error)}`)
-      return false
-    } finally {
-      fieldSavePromise = null
-    }
-  })()
-  fieldSavePromise = savePromise
-  return savePromise
+
+      setNestedValue(userData, change.key, change.value)
+    })
+
+    await updateUser(scriptId, userId, userData)
+  } catch (error) {
+    logger.error(`保存用户字段失败: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    isSaving.value = false
+  }
 }
 
 const handleFieldSave = async (key: string, value: any) => {
@@ -296,6 +280,8 @@ const loadMaaEndOptions = async () => {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code === 200) {
       essenceLocationOptions.value = response.essenceLocations
+      presetSupported.value = response.controllerTypes[controllerType.value ?? ''] === 'Win32'
+      maaEndOptionsLoaded.value = true
     }
   } finally {
     maaEndOptionsLoading.value = false
