@@ -100,5 +100,5 @@ export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
-  Endfield?: EndfieldActivityOverview
+  Endfield: EndfieldActivityOverview
 }

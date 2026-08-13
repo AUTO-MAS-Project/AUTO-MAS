@@ -72,83 +72,60 @@ class _ResolvedPool:
     sort_id: int
 
 
-def _parse_activity_time(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
+def _parse_activity_time(value: str | None) -> datetime | None:
+    if not value:
         return None
-    try:
-        parsed = datetime.strptime(value, "%Y/%m/%d %H:%M:%S")
-    except ValueError:
-        return None
-    return parsed.replace(tzinfo=ENDFIELD_TIMEZONE)
+    return datetime.strptime(value, "%Y/%m/%d %H:%M:%S").replace(
+        tzinfo=ENDFIELD_TIMEZONE
+    )
 
 
-def _resolve_text(reference: object, text_table: dict[str, Any], fallback: str) -> str:
-    if not isinstance(reference, dict):
-        return fallback
-    text_id = reference.get("id")
-    resolved = text_table.get(str(text_id))
-    return resolved if isinstance(resolved, str) and resolved else fallback
+def _resolve_text(
+    reference: dict[str, Any], text_table: dict[str, str], fallback: str
+) -> str:
+    return text_table.get(str(reference.get("id")), fallback)
 
 
-def _resolve_sort_id(value: object, fallback: int) -> int:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            pass
-    return fallback
+def _first_time_range(
+    record: dict[str, Any],
+    time_ranges: dict[str, Any],
+    time_key: str,
+    default_time_id: str = "",
+) -> dict[str, str]:
+    time_id = record.get(time_key) or default_time_id
+    return time_ranges.get(time_id, {}).get("timeRangeList", [{}])[0]
 
 
 def _build_activity_records(
     activities: dict[str, Any],
     time_ranges: dict[str, Any],
     activity_tags: dict[str, Any],
-    text_table: dict[str, Any],
+    text_table: dict[str, str],
 ) -> list[_ResolvedActivity]:
     records: list[_ResolvedActivity] = []
     for index, (activity_id, activity) in enumerate(activities.items()):
-        if not isinstance(activity, dict):
-            continue
-
-        time_id = activity.get("timeId")
-        time_config = time_ranges.get(time_id, {})
-        ranges = (
-            time_config.get("timeRangeList", [])
-            if isinstance(time_config, dict)
-            else []
-        )
-        time_range = ranges[0] if ranges and isinstance(ranges[0], dict) else {}
+        time_range = _first_time_range(activity, time_ranges, "timeId")
         tab_image = activity.get("tabImg")
-        image_url = ""
-        if isinstance(tab_image, str) and tab_image:
-            image_url = (
-                f"{AKEDATA_BASE_URL}/{AKEDATA_ACTIVITY_IMAGE_PATH}/"
-                f"{quote(tab_image, safe='')}.png"
-            )
-
-        tag_names: list[str] = []
-        raw_tag_ids = activity.get("tagIds", [])
-        if isinstance(raw_tag_ids, list):
-            for tag_id in raw_tag_ids:
-                tag = activity_tags.get(tag_id, {})
-                tag_name = _resolve_text(
-                    tag.get("name") if isinstance(tag, dict) else None,
-                    text_table,
-                    str(tag_id),
-                )
-                tag_names.append(tag_name)
+        image_url = (
+            f"{AKEDATA_BASE_URL}/{AKEDATA_ACTIVITY_IMAGE_PATH}/"
+            f"{quote(tab_image, safe='')}.png"
+            if tab_image
+            else ""
+        )
+        tag_names = [
+            _resolve_text(activity_tags[tag_id]["name"], text_table, str(tag_id))
+            for tag_id in activity.get("tagIds", [])
+        ]
 
         records.append(
             _ResolvedActivity(
                 activity_id=activity_id,
-                name=_resolve_text(activity.get("name"), text_table, activity_id),
+                name=_resolve_text(activity["name"], text_table, activity_id),
                 start_time=_parse_activity_time(time_range.get("openTime")),
                 end_time=_parse_activity_time(time_range.get("closeTime")),
                 image_url=image_url,
                 tags=tuple(tag_names),
-                sort_id=_resolve_sort_id(activity.get("sortId"), index),
+                sort_id=int(activity.get("sortId", index)),
             )
         )
     return records
@@ -158,31 +135,21 @@ def _build_pool_records(
     pools: dict[str, Any],
     time_ranges: dict[str, Any],
     characters: dict[str, Any],
-    text_table: dict[str, Any],
+    text_table: dict[str, str],
 ) -> list[_ResolvedPool]:
     pool_type_names = {0: "特许寻访", 1: "新手寻访", 2: "常驻寻访", 3: "联合寻访"}
     records: list[_ResolvedPool] = []
     for index, (pool_id, pool) in enumerate(pools.items()):
-        if not isinstance(pool, dict):
-            continue
-
-        time_id = pool.get("clientTopTimeId") or f"time_{pool_id}"
-        time_config = time_ranges.get(time_id, {})
-        ranges = (
-            time_config.get("timeRangeList", [])
-            if isinstance(time_config, dict)
-            else []
+        time_range = _first_time_range(
+            pool,
+            time_ranges,
+            "clientTopTimeId",
+            default_time_id=f"time_{pool_id}",
         )
-        time_range = ranges[0] if ranges and isinstance(ranges[0], dict) else {}
-
         up_character_ids = pool.get("upCharIds", [])
-        if not isinstance(up_character_ids, list):
-            up_character_ids = []
         up_characters = tuple(
             _resolve_text(
-                characters.get(character_id, {}).get("name")
-                if isinstance(characters.get(character_id), dict)
-                else None,
+                characters[character_id]["name"],
                 text_table,
                 str(character_id),
             )
@@ -199,13 +166,13 @@ def _build_pool_records(
         records.append(
             _ResolvedPool(
                 pool_id=pool_id,
-                name=_resolve_text(pool.get("name"), text_table, pool_id),
+                name=_resolve_text(pool["name"], text_table, pool_id),
                 pool_type=pool_type_names.get(pool_type, "角色寻访"),
                 start_time=_parse_activity_time(time_range.get("openTime")),
                 end_time=_parse_activity_time(time_range.get("closeTime")),
                 image_url=image_url,
                 up_characters=up_characters,
-                sort_id=_resolve_sort_id(pool.get("sortId"), index),
+                sort_id=int(pool.get("sortId", index)),
             )
         )
     return records
@@ -218,7 +185,6 @@ class EndfieldActivityService:
         self._source_updated_at = ""
         self._activities: list[_ResolvedActivity] = []
         self._pools: list[_ResolvedPool] = []
-        self._has_cache = False
         self._last_error = ""
         self._next_manifest_check = 0.0
 
@@ -251,7 +217,7 @@ class EndfieldActivityService:
             version = self._get_latest_version(manifest)
             version_id = version["id"]
             source_updated_at = str(manifest.get("updatedAt", ""))
-            if self._has_cache and version_id == self._version_id:
+            if version_id == self._version_id:
                 self._source_updated_at = source_updated_at
                 return
 
@@ -288,32 +254,18 @@ class EndfieldActivityService:
         self._pools = resolved_pools
         self._version_id = version_id
         self._source_updated_at = source_updated_at
-        self._has_cache = True
 
     @staticmethod
     async def _fetch_json(client: httpx.AsyncClient, url: str) -> dict[str, Any]:
         response = await client.get(url)
         response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
-            raise ValueError(f"远程数据不是 JSON 对象: {url}")
-        return data
+        return response.json()
 
     @staticmethod
     def _get_latest_version(manifest: dict[str, Any]) -> dict[str, str]:
-        latest = manifest.get("latest")
-        versions = manifest.get("versions")
-        if not isinstance(latest, str) or not isinstance(versions, list):
-            raise ValueError("AKEDatabase 版本清单缺少 latest 或 versions")
-
-        for version in versions:
-            if not isinstance(version, dict) or version.get("id") != latest:
-                continue
-            table_path = version.get("tableCfgPath")
-            if not isinstance(table_path, str) or not table_path:
-                break
-            return {"id": latest, "tableCfgPath": table_path.strip("/")}
-        raise ValueError("AKEDatabase 版本清单中找不到 latest 数据路径")
+        latest = manifest["latest"]
+        version = next(item for item in manifest["versions"] if item["id"] == latest)
+        return {"id": latest, "tableCfgPath": version["tableCfgPath"].strip("/")}
 
     def _build_overview(self) -> dict[str, Any]:
         now = datetime.now(tz=ENDFIELD_TIMEZONE)
@@ -335,11 +287,11 @@ class EndfieldActivityService:
         active_pools.sort(key=lambda pool: (pool.sort_id, pool.pool_id))
 
         return {
-            "Available": self._has_cache,
-            "Stale": bool(self._last_error and self._has_cache),
+            "Available": bool(self._version_id),
+            "Stale": bool(self._last_error and self._version_id),
             "Message": (
                 "终末地活动数据暂不可用"
-                if self._last_error and not self._has_cache
+                if self._last_error and not self._version_id
                 else ("正在使用上次成功获取的活动数据" if self._last_error else "")
             ),
             "Version": self._version_id,
