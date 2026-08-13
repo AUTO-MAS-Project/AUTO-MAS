@@ -156,21 +156,6 @@ HSR_CURRENCY_WARS_FINAL_SUCCESS_SRA: tuple[str, ...] = (
     "达到终止状态：游戏结束",          # CurrencyWars.py:790
 )
 
-HSR_ABYSS_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "混沌回忆未刷新",                  # basechallenge.py:64
-    "虚构叙事未刷新",
-    "末日幻影未刷新",
-    "星数：3/3",                        # basechallenge.py:61
-)
-HSR_ABYSS_FINAL_FAILURE_M7A: tuple[str, ...] = (
-    "战斗超时",                        # memoryofchaos.py:208 / purefiction.py:209 / apocalyptic.py:301
-    "领取星琼失败",                    # memoryofchaos.py:230 / purefiction.py:231 / apocalyptic.py:331
-    "前往挑战失败",                    # apocalyptic.py:143
-    "选择buff失败",                    # apocalyptic.py:184
-    "没有找到角色",                    # apocalyptic.py:215
-)
-
-
 def emit_process_output(
     log_callback: Callable[[str], None] | None,
     title: str,
@@ -401,27 +386,3 @@ def detect_daily_completion(
             f"但本次调用方为 {upper_script}，拒绝跨脚本写完成态"
         )
     return True, f"{label} 日志命中日常完成 marker：{marker}"
-
-
-def detect_abyss_completion(
-    result: object,
-    abyss_type: str | None = None,
-) -> tuple[bool, str]:
-    """根据 M7A 输出判断三深渊本次执行是否完成。
-
-    ``abyss_type`` 形如 ``"ForgottenHall"`` / ``"PureFiction"`` / ``"Apocalyptic"``；
-    不传时按三深渊整体 marker 判定（混沌回忆/虚构叙事/末日幻影任一命中即视为完成）。
-    当前仅定义骨架，**不**接入三深渊 on_success。
-    """
-
-    text = result_text(result)
-    if not text:
-        return False, "外部脚本未返回可判断的三深渊日志"
-
-    if any(marker in text for marker in HSR_ABYSS_FINAL_FAILURE_M7A):
-        return False, "三深渊日志命中 final_failure marker，本次未完成"
-
-    if not any(marker in text for marker in HSR_ABYSS_FINAL_SUCCESS_M7A):
-        return False, "三深渊日志未命中满星/未刷新 final_success marker"
-
-    return True, "三深渊日志命中 final_success marker（满星或未刷新）"

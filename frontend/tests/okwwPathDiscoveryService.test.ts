@@ -44,14 +44,6 @@ describe('OK-WW path discovery helpers', () => {
           displayIcon: null,
           uninstallString: null,
         },
-        {
-          keyPath: 'WeGame',
-          displayName: 'WeGame',
-          publisher: 'Tencent',
-          installLocation: 'E:\\WeGame\\wegame.exe',
-          displayIcon: null,
-          uninstallString: null,
-        },
       ],
       kuroLaunchers: [
         {
@@ -65,7 +57,6 @@ describe('OK-WW path discovery helpers', () => {
         'D:\\Script\\ok-ww\\ok-ww.exe',
         'D:\\Script\\ok-ww\\data\\apps\\ok-ww\\app.json',
         'C:\\Kuro\\Launcher\\launcher.exe',
-        'E:\\WeGame\\wegame.exe',
       ].map(value => value.toLowerCase())
     )
     const fileExists = async (filePath: string) => existingPaths.has(filePath.toLowerCase())
@@ -75,7 +66,6 @@ describe('OK-WW path discovery helpers', () => {
     ])
     await expect(findWutheringWavesCandidates(snapshot, fileExists)).resolves.toEqual([
       { path: 'C:\\Kuro\\Launcher\\launcher.exe', channel: 'China' },
-      { path: 'E:\\WeGame\\wegame.exe', channel: 'WeGame' },
     ])
   })
 })

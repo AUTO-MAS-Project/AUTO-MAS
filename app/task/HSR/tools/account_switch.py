@@ -34,6 +34,7 @@ from .sra_runtime import (
     run_sra_single_task,
     write_sra_temp_config,
 )
+from .game_resolution import HSRGameResolutionOverride
 from .log_detect import has_screenshot_window_unavailable_output
 
 
@@ -44,6 +45,26 @@ HSR_GAME_FOREGROUND_SETTLE_SECONDS = 2
 HSR_SCRIPT_SWITCH_DELAY_SECONDS = 5
 HSR_SRA_WINDOW_RECOVERY_MIN_INTERVAL_SECONDS = 5
 HSR_GAME_PROCESS_NAME = "StarRail.exe"
+
+
+def _script_path(script_config: Any, engine: str) -> str:
+    """Resolve the old-dev engine root from ``Info`` only."""
+
+    try:
+        value = script_config.get("Info", f"{engine}Path")
+    except (AttributeError, KeyError, TypeError):
+        value = ""
+    return str(value or "").strip()
+
+
+def _user_credential(user_config: Any, key: str) -> str:
+    """Read the old-dev account credential from ``Info``."""
+
+    try:
+        value = user_config.get("Info", key)
+    except (AttributeError, KeyError, TypeError):
+        value = ""
+    return str(value or "")
 
 
 def _is_config_value_readable(user_config: Any, group: str, key: str) -> bool:
@@ -61,6 +82,58 @@ def resolve_game_executable_path(script_config: Any) -> Path:
     if path.suffix.lower() == ".exe":
         return path
     return path / HSR_GAME_PROCESS_NAME
+
+
+def _force_resolution_enabled(script_config: Any) -> bool:
+    """读取脚本页的临时 1920×1080 开关；旧配置缺字段时保持关闭。"""
+
+    try:
+        return bool(script_config.get("Game", "ForceResolution1920x1080"))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+
+
+def prepare_game_resolution_if_needed(
+    runtime: Any,
+    script_config: Any,
+    append_log: Callable[[str], None],
+) -> None:
+    """在 MAS 启动游戏前临时写入注册表分辨率覆盖。"""
+
+    if not _force_resolution_enabled(script_config):
+        return
+
+    override = runtime.game_resolution_override
+    if override is None:
+        override = HSRGameResolutionOverride()
+        first_apply = override.apply()
+        runtime.game_resolution_override = override
+    else:
+        first_apply = override.apply()
+
+    if first_apply:
+        append_log(
+            "已临时把星铁注册表设为 1920×1080 窗口模式；"
+            "游戏关闭后将恢复原值"
+        )
+    else:
+        append_log("重新启动游戏前已再次应用临时 1920×1080 窗口模式")
+
+
+def restore_game_resolution_if_needed(
+    runtime: Any,
+    append_log: Callable[[str], None],
+) -> None:
+    """在关闭游戏后恢复启动前的注册表值。"""
+
+    override = runtime.game_resolution_override
+    if override is None:
+        return
+
+    restored = override.restore()
+    runtime.game_resolution_override = None
+    if restored:
+        append_log("已恢复任务开始前的星铁分辨率注册表")
 
 
 def resolve_sra_start_mode_from_credentials(
@@ -85,8 +158,8 @@ def resolve_sra_start_mode(user_config: Any, user_name: str) -> str:
     """根据用户账号密码情况选择 SRA StartGame 模式。"""
 
     return resolve_sra_start_mode_from_credentials(
-        user_config.get("Info", "Id") or "",
-        user_config.get("Info", "Password") or "",
+        _user_credential(user_config, "Id"),
+        _user_credential(user_config, "Password"),
         user_name,
     )
 
@@ -94,8 +167,8 @@ def resolve_sra_start_mode(user_config: Any, user_name: str) -> str:
 def user_needs_account_switch(user_config: Any) -> bool:
     """判断用户是否配置了可用于切号的账号密码。"""
 
-    plain_id = user_config.get("Info", "Id") or ""
-    plain_pw = user_config.get("Info", "Password") or ""
+    plain_id = _user_credential(user_config, "Id")
+    plain_pw = _user_credential(user_config, "Password")
     return bool(plain_id.strip() and plain_pw.strip())
 
 
@@ -107,7 +180,7 @@ def check_user_credentials(user_config: Any, user_name: str) -> str:
             f"用户「{user_name}」的账号密文损坏或当前 Windows 用户无法解密，"
             "请重新设置账号"
         )
-    decrypted_id = user_config.get("Info", "Id")
+    decrypted_id = _user_credential(user_config, "Id")
     if not decrypted_id or not decrypted_id.strip():
         logger.warning(
             f"用户「{user_name}」的账号为空，SRA StartGame 将使用当前已记住账号进入游戏"
@@ -119,7 +192,7 @@ def check_user_credentials(user_config: Any, user_name: str) -> str:
             f"用户「{user_name}」的密码密文损坏或当前 Windows 用户无法解密，"
             "请重新设置密码"
         )
-    decrypted_pw = user_config.get("Info", "Password")
+    decrypted_pw = _user_credential(user_config, "Password")
     if not decrypted_pw or not decrypted_pw.strip():
         logger.warning(
             f"用户「{user_name}」的密码为空，SRA StartGame 将使用当前已记住账号进入游戏"
@@ -157,7 +230,7 @@ async def stop_external_processes(
 
     path_checked = False
     if script_config is not None:
-        m7a_path = str(script_config.get("Info", "M7APath") or "").strip()
+        m7a_path = _script_path(script_config, "M7A")
         if m7a_path:
             m7a_exe_path = Path(m7a_path) / "March7th Assistant.exe"
             try:
@@ -167,7 +240,7 @@ async def stop_external_processes(
                 logger.warning(f"按路径清理 M7A 进程失败：{m7a_exe_path} - {e}")
                 append_log(f"按路径清理 M7A 进程失败：{e}")
 
-        sra_path = str(script_config.get("Info", "SRAPath") or "").strip()
+        sra_path = _script_path(script_config, "SRA")
         if sra_path:
             sra_exe_path = Path(sra_path) / "SRA-cli.exe"
             try:
@@ -305,6 +378,14 @@ class HSRAccountSwitcher:
         self.runtime.game_exe_path = game_exe_path
         process_name = HSR_GAME_PROCESS_NAME
         if process_name and is_process_running(process_name):
+            if (
+                _force_resolution_enabled(self.script_config)
+                and self.runtime.game_resolution_override is None
+            ):
+                self._append_log(
+                    "检测到游戏已在运行，本轮不会中途修改分辨率；"
+                    "请关闭游戏后重新执行以应用 1920×1080"
+                )
             self._append_log(
                 f"检测到游戏进程已在运行（{process_name}），跳过重复启动"
             )
@@ -315,6 +396,12 @@ class HSRAccountSwitcher:
 
         if not game_exe_path.exists():
             raise RuntimeError(f"游戏启动文件不存在：{game_exe_path}")
+
+        prepare_game_resolution_if_needed(
+            self.runtime,
+            self.script_config,
+            self._append_log,
+        )
 
         game_args = self.split_game_arguments(
             self.script_config.get("Game", "Arguments")
