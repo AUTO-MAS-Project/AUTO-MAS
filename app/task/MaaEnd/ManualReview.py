@@ -36,6 +36,7 @@ from app.services import System
 from app.utils import decode_bytes, get_logger, ProcessManager, is_process_running
 from app.utils.constants import UTC4
 from .ScriptConfig import normalize_maaend_config
+from .resource_loader import load_maaend_task_i18n
 from .tools import login, replace_account_switch_task
 
 logger = get_logger("MaaEnd 人工检查")
@@ -99,9 +100,9 @@ class ManualReviewTask(TaskExecuteBase):
         if self.emulator_manager is None:
             self.game_process_manager = ProcessManager()
         self.maaend_process_manager = ProcessManager()
-        maaend_root_path = Path(self.script_config.get("Info", "Path"))
-        self.maaend_exe_path = maaend_root_path / "MaaEnd.exe"
-        self.maaend_set_path = maaend_root_path / "config"
+        self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
+        self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
+        self.maaend_set_path = self.maaend_root_path / "config"
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
 
@@ -302,6 +303,13 @@ class ManualReviewTask(TaskExecuteBase):
                     ),
                     fallback_set=local_config,
                 )
+                settings = maaend_set.get("settings", {})
+                task_i18n = await asyncio.to_thread(
+                    load_maaend_task_i18n,
+                    self.maaend_root_path,
+                    str(settings.get("language", "system")),
+                )
+                account_switch_task_name = task_i18n["AccountSwitch"]
                 maaend_instance = maaend_set["instances"][0]
                 maaend_instance["tasks"] = []
                 replace_account_switch_task(
@@ -345,9 +353,9 @@ class ManualReviewTask(TaskExecuteBase):
                     if content
                 )
                 self.script_info.log = log
-                if "任务失败: AccountSwitch" in log:
+                if f"任务失败: {account_switch_task_name}" in log:
                     raise RuntimeError("MAAEND 账号切换失败")
-                if "任务完成: AccountSwitch" not in log:
+                if f"任务完成: {account_switch_task_name}" not in log:
                     raise RuntimeError("MAAEND 账号切换进程异常退出")
             finally:
                 await self.maaend_process_manager.kill()

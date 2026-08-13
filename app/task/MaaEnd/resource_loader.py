@@ -29,6 +29,9 @@ import json5
 FileSignature = tuple[tuple[str, int, int], ...]
 _options_cache: dict[Path, tuple[FileSignature, tuple[Path, ...], dict[str, Any]]] = {}
 _task_i18n_cache: dict[tuple[Path, str], tuple[FileSignature, dict[str, str]]] = {}
+_interface_i18n_cache: dict[
+    tuple[Path, str], tuple[FileSignature, dict[str, str]]
+] = {}
 _root_locks: dict[Path, LockType] = {}
 _locks_guard = Lock()
 
@@ -44,6 +47,43 @@ def _signature(paths: tuple[Path, ...]) -> FileSignature:
 def _root_lock(root_path: Path) -> LockType:
     with _locks_guard:
         return _root_locks.setdefault(root_path, Lock())
+
+
+def _normalize_language(language: str) -> str:
+    return (
+        "zh_cn"
+        if language.lower() == "system"
+        else language.lower().replace("-", "_")
+    )
+
+
+def _load_maaend_interface_i18n(
+    root_path: Path,
+    language: str,
+) -> tuple[Path, dict[str, str]]:
+    locale_path = root_path / f"locales/interface/{language}.json"
+    paths = (locale_path,)
+    signature = _signature(paths)
+    cache_key = (root_path, language)
+    cached = _interface_i18n_cache.get(cache_key)
+    if cached is not None and cached[0] == signature:
+        return locale_path, cached[1]
+
+    locale = json.loads(locale_path.read_text(encoding="utf-8"))
+    _interface_i18n_cache[cache_key] = (signature, locale)
+    return locale_path, locale
+
+
+def load_maaend_interface_i18n(
+    root_path: Path,
+    language: str,
+) -> dict[str, str]:
+    """加载并缓存 MaaEnd Interface 本地化资源。"""
+
+    root_path = root_path.resolve()
+    language = _normalize_language(language)
+    with _root_lock(root_path):
+        return _load_maaend_interface_i18n(root_path, language)[1]
 
 
 def load_maaend_options(root_path: Path) -> dict[str, Any]:
@@ -118,12 +158,11 @@ def load_maaend_task_i18n(root_path: Path, language: str) -> dict[str, str]:
     """加载并缓存 MaaEnd 任务名称的本地化映射。"""
 
     root_path = root_path.resolve()
-    language = "zh-CN" if language.lower() == "system" else language
-    language = language.lower().replace("-", "_")
+    language = _normalize_language(language)
     cache_key = (root_path, language)
 
     with _root_lock(root_path):
-        locale_path = root_path / f"locales/interface/{language}.json"
+        locale_path, locale = _load_maaend_interface_i18n(root_path, language)
         task_paths = tuple(sorted(root_path.glob("tasks/*.json")))
         paths = (locale_path, *task_paths)
         signature = _signature(paths)
@@ -131,7 +170,6 @@ def load_maaend_task_i18n(root_path: Path, language: str) -> dict[str, str]:
         if cached is not None and cached[0] == signature:
             return cached[1]
 
-        locale = json.loads(locale_path.read_text(encoding="utf-8"))
         data: dict[str, str] = {}
         for task_path in task_paths:
             task = json5.loads(task_path.read_text(encoding="utf-8"))["task"][0]
