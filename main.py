@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
 from app.utils import get_logger, sanitize_log_message
 from app.core import Config
-from app.services.telemetry import init_sentry
+from app.services.telemetry import init_sentry, is_telemetry_enabled
 
 logger = get_logger("主程序")
 
@@ -85,7 +85,11 @@ def main():
     if development_environment:
         os.environ["AUTO_MAS_DEV"] = "1"
 
-    init_sentry(release=Config.VERSION, development=development_environment)
+    init_sentry(
+        release=Config.VERSION,
+        development=development_environment,
+        enabled=is_telemetry_enabled(current_dir / "config" / "Config.json"),
+    )
 
     if is_admin() or development_environment:
         import asyncio

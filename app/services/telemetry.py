@@ -20,6 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+import json
+from pathlib import Path
 from typing import Any
 
 import sentry_sdk
@@ -47,7 +49,11 @@ PRIVATE_DATA_MARKERS = {
     "query_string",
     "statement",
 }
+
 PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
+
+_sentry_context: tuple[str, bool] | None = None
+_sentry_started = False
 
 
 def _strip_url_query(url: str) -> str:
@@ -157,8 +163,21 @@ def sanitize_event(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any
     return event
 
 
-def init_sentry(release: str, development: bool) -> None:
-    """初始化后端 Sentry 错误与性能监控。"""
+def is_telemetry_enabled(config_path: Path) -> bool:
+    """读取遥测开关；缺失或损坏的旧配置按默认开启处理。"""
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        value = data.get("Function", {}).get("IfEnableTelemetry", True)
+        return value if isinstance(value, bool) else True
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return True
+
+
+def _start_sentry(release: str, development: bool) -> None:
+    """使用固定的脱敏策略启动 Sentry。"""
+
+    global _sentry_started
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
@@ -176,6 +195,37 @@ def init_sentry(release: str, development: bool) -> None:
         before_send=sanitize_event,
         before_send_transaction=sanitize_event,
     )
+    _sentry_started = True
 
 
-__all__ = ["init_sentry", "sanitize_event"]
+def set_telemetry_enabled(enabled: bool) -> None:
+    """立即启用或停用后端遥测。"""
+
+    global _sentry_started
+
+    if not enabled:
+        if _sentry_started:
+            sentry_sdk.get_client().close(timeout=0)
+            sentry_sdk.init(dsn=None)
+            _sentry_started = False
+        return
+
+    if not _sentry_started and _sentry_context is not None:
+        _start_sentry(*_sentry_context)
+
+
+def init_sentry(release: str, development: bool, enabled: bool = True) -> None:
+    """记录运行环境，并按用户配置初始化后端 Sentry。"""
+
+    global _sentry_context
+
+    _sentry_context = (release, development)
+    set_telemetry_enabled(enabled)
+
+
+__all__ = [
+    "init_sentry",
+    "is_telemetry_enabled",
+    "sanitize_event",
+    "set_telemetry_enabled",
+]

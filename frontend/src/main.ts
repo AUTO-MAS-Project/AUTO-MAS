@@ -1,13 +1,13 @@
 import '@/utils/browserDevElectronAPI'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import * as Sentry from '@sentry/vue'
 import '@/styles/inspira.css'
 import App from './App.vue'
 import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
-import { sanitizeSentryEvent } from '@/utils/sentry'
+import { getConfig } from '@/utils/config'
+import { configureSentry } from '@/utils/sentry'
 
 configureLocalMonaco()
 
@@ -74,52 +74,17 @@ app.config.errorHandler = (err, instance, info) => {
   logger.error(`Vue应用错误: ${errorMsg}, 组件信息: ${info}`)
 }
 
-Sentry.init({
-  app,
-  dsn: 'https://6ad15803ac77e44f24f46f2dfa599def@o4511881138733056.ingest.us.sentry.io/4511902510678016',
-  release: `auto-mas@${import.meta.env.VITE_APP_VERSION}`,
-  environment: import.meta.env.DEV ? 'development' : 'production',
-  sendDefaultPii: false,
-  dataCollection: {
-    userInfo: false,
-    cookies: false,
-    httpHeaders: {
-      request: false,
-      response: false,
-    },
-    httpBodies: [],
-    urlQueryParams: false,
-    graphQL: {
-      document: false,
-      variables: false,
-    },
-    genAI: {
-      inputs: false,
-      outputs: false,
-    },
-    databaseQueryData: false,
-    stackFrameVariables: false,
-    frameContextLines: 0,
-  },
-  attachProps: false,
-  integrations: [
-    Sentry.browserTracingIntegration({ router }),
-    Sentry.breadcrumbsIntegration({
-      console: false,
-      dom: false,
-      history: false,
-    }),
-  ],
-  tracesSampleRate: 0.1,
-  tracePropagationTargets: [/^http:\/\/(?:localhost|127\.0\.0\.1):36163\//],
-  beforeSend: sanitizeSentryEvent,
-  beforeSendTransaction: sanitizeSentryEvent,
-})
+const bootstrap = async () => {
+  const frontendConfig = await getConfig()
+  configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
 
-// 挂载应用
-app.mount('#app')
+  // 挂载应用
+  app.mount('#app')
 
-// 注册WebSocket消息监听组件
-app.component('WebSocketMessageListener', WebSocketMessageListener)
+  // 注册WebSocket消息监听组件
+  app.component('WebSocketMessageListener', WebSocketMessageListener)
 
-logger.info('前端应用初始化完成')
+  logger.info('前端应用初始化完成')
+}
+
+void bootstrap()

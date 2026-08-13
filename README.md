@@ -101,7 +101,7 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 - 运行时错误信息
 - 性能追踪信息
 
-AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。
+AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。匿名遥测默认开启，可在“设置 → 功能设置”中关闭；关闭后前后端均不再发送遥测数据。
 
 To better serve you, AUTO-MAS will automatically collect the following information:
 
@@ -109,7 +109,7 @@ To better serve you, AUTO-MAS will automatically collect the following informati
 - Runtime error information
 - Performance tracing information
 
-AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent.
+AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under Settings → Function Settings; once disabled, neither the frontend nor backend sends telemetry data.
 
 ---
 
