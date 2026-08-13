@@ -122,7 +122,12 @@ def init_maaend_task_config(config) -> None:
         setattr(
             config,
             f"Task_If{task_name}",
-            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+            ConfigItem(
+                "Task",
+                f"If{task_name}",
+                task_name != "PullCountCalculator",
+                BoolValidator(),
+            ),
         )
 
 
