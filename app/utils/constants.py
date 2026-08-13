@@ -301,6 +301,7 @@ MAAEND_TASK_GROUPS = {
             ("AutoSell", "售卖弹性物资"),
             ("EnvironmentMonitoring", "环境监测"),
             ("AutoCollect", "自动采集"),
+            ("TrialOfSwordmancy", "选剑演武"),
         ),
     },
     "Rewards": {

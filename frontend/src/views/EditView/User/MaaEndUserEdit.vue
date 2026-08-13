@@ -173,6 +173,7 @@ const getDefaultMaaEndUserData = () => ({
     IfAutoSell: true,
     IfEnvironmentMonitoring: true,
     IfAutoCollect: true,
+    IfTrialOfSwordmancy: true,
     IfDailyRewards: true,
     IfResourceRecycleStation: true,
   },

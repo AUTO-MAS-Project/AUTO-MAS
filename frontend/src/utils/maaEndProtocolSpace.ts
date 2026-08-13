@@ -86,6 +86,7 @@ export const MAAEND_TASK_GROUPS = [
       { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
       { name: 'AutoCollect', label: '🧺 自动采集' },
+      { name: 'TrialOfSwordmancy', label: '🗡️ 选剑演武' },
     ],
   },
   {

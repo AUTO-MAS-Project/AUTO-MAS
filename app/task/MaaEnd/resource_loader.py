@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
+import hashlib
 import json
 from _thread import LockType
 from pathlib import Path
@@ -24,6 +25,8 @@ from threading import Lock
 from typing import Any
 
 import json5
+
+from app.utils import get_logger
 
 
 FileSignature = tuple[tuple[str, int, int], ...]
@@ -34,6 +37,9 @@ _interface_i18n_cache: dict[
 ] = {}
 _root_locks: dict[Path, LockType] = {}
 _locks_guard = Lock()
+SUPPORTED_CONTROLLER_PROTOCOLS = frozenset({"Adb", "Win32"})
+_OPTIONS_DISK_CACHE_VERSION = 1
+logger = get_logger("MaaEnd 资源加载器")
 
 
 def _signature(paths: tuple[Path, ...]) -> FileSignature:
@@ -47,6 +53,107 @@ def _signature(paths: tuple[Path, ...]) -> FileSignature:
 def _root_lock(root_path: Path) -> LockType:
     with _locks_guard:
         return _root_locks.setdefault(root_path, Lock())
+
+
+def _options_disk_cache_dir() -> Path:
+    return Path.cwd() / "data/cache/maaend_options"
+
+
+def _options_disk_cache_path(root_path: Path) -> Path:
+    cache_key = hashlib.sha256(
+        str(root_path).casefold().encode("utf-8")
+    ).hexdigest()
+    return _options_disk_cache_dir() / f"{cache_key}.json"
+
+
+def _signature_to_json(signature: FileSignature) -> list[list[str | int]]:
+    return [list(part) for part in signature]
+
+
+def _signature_from_json(value: Any) -> FileSignature | None:
+    if not isinstance(value, list):
+        return None
+
+    signature: list[tuple[str, int, int]] = []
+    for part in value:
+        if (
+            not isinstance(part, list)
+            or len(part) != 3
+            or not isinstance(part[0], str)
+            or not isinstance(part[1], int)
+            or not isinstance(part[2], int)
+        ):
+            return None
+        signature.append((part[0], part[1], part[2]))
+    return tuple(signature)
+
+
+def _load_options_from_disk_cache(
+    root_path: Path,
+) -> tuple[FileSignature, tuple[Path, ...], dict[str, Any]] | None:
+    cache_path = _options_disk_cache_path(root_path)
+    if not cache_path.is_file():
+        return None
+
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("version") != _OPTIONS_DISK_CACHE_VERSION:
+            return None
+
+        raw_paths = payload.get("paths")
+        signature = _signature_from_json(payload.get("signature"))
+        data = payload.get("data")
+        if (
+            not isinstance(raw_paths, list)
+            or signature is None
+            or not isinstance(data, dict)
+            or len(raw_paths) != len(signature)
+            or not all(isinstance(path, str) for path in raw_paths)
+            or not isinstance(data.get("controllers"), list)
+            or not isinstance(data.get("controllerTypes"), dict)
+            or not isinstance(data.get("essenceLocations"), list)
+        ):
+            return None
+
+        paths = tuple(Path(path) for path in raw_paths)
+        if _signature(paths) != signature:
+            return None
+
+        logger.debug(f"读取 MaaEnd 选项磁盘缓存：{root_path}")
+        return signature, paths, data
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        logger.debug(f"读取 MaaEnd 选项磁盘缓存失败，回退实时解析：{error}")
+        return None
+
+
+def _save_options_to_disk_cache(
+    root_path: Path,
+    signature: FileSignature,
+    paths: tuple[Path, ...],
+    data: dict[str, Any],
+) -> None:
+    cache_path = _options_disk_cache_path(root_path)
+    payload = {
+        "version": _OPTIONS_DISK_CACHE_VERSION,
+        "root_path": str(root_path),
+        "paths": [str(path) for path in paths],
+        "signature": _signature_to_json(signature),
+        "data": data,
+    }
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = cache_path.with_suffix(".tmp")
+        temp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temp_path.replace(cache_path)
+        logger.debug(f"写入 MaaEnd 选项磁盘缓存：{cache_path}")
+    except (OSError, TypeError, ValueError) as error:
+        logger.debug(f"写入 MaaEnd 选项磁盘缓存失败：{error}")
 
 
 def _normalize_language(language: str) -> str:
@@ -100,6 +207,11 @@ def load_maaend_options(root_path: Path) -> dict[str, Any]:
             except OSError:
                 pass
 
+        disk_cached = _load_options_from_disk_cache(root_path)
+        if disk_cached is not None:
+            _options_cache[root_path] = disk_cached
+            return disk_cached[2]
+
         config_path = root_path / "config/mxu-MaaEnd.json"
         interface_path = root_path / "interface.json"
         config = json5.loads(config_path.read_text(encoding="utf-8"))
@@ -140,17 +252,24 @@ def load_maaend_options(root_path: Path) -> dict[str, Any]:
             )
 
         task = json5.loads(task_path.read_text(encoding="utf-8"))
+        controller_cases = [
+            case
+            for case in interface["controller"]
+            if case["type"] in SUPPORTED_CONTROLLER_PROTOCOLS
+        ]
         data = {
-            "controllers": options(interface["controller"]),
+            "controllers": options(controller_cases),
             "controllerTypes": {
-                case["name"]: case["type"] for case in interface["controller"]
+                case["name"]: case["type"] for case in controller_cases
             },
             "essenceLocations": options(
                 task["option"]["AutoEssenceChooseLocation"]["cases"]
             ),
         }
         paths = (config_path, interface_path, locale_path, task_path)
-        _options_cache[root_path] = (_signature(paths), paths, data)
+        signature = _signature(paths)
+        _options_cache[root_path] = (signature, paths, data)
+        _save_options_to_disk_cache(root_path, signature, paths, data)
         return data
 
 

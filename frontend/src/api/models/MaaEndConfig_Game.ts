@@ -8,6 +8,10 @@ export type MaaEndConfig_Game = {
      */
     ControllerType?: (string | null);
     /**
+     * 控制器协议类型
+     */
+    ControllerProtocol?: (string | null);
+    /**
      * 终末地客户端路径
      */
     Path?: (string | null);

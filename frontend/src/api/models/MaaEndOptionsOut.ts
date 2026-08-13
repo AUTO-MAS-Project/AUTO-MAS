@@ -21,7 +21,12 @@ export type MaaEndOptionsOut = {
      */
     controllers: Array<ComboBoxItem>;
     /**
+     * 控制器协议类型映射
+     */
+    controllerTypes: Record<string, string>;
+    /**
      * MaaEnd 基质刷取地点选项
      */
     essenceLocations: Array<ComboBoxItem>;
 };
+

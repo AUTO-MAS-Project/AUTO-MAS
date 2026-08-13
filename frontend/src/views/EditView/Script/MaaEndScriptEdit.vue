@@ -507,6 +507,10 @@ const rules = {
 
 const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
+const legacyControllerProtocols: Record<string, string> = {
+  ADB: 'Adb',
+  'Win32-Front': 'Win32',
+}
 
 const booleanOptions = [
   { label: '是', value: true },
@@ -552,6 +556,11 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
+
+  if (!maaEndConfig.Game.ControllerProtocol && maaEndConfig.Game.ControllerType) {
+    maaEndConfig.Game.ControllerProtocol =
+      legacyControllerProtocols[maaEndConfig.Game.ControllerType] ?? ''
+  }
 }
 
 const refreshScript = async () => {

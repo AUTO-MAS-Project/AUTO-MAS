@@ -753,6 +753,10 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfAutoCollect != null
                             ? maaEndUserData.Task.IfAutoCollect
                             : true,
+                        IfTrialOfSwordmancy:
+                          maaEndUserData.Task?.IfTrialOfSwordmancy != null
+                            ? maaEndUserData.Task.IfTrialOfSwordmancy
+                            : true,
                         IfDailyRewards:
                           maaEndUserData.Task?.IfDailyRewards != null
                             ? maaEndUserData.Task.IfDailyRewards

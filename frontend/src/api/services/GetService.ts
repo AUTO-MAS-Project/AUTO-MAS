@@ -62,25 +62,6 @@ export class GetService {
         });
     }
     /**
-     * 获取 MaaEnd 动态选项
-     * @param requestBody
-     * @returns MaaEndOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
-        requestBody: ScriptDeleteIn,
-    ): CancelablePromise<MaaEndOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maaend/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取关卡号下拉框信息
      * @param requestBody
      * @returns ComboBoxOut Successful Response
@@ -207,6 +188,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 MaaEnd 动态选项
+     * @param requestBody
+     * @returns MaaEndOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<MaaEndOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

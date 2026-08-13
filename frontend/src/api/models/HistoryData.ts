@@ -17,6 +17,10 @@ export type HistoryData = {
      */
     drop_statistics?: (Record<string, Record<string, number>> | null);
     /**
+     * 基质统计数据, key为技能组合, value为符合武器名称
+     */
+    matrix_statistics?: (Record<string, string> | null);
+    /**
      * 报错信息, key为时间戳, value为错误描述
      */
     error_info?: (Record<string, string> | null);

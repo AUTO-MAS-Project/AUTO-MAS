@@ -120,25 +120,6 @@ export class Service {
         });
     }
     /**
-     * 获取 MaaEnd 动态选项
-     * @param requestBody
-     * @returns MaaEndOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
-        requestBody: ScriptDeleteIn,
-    ): CancelablePromise<MaaEndOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maaend/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取后端git版本信息
      * @returns VersionOut Successful Response
      * @throws ApiError
@@ -458,6 +439,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 MaaEnd 动态选项
+     * @param requestBody
+     * @returns MaaEndOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<MaaEndOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1939,7 +1939,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后 cookies 直接从响应头获取
+     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError

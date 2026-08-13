@@ -84,6 +84,10 @@ export type MaaEndUserConfig_Task = {
      */
     IfAutoCollect?: (boolean | null);
     /**
+     * 选剑演武
+     */
+    IfTrialOfSwordmancy?: (boolean | null);
+    /**
      * 日常奖励领取
      */
     IfDailyRewards?: (boolean | null);

@@ -48,6 +48,8 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]
     "ScriptConfig": ScriptConfigTask,
 }
 
+LEGACY_CONTROLLER_PROTOCOLS = {"ADB": "Adb", "Win32-Front": "Win32"}
+
 
 class MaaEndManager(TaskExecuteBase):
     """MaaEnd 控制器"""
@@ -76,6 +78,14 @@ class MaaEndManager(TaskExecuteBase):
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
         self.controller_protocol = script_config.get("Game", "ControllerProtocol")
+        if not self.controller_protocol:
+            self.controller_protocol = LEGACY_CONTROLLER_PROTOCOLS.get(
+                script_config.get("Game", "ControllerType"), ""
+            )
+            if self.controller_protocol:
+                await script_config.set(
+                    "Game", "ControllerProtocol", self.controller_protocol
+                )
 
         if self.controller_protocol == "Adb" and (
             script_config.get("Game", "EmulatorId") == "-"
