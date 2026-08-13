@@ -19,9 +19,5 @@ export type HSRUserConfig_TaskSwitch = {
      * 货币战争模块开关
      */
     CurrencyWars?: (boolean | null);
-    /**
-     * 三深渊模块开关
-     */
-    ForgottenHall?: (boolean | null);
 };
 

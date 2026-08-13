@@ -41,6 +41,7 @@ from app.task.HSR.tools.m7a_config import (
     M7A_INSTANCE_TYPE_RELIC,
     M7A_INSTANCE_TYPE_STAGNANT_SHADOW,
 )
+from .native_control import resolve_script_path
 
 HSR_STAGE_ENGINE_M7A = "M7A"
 HSR_STAGE_ENGINE_SRA = "SRA"
@@ -126,7 +127,7 @@ def get_sra_stage_options(script_config: Any) -> dict[str, Any]:
 
 
 def _m7a_assets_config_dir(script_config: Any) -> Path:
-    root = str(script_config.get("Info", "M7APath") or "").strip()
+    root = resolve_script_path(script_config, "M7A")
     if not root:
         raise RuntimeError("未配置三月七路径，无法读取副本配置")
     path = Path(root)
@@ -145,7 +146,7 @@ def _m7a_assets_config_dir(script_config: Any) -> Path:
 
 
 def _sra_trailblaze_power_toml_path(script_config: Any) -> Path:
-    root = str(script_config.get("Info", "SRAPath") or "").strip()
+    root = resolve_script_path(script_config, "SRA")
     if not root:
         raise RuntimeError("未配置 SRA 路径，无法读取体力副本配置")
     path = Path(root)

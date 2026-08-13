@@ -304,19 +304,22 @@ class AutoProxyTask(TaskExecuteBase):
         await asyncio.sleep(0)
 
     async def _mas_launch_game_before_task(self) -> None:
-        """使用从启动器元数据解码出的客户端路径直接启动游戏。"""
+        """启动鸣潮并跟踪客户端进程。"""
 
         if isinstance(self.game_manager, ProcessManager):
             if is_process_running(_WUWA_CLIENT_PROCESS):
-                logger.info(
-                    "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
-                )
-                with suppress(RuntimeError):
+                try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
                         datetime.now() + timedelta(seconds=3),
                     )
-                return
+                except RuntimeError:
+                    logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
+                else:
+                    logger.info(
+                        "检测到已配置的鸣潮客户端进程正在运行，跳过重复启动"
+                    )
+                    return
 
             await self.game_manager.open_process(
                 self.game_process_path,

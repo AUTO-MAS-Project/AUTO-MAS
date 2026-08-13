@@ -152,6 +152,13 @@ class OkwwUserConfigInitTest(unittest.IsolatedAsyncioTestCase):
             second_process_path,
         )
 
+    def test_resolver_rejects_non_official_launcher(self) -> None:
+        launcher_path = self.workspace / "third-party-launcher.exe"
+        launcher_path.touch()
+
+        with self.assertRaisesRegex(ValueError, "官方启动器 launcher.exe"):
+            resolve_wuthering_waves_process_path(launcher_path)
+
     @staticmethod
     def _write_launcher_preference(launcher_root: Path, game_root: Path) -> None:
         payload = json.dumps({"installDirPath": str(game_root)}).encode("utf-8")
