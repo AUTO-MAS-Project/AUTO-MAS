@@ -42,17 +42,6 @@
 
     <a-space size="middle" wrap>
       <a-button
-        size="large"
-        :loading="exportingIssueReport"
-        :disabled="pageLoading || showMaaEndConfigMask"
-        @click="exportMaaEndIssueReport"
-      >
-        <template #icon>
-          <DownloadOutlined />
-        </template>
-        导出问题包
-      </a-button>
-      <a-button
         type="primary"
         size="large"
         :loading="maaEndConfigLoading"
@@ -102,14 +91,6 @@
           </div>
         </template>
       </a-alert>
-
-      <a-alert
-        message="遇到问题？"
-        description="点击页面顶部“导出问题包”，然后将 ZIP 原文件发送到 AUTO-MAS 官方 QQ 群。"
-        type="info"
-        show-icon
-        class="notice-alert"
-      />
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
@@ -459,12 +440,10 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
-  DownloadOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -474,8 +453,6 @@ const route = useRoute()
 const router = useRouter()
 const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const logger = window.electronAPI.getLogger('MaaEnd脚本配置')
-const { exporting: exportingIssueReport, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
