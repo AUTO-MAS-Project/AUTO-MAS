@@ -21,9 +21,11 @@
 
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -46,6 +48,7 @@ AKEDATA_CHARACTER_IMAGE_PATH = (
 AKEDATA_REQUEST_TIMEOUT_SECONDS = 20
 AKEDATA_MANIFEST_CACHE_SECONDS = 30 * 60
 AKEDATA_RETRY_SECONDS = 5 * 60
+AKEDATA_CACHE_PATH = Path.cwd() / "data/cache/endfield_activity.json"
 ENDFIELD_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
@@ -180,35 +183,40 @@ def _build_pool_records(
 
 class EndfieldActivityService:
     def __init__(self) -> None:
-        self._lock = asyncio.Lock()
         self._version_id = ""
         self._source_updated_at = ""
         self._activities: list[_ResolvedActivity] = []
         self._pools: list[_ResolvedPool] = []
         self._last_error = ""
         self._next_manifest_check = 0.0
+        self._refresh_task: asyncio.Task[None] | None = None
+        self._load_cache()
 
     async def get_overview(self) -> dict[str, Any]:
-        if time.monotonic() >= self._next_manifest_check:
-            await self._refresh_if_needed()
+        if (
+            time.monotonic() >= self._next_manifest_check
+            and self._refresh_task is None
+        ):
+            self._refresh_task = asyncio.create_task(self._refresh_if_needed())
+        refresh_task = self._refresh_task
+        if not self._version_id and refresh_task is not None:
+            await asyncio.shield(refresh_task)
         return self._build_overview()
 
     async def _refresh_if_needed(self) -> None:
-        async with self._lock:
-            if time.monotonic() < self._next_manifest_check:
-                return
-
-            try:
-                await self._refresh()
-            except Exception as error:
-                self._last_error = f"{type(error).__name__}: {str(error)}"
-                self._next_manifest_check = time.monotonic() + AKEDATA_RETRY_SECONDS
-                logger.warning(f"更新终末地活动数据失败: {self._last_error}")
-            else:
-                self._last_error = ""
-                self._next_manifest_check = (
-                    time.monotonic() + AKEDATA_MANIFEST_CACHE_SECONDS
-                )
+        try:
+            await self._refresh()
+        except Exception as error:
+            self._last_error = f"{type(error).__name__}: {str(error)}"
+            self._next_manifest_check = time.monotonic() + AKEDATA_RETRY_SECONDS
+            logger.warning(f"更新终末地活动数据失败: {self._last_error}")
+        else:
+            self._last_error = ""
+            self._next_manifest_check = (
+                time.monotonic() + AKEDATA_MANIFEST_CACHE_SECONDS
+            )
+        finally:
+            self._refresh_task = None
 
     async def _refresh(self) -> None:
         timeout = httpx.Timeout(AKEDATA_REQUEST_TIMEOUT_SECONDS)
@@ -218,7 +226,9 @@ class EndfieldActivityService:
             version_id = version["id"]
             source_updated_at = str(manifest.get("updatedAt", ""))
             if version_id == self._version_id:
-                self._source_updated_at = source_updated_at
+                if source_updated_at != self._source_updated_at:
+                    self._source_updated_at = source_updated_at
+                    self._save_cache()
                 return
 
             table_root = f"{AKEDATA_BASE_URL}/{version['tableCfgPath']}"
@@ -254,6 +264,110 @@ class EndfieldActivityService:
         self._pools = resolved_pools
         self._version_id = version_id
         self._source_updated_at = source_updated_at
+        self._save_cache()
+
+    def _load_cache(self) -> None:
+        if not AKEDATA_CACHE_PATH.exists():
+            return
+
+        try:
+            cache = json.loads(AKEDATA_CACHE_PATH.read_text(encoding="utf-8"))
+            self._version_id = cache["version_id"]
+            self._source_updated_at = cache["source_updated_at"]
+            self._activities = [
+                _ResolvedActivity(
+                    activity_id=item["activity_id"],
+                    name=item["name"],
+                    start_time=(
+                        datetime.fromisoformat(item["start_time"])
+                        if item["start_time"]
+                        else None
+                    ),
+                    end_time=(
+                        datetime.fromisoformat(item["end_time"])
+                        if item["end_time"]
+                        else None
+                    ),
+                    image_url=item["image_url"],
+                    tags=tuple(item["tags"]),
+                    sort_id=item["sort_id"],
+                )
+                for item in cache["activities"]
+            ]
+            self._pools = [
+                _ResolvedPool(
+                    pool_id=item["pool_id"],
+                    name=item["name"],
+                    pool_type=item["pool_type"],
+                    start_time=(
+                        datetime.fromisoformat(item["start_time"])
+                        if item["start_time"]
+                        else None
+                    ),
+                    end_time=(
+                        datetime.fromisoformat(item["end_time"])
+                        if item["end_time"]
+                        else None
+                    ),
+                    image_url=item["image_url"],
+                    up_characters=tuple(item["up_characters"]),
+                    sort_id=item["sort_id"],
+                )
+                for item in cache["pools"]
+            ]
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            self._version_id = ""
+            self._source_updated_at = ""
+            self._activities = []
+            self._pools = []
+            logger.warning(f"加载终末地活动缓存失败: {error}")
+
+    def _save_cache(self) -> None:
+        cache = {
+            "version_id": self._version_id,
+            "source_updated_at": self._source_updated_at,
+            "activities": [
+                {
+                    "activity_id": item.activity_id,
+                    "name": item.name,
+                    "start_time": (
+                        item.start_time.isoformat() if item.start_time else ""
+                    ),
+                    "end_time": item.end_time.isoformat() if item.end_time else "",
+                    "image_url": item.image_url,
+                    "tags": list(item.tags),
+                    "sort_id": item.sort_id,
+                }
+                for item in self._activities
+            ],
+            "pools": [
+                {
+                    "pool_id": item.pool_id,
+                    "name": item.name,
+                    "pool_type": item.pool_type,
+                    "start_time": (
+                        item.start_time.isoformat() if item.start_time else ""
+                    ),
+                    "end_time": item.end_time.isoformat() if item.end_time else "",
+                    "image_url": item.image_url,
+                    "up_characters": list(item.up_characters),
+                    "sort_id": item.sort_id,
+                }
+                for item in self._pools
+            ],
+        }
+        temporary_path = AKEDATA_CACHE_PATH.with_name(
+            f"{AKEDATA_CACHE_PATH.name}.tmp"
+        )
+        try:
+            AKEDATA_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path.write_text(
+                json.dumps(cache, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temporary_path.replace(AKEDATA_CACHE_PATH)
+        except (OSError, TypeError, ValueError) as error:
+            logger.warning(f"保存终末地活动缓存失败: {error}")
 
     @staticmethod
     async def _fetch_json(client: httpx.AsyncClient, url: str) -> dict[str, Any]:
@@ -292,7 +406,15 @@ class EndfieldActivityService:
             "Message": (
                 "终末地活动数据暂不可用"
                 if self._last_error and not self._version_id
-                else ("正在使用上次成功获取的活动数据" if self._last_error else "")
+                else (
+                    "正在使用上次成功获取的活动数据"
+                    if self._last_error
+                    else (
+                        "正在获取终末地活动数据"
+                        if not self._version_id and self._refresh_task is not None
+                        else ""
+                    )
+                )
             ),
             "Version": self._version_id,
             "UpdatedAt": self._source_updated_at,
