@@ -1,0 +1,181 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+from typing import Any
+
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
+
+
+SENTRY_DSN = (
+    "https://eae490f602916b04f2f51f49f0fb5155@"
+    "o4511881138733056.ingest.us.sentry.io/4511902512644096"
+)
+PRIVATE_REQUEST_FIELDS = {
+    "cookies",
+    "data",
+    "env",
+    "headers",
+    "query_string",
+}
+PRIVATE_DATA_MARKERS = {
+    "body",
+    "cookie",
+    "cookies",
+    "header",
+    "headers",
+    "query",
+    "query_string",
+    "statement",
+}
+PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
+
+
+def _strip_url_query(url: str) -> str:
+    """移除 URL 中可能包含隐私数据的查询参数和片段。"""
+
+    return url.split("?", 1)[0].split("#", 1)[0]
+
+
+def _sanitize_path(value: str) -> str:
+    """移除路径查询信息，并将本机路径缩减为文件名。"""
+
+    sanitized = _strip_url_query(value)
+    is_windows_path = (
+        len(sanitized) >= 3
+        and sanitized[1] == ":"
+        and sanitized[2] in {"\\", "/"}
+    )
+    if not sanitized.lower().startswith("file://") and not is_windows_path:
+        return sanitized
+
+    normalized = sanitized.replace("\\", "/")
+    return normalized.rsplit("/", 1)[-1] or "<local-file>"
+
+
+def _sanitize_data(data: Any) -> None:
+    """清理 Breadcrumb 和 Span 中可能包含隐私的数据。"""
+
+    if not isinstance(data, dict):
+        return
+
+    for key, value in list(data.items()):
+        if not isinstance(key, str):
+            continue
+        markers = set(key.lower().replace("-", ".").replace("_", ".").split("."))
+        if markers & PRIVATE_DATA_MARKERS:
+            data.pop(key, None)
+        elif markers & PATH_DATA_MARKERS and isinstance(value, str):
+            data[key] = _sanitize_path(value)
+
+
+def _sanitize_stacktrace(stacktrace: Any) -> None:
+    """从堆栈帧中移除本机绝对路径。"""
+
+    if not isinstance(stacktrace, dict):
+        return
+
+    frames = stacktrace.get("frames")
+    if not isinstance(frames, list):
+        return
+
+    for frame in frames:
+        if isinstance(frame, dict):
+            if isinstance(frame.get("filename"), str):
+                frame["filename"] = _sanitize_path(frame["filename"])
+            frame.pop("abs_path", None)
+            frame.pop("vars", None)
+            frame.pop("context_line", None)
+            frame.pop("pre_context", None)
+            frame.pop("post_context", None)
+            frame.pop("module_metadata", None)
+
+
+def sanitize_event(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
+    """在发送前移除用户、请求内容和本机绝对路径。"""
+
+    del hint
+    event.pop("user", None)
+    event.pop("extra", None)
+
+    request = event.get("request")
+    if isinstance(request, dict):
+        for field in PRIVATE_REQUEST_FIELDS:
+            request.pop(field, None)
+        if isinstance(request.get("url"), str):
+            request["url"] = _sanitize_path(request["url"])
+
+    _sanitize_stacktrace(event.get("stacktrace"))
+    for container_name in ("exception", "threads"):
+        container = event.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        values = container.get("values")
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            if isinstance(value, dict):
+                _sanitize_stacktrace(value.get("stacktrace"))
+
+    breadcrumbs = event.get("breadcrumbs")
+    if isinstance(breadcrumbs, dict) and isinstance(breadcrumbs.get("values"), list):
+        for breadcrumb in breadcrumbs["values"]:
+            if not isinstance(breadcrumb, dict):
+                continue
+            data = breadcrumb.get("data")
+            if not isinstance(data, dict):
+                continue
+            for field in PRIVATE_REQUEST_FIELDS:
+                data.pop(field, None)
+            _sanitize_data(data)
+
+    spans = event.get("spans")
+    if isinstance(spans, list):
+        for span in spans:
+            if isinstance(span, dict):
+                _sanitize_data(span.get("data"))
+
+    return event
+
+
+def init_sentry(release: str, development: bool) -> None:
+    """初始化后端 Sentry 错误与性能监控。"""
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        release=f"auto-mas@{release}",
+        environment="development" if development else "production",
+        send_default_pii=False,
+        include_local_variables=False,
+        include_source_context=False,
+        max_request_body_size="never",
+        server_name="AUTO-MAS",
+        integrations=[
+            LoggingIntegration(level=None, event_level=None, sentry_logs_level=None)
+        ],
+        traces_sample_rate=0.1,
+        before_send=sanitize_event,
+        before_send_transaction=sanitize_event,
+    )
+
+
+__all__ = ["init_sentry", "sanitize_event"]

@@ -99,15 +99,17 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 
 - 软件版本号
 - 运行时错误信息
+- 性能追踪信息
 
-AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
+AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。
 
 To better serve you, AUTO-MAS will automatically collect the following information:
 
 - Software version number
 - Runtime error information
+- Performance tracing information
 
-AUTO-MAS respects and protects user privacy. All collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS and will not be transmitted to any third-party institution or facility.
+AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent.
 
 ---
 
