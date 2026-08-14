@@ -3007,6 +3007,10 @@ class GlobalConfig(ConfigBase):
         self.Function_IfBlockAd = ConfigItem(
             "Function", "IfBlockAd", False, BoolValidator()
         )
+        ## 是否启用匿名遥测
+        self.Function_IfEnableTelemetry = ConfigItem(
+            "Function", "IfEnableTelemetry", True, BoolValidator()
+        )
 
         ## Voice ------------------------------------------------------------
         ## 是否启用语音
