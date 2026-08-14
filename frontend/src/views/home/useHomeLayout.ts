@@ -9,6 +9,7 @@ export const defaultHomeModuleOrder: HomeModuleKey[] = [
   'quick',
   'satellite',
   'proxy',
+  'endfield',
   'arknights',
 ]
 
@@ -17,6 +18,7 @@ export const moduleTitleMap: Record<HomeModuleKey, string> = {
   quick: '常用入口',
   satellite: '卫星环绕',
   proxy: '代理状态',
+  endfield: '终末地活动信息',
   arknights: '明日方舟活动信息',
 }
 

@@ -8,7 +8,7 @@ export type QrCheckOut = {
      */
     code?: number;
     /**
-     * Init/Scanned/Confirmed/Error
+     * Init/Scanned/Confirmed/Expired/Canceled/Error
      */
     status?: string;
     /**

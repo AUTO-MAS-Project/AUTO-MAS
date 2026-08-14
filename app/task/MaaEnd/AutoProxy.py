@@ -37,6 +37,7 @@ from app.services import Notify, System
 from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
 from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
+from app.utils.io import read_file, write_file
 from .tools import login, push_notification, replace_account_switch_task
 from app.task.general.tools import execute_script_task
 
@@ -478,9 +479,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
-            maaend_local_config = json.loads(
-                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-            )
+            maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
 
         config_user_id = (
             "Default"
@@ -499,9 +498,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         shutil.rmtree(self.maaend_set_path, ignore_errors=True)
         shutil.copytree(maaend_config_path, self.maaend_set_path)
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-        )
+        maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         for field in ("version", "interfaceTaskSnapshot"):
             maaend_set.pop(field, None)
             if maaend_local_config is not None and field in maaend_local_config:
@@ -563,18 +560,14 @@ class AutoProxyTask(TaskExecuteBase):
         settings = maaend_set["settings"]
         if settings["language"] == "system":
             settings["language"] = "zh-CN"
-        maaend_i18n_raw = json.loads(
-            (
-                self.maaend_root_path
-                / f"locales/interface/{settings['language'].lower().replace('-', '_')}.json"
-            ).read_text(encoding="utf-8")
+        maaend_i18n_raw = read_file(
+            self.maaend_root_path
+            / f"locales/interface/{settings['language'].lower().replace('-', '_')}.json"
         )
 
         maaend_i18n: dict[str, str] = {}
         for task_definition_file in self.maaend_root_path.glob("tasks/*.json"):
-            task_definition = json5.loads(  # type: ignore
-                task_definition_file.read_text(encoding="utf-8")
-            )["task"][0]
+            task_definition = read_file(task_definition_file)["task"][0]
             if task_definition["label"].startswith("$"):
                 locale_text = maaend_i18n_raw.get(task_definition["label"].lstrip("$"))
                 if locale_text is None:
@@ -694,31 +687,6 @@ class AutoProxyTask(TaskExecuteBase):
                         if sanity_task_config["OperatorProgression"] == "OperatorEXP":
                             task["optionValues"]["OperatorEXPRewardsSetOption"] = {
                                 "type": "select",
-                                "caseName": "AdvancedCombatRecord",
-                            }
-                        elif sanity_task_config["OperatorProgression"] == "Promotions":
-                            task["optionValues"]["PromotionsRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protodisk",
-                            }
-                        elif sanity_task_config["OperatorProgression"] == "SkillUp":
-                            task["optionValues"]["SkillUpRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protoprism",
-                            }
-                    elif (
-                        sanity_task_type == "WeaponProgression"
-                        and sanity_task_config["WeaponProgression"] == "WeaponTune"
-                    ):
-                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
-                            "type": "select",
-                            "caseName": "CastDie",
-                        }
-                elif reward_option == "RewardsSetB":
-                    if sanity_task_type == "OperatorProgression":
-                        if sanity_task_config["OperatorProgression"] == "OperatorEXP":
-                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
-                                "type": "select",
                                 "caseName": "CognitiveCarriers",
                             }
                         elif sanity_task_config["OperatorProgression"] == "Promotions":
@@ -739,20 +707,46 @@ class AutoProxyTask(TaskExecuteBase):
                             "type": "select",
                             "caseName": "HeavyCastDie",
                         }
+                elif reward_option == "RewardsSetB":
+                    if sanity_task_type == "OperatorProgression":
+                        if sanity_task_config["OperatorProgression"] == "OperatorEXP":
+                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "AdvancedCombatRecord",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "Promotions":
+                            task["optionValues"]["PromotionsRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protodisk",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "SkillUp":
+                            task["optionValues"]["SkillUpRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protoprism",
+                            }
+                    elif (
+                        sanity_task_type == "WeaponProgression"
+                        and sanity_task_config["WeaponProgression"] == "WeaponTune"
+                    ):
+                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
+                            "type": "select",
+                            "caseName": "CastDie",
+                        }
             elif (
                 if_quick_config
                 and task["taskName"] == target_task_name
                 and target_task_name == "AutoEssence"
             ):
                 task.setdefault("optionValues", {})
-                task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
-                    "type": "select",
-                    "caseName": sanity_task_config["AutoEssenceSpecifiedLocation"],
+                task["optionValues"].pop("AutoEssenceSpecifiedLocation", None)
+                task["optionValues"]["AutoEssenceChooseLocation"] = {
+                    "type": "checkbox",
+                    "caseNames": [
+                        sanity_task_config["AutoEssenceSpecifiedLocation"]
+                    ],
                 }
 
-        (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
     def has_maaend_local_install_file(self) -> bool:

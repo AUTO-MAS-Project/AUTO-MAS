@@ -31,6 +31,7 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from app.utils.io import read_file, write_file
 from .tools import poor_yaml_read, poor_yaml_write
 
 logger = get_logger("SRC 脚本设置")
@@ -107,9 +108,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     self.src_set_path / "template.json", self.src_set_path / "src.json"
                 )
 
-        src_set = json.loads(
-            (self.src_set_path / "src.json").read_text(encoding="utf-8")
-        )
+        src_set = read_file(self.src_set_path / "src.json")
         deploy_set = poor_yaml_read((self.src_set_path / "deploy.yaml"))
 
         # 不直接运行任务
@@ -129,9 +128,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 养成规划
         src_set["Dungeon"]["PlannerTarget"]["Enable"] = False
 
-        (self.src_set_path / "src.json").write_text(
-            json.dumps(src_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.src_set_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
             self.src_set_path / "deploy.yaml",

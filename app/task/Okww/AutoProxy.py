@@ -32,6 +32,7 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
 from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
+from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
@@ -83,13 +84,7 @@ def _update_json(path: Path, values: dict[str, object]) -> None:
     if not isinstance(data, dict):
         raise ValueError(f"OK-WW 配置文件格式错误: {path.name}")
     data.update(values)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_suffix(path.suffix + ".tmp")
-    temporary_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=4) + "\n",
-        encoding="utf-8",
-    )
-    temporary_path.replace(path)
+    write_file(path, data)
 
 
 def _configure_okww_launcher(
@@ -130,12 +125,7 @@ def _configure_okww_launcher(
     if resource is not None:
         app_config["current_profile"] = profile
     app_config["update_method"] = _OKWW_UPDATE_METHOD
-    temporary_path = app_json_path.with_suffix(".json.tmp")
-    temporary_path.write_text(
-        json.dumps(app_config, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary_path.replace(app_json_path)
+    write_file(app_json_path, app_config)
     logger.info("已设置 OK-WW 自动启动与正式版更新策略")
 
 
@@ -304,19 +294,22 @@ class AutoProxyTask(TaskExecuteBase):
         await asyncio.sleep(0)
 
     async def _mas_launch_game_before_task(self) -> None:
-        """使用从启动器元数据解码出的客户端路径直接启动游戏。"""
+        """启动鸣潮并跟踪客户端进程。"""
 
         if isinstance(self.game_manager, ProcessManager):
             if is_process_running(_WUWA_CLIENT_PROCESS):
-                logger.info(
-                    "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
-                )
-                with suppress(RuntimeError):
+                try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
                         datetime.now() + timedelta(seconds=3),
                     )
-                return
+                except RuntimeError:
+                    logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
+                else:
+                    logger.info(
+                        "检测到已配置的鸣潮客户端进程正在运行，跳过重复启动"
+                    )
+                    return
 
             await self.game_manager.open_process(
                 self.game_process_path,
