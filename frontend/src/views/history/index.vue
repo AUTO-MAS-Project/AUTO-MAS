@@ -51,6 +51,7 @@
             :recruit-statistics="selectedUserData?.recruit_statistics || null"
             :drop-statistics="selectedUserData?.drop_statistics || null"
             :matrix-statistics="getMatrixStatistics(selectedUserData)"
+            :pull-count-statistics="getPullCountStatistics(selectedUserData)"
             @select-record="handleSelectRecord"
           />
         </div>
@@ -69,6 +70,7 @@
       :recruit-statistics="currentDetail?.recruit_statistics || null"
       :drop-statistics="currentDetail?.drop_statistics || null"
       :matrix-statistics="getMatrixStatistics(currentDetail)"
+      :pull-count-statistics="getPullCountStatistics(currentDetail)"
       :font-size="editorConfig.fontSize"
       :font-size-options="fontSizeOptions"
       :editor-theme="editorTheme"
@@ -91,6 +93,7 @@ import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
+import type { PullCountStatistics } from '@/types/history'
 
 defineOptions({
   name: 'HistoryPage',
@@ -137,10 +140,15 @@ const currentErrorMessage = ref('')
 
 type HistoryDataWithMatrix = HistoryData & {
   matrix_statistics?: Record<string, string> | null
+  pull_count_statistics?: PullCountStatistics | null
 }
 
 const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
   return (data as HistoryDataWithMatrix | null)?.matrix_statistics ?? null
+}
+
+const getPullCountStatistics = (data: HistoryData | null): PullCountStatistics | null => {
+  return (data as HistoryDataWithMatrix | null)?.pull_count_statistics ?? null
 }
 
 const handleModeUpdate = (mode: string) => {

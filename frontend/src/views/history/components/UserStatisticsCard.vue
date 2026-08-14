@@ -1,13 +1,18 @@
 <template>
   <div class="statistics-card">
-    <div v-if="hasMultipleStatistics" class="statistics-switch">
-      <a-segmented
-        :value="activeStatistics"
-        :options="availableStatistics"
-        size="small"
-        @change="handleStatisticsChange"
+    <a-tabs
+      v-if="hasMultipleStatistics"
+      v-model:active-key="activeStatistics"
+      :animated="false"
+      class="statistics-tabs"
+      size="small"
+    >
+      <a-tab-pane
+        v-for="option in availableStatistics"
+        :key="option.value"
+        :tab="option.label"
       />
-    </div>
+    </a-tabs>
 
     <div class="card-content">
       <template v-if="activeStatistics === 'maa' && hasMaaStatistics">
@@ -75,9 +80,37 @@
         </div>
       </template>
 
-      <!-- 基质统计 -->
-      <template v-else-if="activeStatistics === 'maaend' && hasMatrixStatistics">
-        <div class="stat-section">
+      <template v-else-if="activeStatistics === 'maaend' && hasMaaEndStatistics">
+        <div v-if="pullCountStatistics" class="stat-section">
+          <div class="section-header">
+            <BarChartOutlined class="section-icon" />
+            <span class="section-title">抽数统计</span>
+          </div>
+          <div class="pull-count-items">
+            <div class="pull-count-item primary">
+              <span>当前池可用</span>
+              <strong>{{ pullCountStatistics.current_pool_total }}</strong>
+              <span>抽</span>
+            </div>
+            <div class="pull-count-item">
+              <span>下版本总计</span>
+              <strong>{{ pullCountStatistics.next_pool_total }}</strong>
+              <span>抽</span>
+            </div>
+            <div class="pull-count-item compact">
+              <span>资源 {{ pullCountStatistics.resource_pulls }} 抽</span>
+              <span>凭证 {{ pullCountStatistics.carry_over_pulls }} 抽</span>
+            </div>
+          </div>
+        </div>
+
+        <a-divider
+          v-if="pullCountStatistics && hasMatrixStatistics"
+          type="vertical"
+          class="section-divider"
+        />
+
+        <div v-if="hasMatrixStatistics" class="stat-section">
           <div class="section-header">
             <InboxOutlined class="section-icon" />
             <span class="section-title">基质统计</span>
@@ -122,13 +155,15 @@
 </template>
 
 <script setup lang="ts">
-import { GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { BarChartOutlined, GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
+import type { PullCountStatistics } from '@/types/history'
 
 interface Props {
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
+  pullCountStatistics: PullCountStatistics | null
 }
 
 const props = defineProps<Props>()
@@ -149,6 +184,10 @@ const hasMatrixStatistics = computed(() => {
   return props.matrixStatistics !== null
 })
 
+const hasMaaEndStatistics = computed(() => {
+  return hasMatrixStatistics.value || props.pullCountStatistics !== null
+})
+
 const hasMaaStatistics = computed(() => {
   return hasRecruitStatistics.value || hasDropStatistics.value
 })
@@ -159,7 +198,7 @@ const availableStatistics = computed(() => {
   if (hasMaaStatistics.value) {
     options.push({ label: 'MAA', value: 'maa' })
   }
-  if (hasMatrixStatistics.value) {
+  if (hasMaaEndStatistics.value) {
     options.push({ label: 'MaaEnd', value: 'maaend' })
   }
 
@@ -180,9 +219,6 @@ watch(
   { immediate: true }
 )
 
-const handleStatisticsChange = (value: string | number) => {
-  activeStatistics.value = value as StatisticsType
-}
 </script>
 
 <style scoped>
@@ -194,10 +230,16 @@ const handleStatisticsChange = (value: string | number) => {
   border: 1px solid var(--ant-color-border-secondary);
 }
 
-.statistics-switch {
-  display: flex;
-  justify-content: flex-end;
+.statistics-tabs {
+  margin: -4px 0 12px;
+}
+
+.statistics-tabs :deep(.ant-tabs-nav) {
   margin-bottom: 12px;
+}
+
+.statistics-tabs :deep(.ant-tabs-tab) {
+  padding: 8px 4px;
 }
 
 .card-content {
@@ -299,6 +341,41 @@ const handleStatisticsChange = (value: string | number) => {
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
+}
+
+.pull-count-items {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.pull-count-item {
+  min-width: 104px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  background: var(--ant-color-fill-quaternary);
+  border-radius: 6px;
+}
+
+.pull-count-item strong {
+  color: var(--ant-color-text);
+  font-size: 20px;
+}
+
+.pull-count-item.primary strong {
+  color: var(--ant-color-primary);
+}
+
+.pull-count-item.compact {
+  min-width: 130px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .drop-container {

@@ -57,6 +57,16 @@ def _script_path(script_config: Any, engine: str) -> str:
     return str(value or "").strip()
 
 
+def is_game_management_enabled(script_config: Any) -> bool:
+    """读取 MAS 游戏管理开关；旧配置缺少该字段时默认开启。"""
+
+    try:
+        value = script_config.get("Game", "Enabled")
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return True
+    return True if value is None else bool(value)
+
+
 def _user_credential(user_config: Any, key: str) -> str:
     """Read the old-dev account credential from ``Info``."""
 
@@ -100,7 +110,9 @@ def prepare_game_resolution_if_needed(
 ) -> None:
     """在 MAS 启动游戏前临时写入注册表分辨率覆盖。"""
 
-    if not _force_resolution_enabled(script_config):
+    if not is_game_management_enabled(script_config) or not _force_resolution_enabled(
+        script_config
+    ):
         return
 
     override = runtime.game_resolution_override
@@ -263,6 +275,8 @@ async def close_game_if_needed(
 ) -> None:
     """任务结束后关闭由 MAS 本次启动的游戏。"""
 
+    if not is_game_management_enabled(script_config):
+        return
     if not runtime.game_started_by_mas:
         return
 
@@ -310,18 +324,24 @@ class HSRAccountSwitcher:
         *,
         track_last_script: bool = True,
     ) -> None:
-        """SRA/M7A 交替执行前留出缓冲，切换时重启游戏避免状态污染。"""
+        """SRA/M7A 交替执行前按开关处理游戏切换，避免状态污染。"""
 
         previous = self.runtime.last_external_script
         if previous is not None and previous != script:
-            self._append_log(
-                f"外部脚本从 {previous} 切换到 {script}，"
-                f"等待 {HSR_SCRIPT_SWITCH_DELAY_SECONDS}s 后重启游戏"
-            )
-            await asyncio.sleep(HSR_SCRIPT_SWITCH_DELAY_SECONDS)
-            # 切换时由 MAS 关闭并重新拉起游戏，避免上一个脚本遗留的页面
-            # 状态导致下一个脚本无法初始化（例如 SRA 找不到 enter.png）。
-            await self._restart_game_after_script_switch(user_name)
+            if is_game_management_enabled(self.script_config):
+                self._append_log(
+                    f"外部脚本从 {previous} 切换到 {script}，"
+                    f"等待 {HSR_SCRIPT_SWITCH_DELAY_SECONDS}s 后重启游戏"
+                )
+                await asyncio.sleep(HSR_SCRIPT_SWITCH_DELAY_SECONDS)
+                # 切换时由 MAS 关闭并重新拉起游戏，避免上一个脚本遗留的页面
+                # 状态导致下一个脚本无法初始化（例如 SRA 找不到 enter.png）。
+                await self._restart_game_after_script_switch(user_name)
+            else:
+                self._append_log(
+                    f"外部脚本从 {previous} 切换到 {script}，"
+                    "MAS 未管理游戏，跳过游戏重启"
+                )
         if track_last_script:
             self.runtime.last_external_script = script
         if script == "M7A":
@@ -329,6 +349,14 @@ class HSRAccountSwitcher:
 
     async def _restart_game_after_script_switch(self, user_name: str) -> None:
         """M7A/SRA 切换时由 MAS 关闭并重新启动游戏。"""
+
+        if not is_game_management_enabled(self.script_config):
+            self.runtime.last_external_script = None
+            self._append_log(
+                f"用户「{user_name}」外部脚本切换，"
+                "MAS 未管理游戏，跳过游戏重启"
+            )
+            return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         process_name = HSR_GAME_PROCESS_NAME
@@ -368,11 +396,19 @@ class HSRAccountSwitcher:
             self.runtime.game_transitioning = False
 
     async def ensure_game_started_by_mas(self) -> None:
-        """在 SRA/M7A 接手前由 MAS 统一启动游戏。"""
+        """按开关在 SRA/M7A 接手前准备游戏状态。"""
 
         if self.runtime.game_launch_checked:
             return
         self.runtime.game_launch_checked = True
+
+        if not is_game_management_enabled(self.script_config):
+            self.runtime.game_started_by_mas = False
+            self.runtime.game_transitioning = False
+            self._append_log(
+                "MAS 未管理游戏，跳过游戏启动、进程检查和窗口前置"
+            )
+            return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         self.runtime.game_exe_path = game_exe_path
@@ -418,7 +454,19 @@ class HSRAccountSwitcher:
         await self._wait_for_game_process_after_launch(process_name, wait_time)
 
     async def prepare_game_for_account_switch(self, user_name: str) -> None:
-        """需要切换账号前，确保游戏按完整启动链路重开。"""
+        """需要切换账号前按开关准备游戏重启链路。"""
+
+        if not is_game_management_enabled(self.script_config):
+            self.runtime.game_launch_checked = True
+            self.runtime.game_started_by_mas = False
+            self.runtime.game_session_clean = False
+            self.runtime.last_external_script = None
+            self.runtime.game_transitioning = False
+            self._append_log(
+                f"用户「{user_name}」需要登录/切号，"
+                "MAS 未管理游戏，跳过游戏重启"
+            )
+            return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         process_name = HSR_GAME_PROCESS_NAME
@@ -533,6 +581,9 @@ class HSRAccountSwitcher:
         return result
 
     async def _wait_after_game_process_detected(self, process_name: str) -> None:
+        if not is_game_management_enabled(self.script_config):
+            return
+
         self._append_log(
             f"检测到游戏进程（{process_name}），"
             f"等待 {HSR_GAME_READY_DELAY_SECONDS}s 后前置游戏窗口"
@@ -553,6 +604,8 @@ class HSRAccountSwitcher:
     async def recover_game_window_if_screenshot_blocked(self, line: str) -> None:
         """外部脚本因窗口不可截图卡住时，尝试重新前置游戏窗口。"""
 
+        if not is_game_management_enabled(self.script_config):
+            return
         if not has_screenshot_window_unavailable_output(line):
             return
 
@@ -576,6 +629,9 @@ class HSRAccountSwitcher:
             self._append_log("重新前置游戏窗口失败，SRA 可能继续等待窗口恢复")
 
     async def _activate_game_window(self, process_name: str) -> bool:
+        if not is_game_management_enabled(self.script_config):
+            return False
+
         manager = self.runtime.game_process_manager
         if manager.main_pid is None or manager.main_hwnd is None:
             try:
@@ -595,6 +651,8 @@ class HSRAccountSwitcher:
         wait_time: int,
         poll_interval: int = 5,
     ) -> None:
+        if not is_game_management_enabled(self.script_config):
+            return
         if wait_time <= 0:
             self._append_log("游戏启动等待时间为 0s，继续执行 M7A/SRA 任务")
             return

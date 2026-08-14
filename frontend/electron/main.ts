@@ -190,6 +190,9 @@ interface AppConfig {
   Update: {
     IfAutoUpdate: boolean
   }
+  Function: {
+    IfEnableTelemetry: boolean
+  }
 
   [key: string]: any
 }
@@ -211,6 +214,9 @@ const defaultConfig: AppConfig = {
   Update: {
     IfAutoUpdate: false,
   },
+  Function: {
+    IfEnableTelemetry: true,
+  },
 }
 
 //加载配置
@@ -218,12 +224,22 @@ function loadConfig(): AppConfig {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    let config = { ...defaultConfig }
 
     if (fs.existsSync(configPath)) {
       const configData = fs.readFileSync(configPath, 'utf8')
-      const config = JSON.parse(configData)
-      return { ...defaultConfig, ...config }
+      config = { ...config, ...JSON.parse(configData) }
     }
+
+    const backendConfigPath = path.join(appRoot, 'config', 'Config.json')
+    if (fs.existsSync(backendConfigPath)) {
+      const backendConfig = JSON.parse(fs.readFileSync(backendConfigPath, 'utf8'))
+      const enabled = backendConfig.Function?.IfEnableTelemetry
+      if (typeof enabled === 'boolean') {
+        config.Function = { ...config.Function, IfEnableTelemetry: enabled }
+      }
+    }
+    return config
   } catch {
     logger.error('加载配置失败')
   }
@@ -1346,6 +1362,11 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
     // 同步Update配置
     if (backendSettings.Update) {
       currentConfig.Update = { ...currentConfig.Update, ...backendSettings.Update }
+    }
+
+    // 同步遥测开关，供渲染进程在 Sentry 初始化前读取
+    if (backendSettings.Function) {
+      currentConfig.Function = { ...currentConfig.Function, ...backendSettings.Function }
     }
 
     // 保存到前端配置文件
