@@ -149,15 +149,17 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="lowPerformanceMode"
+            <a-select
+              :value="lowPerformanceMode"
               :disabled="lowPerformanceModeSaving"
               :loading="lowPerformanceModeSaving"
-              checked-children="已开启"
-              un-checked-children="已关闭"
-              style="width: auto; align-self: flex-start"
-              @change="handleLowPerformanceModeChange"
-            />
+              size="large"
+              style="width: 100%"
+              @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
+            >
+              <a-select-option :value="true">开启</a-select-option>
+              <a-select-option :value="false">关闭</a-select-option>
+            </a-select>
           </div>
         </a-col>
       </a-row>
