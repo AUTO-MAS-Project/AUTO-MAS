@@ -16,6 +16,7 @@
         :recruit-statistics="recruitStatistics"
         :drop-statistics="dropStatistics"
         :matrix-statistics="matrixStatistics"
+        :pull-count-statistics="pullCountStatistics"
       />
 
       <!-- 记录列表 -->
@@ -33,6 +34,7 @@
 import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
+import type { PullCountStatistics } from '@/types/history'
 
 interface RecordItem {
   date: string
@@ -48,6 +50,7 @@ interface Props {
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
+  pullCountStatistics: PullCountStatistics | null
 }
 
 defineProps<Props>()

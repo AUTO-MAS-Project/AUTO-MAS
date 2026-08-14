@@ -8,6 +8,7 @@ import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { setTelemetryEnabled } from '@/utils/sentry'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
@@ -126,6 +127,7 @@ const loadSettings = async () => {
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
+          Function: data.Function,
         })
         logger.info('后端配置已同步到 Electron')
       }
@@ -168,6 +170,7 @@ const refreshSettings = async () => {
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
+          Function: data.Function,
         })
         logger.info('所有配置已同步到 Electron')
       }
@@ -189,6 +192,10 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
 
   // 更新成功后重新获取最新配置（会自动同步到 Electron）
   await refreshSettings()
+
+  if (category === 'Function' && key === 'IfEnableTelemetry') {
+    setTelemetryEnabled(Boolean(value))
+  }
 
   // 处理托盘相关配置（需要额外的实时更新调用）
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {

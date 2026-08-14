@@ -54,6 +54,7 @@ from .tools.account_switch import (
     HSRAccountSwitcher,
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
+    is_game_management_enabled,
     stop_external_processes,
     resolve_game_executable_path,
     user_needs_account_switch,
@@ -249,7 +250,19 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return self._timeout_seconds_for_phase(phase)
 
     async def _restart_game(self, user_name: str, reason: str) -> None:
-        """由 MAS 关闭并重新启动游戏。"""
+        """按开关决定是否由 MAS 关闭并重新启动游戏。"""
+
+        await self._stop_external_processes()
+        if not is_game_management_enabled(self.script_config):
+            self.runtime.game_launch_checked = True
+            self.runtime.game_started_by_mas = False
+            self.runtime.game_session_clean = False
+            self.runtime.last_external_script = None
+            self._append_log(
+                f"用户「{user_name}」{reason}，"
+                "MAS 未管理游戏，跳过游戏重启并继续执行"
+            )
+            return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         process_name = HSR_GAME_PROCESS_NAME
@@ -257,7 +270,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._append_log(
             f"用户「{user_name}」{reason}，正在由 MAS 重启游戏"
         )
-        await self._stop_external_processes()
 
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
@@ -1334,10 +1346,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return failures
 
     async def _run_item_with_game_guard(self, item: HSRRunItem) -> object:
-        """执行单个外部模块；若游戏进程被关闭，尽快中止外部脚本。"""
+        """执行外部模块；启用游戏管理时监测游戏进程并及时中止脚本。"""
 
         run_task = asyncio.create_task(item.run())
         try:
+            if not is_game_management_enabled(self.script_config):
+                return await run_task
+
             while not run_task.done():
                 await asyncio.sleep(1)
                 if self.runtime.game_transitioning:
@@ -1390,7 +1405,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await self._account_switcher.ensure_game_started_by_mas()
 
     async def _prepare_before_retry_attempt(self, user_name: str) -> None:
-        """补跑前统一重启游戏，避免外部脚本继承异常场景。"""
+        """补跑前按开关准备游戏状态，必要时重启游戏。"""
 
         await self._restart_game(user_name, "补跑失败任务前")
 
@@ -1493,9 +1508,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 return
 
             if attempt < retry_limit:
+                retry_action = (
+                    "将重新启动游戏后补跑"
+                    if is_game_management_enabled(self.script_config)
+                    else "MAS 未管理游戏，直接补跑"
+                )
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
-                    f"仍有 {len(failed_items)} 个失败任务，将重新启动游戏后补跑"
+                    f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
                 )
                 self._finish_current_user_log(
                     "HSR 用户任务本轮失败，等待补跑",

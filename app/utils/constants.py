@@ -328,6 +328,10 @@ MAAEND_TASK_GROUPS = {
             ("ResourceRecycleStation", "资源回收站"),
         ),
     },
+    "Statistics": {
+        "label": "数据统计",
+        "tasks": (("PullCountCalculator", "抽数计算"),),
+    },
 }
 """MaaEnd任务分组"""
 
