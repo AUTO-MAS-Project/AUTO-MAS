@@ -33,6 +33,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import M9AConfig, M9AUserConfig
 from app.services import Notify, System
 from app.utils import get_logger
+from app.utils.io import read_file, write_file
 from app.utils.constants import TASK_MODE_ZH
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
@@ -122,9 +123,9 @@ class M9AManager(TaskExecuteBase):
         if not config_json.exists():
             return
         try:
-            config = json.loads(config_json.read_text(encoding="utf-8"))
+            config = read_file(config_json)
             config["EnableAutoUpdateResource"] = enabled
-            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            write_file(config_json, config)
             status = "开启" if enabled else "关闭"
             logger.info(f"已{status} M9A 自动更新开关")
         except Exception:
@@ -137,12 +138,12 @@ class M9AManager(TaskExecuteBase):
         if not config_json.exists():
             return
         try:
-            config = json.loads(config_json.read_text(encoding="utf-8"))
+            config = read_file(config_json)
             is_silent = Config.get("Function", "IfSilence")
             config["AutoMinimize"] = is_silent
             config["AutoHide"] = is_silent
             config["ShouldMinimizeToTray"] = is_silent
-            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            write_file(config_json, config)
             status = "开启" if is_silent else "关闭"
             logger.info(f"已{status} M9A 静默模式（AutoMinimize={is_silent}, AutoHide={is_silent}, ShouldMinimizeToTray={is_silent}）")
         except Exception as e:

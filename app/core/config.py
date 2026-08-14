@@ -76,6 +76,7 @@ from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
 from app.utils import get_logger
+from app.utils.io import write_file
 
 logger = get_logger("配置管理")
 
@@ -107,23 +108,13 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏签到结果快照。"""
+    """原子保存游戏签到结果快照（走 ``app.utils.io.write_file``）。"""
 
     if path is None:
         return
 
-    temporary_path = path.with_name(f"{path.name}.tmp")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path.write_text(
-            json.dumps(
-                {"date": result_date, "result": result},
-                ensure_ascii=False,
-                indent=4,
-            ),
-            encoding="utf-8",
-        )
-        temporary_path.replace(path)
+        write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 

@@ -36,6 +36,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
+from app.utils.io import read_file, write_file
 from .tools import login, push_notification, poor_yaml_read, poor_yaml_write
 from app.task.general.tools import execute_script_task
 
@@ -347,9 +348,7 @@ class AutoProxyTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        src_set = json.loads(
-            (self.src_set_path / "src.json").read_text(encoding="utf-8")
-        )
+        src_set = read_file(self.src_set_path / "src.json")
         deploy_set = poor_yaml_read(self.src_set_path / "deploy.yaml")
 
         # 直接运行任务
@@ -436,9 +435,7 @@ class AutoProxyTask(TaskExecuteBase):
                 "Stage", "SimulatedUniverseWorld"
             )
 
-        (self.src_set_path / "src.json").write_text(
-            json.dumps(src_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.src_set_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
             self.src_set_path / "deploy.yaml",

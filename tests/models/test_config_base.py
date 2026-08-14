@@ -187,7 +187,7 @@ class ConfigBaseSaveTest(ConfigBaseTestCase):
         await self.config.save()
 
         self.assertEqual(self.read_config(), self.default_data())
-        self.assertEqual(list(self.config_path.parent.glob(".Config.json.*.tmp")), [])
+        self.assertEqual(list(self.config_path.parent.glob("Config.json.tmp")), [])
 
     async def test_save_keeps_original_config_when_temporary_write_fails(
         self,
@@ -197,15 +197,15 @@ class ConfigBaseSaveTest(ConfigBaseTestCase):
         self.config.file = self.config_path
 
         def write_partial_then_fail(
-            path: Path, data: str, encoding: str | None = None
+            path: Path, data: bytes, encoding: str | None = None
         ) -> None:
-            with path.open("w", encoding=encoding) as file:
+            with path.open("wb") as file:
                 file.write(data[:1])
             raise OSError(errno.ENOSPC, "No space left on device")
 
         with patch.object(
             Path,
-            "write_text",
+            "write_bytes",
             autospec=True,
             side_effect=write_partial_then_fail,
         ):
@@ -213,7 +213,7 @@ class ConfigBaseSaveTest(ConfigBaseTestCase):
                 await self.config.save()
 
         self.assertEqual(self.config_path.read_text(encoding="utf-8"), original_content)
-        self.assertEqual(list(self.config_path.parent.glob(".Config.json.*.tmp")), [])
+        self.assertEqual(list(self.config_path.parent.glob("Config.json.tmp")), [])
 
     async def test_save_keeps_original_config_when_replace_fails(self) -> None:
         original_content = '{"Info": {"Name": "原配置"}}'
@@ -230,7 +230,7 @@ class ConfigBaseSaveTest(ConfigBaseTestCase):
                 await self.config.save()
 
         self.assertEqual(self.config_path.read_text(encoding="utf-8"), original_content)
-        self.assertEqual(list(self.config_path.parent.glob(".Config.json.*.tmp")), [])
+        self.assertEqual(list(self.config_path.parent.glob("Config.json.tmp")), [])
 
 
 if __name__ == "__main__":
