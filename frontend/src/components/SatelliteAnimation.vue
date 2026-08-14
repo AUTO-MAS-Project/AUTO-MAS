@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
@@ -15,6 +15,7 @@ import {
 } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { Service } from '@/api'
+import { usePerformanceStore } from '@/stores/performance'
 import * as THREE from 'three'
 
 const logger = window.electronAPI.getLogger('卫星动画')
@@ -55,6 +56,7 @@ let glowRenderer: THREE.WebGLRenderer | null = null
 let cardRenderer: THREE.WebGLRenderer | null = null
 let animationFrameId: number | null = null
 let appearAnimationFrameId: number | null = null
+let allowLowPowerFrame = false
 let isUnmounted = false
 
 type CardMesh = THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>
@@ -71,35 +73,91 @@ interface SatelliteState {
 }
 let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
+let glowTexture: THREE.CanvasTexture | null = null
 let updateInterval: ReturnType<typeof setInterval> | null = null
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
+const performanceStore = usePerformanceStore()
 
-onUnmounted(() => {
-  isUnmounted = true
-  window.removeEventListener('resize', handleResize)
-  if (animationFrameId !== null) {
-    cancelAnimationFrame(animationFrameId)
-    animationFrameId = null
-  }
-  if (appearAnimationFrameId !== null) {
-    cancelAnimationFrame(appearAnimationFrameId)
-    appearAnimationFrameId = null
+function stopAnimation() {
+  if (animationFrameId === null) {
+    return
   }
 
-  if (updateInterval) {
-    clearInterval(updateInterval)
-    updateInterval = null
+  cancelAnimationFrame(animationFrameId)
+  animationFrameId = null
+}
+
+function stopAppearAnimation() {
+  if (appearAnimationFrameId === null) {
+    return
   }
+
+  cancelAnimationFrame(appearAnimationFrameId)
+  appearAnimationFrameId = null
+}
+
+function stopStatusPolling() {
+  if (updateInterval === null) {
+    return
+  }
+
+  clearInterval(updateInterval)
+  updateInterval = null
+}
+
+function startStatusPolling() {
+  if (performanceStore.isBackgrounded || updateInterval !== null) {
+    return
+  }
+
+  updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
+}
+
+function showCardsImmediately() {
+  if (centerCard) {
+    const frontMaterial = getCardFrontMaterial(centerCard)
+    if (frontMaterial) frontMaterial.opacity = 1
+    centerCard.scale.set(1, 1, 1)
+  }
+
+  satellites.forEach(sat => {
+    const frontMaterial = getCardFrontMaterial(sat)
+    if (frontMaterial) frontMaterial.opacity = 1
+    sat.scale.set(1, 1, 1)
+  })
+}
+
+function renderCurrentFrame() {
+  if (!camera || performanceStore.isBackgrounded) {
+    return
+  }
+
+  allowLowPowerFrame = true
+  animate()
+}
+
+function disposeScene() {
+  stopAnimation()
+  stopAppearAnimation()
+  stopStatusPolling()
 
   disposeSceneResources(orbitScene)
   disposeSceneResources(glowScene)
   disposeSceneResources(cardScene)
-  disposeRenderer(orbitRenderer)
-  disposeRenderer(glowRenderer)
-  disposeRenderer(cardRenderer)
+
+  const disposedRenderers = new Set<THREE.WebGLRenderer>()
+  for (const renderer of [orbitRenderer, glowRenderer, cardRenderer]) {
+    if (renderer && !disposedRenderers.has(renderer)) {
+      disposedRenderers.add(renderer)
+      disposeRenderer(renderer)
+    }
+  }
+
+  glowTexture?.dispose()
+  glowTexture = null
 
   orbitScene = null
   glowScene = null
@@ -113,6 +171,20 @@ onUnmounted(() => {
   centerCard = null
   centerGlowSprite = null
   satelliteStates.clear()
+  allowLowPowerFrame = false
+}
+
+function disposeCardMesh(card: CardMesh) {
+  const disposedMaterials = new Set<THREE.Material>()
+  const disposedTextures = new Set<THREE.Texture>()
+  card.geometry.dispose()
+  card.material.forEach(material => disposeMaterial(material, disposedMaterials, disposedTextures))
+}
+
+onUnmounted(() => {
+  isUnmounted = true
+  window.removeEventListener('resize', handleResize)
+  disposeScene()
 })
 
 function disposeRenderer(renderer: THREE.WebGLRenderer | null): void {
@@ -239,6 +311,83 @@ function getThemeColors() {
   }
 }
 
+function getRendererPixelRatio() {
+  return Math.min(window.devicePixelRatio || 1, performanceStore.isLowPower ? 1 : 2)
+}
+
+function updateRendererPixelRatio() {
+  const pixelRatio = getRendererPixelRatio()
+  orbitRenderer?.setPixelRatio(pixelRatio)
+  glowRenderer?.setPixelRatio(pixelRatio)
+  cardRenderer?.setPixelRatio(pixelRatio)
+}
+
+function createSceneRenderer(zIndex: string, pointerEvents = true): THREE.WebGLRenderer | null {
+  if (!container.value) {
+    return null
+  }
+
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !performanceStore.lowPerformanceMode,
+    alpha: true,
+    powerPreference: performanceStore.lowPerformanceMode ? 'low-power' : 'high-performance',
+  })
+  renderer.setSize(Math.max(1, container.value.clientWidth), CONFIG.containerHeight)
+  renderer.setPixelRatio(getRendererPixelRatio())
+  renderer.setClearColor(0x000000, 0)
+  renderer.domElement.style.position = 'absolute'
+  renderer.domElement.style.top = '0'
+  renderer.domElement.style.left = '0'
+  renderer.domElement.style.zIndex = zIndex
+  if (!pointerEvents) {
+    renderer.domElement.style.pointerEvents = 'none'
+  }
+  container.value.appendChild(renderer.domElement)
+  return renderer
+}
+
+function recreateMainRenderers() {
+  if (!container.value || !orbitScene || !cardScene) {
+    return
+  }
+
+  disposeRenderer(orbitRenderer)
+  disposeRenderer(cardRenderer)
+  orbitRenderer = createSceneRenderer('1')
+  cardRenderer = createSceneRenderer('2', false)
+}
+
+function createGlowRenderer() {
+  if (!container.value || !glowScene || glowRenderer || performanceStore.isLowPower) {
+    return
+  }
+
+  const w = Math.max(1, container.value.clientWidth)
+  glowRenderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: true,
+    powerPreference: 'high-performance',
+  })
+  glowRenderer.setSize(w, CONFIG.containerHeight)
+  glowRenderer.setPixelRatio(getRendererPixelRatio())
+  glowRenderer.setClearColor(0x000000, 0)
+  glowRenderer.domElement.style.position = 'absolute'
+  glowRenderer.domElement.style.top = '0'
+  glowRenderer.domElement.style.left = '0'
+  glowRenderer.domElement.style.zIndex = '1.5'
+  glowRenderer.domElement.style.pointerEvents = 'none'
+  container.value.appendChild(glowRenderer.domElement)
+}
+
+function disposeGlowRenderer() {
+  if (!glowRenderer) {
+    return
+  }
+
+  disposeRenderer(glowRenderer)
+  glowRenderer = null
+}
+
 async function createCard(size: number, depth: number, imageUrl: string): Promise<CardMesh> {
   const canvas = await loadImageToCanvas(imageUrl)
   const texture = new THREE.CanvasTexture(canvas)
@@ -325,7 +474,7 @@ function updateAllThemeColors() {
 }
 
 async function initScene(): Promise<void> {
-  if (!container.value) return
+  if (!container.value || isUnmounted) return
   try {
     await initSceneInternal()
   } catch (err) {
@@ -336,7 +485,7 @@ async function initScene(): Promise<void> {
 }
 
 async function initSceneInternal(): Promise<void> {
-  if (!container.value) return
+  if (!container.value || isUnmounted) return
 
   let userScripts: Awaited<ReturnType<typeof getScripts>> = []
   try {
@@ -344,6 +493,8 @@ async function initSceneInternal(): Promise<void> {
   } catch (err) {
     logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
   }
+
+  if (!container.value || isUnmounted) return
 
   const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
   const enabledModules = satelliteModules.filter(
@@ -362,39 +513,10 @@ async function initSceneInternal(): Promise<void> {
   camera.lookAt(0, 0, 0)
 
   orbitScene = new THREE.Scene()
-  orbitRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  orbitRenderer.setSize(w, CONFIG.containerHeight)
-  orbitRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  orbitRenderer.setClearColor(0x000000, 0)
-  orbitRenderer.domElement.style.position = 'absolute'
-  orbitRenderer.domElement.style.top = '0'
-  orbitRenderer.domElement.style.left = '0'
-  orbitRenderer.domElement.style.zIndex = '1'
-  container.value.appendChild(orbitRenderer.domElement)
-
   glowScene = new THREE.Scene()
-  glowRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  glowRenderer.setSize(w, CONFIG.containerHeight)
-  glowRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  glowRenderer.setClearColor(0x000000, 0)
-  glowRenderer.domElement.style.position = 'absolute'
-  glowRenderer.domElement.style.top = '0'
-  glowRenderer.domElement.style.left = '0'
-  glowRenderer.domElement.style.zIndex = '1.5'
-  glowRenderer.domElement.style.pointerEvents = 'none'
-  container.value.appendChild(glowRenderer.domElement)
-
   cardScene = new THREE.Scene()
-  cardRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  cardRenderer.setSize(w, CONFIG.containerHeight)
-  cardRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  cardRenderer.setClearColor(0x000000, 0)
-  cardRenderer.domElement.style.position = 'absolute'
-  cardRenderer.domElement.style.top = '0'
-  cardRenderer.domElement.style.left = '0'
-  cardRenderer.domElement.style.zIndex = '2'
-  cardRenderer.domElement.style.pointerEvents = 'none'
-  container.value.appendChild(cardRenderer.domElement)
+  recreateMainRenderers()
+  createGlowRenderer()
 
   const colors = getThemeColors()
   const ambient = new THREE.AmbientLight(colors.ambientColor, 0.6)
@@ -409,9 +531,20 @@ async function initSceneInternal(): Promise<void> {
   orbitLine = createEllipticalOrbit()
   orbitScene.add(orbitLine)
 
-  const glowTexture = createGlowTexture()
+  glowTexture = createGlowTexture()
 
-  centerCard = await createCard(CONFIG.centerCardSize, CONFIG.centerCardDepth, centerIconUrl)
+  const createdCenterCard = await createCard(
+    CONFIG.centerCardSize,
+    CONFIG.centerCardDepth,
+    centerIconUrl
+  )
+  if (!container.value || isUnmounted) {
+    disposeCardMesh(createdCenterCard)
+    disposeScene()
+    return
+  }
+
+  centerCard = createdCenterCard
   centerCard.position.set(0, 0, 0)
   cardScene.add(centerCard)
 
@@ -438,6 +571,12 @@ async function initSceneInternal(): Promise<void> {
       CONFIG.satelliteCardDepth,
       module.iconUrl
     )
+    if (!container.value || isUnmounted) {
+      disposeCardMesh(sat)
+      disposeScene()
+      return
+    }
+
     sat.userData.angle = (i / numSatellites) * Math.PI * 2
     sat.userData.index = i
     satellites.push(sat)
@@ -487,7 +626,13 @@ async function initSceneInternal(): Promise<void> {
 
   loading.value = false
 
-  animateAppear()
+  if (performanceStore.isLowPower) {
+    disposeGlowRenderer()
+    showCardsImmediately()
+    renderCurrentFrame()
+  } else {
+    animateAppear()
+  }
 }
 
 function animateAppear() {
@@ -495,20 +640,11 @@ function animateAppear() {
   const totalDuration = CONFIG.cardAppearDelay * (satellites.length + 1) + CONFIG.cardAppearDuration
 
   function step() {
-    if (isUnmounted) return
+    if (isUnmounted || performanceStore.isLowPower) return
 
     const elapsed = Date.now() - appearStart
     if (elapsed > totalDuration) {
-      if (centerCard) {
-        const frontMaterial = getCardFrontMaterial(centerCard)
-        if (frontMaterial) frontMaterial.opacity = 1
-        centerCard.scale.set(1, 1, 1)
-      }
-      satellites.forEach(sat => {
-        const frontMaterial = getCardFrontMaterial(sat)
-        if (frontMaterial) frontMaterial.opacity = 1
-        sat.scale.set(1, 1, 1)
-      })
+      showCardsImmediately()
       return
     }
 
@@ -540,7 +676,18 @@ function easeOutCubic(t: number): number {
 }
 
 function animate(): void {
-  if (isUnmounted || !camera) return
+  const shouldRenderLowPowerFrame = allowLowPowerFrame
+  allowLowPowerFrame = false
+
+  if (
+    isUnmounted ||
+    !camera ||
+    performanceStore.isBackgrounded ||
+    (!shouldRenderLowPowerFrame && performanceStore.isLowPower)
+  ) {
+    animationFrameId = null
+    return
+  }
 
   const time = Date.now()
   const numSatellites = satellites.length
@@ -567,6 +714,13 @@ function animate(): void {
     const centerFloat =
       Math.sin(time * CONFIG.centerFloatSpeed * 0.001) * CONFIG.centerFloatAmplitude
     centerCard.position.y = centerFloat
+  }
+
+  if (performanceStore.isLowPower) {
+    if (orbitRenderer && orbitScene) orbitRenderer.render(orbitScene, camera)
+    if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
+    animationFrameId = null
+    return
   }
 
   satelliteStates.forEach((state, sat) => {
@@ -645,27 +799,36 @@ function animate(): void {
   if (glowRenderer && glowScene) glowRenderer.render(glowScene, camera)
   if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
 
-  animationFrameId = requestAnimationFrame(animate)
+  if (performanceStore.isLowPower) {
+    animationFrameId = null
+  } else {
+    animationFrameId = requestAnimationFrame(animate)
+  }
 }
 
 function handleResize(): void {
   if (!container.value || !camera) return
   const w = container.value.clientWidth
+  if (w <= 0) return
   camera.aspect = w / CONFIG.containerHeight
   camera.position.set(0, 80, 500)
   camera.updateProjectionMatrix()
+  updateRendererPixelRatio()
   if (orbitRenderer) orbitRenderer.setSize(w, CONFIG.containerHeight)
   if (glowRenderer) glowRenderer.setSize(w, CONFIG.containerHeight)
   if (cardRenderer) cardRenderer.setSize(w, CONFIG.containerHeight)
+  if (performanceStore.isLowPower) renderCurrentFrame()
 }
 
 watch(isDark, () => {
   updateAllThemeColors()
+  if (performanceStore.isLowPower) renderCurrentFrame()
 })
 
 async function updateSatelliteStates() {
   try {
     const statusByType = await getSatelliteModuleStatuses()
+    if (isUnmounted) return
 
     satelliteStates.forEach(state => {
       state.status = statusByType.get(state.type) ?? {
@@ -674,10 +837,64 @@ async function updateSatelliteStates() {
         errorVisible: false,
       }
     })
+
+    if (performanceStore.isLowPower && !performanceStore.isBackgrounded) {
+      renderCurrentFrame()
+    }
   } catch (error) {
     logger.error(`更新状态失败: ${String(error)}`)
   }
 }
+
+watch(
+  () => performanceStore.lowPerformanceMode,
+  lowPerformanceMode => {
+    recreateMainRenderers()
+
+    if (lowPerformanceMode) {
+      stopAnimation()
+      stopAppearAnimation()
+      disposeGlowRenderer()
+      showCardsImmediately()
+      if (!performanceStore.isBackgrounded) {
+        renderCurrentFrame()
+      }
+      return
+    }
+
+    if (!performanceStore.isBackgrounded) {
+      createGlowRenderer()
+      animate()
+    }
+  }
+)
+
+watch(
+  () => performanceStore.isBackgrounded,
+  async isBackgrounded => {
+    if (isBackgrounded) {
+      stopAnimation()
+      stopAppearAnimation()
+      stopStatusPolling()
+      disposeGlowRenderer()
+      return
+    }
+
+    await nextTick()
+    if (isUnmounted) return
+
+    handleResize()
+    showCardsImmediately()
+    if (performanceStore.lowPerformanceMode) {
+      renderCurrentFrame()
+    } else {
+      createGlowRenderer()
+      animate()
+    }
+    void updateSatelliteStates()
+    startStatusPolling()
+  }
+)
 
 onMounted(async () => {
   isUnmounted = false
@@ -686,11 +903,17 @@ onMounted(async () => {
   } catch (e) {
     logger.error(`init failed: ${String(e)}`)
   }
-  animate()
+  if (isUnmounted) return
+
+  if (performanceStore.isLowPower) {
+    renderCurrentFrame()
+  } else {
+    animate()
+  }
   window.addEventListener('resize', handleResize)
 
-  updateSatelliteStates()
-  updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
+  void updateSatelliteStates()
+  startStatusPolling()
 
   // 检查更新状态
   const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
@@ -700,6 +923,7 @@ onMounted(async () => {
       if_force: false,
     })
     if (updateRes.code === 200 && updateRes.if_need_update) {
+      if (isUnmounted) return
       centerGlowMode.value = 'rainbow'
     }
   } catch {

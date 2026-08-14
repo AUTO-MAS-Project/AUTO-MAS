@@ -14,9 +14,12 @@ interface TabBasicProps {
   themeColorOptions: { label: string; value: string; color: string }[]
   cursorEffect: CursorEffect
   cursorEffectOptions: { label: string; value: CursorEffect }[]
+  lowPerformanceMode: boolean
+  lowPerformanceModeSaving: boolean
   handleThemeModeChange(value: SelectValue): void
   handleThemeColorChange(value: SelectValue): void
   handleCursorEffectChange(value: SelectValue): Promise<void>
+  handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
 }
 
@@ -28,9 +31,12 @@ const {
   themeColorOptions,
   cursorEffect,
   cursorEffectOptions,
+  lowPerformanceMode,
+  lowPerformanceModeSaving,
   handleThemeModeChange,
   handleThemeColorChange,
   handleCursorEffectChange,
+  handleLowPerformanceModeChange,
   handleSettingChange,
 } = defineProps<TabBasicProps>()
 </script>
@@ -122,6 +128,35 @@ const {
               size="large"
               style="width: 100%"
               @change="handleCursorEffectChange"
+            />
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>性能配置</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">低性能模式</span>
+              <a-tooltip
+                title="降低装饰性动画和后台渲染占用，不影响脚本执行和任务调度；窗口最小化时会自动暂停装饰性动画"
+              >
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-switch
+              :checked="lowPerformanceMode"
+              :disabled="lowPerformanceModeSaving"
+              :loading="lowPerformanceModeSaving"
+              checked-children="已开启"
+              un-checked-children="已关闭"
+              style="width: auto; align-self: flex-start"
+              @change="handleLowPerformanceModeChange"
             />
           </div>
         </a-col>
