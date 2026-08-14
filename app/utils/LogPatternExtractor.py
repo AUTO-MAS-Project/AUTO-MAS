@@ -32,9 +32,9 @@
 提取表达式语法（详见 app.utils.expression）::
 
     $(正则)              正则提取作用域
-    "文本"               字面量
+    "文本"               字面量（支持 \" \\ \n \t 转义）
     +                    同行拼接
-    |                    换行拼接
+    ;                    换行拼接
     $(正则).函数(参数)   函数链处理（cut/get/sub/cutby/subby/replace/trim/upper/lower）
 
 本模块仅提供无副作用的纯函数与数据类，不引入业务策略与 IO，便于跨任务复用。
@@ -164,7 +164,7 @@ class MultiLineAggregator:
 
     - ``$(正则)`` 正则提取作用域
     - ``"文本"`` 字面量
-    - ``+`` 同行拼接，``|`` 换行拼接
+    - ``+`` 同行拼接，``;`` 换行拼接
     - ``$(正则).函数(参数)`` 函数链处理
 
     提取表达式留空时返回窗口原文。
@@ -441,9 +441,14 @@ def apply_patterns(line: str, matchers: Optional[list[CompiledMatcher]] = None) 
 
     Returns:
         首个命中的提取文本；全部未命中返回 None
+
+    Note:
+        入口处统一 strip() 去除行尾空白字符（如 \\r \\n），与 debug_pattern 保持一致，
+        避免正则 (.+) 等配合 re.DOTALL 捕获到行尾换行符导致推送内容多出空行。
     """
     if not matchers:
         return None
+    line = line.strip()
     for matcher in matchers:
         result = matcher.apply(line)
         if result is not None:
@@ -555,7 +560,9 @@ def debug_pattern(
     if matcher is None:
         return ("规则配置无效", is_multiline, [])
 
-    lines = [l for l in log_text.split("\n") if l.strip()]
+    # 统一预处理：strip 每行，过滤空行（与 apply_patterns 入口 strip 行为一致，
+    # 避免行尾 \r 等被正则 (.+) 配合 re.DOTALL 捕获导致调试与生产结果不一致）
+    lines = [l.strip() for l in log_text.split("\n") if l.strip()]
     if not lines:
         return (None, is_multiline, [])
 
@@ -584,7 +591,7 @@ def debug_pattern(
     # split/regex：逐行匹配
     results = []
     for i, line in enumerate(lines):
-        result = matcher.apply(line.strip())
+        result = matcher.apply(line)
         if result is not None:
             results.append({"idx": i, "hit": True, "extracted": result, "line": line})
         else:

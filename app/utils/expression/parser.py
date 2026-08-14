@@ -4,11 +4,11 @@
 
 语法规则::
 
-    expression = line ('|' line)*            # | 分隔输出行
+    expression = line (';' line)*            # ; 分隔输出行
     line       = segment ('+' segment)*       # + 连接同行片段
     segment    = regex_segment | literal
     regex_segment = '$(' regex ')' ('.' function)*
-    literal    = '"' text '"'                 # 支持 \\" 与 \\\\ 转义
+    literal    = '"' text '"'                 # 支持 \\" \\\\ \\n \\t 转义
     function   = identifier '(' args ')'
     args       = arg (',' arg)* | ε
     arg        = literal | number
@@ -16,7 +16,7 @@
 示例::
 
     $(\\d+/\\d+).replace("/","-")+"："+$(邮件：[^\\n]+)
-    $(任务结束)|$(邮件：[^\\n]+)
+    $(任务结束);$(邮件：[^\\n]+)
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ class _Parser:
 
         while self.pos < self.length:
             ch = self.text[self.pos]
-            if ch == "|":
+            if ch == ";":
                 # 换行符：结束当前行
                 if current_line:
                     lines.append(current_line)
@@ -127,7 +127,7 @@ class _Parser:
     # ---------- 字面量 ----------
 
     def _parse_literal(self) -> LiteralSegment:
-        """解析 "..." 字面量，支持 \\" 和 \\\\ 转义"""
+        """解析 "..." 字面量，支持 \\" \\\\ \\n \\t 转义"""
         assert self.text[self.pos] == '"'
         self.pos += 1  # 跳过开头的 "
         chars: list[str] = []
@@ -142,6 +142,14 @@ class _Parser:
                         continue
                     elif nxt == "\\":
                         chars.append("\\")
+                        self.pos += 2
+                        continue
+                    elif nxt == "n":
+                        chars.append("\n")
+                        self.pos += 2
+                        continue
+                    elif nxt == "t":
+                        chars.append("\t")
                         self.pos += 2
                         continue
                 # 其他 \ 按字面量保留
