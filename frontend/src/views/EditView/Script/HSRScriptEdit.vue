@@ -80,7 +80,7 @@
           show-icon
           class="user-control-notice"
           message="运行模式与任务配置已移至用户配置"
-          description="请在用户页选择“MAS 管控”或“脚本直控”。两种模式都由 MAS 启动和关闭游戏；脚本页只维护安装路径与公共执行参数。"
+          description="请在用户页选择“MAS 管控”或“脚本直控”。是否由 MAS 启动、关闭、重启和监测游戏由下方开关决定；脚本页继续维护安装路径与公共执行参数。"
         />
 
         <!-- M7A / SRA / 游戏路径 -->
@@ -93,6 +93,29 @@
               填写对应脚本路径即启用该引擎；清空路径后，该引擎不再校验或参与调度。
             </a-typography-text>
           </div>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="建议在脚本直控且使用云游戏的情况下关闭此开关">
+                    <span class="form-label">
+                      MAS 管理游戏
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  :value="hsrConfig.Game.Enabled"
+                  size="large"
+                  class="modern-input"
+                  @change="handleGameEnabledChange"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -374,6 +397,7 @@ import type { HSRScriptConfig } from '@/types/script'
 type HSRConfigData = {
   Info: HSRConfig_Info
   Game: HSRConfig_Game & {
+    Enabled?: boolean | null
     ForceResolution1920x1080?: boolean | null
     RedeemCodesOnlyWhenChanged?: boolean | null
   }
@@ -403,6 +427,7 @@ const formData = reactive({
 const hsrConfig = reactive<HSRConfigData>({
   Info: { Name: '', M7APath: '', SRAPath: '' },
   Game: {
+    Enabled: true,
     Path: '',
     Arguments: '',
     WaitTime: 60,
@@ -460,6 +485,9 @@ const refreshScript = async () => {
       if (hsrConfig.Game.Arguments === undefined || hsrConfig.Game.Arguments === null) {
         hsrConfig.Game.Arguments = ''
       }
+      if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
+        hsrConfig.Game.Enabled = true
+      }
       if (hsrConfig.Game.WaitTime === undefined || hsrConfig.Game.WaitTime === null) {
         hsrConfig.Game.WaitTime = 60
       }
@@ -512,6 +540,18 @@ const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => 
   await handleChange('Game', key, normalizedValue)
 }
 
+const handleGameEnabledChange = async (value: boolean | string | number) => {
+  if (isInitializing.value || isSaving.value) return
+  const previousValue = hsrConfig.Game.Enabled ?? true
+  const enabled = Boolean(value)
+  hsrConfig.Game.Enabled = enabled
+  const saved = await handleChange('Game', 'Enabled', enabled)
+  if (!saved) {
+    hsrConfig.Game.Enabled = previousValue
+    await refreshScript()
+  }
+}
+
 const handleGameResolutionChange = async (value: boolean | string | number) => {
   if (isInitializing.value || isSaving.value) return
   const enabled = Boolean(value)
@@ -549,7 +589,7 @@ const selectPath = async (key: string) => {
 
     // 校验目录下是否存在期望的 exe；校验失败弹 Modal.warning 且不保存
     const expectedExe = PATH_VALIDATION[key]
-    if (expectedExe) {
+    if (expectedExe && (key !== 'Game.Path' || hsrConfig.Game.Enabled)) {
       const exePath = joinPath(path, expectedExe)
       const exists = await window.electronAPI.fileExists(exePath)
       if (!exists) {
