@@ -35,6 +35,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, MAA_STARTUP_BASE, ARKNIGHTS_PACKAGE_NAME
+from app.utils.io import read_file, write_file
 from .tools import agree_bilibili
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -289,12 +290,8 @@ class ManualReviewTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
+        gui_set = read_file(self.maa_set_path / "gui.json")
+        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
         # 多配置使用默认配置
         if gui_set["Current"] != "Default":
@@ -402,9 +399,7 @@ class ManualReviewTask(TaskExecuteBase):
             json.dumps(gui_set, ensure_ascii=False, indent=4),
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         logger.success("MAA运行参数配置完成: 人工排查")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:

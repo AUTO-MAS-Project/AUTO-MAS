@@ -29,6 +29,7 @@ import re
 from pathlib import Path
 
 from app.utils import decode_bytes
+from app.utils.io import atomic_write
 
 
 def poor_yaml_read(file: Path) -> dict:
@@ -86,4 +87,4 @@ def poor_yaml_write(data: dict, file: Path, template_file: Path | None = None):
             value = "false"
         text = re.sub(f"{key}:.*?\n", f"{key}: {value}\n", text)
 
-    file.write_text(text, encoding="utf-8")
+    atomic_write(file, text.encode("utf-8"))

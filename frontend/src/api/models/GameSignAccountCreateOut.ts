@@ -28,3 +28,4 @@ export type GameSignAccountCreateOut = {
      */
     data?: GameSignAccountGroupConfig;
 };
+

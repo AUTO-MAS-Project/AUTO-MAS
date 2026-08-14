@@ -23,3 +23,4 @@ export type GameSignAccountsListOut = {
      */
     data?: Record<string, any>;
 };
+

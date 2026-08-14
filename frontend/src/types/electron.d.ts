@@ -1,14 +1,14 @@
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
   path: string
-  channel?: 'China' | 'Global' | 'WeGame'
+  channel?: 'China' | 'Global'
 }
 
 export interface PathDiscoveryResult {
   success: boolean
   candidates?: PathDiscoveryCandidate[]
   path?: string
-  channel?: 'China' | 'Global' | 'WeGame'
+  channel?: 'China' | 'Global'
   error?: string
 }
 
@@ -28,6 +28,10 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
+
+  // 窗口可见性/后台状态
+  getWindowActivity?: () => Promise<'visible' | 'background'>
+  onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>

@@ -1919,7 +1919,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后 cookies 直接从响应头获取
+     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError

@@ -47,6 +47,7 @@ from .tools.account_switch import (
     HSRAccountSwitcher,
     check_user_credentials,
     close_game_if_needed,
+    is_game_management_enabled,
     restore_game_resolution_if_needed,
     resolve_game_executable_path,
     stop_external_processes,
@@ -296,6 +297,8 @@ class HSRManager(TaskExecuteBase):
         if not isinstance(script_config, HSRConfig):
             return "脚本配置类型错误，不是 HSR 脚本类型"
 
+        game_management_enabled = is_game_management_enabled(script_config)
+
         if self.task_info.mode == "ManualReview":
             return self._check_manual_review(script_config)
 
@@ -389,7 +392,7 @@ class HSRManager(TaskExecuteBase):
         if not has_executable_user:
             return "未找到任何可执行用户，请确保至少有一个启用且剩余天数不为 0 的用户"
 
-        if enabled_module_keys or has_direct_user:
+        if game_management_enabled and (enabled_module_keys or has_direct_user):
             if not str(script_config.get("Game", "Path") or "").strip():
                 return "请设置游戏路径"
             game_exe_path = resolve_game_executable_path(script_config)
@@ -397,7 +400,9 @@ class HSRManager(TaskExecuteBase):
                 return f"游戏启动文件不存在：{game_exe_path}"
 
         if sra_needed and not sra_available:
-            return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+            if game_management_enabled:
+                return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+            return "HSR 自动代理需要配置 SRA 路径"
 
         try:
             if m7a_needed:
@@ -476,9 +481,10 @@ class HSRManager(TaskExecuteBase):
         if not sra_exe.exists():
             return f"SRA 路径中未找到 SRA-cli.exe：{sra_exe}"
 
-        game_exe_path = resolve_game_executable_path(script_config)
-        if not game_exe_path.exists():
-            return f"游戏启动文件不存在：{game_exe_path}"
+        if is_game_management_enabled(script_config):
+            game_exe_path = resolve_game_executable_path(script_config)
+            if not game_exe_path.exists():
+                return f"游戏启动文件不存在：{game_exe_path}"
 
         has_executable_user = False
         for _uid, user_config in script_config.UserData.items():
@@ -688,8 +694,9 @@ class HSRManager(TaskExecuteBase):
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
         """运行一个用户导入的原生 SRA/M7A 快照。
 
-        直控只把外部配置交给对应 CLI；MAS 仍负责游戏启动、日志、取消和
-        会话收尾。没有新 ``Control``/``Direct`` 字段时不会进入此路径。
+        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
+        日志、取消和会话收尾始终由 MAS 负责。没有新 ``Control``/``Direct``
+        字段时不会进入此路径。
         """
 
         if self.script_config is None:
@@ -709,10 +716,16 @@ class HSRManager(TaskExecuteBase):
         )
         self._runtime.game_launch_checked = False
         await switcher.ensure_game_started_by_mas()
-        self._append_log(
-            f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
-            f"原生配置原样执行：{'、'.join(control.engines)}"
-        )
+        if is_game_management_enabled(self.script_config):
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
+                f"原生配置原样执行：{'、'.join(control.engines)}"
+            )
+        else:
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
+                f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
+            )
 
         summaries: list[str] = []
         try:
@@ -914,10 +927,11 @@ class HSRManager(TaskExecuteBase):
         try:
             # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
             # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
-            restore_game_resolution_if_needed(
-                self._runtime,
-                self._append_log,
-            )
+            if is_game_management_enabled(self.script_config):
+                restore_game_resolution_if_needed(
+                    self._runtime,
+                    self._append_log,
+                )
         except Exception as e:  # noqa: BLE001
             msg = f"恢复星铁分辨率注册表失败：{e}"
             logger.exception(msg)

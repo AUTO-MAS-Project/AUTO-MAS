@@ -30,6 +30,7 @@ from threading import RLock
 import json5
 
 from app.utils import get_logger
+from app.utils.io import read_file, write_file
 
 logger = get_logger("M9A 任务加载器")
 
@@ -227,12 +228,7 @@ class M9ATaskLoader:
 
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = cache_path.with_suffix(".tmp")
-            temp_path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            temp_path.replace(cache_path)
+            write_file(cache_path, payload)
             logger.debug(f"已写入 M9A 本地任务缓存：{cache_path}")
         except Exception as e:
             logger.warning(f"写入 M9A 本地任务缓存失败：{e}")
@@ -364,7 +360,7 @@ class M9ATaskLoader:
                 raise ValueError(f"检测到 interface 循环导入：{resolved_path}")
 
             self._dependency_paths.add(resolved_path)
-            data = json5.loads(path.read_text(encoding="utf-8"))
+            data = read_file(path)
             if not isinstance(data, dict):
                 raise ValueError(f"interface 必须是 JSON 对象：{path}")
 

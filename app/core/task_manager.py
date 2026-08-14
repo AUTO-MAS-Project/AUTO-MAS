@@ -229,7 +229,11 @@ class Task(TaskExecuteBase):
             data={"Accomplish": self.task_info.result},
         )
 
-        if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
+        if (
+            not self.is_closing
+            and self.task_info.mode == "AutoProxy"
+            and self.task_info.queue_id is not None
+        ):
 
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
@@ -372,11 +376,23 @@ class _TaskManager:
 
         if task_id == "ALL":
             task_item_list = list(self.task_handler.values())
+
+            # 主动停止全部任务时，禁止触发队列完成后的电源操作
+            Config.power_sign = "NoAction"
             for task_item in task_item_list:
                 if not task_item.is_closing:
-                    task_item.cancel()
                     task_item.is_closing = True
-                    await task_item.accomplish.wait()
+                    task_item.cancel()
+
+            if System.power_task is not None and not System.power_task.done():
+                await System.cancel_power_task()
+
+            await asyncio.gather(
+                *(task_item.accomplish.wait() for task_item in task_item_list)
+            )
+            await Config.send_websocket_message(
+                id="Main", type="Update", data={"PowerSign": Config.power_sign}
+            )
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
@@ -384,8 +400,8 @@ class _TaskManager:
                 return
             if self.task_handler[uid].is_closing:
                 raise RuntimeError("任务已在中止中")
-            self.task_handler[uid].cancel()
             self.task_handler[uid].is_closing = True
+            self.task_handler[uid].cancel()
             logger.info(f"等待任务 {task_id} 结束...")
             await self.task_handler[uid].accomplish.wait()
             logger.info(f"任务 {task_id} 已结束")

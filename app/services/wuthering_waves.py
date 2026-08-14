@@ -29,60 +29,11 @@ _LAUNCHER_PREFERENCE_RELATIVE_PATH = Path(
 )
 
 
-def _find_wegame_process_path_from_registry() -> Path:
-    """Read the WeGame client's install path from Windows uninstall metadata."""
-
-    try:
-        import winreg
-    except ImportError as e:
-        raise FileNotFoundError("当前系统无法读取 WeGame 游戏路径") from e
-
-    registry_roots = (
-        winreg.HKEY_LOCAL_MACHINE,
-        winreg.HKEY_CURRENT_USER,
-    )
-    uninstall_paths = (
-        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
-    )
-    for hive in registry_roots:
-        for uninstall_path in uninstall_paths:
-            try:
-                uninstall_key = winreg.OpenKey(hive, uninstall_path)
-            except OSError:
-                continue
-            with uninstall_key:
-                for index in range(winreg.QueryInfoKey(uninstall_key)[0]):
-                    try:
-                        key_name = winreg.EnumKey(uninstall_key, index)
-                        with winreg.OpenKey(uninstall_key, key_name) as entry:
-                            display_name = str(
-                                winreg.QueryValueEx(entry, "DisplayName")[0]
-                            )
-                            install_location = str(
-                                winreg.QueryValueEx(entry, "InstallLocation")[0]
-                            )
-                    except (OSError, TypeError):
-                        continue
-
-                    normalized_name = display_name.lower()
-                    if (
-                        "鸣潮" not in display_name
-                        and "wuthering waves" not in normalized_name
-                    ):
-                        continue
-                    candidate = Path(install_location) / _CLIENT_RELATIVE_PATH
-                    if candidate.is_file():
-                        return candidate
-
-    raise FileNotFoundError("未找到 WeGame 鸣潮客户端路径，请重新导入启动器")
-
-
 def _decode_official_launcher_process_path(launcher_path: Path) -> Path:
     """Decode the official launcher's read-only game install metadata."""
 
     if launcher_path.name.lower() != "launcher.exe":
-        raise ValueError("请选择鸣潮官方启动器 launcher.exe 或 WeGame.exe")
+        raise ValueError("请选择鸣潮官方启动器 launcher.exe")
 
     preference_path = launcher_path.parent / _LAUNCHER_PREFERENCE_RELATIVE_PATH
     if not preference_path.is_file():
@@ -117,6 +68,4 @@ def resolve_wuthering_waves_process_path(launcher_path: Path) -> Path:
 
     if not launcher_path.is_file():
         raise FileNotFoundError("鸣潮启动器不存在，请重新导入启动器")
-    if launcher_path.name.lower() == "wegame.exe":
-        return _find_wegame_process_path_from_registry()
     return _decode_official_launcher_process_path(launcher_path)
