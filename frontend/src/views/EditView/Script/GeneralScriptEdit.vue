@@ -508,7 +508,11 @@
           </div>
 
           <div class="push-config-body">
-            <div v-for="(item, idx) in pushLogPatterns" :key="idx" class="pattern-rule">
+            <div
+              v-for="(item, idx) in pushLogPatterns"
+              :key="idx"
+              :class="['pattern-rule', { 'pattern-rule-disabled': item.enabled === false }]"
+            >
               <!-- 规则标识行 -->
               <div class="pattern-rule-bar">
                 <a-select
@@ -525,6 +529,14 @@
                   <QuestionCircleOutlined class="pattern-rule-tip" />
                 </a-tooltip>
                 <div class="pattern-rule-ops">
+                  <a-tooltip :title="item.enabled === false ? '该规则已停用，开启后将参与采集' : '停用该规则（保留配置，不再参与采集）'">
+                    <a-switch
+                      :checked="item.enabled !== false"
+                      size="small"
+                      class="pattern-rule-switch"
+                      @change="(v: boolean) => { item.enabled = v; onPatternChange() }"
+                    />
+                  </a-tooltip>
                   <a-tooltip title="调试">
                     <span class="pattern-op-debug" @click="openDebugDialog(idx)">
                       <BugOutlined />
@@ -1752,6 +1764,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
 type PushLogPatternType = 'split' | 'regex' | 'multiline'
 interface PushLogPattern {
   type: PushLogPatternType
+  // 单条规则启用/停用开关：停用时保留配置但不参与采集
+  enabled?: boolean
   // split
   match?: string
   head?: string
@@ -1782,9 +1796,12 @@ const parsePushLogPatterns = (json: string): PushLogPattern[] => {
       .filter((item: any) => item && typeof item === 'object')
       .map((item: any) => {
         const type = normalizePatternType(item.type)
+        // enabled 默认 true；显式 false 时为 false
+        const enabled = item.enabled === false ? false : true
         if (type === 'split') {
           return {
             type: 'split',
+            enabled,
             match: typeof item.match === 'string' ? item.match : '',
             head: typeof item.head === 'string' ? item.head : '',
             headInclude: !!item.headInclude,
@@ -1795,12 +1812,14 @@ const parsePushLogPatterns = (json: string): PushLogPattern[] => {
         if (type === 'regex') {
           return {
             type: 'regex',
+            enabled,
             match: typeof item.match === 'string' ? item.match : '',
             extract: typeof item.extract === 'string' ? item.extract : '',
           }
         }
         return {
           type: 'multiline',
+          enabled,
           start: typeof item.start === 'string' ? item.start : '',
           end: typeof item.end === 'string' ? item.end : '',
           extract: typeof item.extract === 'string' ? item.extract : '',
@@ -1817,12 +1836,14 @@ const syncPushLogPatternsFromConfig = () => {
   pushLogPatterns.value =
     parsed.length > 0
       ? parsed
-      : [{ type: 'split', match: '', head: '', headInclude: false, tail: '', tailInclude: false }]
+      : [{ type: 'split', enabled: true, match: '', head: '', headInclude: false, tail: '', tailInclude: false }]
 }
 
 const savePushLogPatterns = () => {
   const cleaned: PushLogPattern[] = []
   for (const p of pushLogPatterns.value) {
+    // enabled 默认 true；停用时仍保留配置以便随时重新启用
+    const enabled = p.enabled === false ? false : true
     if (p.type === 'split') {
       const match = (p.match || '').trim()
       const head = (p.head || '').trim()
@@ -1830,6 +1851,7 @@ const savePushLogPatterns = () => {
       if (!match && !head && !tail) continue
       cleaned.push({
         type: 'split',
+        enabled,
         match,
         head,
         headInclude: !!p.headInclude,
@@ -1840,7 +1862,7 @@ const savePushLogPatterns = () => {
       const match = (p.match || '').trim()
       const extract = (p.extract || '').trim()
       if (!match && !extract) continue
-      cleaned.push({ type: 'regex', match, extract })
+      cleaned.push({ type: 'regex', enabled, match, extract })
     } else if (p.type === 'multiline') {
       const start = (p.start || '').trim()
       const end = (p.end || '').trim()
@@ -1848,6 +1870,7 @@ const savePushLogPatterns = () => {
       if (!start && !end) continue
       cleaned.push({
         type: 'multiline',
+        enabled,
         start,
         end,
         extract,
@@ -1864,6 +1887,7 @@ const handleAddPattern = ({ key }: { key: string }) => {
   if (key === 'split') {
     pushLogPatterns.value.push({
       type: 'split',
+      enabled: true,
       match: '',
       head: '',
       headInclude: false,
@@ -1871,10 +1895,11 @@ const handleAddPattern = ({ key }: { key: string }) => {
       tailInclude: false,
     })
   } else if (key === 'regex') {
-    pushLogPatterns.value.push({ type: 'regex', match: '', extract: '' })
+    pushLogPatterns.value.push({ type: 'regex', enabled: true, match: '', extract: '' })
   } else if (key === 'multiline') {
     pushLogPatterns.value.push({
       type: 'multiline',
+      enabled: true,
       start: '',
       end: '',
       extract: '',
@@ -1884,13 +1909,15 @@ const handleAddPattern = ({ key }: { key: string }) => {
   savePushLogPatterns()
 }
 
-// 类型切换：重置为对应类型的默认字段
+// 类型切换：重置为对应类型的默认字段（保留 enabled 状态，避免切换类型时意外停用）
 const onTypeChange = (idx: number) => {
   const item = pushLogPatterns.value[idx]
   if (!item) return
+  const enabled = item.enabled === false ? false : true
   if (item.type === 'split') {
     pushLogPatterns.value[idx] = {
       type: 'split',
+      enabled,
       match: '',
       head: '',
       headInclude: false,
@@ -1898,10 +1925,11 @@ const onTypeChange = (idx: number) => {
       tailInclude: false,
     }
   } else if (item.type === 'regex') {
-    pushLogPatterns.value[idx] = { type: 'regex', match: '', extract: '' }
+    pushLogPatterns.value[idx] = { type: 'regex', enabled, match: '', extract: '' }
   } else if (item.type === 'multiline') {
     pushLogPatterns.value[idx] = {
       type: 'multiline',
+      enabled,
       start: '',
       end: '',
       extract: '',
@@ -3323,6 +3351,21 @@ const handleUpload = async () => {
   height: 40px;
 }
 
+/* 单条规则启用/停用开关：与「调试/删除」同列，size=small */
+.pattern-rule-switch {
+  flex-shrink: 0;
+}
+
+/* 停用状态：整条规则视觉变灰，但保留可读性 */
+.pattern-rule-disabled {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+
+.pattern-rule-disabled:hover {
+  opacity: 0.85;
+}
+
 /* 调试按钮：做成可见的蓝色小按钮，hover 实心填充 */
 .pattern-op-debug {
   display: inline-flex;
@@ -3546,7 +3589,7 @@ const handleUpload = async () => {
 
 .debug-result-out {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding-left: 26px;
 }
@@ -3554,14 +3597,20 @@ const handleUpload = async () => {
 .debug-result-tag {
   flex-shrink: 0;
   margin: 0;
+  margin-top: 1px;
 }
 
 .debug-result-extracted {
+  flex: 1;
+  min-width: 0;
+  display: block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   color: var(--ant-color-success);
+  white-space: pre-wrap;
   word-break: break-all;
   font-weight: 500;
+  line-height: 1.6;
 }
 
 .debug-result-error {

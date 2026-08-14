@@ -313,8 +313,16 @@ def compile_pattern(config: dict) -> Optional[CompiledMatcher]:
         config: 形如 {"type":"split|regex|multiline", ...} 的配置字典
 
     Returns:
-        编译后的匹配器；类型未知或字段不全时返回 None
+        编译后的匹配器；类型未知、字段不全或 enabled 为 false 时返回 None
+
+    Note:
+        enabled 字段用于单独停用某条规则而保留其配置，与匹配字段为空时的跳过语义
+        一致：load_patterns 会静默跳过，validate_pattern/debug_pattern 不受影响
+        以便用户在停用状态下仍可调试。
     """
+    # 单条规则停用开关：显式为 false 时跳过编译，保留配置但不生效
+    if config.get("enabled", True) is False:
+        return None
     ptype = (config.get("type") or "").lower()
     if ptype == PATTERN_TYPE_SPLIT:
         return _compile_split(config)
@@ -365,6 +373,8 @@ def serialize_patterns(patterns: list[dict]) -> str:
     """将模式列表序列化为 JSON 字符串（与 load_patterns 对称）
 
     按类型清洗字段，过滤掉匹配字段为空的条目（匹配字段留空则规则不生效）。
+    enabled 字段会被保留：显式为 false 时规则在 load_patterns 阶段被跳过，
+    但配置仍持久化，便于用户随时重新启用而无需重新填写。
 
     Args:
         patterns: 原始模式列表
@@ -375,6 +385,8 @@ def serialize_patterns(patterns: list[dict]) -> str:
     cleaned: list[dict] = []
     for item in patterns:
         ptype = (item.get("type") or "").lower()
+        # enabled 字段：默认 true；显式 false 时保留以便前端显示停用状态
+        enabled_out = bool(item.get("enabled", True))
         if ptype == PATTERN_TYPE_SPLIT:
             match = (item.get("match") or "").strip()
             # 匹配关键字留空则跳过，与编译逻辑保持一致
@@ -390,6 +402,7 @@ def serialize_patterns(patterns: list[dict]) -> str:
                     "headInclude": bool(item.get("headInclude", False)),
                     "tail": tail,
                     "tailInclude": bool(item.get("tailInclude", False)),
+                    "enabled": enabled_out,
                 }
             )
         elif ptype == PATTERN_TYPE_REGEX:
@@ -403,6 +416,7 @@ def serialize_patterns(patterns: list[dict]) -> str:
                     "type": PATTERN_TYPE_REGEX,
                     "match": match,
                     "extract": extract,
+                    "enabled": enabled_out,
                 }
             )
         elif ptype == PATTERN_TYPE_MULTILINE:
@@ -426,6 +440,7 @@ def serialize_patterns(patterns: list[dict]) -> str:
                     "end": end,
                     "extract": extract,
                     "maxLines": max_lines,
+                    "enabled": enabled_out,
                 }
             )
     return json.dumps(cleaned, ensure_ascii=False)
