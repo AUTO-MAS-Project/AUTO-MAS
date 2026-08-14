@@ -4,6 +4,11 @@ from app.models.config import MaaEndUserConfig
 
 
 class MaaEndUserConfigTest(unittest.IsolatedAsyncioTestCase):
+    async def test_pull_count_calculator_is_disabled_by_default(self) -> None:
+        config = MaaEndUserConfig()
+
+        self.assertFalse(config.get("Task", "IfPullCountCalculator"))
+
     async def test_load_migrates_legacy_protocol_space_tab(self) -> None:
         config = MaaEndUserConfig()
 
