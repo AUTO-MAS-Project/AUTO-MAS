@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getConfig, saveConfig } from '@/utils/config'
 
@@ -101,6 +101,11 @@ export const usePerformanceStore = defineStore('performance', () => {
       saving.value = false
     }
   }
+
+  onScopeDispose(() => {
+    removeWindowActivityListener?.()
+    removeWindowActivityListener = null
+  })
 
   return {
     lowPerformanceMode,
