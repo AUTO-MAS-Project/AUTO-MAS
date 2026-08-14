@@ -16,6 +16,7 @@ import {
 import type { ScriptType } from '@/types/script'
 import { Service } from '@/api'
 import { usePerformanceStore } from '@/stores/performance'
+import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
 import * as THREE from 'three'
 
 const logger = window.electronAPI.getLogger('卫星动画')
@@ -54,10 +55,13 @@ let camera: THREE.PerspectiveCamera | null = null
 let orbitRenderer: THREE.WebGLRenderer | null = null
 let glowRenderer: THREE.WebGLRenderer | null = null
 let cardRenderer: THREE.WebGLRenderer | null = null
-let animationFrameId: number | null = null
 let appearAnimationFrameId: number | null = null
 let allowLowPowerFrame = false
 let isUnmounted = false
+const animationFrameScheduler = createAnimationFrameScheduler(
+  requestAnimationFrame,
+  cancelAnimationFrame
+)
 
 type CardMesh = THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>
 
@@ -82,12 +86,15 @@ const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
 
 function stopAnimation() {
-  if (animationFrameId === null) {
+  animationFrameScheduler.cancel()
+}
+
+function startAnimation() {
+  if (isUnmounted || !camera || performanceStore.isLowPower) {
     return
   }
 
-  cancelAnimationFrame(animationFrameId)
-  animationFrameId = null
+  animationFrameScheduler.request(animate)
 }
 
 function stopAppearAnimation() {
@@ -686,7 +693,6 @@ function animate(): void {
     performanceStore.isBackgrounded ||
     (!shouldRenderLowPowerFrame && performanceStore.isLowPower)
   ) {
-    animationFrameId = null
     return
   }
 
@@ -720,7 +726,6 @@ function animate(): void {
   if (performanceStore.isLowPower) {
     if (orbitRenderer && orbitScene) orbitRenderer.render(orbitScene, camera)
     if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
-    animationFrameId = null
     return
   }
 
@@ -800,10 +805,8 @@ function animate(): void {
   if (glowRenderer && glowScene) glowRenderer.render(glowScene, camera)
   if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
 
-  if (performanceStore.isLowPower) {
-    animationFrameId = null
-  } else {
-    animationFrameId = requestAnimationFrame(animate)
+  if (!performanceStore.isLowPower) {
+    animationFrameScheduler.request(animate)
   }
 }
 
@@ -865,7 +868,7 @@ watch(
 
     if (!performanceStore.isBackgrounded) {
       createGlowRenderer()
-      animate()
+      startAnimation()
     }
   }
 )
@@ -890,7 +893,7 @@ watch(
       renderCurrentFrame()
     } else {
       createGlowRenderer()
-      animate()
+      startAnimation()
     }
     void updateSatelliteStates()
     startStatusPolling()
@@ -909,7 +912,7 @@ onMounted(async () => {
   if (performanceStore.isLowPower) {
     renderCurrentFrame()
   } else {
-    animate()
+    startAnimation()
   }
   window.addEventListener('resize', handleResize)
 
