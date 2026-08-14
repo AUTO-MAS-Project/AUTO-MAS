@@ -405,6 +405,17 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+type WindowActivity = 'visible' | 'background'
+let lastWindowActivity: WindowActivity | null = null
+
+function notifyWindowActivity(activity: WindowActivity) {
+  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+    return
+  }
+
+  lastWindowActivity = activity
+  mainWindow.webContents.send('window-activity-changed', activity)
+}
 
 const TITLE_BAR_HEIGHT = 32
 const RECOVERY_DRAG_HANDLE_WIDTH = 64
@@ -519,6 +530,7 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  lastWindowActivity = null
 
   // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
   let restoreToMaximized = Boolean(config.UI.maximized)
@@ -529,6 +541,7 @@ function createWindow() {
     restoreToMaximized = false
   })
   win.on('restore', () => {
+    notifyWindowActivity('visible')
     if (restoreToMaximized && !win.isMaximized()) {
       win.maximize()
     }
@@ -540,6 +553,9 @@ function createWindow() {
     if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
       logger.info('页面加载完成，窗口已显示')
+    } else {
+      notifyWindowActivity('background')
+      logger.info('页面加载完成，窗口保持后台状态')
     }
   })
 
@@ -686,6 +702,7 @@ function createWindow() {
   })
 
   win.on('minimize', () => {
+    notifyWindowActivity('background')
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.hide()
@@ -696,6 +713,7 @@ function createWindow() {
   })
 
   win.on('show', () => {
+    notifyWindowActivity('visible')
     if (restoreToMaximized && !win.isMaximized() && !win.isMinimized()) {
       win.maximize()
     }
@@ -706,6 +724,7 @@ function createWindow() {
   })
 
   win.on('hide', () => {
+    notifyWindowActivity('background')
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.setSkipTaskbar(true)
@@ -989,6 +1008,18 @@ ipcMain.handle('window-close', () => {
     isQuitting = true
     mainWindow.close()
   }
+})
+
+ipcMain.handle('get-window-activity', () => {
+  if (lastWindowActivity) {
+    return lastWindowActivity
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return 'background' as const
+  }
+
+  return mainWindow.isVisible() && !mainWindow.isMinimized() ? 'visible' : 'background'
 })
 
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
