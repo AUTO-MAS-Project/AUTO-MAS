@@ -11,6 +11,7 @@ import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
+import { usePerformanceStore } from '@/stores/performance'
 import { Service, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('设置')
 
@@ -25,6 +26,7 @@ const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useT
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
+const performanceStore = usePerformanceStore()
 const {
   restartPolling,
   updateVisible,
@@ -256,6 +258,16 @@ const handleCursorEffectChange = async (value: SelectValue) => {
   }
 }
 
+const handleLowPerformanceModeChange = async (enabled: boolean) => {
+  try {
+    await performanceStore.setLowPerformanceMode(enabled)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存低性能模式失败: ${errorMsg}`)
+    message.error('低性能模式保存失败')
+  }
+}
+
 // 其他操作
 const openDevTools = () => window.electronAPI?.openDevTools?.()
 
@@ -270,11 +282,13 @@ const checkUpdate = async () => {
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    logger.info(`全局更新检查完成，状态: ${JSON.stringify({
-      updateVisible: updateVisible.value,
-      updateData: updateData.value,
-      latestVersion: latestVersion.value,
-    })}`)
+    logger.info(
+      `全局更新检查完成，状态: ${JSON.stringify({
+        updateVisible: updateVisible.value,
+        updateData: updateData.value,
+        latestVersion: latestVersion.value,
+      })}`
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局更新检查失败: ${errorMsg}`)
@@ -312,6 +326,7 @@ const testNotify = async () => {
 
 onMounted(() => {
   void cursorEffectStore.load()
+  void performanceStore.initialize()
   loadSettings()
   getBackendVersion()
 })
@@ -325,27 +340,53 @@ onMounted(() => {
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
-          <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
-            :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
-            :cursor-effect="cursorEffectStore.effect" :cursor-effect-options="cursorEffectOptions"
-            :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
-            :handle-cursor-effect-change="handleCursorEffectChange" :handle-setting-change="handleSettingChange" />
+          <TabBasic
+            :settings="settings"
+            :theme-mode="themeMode"
+            :theme-color="themeColor"
+            :theme-mode-options="themeModeOptions"
+            :theme-color-options="themeColorOptions"
+            :cursor-effect="cursorEffectStore.effect"
+            :cursor-effect-options="cursorEffectOptions"
+            :low-performance-mode="performanceStore.lowPerformanceMode"
+            :low-performance-mode-saving="performanceStore.saving"
+            :handle-theme-mode-change="handleThemeModeChange"
+            :handle-theme-color-change="handleThemeColorChange"
+            :handle-cursor-effect-change="handleCursorEffectChange"
+            :handle-low-performance-mode-change="handleLowPerformanceModeChange"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
-          <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
+          <TabFunction
+            :settings="settings"
+            :history-retention-options="historyRetentionOptions"
+            :voice-type-options="voiceTypeOptions"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
-          <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
-            :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
+          <TabNotify
+            :settings="settings"
+            :send-task-result-time-options="sendTaskResultTimeOptions"
+            :handle-setting-change="handleSettingChange"
+            :test-notify="testNotify"
+            :testing-notify="testingNotify"
+          />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="日志管理">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="关于">
-          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" :settings="settings"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :handle-setting-change="handleSettingChange" :check-update="checkUpdate" />
+          <TabOthers
+            :version="version"
+            :backend-update-info="backendUpdateInfo"
+            :settings="settings"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate"
+          />
         </a-tab-pane>
       </a-tabs>
     </div>

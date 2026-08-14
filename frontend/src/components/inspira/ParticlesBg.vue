@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { usePerformanceStore } from '@/stores/performance'
 
 interface ParticleColor {
   red: number
@@ -47,6 +48,7 @@ const props = withDefaults(
 )
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const performanceStore = usePerformanceStore()
 
 let canvasContext: CanvasRenderingContext2D | null = null
 let containerElement: HTMLElement | null = null
@@ -133,6 +135,14 @@ function drawParticles() {
   }
 }
 
+function clearCanvas() {
+  if (!canvasContext || width <= 0 || height <= 0) {
+    return
+  }
+
+  canvasContext.clearRect(0, 0, width, height)
+}
+
 function updateParticles() {
   const movementEase = clamp(props.ease / 100, 0.02, 0.5)
   const staticity = Math.max(1, props.staticity)
@@ -194,6 +204,16 @@ function stopAnimation() {
 function startAnimation() {
   stopAnimation()
 
+  if (performanceStore.isLowPower) {
+    particles = []
+    clearCanvas()
+    return
+  }
+
+  if (particles.length === 0) {
+    resizeCanvas()
+  }
+
   if (reducedMotionQuery?.matches || typeof window.requestAnimationFrame !== 'function') {
     drawParticles()
     return
@@ -211,10 +231,18 @@ function resizeCanvas() {
   width = Math.max(1, Math.floor(rect.width || containerElement.clientWidth))
   height = Math.max(1, Math.floor(rect.height || containerElement.clientHeight))
 
-  const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+  const devicePixelRatio = performanceStore.isLowPower
+    ? 1
+    : Math.min(window.devicePixelRatio || 1, 2)
   canvasRef.value.width = Math.floor(width * devicePixelRatio)
   canvasRef.value.height = Math.floor(height * devicePixelRatio)
   canvasContext.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+
+  if (performanceStore.isLowPower) {
+    particles = []
+    clearCanvas()
+    return
+  }
 
   createParticles()
   drawParticles()
@@ -238,11 +266,29 @@ function handlePointerLeave() {
 function handleReducedMotionChange(event: MediaQueryListEvent) {
   if (event.matches) {
     stopAnimation()
-    drawParticles()
+    if (performanceStore.isLowPower) {
+      particles = []
+      clearCanvas()
+    } else {
+      drawParticles()
+    }
     return
   }
 
   startAnimation()
+}
+
+function handlePerformanceChange(isLowPower: boolean) {
+  if (isLowPower) {
+    stopAnimation()
+    resizeCanvas()
+    return
+  }
+
+  if (isMounted) {
+    resizeCanvas()
+    startAnimation()
+  }
 }
 
 onMounted(() => {
@@ -278,6 +324,7 @@ onMounted(() => {
 onUnmounted(() => {
   isMounted = false
   stopAnimation()
+  clearCanvas()
   resizeObserver?.disconnect()
   reducedMotionQuery?.removeEventListener('change', handleReducedMotionChange)
   containerElement?.removeEventListener('pointermove', handlePointerMove)
@@ -292,10 +339,17 @@ watch(
   () => {
     particleColor = parseHexColor(props.color)
     if (isMounted) {
-      resizeCanvas()
+      if (performanceStore.isLowPower) {
+        particles = []
+        clearCanvas()
+      } else {
+        resizeCanvas()
+      }
     }
   }
 )
+
+watch(() => performanceStore.isLowPower, handlePerformanceChange)
 </script>
 
 <style scoped>
