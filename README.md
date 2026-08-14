@@ -137,16 +137,26 @@ We thank the following contributors for their work on this project
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=AUTO-MAS-Project/AUTO-MAS&type=Date)](https://star-history.com/#AUTO-MAS-Project/AUTO-MAS&Date)
+<a href="https://www.star-history.com/?repos=AUTO-MAS-Project%2FAUTO-MAS&type=date&legend=top-left">
+
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=AUTO-MAS-Project/AUTO-MAS&type=date&theme=dark&legend=top-left&sealed_token=tzZpfkoUQl3n13ptQrCOpskCv49TRKf6ChW1P2gpvDLfKXtjjy853wsRzl7qsI3J3ryH6456XHLUG15UveDTCcgKmop9fdLrxjOG4pFgeRdH5HR_SYbHSd24ZhBEfVKHPEMwtZkSOW7-i1CUKC8aWLxiW1I97KfvHgU4-PlMTZcqPw9CTBUfQhpB9iS0" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=AUTO-MAS-Project/AUTO-MAS&type=date&legend=top-left&sealed_token=tzZpfkoUQl3n13ptQrCOpskCv49TRKf6ChW1P2gpvDLfKXtjjy853wsRzl7qsI3J3ryH6456XHLUG15UveDTCcgKmop9fdLrxjOG4pFgeRdH5HR_SYbHSd24ZhBEfVKHPEMwtZkSOW7-i1CUKC8aWLxiW1I97KfvHgU4-PlMTZcqPw9CTBUfQhpB9iS0" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=AUTO-MAS-Project/AUTO-MAS&type=date&legend=top-left&sealed_token=tzZpfkoUQl3n13ptQrCOpskCv49TRKf6ChW1P2gpvDLfKXtjjy853wsRzl7qsI3J3ryH6456XHLUG15UveDTCcgKmop9fdLrxjOG4pFgeRdH5HR_SYbHSd24ZhBEfVKHPEMwtZkSOW7-i1CUKC8aWLxiW1I97KfvHgU4-PlMTZcqPw9CTBUfQhpB9iS0" />
+ </picture>
+
+</a>
 
 ## 官方社区 / Official Community
 
 欢迎加入 AUTO-MAS 项目组官方社群！
 
 - QQ 交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
+- QQ 开发者交流群：[1094208135](https://qm.qq.com/q/MJYbfjwScM)
 - Telegram：[@AUTO_MAS_top](https://t.me/AUTO_MAS_top)
 
 Join the official AUTO-MAS community!
 
-- QQ Group: [957750551](https://qm.qq.com/q/bd9fISNoME)  
+- QQ Group: [957750551](https://qm.qq.com/q/bd9fISNoME)
+- QQ Developer Community: [1094208135](https://qm.qq.com/q/MJYbfjwScM)
 - Telegram: [@AUTO_MAS_top](https://t.me/AUTO_MAS_top)
