@@ -478,6 +478,7 @@ async function initScene(): Promise<void> {
   try {
     await initSceneInternal()
   } catch (err) {
+    disposeScene()
     logger.error(`初始化场景失败: ${String(err)}`)
   } finally {
     loading.value = false

@@ -830,7 +830,7 @@ watch(
   open => {
     if (open && !performanceStore.isLowPower) {
       void initPhysics()
-    } else if (open) {
+    } else if (open && performanceStore.lowPerformanceMode) {
       emit('update:modelValue', false)
       emit('update:visible', false)
       destroyPhysics()
@@ -842,14 +842,19 @@ watch(
 )
 
 watch(
-  () => performanceStore.isLowPower,
-  isLowPower => {
-    if (isLowPower) {
+  [() => performanceStore.lowPerformanceMode, () => performanceStore.isBackgrounded],
+  ([lowPerformanceMode, isBackgrounded]) => {
+    if (lowPerformanceMode) {
       destroyPhysics()
       if (isOpen.value) {
         emit('update:modelValue', false)
         emit('update:visible', false)
       }
+      return
+    }
+
+    if (isBackgrounded) {
+      destroyPhysics()
       return
     }
 

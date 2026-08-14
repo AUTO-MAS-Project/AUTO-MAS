@@ -58,4 +58,19 @@ describe('performance store', () => {
     expect(store.lowPerformanceMode).toBe(false)
     expect(store.saving).toBe(false)
   })
+
+  it('removes the window activity listener when disposed', async () => {
+    const removeWindowActivityListener = vi.fn()
+    const onWindowActivityChange = vi.fn(() => removeWindowActivityListener)
+    vi.stubGlobal('window', {
+      electronAPI: { onWindowActivityChange },
+    })
+
+    const store = usePerformanceStore()
+    await store.initialize()
+    store.$dispose()
+
+    expect(onWindowActivityChange).toHaveBeenCalledOnce()
+    expect(removeWindowActivityListener).toHaveBeenCalledOnce()
+  })
 })
