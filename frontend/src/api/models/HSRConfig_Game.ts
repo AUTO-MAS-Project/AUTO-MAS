@@ -4,10 +4,6 @@
 /* eslint-disable */
 export type HSRConfig_Game = {
     /**
-     * 是否由 MAS 管理游戏
-     */
-    Enabled?: (boolean | null);
-    /**
      * 游戏路径
      */
     Path?: (string | null);

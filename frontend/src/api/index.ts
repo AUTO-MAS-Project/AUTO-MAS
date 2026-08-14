@@ -164,6 +164,7 @@ export type { PlanReorderIn } from './models/PlanReorderIn';
 export type { PlanUpdateIn } from './models/PlanUpdateIn';
 export { PowerIn } from './models/PowerIn';
 export { PowerOut } from './models/PowerOut';
+export type { PullCountStatistics } from './models/PullCountStatistics';
 export type { QrCheckIn } from './models/QrCheckIn';
 export type { QrCheckOut } from './models/QrCheckOut';
 export type { QrCreateOut } from './models/QrCreateOut';
