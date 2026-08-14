@@ -53,8 +53,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)" />
+                <a-input
+                  v-model:value="formData.name"
+                  placeholder="请输入脚本名称"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -68,8 +73,13 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.rootPath" placeholder="请选择脚本根目录" size="large" class="path-input"
-                    readonly />
+                  <a-input
+                    v-model:value="formData.rootPath"
+                    placeholder="请选择脚本根目录"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectRootPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -99,8 +109,13 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.scriptPath" placeholder="请选择脚本主程序文件" size="large" class="path-input"
-                    readonly />
+                  <a-input
+                    v-model:value="formData.scriptPath"
+                    placeholder="请选择脚本主程序文件"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectScriptPath">
                     <template #icon>
                       <FileOutlined />
@@ -120,8 +135,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="generalConfig.Script.Arguments" placeholder="请输入脚本启动参数" size="large"
-                  class="modern-input" @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)" />
+                <a-input
+                  v-model:value="generalConfig.Script.Arguments"
+                  placeholder="请输入脚本启动参数"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -134,8 +154,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large"
-                  @change="handleChange('Script', 'IfTrackProcess', $event)">
+                <a-select
+                  v-model:value="generalConfig.Script.IfTrackProcess"
+                  size="large"
+                  @change="handleChange('Script', 'IfTrackProcess', $event)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -147,27 +170,36 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="要追踪的进程名称，打开脚本后启动任务管理器，在目标脚本进程右键，选择转到详细信息，填入名称栏中的内容即可，无法确认时可以留空">
+                  <a-tooltip
+                    title="要追踪的进程名称，打开脚本后启动任务管理器，在目标脚本进程右键，选择转到详细信息，填入名称栏中的内容即可，无法确认时可以留空"
+                  >
                     <span class="form-label">
                       被追踪进程的名称
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="generalConfig.Script.TrackProcessName" placeholder="请输入要追踪的进程名称" size="large"
-                  class="modern-input" @blur="
+                <a-input
+                  v-model:value="generalConfig.Script.TrackProcessName"
+                  placeholder="请输入要追踪的进程名称"
+                  size="large"
+                  class="modern-input"
+                  @blur="
                     handleChange(
                       'Script',
                       'TrackProcessName',
                       generalConfig.Script.TrackProcessName
                     )
-                    " />
+                  "
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="要追踪的进程可执行文件路径，打开脚本后启动任务管理器，在目标脚本进程右键，选择「打开文件所在位置」，即可定位到可执行文件路径，无法确认时可以留空">
+                  <a-tooltip
+                    title="要追踪的进程可执行文件路径，打开脚本后启动任务管理器，在目标脚本进程右键，选择「打开文件所在位置」，即可定位到可执行文件路径，无法确认时可以留空"
+                  >
                     <span class="form-label">
                       被追踪进程的文件路径
                       <QuestionCircleOutlined class="help-icon" />
@@ -175,15 +207,25 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="generalConfig.Script.TrackProcessExe" placeholder="请选择进程可执行文件路径" size="large"
-                    class="path-input" readonly />
+                  <a-input
+                    v-model:value="generalConfig.Script.TrackProcessExe"
+                    placeholder="请选择进程可执行文件路径"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectTrackProcessExe">
                     <template #icon>
                       <FileOutlined />
                     </template>
                     选择文件
                   </a-button>
-                  <a-button size="large" class="path-clear-icon-btn" aria-label="清空路径" @click="clearTrackProcessExe">
+                  <a-button
+                    size="large"
+                    class="path-clear-icon-btn"
+                    aria-label="清空路径"
+                    @click="clearTrackProcessExe"
+                  >
                     <template #icon>
                       <DeleteOutlined />
                     </template>
@@ -195,21 +237,27 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    title="要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空">
+                    title="要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空"
+                  >
                     <span class="form-label">
                       追踪进程命令行参数
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="generalConfig.Script.TrackProcessCmdline" placeholder="请输入进程启动命令行参数"
-                  size="large" class="modern-input" @blur="
+                <a-input
+                  v-model:value="generalConfig.Script.TrackProcessCmdline"
+                  placeholder="请输入进程启动命令行参数"
+                  size="large"
+                  class="modern-input"
+                  @blur="
                     handleChange(
                       'Script',
                       'TrackProcessCmdline',
                       generalConfig.Script.TrackProcessCmdline
                     )
-                    " />
+                  "
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -217,10 +265,13 @@
             <a-col :span="12">
               <a-form-item name="configPath" :rules="rules.configPath">
                 <template #label>
-                  <a-tooltip :title="generalConfig.Script.ConfigPathMode === 'Folder'
-                    ? '脚本配置文件所在的文件夹路径'
-                    : '脚本配置文件的路径'
-                    ">
+                  <a-tooltip
+                    :title="
+                      generalConfig.Script.ConfigPathMode === 'Folder'
+                        ? '脚本配置文件所在的文件夹路径'
+                        : '脚本配置文件的路径'
+                    "
+                  >
                     <span class="form-label">
                       配置文件路径
                       <QuestionCircleOutlined class="help-icon" />
@@ -228,10 +279,17 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.configPath" :placeholder="generalConfig.Script.ConfigPathMode === 'Folder'
-                    ? '请选择配置文件夹'
-                    : '请选择配置文件'
-                    " size="large" class="path-input" readonly />
+                  <a-input
+                    v-model:value="formData.configPath"
+                    :placeholder="
+                      generalConfig.Script.ConfigPathMode === 'Folder'
+                        ? '请选择配置文件夹'
+                        : '请选择配置文件'
+                    "
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectConfigPath">
                     <template #icon>
                       <FolderOpenOutlined v-if="generalConfig.Script.ConfigPathMode === 'Folder'" />
@@ -254,8 +312,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large"
-                  @change="handleChange('Script', 'ConfigPathMode', $event)">
+                <a-select
+                  v-model:value="generalConfig.Script.ConfigPathMode"
+                  size="large"
+                  @change="handleChange('Script', 'ConfigPathMode', $event)"
+                >
                   <a-select-option value="File">单文件</a-select-option>
                   <a-select-option value="Folder">文件夹</a-select-option>
                 </a-select>
@@ -271,8 +332,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large"
-                  @change="handleChange('Script', 'UpdateConfigMode', $event)">
+                <a-select
+                  v-model:value="generalConfig.Script.UpdateConfigMode"
+                  size="large"
+                  @change="handleChange('Script', 'UpdateConfigMode', $event)"
+                >
                   <a-select-option value="Never">从不</a-select-option>
                   <a-select-option value="Success">成功时</a-select-option>
                   <a-select-option value="Failure">失败时</a-select-option>
@@ -293,8 +357,13 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.logPath" placeholder="请选择日志文件" size="large" class="path-input"
-                    readonly />
+                  <a-input
+                    v-model:value="formData.logPath"
+                    placeholder="请选择日志文件"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectLogPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -309,26 +378,39 @@
                 <template #label>
                   <span class="form-label">
                     日志文件名格式
-                    <a-tooltip title="指示实时生成日志文件名的格式（strptime 格式），文件名固定时留空">
+                    <a-tooltip
+                      title="指示实时生成日志文件名的格式（strptime 格式），文件名固定时留空"
+                    >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
-                    <a-tooltip title="针对 mxu 按日期+自增序号命名的日志：末尾加 ****** 启用mxu日志前缀匹配（如 %Y-%m-%d******）">
-                      <QuestionCircleOutlined class="help-icon" style="margin-left: 2px;" />
+                    <a-tooltip
+                      title="针对 mxu 按日期+自增序号命名的日志：末尾加 ****** 启用mxu日志前缀匹配（如 %Y-%m-%d******）"
+                    >
+                      <QuestionCircleOutlined class="help-icon" style="margin-left: 2px" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input v-model:value="generalConfig.Script.LogPathFormat" placeholder="日志文件名格式，文件名固定时留空" size="large"
-                  class="modern-input" @blur="
+                <a-input
+                  v-model:value="generalConfig.Script.LogPathFormat"
+                  placeholder="日志文件名格式，文件名固定时留空"
+                  size="large"
+                  class="modern-input"
+                  @blur="
                     handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)
-                    " />
+                  "
+                />
               </a-form-item>
             </a-col>
           </a-row>
 
           <a-row :gutter="24">
             <a-col :span="12">
-              <LogTimestampSelector :form-data="formData" :log-file-path="formData.logPath"
-                :handle-change="handleChange" :rules="rules" />
+              <LogTimestampSelector
+                :form-data="formData"
+                :log-file-path="formData.logPath"
+                :handle-change="handleChange"
+                :rules="rules"
+              />
             </a-col>
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
@@ -340,13 +422,19 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.logTimeFormat" placeholder="请输入脚本日志时间戳格式" size="large"
-                  class="modern-input" @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)" />
+                <a-input
+                  v-model:value="formData.logTimeFormat"
+                  placeholder="请输入脚本日志时间戳格式"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
+                />
                 <div class="format-preview">
                   示例：<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
                 <div v-if="hasFractionalSecondToken" class="format-preview-tip">
-                  提示：%f 同时支持 3 位毫秒（如 123）和 6 位微秒（如 123456），会按日志中的位数自动识别。
+                  提示：%f 同时支持 3 位毫秒（如 123）和 6 位微秒（如
+                  123456），会按日志中的位数自动识别。
                 </div>
               </a-form-item>
             </a-col>
@@ -357,15 +445,21 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功">
+                    title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功"
+                  >
                     <span class="form-label">
                       任务成功日志
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="generalConfig.Script.SuccessLog" placeholder="请输入脚本成功日志，以「 | 」进行分割" size="large"
-                  class="modern-input" @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)" />
+                <a-input
+                  v-model:value="generalConfig.Script.SuccessLog"
+                  placeholder="请输入脚本成功日志，以「 | 」进行分割"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -378,31 +472,330 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.errorLog" placeholder="请输入脚本失败日志，以「 | 」进行分割" size="large"
-                  class="modern-input" @blur="handleChange('Script', 'ErrorLog', formData.errorLog)" />
+                <a-input
+                  v-model:value="formData.errorLog"
+                  placeholder="请输入脚本失败日志，以「 | 」进行分割"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Script', 'ErrorLog', formData.errorLog)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
 
-          <a-row :gutter="24">
-            <a-col :span="24">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    title="按关键字采集任务进程信息（如：理智作战|任务出错: 仓库识别），任务结束后会追加到推送报告的任务进程信息中，便于直观了解本次运行的关键过程">
-                    <span class="form-label">
-                      推送日志
-                      <QuestionCircleOutlined class="help-icon" />
+          <div class="section-header push-config-header">
+            <h3>
+              推送配置
+              <a-tooltip
+                title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式：字符串切割（关键字掐头去尾）、表达式（匹配+提取）、多行聚合（跨行窗口+提取拼接）。可添加多条规则，每条规则独立执行。"
+              >
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </h3>
+            <div class="push-config-actions">
+              <a-tooltip
+                title="开启后才会按下列规则采集任务进程信息追加到推送报告；关闭时配置仍保留，但不进行采集"
+              >
+                <a-switch
+                  v-model:checked="generalConfig.Script.PushLogEnabled"
+                  class="push-log-switch"
+                  :checked-children="'启用'"
+                  :un-checked-children="'停用'"
+                  @change="handleChange('Script', 'PushLogEnabled', $event)"
+                />
+              </a-tooltip>
+            </div>
+          </div>
+
+          <div class="push-config-body">
+            <div v-for="(item, idx) in pushLogPatterns" :key="idx" class="pattern-rule">
+              <!-- 规则标识行 -->
+              <div class="pattern-rule-bar">
+                <a-select
+                  v-model:value="item.type"
+                  class="pattern-type-select"
+                  size="large"
+                  @change="onTypeChange(idx)"
+                >
+                  <a-select-option value="split">字符串切割</a-select-option>
+                  <a-select-option value="regex">表达式</a-select-option>
+                  <a-select-option value="multiline">多行聚合</a-select-option>
+                </a-select>
+                <a-tooltip :title="getPatternHint(item.type)">
+                  <QuestionCircleOutlined class="pattern-rule-tip" />
+                </a-tooltip>
+                <div class="pattern-rule-ops">
+                  <a-tooltip title="调试">
+                    <span class="pattern-op-debug" @click="openDebugDialog(idx)">
+                      <BugOutlined />
+                      调试
                     </span>
                   </a-tooltip>
-                </template>
-                <a-input v-model:value="generalConfig.Script.PushLog" placeholder="请输入要采集并推送的日志关键字，以「 | 」进行分割" size="large"
-                  class="modern-input" @blur="handleChange('Script', 'PushLog', generalConfig.Script.PushLog)" />
-              </a-form-item>
-            </a-col>
-          </a-row>
+                  <a-tooltip title="删除">
+                    <DeleteOutlined
+                      class="pattern-op-icon pattern-op-del"
+                      @click="removePattern(idx)"
+                    />
+                  </a-tooltip>
+                </div>
+              </div>
 
-          <a-row :gutter="24"></a-row>
+              <!-- 字符串切割 -->
+              <a-row v-if="item.type === 'split'" :gutter="16">
+                <a-col :span="24">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip
+                        title="必填，留空则该规则不生效；多个关键字以「 | 」分隔，任一命中即通过"
+                      >
+                        <span class="form-label">
+                          匹配关键字
+                          <QuestionCircleOutlined class="help-icon" />
+                          <span class="doc-link" @click.stop="openDocsModal('split')">
+                            <BookOutlined />
+                            说明文档
+                          </span>
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input
+                      v-model:value="item.match"
+                      placeholder="例如：任务完成|成功|失败"
+                      size="large"
+                      class="modern-input"
+                      @blur="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item class="split-item">
+                    <template #label>
+                      <a-tooltip
+                        title="从行首截取到关键字处；勾选「包含」则连同关键字一起去除，不勾选则保留关键字"
+                      >
+                        <span class="form-label">
+                          掐头关键字
+                          <QuestionCircleOutlined class="help-icon" />
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <div class="split-input-row">
+                      <a-input
+                        v-model:value="item.head"
+                        placeholder="留空不掐头"
+                        size="large"
+                        class="modern-input"
+                        @blur="onPatternChange()"
+                      />
+                      <a-checkbox v-model:checked="item.headInclude" @change="onPatternChange()">
+                        包含
+                      </a-checkbox>
+                    </div>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item class="split-item">
+                    <template #label>
+                      <a-tooltip
+                        title="从关键字处截取到行尾；勾选「包含」则连同关键字一起去除，不勾选则保留关键字"
+                      >
+                        <span class="form-label">
+                          去尾关键字
+                          <QuestionCircleOutlined class="help-icon" />
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <div class="split-input-row">
+                      <a-input
+                        v-model:value="item.tail"
+                        placeholder="留空不去尾"
+                        size="large"
+                        class="modern-input"
+                        @blur="onPatternChange()"
+                      />
+                      <a-checkbox v-model:checked="item.tailInclude" @change="onPatternChange()">
+                        包含
+                      </a-checkbox>
+                    </div>
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <!-- 正则 -->
+              <a-row v-else-if="item.type === 'regex'" :gutter="16">
+                <a-col :span="24">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip title="必填，留空则该规则不生效；用于过滤行的正则表达式">
+                        <span class="form-label">
+                          匹配正则
+                          <QuestionCircleOutlined class="help-icon" />
+                          <span class="doc-link" @click.stop="openDocsModal('regex')">
+                            <BookOutlined />
+                            说明文档
+                          </span>
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input
+                      v-model:value="item.match"
+                      placeholder="例如：任务执行"
+                      size="large"
+                      class="modern-input"
+                      @blur="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="24">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip
+                        title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、|（换行拼接）、""（字面量）和函数链；留空则返回整行'
+                      >
+                        <span class="form-label">
+                          提取表达式
+                          <QuestionCircleOutlined class="help-icon" />
+                          <span class="doc-link" @click.stop="openDocsModal('expression')">
+                            <BookOutlined />
+                            说明文档
+                          </span>
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input
+                      v-model:value="item.extract"
+                      placeholder="例如：$(任务执行: (\S+))"
+                      size="large"
+                      class="modern-input"
+                      @blur="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <!-- 多行聚合 -->
+              <a-row v-else :gutter="16">
+                <a-col :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip
+                        title="必填，留空则该规则不生效；匹配到此正则的行作为窗口起始（含该行）"
+                      >
+                        <span class="form-label">
+                          起始正则
+                          <QuestionCircleOutlined class="help-icon" />
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input
+                      v-model:value="item.start"
+                      placeholder="例如：一条龙任务执行"
+                      size="large"
+                      class="modern-input"
+                      @blur="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip title="匹配到此正则的行作为窗口结束（含该行）；留空则不限定结束">
+                        <span class="form-label">
+                          结束正则
+                          <QuestionCircleOutlined class="help-icon" />
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input
+                      v-model:value="item.end"
+                      placeholder="例如：任务结束"
+                      size="large"
+                      class="modern-input"
+                      @blur="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="24">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip
+                        title='提取表达式使用 $() 包裹正则，支持 +（同行拼接）、|（换行拼接）、""（字面量）和函数链（.replace/.cut/.sub/.trim）；留空则返回窗口原文'
+                      >
+                        <span class="form-label">
+                          提取表达式
+                          <QuestionCircleOutlined class="help-icon" />
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input
+                      v-model:value="item.extract"
+                      placeholder='例如：$((一条龙任务执行: \d+/\d+))+" -> "+$((邮件：[^\n]+))|$((任务结束))'
+                      size="large"
+                      class="modern-input"
+                      @blur="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="24">
+                  <a-form-item>
+                    <template #label>
+                      <a-tooltip
+                        title="窗口最多收集的行数，达到上限时强制关闭窗口；防止意外匹配过多行"
+                      >
+                        <span class="form-label">
+                          最大跨行数
+                          <QuestionCircleOutlined class="help-icon" />
+                          <span class="doc-link" @click.stop="openDocsModal('multiline')">
+                            <BookOutlined />
+                            说明文档
+                          </span>
+                        </span>
+                      </a-tooltip>
+                    </template>
+                    <a-input-number
+                      v-model:value="item.maxLines"
+                      :min="2"
+                      :max="500"
+                      :step="10"
+                      size="large"
+                      style="width: 200px"
+                      @change="onPatternChange()"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </div>
+
+            <!-- 底部添加行：始终在最下方 -->
+            <a-dropdown trigger="click" placement="topLeft" class="pattern-add-dropdown">
+              <div class="pattern-add-row">
+                <PlusOutlined />
+                <span>添加采集规则</span>
+              </div>
+              <template #overlay>
+                <a-menu @click="handleAddPattern">
+                  <a-menu-item key="split">
+                    <template #icon>
+                      <ScissorOutlined />
+                    </template>
+                    添加字符串切割
+                  </a-menu-item>
+                  <a-menu-item key="regex">
+                    <template #icon>
+                      <CodeOutlined />
+                    </template>
+                    添加表达式
+                  </a-menu-item>
+                  <a-menu-item key="multiline">
+                    <template #icon>
+                      <BlockOutlined />
+                    </template>
+                    添加多行聚合
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
 
           <div class="section-header">
             <h3>游戏配置</h3>
@@ -419,8 +812,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.Enabled" size="large"
-                  @change="handleChange('Game', 'Enabled', $event)">
+                <a-select
+                  v-model:value="generalConfig.Game.Enabled"
+                  size="large"
+                  @change="handleChange('Game', 'Enabled', $event)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -436,7 +832,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.Type" size="large" @change="handleGameTypeChange">
+                <a-select
+                  v-model:value="generalConfig.Game.Type"
+                  size="large"
+                  @change="handleGameTypeChange"
+                >
                   <a-select-option value="Emulator">模拟器</a-select-option>
                   <a-select-option value="Client">PC客户端</a-select-option>
                   <a-select-option value="URL">URL协议(如Starward)</a-select-option>
@@ -455,8 +855,13 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="generalConfig.Game.Path" placeholder="请选择游戏的可执行文件" size="large"
-                    class="path-input" readonly />
+                  <a-input
+                    v-model:value="generalConfig.Game.Path"
+                    placeholder="请选择游戏的可执行文件"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
                       <FileOutlined />
@@ -477,9 +882,18 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.EmulatorId" size="large" placeholder="请选择模拟器"
-                  :loading="emulatorLoading" @change="handleEmulatorChange">
-                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-model:value="generalConfig.Game.EmulatorId"
+                  size="large"
+                  placeholder="请选择模拟器"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -497,8 +911,12 @@
                   </a-tooltip>
                 </template>
                 <a-input-group class="path-input-group">
-                  <a-input v-model:value="generalConfig.Game.URL" placeholder="请输入URL参数，如：starward://startgame/xxxx"
-                    size="large" @blur="handleChange('Game', 'URL', generalConfig.Game.URL)" />
+                  <a-input
+                    v-model:value="generalConfig.Game.URL"
+                    placeholder="请输入URL参数，如：starward://startgame/xxxx"
+                    size="large"
+                    @blur="handleChange('Game', 'URL', generalConfig.Game.URL)"
+                  />
                 </a-input-group>
               </a-form-item>
             </a-col>
@@ -506,10 +924,13 @@
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                    ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
-                    : '选择模拟器的具体实例'
-                    ">
+                  <a-tooltip
+                    :title="
+                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                        ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
+                        : '选择模拟器的具体实例'
+                    "
+                  >
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
@@ -517,18 +938,33 @@
                   </a-tooltip>
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
-                <a-input v-if="
-                  emulatorDeviceOptions.length === 0 &&
-                  !emulatorDeviceLoading &&
-                  generalConfig.Game.EmulatorId
-                " v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                <a-input
+                  v-if="
+                    emulatorDeviceOptions.length === 0 &&
+                    !emulatorDeviceLoading &&
+                    generalConfig.Game.EmulatorId
+                  "
+                  v-model:value="generalConfig.Game.EmulatorIndex"
+                  size="large"
+                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   class="modern-input"
-                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)" />
+                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)"
+                />
                 <!-- 正常情况下显示下拉框 -->
-                <a-select v-else v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请先选择模拟器"
-                  :loading="emulatorDeviceLoading" :disabled="!generalConfig.Game.EmulatorId"
-                  @change="handleChange('Game', 'EmulatorIndex', $event)">
-                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-else
+                  v-model:value="generalConfig.Game.EmulatorIndex"
+                  size="large"
+                  placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!generalConfig.Game.EmulatorId"
+                  @change="handleChange('Game', 'EmulatorIndex', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -548,8 +984,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="generalConfig.Game.Arguments" placeholder="请输入启动参数" size="large"
-                  class="modern-input" @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)" />
+                <a-input
+                  v-model:value="generalConfig.Game.Arguments"
+                  placeholder="请输入启动参数"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -562,9 +1003,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
+                <a-input-number
+                  v-model:value="generalConfig.Game.WaitTime"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -577,8 +1024,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.IfForceClose" size="large"
-                  @change="handleChange('Game', 'IfForceClose', $event)">
+                <a-select
+                  v-model:value="generalConfig.Game.IfForceClose"
+                  size="large"
+                  @change="handleChange('Game', 'IfForceClose', $event)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -592,15 +1042,22 @@
           <a-col :span="8">
             <a-form-item>
               <template #label>
-                <a-tooltip title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。">
+                <a-tooltip
+                  title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。"
+                >
                   <span class="form-label">
                     进程名称
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
-              <a-input v-model:value="generalConfig.Game.ProcessName" placeholder="比如 StarRail.exe" size="large"
-                class="modern-input" @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)" />
+              <a-input
+                v-model:value="generalConfig.Game.ProcessName"
+                placeholder="比如 StarRail.exe"
+                size="large"
+                class="modern-input"
+                @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)"
+              />
             </a-form-item>
           </a-col>
         </a-row>
@@ -613,16 +1070,24 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                  <a-tooltip
+                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
+                  >
                     <span class="form-label">
                       单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)" />
+                <a-input-number
+                  v-model:value="generalConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -635,9 +1100,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)" />
+                <a-input-number
+                  v-model:value="generalConfig.Run.RunTimesLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -650,9 +1121,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)" />
+                <a-input-number
+                  v-model:value="generalConfig.Run.RunTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -662,33 +1139,172 @@
   </div>
 
   <!-- 上传脚本弹窗 -->
-  <a-modal v-model:open="uploadModalVisible" title="上传脚本配置到云端" :confirm-loading="uploadLoading" width="600px"
-    :mask-closable="false" @ok="handleUpload" @cancel="handleUploadCancel">
-    <a-form ref="uploadFormRef" :model="uploadForm" :rules="uploadRules" layout="vertical" class="upload-form">
+  <a-modal
+    v-model:open="uploadModalVisible"
+    title="上传脚本配置到云端"
+    :confirm-loading="uploadLoading"
+    width="600px"
+    :mask-closable="false"
+    @ok="handleUpload"
+    @cancel="handleUploadCancel"
+  >
+    <a-form
+      ref="uploadFormRef"
+      :model="uploadForm"
+      :rules="uploadRules"
+      layout="vertical"
+      class="upload-form"
+    >
       <a-form-item name="config_name" label="配置名称">
-        <a-input v-model:value="uploadForm.config_name" placeholder="为您的脚本配置起一个易于识别的名称" size="large" :maxlength="50"
-          show-count class="modern-input" />
+        <a-input
+          v-model:value="uploadForm.config_name"
+          placeholder="为您的脚本配置起一个易于识别的名称"
+          size="large"
+          :maxlength="50"
+          show-count
+          class="modern-input"
+        />
       </a-form-item>
 
       <a-form-item name="author" label="作者">
-        <a-input v-model:value="uploadForm.author" placeholder="请输入作者名称" size="large" :maxlength="30" show-count
-          class="modern-input" />
+        <a-input
+          v-model:value="uploadForm.author"
+          placeholder="请输入作者名称"
+          size="large"
+          :maxlength="30"
+          show-count
+          class="modern-input"
+        />
       </a-form-item>
 
       <a-form-item name="description" label="描述">
-        <a-textarea v-model:value="uploadForm.description" placeholder="请简要描述该脚本配置的功能、适用场景等信息" size="large" :rows="4"
-          :maxlength="200" show-count class="modern-textarea" />
+        <a-textarea
+          v-model:value="uploadForm.description"
+          placeholder="请简要描述该脚本配置的功能、适用场景等信息"
+          size="large"
+          :rows="4"
+          :maxlength="200"
+          show-count
+          class="modern-textarea"
+        />
       </a-form-item>
 
       <a-alert message="分享说明" type="info">
         <template #description>
           <p>
-            所有<span style="font-weight: bold"> 敏感信息
-            </span>均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
+            所有<span style="font-weight: bold"> 敏感信息 </span
+            >均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
           </p>
         </template>
       </a-alert>
     </a-form>
+  </a-modal>
+
+  <LogPatternDocsModal v-model:open="logDocsOpen" v-model:active-key="logDocsActiveKey" />
+
+  <!-- 规则调试弹窗 -->
+  <a-modal
+    v-model:open="debugModalOpen"
+    title="规则调试"
+    width="680px"
+    :footer="null"
+    :destroy-on-close="true"
+  >
+    <template #title>
+      <span class="modal-title">
+        <BugOutlined />
+        规则调试
+      </span>
+    </template>
+    <div class="debug-modal-body">
+      <div class="debug-config-preview">
+        <span class="debug-config-label">当前规则：</span>
+        <code class="debug-config-code">{{ debugConfigPreview }}</code>
+      </div>
+      <div class="debug-input-section">
+        <div class="debug-section-label">
+          <span>粘贴日志（每行一条，支持多行批量调试）</span>
+          <span class="debug-load-row">
+            <a-button
+              type="primary"
+              size="small"
+              :loading="debugLoadingLog"
+              :disabled="!generalConfig.Script.LogPath || generalConfig.Script.LogPath === '.'"
+              @click="loadDebugLog"
+            >
+              加载日志
+            </a-button>
+            <a-input-number
+              v-model:value="debugLogLines"
+              size="small"
+              :min="-1"
+              :step="100"
+              style="width: 90px"
+            />
+            <span class="debug-load-hint">行</span>
+          </span>
+        </div>
+        <a-textarea
+          v-model:value="debugInput"
+          :rows="6"
+          placeholder="粘贴要测试的日志行，每行一条..."
+          class="debug-textarea"
+        />
+      </div>
+      <div class="debug-actions">
+        <a-button
+          type="primary"
+          size="small"
+          :loading="debugRunning"
+          :disabled="!debugInput.trim()"
+          @click="runDebug"
+        >
+          <template #icon>
+            <BugOutlined />
+          </template>
+          调试
+        </a-button>
+        <a-button size="small" @click="clearDebug">清空</a-button>
+      </div>
+      <a-alert
+        v-if="debugCompileError"
+        type="error"
+        show-icon
+        class="debug-compile-error"
+        :message="debugCompileError"
+        closable
+        @close="debugCompileError = null"
+      />
+      <div v-if="debugResults.length > 0" class="debug-results">
+        <div class="debug-results-header">
+          <span class="debug-section-label"
+            >结果（{{ debugHitCount }}/{{ debugResults.length }}）</span
+          >
+          <a-checkbox v-model:checked="debugOnlyHit" size="small">仅显示已命中</a-checkbox>
+        </div>
+        <div class="debug-results-list">
+          <div
+            v-for="item in filteredDebugResults"
+            :key="item.idx"
+            :class="['debug-result-item', item.hit ? 'hit' : 'miss']"
+          >
+            <div class="debug-result-line">
+              <span class="debug-result-line-num">{{ item.idx + 1 }}</span>
+              <span class="debug-result-line-text">{{
+                debugIsMultiline ? `窗口 ${item.idx + 1}` : item.line
+              }}</span>
+            </div>
+            <div class="debug-result-out">
+              <a-tag v-if="item.hit" color="green" class="debug-result-tag">命中</a-tag>
+              <a-tag v-else color="default" class="debug-result-tag">未命中</a-tag>
+              <span v-if="item.hit" class="debug-result-extracted">{{ item.extracted }}</span>
+              <span v-else-if="item.error" class="debug-result-error">{{ item.error }}</span>
+            </div>
+          </div>
+          <div v-if="filteredDebugResults.length === 0" class="debug-results-empty">无命中行</div>
+        </div>
+      </div>
+    </div>
   </a-modal>
 </template>
 
@@ -704,13 +1320,46 @@ import { Service, type ComboBoxItem } from '@/api'
 import type { ScriptUploadIn } from '@/api'
 import {
   ArrowLeftOutlined,
+  BlockOutlined,
+  BookOutlined,
+  BugOutlined,
   CloudUploadOutlined,
+  CodeOutlined,
   DeleteOutlined,
   FileOutlined,
   FolderOpenOutlined,
+  PlusOutlined,
   QuestionCircleOutlined,
+  ScissorOutlined,
 } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
+import LogPatternDocsModal from './LogPatternDocsModal.vue'
+import axios from 'axios'
+import { OpenAPI } from '@/api'
+
+// ==================== 调试类型 ====================
+type PatternType = 'split' | 'regex' | 'multiline'
+
+interface DebugPatternConfig {
+  type: PatternType
+  match?: string
+  head?: string
+  headInclude?: boolean
+  tail?: string
+  tailInclude?: boolean
+  extract?: string
+  start?: string
+  end?: string
+  maxLines?: number
+}
+
+interface DebugResult {
+  idx: number
+  hit: boolean
+  extracted: string
+  line: string
+  error?: string | null
+}
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
@@ -1095,7 +1744,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
     LogTimeFormat: '%Y-%m-%d %H:%M:%S',
     ScriptPath: '.',
     SuccessLog: '',
-    PushLog: '',
+    PushLogEnabled: false,
+    PushLogPatterns: '',
     UpdateConfigMode: 'Never',
   },
   SubConfigsInfo: {
@@ -1104,6 +1754,325 @@ const generalConfig = reactive<GeneralScriptConfig>({
     },
   },
 })
+
+// ==================== 推送日志：采集规则 ====================
+type PushLogPatternType = 'split' | 'regex' | 'multiline'
+interface PushLogPattern {
+  type: PushLogPatternType
+  // split
+  match?: string
+  head?: string
+  headInclude?: boolean
+  tail?: string
+  tailInclude?: boolean
+  // regex
+  extract?: string
+  // multiline
+  start?: string
+  end?: string
+  maxLines?: number
+}
+
+// 采集规则编辑列表：与 generalConfig.Script.PushLogPatterns (JSON) 双向同步
+const pushLogPatterns = ref<PushLogPattern[]>([])
+
+const normalizePatternType = (raw: unknown): PushLogPatternType => {
+  return raw === 'split' ? 'split' : raw === 'multiline' ? 'multiline' : 'regex'
+}
+
+const parsePushLogPatterns = (json: string): PushLogPattern[] => {
+  if (!json) return []
+  try {
+    const items = JSON.parse(json)
+    if (!Array.isArray(items)) return []
+    return items
+      .filter((item: any) => item && typeof item === 'object')
+      .map((item: any) => {
+        const type = normalizePatternType(item.type)
+        if (type === 'split') {
+          return {
+            type: 'split',
+            match: typeof item.match === 'string' ? item.match : '',
+            head: typeof item.head === 'string' ? item.head : '',
+            headInclude: !!item.headInclude,
+            tail: typeof item.tail === 'string' ? item.tail : '',
+            tailInclude: !!item.tailInclude,
+          }
+        }
+        if (type === 'regex') {
+          return {
+            type: 'regex',
+            match: typeof item.match === 'string' ? item.match : '',
+            extract: typeof item.extract === 'string' ? item.extract : '',
+          }
+        }
+        return {
+          type: 'multiline',
+          start: typeof item.start === 'string' ? item.start : '',
+          end: typeof item.end === 'string' ? item.end : '',
+          extract: typeof item.extract === 'string' ? item.extract : '',
+          maxLines: typeof item.maxLines === 'number' ? item.maxLines : 50,
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+const syncPushLogPatternsFromConfig = () => {
+  const parsed = parsePushLogPatterns(generalConfig.Script.PushLogPatterns || '')
+  pushLogPatterns.value =
+    parsed.length > 0
+      ? parsed
+      : [{ type: 'split', match: '', head: '', headInclude: false, tail: '', tailInclude: false }]
+}
+
+const savePushLogPatterns = () => {
+  const cleaned: PushLogPattern[] = []
+  for (const p of pushLogPatterns.value) {
+    if (p.type === 'split') {
+      const match = (p.match || '').trim()
+      const head = (p.head || '').trim()
+      const tail = (p.tail || '').trim()
+      if (!match && !head && !tail) continue
+      cleaned.push({
+        type: 'split',
+        match,
+        head,
+        headInclude: !!p.headInclude,
+        tail,
+        tailInclude: !!p.tailInclude,
+      })
+    } else if (p.type === 'regex') {
+      const match = (p.match || '').trim()
+      const extract = (p.extract || '').trim()
+      if (!match && !extract) continue
+      cleaned.push({ type: 'regex', match, extract })
+    } else if (p.type === 'multiline') {
+      const start = (p.start || '').trim()
+      const end = (p.end || '').trim()
+      const extract = (p.extract || '').trim()
+      if (!start && !end) continue
+      cleaned.push({
+        type: 'multiline',
+        start,
+        end,
+        extract,
+        maxLines: p.maxLines || 50,
+      })
+    }
+  }
+  const json = JSON.stringify(cleaned)
+  generalConfig.Script.PushLogPatterns = json
+  handleChange('Script', 'PushLogPatterns', json)
+}
+
+const handleAddPattern = ({ key }: { key: string }) => {
+  if (key === 'split') {
+    pushLogPatterns.value.push({
+      type: 'split',
+      match: '',
+      head: '',
+      headInclude: false,
+      tail: '',
+      tailInclude: false,
+    })
+  } else if (key === 'regex') {
+    pushLogPatterns.value.push({ type: 'regex', match: '', extract: '' })
+  } else if (key === 'multiline') {
+    pushLogPatterns.value.push({
+      type: 'multiline',
+      start: '',
+      end: '',
+      extract: '',
+      maxLines: 50,
+    })
+  }
+  savePushLogPatterns()
+}
+
+// 类型切换：重置为对应类型的默认字段
+const onTypeChange = (idx: number) => {
+  const item = pushLogPatterns.value[idx]
+  if (!item) return
+  if (item.type === 'split') {
+    pushLogPatterns.value[idx] = {
+      type: 'split',
+      match: '',
+      head: '',
+      headInclude: false,
+      tail: '',
+      tailInclude: false,
+    }
+  } else if (item.type === 'regex') {
+    pushLogPatterns.value[idx] = { type: 'regex', match: '', extract: '' }
+  } else if (item.type === 'multiline') {
+    pushLogPatterns.value[idx] = {
+      type: 'multiline',
+      start: '',
+      end: '',
+      extract: '',
+      maxLines: 50,
+    }
+  }
+  savePushLogPatterns()
+}
+
+const removePattern = (idx: number) => {
+  pushLogPatterns.value.splice(idx, 1)
+  savePushLogPatterns()
+}
+
+const onPatternChange = () => {
+  savePushLogPatterns()
+}
+
+const getPatternHint = (type: PushLogPatternType): string => {
+  if (type === 'split') {
+    return '按关键字过滤行，再掐头去尾提取中间内容。具体用法见：字符串切割文档'
+  }
+  if (type === 'regex') {
+    return '匹配正则过滤行，提取表达式用 $() 提取内容并支持函数链。具体用法见：表达式文档'
+  }
+  return '由起始/结束正则划定多行窗口，再用提取表达式（$() 语法）提取字段并拼接。具体用法见：多行聚合文档'
+}
+
+// 日志提取表达式参考弹窗：内置字符串切割/正则/表达式/多行聚合文档
+const logDocsOpen = ref(false)
+const logDocsActiveKey = ref<'split' | 'regex' | 'expression' | 'multiline'>('regex')
+const openDocsModal = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
+  logDocsActiveKey.value = key
+  logDocsOpen.value = true
+}
+
+// ==================== 规则调试 ====================
+const debugModalOpen = ref(false)
+const debugInput = ref('')
+const debugResults = ref<DebugResult[]>([])
+// 配置级错误（正则/表达式语法错误、未知函数）：由后端校验返回
+const debugCompileError = ref<string | null>(null)
+// 当前调试的规则索引
+const debugIdx = ref(-1)
+// 多行聚合按窗口产出结果，不与逐行输入对齐
+const debugIsMultiline = computed(() => pushLogPatterns.value[debugIdx.value]?.type === 'multiline')
+// 加载日志：行数（倒序取最后 N 行，-1 为全部）
+const debugLogLines = ref(500)
+const debugLoadingLog = ref(false)
+// 调试执行中（调用后端 API）
+const debugRunning = ref(false)
+
+// 调试弹窗中展示的当前规则预览
+const debugConfigPreview = computed(() => {
+  const item = pushLogPatterns.value[debugIdx.value]
+  if (!item) return ''
+  if (item.type === 'split') {
+    return `[split] match="${item.match || ''}" head="${item.head || ''}"(含${item.headInclude ? '是' : '否'}) tail="${item.tail || ''}"(含${item.tailInclude ? '是' : '否'})`
+  }
+  if (item.type === 'regex') {
+    return `[regex] match="${item.match || ''}" extract="${item.extract || ''}"`
+  }
+  return `[multiline] start="${item.start || ''}" end="${item.end || ''}" extract="${item.extract || ''}" maxLines=${item.maxLines || 50}`
+})
+
+const openDebugDialog = (idx: number) => {
+  debugIdx.value = idx
+  debugInput.value = ''
+  debugResults.value = []
+  debugCompileError.value = null
+  debugModalOpen.value = true
+}
+
+const runDebug = async () => {
+  const item = pushLogPatterns.value[debugIdx.value]
+  if (!item) return
+  const config: DebugPatternConfig = {
+    type: item.type,
+    match: item.match,
+    head: item.head,
+    headInclude: item.headInclude,
+    tail: item.tail,
+    tailInclude: item.tailInclude,
+    extract: item.extract,
+    start: item.start,
+    end: item.end,
+    maxLines: item.maxLines,
+  }
+  debugRunning.value = true
+  debugCompileError.value = null
+  try {
+    const baseURL = OpenAPI.BASE || ''
+    const resp = await axios.post(`${baseURL}/api/setting/debug_pattern`, {
+      pattern: config,
+      logText: debugInput.value,
+    })
+    const data = resp.data
+    if (data.code !== 200) {
+      debugCompileError.value = data.message || '调试请求失败'
+      debugResults.value = []
+      return
+    }
+    if (data.configError) {
+      debugCompileError.value = data.configError
+      debugResults.value = []
+      return
+    }
+    debugResults.value = (data.results || []).map((r: DebugResult) => ({
+      idx: r.idx,
+      hit: r.hit,
+      extracted: r.extracted || '',
+      line: r.line || '',
+      error: r.error || null,
+    }))
+  } catch (error) {
+    debugCompileError.value = '调试请求失败: ' + (error as Error).message
+    debugResults.value = []
+  } finally {
+    debugRunning.value = false
+  }
+}
+
+const clearDebug = () => {
+  debugInput.value = ''
+  debugResults.value = []
+  debugCompileError.value = null
+}
+
+// 从脚本配置的日志路径加载日志到调试输入框（倒序取最后 N 行）
+const loadDebugLog = async () => {
+  const logPath = generalConfig.Script.LogPath
+  if (!logPath || logPath === '.') {
+    message.warning('请先在脚本配置中设置日志文件路径')
+    return
+  }
+  try {
+    debugLoadingLog.value = true
+    const content = await window.electronAPI.readFile(logPath)
+    if (!content) {
+      message.warning('日志文件为空或无法读取')
+      return
+    }
+    const allLines = content.split('\n')
+    const n = debugLogLines.value
+    const lines = n < 0 ? allLines : allLines.slice(Math.max(0, allLines.length - n))
+    debugInput.value = lines.join('\n')
+    message.success(`已加载 ${lines.length} 行日志（共 ${allLines.length} 行）`)
+  } catch (error) {
+    logger.error(`加载日志文件失败: ${String(error)}`)
+    message.error('加载日志文件失败: ' + (error as Error).message)
+  } finally {
+    debugLoadingLog.value = false
+  }
+}
+
+// 仅显示已命中
+const debugOnlyHit = ref(false)
+const debugHitCount = computed(() => debugResults.value.filter(r => r.hit).length)
+const filteredDebugResults = computed(() =>
+  debugResults.value.filter(r => !debugOnlyHit.value || r.hit)
+)
+
+// 初始化时解析一次（覆盖默认空值场景，loadScript 后会再次同步）
+syncPushLogPatternsFromConfig()
 
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
@@ -1348,6 +2317,9 @@ const loadScript = async () => {
         void loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
       }
     }
+
+    // 同步推送日志采集规则：将后端返回的 JSON 字符串解析为可编辑的列表
+    syncPushLogPatternsFromConfig()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
@@ -1528,10 +2500,7 @@ const selectRootPath = async () => {
         if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
           scriptPathUpdates.LogPath = generalConfig.Script.LogPath
         }
-        if (
-          generalConfig.Script.TrackProcessExe &&
-          generalConfig.Script.TrackProcessExe !== '.'
-        ) {
+        if (generalConfig.Script.TrackProcessExe && generalConfig.Script.TrackProcessExe !== '.') {
           scriptPathUpdates.TrackProcessExe = generalConfig.Script.TrackProcessExe
         }
 
@@ -1934,6 +2903,21 @@ const handleUpload = async () => {
   color: var(--ant-color-primary);
 }
 
+/* 字段标题旁的文档入口：蓝色书形图标 + 文字，区别于灰色问号 */
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ant-color-primary);
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.doc-link:hover {
+  color: var(--ant-color-primary-hover);
+}
+
 .modern-input {
   border-radius: 8px;
   border: 2px solid var(--ant-color-border);
@@ -2216,7 +3200,9 @@ const handleUpload = async () => {
 
 .format-preview-value {
   color: var(--ant-color-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
 }
 
 .format-preview-tip {
@@ -2228,5 +3214,339 @@ const handleUpload = async () => {
   border-radius: 6px;
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
+}
+
+/* ==================== 推送配置区 ==================== */
+.push-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.push-config-header h3 {
+  margin: 0;
+}
+
+.push-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 启停按钮放大，移除头部文档链接后腾出空间 */
+.push-log-switch {
+  transform: scale(1.25);
+  transform-origin: center;
+}
+
+.push-config-body {
+  padding: 16px 0 4px;
+}
+
+/* 底部添加行 */
+.pattern-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 0 0;
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  user-select: none;
+}
+
+.pattern-add-row:hover {
+  color: var(--ant-color-primary);
+}
+
+/* ==================== 推送配置-规则列表 ==================== */
+/* 规则分组：扁平化，与其他表单 section 风格一致，仅用分隔线区分多条规则 */
+.pattern-rule {
+  padding: 24px 0 12px;
+  border-top: 1px solid var(--ant-color-border);
+}
+
+.pattern-rule:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* 规则标识行：类型选择器 + 提示图标 + 操作图标 */
+.pattern-rule-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pattern-type-select {
+  width: 130px;
+  flex-shrink: 0;
+}
+
+.pattern-rule-tip {
+  font-size: 14px;
+  color: var(--ant-color-text-tertiary);
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.pattern-rule-ops {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  margin-left: auto;
+  height: 40px;
+}
+
+/* 调试按钮：做成可见的蓝色小按钮，hover 实心填充 */
+.pattern-op-debug {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-primary-border);
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.pattern-op-debug:hover {
+  color: #fff;
+  background: var(--ant-color-primary);
+  border-color: var(--ant-color-primary);
+}
+
+.pattern-op-icon {
+  font-size: 16px;
+  color: var(--ant-color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.pattern-op-icon:hover {
+  color: var(--ant-color-primary);
+}
+
+.pattern-op-icon.pattern-op-del {
+  color: var(--ant-color-error);
+  opacity: 0.75;
+}
+
+.pattern-op-icon.pattern-op-del:hover {
+  opacity: 1;
+}
+
+/* 字符串切割：输入框 + 包含复选框同行排列 */
+.split-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.split-input-row .modern-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.split-input-row :deep(.ant-checkbox-wrapper) {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+}
+
+/* 规则内的 form-item 间距，与游戏配置/运行配置保持一致 */
+.pattern-rule :deep(.ant-form-item) {
+  margin-bottom: 20px;
+}
+
+.pattern-rule :deep(.ant-form-item:last-child) {
+  margin-bottom: 4px;
+}
+
+/* form-item label 字号与其他模块对齐 */
+.pattern-rule :deep(.ant-form-item-label > label) {
+  font-size: 13px;
+}
+
+/* 暗色模式下规则分隔线 */
+@media (prefers-color-scheme: dark) {
+  .pattern-rule {
+    border-top-color: var(--ant-color-border);
+  }
+}
+
+/* ==================== 调试弹窗 ==================== */
+.debug-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.debug-config-preview {
+  padding: 8px 12px;
+  background: var(--ant-color-fill-tertiary);
+  border-radius: 6px;
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.debug-config-label {
+  color: var(--ant-color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.debug-config-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  word-break: break-all;
+}
+
+.debug-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+  margin-bottom: 8px;
+}
+
+.debug-load-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-load-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+}
+
+.debug-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.debug-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.debug-compile-error {
+  margin-top: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.debug-results {
+  border-top: 1px solid var(--ant-color-border-secondary);
+  padding-top: 12px;
+}
+
+.debug-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.debug-results-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.debug-results-empty {
+  padding: 20px 8px;
+  text-align: center;
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+}
+
+.debug-result-item {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+}
+
+.debug-result-item.hit {
+  background: var(--ant-color-success-bg);
+  border-color: var(--ant-color-success-border);
+}
+
+.debug-result-item.miss {
+  background: var(--ant-color-fill-quaternary);
+  opacity: 0.75;
+}
+
+.debug-result-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.debug-result-line-num {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--ant-color-fill-tertiary);
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.debug-result-line-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--ant-color-text);
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.debug-result-out {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 26px;
+}
+
+.debug-result-tag {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.debug-result-extracted {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--ant-color-success);
+  word-break: break-all;
+  font-weight: 500;
+}
+
+.debug-result-error {
+  font-size: 12px;
+  color: var(--ant-color-error);
 }
 </style>
