@@ -106,8 +106,8 @@ def fn_cutby(text: str, args: list[Arg]) -> str:
 def fn_subby(text: str, args: list[Arg]) -> str:
     """subby("首位文本", "末位文本", keepFirst, keepLast) — 提取两段文本之间的内容
 
-    - keepFirst: 0=保留首位文本，1=删除首位文本。默认 1
-    - keepLast: 0=保留末位文本，1=删除末位文本。默认 1
+    - keepFirst: 0=保留首位文本，1=删除首位文本。默认 0
+    - keepLast: 0=保留末位文本，1=删除末位文本。默认 0
     """
     if len(args) < 2:
         raise ValueError(
@@ -115,8 +115,8 @@ def fn_subby(text: str, args: list[Arg]) -> str:
         )
     first = str(args[0])
     second = str(args[1])
-    keep_first = int(args[2]) if len(args) > 2 else 1
-    keep_last = int(args[3]) if len(args) > 3 else 1
+    keep_first = int(args[2]) if len(args) > 2 else 0
+    keep_last = int(args[3]) if len(args) > 3 else 0
 
     first_pos = text.find(first)
     if first_pos == -1:
