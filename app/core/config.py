@@ -224,11 +224,14 @@ class AppConfig(GlobalConfig):
         await self._sync_legacy_skland_accounts()
 
         from app.services import System
+        from app.services.telemetry import set_telemetry_enabled
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
         await System.set_SelfStart(self.get("Start", "IfSelfStart"))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+        set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
         self.loop = asyncio.get_running_loop()
 

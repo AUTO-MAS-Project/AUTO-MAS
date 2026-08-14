@@ -238,6 +238,9 @@ class GlobalConfig_Function(BaseModel):
         default=None, description="同意哔哩哔哩用户协议"
     )
     IfBlockAd: Optional[bool] = Field(default=None, description="屏蔽模拟器广告")
+    IfEnableTelemetry: Optional[bool] = Field(
+        default=None, description="启用匿名错误与性能遥测"
+    )
 
 
 class GlobalConfig_Voice(BaseModel):
