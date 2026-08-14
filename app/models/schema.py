@@ -770,7 +770,13 @@ class GeneralConfig_Script(BaseModel):
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
-    PushLog: Optional[str] = Field(default=None, description="推送日志匹配")
+    PushLogEnabled: Optional[bool] = Field(
+        default=None, description="推送日志采集启用开关"
+    )
+    PushLogPatterns: Optional[str] = Field(
+        default=None,
+        description='推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})',
+    )
 
 
 class GeneralConfig_Game(BaseModel):
@@ -2436,3 +2442,37 @@ class WSCommandsOut(OutBase):
     """可用命令列表响应"""
 
     data: Optional[Dict[str, Any]] = Field(default=None, description="命令列表")
+
+
+# ============== 日志模式调试相关模型 ==============
+
+
+class PatternDebugIn(BaseModel):
+    """日志模式调试请求"""
+
+    pattern: Dict[str, Any] = Field(..., description="模式配置字典")
+    logText: str = Field(default="", description="待调试的多行日志文本")
+
+
+class PatternDebugResultItem(BaseModel):
+    """单行/单窗口调试结果"""
+
+    idx: int = Field(..., description="行号或窗口序号")
+    hit: bool = Field(..., description="是否命中")
+    extracted: str = Field(default="", description="提取后的文本")
+    line: str = Field(default="", description="原始日志行（多行模式为空）")
+    error: Optional[str] = Field(default=None, description="该行/窗口的错误信息")
+
+
+class PatternDebugOut(OutBase):
+    """日志模式调试响应"""
+
+    configError: Optional[str] = Field(
+        default=None, description="配置级错误（正则/表达式语法错误等）"
+    )
+    isMultiline: bool = Field(
+        default=False, description="是否为多行聚合模式"
+    )
+    results: List[PatternDebugResultItem] = Field(
+        default_factory=list, description="逐行/逐窗口调试结果"
+    )
