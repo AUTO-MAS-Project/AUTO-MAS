@@ -650,7 +650,7 @@
                   <a-form-item>
                     <template #label>
                       <a-tooltip
-                        title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、|（换行拼接）、""（字面量）和函数链；留空则返回整行'
+                        title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链；留空则返回整行'
                       >
                         <span class="form-label">
                           提取表达式
@@ -719,7 +719,7 @@
                   <a-form-item>
                     <template #label>
                       <a-tooltip
-                        title='提取表达式使用 $() 包裹正则，支持 +（同行拼接）、|（换行拼接）、""（字面量）和函数链（.replace/.cut/.sub/.trim）；留空则返回窗口原文'
+                        title='提取表达式使用 $() 包裹正则，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链（.replace/.cut/.sub/.trim）；留空则返回窗口原文'
                       >
                         <span class="form-label">
                           提取表达式

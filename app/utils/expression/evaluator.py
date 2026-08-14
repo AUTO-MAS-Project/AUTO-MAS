@@ -4,7 +4,7 @@
 
 编译后的 CompiledExpression.extract(text) 流程::
 
-    对每一行（| 分隔）:
+    对每一行（; 分隔）:
       对每个片段（+ 连接）:
         - 字面量：直接拼接
         - 正则片段：finditer 提取 → 函数链处理 → 拼接
