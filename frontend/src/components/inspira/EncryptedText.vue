@@ -6,6 +6,7 @@ import {
   generateGibberishPreservingSpaces,
   getDisplayCharacter,
 } from './encryptedTextMotion'
+import { usePerformanceStore } from '@/stores/performance'
 
 interface Props {
   text: string
@@ -27,6 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
   revealedClass: '',
 })
 
+const performanceStore = usePerformanceStore()
 const containerRef = ref<HTMLElement>()
 const isInView = useInView(containerRef)
 const revealCount = ref(0)
@@ -50,6 +52,12 @@ const resetAnimation = () => {
   startTime.value = performance.now()
   lastFlipTime.value = startTime.value
   revealCount.value = 0
+}
+
+const showStaticText = () => {
+  stopAnimation()
+  scrambledCharacters.value = Array.from(props.text)
+  revealCount.value = textCharacters.value.length
 }
 
 const updateAnimation = (now: number) => {
@@ -79,6 +87,10 @@ const updateAnimation = (now: number) => {
 const startAnimation = () => {
   stopAnimation()
   if (!props.text) return
+  if (performanceStore.isLowPower) {
+    showStaticText()
+    return
+  }
   resetAnimation()
   animationFrameId.value = requestAnimationFrame(updateAnimation)
 }
@@ -98,10 +110,27 @@ watch(isInView, visible => {
 watch(
   () => props.text,
   () => {
+    if (performanceStore.isLowPower) {
+      showStaticText()
+      return
+    }
+
     resetAnimation()
     if (isInView.value) startAnimation()
   },
   { immediate: true }
+)
+
+watch(
+  () => performanceStore.isLowPower,
+  isLowPower => {
+    if (isLowPower) {
+      showStaticText()
+      return
+    }
+
+    if (isInView.value) startAnimation()
+  }
 )
 
 onUnmounted(stopAnimation)

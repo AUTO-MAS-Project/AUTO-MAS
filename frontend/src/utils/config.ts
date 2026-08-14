@@ -9,6 +9,7 @@ export interface FrontendConfig {
   themeMode: ThemeMode
   themeColor: ThemeColor
   cursorEffect?: CursorEffect
+  lowPerformanceMode?: boolean
 
   // 镜像源设置
   selectedGitMirror: string
@@ -28,6 +29,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
   cursorEffect: 'none',
+  lowPerformanceMode: false,
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',
