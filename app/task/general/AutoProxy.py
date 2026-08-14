@@ -28,6 +28,7 @@ import re
 from pathlib import Path
 from contextlib import suppress
 from datetime import datetime, timedelta
+from typing import Optional
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
@@ -42,6 +43,9 @@ from app.utils import (
     ProcessInfo,
     strptime,
     is_process_running,
+    load_patterns,
+    apply_patterns,
+    flush_patterns,
 )
 from app.utils.constants import UTC4
 from .tools import execute_script_task, push_notification
@@ -209,12 +213,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.error_log = [
             _.strip() for _ in self.script_config.get("Script", "ErrorLog").split("|")
         ]
-        # 推送日志匹配：按关键字采集任务进程信息，用于任务结束后追加到推送信息
-        self.push_log_keywords = [
-            _.strip()
-            for _ in self.script_config.get("Script", "PushLog").split("|")
-            if _.strip()
-        ]
+        # 推送日志采集：受 PushLogEnabled 总开关控制，关闭时保留配置但不采集；
+        # 仅使用高级模式（PushLogPatterns，JSON）进行采集，供任务结束后追加到推送报告
+        self.push_log_enabled = bool(
+            self.script_config.get("Script", "PushLogEnabled")
+        )
+        self.push_log_patterns_compiled = (
+            load_patterns(self.script_config.get("Script", "PushLogPatterns"))
+            if self.push_log_enabled
+            else []
+        )
         self.push_log_buffer: list[str] = []
         self._push_log_processed = 0
         self.general_log_monitor = LogMonitor(
@@ -563,11 +571,18 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info(f"脚本运行参数配置完成: 自动代理")
 
-    def _format_push_log(self, line: str, latest_time: datetime) -> str:
+    def _format_push_log(
+        self,
+        line: str,
+        latest_time: datetime,
+        content_override: Optional[str] = None,
+    ) -> str:
         """从单行日志中提取时间戳并剥离时间前缀，生成推送用日志片段。
 
         时间戳按 LogTimeStart/LogTimeEnd 与 LogTimeFormat 解析，展示为「HH:MM」；
         解析失败时降级为整行日志内容。
+        当 content_override 不为 None 时，直接作为展示内容（用于高级模式提取后的文本），
+        跳过时间戳剥离与 OneDragon 前缀清理。
         """
         time_text = ""
         try:
@@ -580,16 +595,19 @@ class AutoProxyTask(TaskExecuteBase):
         except (IndexError, ValueError):
             pass
 
-        content = (
-            line[: self.log_time_range[0]] + line[self.log_time_range[1] :]
-        ).strip()
-        content = content or line.strip()
+        if content_override is not None:
+            content = content_override
+        else:
+            content = (
+                line[: self.log_time_range[0]] + line[self.log_time_range[1] :]
+            ).strip()
+            content = content or line.strip()
 
-        # 剥离 OneDragon 风格的日志元数据前缀（如 `[] [operation.py 429] [INFO]: `），
-        # 仅保留指令、节点与返回状态等有效信息
-        content = re.sub(
-            r"^(?:\[\]\s*)?\[[^\]]+\]\s*\[\w+\]:\s*", "", content
-        )
+            # 剥离 OneDragon 风格的日志元数据前缀（如 `[] [operation.py 429] [INFO]: `），
+            # 仅保留指令、节点与返回状态等有效信息
+            content = re.sub(
+                r"^(?:\[\]\s*)?\[[^\]]+\]\s*\[\w+\]:\s*", "", content
+            )
 
         return f"{time_text} - {content}" if time_text else content
 
@@ -600,11 +618,19 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        # 按推送日志关键字采集任务进程信息
-        if self.push_log_keywords:
+        # 按推送日志高级模式采集任务进程信息（受总开关控制）
+        # 命中规则时采集提取后的文本作为内容覆盖
+        if self.push_log_enabled and self.push_log_patterns_compiled:
             for line in log_content[self._push_log_processed:]:
-                if any(sign in line for sign in self.push_log_keywords):
-                    self.push_log_buffer.append(self._format_push_log(line, latest_time))
+                extracted = apply_patterns(
+                    line, matchers=self.push_log_patterns_compiled
+                )
+                if extracted is not None:
+                    self.push_log_buffer.append(
+                        self._format_push_log(
+                            line, latest_time, content_override=extracted
+                        )
+                    )
             self._push_log_processed = len(log_content)
 
         for success_sign in self.success_log:
@@ -664,6 +690,16 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+        # 日志处理结束：强制关闭多行聚合等有状态匹配器的残留窗口
+        if self.push_log_enabled and self.push_log_patterns_compiled:
+            flushed = flush_patterns(matchers=self.push_log_patterns_compiled)
+            if flushed is not None:
+                self.push_log_buffer.append(
+                    self._format_push_log(
+                        "", datetime.now(), content_override=flushed
+                    )
+                )
 
         # 将本次采集的推送日志回写到用户项，供调度器聚合到推送报告
         self.cur_user_item.push_log = self.push_log_buffer

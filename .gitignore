@@ -71,6 +71,10 @@ list/
 # Test artifacts
 /test-results/
 
+# Local dev scripts & logs (本地测试用例，与代码逻辑无关)
+/dev.bat
+/.dev-logs/
+
 res/docs/ok-series-common-script-report.md
 
 # 强制加入的测试源产生的字节码不纳入版本库

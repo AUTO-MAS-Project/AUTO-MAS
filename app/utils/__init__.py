@@ -25,6 +25,24 @@ from .constants import *
 from .logger import get_logger
 from .ImageUtils import ImageUtils
 from .LogMonitor import LogMonitor, strptime
+from .LogPatternExtractor import (
+    PATTERN_TYPE_SPLIT,
+    PATTERN_TYPE_REGEX,
+    PATTERN_TYPE_MULTILINE,
+    SUPPORTED_PATTERN_TYPES,
+    SplitMatcher,
+    RegexMatcher,
+    MultiLineAggregator,
+    CompiledMatcher,
+    compile_regex,
+    compile_pattern,
+    load_patterns,
+    serialize_patterns,
+    apply_patterns,
+    flush_patterns,
+    validate_pattern,
+    debug_pattern,
+)
 from .ProcessManager import (
     ProcessManager,
     ProcessRunner,
@@ -59,4 +77,20 @@ __all__ = [
     "busy_wait",
     "WebSocketClient",
     "create_ws_client",
+    "PATTERN_TYPE_SPLIT",
+    "PATTERN_TYPE_REGEX",
+    "PATTERN_TYPE_MULTILINE",
+    "SUPPORTED_PATTERN_TYPES",
+    "SplitMatcher",
+    "RegexMatcher",
+    "MultiLineAggregator",
+    "CompiledMatcher",
+    "compile_regex",
+    "compile_pattern",
+    "load_patterns",
+    "serialize_patterns",
+    "apply_patterns",
+    "flush_patterns",
+    "validate_pattern",
+    "debug_pattern",
 ]

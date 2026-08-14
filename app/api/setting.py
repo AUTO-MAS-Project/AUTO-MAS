@@ -38,8 +38,12 @@ from app.models.schema import (
     WebhookDeleteIn,
     WebhookReorderIn,
     WebhookTestIn,
+    PatternDebugIn,
+    PatternDebugOut,
+    PatternDebugResultItem,
 )
 from app.models.config import Webhook as WebhookConfig
+from app.utils import debug_pattern
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
@@ -104,6 +108,37 @@ async def test_notify() -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/debug_pattern",
+    tags=["Action"],
+    summary="调试日志模式",
+    response_model=PatternDebugOut,
+    status_code=200,
+)
+async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
+    """调试单条日志模式配置，返回逐行/逐窗口匹配结果
+
+    前端调试弹窗调用此接口，由后端统一执行模式匹配，
+    确保调试结果与实际推送日志采集逻辑完全一致。
+    """
+    try:
+        error, is_multiline, results = debug_pattern(req.pattern, req.logText)
+    except Exception as e:
+        return PatternDebugOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            configError=f"{type(e).__name__}: {str(e)}",
+            isMultiline=False,
+            results=[],
+        )
+    return PatternDebugOut(
+        configError=error,
+        isMultiline=is_multiline,
+        results=[PatternDebugResultItem(**r) for r in results],
+    )
 
 
 @router.post(

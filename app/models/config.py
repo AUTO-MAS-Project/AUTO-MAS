@@ -2624,8 +2624,12 @@ class GeneralConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
-        ## 推送日志匹配
-        self.Script_PushLog = ConfigItem("Script", "PushLog", "")
+        ## 推送日志启用开关：关闭后保留高级正则配置，但不会实际采集推送日志
+        self.Script_PushLogEnabled = ConfigItem(
+            "Script", "PushLogEnabled", False, BoolValidator()
+        )
+        ## 推送日志高级模式（JSON 数组，每项形如 {"type":"regex|multiline",...}）
+        self.Script_PushLogPatterns = ConfigItem("Script", "PushLogPatterns", "")
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
