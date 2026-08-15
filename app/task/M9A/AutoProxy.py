@@ -52,6 +52,7 @@ ENTRY_FALLBACK_NAMES = {
     "自动深眠": LIMBO_ENTRY,
     "自动醒梦": LUCIDSCAPE_ENTRY,
 }
+M9A_FAILURE_QUIET_SECONDS = 5
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -98,6 +99,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.completed_task_entries: set[str] = set()
         self.emulator_opened = False
         self.m9a_started = False
+        self._m9a_failed_task_names: set[str] = set()
+        self._m9a_failure_signal_seen = False
+        self._m9a_failure_quiet_task: asyncio.Task | None = None
 
     async def check(self) -> str:
 
@@ -160,6 +164,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(
                 f"用户 {self.cur_user_item.name} 自动代理模式 - 尝试次数: {i + 1}/{retry_limit}"
             )
+            await self._stop_failure_quiet_waiter()
+            self._m9a_failed_task_names.clear()
+            self._m9a_failure_signal_seen = False
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = (
                 self.cur_user_log
@@ -266,6 +273,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()
+            await self._stop_failure_quiet_waiter()
 
             if not self.is_virtual_update_user:
                 completed_entries = self._collect_completed_task_entries()
@@ -511,6 +519,55 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning(f"删除旧备份文件失败 {file_path}: {e}")
 
 
+    @staticmethod
+    def _extract_failed_task_names(log: str) -> set[str]:
+        return {
+            task_name.strip()
+            for task_name in re.findall(r"任务失败[:：]\s*(.+)", log)
+            if task_name.strip()
+        }
+
+    def _start_failure_quiet_waiter(self) -> None:
+        if self._m9a_failure_quiet_task is None or self._m9a_failure_quiet_task.done():
+            self._m9a_failure_quiet_task = asyncio.create_task(
+                self._wait_for_failure_quiet_period()
+            )
+
+    async def _wait_for_failure_quiet_period(self) -> None:
+        while not self.wait_event.is_set():
+            idle_seconds = (
+                datetime.now() - self.m9a_log_monitor.latest_time
+            ).total_seconds()
+            if idle_seconds >= M9A_FAILURE_QUIET_SECONDS:
+                failed_tasks = "、".join(sorted(self._m9a_failed_task_names)) or "未知任务"
+                self.cur_user_log.status = f"M9A 任务失败: {failed_tasks}"
+                self.script_info.log = (
+                    f"{self.cur_user_log.status}\n"
+                    f"{M9A_FAILURE_QUIET_SECONDS}秒无新动作，准备重试"
+                )
+                logger.warning(
+                    f"用户: {self.cur_user_uid} - {self.cur_user_log.status}，"
+                    f"{M9A_FAILURE_QUIET_SECONDS}秒无新动作"
+                )
+                self.wait_event.set()
+                return
+
+            await asyncio.sleep(
+                min(1, M9A_FAILURE_QUIET_SECONDS - max(idle_seconds, 0))
+            )
+
+    async def _stop_failure_quiet_waiter(self) -> None:
+        if self._m9a_failure_quiet_task is None:
+            return
+
+        if not self._m9a_failure_quiet_task.done():
+            self._m9a_failure_quiet_task.cancel()
+            try:
+                await self._m9a_failure_quiet_task
+            except asyncio.CancelledError:
+                pass
+        self._m9a_failure_quiet_task = None
+
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
 
         log = "".join(log_content)
@@ -536,6 +593,19 @@ class AutoProxyTask(TaskExecuteBase):
             version_match = re.search(r'最新资源版本：v([\d.]+)', log)
             if version_match:
                 self.script_info._m9a_latest_version = version_match.group(1)
+
+        if not self.is_virtual_update_user:
+            self._m9a_failed_task_names = self._extract_failed_task_names(log)
+            failure_signal_seen = "任务运行失败！" in log or "任务运行失败!" in log
+            all_done_with_failure = bool(self._m9a_failed_task_names) and (
+                "任务已全部完成！" in log or "All tasks completed" in log
+            )
+            if failure_signal_seen or all_done_with_failure:
+                if not self._m9a_failure_signal_seen:
+                    self._m9a_failure_signal_seen = True
+                    self._start_failure_quiet_waiter()
+                logger.debug("M9A 检测到任务失败结束信号，等待无新动作后收口")
+                return
 
         if "任务已全部完成！" in log or "All tasks completed" in log:
             if not self.is_virtual_update_user:
@@ -647,6 +717,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def final_task(self):
         """运行结束后的收尾工作"""
 
+        await self._stop_failure_quiet_waiter()
         try:
             if hasattr(self, "m9a_log_monitor") and self.m9a_log_monitor is not None:
                 await self.m9a_log_monitor.stop()
@@ -735,7 +806,10 @@ class AutoProxyTask(TaskExecuteBase):
         # 分析运行日志，获取任务详情
         task_details_text = ""
         try:
-            task_details_text = self._build_attempt_task_details(user_log_records)
+            task_details_text = self._build_attempt_task_details(
+                user_log_records,
+                final_success=self.run_complete,
+            )
         except Exception as e:
             logger.exception(f"日志分析失败: {e}")
         statistics["task_details"] = task_details_text
@@ -1241,13 +1315,16 @@ class AutoProxyTask(TaskExecuteBase):
             "AgentPath": "./MaaAgentBinary"
         }
 
-    def _build_attempt_task_details(self, user_log_records: list[dict]) -> str:
+    def _build_attempt_task_details(
+        self, user_log_records: list[dict], final_success: bool = False
+    ) -> str:
         """按本轮尝试顺序汇总 M9A 任务详情。"""
         if not user_log_records:
             return ""
 
         multiple_attempts = len(user_log_records) > 1
         detail_blocks = []
+        analyses = []
 
         for index, record in enumerate(user_log_records, start=1):
             try:
@@ -1255,7 +1332,9 @@ class AutoProxyTask(TaskExecuteBase):
                 detail_text = M9ALogAnalyzer.build_notification_text(analysis)
             except Exception as e:
                 logger.exception(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
+                analysis = None
                 detail_text = ""
+            analyses.append(analysis)
 
             if not multiple_attempts:
                 return detail_text
@@ -1265,6 +1344,21 @@ class AutoProxyTask(TaskExecuteBase):
             if not detail_text:
                 detail_text = "未解析到任务详情"
             detail_blocks.append(f"第 {index} 次尝试（{start_time}，{status}）\n{detail_text}")
+
+        if final_success:
+            merged_tasks = {}
+            for analysis in analyses:
+                if analysis is None:
+                    continue
+                for task in analysis.get("tasks", []):
+                    task_name = task.get("name")
+                    if task_name:
+                        merged_tasks[task_name] = task
+
+            if merged_tasks:
+                return M9ALogAnalyzer.build_notification_text(
+                    {"tasks": list(merged_tasks.values()), "duration": ""}
+                )
 
         return "\n\n".join(detail_blocks)
 
