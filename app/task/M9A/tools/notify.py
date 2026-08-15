@@ -61,6 +61,14 @@ class M9ALogAnalyzer:
         return None
 
     @staticmethod
+    def _extract_task_failure(line: str) -> str | None:
+        """从"任务失败：XXX"行提取任务名"""
+        m = re.search(r"任务失败[:：]\s*(.+)$", line)
+        if m:
+            return m.group(1).strip()
+        return None
+
+    @staticmethod
     def _extract_record(line: str) -> str | None:
         """从 [Record] 行提取记录文本（已去除 HTML 标签）"""
         m = re.search(r"\[Record\] (.+)$", line)
@@ -160,6 +168,16 @@ class M9ALogAnalyzer:
                 tasks.append(current_task)
                 in_drops = False
                 drops = []
+                continue
+
+            failed_task_name = M9ALogAnalyzer._extract_task_failure(line)
+            if failed_task_name:
+                for task in reversed(tasks):
+                    if task.get("name") == failed_task_name:
+                        task["status"] = "失败"
+                        if task is current_task:
+                            save_drops()
+                        break
                 continue
 
             if M9ALogAnalyzer._is_all_done(line):
