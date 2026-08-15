@@ -672,6 +672,18 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
+        """读取指定 MaaEnd 安装目录中的动态选项。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        root_path = str(script_config.get("Info", "Path")).strip()
+        if not root_path:
+            raise ValueError("MaaEnd 路径未配置")
+
+        return script_config.get_loaded_resource()
+
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
