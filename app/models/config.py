@@ -122,7 +122,12 @@ def init_maaend_task_config(config) -> None:
         setattr(
             config,
             f"Task_If{task_name}",
-            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+            ConfigItem(
+                "Task",
+                f"If{task_name}",
+                task_name != "PullCountCalculator",
+                BoolValidator(),
+            ),
         )
 
 
@@ -1573,21 +1578,6 @@ class HSRUserConfig(ConfigBase):
         self.Data_WeeklyLastResetWeek = ConfigItem(
             "Data", "WeeklyLastResetWeek", "2000-W01"
         )
-        ## HSR 三深渊月度（每月一次）—— 三深渊最近一次完成日期
-        self.Data_AbyssLastCompletionDate = ConfigItem(
-            "Data",
-            "AbyssLastCompletionDate",
-            "2000-01-01",
-            DateTimeValidator("%Y-%m-%d"),
-        )
-        ## HSR 三深渊月度（每月一次）—— 本月是否已完成三深渊（仅依据 Data 字段判断）
-        self.Data_AbyssCompletedThisMonth = ConfigItem(
-            "Data", "AbyssCompletedThisMonth", False, BoolValidator()
-        )
-        ## HSR 三深渊月度（每月一次）—— 三深渊上次重置自然月（形如 "2025-06"）
-        self.Data_AbyssLastResetMonth = ConfigItem(
-            "Data", "AbyssLastResetMonth", "2000-01"
-        )
         ## TaskSwitch ------------------------------------------------------
         ## 模块执行开关
         self.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
@@ -1600,10 +1590,6 @@ class HSRUserConfig(ConfigBase):
         self.TaskSwitch_CurrencyWars = ConfigItem(
             "TaskSwitch", "CurrencyWars", False, BoolValidator()
         )
-        self.TaskSwitch_ForgottenHall = ConfigItem(
-            "TaskSwitch", "ForgottenHall", False, BoolValidator()
-        )
-
         ## Stage -----------------------------------------------------------
         ## 关卡通道
         self.Stage_Channel = ConfigItem(
@@ -1640,10 +1626,6 @@ class HSRUserConfig(ConfigBase):
             ),
         )
 
-        ## Abyss (三深渊) ---------------------------------------------------
-        ## 三深渊快照集合（从 M7A config.yaml 导入的 JSON 对象）
-        self.Abyss_Snapshots = ConfigItem("Abyss", "Snapshots", "{}", JSONValidator())
-
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -1665,6 +1647,37 @@ class HSRUserConfig(ConfigBase):
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        ## Control / Managed / Direct ------------------------------------
+        ## 兼容插件版的托管/直连配置形状。内置 HSRManager 按模式读取
+        ## 这些字段；普通用户 API 只返回非敏感元数据。
+        self.Control_Mode = ConfigItem(
+            "Control", "Mode", "managed", OptionsValidator(["managed", "direct"])
+        )
+        self.Control_SRA = ConfigItem("Control", "SRA", False, BoolValidator())
+        self.Control_M7A = ConfigItem("Control", "M7A", False, BoolValidator())
+        self.Managed_TaskMapping = ConfigItem(
+            "Managed", "TaskMapping", "{ }", JSONValidator()
+        )
+        self.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
+        self.Direct_SRAConfig = ConfigItem(
+            "Direct", "SRAConfig", "", EncryptValidator()
+        )
+        self.Direct_M7AConfig = ConfigItem(
+            "Direct", "M7AConfig", "", EncryptValidator()
+        )
+        self.Direct_SRAImportedAt = ConfigItem("Direct", "SRAImportedAt", "")
+        self.Direct_M7AImportedAt = ConfigItem("Direct", "M7AImportedAt", "")
+        self.Direct_SRASource = ConfigItem("Direct", "SRASource", "")
+        self.Direct_M7ASource = ConfigItem("Direct", "M7ASource", "")
+
+        ## 兑换码状态指纹（仅状态信息，不保存兑换码明文）
+        self.Data_SRARedeemCodeFingerprint = ConfigItem(
+            "Data", "SRARedeemCodeFingerprint", ""
+        )
+        self.Data_M7ARedeemCodeFingerprint = ConfigItem(
+            "Data", "M7ARedeemCodeFingerprint", ""
+        )
 
         super().__init__()
 
@@ -1723,7 +1736,6 @@ class HSRUserConfig(ConfigBase):
         now = datetime.now(tz=UTC8)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
-        current_month = now.strftime("%Y-%m")
 
         eow_done = (
             bool(self.get("Data", "EchoOfWarCompletedThisWeek"))
@@ -1752,17 +1764,6 @@ class HSRUserConfig(ConfigBase):
         else:
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
-
-        abyss_done = (
-            bool(self.get("Data", "AbyssCompletedThisMonth"))
-            and self.get("Data", "AbyssLastResetMonth") == current_month
-        )
-        tags.append(
-            {
-                "text": "三深渊：已完成" if abyss_done else "三深渊：未完成",
-                "color": "green" if abyss_done else "orange",
-            }
-        )
 
         notes = self.get("Info", "Notes")
         tags.append(
@@ -1793,12 +1794,22 @@ class HSRConfig(ConfigBase):
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
+        self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
+        self.Game_ForceResolution1920x1080 = ConfigItem(
+            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        )
+        ## 仅在原生兑换码内容变化时执行兑换
+        self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
+            "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
+        )
 
         ## Run -------------------------------------------------------------
         ## 失败任务最大尝试次数
@@ -1813,10 +1824,6 @@ class HSRConfig(ConfigBase):
         self.Run_WeeklyTimeLimit = ConfigItem(
             "Run", "WeeklyTimeLimit", 60, RangeValidator(1, 9999)
         )
-        ## 月常任务超时限制（分钟）
-        self.Run_MonthlyTimeLimit = ConfigItem(
-            "Run", "MonthlyTimeLimit", 60, RangeValidator(1, 9999)
-        )
         ## 低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）
         self.Run_LowPerformanceMode = ConfigItem(
             "Run", "LowPerformanceMode", False, BoolValidator()
@@ -1826,8 +1833,6 @@ class HSRConfig(ConfigBase):
         from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
 
         for module in _HSR_TASK_MODULES:
-            if module.key == "ForgottenHall":
-                continue
             self.__setattr__(
                 f"TaskMapping_{module.key}",
                 ConfigItem(
@@ -2702,7 +2707,7 @@ class OkwwConfig(ConfigBase):
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
@@ -3001,6 +3006,10 @@ class GlobalConfig(ConfigBase):
         ## 是否屏蔽模拟器广告
         self.Function_IfBlockAd = ConfigItem(
             "Function", "IfBlockAd", False, BoolValidator()
+        )
+        ## 是否启用匿名遥测
+        self.Function_IfEnableTelemetry = ConfigItem(
+            "Function", "IfEnableTelemetry", True, BoolValidator()
         )
 
         ## Voice ------------------------------------------------------------

@@ -27,7 +27,7 @@ export const getDisplayCharacter = (
   index: number,
   revealCount: number
 ): string => {
-  const character = text[index] ?? ''
+  const character = Array.from(text)[index] ?? ''
   if (index < revealCount || character === ' ') return character
   return scrambledCharacters[index] ?? ''
 }

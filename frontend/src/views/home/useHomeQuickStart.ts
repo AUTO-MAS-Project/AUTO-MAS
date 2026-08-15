@@ -43,7 +43,7 @@ const homeGreetingMessages: HomeGreetingMessage[] = [
   },
   { text: 'AUTO-MAS检测到一切正常，除非稍后它不正常。', author: 'AUTO-MAS项目组' },
   { text: '请稍候，系统正在把复杂问题包装成一个按钮。', author: 'AUTO-MAS项目组' },
-  { text: '欢迎来到大连主人361的世界……魔↗术↘技↻巧！', author: "T'a1mer" },
+  { text: '欢迎来到大雷主人361的世界……魔↗术↘技↻巧！', author: "T'a1mer" },
   { text: '海内存知己，天涯若比邻', author: '匿名' },
   {
     text: '注意到你已经有一段时间没有使用AUTO-MAS了。现在不启用 | 关闭',

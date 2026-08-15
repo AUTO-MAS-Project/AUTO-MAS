@@ -28,9 +28,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from inspect import isawaitable
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
+from app.utils.io import atomic_write, read_file, write_file
 
 from .log_detect import (
     can_read_stream_live,
@@ -42,7 +43,6 @@ from .stage_runtime import (
     read_native_main_stage,
     read_native_stage,
 )
-
 
 logger = get_logger("HSR SRA 运行器")
 
@@ -63,6 +63,146 @@ SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
 SRA_CACHE_NO_NOTIFY_KEY = "NoNotifyForShortcut"
 
 
+def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
+    """读取 ConfigBase JSONValidator 的 Managed.Options（字符串或对象）。"""
+
+    try:
+        raw = user_config.get("Managed", "Options")
+    except (AttributeError, KeyError, TypeError):
+        raw = {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = {}
+    if not isinstance(raw, dict):
+        return {}
+    engine = raw.get("SRA")
+    if not isinstance(engine, dict):
+        return {}
+    module = engine.get(module_key)
+    return dict(module) if isinstance(module, dict) else {}
+
+
+def load_sra_native_config(script_config: Any) -> tuple[Path, dict[str, Any]]:
+    """Load the selected SRA profile used by forms and runtime overlays."""
+
+    _selected_id, path = resolve_sra_profile(script_config)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        raise FileNotFoundError(f"SRA 原生配置不存在：{path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"SRA 原生配置不是有效 JSON：{path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"SRA 原生配置顶层必须是对象：{path}")
+    return path, payload
+
+
+def discover_sra_managed_options(
+    module_key: str,
+    script_config: Any,
+) -> tuple[dict[str, Any], str]:
+    """Discover native fields for one HSR module without applying overrides."""
+
+    if module_key == "Daily":
+        section_name = "trailblazePower"
+    elif module_key == "ReceiveRewards":
+        section_name = "receiveRewards"
+    else:
+        section_name = "cosmicStrife"
+    _source, payload = load_sra_native_config(script_config)
+    if module_key == "Daily":
+        predicate = lambda key: key not in {"enabled", "tasklist"}
+    elif module_key == "ReceiveRewards":
+        predicate = lambda key: key not in {"enabled", "redeemCodes"}
+    else:
+        if module_key == "DivergentUniverse":
+            predicate = (
+                lambda key: (
+                    key == "pointRewards.enabled"
+                    or key.startswith("divergentUniverse.")
+                )
+                and key != "divergentUniverse.enabled"
+            )
+        else:
+            predicate = (
+                lambda key: key.startswith("currencyWars.")
+                and key != "currencyWars.enabled"
+            )
+    section = payload.get(section_name)
+    if not isinstance(section, dict):
+        return {}, section_name
+    options = {str(key): value for key, value in section.items() if predicate(str(key))}
+    if module_key == "ReceiveRewards":
+        rewards = options.pop("rewards", None)
+        if isinstance(rewards, list):
+            options.update(
+                {f"rewards.{index}": value for index, value in enumerate(rewards)}
+            )
+    return options, section_name
+
+
+def _same_value_kind(value: Any, reference: Any) -> bool:
+    if isinstance(reference, bool):
+        return isinstance(value, bool)
+    if isinstance(reference, int):
+        return isinstance(value, int) and not isinstance(value, bool)
+    if isinstance(reference, float):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(reference, list):
+        return isinstance(value, list)
+    if isinstance(reference, dict):
+        return isinstance(value, dict)
+    return isinstance(value, str) if isinstance(reference, str) else True
+
+
+def resolve_sra_managed_options(
+    module_key: str,
+    script_config: Any,
+    user_config: Any,
+) -> dict[str, Any]:
+    """Return native SRA values overlaid with a user's Managed.Options."""
+
+    native, _section_name = discover_sra_managed_options(module_key, script_config)
+    overrides = _managed_options(user_config, module_key)
+    unknown = sorted(set(overrides).difference(native))
+    if unknown:
+        raise ValueError(
+            f"SRA {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}"
+        )
+    effective = dict(native)
+    for key, value in overrides.items():
+        if not _same_value_kind(value, native[key]):
+            raise ValueError(f"SRA {module_key}.{key} 的值类型与原生配置不一致")
+        effective[key] = value
+    return effective
+
+
+def _apply_managed_options(
+    config: dict[str, Any],
+    module_key: str,
+    script_config: Any,
+    user_config: Any,
+) -> None:
+    _native, section_name = discover_sra_managed_options(module_key, script_config)
+    effective = resolve_sra_managed_options(module_key, script_config, user_config)
+    section = config.get(section_name)
+    if not isinstance(section, dict):
+        raise ValueError(f"SRA 临时配置缺少 {section_name} 对象")
+    for key, value in effective.items():
+        if key.startswith("rewards."):
+            index = int(key.split(".", 1)[1])
+            rewards = section.setdefault("rewards", [])
+            if not isinstance(rewards, list):
+                raise ValueError("SRA receiveRewards.rewards 必须是数组")
+            while len(rewards) <= index:
+                rewards.append(False)
+            rewards[index] = value
+        else:
+            section[key] = value
+
+
 def write_sra_temp_config(
     config: dict,
     script_uid: str,
@@ -72,10 +212,9 @@ def write_sra_temp_config(
     """写出 SRA 运行 JSON，避免 SRA CLI 按 ANSI 读取时编码炸裂。"""
 
     target_path = _sra_temp_path(script_uid, user_uid, module_key)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(
-        json.dumps(config, ensure_ascii=True, indent=4),
-        encoding="utf-8",
+    atomic_write(
+        target_path,
+        json.dumps(config, ensure_ascii=True, indent=4).encode("utf-8"),
     )
     logger.debug(f"SRA temp config written: {target_path}")
     return target_path
@@ -143,12 +282,15 @@ def build_sra_start_game_config(
         config["startGame"]["autologin"] = False
         return config
 
-    username_cipher = user_config._config_item_index["Info"]["Id"].getValue(
-        if_decrypt=False
-    )
-    password_cipher = user_config._config_item_index["Info"]["Password"].getValue(
-        if_decrypt=False
-    )
+    def _cipher(key: str) -> str:
+        try:
+            item = user_config._config_item_index["Info"][key]
+        except (AttributeError, KeyError):
+            return ""
+        return str(item.getValue(if_decrypt=False) or "")
+
+    username_cipher = _cipher("Id")
+    password_cipher = _cipher("Password")
     config["startGame"]["relogin"] = True
     config["startGame"]["autologin"] = True
     config["startGame"]["username"] = str(username_cipher)
@@ -162,6 +304,7 @@ def build_sra_module_config(
     user_config,
     name: str = "",
     daily_eow_enabled: bool = False,
+    redeem_codes_enabled: bool = True,
 ) -> dict:
     """构造只启用一个目标模块的 SRA TasksConfig。"""
 
@@ -197,46 +340,107 @@ def build_sra_module_config(
         config["trailblazePower"]["replenish.times"] = 0
 
     elif module.key == "ReceiveRewards":
-        # 不接管 SRA 自己维护的兑换码内容，只打开领取开关。
+        # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
+        native_options = resolve_sra_managed_options(
+            module.key, script_config, user_config
+        )
         config["receiveRewards"]["rewards"] = [
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
+            bool(native_options.get("rewards.0", True)),
+            bool(native_options.get("rewards.1", True)),
+            bool(native_options.get("rewards.2", True)),
+            bool(native_options.get("rewards.3", True)),
+            bool(native_options.get("rewards.4", True)),
+            bool(native_options.get("rewards.5", True)),
+            bool(native_options.get("rewards.6", True)) and bool(redeem_codes_enabled),
         ]
 
     elif module.key == "DivergentUniverse":
+        native_options = resolve_sra_managed_options(
+            module.key, script_config, user_config
+        )
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
-        config["cosmicStrife"]["divergentUniverse.mode"] = SRA_DIVERGENT_UNIVERSE_MODE
-        config["cosmicStrife"]["divergentUniverse.runtimes"] = (
-            SRA_DIVERGENT_UNIVERSE_RUNTIMES
+        config["cosmicStrife"]["divergentUniverse.mode"] = int(
+            native_options.get("divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE)
         )
-        config["cosmicStrife"]["divergentUniverse.useTechnique"] = (
-            SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE
+        config["cosmicStrife"]["divergentUniverse.runtimes"] = int(
+            native_options.get(
+                "divergentUniverse.runtimes", SRA_DIVERGENT_UNIVERSE_RUNTIMES
+            )
         )
-        config["cosmicStrife"]["pointRewards.enabled"] = (
-            SRA_DIVERGENT_UNIVERSE_POINT_REWARDS
+        config["cosmicStrife"]["divergentUniverse.useTechnique"] = bool(
+            native_options.get(
+                "divergentUniverse.useTechnique", SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE
+            )
+        )
+        config["cosmicStrife"]["pointRewards.enabled"] = bool(
+            native_options.get(
+                "pointRewards.enabled", SRA_DIVERGENT_UNIVERSE_POINT_REWARDS
+            )
         )
 
     elif module.key == "CurrencyWars":
+        native_options = resolve_sra_managed_options(
+            module.key, script_config, user_config
+        )
         username = str(user_config.get("Info", "Name") or "").strip()
         config["cosmicStrife"]["currencyWars.enabled"] = True
-        config["cosmicStrife"]["currencyWars.mode"] = SRA_CURRENCY_WARS_MODE
-        config["cosmicStrife"]["currencyWars.difficulty"] = (
-            SRA_CURRENCY_WARS_DIFFICULTY
+        mode = native_options.get("currencyWars.mode", SRA_CURRENCY_WARS_MODE)
+        difficulty = native_options.get(
+            "currencyWars.difficulty", SRA_CURRENCY_WARS_DIFFICULTY
         )
+        config["cosmicStrife"]["currencyWars.mode"] = {
+            "normal": 0,
+            "overclock": 1,
+            0: 0,
+            1: 1,
+        }.get(mode, SRA_CURRENCY_WARS_MODE)
+        config["cosmicStrife"]["currencyWars.difficulty"] = {
+            "lowest": 0,
+            "highest": 1,
+            0: 0,
+            1: 1,
+        }.get(difficulty, SRA_CURRENCY_WARS_DIFFICULTY)
         config["cosmicStrife"]["currencyWars.policy"] = 0
-        config["cosmicStrife"]["currencyWars.strategy"] = (
-            _resolve_sra_currency_wars_strategy(script_config)
+        config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
+            "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
         )
-        config["cosmicStrife"]["currencyWars.strategyIndex"] = (
-            SRA_CURRENCY_WARS_STRATEGY_INDEX
+        config["cosmicStrife"]["currencyWars.strategyIndex"] = int(
+            native_options.get(
+                "currencyWars.strategyIndex", SRA_CURRENCY_WARS_STRATEGY_INDEX
+            )
         )
-        config["cosmicStrife"]["currencyWars.runtimes"] = SRA_CURRENCY_WARS_RUNTIMES
+        config["cosmicStrife"]["currencyWars.runtimes"] = int(
+            native_options.get("currencyWars.runtimes", SRA_CURRENCY_WARS_RUNTIMES)
+        )
         config["cosmicStrife"]["currencyWars.username"] = username
+
+    _apply_managed_options(config, module.key, script_config, user_config)
+    if module.key == "Daily":
+        trailblaze = config["trailblazePower"]
+        trailblaze["enabled"] = True
+        if bool(trailblaze.get("useBuildTarget")):
+            trailblaze["tasklist"] = []
+        else:
+            trailblaze["tasklist"] = _build_sra_trailblaze_tasklist(
+                user_config,
+                eow_enabled=daily_eow_enabled,
+            )
+    elif module.key == "ReceiveRewards":
+        config["receiveRewards"]["enabled"] = True
+        rewards = config["receiveRewards"].setdefault("rewards", [])
+        while len(rewards) <= 6:
+            rewards.append(False)
+        rewards[6] = bool(rewards[6]) and bool(redeem_codes_enabled)
+        if not rewards[6]:
+            config["receiveRewards"]["redeemCodes"] = ""
+    elif module.key == "DivergentUniverse":
+        config["cosmicStrife"]["enabled"] = True
+        config["cosmicStrife"]["divergentUniverse.enabled"] = True
+        config["cosmicStrife"]["currencyWars.enabled"] = False
+    elif module.key == "CurrencyWars":
+        config["cosmicStrife"]["enabled"] = True
+        config["cosmicStrife"]["divergentUniverse.enabled"] = False
+        config["cosmicStrife"]["currencyWars.enabled"] = True
 
     return config
 
@@ -250,6 +454,40 @@ def get_sra_app_data_dir() -> Path:
     return Path.home() / ".config" / "SRA"
 
 
+def resolve_sra_profile(
+    script_config: Any,
+    *,
+    config_root: Path | None = None,
+) -> tuple[str, Path]:
+    """Resolve the one SRA native profile shared by inspect, forms and runtime.
+
+    The conventional ``Default.json`` is preferred when present; otherwise
+    the first profile in stable filename order is selected.
+    """
+
+    root = (
+        Path(config_root)
+        if config_root is not None
+        else get_sra_app_data_dir() / "configs"
+    )
+    default_path = root / "Default.json"
+    if default_path.is_file():
+        return "Default", default_path
+
+    candidates = (
+        sorted(
+            (item for item in root.glob("*.json") if item.is_file()),
+            key=lambda item: item.name.casefold(),
+        )
+        if root.is_dir()
+        else []
+    )
+    if candidates:
+        selected = candidates[0]
+        return selected.stem, selected
+    return "Default", default_path
+
+
 def disable_sra_windows_notifications() -> Path:
     """临时关闭 SRA 本体的 Windows 通知。"""
 
@@ -257,7 +495,7 @@ def disable_sra_windows_notifications() -> Path:
     cache: dict = {}
     if cache_path.exists():
         try:
-            raw_cache = json.loads(cache_path.read_text(encoding="utf-8-sig"))
+            raw_cache = read_file(cache_path)
         except json.JSONDecodeError:
             raw_cache = {}
         if isinstance(raw_cache, dict):
@@ -267,12 +505,7 @@ def disable_sra_windows_notifications() -> Path:
         return cache_path
 
     cache[SRA_CACHE_NO_NOTIFY_KEY] = True
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(
-        json.dumps(cache, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_file(cache_path, cache)
     logger.info(f"SRA cache.json 已关闭 Windows 通知：{cache_path}")
     return cache_path
 
@@ -416,6 +649,87 @@ async def run_sra_single_task(
             await process_registry.clear()
 
 
+async def run_sra_config(
+    sra_exe_path: Path,
+    config_path: Path,
+    timeout: int = 7200,
+    process_registry: SRAProcessRegistry | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> SRACommandResult:
+    """运行 SRA 原生配置中的完整任务计划。
+
+    这是旧 dev 对插件版 ``run_sra_config`` 的等价入口；命令仍走 SRA
+    ``--inline run``，并复用既有实时日志/进程终止逻辑。
+    """
+
+    started_at = datetime.now(timezone.utc)
+    module_key = "DirectControl"
+    if not sra_exe_path.exists():
+        return SRACommandResult(
+            task_class="run",
+            config_path=str(config_path),
+            module_key=module_key,
+            success=False,
+            error=f"SRA-cli.exe does not exist: {sra_exe_path}",
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+
+    registry = process_registry or SRAProcessRegistry()
+    try:
+        proc = await registry.open_process(
+            str(sra_exe_path),
+            "--inline",
+            f'run "{config_path}"',
+            "quit",
+            cwd=sra_exe_path.parent,
+        )
+        stdout, stderr = await _communicate_sra_with_live_output(
+            proc,
+            timeout,
+            log_callback,
+        )
+        success = proc.returncode == 0 and not has_failure_output(stdout, stderr)
+        return SRACommandResult(
+            task_class="run",
+            config_path=str(config_path),
+            module_key=module_key,
+            success=success,
+            output=stdout,
+            error=stderr,
+            returncode=proc.returncode or 0,
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+    except asyncio.TimeoutError:
+        await registry.terminate_current_process()
+        return SRACommandResult(
+            task_class="run",
+            config_path=str(config_path),
+            module_key=module_key,
+            success=False,
+            error=f"command timeout: {timeout}s",
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+    except asyncio.CancelledError:
+        await registry.terminate_current_process()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"SRA 原生配置执行失败：{exc}")
+        return SRACommandResult(
+            task_class="run",
+            config_path=str(config_path),
+            module_key=module_key,
+            success=False,
+            error=str(exc),
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+    finally:
+        await registry.clear()
+
+
 def _sra_temp_path(script_uid: str, user_uid: str, module_key: str) -> Path:
     from app.core import Config
 
@@ -500,9 +814,9 @@ def _native_stage_to_sra_tp_item(
     """把 Stage.ScriptStage / ScriptEchoOfWar 转成 SRA tasklist item。"""
 
     stage_data = (
-        read_native_main_stage(user_config)
+        read_native_main_stage(user_config, "SRA")
         if field == "ScriptStage"
-        else read_native_stage(user_config, field)
+        else read_native_stage(user_config, field, "SRA")
     )
     native = get_sra_native_stage(stage_data)
     if native is None:
@@ -537,9 +851,7 @@ def _build_sra_trailblaze_tasklist(
 
     if eow_enabled:
         # SRA autoDetect 路径不读取 RunTimes，这里只保留结构占位。
-        native_eow = _native_stage_to_sra_tp_item(
-            user_config, "ScriptEchoOfWar", 1
-        )
+        native_eow = _native_stage_to_sra_tp_item(user_config, "ScriptEchoOfWar", 1)
         if native_eow is None:
             raise RuntimeError(
                 "本周需要执行历战余响，但 Stage.ScriptEchoOfWar 缺少 SRA 原生"
@@ -632,10 +944,7 @@ async def _communicate_sra_with_live_output(
 
     stdout_stream = getattr(proc, "stdout", None)
     stderr_stream = getattr(proc, "stderr", None)
-    if not (
-        can_read_stream_live(stdout_stream)
-        or can_read_stream_live(stderr_stream)
-    ):
+    if not (can_read_stream_live(stdout_stream) or can_read_stream_live(stderr_stream)):
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             proc.communicate(), timeout=timeout
         )

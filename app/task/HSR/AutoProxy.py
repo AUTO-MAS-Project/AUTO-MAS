@@ -54,12 +54,15 @@ from .tools.account_switch import (
     HSRAccountSwitcher,
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
+    is_game_management_enabled,
     stop_external_processes,
     resolve_game_executable_path,
     user_needs_account_switch,
 )
 from .tools import push_notification
 from .tools.log_detect import detect_echo_of_war_completion
+from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
+from .tools.native_control import resolve_script_path
 from .tools.m7a_runtime import M7ARunner
 from .tools.sra_runtime import cleanup_sra_temp_config
 from .tools.stage_runtime import (
@@ -75,14 +78,13 @@ logger = get_logger("HSR 自动代理")
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
     "weekly": ("WeeklyTimeLimit", 60),
-    "monthly": ("MonthlyTimeLimit", 60),
 }
 
 MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(
         module.key for module in HSR_TASK_MODULES if module.category == phase
     )
-    for phase in ("daily", "weekly", "monthly")
+    for phase in ("daily", "weekly")
 }
 
 
@@ -145,7 +147,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_timeout_seconds=self._module_timeout_seconds,
             queue_eow_completion=self._queue_eow_completion_if_confirmed,
             queue_weekly_completion=self._queue_weekly_completion,
-            queue_abyss_completion=self._queue_abyss_completion,
             record_module_result=self._record_module_result,
         )
         self._current_user_item: UserItem | None = None
@@ -156,6 +157,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.steps_count: int = 0
         self.crashed: bool = False
         self.error_message: str = ""
+        self._managed_options_cache: dict[tuple[int, str, str], dict[str, object]] = {}
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         text = str(message).strip()
@@ -243,12 +245,24 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 for module in HSR_TASK_MODULES
                 if module.key == module_key
             ),
-            "monthly",
+            "weekly",
         )
         return self._timeout_seconds_for_phase(phase)
 
     async def _restart_game(self, user_name: str, reason: str) -> None:
-        """由 MAS 关闭并重新启动游戏。"""
+        """按开关决定是否由 MAS 关闭并重新启动游戏。"""
+
+        await self._stop_external_processes()
+        if not is_game_management_enabled(self.script_config):
+            self.runtime.game_launch_checked = True
+            self.runtime.game_started_by_mas = False
+            self.runtime.game_session_clean = False
+            self.runtime.last_external_script = None
+            self._append_log(
+                f"用户「{user_name}」{reason}，"
+                "MAS 未管理游戏，跳过游戏重启并继续执行"
+            )
+            return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         process_name = HSR_GAME_PROCESS_NAME
@@ -256,7 +270,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._append_log(
             f"用户「{user_name}」{reason}，正在由 MAS 重启游戏"
         )
-        await self._stop_external_processes()
 
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
@@ -301,8 +314,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
     @staticmethod
     def _period_markers(
         now_dt: datetime | None = None,
-    ) -> tuple[str, str, str]:
-        """返回当前日期、ISO 周、自然月标记。"""
+    ) -> tuple[str, str]:
+        """返回当前日期和 ISO 周标记。"""
 
         if now_dt is None:
             now_dt = datetime.now(tz=UTC8)
@@ -310,7 +323,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return (
             now_dt.strftime("%Y-%m-%d"),
             f"{iso_year:04d}-W{iso_week:02d}",
-            now_dt.strftime("%Y-%m"),
         )
 
     def _queue_data_writeback(
@@ -500,7 +512,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             status="completed",
             reason=reason,
         )
-        today, current_week, _ = self._period_markers()
+        today, current_week = self._period_markers()
         self._queue_data_writeback(
             user_id=user_id,
             user_name=user_name,
@@ -520,7 +532,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> None:
         """差分宇宙 / 货币战争成功后，登记本周周常完成态。"""
 
-        today, current_week, _ = self._period_markers()
+        today, current_week = self._period_markers()
         self._queue_data_writeback(
             user_id=user_id,
             user_name=user_name,
@@ -529,25 +541,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 ("Data", "WeeklyCompletedThisWeek", True),
                 ("Data", "WeeklyLastResetWeek", current_week),
                 ("Data", "WeeklyLastCompletionDate", today),
-            ],
-        )
-
-    def _queue_abyss_completion(
-        self,
-        user_id: str,
-        user_name: str,
-    ) -> None:
-        """三深渊三项全部成功后，登记本月完成态。"""
-
-        today, _, current_month = self._period_markers()
-        self._queue_data_writeback(
-            user_id=user_id,
-            user_name=user_name,
-            reason="三深渊三项全部成功执行",
-            fields=[
-                ("Data", "AbyssCompletedThisMonth", True),
-                ("Data", "AbyssLastResetMonth", current_month),
-                ("Data", "AbyssLastCompletionDate", today),
             ],
         )
 
@@ -627,44 +620,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         return False, "", is_new_week_in_mem
 
-    @staticmethod
-    def _resolve_abyss_monthly_skip(
-        user_config,
-        now_dt: datetime | None = None,
-    ) -> tuple[bool, str, bool]:
-        """解析三深渊本自然月是否已完成（纯计算，不修改 user_config / Data 字段）。
-
-        跨月时只在内存中按“新月已重置”计算，执行成功后的完成态由
-        调度器在三个深渊全部成功后统一写回。
-        """
-        monthly_enabled = _has_enabled_phase_module(user_config, "monthly")
-
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
-        now_month = now_dt.strftime("%Y-%m")
-
-        last_reset_month = (
-            user_config.get("Data", "AbyssLastResetMonth") or "2000-01"
-        )
-        done_stored = bool(
-            user_config.get("Data", "AbyssCompletedThisMonth")
-        )
-
-        if last_reset_month != now_month:
-            # 跨月 —— 仅在内存中按"新月已重置"计算
-            is_new_month_in_mem = True
-            done_in_mem = False
-        else:
-            is_new_month_in_mem = False
-            done_in_mem = done_stored
-
-        if not monthly_enabled:
-            return True, "已关闭月常", is_new_month_in_mem
-        if done_in_mem:
-            return True, "本月已完成（三深渊）", is_new_month_in_mem
-
-        return False, "", is_new_month_in_mem
-
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
         """按周期读取超时配置，返回秒。"""
 
@@ -677,6 +632,94 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         return self._timeout_seconds_for_phase(phase)
 
+    def _managed_module_values(
+        self,
+        *,
+        assigned_script: str,
+        module_key: str,
+        user_cfg,
+    ) -> dict[str, object]:
+        """读取动态托管页展示的原生值，并允许用户覆盖。"""
+
+        cache_key = (id(user_cfg), assigned_script, module_key)
+        if cache_key in self._managed_options_cache:
+            return dict(self._managed_options_cache[cache_key])
+        try:
+            modules = list_managed_modules(
+                assigned_script,
+                self.script_config,
+                user_cfg,
+            )
+            for module in modules:
+                if module.key == module_key:
+                    values = {field.key: field.value for field in module.fields}
+                    self._managed_options_cache[cache_key] = values
+                    return dict(values)
+        except (OSError, ValueError, TypeError):
+            # 发现失败不应阻断旧的 MAS 队列；控制器会在真正写配置时给出
+            # 更具体的错误。
+            pass
+        self._managed_options_cache[cache_key] = {}
+        return {}
+
+    def _daily_native_modes(self, *, assigned_script: str, user_cfg) -> tuple[bool, bool]:
+        values = self._managed_module_values(
+            assigned_script=assigned_script,
+            module_key="Daily",
+            user_cfg=user_cfg,
+        )
+        if assigned_script == "SRA":
+            return bool(values.get("useBuildTarget", False)), bool(
+                values.get("activity.enabled", False)
+            )
+        activity_enabled = bool(values.get("activity_enable", False)) and any(
+            bool(value)
+            for key, value in values.items()
+            if key.startswith("activity_")
+            and key.endswith("_enable")
+            and key
+            not in {
+                "activity_enable",
+                "activity_dailycheckin_enable",
+                "activity_journey_highlights_notification_enable",
+            }
+        )
+        return bool(values.get("build_target_enable", False)), activity_enabled
+
+    def _resolve_redeem_code_policy(
+        self,
+        *,
+        engine: str,
+        user_cfg,
+        user_name: str,
+    ) -> tuple[bool, str | None]:
+        values = self._managed_module_values(
+            assigned_script=engine,
+            module_key="ReceiveRewards",
+            user_cfg=user_cfg,
+        )
+        field_key = "rewards.6" if engine == "SRA" else "reward_redemption_code_enable"
+        selected = bool(values.get(field_key, True))
+        if not selected:
+            self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
+            return False, None
+        try:
+            only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
+        except (AttributeError, KeyError, TypeError):
+            only_when_changed = True
+        if only_when_changed is False:
+            return True, None
+        try:
+            fingerprint = redeem_code_fingerprint(engine, self.script_config)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning(f"用户「{user_name}」读取 {engine} 兑换码版本失败，保守执行：{exc}")
+            return True, None
+        previous = str(user_cfg.get("Data", f"{engine}RedeemCodeFingerprint") or "")
+        if previous == fingerprint:
+            self._append_log(f"用户「{user_name}」{engine} 兑换码未变化，本轮跳过兑换码领取")
+            return False, fingerprint
+        return True, fingerprint
+
     def _resolve_daily_runnable_parts(
         self,
         *,
@@ -688,19 +731,28 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> tuple[bool, bool]:
         """判断体力模块实际可执行内容；缺少关卡配置时跳过而不是失败。"""
 
+        cultivation_enabled, native_activity_enabled = self._daily_native_modes(
+            assigned_script=assigned_script,
+            user_cfg=user_cfg,
+        )
+
         if assigned_script == "SRA":
             main_configured = (
-                get_sra_native_stage(read_native_main_stage(user_cfg)) is not None
+                get_sra_native_stage(read_native_main_stage(user_cfg, "SRA"))
+                is not None
             )
             eow_configured = (
                 get_sra_native_stage(
-                    read_native_stage(user_cfg, "ScriptEchoOfWar")
+                    read_native_stage(user_cfg, "ScriptEchoOfWar", "SRA")
                 )
                 is not None
             )
         else:
             main_configured = resolve_m7a_main_stage(user_cfg) is not None
             eow_configured = resolve_m7a_eow_stage(user_cfg) is not None
+
+        if cultivation_enabled or native_activity_enabled:
+            main_configured = True
 
         effective_eow_enabled = daily_eow_enabled and eow_configured
         if daily_eow_enabled and not eow_configured:
@@ -743,8 +795,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not user_cfg.get("TaskSwitch", module.key):
                 continue
 
-            assigned = get_assigned_script(module, self.script_config)
+            assigned = get_assigned_script(
+                module,
+                self.script_config,
+                user_config=user_cfg,
+            )
             module_daily_eow_enabled = daily_eow_enabled
+            redeem_codes_enabled = True
+            redeem_code_fingerprint: str | None = None
             if module.key == "Daily":
                 main_configured, module_daily_eow_enabled = (
                     self._resolve_daily_runnable_parts(
@@ -768,6 +826,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         reason=reason,
                     )
                     continue
+            elif module.key == "ReceiveRewards":
+                redeem_codes_enabled, redeem_code_fingerprint = self._resolve_redeem_code_policy(
+                    engine=assigned,
+                    user_cfg=user_cfg,
+                    user_name=user_name,
+                )
 
             if assigned == "SRA":
                 item = self._sra_control.create_module_item(
@@ -781,8 +845,38 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     script_id=script_id,
                     temp_files=temp_files,
                     daily_eow_enabled=module_daily_eow_enabled,
+                    redeem_codes_enabled=redeem_codes_enabled,
                 )
                 if item is not None:
+                    if (
+                        module.key == "ReceiveRewards"
+                        and redeem_codes_enabled
+                        and redeem_code_fingerprint
+                    ):
+                        previous_on_success = item.on_success
+
+                        def on_rewards_success(
+                            result,
+                            previous_on_success=previous_on_success,
+                            fingerprint=redeem_code_fingerprint,
+                            engine=assigned,
+                        ):
+                            if previous_on_success is not None:
+                                previous_on_success(result)
+                            self._queue_data_writeback(
+                                user_id=uid,
+                                user_name=user_name,
+                                reason=f"{engine} 兑换码任务成功完成",
+                                fields=[
+                                    (
+                                        "Data",
+                                        f"{engine}RedeemCodeFingerprint",
+                                        fingerprint,
+                                    )
+                                ],
+                            )
+
+                        item.on_success = on_rewards_success
                     items.append(item)
             else:
                 item = self._m7a_control.create_module_item(
@@ -795,8 +889,38 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     m7a_path=m7a_path,
                     m7a_runner=m7a_runner,
                     daily_eow_enabled=module_daily_eow_enabled,
+                    redeem_codes_enabled=redeem_codes_enabled,
                 )
                 if item is not None:
+                    if (
+                        module.key == "ReceiveRewards"
+                        and redeem_codes_enabled
+                        and redeem_code_fingerprint
+                    ):
+                        previous_on_success = item.on_success
+
+                        def on_rewards_success(
+                            result,
+                            previous_on_success=previous_on_success,
+                            fingerprint=redeem_code_fingerprint,
+                            engine=assigned,
+                        ):
+                            if previous_on_success is not None:
+                                previous_on_success(result)
+                            self._queue_data_writeback(
+                                user_id=uid,
+                                user_name=user_name,
+                                reason=f"{engine} 兑换码任务成功完成",
+                                fields=[
+                                    (
+                                        "Data",
+                                        f"{engine}RedeemCodeFingerprint",
+                                        fingerprint,
+                                    )
+                                ],
+                            )
+
+                        item.on_success = on_rewards_success
                     items.append(item)
 
         return items
@@ -924,7 +1048,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return items
 
         result: list[HSRRunItem] = []
-        for phase in ("daily", "weekly", "monthly"):
+        for phase in ("daily", "weekly"):
             phase_items = [item for item in items if item.phase == phase]
             result.extend(
                 self._with_phase_login_items(
@@ -969,7 +1093,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         retry_items: list[HSRRunItem] = []
 
-        for phase in ("daily", "weekly", "monthly"):
+        for phase in ("daily", "weekly"):
             phase_items = [item for item in failed_items if item.phase == phase]
             if not phase_items:
                 continue
@@ -1072,43 +1196,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         else:
             self._append_log(f"用户「{user_name}」周常跳过：{weekly_skip_reason}")
 
-        abyss_skip, abyss_skip_reason, abyss_is_new_month = (
-            self._resolve_abyss_monthly_skip(user_cfg)
-        )
-        logger.debug(
-            f"用户「{user_name}」monthly resolver: "
-            f"abyss_skip={abyss_skip} ({abyss_skip_reason!r}), "
-            f"abyss_is_new_month={abyss_is_new_month}"
-        )
-        if abyss_skip:
-            self._append_log(f"用户「{user_name}」月常跳过：{abyss_skip_reason}")
-            return self._with_login_items_for_queue(
-                items,
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                uid=uid,
-                login_plan=login_plan,
-                script_id=script_id,
-                temp_files=temp_files,
-            )
-
-        items.extend(
-            self._build_phase_items(
-                phase="monthly",
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                uid=uid,
-                m7a_path=m7a_path,
-                m7a_runner=m7a_runner,
-                sra_exe_path=sra_exe_path,
-                script_id=script_id,
-                temp_files=temp_files,
-                daily_eow_enabled=daily_eow_enabled,
-            )
-        )
-
         return self._with_login_items_for_queue(
             items,
             user_item=user_item,
@@ -1148,11 +1235,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         failures: list[HSRRunItem] = []
         completed_phases: set[HSRPhase] = set()
-        phases: tuple[HSRPhase, ...] = ("daily", "weekly", "monthly")
+        phases: tuple[HSRPhase, ...] = ("daily", "weekly")
         phase_labels = {
             "daily": "日常",
             "weekly": "周常",
-            "monthly": "月常",
         }
 
         for phase_index, phase in enumerate(phases):
@@ -1260,10 +1346,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return failures
 
     async def _run_item_with_game_guard(self, item: HSRRunItem) -> object:
-        """执行单个外部模块；若游戏进程被关闭，尽快中止外部脚本。"""
+        """执行外部模块；启用游戏管理时监测游戏进程并及时中止脚本。"""
 
         run_task = asyncio.create_task(item.run())
         try:
+            if not is_game_management_enabled(self.script_config):
+                return await run_task
+
             while not run_task.done():
                 await asyncio.sleep(1)
                 if self.runtime.game_transitioning:
@@ -1316,7 +1405,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await self._account_switcher.ensure_game_started_by_mas()
 
     async def _prepare_before_retry_attempt(self, user_name: str) -> None:
-        """补跑前统一重启游戏，避免外部脚本继承异常场景。"""
+        """补跑前按开关准备游戏状态，必要时重启游戏。"""
 
         await self._restart_game(user_name, "补跑失败任务前")
 
@@ -1327,8 +1416,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.get("Info", "Name")
-        m7a_path = self.script_config.get("Info", "M7APath") or ""
-        sra_path = self.script_config.get("Info", "SRAPath") or ""
+        m7a_path = resolve_script_path(self.script_config, "M7A")
+        sra_path = resolve_script_path(self.script_config, "SRA")
         script_id = self.script_info.script_id
         retry_limit = self._get_run_times_limit()
         self.user_start_time = datetime.now()
@@ -1403,7 +1492,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     else "HSR 失败任务补跑部分失败"
                 )
             # 只要日常阶段有模块执行成功，就登记代理日期；
-            # 后续周常/月常失败不影响日常已完成的事实。
+            # 后续周常失败不影响日常已完成的事实。
             _daily_items = [
                 i for i in current_items
                 if i.phase == "daily" and i.module_key != "StartGame"
@@ -1419,9 +1508,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 return
 
             if attempt < retry_limit:
+                retry_action = (
+                    "将重新启动游戏后补跑"
+                    if is_game_management_enabled(self.script_config)
+                    else "MAS 未管理游戏，直接补跑"
+                )
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
-                    f"仍有 {len(failed_items)} 个失败任务，将重新启动游戏后补跑"
+                    f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
                 )
                 self._finish_current_user_log(
                     "HSR 用户任务本轮失败，等待补跑",

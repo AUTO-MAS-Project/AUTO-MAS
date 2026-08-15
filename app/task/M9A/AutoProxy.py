@@ -34,6 +34,7 @@ from app.models.config import M9AConfig, M9AUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.io import read_file, write_file
 from app.utils.constants import UTC4,UTC8
 from .tools import push_notification
 from app.task.general.tools import execute_script_task
@@ -463,10 +464,7 @@ class AutoProxyTask(TaskExecuteBase):
             raise
 
         # 保存配置到 M9A 目录
-        self.m9a_tasks_path.write_text(
-            json.dumps(config, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        write_file(self.m9a_tasks_path, config)
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
 
         # Debug 备份：保存到 data/script_id 目录，按 testN.json 递增，保留最近 5 个
@@ -485,10 +483,7 @@ class AutoProxyTask(TaskExecuteBase):
         backup_path = debug_dir / f"test{next_num}.json"
         
         # 保存备份
-        backup_path.write_text(
-            json.dumps(config, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        write_file(backup_path, config)
         logger.info(f"Debug 备份已保存：{backup_path}")
         
         # 清理旧备份，只保留最近 5 个
@@ -811,7 +806,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         if self.template_path.exists():
             try:
-                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                config = read_file(self.template_path)
                 config["Resource"] = resource
                 logger.info(f"使用配置模板：{self.template_path}")
             except Exception as e:
@@ -934,7 +929,7 @@ class AutoProxyTask(TaskExecuteBase):
         config = {}
         if self.template_path.exists():
             try:
-                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                config = read_file(self.template_path)
             except Exception:
                 pass
 

@@ -22,6 +22,7 @@
 
 
 import asyncio
+import json
 import uuid
 from pathlib import Path
 from typing import Any, Literal
@@ -29,10 +30,25 @@ from typing import Any, Literal
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+
+
+def _hsr_script_config(script_id: str):
+    """Resolve an HSR script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeHSRConfig):
+        raise TypeError("脚本配置类型错误, 不是 HSR 类型")
+    return script_config
+
+
+def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
+    user_config = script_config.UserData[uuid.UUID(user_id)]
+    return user_config
 
 
 def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
@@ -372,62 +388,6 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/user/import-m7a-abyss-snapshot",
-    tags=["Update"],
-    summary="从 M7A config.yaml 导入三深渊快照",
-    response_model=AbyssSnapshotImportOut,
-    status_code=200,
-)
-async def import_m7a_abyss_snapshot(
-    payload: UserImportAbyssSnapshotIn = Body(...),
-) -> AbyssSnapshotImportOut:
-    """从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。"""
-    import json
-
-    from app.task.HSR.tools.m7a_config import read_m7a_abyss_snapshots
-
-    items: list[AbyssSnapshotImportItem] = []
-    m7a_config_path: Path | None = None
-
-    try:
-        script_config = Config.ScriptConfig[uuid.UUID(payload.scriptId)]
-        m7a_path_str = str(script_config.get("Info", "M7APath") or "").strip()
-        if not m7a_path_str:
-            raise ValueError("请先在脚本配置页配置三月七路径")
-
-        m7a_config_path = Path(m7a_path_str) / "config.yaml"
-        write_snapshots, raw_items = read_m7a_abyss_snapshots(m7a_config_path)
-        items = [AbyssSnapshotImportItem(**item) for item in raw_items]
-
-        await Config.update_user(
-            payload.scriptId,
-            payload.userId,
-            {"Abyss": {"Snapshots": json.dumps(write_snapshots, ensure_ascii=False)}},
-        )
-        _, user_data_dict = await Config.get_user(payload.scriptId, payload.userId)
-        updated_user_data = HSRUserConfig(**user_data_dict)
-    except Exception as e:
-        return AbyssSnapshotImportOut(
-            code=400 if isinstance(e, (FileNotFoundError, ValueError)) else 500,
-            status="error",
-            message=f"导入三深渊快照失败: {type(e).__name__}: {e}",
-            m7aConfigPath=str(m7a_config_path) if m7a_config_path else "",
-            items=items,
-            updatedUserData=HSRUserConfig(),
-        )
-
-    success_count = len(items)
-    return AbyssSnapshotImportOut(
-        code=200,
-        status="success",
-        message=f"已从 M7A config.yaml 导入 {success_count}/3 个三深渊快照",
-        m7aConfigPath=str(m7a_config_path),
-        items=items,
-        updatedUserData=updated_user_data,
-    )
-
-
-@router.post(
     "/user/delete",
     tags=["Delete"],
     summary="删除用户",
@@ -692,10 +652,14 @@ async def get_m9a_available_tasks(script_id: str):
 async def get_hsr_stage_options_api(
     scriptId: str | None = None,
     engine: Literal["M7A", "SRA"] = "M7A",
+    userId: str | None = None,
+    slot: Literal["main", "eow"] = "main",
 ) -> HSRStageOptionsOut:
-    """按体力执行脚本返回 M7A / SRA 原生副本字段。"""
+    """返回 M7A/SRA 原生副本字段。
 
-    from app.task.HSR.tools.stage_provider import get_hsr_stage_options
+    ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+    按引擎统一返回，不按 slot 生成不同结果。
+    """
 
     try:
         if not scriptId:
@@ -705,21 +669,134 @@ async def get_hsr_stage_options_api(
                 message="缺少 scriptId",
             )
 
-        script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
-        data = HSRStageOptionsData(**get_hsr_stage_options(script_config, engine))
-        option_count = sum(
-            len(category.options)
-            for category in data.categories
+        script_config = _hsr_script_config(scriptId)
+        if userId:
+            _hsr_user_config(script_config, userId)
+        from app.task.HSR.tools.api import build_stage_options
+
+        data = HSRStageOptionsData(
+            **build_stage_options(script_config, engine)
         )
+        option_count = sum(len(category.options) for category in data.categories)
         return HSRStageOptionsOut(
             message=f"共 {option_count} 个 HSR 体力副本选项",
             data=data,
         )
     except Exception as e:
         return HSRStageOptionsOut(
-            code=500,
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/hsr/capabilities",
+    tags=["HSR"],
+    summary="获取内置 HSR 能力快照",
+    response_model=HSRCapabilitiesOut,
+    status_code=200,
+)
+async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabilitiesOut:
+    """返回内置 HSR 的能力快照，不暴露原生编辑器会话。"""
+
+    try:
+        if not scriptId:
+            return HSRCapabilitiesOut(code=400, status="error", message="缺少 scriptId")
+        script_config = _hsr_script_config(scriptId)
+        from app.task.HSR.tools.api import build_capabilities
+
+        data = HSRCapabilitiesData(**build_capabilities(script_config))
+        return HSRCapabilitiesOut(data=data)
+    except Exception as e:
+        return HSRCapabilitiesOut(
+            code=400
+            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/hsr/managed-config",
+    tags=["HSR"],
+    summary="获取 HSR 托管配置字段",
+    response_model=HSRManagedConfigOut,
+    status_code=200,
+)
+async def get_hsr_managed_config_api(
+    scriptId: str | None = None, userId: str | None = None
+) -> HSRManagedConfigOut:
+    """返回原生动态托管字段；用户 ID 只负责归属校验。"""
+
+    try:
+        if not scriptId:
+            return HSRManagedConfigOut(
+                code=400, status="error", message="缺少 scriptId"
+            )
+        script_config = _hsr_script_config(scriptId)
+        user_config = None
+        if userId:
+            user_config = _hsr_user_config(script_config, userId)
+        from app.task.HSR.tools.api import build_managed_config
+
+        data = HSRManagedConfigData(
+            **build_managed_config(script_config, user_config)
+        )
+        return HSRManagedConfigOut(data=data)
+    except Exception as e:
+        return HSRManagedConfigOut(
+            code=400
+            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/hsr/direct-config/import",
+    tags=["HSR"],
+    summary="导入 HSR 原生配置快照",
+    response_model=HSRDirectConfigImportOut,
+    status_code=200,
+)
+async def import_hsr_direct_config_api(
+    request: HSRDirectConfigImportIn = Body(...),
+) -> HSRDirectConfigImportOut:
+    from app.task.HSR.tools.api import import_direct_config
+    from app.task.HSR.tools.external_locks import HSRExternalPathBusyError
+
+    try:
+        script_config = _hsr_script_config(request.scriptId)
+        # 先校验用户归属，再让 provider 读取原生文件，避免无效请求触碰用户配置。
+        _hsr_user_config(script_config, request.userId)
+
+        result = await import_direct_config(
+            script_config,
+            request.engine,
+            script_id=request.scriptId,
+            user_id=request.userId,
+            update_user=Config.update_user,
+        )
+        return HSRDirectConfigImportOut(
+            message=f"{request.engine} 原生配置已导入",
+            data=HSRDirectConfigImportData(**result),
+        )
+    except HSRExternalPathBusyError as e:
+        return HSRDirectConfigImportOut(
+            code=409, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except (FileNotFoundError, KeyError, TypeError, ValueError, RuntimeError) as e:
+        return HSRDirectConfigImportOut(
+            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except OSError as e:
+        return HSRDirectConfigImportOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
 
 

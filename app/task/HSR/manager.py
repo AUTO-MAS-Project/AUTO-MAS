@@ -25,6 +25,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.models.ConfigBase import MultipleConfig
@@ -43,14 +44,30 @@ from .tools.run_model import CompletionWriteback, HSRRuntimeState
 from .task_mapping import HSR_TASK_MODULES, get_assigned_script, script_supports
 from .tools import push_notification
 from .tools.account_switch import (
+    HSRAccountSwitcher,
     check_user_credentials,
     close_game_if_needed,
+    is_game_management_enabled,
+    restore_game_resolution_if_needed,
     resolve_game_executable_path,
     stop_external_processes,
 )
 from .tools.sra_runtime import (
     disable_sra_windows_notifications,
     get_sra_app_data_dir,
+    load_sra_native_config,
+)
+from .tools.m7a_config import load_m7a_native_config
+from .tools.native_control import (
+    get_user_direct_config,
+    native_provider,
+    resolve_script_path,
+    resolve_user_control,
+)
+from .tools.external_locks import (
+    HSRExternalPathLockLease,
+    acquire_external_path_locks,
+    resolve_external_lock_paths,
 )
 
 
@@ -117,6 +134,16 @@ class HSRManager(TaskExecuteBase):
         )
         self.temp_path: Path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
+        # 同一上游 M7A/SRA 路径可能被多个 HSR 脚本共享；持有至恢复完成。
+        self._external_path_lock: HSRExternalPathLockLease | None = None
+        # 旧 dev 没有插件 registry；由调度器独占本轮直控会话并在停止时取消。
+        self._direct_sessions: dict[str, Any] = {}
+
+    def _release_external_path_lock(self) -> None:
+        lease = self._external_path_lock
+        self._external_path_lock = None
+        if lease is not None:
+            lease.release()
 
     def _backup_external_configs(self) -> None:
         """运行前备份 M7A/SRA 的真实配置文件。"""
@@ -145,7 +172,7 @@ class HSRManager(TaskExecuteBase):
                 raise RuntimeError(f"{label} 既不是文件也不是目录：{source}")
             logger.info(f"{label} 已备份：{source} -> {backup}")
 
-        m7a_path = self.script_config.get("Info", "M7APath")
+        m7a_path = resolve_script_path(self.script_config, "M7A")
         if m7a_path:
             backup_path(
                 "M7A config.yaml",
@@ -153,7 +180,7 @@ class HSRManager(TaskExecuteBase):
                 backup_root / "M7A" / "config.yaml",
             )
 
-        sra_path = self.script_config.get("Info", "SRAPath")
+        sra_path = resolve_script_path(self.script_config, "SRA")
         if sra_path:
             sra_app_data = get_sra_app_data_dir()
             backup_path(
@@ -231,6 +258,13 @@ class HSRManager(TaskExecuteBase):
     async def _stop_external_processes(self) -> None:
         """停止当前仍在运行的 SRA/M7A 子进程。"""
 
+        for engine, session in reversed(list(self._direct_sessions.items())):
+            try:
+                await session.cancel()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"终止 HSR {engine} 直控会话失败：{exc}")
+                self._append_log(f"终止 HSR {engine} 直控会话失败：{exc}")
+
         await stop_external_processes(
             self._runtime,
             self._append_log,
@@ -263,18 +297,18 @@ class HSRManager(TaskExecuteBase):
         if not isinstance(script_config, HSRConfig):
             return "脚本配置类型错误，不是 HSR 脚本类型"
 
+        game_management_enabled = is_game_management_enabled(script_config)
+
         if self.task_info.mode == "ManualReview":
             return self._check_manual_review(script_config)
 
-        m7a_path = script_config.get("Info", "M7APath")
-        sra_path = script_config.get("Info", "SRAPath")
+        m7a_path = resolve_script_path(script_config, "M7A")
+        sra_path = resolve_script_path(script_config, "SRA")
 
         if not m7a_path and not sra_path:
             return "未配置任何脚本路径，请至少填写 M7A 或 SRA 路径"
 
         for module in HSR_TASK_MODULES:
-            if module.key == "ForgottenHall":
-                continue
             raw_assigned = script_config._config_item_index["TaskMapping"][module.key].value
             if not script_supports(module.key, raw_assigned):
                 return (
@@ -298,6 +332,8 @@ class HSRManager(TaskExecuteBase):
             sra_available = True
 
         has_executable_user = False
+        has_direct_user = False
+        m7a_needed = False
         sra_needed = False
         enabled_module_keys: set[str] = set()
 
@@ -308,32 +344,73 @@ class HSRManager(TaskExecuteBase):
                 continue
             has_executable_user = True
 
+            control = resolve_user_control(user_config, script_config=script_config)
+            user_name = str(user_config.get("Info", "Name") or uid)
+            if control.mode == "direct":
+                has_direct_user = True
+                if self.task_info.mode != "AutoProxy":
+                    return f"用户「{user_name}」启用了脚本直控，但直控仅支持自动代理"
+                if not control.engines:
+                    return f"用户「{user_name}」尚未启用任何直控脚本"
+                for engine in control.engines:
+                    # 已导入快照可脱离当前原生配置文件运行；这里只要求
+                    # 当前 CLI/Assistant 可执行，避免配置器改名后误阻断直控。
+                    script_root = resolve_script_path(script_config, engine)
+                    if not script_root:
+                        return f"用户「{user_name}」{engine} 直控不可用：未配置原生脚本路径"
+                    executable = (
+                        Path(script_root)
+                        / ("SRA-cli.exe" if engine == "SRA" else "March7th Assistant.exe")
+                    )
+                    if not executable.is_file():
+                        return (
+                            f"用户「{user_name}」{engine} 直控不可用："
+                            f"原生执行文件不存在：{executable}"
+                        )
+                    if not get_user_direct_config(user_config, engine).strip():
+                        return f"用户「{user_name}」尚未导入 {engine} 原生配置快照"
+                # 直控快照包含完整原生计划，跳过 MAS 模块队列和凭证检查。
+                continue
+
             for module in HSR_TASK_MODULES:
                 if user_config.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
-                    assigned = get_assigned_script(module, script_config)
+                    assigned = get_assigned_script(
+                        module,
+                        script_config,
+                        user_config=user_config,
+                    )
                     if assigned == "SRA":
                         sra_needed = True
+                    if assigned == "M7A":
+                        m7a_needed = True
+                    if assigned == "M7A" and not m7a_available:
+                        return f"用户「{user_name}」模块「{module.name}」分配给了 M7A，但 M7A 路径不可用"
+                    if assigned == "SRA" and not sra_available:
+                        return f"用户「{user_name}」模块「{module.name}」分配给了 SRA，但 SRA 路径不可用"
 
         if not has_executable_user:
             return "未找到任何可执行用户，请确保至少有一个启用且剩余天数不为 0 的用户"
 
-        for module in HSR_TASK_MODULES:
-            if module.key not in enabled_module_keys:
-                continue
-            assigned = get_assigned_script(module, script_config)
-            if assigned == "M7A" and not m7a_available:
-                return f"模块「{module.name}」分配给了 M7A，但 M7A 路径不可用"
-            if assigned == "SRA" and not sra_available:
-                return f"模块「{module.name}」分配给了 SRA，但 SRA 路径不可用"
-
-        if enabled_module_keys:
+        if game_management_enabled and (enabled_module_keys or has_direct_user):
+            if not str(script_config.get("Game", "Path") or "").strip():
+                return "请设置游戏路径"
             game_exe_path = resolve_game_executable_path(script_config)
             if not game_exe_path.exists():
                 return f"游戏启动文件不存在：{game_exe_path}"
 
         if sra_needed and not sra_available:
-            return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+            if game_management_enabled:
+                return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+            return "HSR 自动代理需要配置 SRA 路径"
+
+        try:
+            if m7a_needed:
+                load_m7a_native_config(script_config)
+            if sra_needed:
+                load_sra_native_config(script_config)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return f"HSR 原生配置不可用：{exc}"
 
         if sra_available:
             return self._validate_sra_user_credentials(
@@ -359,9 +436,11 @@ class HSRManager(TaskExecuteBase):
         for module in HSR_TASK_MODULES:
             if not user_config.get("TaskSwitch", module.key):
                 continue
-            if (
-                get_assigned_script(module, script_config) == "SRA"
-            ):
+            if get_assigned_script(
+                module,
+                script_config,
+                user_config=user_config,
+            ) == "SRA":
                 return True
         return False
 
@@ -376,10 +455,12 @@ class HSRManager(TaskExecuteBase):
         for _uid, user_config in script_config.UserData.items():
             if not self._is_executable_user(user_config):
                 continue
-            if (
-                only_sra_needed
-                and not self._user_needs_sra(user_config, script_config)
-            ):
+            if resolve_user_control(
+                user_config,
+                script_config=script_config,
+            ).mode == "direct":
+                continue
+            if only_sra_needed and not self._user_needs_sra(user_config, script_config):
                 continue
 
             user_name = user_config.get("Info", "Name")
@@ -392,7 +473,7 @@ class HSRManager(TaskExecuteBase):
     def _check_manual_review(self, script_config: HSRConfig) -> str:
         """校验 HSR 人工检查需要的 SRA 切号配置。"""
 
-        sra_path = script_config.get("Info", "SRAPath")
+        sra_path = resolve_script_path(script_config, "SRA")
         if not sra_path:
             return "人工排查需要先设置 SRA 路径"
 
@@ -400,9 +481,10 @@ class HSRManager(TaskExecuteBase):
         if not sra_exe.exists():
             return f"SRA 路径中未找到 SRA-cli.exe：{sra_exe}"
 
-        game_exe_path = resolve_game_executable_path(script_config)
-        if not game_exe_path.exists():
-            return f"游戏启动文件不存在：{game_exe_path}"
+        if is_game_management_enabled(script_config):
+            game_exe_path = resolve_game_executable_path(script_config)
+            if not game_exe_path.exists():
+                return f"游戏启动文件不存在：{game_exe_path}"
 
         has_executable_user = False
         for _uid, user_config in script_config.UserData.items():
@@ -452,15 +534,32 @@ class HSRManager(TaskExecuteBase):
 
         logger.success(f"{self.script_info.script_id} 已锁定，HSR 配置提取完成")
 
-        self._backup_external_configs()
-        self._append_log("HSR 外部脚本配置已备份")
-        if self.script_config.get("Info", "SRAPath"):
-            try:
-                disable_sra_windows_notifications()
-                self._append_log("SRA 本体 Windows 通知已临时关闭")
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"SRA 本体 Windows 通知关闭失败：{e}")
-                self._append_log(f"SRA 本体 Windows 通知关闭失败，将继续执行：{e}")
+        try:
+            external_paths = resolve_external_lock_paths(
+                self.script_config,
+                ("SRA", "M7A"),
+            )
+            self._external_path_lock = await acquire_external_path_locks(
+                external_paths,
+                wait=False,
+            )
+            self._append_log("HSR 外部脚本目录运行锁已获取")
+
+            self._backup_external_configs()
+            self._append_log("HSR 外部脚本配置已备份")
+            if resolve_script_path(self.script_config, "SRA"):
+                try:
+                    disable_sra_windows_notifications()
+                    self._append_log("SRA 本体 Windows 通知已临时关闭")
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"SRA 本体 Windows 通知关闭失败：{e}")
+                    self._append_log(f"SRA 本体 Windows 通知关闭失败，将继续执行：{e}")
+        except BaseException:
+            # 若备份已登记目标，交给 final_task 在恢复后释放；否则没有
+            # 关键区需要收尾，可以立即释放空/已获取的 lease。
+            if not self._external_config_targets:
+                self._release_external_path_lock()
+            raise
 
         self.script_info.user_list = [
             UserItem(
@@ -514,15 +613,26 @@ class HSRManager(TaskExecuteBase):
                 self.script_info.current_index = user_index
                 proxy = None
                 try:
-                    proxy = task_cls(
-                        self.script_info,
-                        self.script_config,
-                        self.user_config,
-                        user_item,
-                        self._runtime,
+                    user_config = self.user_config[uuid.UUID(user_item.user_id)]
+                    control = resolve_user_control(
+                        user_config,
+                        script_config=self.script_config,
                     )
-                    await self.spawn(proxy)
-                    steps_count += getattr(proxy, "steps_count", 0)
+                    if control.mode == "direct":
+                        steps_count += await self._run_direct_user(
+                            user_item,
+                            user_config,
+                        )
+                    else:
+                        proxy = task_cls(
+                            self.script_info,
+                            self.script_config,
+                            self.user_config,
+                            user_item,
+                            self._runtime,
+                        )
+                        await self.spawn(proxy)
+                        steps_count += getattr(proxy, "steps_count", 0)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:  # noqa: BLE001
@@ -542,7 +652,7 @@ class HSRManager(TaskExecuteBase):
                     )
                     continue
 
-                if proxy.crashed:
+                if proxy is not None and proxy.crashed:
                     error_message = proxy.error_message or "HSR 用户任务异常"
                     user_errors.append(f"用户「{user_item.name}」执行异常：{error_message}")
                     logger.error(
@@ -580,6 +690,82 @@ class HSRManager(TaskExecuteBase):
             f"HSR 执行计划处理完成：{len(self.script_info.user_list)} 个用户，"
             f"{steps_count} 个步骤"
         )
+
+    async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
+        """运行一个用户导入的原生 SRA/M7A 快照。
+
+        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
+        日志、取消和会话收尾始终由 MAS 负责。没有新 ``Control``/``Direct``
+        字段时不会进入此路径。
+        """
+
+        if self.script_config is None:
+            raise RuntimeError("HSR 脚本配置尚未加载")
+        control = resolve_user_control(user_config, script_config=self.script_config)
+        user_name = str(user_config.get("Info", "Name") or user_item.name)
+        started_at = datetime.now()
+        log_item = LogRecord(status="HSR 脚本直控运行中")
+        user_item.log_record[started_at] = log_item
+        user_item.status = "运行"
+        log_start = len(self._log_lines)
+
+        switcher = HSRAccountSwitcher(
+            script_config=self.script_config,
+            runtime=self._runtime,
+            append_log=self._append_log,
+        )
+        self._runtime.game_launch_checked = False
+        await switcher.ensure_game_started_by_mas()
+        if is_game_management_enabled(self.script_config):
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
+                f"原生配置原样执行：{'、'.join(control.engines)}"
+            )
+        else:
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
+                f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
+            )
+
+        summaries: list[str] = []
+        try:
+            for engine in control.engines:
+                # 复用旧脚本切号的等待/切换语义。
+                await switcher.wait_before_external_script(engine, user_name)
+                provider = native_provider(engine)
+                session = await provider.open_direct_session(
+                    script_config=self.script_config,
+                    config_content=get_user_direct_config(user_config, engine),
+                    session_id=user_item.user_id,
+                    log=self._append_log,
+                )
+                self._direct_sessions[engine] = session
+                try:
+                    result = await session.run(control.timeout_seconds)
+                    if not result.success:
+                        raise RuntimeError(result.error or f"{engine} 用户配置快照执行失败")
+                    summary = result.summary or f"{engine} 用户配置快照执行完成"
+                    summaries.append(summary)
+                    self._append_log(f"用户「{user_name}」{summary}")
+                except asyncio.CancelledError:
+                    await session.cancel()
+                    raise
+                finally:
+                    try:
+                        await session.close()
+                    finally:
+                        if self._direct_sessions.get(engine) is session:
+                            self._direct_sessions.pop(engine, None)
+        except Exception:
+            user_item.status = "异常"
+            log_item.status = "HSR 脚本直控异常"
+            log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
+            raise
+
+        user_item.status = "完成"
+        log_item.status = "HSR 脚本直控完成"
+        log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
+        return len(control.engines)
 
     async def _persist_user_logs(self) -> None:
         """将 HSR 用户日志写入历史记录。"""
@@ -738,7 +924,25 @@ class HSRManager(TaskExecuteBase):
             self._append_log(msg)
             final_errors.append(msg)
 
-        restore_error = await self._restore_external_configs()
+        try:
+            # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
+            # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
+            if is_game_management_enabled(self.script_config):
+                restore_game_resolution_if_needed(
+                    self._runtime,
+                    self._append_log,
+                )
+        except Exception as e:  # noqa: BLE001
+            msg = f"恢复星铁分辨率注册表失败：{e}"
+            logger.exception(msg)
+            self._append_log(msg)
+            final_errors.append(msg)
+
+        try:
+            restore_error = await self._restore_external_configs()
+        finally:
+            # 备份/运行/恢复是同一关键区；配置解锁与通知在锁释放后进行。
+            self._release_external_path_lock()
         if restore_error:
             final_errors.append(restore_error)
 

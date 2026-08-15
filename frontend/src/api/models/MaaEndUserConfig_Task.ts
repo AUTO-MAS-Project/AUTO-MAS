@@ -91,5 +91,9 @@ export type MaaEndUserConfig_Task = {
      * 资源回收站
      */
     IfResourceRecycleStation?: (boolean | null);
+    /**
+     * 抽数计算
+     */
+    IfPullCountCalculator?: (boolean | null);
 };
 

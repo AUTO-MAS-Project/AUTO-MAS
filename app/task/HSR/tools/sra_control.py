@@ -166,6 +166,7 @@ class HSRSRAControl:
         script_id: str,
         temp_files: list[Path],
         daily_eow_enabled: bool,
+        redeem_codes_enabled: bool = True,
     ) -> HSRRunItem | None:
         """创建一个 SRA 模块队列项。"""
 
@@ -176,14 +177,21 @@ class HSRSRAControl:
                 self.script_config,
                 user_cfg,
                 daily_eow_enabled=daily_eow_enabled,
+                redeem_codes_enabled=redeem_codes_enabled,
             )
             tasklist = cfg.get("trailblazePower", {}).get("tasklist") or []
-            if not tasklist:
-                self._append_log(f"用户「{user_name}」体力模块无可执行副本，跳过")
-                return None
-            description = f"SRA TrailblazePowerTask：{build_sra_tasklist_description(tasklist)}"
+            description = (
+                f"SRA TrailblazePowerTask：{build_sra_tasklist_description(tasklist)}"
+                if tasklist
+                else "SRA TrailblazePowerTask：按原生培养目标/活动配置执行"
+            )
         else:
-            cfg = build_sra_module_config(module, self.script_config, user_cfg)
+            cfg = build_sra_module_config(
+                module,
+                self.script_config,
+                user_cfg,
+                redeem_codes_enabled=redeem_codes_enabled,
+            )
             description = f"SRA {module.sra_task}：{module.description}"
 
         temp_path = write_sra_temp_config(cfg, script_id, uid, module.key)
