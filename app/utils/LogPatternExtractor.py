@@ -53,6 +53,18 @@ PATTERN_TYPE_REGEX = "regex"
 PATTERN_TYPE_MULTILINE = "multiline"
 SUPPORTED_PATTERN_TYPES = (PATTERN_TYPE_SPLIT, PATTERN_TYPE_REGEX, PATTERN_TYPE_MULTILINE)
 
+# 规则日志类型：普通 = 任何推送报告均包含；失败 = 仅在存在未完成用户的报告中包含
+LOG_TYPE_NORMAL = "普通"
+LOG_TYPE_ERROR = "失败"
+SUPPORTED_LOG_TYPES = (LOG_TYPE_NORMAL, LOG_TYPE_ERROR)
+
+
+def _clean_log_type(value: object) -> str:
+
+    if value == LOG_TYPE_ERROR:
+        return LOG_TYPE_ERROR
+    return LOG_TYPE_NORMAL
+
 # 多行聚合默认最大跨行数
 _MULTILINE_DEFAULT_MAX_LINES = 50
 
@@ -91,6 +103,8 @@ class SplitMatcher:
     head_include: bool
     tail: Optional[str]
     tail_include: bool
+    # 日志类型（普通/异常）：仅作为推送策略的元数据，不参与匹配逻辑
+    log_type: str = LOG_TYPE_NORMAL
 
     def apply(self, line: str) -> Optional[str]:
         """对单行日志应用切割规则，命中返回提取文本，未命中返回 None"""
@@ -133,6 +147,8 @@ class RegexMatcher:
 
     match: Optional[Pattern[str]]
     extract: Optional[CompiledExpression]
+    # 日志类型（普通/异常）：仅作为推送策略的元数据，不参与匹配逻辑
+    log_type: str = LOG_TYPE_NORMAL
 
     def apply(self, line: str) -> Optional[str]:
         """对单行日志应用正则规则，命中返回提取文本，未命中返回 None"""
@@ -174,6 +190,8 @@ class MultiLineAggregator:
     end_re: Optional[Pattern[str]]
     extract_expr: Optional[CompiledExpression] = None
     max_lines: int = _MULTILINE_DEFAULT_MAX_LINES
+    # 日志类型（普通/异常）：仅作为推送策略的元数据，不参与匹配逻辑
+    log_type: str = LOG_TYPE_NORMAL
     # 运行时状态（不参与序列化）
     _buffer: list[str] = field(default_factory=list, repr=False)
     _window_open: bool = field(default=False, repr=False)
@@ -257,6 +275,7 @@ def _compile_split(config: dict) -> Optional[SplitMatcher]:
         head_include=bool(config.get("headInclude", False)),
         tail=tail or None,
         tail_include=bool(config.get("tailInclude", False)),
+        log_type=_clean_log_type(config.get("logType")),
     )
 
 
@@ -272,7 +291,11 @@ def _compile_regex_matcher(config: dict) -> Optional[RegexMatcher]:
     # 匹配正则编译失败则跳过该条，避免运行时静默失效
     if match_re is None:
         return None
-    return RegexMatcher(match=match_re, extract=extract_expr)
+    return RegexMatcher(
+        match=match_re,
+        extract=extract_expr,
+        log_type=_clean_log_type(config.get("logType")),
+    )
 
 
 def _compile_multiline_matcher(config: dict) -> Optional[MultiLineAggregator]:
@@ -303,6 +326,7 @@ def _compile_multiline_matcher(config: dict) -> Optional[MultiLineAggregator]:
         end_re=end_re,
         extract_expr=extract_expr,
         max_lines=max_lines,
+        log_type=_clean_log_type(config.get("logType")),
     )
 
 
@@ -387,6 +411,10 @@ def serialize_patterns(patterns: list[dict]) -> str:
         ptype = (item.get("type") or "").lower()
         # enabled 字段：默认 true；显式 false 时保留以便前端显示停用状态
         enabled_out = bool(item.get("enabled", True))
+        # name 字段：规则标题（供分享站展示），可选，留空则前端按 规则1/规则2 兜底
+        name_out = (item.get("name") or "").strip()
+        # logType 字段：日志类型（普通/异常），非法值回退为「普通」
+        log_type_out = _clean_log_type(item.get("logType"))
         if ptype == PATTERN_TYPE_SPLIT:
             match = (item.get("match") or "").strip()
             # 匹配关键字留空则跳过，与编译逻辑保持一致
@@ -403,6 +431,8 @@ def serialize_patterns(patterns: list[dict]) -> str:
                     "tail": tail,
                     "tailInclude": bool(item.get("tailInclude", False)),
                     "enabled": enabled_out,
+                    "name": name_out,
+                    "logType": log_type_out,
                 }
             )
         elif ptype == PATTERN_TYPE_REGEX:
@@ -417,6 +447,8 @@ def serialize_patterns(patterns: list[dict]) -> str:
                     "match": match,
                     "extract": extract,
                     "enabled": enabled_out,
+                    "name": name_out,
+                    "logType": log_type_out,
                 }
             )
         elif ptype == PATTERN_TYPE_MULTILINE:
@@ -441,21 +473,25 @@ def serialize_patterns(patterns: list[dict]) -> str:
                     "extract": extract,
                     "maxLines": max_lines,
                     "enabled": enabled_out,
+                    "name": name_out,
+                    "logType": log_type_out,
                 }
             )
     return json.dumps(cleaned, ensure_ascii=False)
 
 
 # ==================== 匹配 ====================
-def apply_patterns(line: str, matchers: Optional[list[CompiledMatcher]] = None) -> Optional[str]:
-    """对单行日志依次应用匹配器，返回首个命中的提取文本
+def apply_patterns(
+    line: str, matchers: Optional[list[CompiledMatcher]] = None
+) -> Optional[tuple[str, str]]:
+    """对单行日志依次应用匹配器，返回首个命中规则的 (日志类型, 提取文本)
 
     Args:
         line: 单行日志原文
         matchers: 经 load_patterns / compile_pattern 编译后的匹配器列表
 
     Returns:
-        首个命中的提取文本；全部未命中返回 None
+        首个命中规则的 (log_type, extracted) 元组；全部未命中返回 None
 
     Note:
         入口处统一 strip() 去除行尾空白字符（如 \\r \\n），与 debug_pattern 保持一致，
@@ -467,12 +503,14 @@ def apply_patterns(line: str, matchers: Optional[list[CompiledMatcher]] = None) 
     for matcher in matchers:
         result = matcher.apply(line)
         if result is not None:
-            return result
+            return (matcher.log_type, result)
     return None
 
 
-def flush_patterns(matchers: Optional[list[CompiledMatcher]] = None) -> Optional[str]:
-    """对所有匹配器调用 flush，返回首个非 None 的残留结果
+def flush_patterns(
+    matchers: Optional[list[CompiledMatcher]] = None
+) -> Optional[tuple[str, str]]:
+    """对所有匹配器调用 flush，返回首个非 None 的 (日志类型, 残留结果)
 
     用于日志处理结束时强制关闭多行聚合等有状态匹配器的残留窗口。
 
@@ -480,14 +518,14 @@ def flush_patterns(matchers: Optional[list[CompiledMatcher]] = None) -> Optional
         matchers: 编译后的匹配器列表
 
     Returns:
-        首个非 None 的残留提取文本；全部无残留返回 None
+        首个非 None 的 (log_type, flushed) 元组；全部无残留返回 None
     """
     if not matchers:
         return None
     for matcher in matchers:
         result = matcher.flush()
         if result is not None:
-            return result
+            return (matcher.log_type, result)
     return None
 
 
