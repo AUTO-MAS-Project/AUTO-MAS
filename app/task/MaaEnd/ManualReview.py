@@ -35,6 +35,7 @@ from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import decode_bytes, get_logger, ProcessManager, is_process_running
 from app.utils.constants import UTC4
+from app.utils.io import read_file, write_file
 from .ScriptConfig import normalize_maaend_config
 from .resource_loader import load_maaend_task_i18n
 from .tools import login, replace_account_switch_task
@@ -272,12 +273,12 @@ class ManualReviewTask(TaskExecuteBase):
                 shutil.rmtree(self.maaend_set_path, ignore_errors=True)
                 shutil.copytree(self.maaend_config_path, self.maaend_set_path)
                 config_path = self.maaend_set_path / "mxu-MaaEnd.json"
-                maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
+                maaend_set = read_file(config_path)
 
                 local_config = None
                 backup_file = backup_config_path / "mxu-MaaEnd.json"
                 if backup_file.exists():
-                    local_config = json.loads(backup_file.read_text(encoding="utf-8"))
+                    local_config = read_file(backup_file)
                 for field in ("version", "interfaceTaskSnapshot"):
                     maaend_set.pop(field, None)
                     if local_config is not None and field in local_config:
@@ -321,10 +322,7 @@ class ManualReviewTask(TaskExecuteBase):
                     task_id=f"mas{self.cur_user_uid.hex[:4]}",
                 )
                 instance_name = str(maaend_instance.get("name") or "AUTO-MAS")
-                config_path.write_text(
-                    json.dumps(maaend_set, ensure_ascii=False, indent=4),
-                    encoding="utf-8",
-                )
+                write_file(config_path, maaend_set)
 
                 await self.maaend_process_manager.open_process(
                     self.maaend_exe_path,

@@ -97,6 +97,11 @@ export const MAAEND_TASK_GROUPS = [
       { name: 'ResourceRecycleStation', label: '🦉 资源回收站' },
     ],
   },
+  {
+    key: 'Statistics',
+    label: '📊 数据统计',
+    tasks: [{ name: 'PullCountCalculator', label: '🧮 抽数计算' }],
+  },
 ] as const
 
 export type MaaEndTaskSwitch = (typeof MAAEND_TASK_GROUPS)[number]['tasks'][number]['name']

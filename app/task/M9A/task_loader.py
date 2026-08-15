@@ -27,9 +27,8 @@ from copy import deepcopy
 from pathlib import Path
 from threading import RLock
 
-import json5
-
 from app.utils import get_logger
+from app.utils.io import read_file, write_file
 
 logger = get_logger("M9A 任务加载器")
 
@@ -55,7 +54,9 @@ class M9ATaskLoader:
         self._load_all_tasks()
 
     @classmethod
-    def get_cached(cls, m9a_root_path: Path, force_reload: bool = False) -> "M9ATaskLoader":
+    def get_cached(
+        cls, m9a_root_path: Path, force_reload: bool = False
+    ) -> "M9ATaskLoader":
         """获取按 M9A 根目录缓存的任务加载器。"""
         root_path = m9a_root_path.resolve()
         with cls._cache_lock:
@@ -98,14 +99,19 @@ class M9ATaskLoader:
 
     @classmethod
     def _disk_cache_path(cls, root_path: Path) -> Path:
-        cache_key = hashlib.sha256(str(root_path).casefold().encode("utf-8")).hexdigest()
+        cache_key = hashlib.sha256(
+            str(root_path).casefold().encode("utf-8")
+        ).hexdigest()
         return cls._disk_cache_dir() / f"{cache_key}.json"
 
     @classmethod
     def _cleanup_expired_disk_cache(cls, protected_cache_path: Path) -> None:
         """清理 30 天未使用的 M9A 任务磁盘缓存。"""
         now = time.time()
-        if now - cls._last_disk_cache_cleanup_at < cls._disk_cache_cleanup_interval_seconds:
+        if (
+            now - cls._last_disk_cache_cleanup_at
+            < cls._disk_cache_cleanup_interval_seconds
+        ):
             return
 
         cls._last_disk_cache_cleanup_at = now
@@ -172,7 +178,10 @@ class M9ATaskLoader:
             scan_select_specs = {
                 (Path(item[0]), item[1])
                 for item in payload.get("scan_select_specs", [])
-                if isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], str)
+                if isinstance(item, list)
+                and len(item) == 2
+                and isinstance(item[0], str)
+                and isinstance(item[1], str)
             }
             loaded_from_interface = bool(payload.get("loaded_from_interface"))
             current_signature = cls._build_signature(
@@ -215,10 +224,15 @@ class M9ATaskLoader:
             "version": self._disk_cache_version,
             "root_path": str(self.root_path),
             "loaded_from_interface": self._loaded_from_interface,
-            "dependency_paths": [str(path) for path in sorted(self._dependency_paths, key=lambda p: str(p))],
+            "dependency_paths": [
+                str(path)
+                for path in sorted(self._dependency_paths, key=lambda p: str(p))
+            ],
             "scan_select_specs": [
                 [str(path), scan_filter]
-                for path, scan_filter in sorted(self._scan_select_specs, key=lambda item: (str(item[0]), item[1]))
+                for path, scan_filter in sorted(
+                    self._scan_select_specs, key=lambda item: (str(item[0]), item[1])
+                )
             ],
             "signature": self._signature_to_json(signature),
             "task_cache": self._task_cache,
@@ -227,12 +241,7 @@ class M9ATaskLoader:
 
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = cache_path.with_suffix(".tmp")
-            temp_path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            temp_path.replace(cache_path)
+            write_file(cache_path, payload)
             logger.debug(f"已写入 M9A 本地任务缓存：{cache_path}")
         except Exception as e:
             logger.warning(f"写入 M9A 本地任务缓存失败：{e}")
@@ -279,13 +288,23 @@ class M9ATaskLoader:
             for json_file in sorted(tasks_dir.glob("*.json")):
                 signature_parts.append(cls._file_signature(json_file.resolve()))
 
-        for scan_path, scan_filter in sorted(scan_select_specs, key=lambda item: (str(item[0]), item[1])):
+        for scan_path, scan_filter in sorted(
+            scan_select_specs, key=lambda item: (str(item[0]), item[1])
+        ):
             signature_parts.append(("scan", str(scan_path), scan_filter))
             signature_parts.append(cls._file_signature(scan_path))
             try:
                 scan_files = sorted(scan_path.glob(scan_filter))
             except Exception as e:
-                signature_parts.append(("scan-error", str(scan_path), scan_filter, type(e).__name__, str(e)))
+                signature_parts.append(
+                    (
+                        "scan-error",
+                        str(scan_path),
+                        scan_filter,
+                        type(e).__name__,
+                        str(e),
+                    )
+                )
                 continue
 
             for file in scan_files:
@@ -354,7 +373,11 @@ class M9ATaskLoader:
 
         def resolve_path(base_dir: Path, raw_path: str) -> Path:
             relative_path = raw_path.strip().replace("\\", "/")
-            if not relative_path or Path(relative_path).is_absolute() or ".." in relative_path.split("/"):
+            if (
+                not relative_path
+                or Path(relative_path).is_absolute()
+                or ".." in relative_path.split("/")
+            ):
                 raise ValueError(f"路径不允许使用绝对路径或包含 ..：{raw_path}")
             return (base_dir / relative_path).resolve()
 
@@ -364,7 +387,7 @@ class M9ATaskLoader:
                 raise ValueError(f"检测到 interface 循环导入：{resolved_path}")
 
             self._dependency_paths.add(resolved_path)
-            data = json5.loads(path.read_text(encoding="utf-8"))
+            data = read_file(path, format=".json5")
             if not isinstance(data, dict):
                 raise ValueError(f"interface 必须是 JSON 对象：{path}")
 
@@ -374,7 +397,10 @@ class M9ATaskLoader:
             options = options if isinstance(options, dict) else {}
 
             for option_data in options.values():
-                if not isinstance(option_data, dict) or option_data.get("type") != "scan_select":
+                if (
+                    not isinstance(option_data, dict)
+                    or option_data.get("type") != "scan_select"
+                ):
                     continue
 
                 scan_dir = option_data.get("scan_dir")
@@ -384,7 +410,11 @@ class M9ATaskLoader:
                     continue
 
                 scan_filter = scan_filter.strip().replace("\\", "/")
-                if not scan_filter or Path(scan_filter).is_absolute() or ".." in scan_filter.split("/"):
+                if (
+                    not scan_filter
+                    or Path(scan_filter).is_absolute()
+                    or ".." in scan_filter.split("/")
+                ):
                     raise ValueError(f"路径不允许使用绝对路径或包含 ..：{scan_filter}")
                 scan_path = resolve_path(self.root_path, scan_dir)
                 self._scan_select_specs.add((scan_path, scan_filter))
@@ -398,7 +428,9 @@ class M9ATaskLoader:
                 if not isinstance(import_path, str) or not import_path.strip():
                     continue
 
-                child_tasks, child_options = read_interface(resolve_path(self.root_path, import_path), [*stack, resolved_path])
+                child_tasks, child_options = read_interface(
+                    resolve_path(self.root_path, import_path), [*stack, resolved_path]
+                )
                 tasks.extend(child_tasks)
                 options.update(child_options)
 
@@ -479,7 +511,10 @@ class M9ATaskLoader:
 
             missing_options = []
             for opt_name in referenced_options:
-                if opt_name not in raw_data["option"] and opt_name in global_option_defs:
+                if (
+                    opt_name not in raw_data["option"]
+                    and opt_name in global_option_defs
+                ):
                     missing_options.append(opt_name)
 
             if missing_options:
@@ -563,10 +598,7 @@ class M9ATaskLoader:
             任务列表，每个任务包含 name 和 entry
         """
         return [
-            {
-                "name": name,
-                "entry": task.get("entry", name)
-            }
+            {"name": name, "entry": task.get("entry", name)}
             for name, task in self._task_cache.items()
         ]
 

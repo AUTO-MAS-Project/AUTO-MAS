@@ -21,7 +21,6 @@
 
 import re
 import uuid
-import json
 import shutil
 import asyncio
 from pathlib import Path
@@ -87,7 +86,9 @@ class AutoProxyTask(TaskExecuteBase):
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
+        ) >= self.script_config.get(
+            "Run", "ProxyTimesLimit"
+        ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -199,7 +200,9 @@ class AutoProxyTask(TaskExecuteBase):
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
-                        data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
+                        data={
+                            "Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"
+                        },
                     )
                 if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
                     await self.cur_user_config.set(
@@ -211,7 +214,9 @@ class AutoProxyTask(TaskExecuteBase):
                 "Info", "IfSkland"
             ) and self.cur_user_config.get("Data", "LastSklandDate") != datetime.now(
                 tz=UTC8
-            ).strftime("%Y-%m-%d"):
+            ).strftime(
+                "%Y-%m-%d"
+            ):
                 logger.warning(
                     f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
                 )
@@ -285,9 +290,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
             account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-            account_switch_method = self.script_config.get(
-                "Run", "AccountSwitchMethod"
-            )
+            account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
             if account_switch_method == "MAS":
                 try:
                     if account_id:
@@ -485,9 +488,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
-            maaend_local_config = json.loads(
-                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-            )
+            maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
 
         config_user_id = (
             "Default"
@@ -506,9 +507,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         shutil.rmtree(self.maaend_set_path, ignore_errors=True)
         shutil.copytree(maaend_config_path, self.maaend_set_path)
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-        )
+        maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         for field in ("version", "interfaceTaskSnapshot"):
             maaend_set.pop(field, None)
             if maaend_local_config is not None and field in maaend_local_config:
@@ -750,14 +749,10 @@ class AutoProxyTask(TaskExecuteBase):
                 task["optionValues"].pop("AutoEssenceSpecifiedLocation", None)
                 task["optionValues"]["AutoEssenceChooseLocation"] = {
                     "type": "checkbox",
-                    "caseNames": [
-                        sanity_task_config["AutoEssenceSpecifiedLocation"]
-                    ],
+                    "caseNames": [sanity_task_config["AutoEssenceSpecifiedLocation"]],
                 }
 
-        (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
     def has_maaend_local_install_file(self) -> bool:

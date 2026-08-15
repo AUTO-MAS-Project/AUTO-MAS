@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 import yaml
 
+from app.utils.io import atomic_write
 from .m7a_runtime import M7ARunner
 from .sra_runtime import (
     SRAProcessRegistry,
@@ -227,7 +228,9 @@ class SRANativeControlProvider:
             raise ValueError(f"SRA 原生配置顶层必须是对象：{selected_path}")
         return selected_path, content
 
-    async def open_direct_session(self, *, script_config: Any, config_content: str, session_id: str, log) -> SRADirectControlSession:
+    async def open_direct_session(
+        self, *, script_config: Any, config_content: str, session_id: str, log
+    ) -> SRADirectControlSession:
         root = self._root(script_config)
         executable = root / "SRA-cli.exe"
         if not executable.is_file():
@@ -241,7 +244,7 @@ class SRANativeControlProvider:
         safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", session_id).strip("-") or "user"
         temporary = tempfile.TemporaryDirectory(prefix=f"automas-sra-{safe_id[:32]}-")
         config_path = Path(temporary.name) / "config.json"
-        config_path.write_text(config_content, encoding="utf-8")
+        atomic_write(config_path, config_content.encode("utf-8"))
         log("SRA 将原样执行当前用户导入的隔离配置快照；MAS 只负责外部进程生命周期")
         return SRADirectControlSession(executable, config_path, temporary, log)
 
@@ -264,7 +267,9 @@ class M7ADirectControlSession:
         if not isinstance(config, dict):
             raise ValueError("三月七助手用户快照顶层必须是对象")
         safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", self._session_id).strip("-") or "user"
-        self._temporary = tempfile.TemporaryDirectory(prefix=f"automas-m7a-{safe_id[:32]}-")
+        self._temporary = tempfile.TemporaryDirectory(
+            prefix=f"automas-m7a-{safe_id[:32]}-"
+        )
         isolated_root = Path(self._temporary.name)
         try:
             for source in self._source_root.iterdir():
@@ -278,7 +283,9 @@ class M7ADirectControlSession:
                         shutil.copytree(source, target)
                 elif source.is_file():
                     shutil.copy2(source, target)
-            (isolated_root / "config.yaml").write_text(self._config_content, encoding="utf-8")
+            atomic_write(
+                isolated_root / "config.yaml", self._config_content.encode("utf-8")
+            )
         except Exception:
             self._temporary.cleanup()
             self._temporary = None
@@ -288,7 +295,9 @@ class M7ADirectControlSession:
     async def run(self, timeout_seconds: int) -> HSRRunResult:
         isolated_root = self._create_isolated_root()
         self._runner = M7ARunner(isolated_root, log_callback=self._log)
-        self._log("三月七助手将从隔离启动目录原样读取当前用户 config.yaml；MAS 只负责外部进程生命周期")
+        self._log(
+            "三月七助手将从隔离启动目录原样读取当前用户 config.yaml；MAS 只负责外部进程生命周期"
+        )
         result = await self._runner.run_task("main", timeout=timeout_seconds)
         return HSRRunResult.from_native(
             result,
@@ -325,9 +334,15 @@ class M7ANativeControlProvider:
             import_reason = "请先设置三月七助手路径"
             direct_reason = "请先设置三月七助手路径"
         else:
-            import_reason = "" if config_path.is_file() else f"三月七助手原生配置不存在：{config_path}"
+            import_reason = (
+                ""
+                if config_path.is_file()
+                else f"三月七助手原生配置不存在：{config_path}"
+            )
             if not executable.is_file():
-                direct_reason = f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
+                direct_reason = (
+                    f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
+                )
             else:
                 direct_reason = ""
         return HSRNativeControlSnapshot(
@@ -348,11 +363,15 @@ class M7ANativeControlProvider:
             raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
         return path, content
 
-    async def open_direct_session(self, *, script_config: Any, config_content: str, session_id: str, log) -> M7ADirectControlSession:
+    async def open_direct_session(
+        self, *, script_config: Any, config_content: str, session_id: str, log
+    ) -> M7ADirectControlSession:
         root = self._root(script_config)
         executable = root / "March7th Assistant.exe"
         if not executable.is_file():
-            raise FileNotFoundError(f"三月七助手路径中未找到 March7th Assistant.exe：{executable}")
+            raise FileNotFoundError(
+                f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
+            )
         if not config_content.strip():
             raise ValueError("当前用户尚未导入三月七助手 config.yaml 快照")
         return M7ADirectControlSession(root, config_content, session_id, log)

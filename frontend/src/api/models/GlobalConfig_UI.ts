@@ -16,3 +16,4 @@ export type GlobalConfig_UI = {
      */
     IfHideCloseButton?: (boolean | null);
 };
+

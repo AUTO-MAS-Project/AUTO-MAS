@@ -76,6 +76,7 @@ from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
 from app.utils import get_logger
+from app.utils.io import write_file
 
 logger = get_logger("配置管理")
 
@@ -107,23 +108,13 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏签到结果快照。"""
+    """原子保存游戏签到结果快照（走 ``app.utils.io.write_file``）。"""
 
     if path is None:
         return
 
-    temporary_path = path.with_name(f"{path.name}.tmp")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path.write_text(
-            json.dumps(
-                {"date": result_date, "result": result},
-                ensure_ascii=False,
-                indent=4,
-            ),
-            encoding="utf-8",
-        )
-        temporary_path.replace(path)
+        write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
@@ -224,11 +215,14 @@ class AppConfig(GlobalConfig):
         await self._sync_legacy_skland_accounts()
 
         from app.services import System
+        from app.services.telemetry import set_telemetry_enabled
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
         await System.set_SelfStart(self.get("Start", "IfSelfStart"))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+        set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
         self.loop = asyncio.get_running_loop()
 
@@ -890,9 +884,9 @@ class AppConfig(GlobalConfig):
             if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                config["Script"][
-                    path
-                ] = f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                config["Script"][path] = (
+                    f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                )
         config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
         return config
@@ -916,7 +910,9 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(self, script_id: str) -> tuple[
+    async def add_user(
+        self, script_id: str
+    ) -> tuple[
         uuid.UUID,
         MaaUserConfig
         | SrcUserConfig
@@ -1026,10 +1022,9 @@ class AppConfig(GlobalConfig):
         finally:
             shutil.rmtree(temporary_path, ignore_errors=True)
 
-        logger.info(
-            f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}"
-        )
+        logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
         return target_config_dir
+
     @staticmethod
     def _safe_config_get(
         config: Any, group: str, name: str, default: Any = None
@@ -1047,7 +1042,9 @@ class AppConfig(GlobalConfig):
         """查找持有指定森空岛 Token 的工具账号。"""
 
         token_value = str(token or "").strip()
-        accounts = getattr(getattr(self, "ToolsConfig", None), "GameSign_Accounts", None)
+        accounts = getattr(
+            getattr(self, "ToolsConfig", None), "GameSign_Accounts", None
+        )
         if not token_value or accounts is None:
             return None, None
 
@@ -1058,9 +1055,7 @@ class AppConfig(GlobalConfig):
 
         for account_uid, account in account_items:
             candidate_token = str(
-                self._safe_config_get(
-                    account, "GameSignAccount", "SklandToken", ""
-                )
+                self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
                 or ""
             ).strip()
             if candidate_token == token_value:
@@ -1089,8 +1084,7 @@ class AppConfig(GlobalConfig):
                 continue
             for user_config in script_config.UserData.values():
                 user_token = str(
-                    self._safe_config_get(user_config, "Info", "SklandToken", "")
-                    or ""
+                    self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
                 ).strip()
                 if user_token == token_value:
                     references.append(
@@ -1159,9 +1153,7 @@ class AppConfig(GlobalConfig):
                 and not old_token_shared
             ):
                 await old_account.set("GameSignAccount", "SklandToken", "")
-                await old_account.set(
-                    "GameSignAccount", "LastSignDate", "2000-01-01"
-                )
+                await old_account.set("GameSignAccount", "LastSignDate", "2000-01-01")
                 if old_account_uid is not None:
                     self._clear_game_sign_account_results(str(old_account_uid))
         elif old_account is not None and not old_token_shared:
@@ -1172,8 +1164,7 @@ class AppConfig(GlobalConfig):
         current_name = str(
             name
             if name is not None
-            else self._safe_config_get(user_config, "Info", "Name", "")
-            or ""
+            else self._safe_config_get(user_config, "Info", "Name", "") or ""
         ).strip()
         account_name = current_name or f"用户 {str(user_id)[-8:]}"
 
@@ -1189,8 +1180,7 @@ class AppConfig(GlobalConfig):
             enabled_value = bool(enabled)
 
         account_token = str(
-            self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
-            or ""
+            self._safe_config_get(account, "GameSignAccount", "SklandToken", "") or ""
         ).strip()
         credential_changed = account_token != new_token
         await account.set("GameSignAccount", "Name", account_name)
@@ -1216,9 +1206,7 @@ class AppConfig(GlobalConfig):
             for user_config in script_config.UserData.values():
                 if (
                     str(
-                        self._safe_config_get(
-                            user_config, "Info", "SklandToken", ""
-                        )
+                        self._safe_config_get(user_config, "Info", "SklandToken", "")
                         or ""
                     ).strip()
                     == token_value
@@ -1263,17 +1251,13 @@ class AppConfig(GlobalConfig):
         legacy_old_token = ""
         if reset_skland_date:
             legacy_old_token = str(
-                AppConfig._safe_config_get(
-                    user_config, "Info", "SklandToken", ""
-                )
-                or ""
+                AppConfig._safe_config_get(user_config, "Info", "SklandToken", "") or ""
             )
         if reset_skland_date:
             info_data = data.get("Info", {})
             if isinstance(info_data, dict) and "SklandToken" in info_data:
                 skland_token_changed = (
-                    user_config.get("Info", "SklandToken")
-                    != info_data["SklandToken"]
+                    user_config.get("Info", "SklandToken") != info_data["SklandToken"]
                 )
 
         for group, items in data.items():
@@ -1285,8 +1269,7 @@ class AppConfig(GlobalConfig):
 
         if reset_skland_date and isinstance(legacy_skland_info, dict):
             if any(
-                key in legacy_skland_info
-                for key in ("SklandToken", "IfSkland", "Name")
+                key in legacy_skland_info for key in ("SklandToken", "IfSkland", "Name")
             ):
                 await self._sync_legacy_skland_user(
                     user_config=user_config,
@@ -1395,8 +1378,10 @@ class AppConfig(GlobalConfig):
         if infrast_data.get("title", "文件标题") == "文件标题":
             infrast_data["title"] = json_path.stem
 
-        await self.ScriptConfig[script_uid].UserData[user_uid].set(
-            "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
+        await (
+            self.ScriptConfig[script_uid]
+            .UserData[user_uid]
+            .set("Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False))
         )
 
     async def get_user_combox_infrastructure(
@@ -1421,7 +1406,7 @@ class AppConfig(GlobalConfig):
                 script_config.UserData[user_uid].get("Data", "CustomInfrast")
             ).get("plans", [])
         ):
-            data.append({"label": plan.get("name", f"排班 {i+1}"), "value": str(i)})
+            data.append({"label": plan.get("name", f"排班 {i + 1}"), "value": str(i)})
 
         logger.success("用户自定义基建排班下拉框信息获取成功")
 
@@ -1505,7 +1490,7 @@ class AppConfig(GlobalConfig):
                     if user.get("Info", "StageMode") == str(plan_uid):
                         if user.is_locked:
                             raise RuntimeError(
-                                f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
+                                f"用户 {user.get('Info', 'Name')} 正在使用此计划表且被锁定, 无法完成删除"
                             )
                         user_list.append(user)
 
@@ -1567,7 +1552,7 @@ class AppConfig(GlobalConfig):
                 if script.get("Emulator", "Id") == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
-                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                            f"脚本 {script.get('Info', 'Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
                     script_list.append(script)
             elif isinstance(script, GeneralConfig):
@@ -1576,7 +1561,7 @@ class AppConfig(GlobalConfig):
                 ) == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
-                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                            f"脚本 {script.get('Info', 'Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
                     script_list.append(script)
 
@@ -2218,12 +2203,8 @@ class AppConfig(GlobalConfig):
             "sideStoryStage" in raw_stage_data["Official"]
         )
         refresh = refresh or not has_server_data
-        if (
-            not refresh
-            and datetime.now() - timedelta(hours=1)
-            < datetime.strptime(
-                self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
-            )
+        if not refresh and datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
@@ -2758,6 +2739,49 @@ class AppConfig(GlobalConfig):
 
         return (matrix_statistics or None), True
 
+    def parse_maaend_pull_count_statistics(
+        self, logs: list[str]
+    ) -> Optional[Dict[str, int]]:
+        """解析 MaaEnd 抽数计算任务输出的统计结果。"""
+
+        content = "".join(logs)
+        field_patterns = {
+            "resource_pulls": (
+                r'"ResourcePulls"\s*:\s*(\d+)',
+                r"资源折算[：:]\s*(\d+)\s*抽",
+            ),
+            "carry_over_pulls": (
+                r'"CarryToNextPulls"\s*:\s*(\d+)',
+                r"可留到下版本的券[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_shop_pulls": (
+                r'"NextPoolShopPulls"\s*:\s*(\d+)',
+                r"下版本商店[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_signin_pulls": (
+                r'"NextPoolSigninPulls"\s*:\s*(\d+)',
+                r"下版本签到[：:]\s*(\d+)\s*抽",
+            ),
+            "current_pool_total": (
+                r'"CurrentPoolTotal"\s*:\s*(\d+)',
+                r"当前池可用[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_total": (
+                r'"NextPoolTotal"\s*:\s*(\d+)',
+                r"下版本池子总计[：:]\s*(\d+)\s*抽",
+            ),
+        }
+
+        statistics: Dict[str, int] = {}
+        for field, patterns in field_patterns.items():
+            matches = [
+                match for pattern in patterns for match in re.finditer(pattern, content)
+            ]
+            if matches:
+                statistics[field] = int(matches[-1].group(1))
+
+        return statistics if len(statistics) == len(field_patterns) else None
+
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
     ) -> None:
@@ -2776,6 +2800,7 @@ class AppConfig(GlobalConfig):
 
         failed_tasks = self.parse_maaend_failed_tasks(logs)
         matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
+        pull_count_statistics = self.parse_maaend_pull_count_statistics(logs)
 
         if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
             maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
@@ -2783,6 +2808,8 @@ class AppConfig(GlobalConfig):
         data: Dict[str, Any] = {"maaend_result": maaend_result}
         if has_matrix_flow and matrix_statistics is not None:
             data["matrix_statistics"] = matrix_statistics
+        if pull_count_statistics is not None:
+            data["pull_count_statistics"] = pull_count_statistics
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2929,6 +2956,10 @@ class AppConfig(GlobalConfig):
                 elif key == "matrix_statistics":
                     for skill, weapon in single_data[key].items():
                         data[key][skill] = weapon
+
+                # 抽数是当前资源快照，合并时使用最新一条记录
+                elif key == "pull_count_statistics":
+                    data[key] = single_data[key]
 
                 # 处理理智相关字段 - 使用最后一个文件的值
                 elif key in ["sanity", "sanity_full_at"]:

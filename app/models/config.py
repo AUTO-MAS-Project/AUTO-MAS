@@ -123,7 +123,12 @@ def init_maaend_task_config(config) -> None:
         setattr(
             config,
             f"Task_If{task_name}",
-            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+            ConfigItem(
+                "Task",
+                f"If{task_name}",
+                task_name != "PullCountCalculator",
+                BoolValidator(),
+            ),
         )
 
 
@@ -1848,6 +1853,8 @@ class HSRConfig(ConfigBase):
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
+        self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 游戏启动参数
@@ -3058,6 +3065,10 @@ class GlobalConfig(ConfigBase):
         ## 是否屏蔽模拟器广告
         self.Function_IfBlockAd = ConfigItem(
             "Function", "IfBlockAd", False, BoolValidator()
+        )
+        ## 是否启用匿名遥测
+        self.Function_IfEnableTelemetry = ConfigItem(
+            "Function", "IfEnableTelemetry", True, BoolValidator()
         )
 
         ## Voice ------------------------------------------------------------

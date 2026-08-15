@@ -3,10 +3,12 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
   nativeTheme,
+  Notification,
   screen,
   shell,
   Tray,
@@ -16,7 +18,11 @@ import {
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import {
+  registerInitializationHandlers,
+  cleanupInitializationResources,
+  getLocalApiEndpoint,
+} from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 
@@ -28,6 +34,70 @@ import AdmZip = require('adm-zip')
 initializeLogger()
 
 const logger = getLogger('主进程')
+const STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+M'
+let isStoppingAllTasks = false
+
+interface ApiResult {
+  code?: number
+  message?: string
+}
+
+function showShortcutNotification(title: string, body: string): void {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show()
+  }
+}
+
+async function stopAllTasksByShortcut(): Promise<void> {
+  if (isStoppingAllTasks) {
+    logger.info('全部任务正在停止中，忽略重复快捷键')
+    return
+  }
+
+  isStoppingAllTasks = true
+  logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
+
+  try {
+    const apiUrl = `${getLocalApiEndpoint()}/api/dispatch/stop`
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ taskId: 'ALL' }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`停止请求返回错误: ${response.status}`)
+    }
+
+    const result = (await response.json()) as ApiResult
+    if (result.code !== undefined && result.code !== 200) {
+      throw new Error(result.message || `停止请求失败: ${result.code}`)
+    }
+
+    logger.info('所有任务已停止')
+    showShortcutNotification('AUTO-MAS', '所有任务已停止')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`全局快捷键停止所有任务失败: ${errorMsg}`)
+    showShortcutNotification('AUTO-MAS', `停止所有任务失败: ${errorMsg}`)
+  } finally {
+    isStoppingAllTasks = false
+  }
+}
+
+function registerStopAllTasksShortcut(): void {
+  const registered = globalShortcut.register(STOP_ALL_TASKS_SHORTCUT, () => {
+    void stopAllTasksByShortcut()
+  })
+
+  if (registered) {
+    logger.info(`全局停止任务快捷键已注册: ${STOP_ALL_TASKS_SHORTCUT}`)
+  } else {
+    logger.error(`全局停止任务快捷键注册失败: ${STOP_ALL_TASKS_SHORTCUT}`)
+  }
+}
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -121,6 +191,9 @@ interface AppConfig {
   Update: {
     IfAutoUpdate: boolean
   }
+  Function: {
+    IfEnableTelemetry: boolean
+  }
 
   [key: string]: any
 }
@@ -142,6 +215,9 @@ const defaultConfig: AppConfig = {
   Update: {
     IfAutoUpdate: false,
   },
+  Function: {
+    IfEnableTelemetry: true,
+  },
 }
 
 //加载配置
@@ -149,12 +225,22 @@ function loadConfig(): AppConfig {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    let config = { ...defaultConfig }
 
     if (fs.existsSync(configPath)) {
       const configData = fs.readFileSync(configPath, 'utf8')
-      const config = JSON.parse(configData)
-      return { ...defaultConfig, ...config }
+      config = { ...config, ...JSON.parse(configData) }
     }
+
+    const backendConfigPath = path.join(appRoot, 'config', 'Config.json')
+    if (fs.existsSync(backendConfigPath)) {
+      const backendConfig = JSON.parse(fs.readFileSync(backendConfigPath, 'utf8'))
+      const enabled = backendConfig.Function?.IfEnableTelemetry
+      if (typeof enabled === 'boolean') {
+        config.Function = { ...config.Function, IfEnableTelemetry: enabled }
+      }
+    }
+    return config
   } catch {
     logger.error('加载配置失败')
   }
@@ -320,6 +406,17 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+type WindowActivity = 'visible' | 'background'
+let lastWindowActivity: WindowActivity | null = null
+
+function notifyWindowActivity(activity: WindowActivity) {
+  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+    return
+  }
+
+  lastWindowActivity = activity
+  mainWindow.webContents.send('window-activity-changed', activity)
+}
 
 const TITLE_BAR_HEIGHT = 32
 const RECOVERY_DRAG_HANDLE_WIDTH = 64
@@ -434,6 +531,7 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  lastWindowActivity = null
 
   // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
   let restoreToMaximized = Boolean(config.UI.maximized)
@@ -444,6 +542,7 @@ function createWindow() {
     restoreToMaximized = false
   })
   win.on('restore', () => {
+    notifyWindowActivity('visible')
     if (restoreToMaximized && !win.isMaximized()) {
       win.maximize()
     }
@@ -455,6 +554,9 @@ function createWindow() {
     if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
       logger.info('页面加载完成，窗口已显示')
+    } else {
+      notifyWindowActivity('background')
+      logger.info('页面加载完成，窗口保持后台状态')
     }
   })
 
@@ -601,6 +703,7 @@ function createWindow() {
   })
 
   win.on('minimize', () => {
+    notifyWindowActivity('background')
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.hide()
@@ -611,6 +714,7 @@ function createWindow() {
   })
 
   win.on('show', () => {
+    notifyWindowActivity('visible')
     if (restoreToMaximized && !win.isMaximized() && !win.isMinimized()) {
       win.maximize()
     }
@@ -621,6 +725,7 @@ function createWindow() {
   })
 
   win.on('hide', () => {
+    notifyWindowActivity('background')
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.setSkipTaskbar(true)
@@ -928,6 +1033,18 @@ ipcMain.handle('window-close', () => {
     isQuitting = true
     mainWindow.close()
   }
+})
+
+ipcMain.handle('get-window-activity', () => {
+  if (lastWindowActivity) {
+    return lastWindowActivity
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return 'background' as const
+  }
+
+  return mainWindow.isVisible() && !mainWindow.isMinimized() ? 'visible' : 'background'
 })
 
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
@@ -1272,6 +1389,11 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
       currentConfig.Update = { ...currentConfig.Update, ...backendSettings.Update }
     }
 
+    // 同步遥测开关，供渲染进程在 Sentry 初始化前读取
+    if (backendSettings.Function) {
+      currentConfig.Function = { ...currentConfig.Function, ...backendSettings.Function }
+    }
+
     // 保存到前端配置文件
     saveConfig(currentConfig)
 
@@ -1376,6 +1498,10 @@ app.on('second-instance', () => {
   }
 })
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
 app.on('before-quit', async event => {
   // 只处理一次，避免多重触发
   if (!isQuitting) {
@@ -1471,6 +1597,8 @@ app.whenReady().then(async () => {
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
   logger.info('OK-WW 路径发现处理器已注册')
+
+  registerStopAllTasksShortcut()
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {

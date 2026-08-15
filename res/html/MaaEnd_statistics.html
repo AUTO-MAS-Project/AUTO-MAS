@@ -183,6 +183,24 @@
                 {% endif %}
             </p>
 
+            {% if pull_count_statistics is defined %}
+            <h3>抽数统计</h3>
+            <table>
+                <tr>
+                    <th>当前池可用</th>
+                    <th>下版本池子总计</th>
+                    <th>资源折算</th>
+                    <th>可留到下版本的券</th>
+                </tr>
+                <tr>
+                    <td>{{ pull_count_statistics.current_pool_total }} 抽</td>
+                    <td>{{ pull_count_statistics.next_pool_total }} 抽</td>
+                    <td>{{ pull_count_statistics.resource_pulls }} 抽</td>
+                    <td>{{ pull_count_statistics.carry_over_pulls }} 抽</td>
+                </tr>
+            </table>
+            {% endif %}
+
             {% if matrix_statistics is defined %}
             <h3>基质统计</h3>
             {% if matrix_statistics %}

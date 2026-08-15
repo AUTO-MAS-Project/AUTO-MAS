@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { HistoryIndexItem } from './HistoryIndexItem';
+import type { PullCountStatistics } from './PullCountStatistics';
 export type HistoryData = {
     /**
      * 历史记录索引列表
@@ -20,6 +21,10 @@ export type HistoryData = {
      * 基质统计数据, key为技能组合, value为符合武器名称
      */
     matrix_statistics?: (Record<string, string> | null);
+    /**
+     * MaaEnd 抽数计算统计
+     */
+    pull_count_statistics?: (PullCountStatistics | null);
     /**
      * 报错信息, key为时间戳, value为错误描述
      */

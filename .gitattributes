@@ -1,1 +1,61 @@
-frontend/src/api/** text eol=lf
+# 默认：文本文件使用 LF 换行，并做换行符规范化
+* text=auto eol=lf
+
+# 源码 / 文本类型 —— 强制 LF，入库前统一换行符
+*.py     text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.vue    text eol=lf
+*.js     text eol=lf
+*.jsx    text eol=lf
+*.mjs    text eol=lf
+*.cjs    text eol=lf
+*.css    text eol=lf
+*.scss   text eol=lf
+*.html   text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
+*.md     text eol=lf
+*.svg    text eol=lf
+*.txt    text eol=lf
+*.ini    text eol=lf
+*.cfg    text eol=lf
+*.conf   text eol=lf
+
+# 脚本文件
+*.sh     text eol=lf
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# 环境与锁文件
+*.env    text eol=lf
+.gitignore  text eol=lf
+.prettierrc text eol=lf
+.editorconfig text eol=lf
+*.lock   text eol=lf
+
+# 二进制文件 —— 不做任何换行转换
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.wav    binary
+*.mp3    binary
+*.mp4    binary
+*.onnx   binary
+*.bin    binary
+*.db     binary
+*.sqlite binary
+*.zip    binary
+*.gz     binary
+*.ttf    binary
+*.woff   binary
+*.woff2  binary
+*.exe    binary
+*.dll    binary
+*.pyc    binary

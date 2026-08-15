@@ -24,6 +24,7 @@ import yaml
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 from app.utils import get_logger
+from app.utils.io import write_file
 
 from .run_model import (
     HSRPhase,
@@ -143,19 +144,7 @@ class HSRM7AControl:
             whitelist=effective_whitelist,
             deep_merge_keys=deep_merge_keys,
         )
-        temp_path = config_path.with_name(f"{config_path.name}.tmp")
-        temp_path.write_text(
-            yaml.safe_dump(
-                patched_config,
-                allow_unicode=True,
-                sort_keys=False,
-                default_flow_style=False,
-                width=4096,
-            ),
-            encoding="utf-8",
-            newline="\n",
-        )
-        temp_path.replace(config_path)
+        write_file(config_path, patched_config)
         logger.info(
             f"M7A config.yaml 已写入 MAS 模板字段：{sorted(effective_patch.keys())}"
         )
