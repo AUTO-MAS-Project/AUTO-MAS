@@ -196,7 +196,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"脚本设置任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

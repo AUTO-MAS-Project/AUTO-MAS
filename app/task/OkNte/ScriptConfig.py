@@ -150,7 +150,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"
-        logger.exception(f"OK-NTE GUI 配置任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"OK-NTE GUI 配置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_oknte_process()
         await Config.send_websocket_message(
@@ -163,12 +163,12 @@ class ScriptConfigTask(TaskExecuteBase):
         try:
             await self.oknte_process_manager.kill()
         except Exception as e:
-            logger.exception(f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}")
+            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}")
 
         try:
             await System.kill_process(self.script_exe_path)
         except Exception as e:
-            logger.exception(f"中止 OK-NTE 主进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止 OK-NTE 主进程失败: {e}")
 
         track_exe = str(
             self.script_config.get("Script", "TrackProcessExe") or ""
@@ -181,4 +181,4 @@ class ScriptConfigTask(TaskExecuteBase):
             try:
                 await System.kill_process(Path(track_exe))
             except Exception as e:
-                logger.exception(f"中止 OK-NTE 追踪进程失败: {e}")
+                logger.opt(exception=True).warning(f"中止 OK-NTE 追踪进程失败: {e}")

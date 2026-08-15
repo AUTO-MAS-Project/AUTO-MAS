@@ -20,6 +20,7 @@ import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
@@ -187,6 +188,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 MaaEnd 动态选项
+     * @param requestBody
+     * @returns MaaEndOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<MaaEndOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

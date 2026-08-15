@@ -243,7 +243,7 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.src_exe_path)
 
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -281,14 +281,14 @@ class AutoProxyTask(TaskExecuteBase):
     ):
 
         if e is None:
-            logger.error(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
                 data={"Error": error_message},
             )
         else:
-            logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -314,14 +314,14 @@ class AutoProxyTask(TaskExecuteBase):
             await self.src_process_manager.kill()
             await System.kill_process(self.src_exe_path)
         except Exception as e:
-            logger.exception(f"中止 SRC 进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止 SRC 进程失败: {e}")
         try:
             logger.info("中止模拟器进程")
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
         except Exception as e:
-            logger.exception(f"关闭模拟器失败: {e}")
+            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
     async def set_src(self, emulator_info: DeviceInfo) -> None:
         """配置 SRC 脚本运行参数"""
@@ -503,7 +503,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index")
                 )
             except Exception as e:
-                logger.exception(f"关闭模拟器失败: {e}")
+                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
         del self.src_process_manager
         del self.src_log_monitor
@@ -547,7 +547,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -578,12 +578,12 @@ class AutoProxyTask(TaskExecuteBase):
                 3,
             )
         else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

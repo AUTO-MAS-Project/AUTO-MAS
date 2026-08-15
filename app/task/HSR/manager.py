@@ -224,7 +224,7 @@ class HSRManager(TaskExecuteBase):
                 _restore_path_from_backup(label, source, backup)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{label}: {e}")
-                logger.exception(f"恢复 HSR 外部配置失败：{label}: {e}")
+                logger.opt(exception=True).warning(f"恢复 HSR 外部配置失败：{label}: {e}")
 
         shutil.rmtree(self.temp_path / "ExternalConfig", ignore_errors=True)
         try:
@@ -584,7 +584,7 @@ class HSRManager(TaskExecuteBase):
         self._append_log("开始 HSR 配置检查")
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"HSR 配置检查未通过：{self.check_result}")
+            logger.warning(f"HSR 配置检查未通过：{self.check_result}")
             self._append_log(f"HSR 配置检查未通过：{self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -646,7 +646,7 @@ class HSRManager(TaskExecuteBase):
                     user_log.status = f"HSR 执行异常: {e}"
                     user_log.content.append(str(e))
                     user_errors.append(f"用户「{user_item.name}」执行异常：{e}")
-                    logger.exception(f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}")
+                    logger.opt(exception=True).warning(f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}")
                     self._append_log(
                         f"用户「{user_item.name}」执行异常，继续处理后续用户：{e}"
                     )
@@ -655,7 +655,7 @@ class HSRManager(TaskExecuteBase):
                 if proxy is not None and proxy.crashed:
                     error_message = proxy.error_message or "HSR 用户任务异常"
                     user_errors.append(f"用户「{user_item.name}」执行异常：{error_message}")
-                    logger.error(
+                    logger.warning(
                         f"HSR 用户「{user_item.name}」执行异常，继续后续用户："
                         f"{error_message}"
                     )
@@ -806,7 +806,7 @@ class HSRManager(TaskExecuteBase):
             self._append_log("HSR 外部脚本配置已恢复")
             return ""
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"HSR 外部脚本配置恢复失败：{e}")
+            logger.opt(exception=True).warning(f"HSR 外部脚本配置恢复失败：{e}")
             self._append_log(f"HSR 外部脚本配置恢复失败：{e}")
             return f"HSR 外部脚本配置恢复失败：{e}"
 
@@ -877,7 +877,7 @@ class HSRManager(TaskExecuteBase):
                 10,
             )
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"推送 HSR 系统通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送 HSR 系统通知时出现异常: {e}")
             await self._send_notification_error(
                 f"推送 HSR 系统通知时出现异常: {e}"
             )
@@ -887,7 +887,7 @@ class HSRManager(TaskExecuteBase):
             if has_game_sign_summary:
                 mark_task_game_sign_summary_consumed(self.task_info)
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"推送 HSR 代理结果时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")
             await self._send_notification_error(
                 f"推送 HSR 代理结果时出现异常: {e}"
             )
@@ -912,7 +912,7 @@ class HSRManager(TaskExecuteBase):
             await self._stop_external_processes()
         except Exception as e:  # noqa: BLE001
             msg = f"停止 SRA/M7A 外部进程失败：{e}"
-            logger.exception(msg)
+            logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)
 
@@ -920,7 +920,7 @@ class HSRManager(TaskExecuteBase):
             await self._close_game_if_needed()
         except Exception as e:  # noqa: BLE001
             msg = f"关闭 HSR 游戏进程失败：{e}"
-            logger.exception(msg)
+            logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)
 
@@ -934,7 +934,7 @@ class HSRManager(TaskExecuteBase):
                 )
         except Exception as e:  # noqa: BLE001
             msg = f"恢复星铁分辨率注册表失败：{e}"
-            logger.exception(msg)
+            logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)
 
@@ -963,7 +963,7 @@ class HSRManager(TaskExecuteBase):
                     await self._sync_manual_review_user_data()
             except Exception as e:  # noqa: BLE001
                 msg = f"HSR 已完成模块状态写回失败：{e}"
-                logger.exception(msg)
+                logger.opt(exception=True).warning(msg)
                 self._append_log(msg)
                 final_errors.append(msg)
             await self._persist_user_logs()
@@ -983,7 +983,7 @@ class HSRManager(TaskExecuteBase):
                 await self._sync_manual_review_user_data()
         except Exception as e:
             self.script_info.status = "异常"
-            logger.exception(f"HSR 用户数据写回失败：{e}")
+            logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
             self._append_log(f"HSR 用户数据写回失败：{e}")
             return f"HSR 用户数据写回失败：{e}"
 
@@ -1000,7 +1000,7 @@ class HSRManager(TaskExecuteBase):
 
         self.crashed = True
         self.script_info.status = "异常"
-        logger.exception(f"HSR 任务出现异常：{e}")
+        logger.opt(exception=True).warning(f"HSR 任务出现异常：{e}")
         self._append_log(f"HSR 任务出现异常：{e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,

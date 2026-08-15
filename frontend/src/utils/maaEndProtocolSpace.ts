@@ -23,17 +23,7 @@ export const REWARD_OPTIONS = [
 
 export type RewardSetOption = (typeof REWARD_OPTIONS)[number]['value']
 
-export const AUTO_ESSENCE_LOCATION_OPTIONS = [
-  { label: '枢纽区', value: 'VFTheHub' },
-  { label: '源石研究园', value: 'VFOriginiumSciencePark' },
-  { label: '矿脉源区', value: 'VFOriginLodespring' },
-  { label: '供能高地', value: 'VFPowerPlateau' },
-  { label: '武陵城区', value: 'WLWulingCity' },
-  { label: '清波寨', value: 'WLQingboStockade' },
-  { label: '首墩', value: 'WLMarkerStone' },
-] as const
-
-export type AutoEssenceLocation = (typeof AUTO_ESSENCE_LOCATION_OPTIONS)[number]['value']
+export type AutoEssenceLocation = string
 
 export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
   OperatorProgression: [
@@ -96,6 +86,7 @@ export const MAAEND_TASK_GROUPS = [
       { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
       { name: 'AutoCollect', label: '🧺 自动采集' },
+      { name: 'TrialOfSwordmancy', label: '🗡️ 选剑演武' },
     ],
   },
   {
@@ -141,12 +132,7 @@ export interface MaaEndTaskSwitchGroup {
   tasks: MaaEndTaskSwitchItem[]
 }
 
-// 保留旧别名，避免历史引用爆炸
 export type ProtocolSpaceConfig = MaaEndSanityConfig
-
-export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
-  'Win32-Front': MAAEND_TASK_GROUPS.flatMap(group => group.tasks.map(task => task.name)),
-}
 
 export const PROTOCOL_SPACE_TASK_FIELD_MAP: Record<ProtocolSpaceTab, CurrentTaskField> = {
   OperatorProgression: 'OperatorProgression',
@@ -167,10 +153,6 @@ export const PROTOCOL_SPACE_TASK_LABEL_MAP = Object.fromEntries(
     .flat()
     .map(option => [option.value, option.label])
 ) as Record<ProtocolSpaceTaskValue, string>
-
-export const AUTO_ESSENCE_LOCATION_LABEL_MAP = Object.fromEntries(
-  AUTO_ESSENCE_LOCATION_OPTIONS.map(option => [option.value, option.label])
-) as Record<AutoEssenceLocation, string>
 
 export const PROTOCOL_SPACE_TASK_TITLE_MAP: Record<ProtocolSpaceTab, string> = {
   OperatorProgression: '干员养成任务',
@@ -194,7 +176,7 @@ export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
   WeaponProgression: 'WeaponEXP',
   CrisisDrills: 'AdvancedProgression1',
   RewardsSetOption: 'RewardsSetA',
-  AutoEssenceSpecifiedLocation: 'VFTheHub',
+  AutoEssenceSpecifiedLocation: '',
 })
 
 export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
@@ -224,7 +206,7 @@ export const isProtocolSpaceRewardEnabled = (config: MaaEndSanityConfig): boolea
 export const getSanityTaskDisplayValue = (rawConfig?: Partial<MaaEndSanityConfig> | null) => {
   const config = normalizeMaaEndSanityConfig(rawConfig)
   if (config.SanityTaskType === 'Essence') {
-    return AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation]
+    return config.AutoEssenceSpecifiedLocation
   }
   return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(config)]
 }
@@ -239,9 +221,6 @@ export const normalizeMaaEndSanityConfig = (
 
   if (!SANITY_TASK_TYPE_LABEL_MAP[config.SanityTaskType]) {
     config.SanityTaskType = 'OperatorProgression'
-  }
-  if (!AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation]) {
-    config.AutoEssenceSpecifiedLocation = 'VFTheHub'
   }
   if (!REWARD_LABEL_MAP[config.RewardsSetOption]) {
     config.RewardsSetOption = 'RewardsSetA'

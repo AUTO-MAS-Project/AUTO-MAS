@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
+  exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
   openLogWindow: () => ipcRenderer.invoke('log:openWindow'),

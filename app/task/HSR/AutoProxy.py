@@ -466,7 +466,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送 HSR 用户统计通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -1565,7 +1565,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.crashed = True
         self.error_message = str(e)
         self._mark_current_user_abnormal(f"HSR 用户任务异常: {e}")
-        logger.exception(f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}")
+        logger.opt(exception=True).warning(f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

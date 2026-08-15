@@ -516,7 +516,7 @@ class AutoProxyTask(TaskExecuteBase):
                 await asyncio.sleep(3)
                 break
 
-            logger.error(
+            logger.warning(
                 f"用户 {self.cur_user_item.name} - OK-NTE 代理异常: {self.cur_user_log.status}"
             )
             self.script_info.log = (
@@ -682,7 +682,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.cur_user_config,
                 )
             except Exception as e:
-                logger.exception(f"推送通知时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -725,7 +725,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         if hasattr(self, "cur_user_log"):
             self.cur_user_log.status = f"OK-NTE 运行异常: {e}"
-        logger.exception(f"OK-NTE 自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"OK-NTE 自动代理任务出现异常: {e}")
         if hasattr(self, "wait_event"):
             self.wait_event.set()
         await Config.send_websocket_message(
@@ -758,11 +758,11 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             await self.oknte_process_manager.kill()
         except Exception as e:
-            logger.exception(f"通过进程管理器中止 OK-NTE 进程失败: {e}")
+            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-NTE 进程失败: {e}")
         try:
             await System.kill_process(self.script_exe_path)
         except Exception as e:
-            logger.exception(f"中止 OK-NTE 主进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止 OK-NTE 主进程失败: {e}")
         track_exe = str(self.script_config.get("Script", "TrackProcessExe") or "").strip()
         if not track_exe:
             track_exe = str(self.script_root_path / "data/apps/ok-nte/python/pythonw.exe")
@@ -770,7 +770,7 @@ class AutoProxyTask(TaskExecuteBase):
             try:
                 await System.kill_process(Path(track_exe))
             except Exception as e:
-                logger.exception(f"中止 OK-NTE 追踪进程失败: {e}")
+                logger.opt(exception=True).warning(f"中止 OK-NTE 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
@@ -783,7 +783,7 @@ class AutoProxyTask(TaskExecuteBase):
                 if gp.is_file():
                     await System.kill_process(gp)
         except Exception as e:
-            logger.exception(f"关闭游戏进程失败: {e}")
+            logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 OK-NTE；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
