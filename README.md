@@ -135,7 +135,7 @@ We thank the following contributors for their work on this project
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=AUTO-MAS-Project/AUTO-MAS&type=Date)](https://star-history.com/#AUTO-MAS-Project/AUTO-MAS&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=AUTO-MAS-Project/AUTO-MAS&type=Date)](https://star-history.dera.page/#AUTO-MAS-Project/AUTO-MAS&Date)
 
 ## 官方社区 / Official Community
 
