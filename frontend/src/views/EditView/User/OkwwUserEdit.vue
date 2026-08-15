@@ -455,7 +455,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -486,6 +486,7 @@ const okwwConfigLoading = ref(false)
 const okwwSubscriptionId = ref<string | null>(null)
 const okwwWebsocketId = ref<string | null>(null)
 const showOkwwConfigMask = ref(false)
+const stoppingOkwwConfig = ref(false)
 let okwwConfigTimeout: number | null = null
 
 const resourceOptions = [
@@ -588,9 +589,35 @@ const clearOkwwConfigSession = () => {
   }
 }
 
-const handleCancel = () => {
-  clearOkwwConfigSession()
-  router.push('/scripts')
+const stopOkwwConfigSession = async (keepOnFailure = false): Promise<boolean> => {
+  const taskId = okwwWebsocketId.value
+  if (!taskId) {
+    clearOkwwConfigSession()
+    return true
+  }
+  if (stoppingOkwwConfig.value) return false
+
+  stoppingOkwwConfig.value = true
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    if (response.code !== 200) {
+      throw new Error(response.message || '停止 ok-ww 设置失败')
+    }
+    clearOkwwConfigSession()
+    return true
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    if (keepOnFailure) return false
+    clearOkwwConfigSession()
+    return false
+  } finally {
+    stoppingOkwwConfig.value = false
+  }
+}
+
+const handleCancel = async () => {
+  await stopOkwwConfigSession()
+  await router.push('/scripts')
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
@@ -683,14 +710,16 @@ const handleOkwwConfig = async () => {
     }
 
     showOkwwConfigMask.value = true
+    okwwWebsocketId.value = response.taskId
     const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
       if (wsMessage.type === 'error') {
         message.error(`ok-ww 设置连接失败: ${String(wsMessage.data)}`)
-        clearOkwwConfigSession()
+        void stopOkwwConfigSession()
         return
       }
       if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
         message.error(`ok-ww 设置失败: ${String(wsMessage.data.Error)}`)
+        void stopOkwwConfigSession()
         return
       }
       if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
@@ -698,7 +727,6 @@ const handleOkwwConfig = async () => {
       }
     })
     okwwSubscriptionId.value = subscriptionId
-    okwwWebsocketId.value = response.taskId
     message.success(`已打开${formData.Info.Mode === '简洁' ? '共享' : '当前用户'}的 ok-ww 设置`)
     okwwConfigTimeout = window.setTimeout(handleSaveOkwwConfig, 30 * 60 * 1000)
   } catch (e) {
@@ -712,18 +740,10 @@ const handleOkwwConfig = async () => {
 
 const handleSaveOkwwConfig = async () => {
   if (!okwwWebsocketId.value) return
-  try {
-    const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: okwwWebsocketId.value,
-    })
-    if (response.code !== 200) {
-      throw new Error(response.message || '保存 ok-ww 设置失败')
-    }
-    clearOkwwConfigSession()
+  if (await stopOkwwConfigSession(true)) {
     message.success('ok-ww 设置已保存')
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.error(e instanceof Error ? e.message : '保存 ok-ww 设置失败')
+  } else {
+    message.error('保存 ok-ww 设置失败')
   }
 }
 
@@ -776,6 +796,10 @@ onMounted(async () => {
   if (await loadScriptInfo()) {
     await loadUser()
   }
+})
+
+onUnmounted(() => {
+  void stopOkwwConfigSession()
 })
 </script>
 
