@@ -116,7 +116,7 @@ class ScriptConfigTask(TaskExecuteBase):
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
         self.cur_user_item.status = "异常"
-        logger.exception(f"OK-WW 设置任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"OK-WW 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
         await Config.send_websocket_message(
@@ -129,10 +129,10 @@ class ScriptConfigTask(TaskExecuteBase):
         try:
             await self.process_manager.kill()
         except Exception as e:
-            logger.exception(f"通过进程管理器中止 OK-WW 失败: {e}")
+            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-WW 失败: {e}")
 
         for path in (self.exe_path, self.root_path / _OKWW_REL_PYTHONW):
             try:
                 await System.kill_process(path)
             except Exception as e:
-                logger.exception(f"中止 OK-WW 进程失败 ({path}): {e}")
+                logger.opt(exception=True).warning(f"中止 OK-WW 进程失败 ({path}): {e}")

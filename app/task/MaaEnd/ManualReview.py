@@ -37,6 +37,7 @@ from app.utils import decode_bytes, get_logger, ProcessManager, is_process_runni
 from app.utils.constants import UTC4
 from app.utils.io import read_file, write_file
 from .ScriptConfig import normalize_maaend_config
+from .resource_loader import load_maaend_task_i18n
 from .tools import login, replace_account_switch_task
 
 logger = get_logger("MaaEnd 人工检查")
@@ -100,9 +101,9 @@ class ManualReviewTask(TaskExecuteBase):
         if self.emulator_manager is None:
             self.game_process_manager = ProcessManager()
         self.maaend_process_manager = ProcessManager()
-        maaend_root_path = Path(self.script_config.get("Info", "Path"))
-        self.maaend_exe_path = maaend_root_path / "MaaEnd.exe"
-        self.maaend_set_path = maaend_root_path / "config"
+        self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
+        self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
+        self.maaend_set_path = self.maaend_root_path / "config"
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
 
@@ -167,7 +168,7 @@ class ManualReviewTask(TaskExecuteBase):
                     )
             except Exception as e:
 
-                logger.exception(f"用户 {self.cur_user_item.user_id} 游戏启动失败: {e}")
+                logger.opt(exception=True).warning(f"用户 {self.cur_user_item.user_id} 游戏启动失败: {e}")
                 self.script_info.log = (
                     f"正在启动模拟器\n模拟器启动失败: {e}\n正在中止相关程序"
                 )
@@ -208,7 +209,7 @@ class ManualReviewTask(TaskExecuteBase):
                 self.run_book["SignIn"] = True
                 break
             except Exception as e:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败: {e}"
                 )
                 self.script_info.log = "正在启动模拟器\n模拟器已启动，正在登录「明日方舟：终末地」...\n「明日方舟：终末地」登录失败\n正在中止相关程序"
@@ -239,7 +240,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Game", "EmulatorIndex"), True
                     )
             except Exception as e:
-                logger.exception(f"模拟器显示失败: {e}")
+                logger.opt(exception=True).warning(f"模拟器显示失败: {e}")
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -301,8 +302,15 @@ class ManualReviewTask(TaskExecuteBase):
                     controller_type=str(
                         self.script_config.get("Game", "ControllerType")
                     ),
-                    template_set=local_config,
+                    fallback_set=local_config,
                 )
+                settings = maaend_set["settings"]
+                task_i18n = await asyncio.to_thread(
+                    load_maaend_task_i18n,
+                    self.maaend_root_path,
+                    str(settings["language"]),
+                )
+                account_switch_task_name = task_i18n["AccountSwitch"]
                 maaend_instance = maaend_set["instances"][0]
                 maaend_instance["tasks"] = []
                 replace_account_switch_task(
@@ -343,9 +351,9 @@ class ManualReviewTask(TaskExecuteBase):
                     if content
                 )
                 self.script_info.log = log
-                if "任务失败: AccountSwitch" in log:
+                if f"任务失败: {account_switch_task_name}" in log:
                     raise RuntimeError("MAAEND 账号切换失败")
-                if "任务完成: AccountSwitch" not in log:
+                if f"任务完成: {account_switch_task_name}" not in log:
                     raise RuntimeError("MAAEND 账号切换进程异常退出")
             finally:
                 await self.maaend_process_manager.kill()
@@ -373,7 +381,7 @@ class ManualReviewTask(TaskExecuteBase):
             await self.maaend_process_manager.kill()
             await System.kill_process(self.maaend_exe_path)
         except Exception as e:
-            logger.exception(f"关闭 MaaEnd 失败: {e}")
+            logger.opt(exception=True).warning(f"关闭 MaaEnd 失败: {e}")
         try:
             if self.emulator_manager is None:
                 await self.game_process_manager.kill()
@@ -383,7 +391,7 @@ class ManualReviewTask(TaskExecuteBase):
                     self.script_config.get("Game", "EmulatorIndex")
                 )
         except Exception as e:
-            logger.exception(f"关闭游戏失败: {e}")
+            logger.opt(exception=True).warning(f"关闭游戏失败: {e}")
 
     async def final_task(self):
 
@@ -403,7 +411,7 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"人工排查任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"人工排查任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

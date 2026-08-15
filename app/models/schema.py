@@ -76,6 +76,12 @@ class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
 
 
+class MaaEndOptionsOut(OutBase):
+    controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
+    controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
+    essenceLocations: List[ComboBoxItem] = Field(..., description="MaaEnd 基质刷取地点选项")
+
+
 class GetStageIn(BaseModel):
     type: Literal[
         "User",
@@ -902,17 +908,9 @@ class MaaEndUserConfig_Task(BaseModel):
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
         default=None, description="奖励组选项"
     )
-    AutoEssenceSpecifiedLocation: Optional[
-        Literal[
-            "VFTheHub",
-            "VFOriginiumSciencePark",
-            "VFOriginLodespring",
-            "VFPowerPlateau",
-            "WLWulingCity",
-            "WLQingboStockade",
-            "WLMarkerStone",
-        ]
-    ] = Field(default=None, description="基质刷取指定地点")
+    AutoEssenceSpecifiedLocation: Optional[str] = Field(
+        default=None, description="基质刷取指定地点"
+    )
     IfSanity: Optional[bool] = Field(default=None, description="理智任务")
     IfAutoUseSpMedication: Optional[bool] = Field(
         default=None, description="应急理智加强剂"
@@ -931,6 +929,7 @@ class MaaEndUserConfig_Task(BaseModel):
         default=None, description="环境监测"
     )
     IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(
         default=None, description="资源回收站"
@@ -985,9 +984,7 @@ class MaaEndConfig_Run(BaseModel):
 
 
 class MaaEndConfig_Game(BaseModel):
-    ControllerType: Optional[Literal["Win32-Front", "ADB"]] = Field(
-        default=None, description="控制器类型"
-    )
+    ControllerType: Optional[str] = Field(default=None, description="控制器类型")
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")

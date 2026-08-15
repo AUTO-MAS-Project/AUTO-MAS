@@ -634,7 +634,7 @@ async def run_sra_single_task(
         raise
 
     except Exception as e:
-        logger.exception(f"SRA 单任务 {task_class} 执行失败：{e}")
+        logger.opt(exception=True).warning(f"SRA 单任务 {task_class} 执行失败：{e}")
         return SRACommandResult(
             task_class=task_class,
             config_path=str(config_path),
@@ -716,7 +716,7 @@ async def run_sra_config(
         await registry.terminate_current_process()
         raise
     except Exception as exc:  # noqa: BLE001
-        logger.exception(f"SRA 原生配置执行失败：{exc}")
+        logger.opt(exception=True).warning(f"SRA 原生配置执行失败：{exc}")
         return SRACommandResult(
             task_class="run",
             config_path=str(config_path),

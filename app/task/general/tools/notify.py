@@ -135,7 +135,7 @@ async def push_notification(
                         user_config.get("Notify", "ToAddress"),
                     )
                 else:
-                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
             # 发送ServerChan通知
             if user_config.get("Notify", "IfServerChan"):
@@ -146,7 +146,7 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.error(
+                    logger.warning(
                         "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                     )
 

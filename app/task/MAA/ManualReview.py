@@ -144,7 +144,7 @@ class ManualReviewTask(TaskExecuteBase):
                 )
             except Exception as e:
 
-                logger.exception(
+                logger.opt(exception=True).warning(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
                 self.script_info.log = (
@@ -155,7 +155,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -196,7 +196,7 @@ class ManualReviewTask(TaskExecuteBase):
                 break
             else:
 
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_item.user_id} - MAA进程异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -207,7 +207,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.maa_exe_path)
 
                 uid = str(uuid.uuid4())
@@ -233,7 +233,7 @@ class ManualReviewTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index"), True
                 )
             except Exception as e:
-                logger.exception(f"模拟器显示失败: {e}")
+                logger.opt(exception=True).warning(f"模拟器显示失败: {e}")
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -455,7 +455,7 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"人工排查任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"人工排查任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
