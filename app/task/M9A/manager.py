@@ -215,7 +215,7 @@ class M9AManager(TaskExecuteBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"未通过配置检查: {self.check_result}")
+            logger.warning(f"未通过配置检查: {self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -353,7 +353,7 @@ class M9AManager(TaskExecuteBase):
                 if has_game_sign_summary:
                     mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
-                logger.exception(f"推送代理结果时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -403,7 +403,7 @@ class M9AManager(TaskExecuteBase):
             try:
                 await Notify.push_plyer(update_title, update_message, update_message, 10)
             except Exception as e:
-                logger.exception(f"版本更新桌面通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新桌面通知发送失败: {e}")
 
             update_result = {
                 "title": update_title,
@@ -419,7 +419,7 @@ class M9AManager(TaskExecuteBase):
                 await push_version_update(update_title, update_result)
                 logger.info(f"已发送版本更新通知: {update_message}")
             except Exception as e:
-                logger.exception(f"版本更新通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新通知发送失败: {e}")
 
         elif not getattr(self.script_info, '_m9a_update_success', False) and self._virtual_user_old_version:
             err_log = getattr(self.script_info, '_m9a_err_log', [])
@@ -445,7 +445,7 @@ class M9AManager(TaskExecuteBase):
             try:
                 await Notify.push_plyer(fail_title, fail_message, fail_message, 10)
             except Exception as e:
-                logger.exception(f"版本更新失败桌面通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新失败桌面通知发送失败: {e}")
 
             fail_message = f"更新失败（{virtual_status}），当前版本: v{self._virtual_user_old_version}"
             fail_result = {
@@ -461,13 +461,13 @@ class M9AManager(TaskExecuteBase):
             try:
                 await push_version_update(fail_title, fail_result)
             except Exception as e:
-                logger.exception(f"版本更新失败通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新失败通知发送失败: {e}")
             logger.warning(f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）")
 
     async def on_crash(self, e: Exception):
 
         self.script_info.status = "异常"
-        logger.exception(f"M9A任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"M9A任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

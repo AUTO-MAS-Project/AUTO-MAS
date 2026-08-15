@@ -154,7 +154,7 @@ class MaaEndManager(TaskExecuteBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"未通过配置检查: {self.check_result}")
+            logger.warning(f"未通过配置检查: {self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -236,7 +236,7 @@ class MaaEndManager(TaskExecuteBase):
                 if has_game_sign_summary:
                     mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
-                logger.exception(f"推送代理结果时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -253,7 +253,7 @@ class MaaEndManager(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
-        logger.exception(f"MaaEnd任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

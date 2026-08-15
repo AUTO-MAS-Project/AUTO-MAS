@@ -317,7 +317,7 @@ class OkwwManager(TaskExecuteBase):
                     if has_game_sign_summary:
                         mark_task_game_sign_summary_consumed(self.task_info)
                 except Exception as e:
-                    logger.exception(f"推送代理结果时出现异常: {e}")
+                    logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
@@ -330,7 +330,7 @@ class OkwwManager(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
-        logger.exception(f"OK-WW任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"OK-WW任务出现异常: {e}")
         script_uid = uuid.UUID(self.script_info.script_id)
 
         await self._restore_script_config_from_temp()
@@ -347,7 +347,7 @@ class OkwwManager(TaskExecuteBase):
                     await self.user_config.toDict()
                 )
         except Exception:
-            logger.exception("on_crash 写回 UserConfig 失败，放弃本次状态变更")
+            logger.opt(exception=True).warning("on_crash 写回 UserConfig 失败，放弃本次状态变更")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

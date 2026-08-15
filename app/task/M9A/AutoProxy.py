@@ -208,7 +208,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     self.emulator_opened = True
             except Exception as e:
-                logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -224,7 +224,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -240,7 +240,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index"), False
                     )
                 except Exception as e:
-                    logger.exception(f"模拟器隐藏失败: {e}")
+                    logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
@@ -258,7 +258,7 @@ class AutoProxyTask(TaskExecuteBase):
             
             # 检查 M9A 进程是否还在运行
             if not await self.m9a_process_manager.is_running():
-                logger.error("M9A 进程启动后立即退出，可能是 ADB 连接或模拟器问题")
+                logger.warning("M9A 进程启动后立即退出，可能是 ADB 连接或模拟器问题")
                 raise RuntimeError("M9A 进程启动失败，请检查模拟器和 ADB 连接")
             
             logger.info("M9A 进程正常运行中...")
@@ -287,7 +287,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 break
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = (
@@ -303,7 +303,7 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                         self.emulator_opened = False
                     except Exception as e:
-                        logger.exception(f"关闭模拟器失败: {e}")
+                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.m9a_exe_path)
                 self.m9a_started = False
 
@@ -333,7 +333,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
             except Exception as e:
                 error = f"任务队列 JSON 解析失败: {e}"
-                logger.error(error)
+                logger.warning(error)
                 return [], error
 
         if not isinstance(queue, list):
@@ -460,7 +460,7 @@ class AutoProxyTask(TaskExecuteBase):
                     account=account
                 )
         except Exception as e:
-            logger.error(f"构建 M9A 配置失败: {e}")
+            logger.warning(f"构建 M9A 配置失败: {e}")
             raise
 
         # 保存配置到 M9A 目录
@@ -732,7 +732,7 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             task_details_text = self._build_attempt_task_details(user_log_records)
         except Exception as e:
-            logger.exception(f"日志分析失败: {e}")
+            logger.opt(exception=True).warning(f"日志分析失败: {e}")
         statistics["task_details"] = task_details_text
 
         # 根据运行结果更新用户状态
@@ -772,7 +772,7 @@ class AutoProxyTask(TaskExecuteBase):
                 # 未检测到正常完成标志，置为异常
                 self.cur_user_item.status = "异常"
                 logger.warning(f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}")
-                logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+                logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
 
         try:
             await push_notification(
@@ -782,7 +782,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -1249,7 +1249,7 @@ class AutoProxyTask(TaskExecuteBase):
                 analysis = M9ALogAnalyzer.parse_lines(record["content"])
                 detail_text = M9ALogAnalyzer.build_notification_text(analysis)
             except Exception as e:
-                logger.exception(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
+                logger.opt(exception=True).warning(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
                 detail_text = ""
 
             if not multiple_attempts:
@@ -1265,7 +1265,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

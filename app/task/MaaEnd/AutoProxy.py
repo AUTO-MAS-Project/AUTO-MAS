@@ -338,12 +338,12 @@ class AutoProxyTask(TaskExecuteBase):
                 if await self.maaend_process_manager.minimize_window():
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
-                    logger.error("静默模式: 隐藏 MaaEnd 窗口失败")
+                    logger.warning("静默模式: 隐藏 MaaEnd 窗口失败")
             if self.emulator_manager is None:
                 if await self.game_process_manager.activate_window():
                     logger.success("前置 Endfield 窗口成功")
                 else:
-                    logger.error("前置 Endfield 窗口失败")
+                    logger.warning("前置 Endfield 窗口失败")
 
             await asyncio.sleep(1)
             if isinstance(
@@ -398,7 +398,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning("MaaEnd 更新后已自动重试一次，跳过后续重试")
                     break
 
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -429,14 +429,14 @@ class AutoProxyTask(TaskExecuteBase):
     ):
 
         if e is None:
-            logger.error(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
                 data={"Error": error_message},
             )
         else:
-            logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -462,7 +462,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.maaend_process_manager.kill()
             await System.kill_process(self.maaend_exe_path)
         except Exception as e:
-            logger.exception(f"中止 MaaEnd 进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         try:
             if self.emulator_manager is None:
                 logger.info("中止终末地进程")
@@ -474,7 +474,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Game", "EmulatorIndex")
                 )
         except Exception as e:
-            logger.exception(f"关闭模拟器失败: {e}")
+            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
@@ -905,7 +905,7 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.maaend_process_manager.kill()
                 await System.kill_process(self.maaend_exe_path)
             except Exception as e:
-                logger.exception(f"中止 MaaEnd 进程失败: {e}")
+                logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         else:
             await self.kill_managed_process()
 
@@ -964,7 +964,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.cur_user_config,
                 )
             except Exception as e:
-                logger.exception(f"推送通知时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -1000,12 +1000,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "MaaEnd 正在更新"
         else:
             await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

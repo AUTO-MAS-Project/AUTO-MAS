@@ -327,7 +327,7 @@ class M9ATaskLoader:
             return
 
         if not self.tasks_dir.exists():
-            logger.error(f"任务目录不存在：{self.tasks_dir}")
+            logger.warning(f"任务目录不存在：{self.tasks_dir}")
             return
 
         for json_file in self.tasks_dir.glob("*.json"):
