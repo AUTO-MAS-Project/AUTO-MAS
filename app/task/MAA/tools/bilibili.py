@@ -29,7 +29,7 @@ from app.utils.io import read_file, write_file
 async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
     """向MAA写入Bilibili协议相关任务"""
 
-    data: Any = read_file(maa_tasks_path)
+    data: Any = read_file(maa_tasks_path, format=".json5")
     if if_agree and Config.get("Function", "IfAgreeBilibili"):
         data["BilibiliAgreement_AUTO"] = {
             "algorithm": "OcrDetect",
