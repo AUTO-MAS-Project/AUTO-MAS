@@ -344,7 +344,7 @@ async def _send_to_user_channels(
 
     if user_config.get("Notify", "IfSendMail"):
         if not user_config.get("Notify", "ToAddress"):
-            logger.error("用户邮箱地址为空，无法发送邮件通知")
+            logger.warning("用户邮箱地址为空，无法发送邮件通知")
         else:
             await _safe_send_channel(
                 "用户邮件",
@@ -355,7 +355,7 @@ async def _send_to_user_channels(
 
     if user_config.get("Notify", "IfServerChan"):
         if not user_config.get("Notify", "ServerChanKey"):
-            logger.error("用户 ServerChan 密钥为空，无法发送通知")
+            logger.warning("用户 ServerChan 密钥为空，无法发送通知")
         else:
             await _safe_send_channel(
                 "用户 ServerChan",

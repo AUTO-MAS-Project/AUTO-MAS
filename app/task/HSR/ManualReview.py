@@ -281,7 +281,7 @@ class HSRManualReviewTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         if self._current_user_log is not None:
             self._current_user_log.status = f"HSR 人工排查异常: {e}"
-        logger.exception(f"HSR 用户「{self.cur_user_item.name}」人工排查异常：{e}")
+        logger.opt(exception=True).warning(f"HSR 用户「{self.cur_user_item.name}」人工排查异常：{e}")
 
         try:
             await self.cur_user_config.set("Data", "IfPassCheck", False)

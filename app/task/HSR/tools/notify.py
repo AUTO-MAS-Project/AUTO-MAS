@@ -116,7 +116,7 @@ async def push_notification(
                         user_config.get("Notify", "ToAddress"),
                     )
                 else:
-                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
             if user_config.get("Notify", "IfServerChan"):
                 if user_config.get("Notify", "ServerChanKey"):
@@ -126,7 +126,7 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.error("用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知")
+                    logger.warning("用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知")
 
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(

@@ -430,7 +430,7 @@ class AutoProxyTask(TaskExecuteBase):
                 await asyncio.sleep(3)
                 break
 
-            logger.error(
+            logger.warning(
                 f"用户 {self.cur_user_item.name} - OK-WW 代理异常: {self.cur_user_log.status}"
             )
             self.script_info.log = (
@@ -556,7 +556,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         if hasattr(self, "cur_user_log"):
             self.cur_user_log.status = f"OK-WW 运行异常: {e}"
-        logger.exception(f"OK-WW 自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"OK-WW 自动代理任务出现异常: {e}")
         if hasattr(self, "wait_event"):
             self.wait_event.set()
         await Config.send_websocket_message(
@@ -600,16 +600,16 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             await self.okww_process_manager.kill()
         except Exception as e:
-            logger.exception(f"通过进程管理器中止 OK-WW 进程失败: {e}")
+            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-WW 进程失败: {e}")
         try:
             await System.kill_process(self.script_exe_path)
         except Exception as e:
-            logger.exception(f"中止 OK-WW 主进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
         track_exe = self.script_root_path / _OKWW_REL_PYTHONW
         try:
             await System.kill_process(track_exe)
         except Exception as e:
-            logger.exception(f"中止 OK-WW 追踪进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
@@ -625,11 +625,11 @@ class AutoProxyTask(TaskExecuteBase):
             try:
                 await self.game_manager.kill()
             except Exception as e:
-                logger.exception(f"通过进程管理器关闭鸣潮客户端失败: {e}")
+                logger.opt(exception=True).warning(f"通过进程管理器关闭鸣潮客户端失败: {e}")
         try:
             await System.kill_process(self.game_process_path)
         except Exception as e:
-            logger.exception(f"兜底强杀鸣潮客户端失败: {e}")
+            logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏"""
