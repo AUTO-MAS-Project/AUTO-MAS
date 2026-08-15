@@ -263,9 +263,16 @@ class GeneralManager(TaskExecuteBase):
                 self.task_info, self.script_info.result
             )
             has_game_sign_summary = task_result != self.script_info.result
-            # 聚合各用户采集的推送日志：每条进程信息独占一行，不附加用户名
+            # 聚合各用户采集的推送日志：每条进程信息独占一行，不附加用户名。
+            # 「失败」类型的条目仅在本次任务存在未完成用户时纳入报告，
+            # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
+            has_uncompleted = len(error_user) + len(wait_user) > 0
             push_log_text = "\n".join(
-                "\n".join(u.push_log)
+                "\n".join(
+                    text
+                    for log_type, text in u.push_log
+                    if log_type != "失败" or has_uncompleted
+                )
                 for u in self.script_info.user_list
                 if u.push_log
             )

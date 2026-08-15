@@ -487,7 +487,7 @@
             <h3>
               推送配置
               <a-tooltip
-                title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式：字符串切割（关键字掐头去尾）、表达式（匹配+提取）、多行聚合（跨行窗口+提取拼接）。可添加多条规则，每条规则独立执行。"
+                title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，可添加多条规则，每条规则独立执行，统一推送。"
               >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
@@ -513,28 +513,72 @@
               :key="idx"
               :class="['pattern-rule', { 'pattern-rule-disabled': item.enabled === false }]"
             >
-              <!-- 规则标识行 -->
+              <!-- 规则标识行：左=提取类型+帮助，中=标题，右=操作 -->
               <div class="pattern-rule-bar">
-                <a-select
-                  v-model:value="item.type"
-                  class="pattern-type-select"
-                  size="large"
-                  @change="onTypeChange(idx)"
+                <div class="pattern-rule-left">
+                  <a-select
+                    v-model:value="item.type"
+                    class="pattern-type-select modern-select"
+                    size="large"
+                    @change="onTypeChange(idx)"
+                  >
+                    <a-select-option value="split">字符串切割</a-select-option>
+                    <a-select-option value="regex">表达式</a-select-option>
+                    <a-select-option value="multiline">多行聚合</a-select-option>
+                  </a-select>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="pattern-rule-tip-content">
+                        <div class="pattern-rule-tip-title">提取方式</div>
+                        <div>{{ getPatternHint(item.type) }}</div>
+                        <div class="pattern-rule-tip-title">日志类型</div>
+                        <div>普通|失败, 匹配通知设置中的推送结果时机</div>
+                      </div>
+                    </template>
+                    <QuestionCircleOutlined class="pattern-rule-tip" />
+                  </a-tooltip>
+                </div>
+                <!-- 规则标题：居中纯文字，点击内联编辑 -->
+                <div
+                  class="pattern-rule-title-wrap"
+                  @click="startEditPatternName(idx)"
                 >
-                  <a-select-option value="split">字符串切割</a-select-option>
-                  <a-select-option value="regex">表达式</a-select-option>
-                  <a-select-option value="multiline">多行聚合</a-select-option>
-                </a-select>
-                <a-tooltip :title="getPatternHint(item.type)">
-                  <QuestionCircleOutlined class="pattern-rule-tip" />
-                </a-tooltip>
+                  <span
+                    v-if="editingNameIdx !== idx"
+                    class="pattern-rule-title"
+                    :title="item.name ? item.name : '点击设置标题'"
+                  >
+                    {{ item.name?.trim() || getDefaultPatternName(idx) }}
+                  </span>
+                  <a-input
+                    v-else
+                    v-model:value="editingNameValue"
+                    class="pattern-rule-title-input"
+                    size="small"
+                    autofocus
+                    placeholder="规则标题"
+                    @blur="finishEditPatternName(idx)"
+                    @press-enter="finishEditPatternName(idx)"
+                  />
+                </div>
                 <div class="pattern-rule-ops">
-                  <a-tooltip :title="item.enabled === false ? '该规则已停用，开启后将参与采集' : '停用该规则（保留配置，不再参与采集）'">
+                  <a-tooltip
+                    :title="
+                      item.enabled === false
+                        ? '该规则已停用，开启后将参与采集'
+                        : '停用该规则（保留配置，不再参与采集）'
+                    "
+                  >
                     <a-switch
                       :checked="item.enabled !== false"
                       size="small"
                       class="pattern-rule-switch"
-                      @change="(v: boolean) => { item.enabled = v; onPatternChange() }"
+                      @change="
+                        (v: boolean) => {
+                          item.enabled = v
+                          onPatternChange()
+                        }
+                      "
                     />
                   </a-tooltip>
                   <a-tooltip title="调试">
@@ -553,7 +597,7 @@
               </div>
 
               <!-- 字符串切割 -->
-              <a-row v-if="item.type === 'split'" :gutter="16">
+              <a-row v-if="item.type === 'split'" :gutter="16" class="pattern-first-row">
                 <a-col :span="24">
                   <a-form-item>
                     <template #label>
@@ -579,6 +623,27 @@
                     />
                   </a-form-item>
                 </a-col>
+                <!-- 日志类型：与上方 label 同一行、最右，不占用输入框空间 -->
+                <div class="pattern-log-type-row pattern-log-type-abs">
+                  <span class="pattern-log-type-row-label">日志类型:</span>
+                  <a-radio-group
+                    :value="item.logType || '普通'"
+                    :class="[
+                      'pattern-log-type-group',
+                      (item.logType || '普通') === '失败' ? 'is-error' : 'is-normal'
+                    ]"
+                    size="small"
+                    @change="
+                      (e: { target: { value: string } }) => {
+                        item.logType = e.target.value
+                        onPatternChange()
+                      }
+                    "
+                  >
+                    <a-radio-button value="普通">普通</a-radio-button>
+                    <a-radio-button value="失败">失败</a-radio-button>
+                  </a-radio-group>
+                </div>
                 <a-col :span="12">
                   <a-form-item class="split-item">
                     <template #label>
@@ -634,7 +699,7 @@
               </a-row>
 
               <!-- 正则 -->
-              <a-row v-else-if="item.type === 'regex'" :gutter="16">
+              <a-row v-else-if="item.type === 'regex'" :gutter="16" class="pattern-first-row">
                 <a-col :span="24">
                   <a-form-item>
                     <template #label>
@@ -658,6 +723,27 @@
                     />
                   </a-form-item>
                 </a-col>
+                <!-- 日志类型：与上方 label 同一行、最右，不占用输入框空间 -->
+                <div class="pattern-log-type-row pattern-log-type-abs">
+                  <span class="pattern-log-type-row-label">日志类型:</span>
+                  <a-radio-group
+                    :value="item.logType || '普通'"
+                    :class="[
+                      'pattern-log-type-group',
+                      (item.logType || '普通') === '失败' ? 'is-error' : 'is-normal'
+                    ]"
+                    size="small"
+                    @change="
+                      (e: { target: { value: string } }) => {
+                        item.logType = e.target.value
+                        onPatternChange()
+                      }
+                    "
+                  >
+                    <a-radio-button value="普通">普通</a-radio-button>
+                    <a-radio-button value="失败">失败</a-radio-button>
+                  </a-radio-group>
+                </div>
                 <a-col :span="24">
                   <a-form-item>
                     <template #label>
@@ -686,7 +772,7 @@
               </a-row>
 
               <!-- 多行聚合 -->
-              <a-row v-else :gutter="16">
+              <a-row v-else :gutter="16" class="pattern-first-row">
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
@@ -727,6 +813,27 @@
                     />
                   </a-form-item>
                 </a-col>
+                <!-- 日志类型：与上方 label 同一行、最右，不占用输入框空间 -->
+                <div class="pattern-log-type-row pattern-log-type-abs">
+                  <span class="pattern-log-type-row-label">日志类型:</span>
+                  <a-radio-group
+                    :value="item.logType || '普通'"
+                    :class="[
+                      'pattern-log-type-group',
+                      (item.logType || '普通') === '失败' ? 'is-error' : 'is-normal'
+                    ]"
+                    size="small"
+                    @change="
+                      (e: { target: { value: string } }) => {
+                        item.logType = e.target.value
+                        onPatternChange()
+                      }
+                    "
+                  >
+                    <a-radio-button value="普通">普通</a-radio-button>
+                    <a-radio-button value="失败">失败</a-radio-button>
+                  </a-radio-group>
+                </div>
                 <a-col :span="24">
                   <a-form-item>
                     <template #label>
@@ -782,7 +889,7 @@
             <a-dropdown trigger="click" placement="topLeft" class="pattern-add-dropdown">
               <div class="pattern-add-row">
                 <PlusOutlined />
-                <span>添加采集规则</span>
+                <span>添加推送规则</span>
               </div>
               <template #overlay>
                 <a-menu @click="handleAddPattern">
@@ -1764,8 +1871,12 @@ const generalConfig = reactive<GeneralScriptConfig>({
 type PushLogPatternType = 'split' | 'regex' | 'multiline'
 interface PushLogPattern {
   type: PushLogPatternType
+  // 规则标题（供分享站展示/说明），留空时前端按 规则1/规则2 兜底
+  name?: string
   // 单条规则启用/停用开关：停用时保留配置但不参与采集
   enabled?: boolean
+  // 日志类型：普通 = 任何推送报告均包含；失败 = 仅在存在未完成用户的报告中包含
+  logType?: string
   // split
   match?: string
   head?: string
@@ -1787,6 +1898,34 @@ const normalizePatternType = (raw: unknown): PushLogPatternType => {
   return raw === 'split' ? 'split' : raw === 'multiline' ? 'multiline' : 'regex'
 }
 
+// 日志类型归一：仅接受 普通/失败（旧值「错误」「异常」归一为「失败」），其余回退 普通
+const normalizeLogType = (raw: unknown): string => {
+  // 与后端一致：仅 普通/失败，旧值「错误」「异常」归一为「失败」
+  return raw === '失败' || raw === '错误' || raw === '异常' ? '失败' : '普通'
+}
+
+// 未设置标题时的默认显示名：规则1, 规则2, 规则3...
+const getDefaultPatternName = (idx: number) => `规则${idx + 1}`
+
+// 规则标题内联编辑状态（-1 表示未在编辑）
+const editingNameIdx = ref(-1)
+const editingNameValue = ref('')
+const startEditPatternName = (idx: number) => {
+  const item = pushLogPatterns.value[idx]
+  if (!item) return
+  editingNameIdx.value = idx
+  editingNameValue.value = item.name || ''
+}
+const finishEditPatternName = (idx: number) => {
+  const item = pushLogPatterns.value[idx]
+  if (!item) return
+  const name = editingNameValue.value.trim()
+  // 空标题视为未设置，落回 规则N 兜底，不落盘多余字段
+  item.name = name || undefined
+  editingNameIdx.value = -1
+  savePushLogPatterns()
+}
+
 const parsePushLogPatterns = (json: string): PushLogPattern[] => {
   if (!json) return []
   try {
@@ -1798,10 +1937,17 @@ const parsePushLogPatterns = (json: string): PushLogPattern[] => {
         const type = normalizePatternType(item.type)
         // enabled 默认 true；显式 false 时为 false
         const enabled = item.enabled === false ? false : true
+        // name 可选：字符串且非空才保留
+        const name =
+          typeof item.name === 'string' && item.name.trim() ? item.name.trim() : undefined
+        // logType 默认 普通
+        const logType = normalizeLogType(item.logType)
         if (type === 'split') {
           return {
             type: 'split',
+            name,
             enabled,
+            logType,
             match: typeof item.match === 'string' ? item.match : '',
             head: typeof item.head === 'string' ? item.head : '',
             headInclude: !!item.headInclude,
@@ -1812,14 +1958,18 @@ const parsePushLogPatterns = (json: string): PushLogPattern[] => {
         if (type === 'regex') {
           return {
             type: 'regex',
+            name,
             enabled,
+            logType,
             match: typeof item.match === 'string' ? item.match : '',
             extract: typeof item.extract === 'string' ? item.extract : '',
           }
         }
         return {
           type: 'multiline',
+          name,
           enabled,
+          logType,
           start: typeof item.start === 'string' ? item.start : '',
           end: typeof item.end === 'string' ? item.end : '',
           extract: typeof item.extract === 'string' ? item.extract : '',
@@ -1836,7 +1986,18 @@ const syncPushLogPatternsFromConfig = () => {
   pushLogPatterns.value =
     parsed.length > 0
       ? parsed
-      : [{ type: 'split', enabled: true, match: '', head: '', headInclude: false, tail: '', tailInclude: false }]
+      : [
+          {
+            type: 'split',
+            enabled: true,
+            logType: '普通',
+            match: '',
+            head: '',
+            headInclude: false,
+            tail: '',
+            tailInclude: false,
+          },
+        ]
 }
 
 const savePushLogPatterns = () => {
@@ -1844,6 +2005,10 @@ const savePushLogPatterns = () => {
   for (const p of pushLogPatterns.value) {
     // enabled 默认 true；停用时仍保留配置以便随时重新启用
     const enabled = p.enabled === false ? false : true
+    // name 可选，留空不落盘
+    const name = p.name?.trim() || undefined
+    // logType 归一（仅 普通/失败）
+    const logType = normalizeLogType(p.logType)
     if (p.type === 'split') {
       const match = (p.match || '').trim()
       const head = (p.head || '').trim()
@@ -1851,7 +2016,9 @@ const savePushLogPatterns = () => {
       if (!match && !head && !tail) continue
       cleaned.push({
         type: 'split',
+        name,
         enabled,
+        logType,
         match,
         head,
         headInclude: !!p.headInclude,
@@ -1862,7 +2029,7 @@ const savePushLogPatterns = () => {
       const match = (p.match || '').trim()
       const extract = (p.extract || '').trim()
       if (!match && !extract) continue
-      cleaned.push({ type: 'regex', enabled, match, extract })
+      cleaned.push({ type: 'regex', name, enabled, logType, match, extract })
     } else if (p.type === 'multiline') {
       const start = (p.start || '').trim()
       const end = (p.end || '').trim()
@@ -1870,7 +2037,9 @@ const savePushLogPatterns = () => {
       if (!start && !end) continue
       cleaned.push({
         type: 'multiline',
+        name,
         enabled,
+        logType,
         start,
         end,
         extract,
@@ -1884,10 +2053,12 @@ const savePushLogPatterns = () => {
 }
 
 const handleAddPattern = ({ key }: { key: string }) => {
+  // 新增规则不预设标题，落回 规则N 兜底显示；日志类型默认 普通
   if (key === 'split') {
     pushLogPatterns.value.push({
       type: 'split',
       enabled: true,
+      logType: '普通',
       match: '',
       head: '',
       headInclude: false,
@@ -1895,11 +2066,18 @@ const handleAddPattern = ({ key }: { key: string }) => {
       tailInclude: false,
     })
   } else if (key === 'regex') {
-    pushLogPatterns.value.push({ type: 'regex', enabled: true, match: '', extract: '' })
+    pushLogPatterns.value.push({
+      type: 'regex',
+      enabled: true,
+      logType: '普通',
+      match: '',
+      extract: '',
+    })
   } else if (key === 'multiline') {
     pushLogPatterns.value.push({
       type: 'multiline',
       enabled: true,
+      logType: '普通',
       start: '',
       end: '',
       extract: '',
@@ -1909,15 +2087,19 @@ const handleAddPattern = ({ key }: { key: string }) => {
   savePushLogPatterns()
 }
 
-// 类型切换：重置为对应类型的默认字段（保留 enabled 状态，避免切换类型时意外停用）
+// 类型切换：重置为对应类型的默认字段（保留 enabled/name/logType 状态，避免切换类型时意外丢失）
 const onTypeChange = (idx: number) => {
   const item = pushLogPatterns.value[idx]
   if (!item) return
   const enabled = item.enabled === false ? false : true
+  const name = item.name
+  const logType = normalizeLogType(item.logType)
   if (item.type === 'split') {
     pushLogPatterns.value[idx] = {
       type: 'split',
+      name,
       enabled,
+      logType,
       match: '',
       head: '',
       headInclude: false,
@@ -1925,11 +2107,20 @@ const onTypeChange = (idx: number) => {
       tailInclude: false,
     }
   } else if (item.type === 'regex') {
-    pushLogPatterns.value[idx] = { type: 'regex', enabled, match: '', extract: '' }
+    pushLogPatterns.value[idx] = {
+      type: 'regex',
+      name,
+      enabled,
+      logType,
+      match: '',
+      extract: '',
+    }
   } else if (item.type === 'multiline') {
     pushLogPatterns.value[idx] = {
       type: 'multiline',
+      name,
       enabled,
+      logType,
       start: '',
       end: '',
       extract: '',
@@ -1950,12 +2141,12 @@ const onPatternChange = () => {
 
 const getPatternHint = (type: PushLogPatternType): string => {
   if (type === 'split') {
-    return '按关键字过滤行，再掐头去尾提取中间内容。具体用法见：字符串切割文档'
+    return '按关键字过滤行，再掐头去尾提取中间内容。具体用法见说明文档'
   }
   if (type === 'regex') {
-    return '匹配正则过滤行，提取表达式用 $() 提取内容并支持函数链。具体用法见：表达式文档'
+    return '匹配正则过滤行，提取表达式用 $() 提取内容并支持函数链。具体用法见说明文档'
   }
-  return '由起始/结束正则划定多行窗口，再用提取表达式（$() 语法）提取字段并拼接。具体用法见：多行聚合文档'
+  return '由起始/结束正则划定多行窗口，再用提取表达式（$() 语法）提取字段并拼接。具体用法见说明文档'
 }
 
 // 日志提取表达式参考弹窗：内置字符串切割/正则/表达式/多行聚合文档
@@ -3322,17 +3513,112 @@ const handleUpload = async () => {
   padding-top: 0;
 }
 
-/* 规则标识行：类型选择器 + 提示图标 + 操作图标 */
+/* 规则标识行：左=提取类型，中=标题，右=操作（一行居中对齐） */
 .pattern-rule-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 8px;
+}
+
+.pattern-rule-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .pattern-type-select {
   width: 130px;
   flex-shrink: 0;
+}
+
+/* 日志类型：绝对定位于第一行右上角，与上方 label 同一行，不占用输入框空间 */
+.pattern-first-row {
+  position: relative;
+}
+
+.pattern-log-type-abs {
+  position: absolute;
+  top: 0;
+  /* 与栅格 gutter 对齐：输入框右边界距容器 8px，让日志类型尾部与输入框平齐 */
+  right: 8px;
+  z-index: 1;
+}
+
+.pattern-log-type-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.pattern-log-type-row-label {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  line-height: 1;
+}
+
+.pattern-log-type-group {
+  flex-shrink: 0;
+  display: inline-flex;
+  height: 24px;
+  border: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+.pattern-log-type-group :deep(.ant-radio-button-wrapper) {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: none !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+/* 中间细分隔线 */
+.pattern-log-type-group :deep(.ant-radio-button-wrapper + .ant-radio-button-wrapper::before) {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 1px;
+  background: var(--ant-color-border);
+  transition: all 0.2s ease;
+}
+
+/* 普通选中：仅蓝色文字，无底色 */
+.pattern-log-type-group.is-normal :deep(.ant-radio-button-wrapper-checked) {
+  color: var(--ant-color-primary) !important;
+  font-weight: 600;
+  background: transparent !important;
+}
+
+.pattern-log-type-group.is-normal:hover :deep(.ant-radio-button-wrapper + .ant-radio-button-wrapper::before) {
+  background: var(--ant-color-primary);
+  opacity: 0.35;
+}
+
+/* 失败选中：仅红色文字，无底色 */
+.pattern-log-type-group.is-error :deep(.ant-radio-button-wrapper-checked) {
+  color: var(--ant-color-error) !important;
+  font-weight: 600;
+  background: transparent !important;
+}
+
+.pattern-log-type-group.is-error:hover :deep(.ant-radio-button-wrapper + .ant-radio-button-wrapper::before) {
+  background: var(--ant-color-error);
+  opacity: 0.35;
 }
 
 .pattern-rule-tip {
@@ -3342,13 +3628,73 @@ const handleUpload = async () => {
   flex-shrink: 0;
 }
 
+/* 规则问号提示：分组展示日志类型与提取方式指南 */
+.pattern-rule-tip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pattern-rule-tip-title {
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.pattern-rule-tip-title:first-child {
+  margin-top: 0;
+}
+
 .pattern-rule-ops {
   display: flex;
   align-items: center;
   gap: 16px;
   flex-shrink: 0;
-  margin-left: auto;
   height: 40px;
+}
+
+/* 标题置于中间：在左右两侧挤压下依然居中 */
+.pattern-rule-title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  cursor: text;
+}
+
+/* 规则标题：居中、纯文字、点击内联编辑 */
+
+.pattern-rule-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  line-height: 1.5;
+  padding: 0 4px;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.2s;
+}
+
+.pattern-rule-title:hover {
+  border-bottom-color: var(--ant-color-text-quaternary);
+}
+
+/* 编辑态输入框：无外框仅文字，居中 */
+.pattern-rule-title-input {
+  width: 100%;
+  max-width: 280px;
+  text-align: center;
+}
+
+.pattern-rule-title-input.ant-input,
+.pattern-rule-title-input.ant-input:hover,
+.pattern-rule-title-input.ant-input:focus {
+  border: none;
+  box-shadow: none;
+  background: transparent;
 }
 
 /* 单条规则启用/停用开关：与「调试/删除」同列，size=small */

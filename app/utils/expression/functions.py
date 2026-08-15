@@ -14,6 +14,30 @@ from typing import Callable, Union
 Arg = Union[str, int]
 
 
+def _find_nth(text: str, marker: str, nth: int, start: int = 0) -> int:
+    """按出现序号查找 marker 的位置（非重叠计数）
+
+    nth 正数表示第 nth 次出现（1 起），负数表示倒数第 |nth| 次出现（-1 为最后一次），
+    0 视为 1。未找到时返回 -1。
+    """
+
+    if nth == 0:
+        nth = 1
+    if nth > 0:
+        pos = start - 1
+        for _ in range(nth):
+            pos = text.find(marker, pos + 1)
+            if pos == -1:
+                return -1
+        return pos
+    positions: list[int] = []
+    pos = text.find(marker, start)
+    while pos != -1:
+        positions.append(pos)
+        pos = text.find(marker, pos + 1)
+    return positions[nth] if len(positions) >= -nth else -1
+
+
 def fn_cut(text: str, args: list[Arg]) -> str:
     """cut(num) — 切除指定数量的字符
 
@@ -76,18 +100,24 @@ def fn_sub(text: str, args: list[Arg]) -> str:
 
 
 def fn_cutby(text: str, args: list[Arg]) -> str:
-    """cutby("定位文本", direction, keep) — 按文本定位截断
+    """cutby("定位文本", direction, keep, nth) — 按文本定位截断
 
     - direction: 0=向前切割（去头），1=向后切割（去尾）。默认 0
     - keep: 0=保留定位文本，1=删除定位文本。默认 0
+    - nth: 定位文本的出现序号，正数=第 nth 次（1 起），负数=倒数第 |nth| 次
+      （-1 为最后一次）。默认 1。用于同名分隔符（如多个 `]`）需要定位
+      最后一个的场景。
     """
     if len(args) < 1:
-        raise ValueError('cutby 至少需要一个参数: cutby("文本", direction, keep)')
+        raise ValueError(
+            'cutby 至少需要一个参数: cutby("文本", direction, keep, nth)'
+        )
     marker = str(args[0])
     direction = int(args[1]) if len(args) > 1 else 0
     keep = int(args[2]) if len(args) > 2 else 0
+    nth = int(args[3]) if len(args) > 3 else 1
 
-    pos = text.find(marker)
+    pos = _find_nth(text, marker, nth)
     if pos == -1:
         return text
 
@@ -104,24 +134,29 @@ def fn_cutby(text: str, args: list[Arg]) -> str:
 
 
 def fn_subby(text: str, args: list[Arg]) -> str:
-    """subby("首位文本", "末位文本", keepFirst, keepLast) — 提取两段文本之间的内容
+    """subby("首位文本", "末位文本", keepFirst, keepLast, nthFirst, nthLast) — 提取两段文本之间的内容
 
     - keepFirst: 0=保留首位文本，1=删除首位文本。默认 0
     - keepLast: 0=保留末位文本，1=删除末位文本。默认 0
+    - nthFirst: 首位文本的出现序号（正数第 n 次 / 负数倒数）。默认 1
+    - nthLast: 末位文本在首位之后的出现序号（正数第 n 次 / 负数倒数，-1 为
+      首位之后最后一个）。默认 1
     """
     if len(args) < 2:
         raise ValueError(
-            'subby 需要至少两个参数: subby("首位文本", "末位文本", keepFirst, keepLast)'
+            'subby 需要至少两个参数: subby("首位文本", "末位文本", keepFirst, keepLast, nthFirst, nthLast)'
         )
     first = str(args[0])
     second = str(args[1])
     keep_first = int(args[2]) if len(args) > 2 else 0
     keep_last = int(args[3]) if len(args) > 3 else 0
+    nth_first = int(args[4]) if len(args) > 4 else 1
+    nth_last = int(args[5]) if len(args) > 5 else 1
 
-    first_pos = text.find(first)
+    first_pos = _find_nth(text, first, nth_first)
     if first_pos == -1:
         return text
-    second_pos = text.find(second, first_pos + len(first))
+    second_pos = _find_nth(text, second, nth_last, first_pos + len(first))
     if second_pos == -1:
         return text
 

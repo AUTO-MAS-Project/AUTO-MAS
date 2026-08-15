@@ -223,8 +223,11 @@ class AutoProxyTask(TaskExecuteBase):
             if self.push_log_enabled
             else []
         )
-        self.push_log_buffer: list[str] = []
+        self.push_log_buffer: list[tuple[str, str]] = []
         self._push_log_processed = 0
+        # 进程防抖：是否曾观测到跟踪进程在运行；启动宽限期内进程未出现不判定结束，
+        # 避免残留进程收尾日志触发回调时误判成功
+        self._process_seen = False
         self.general_log_monitor = LogMonitor(
             self.log_time_range,
             self.script_config.get("Script", "LogTimeFormat"),
@@ -272,6 +275,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 重置推送日志采集状态：每次重试只保留当次尝试采集的进程信息
             self.push_log_buffer.clear()
             self._push_log_processed = 0
+            self._process_seen = False
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -619,16 +623,20 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
 
         # 按推送日志高级模式采集任务进程信息（受总开关控制）
-        # 命中规则时采集提取后的文本作为内容覆盖
+        # 命中规则时以 (日志类型, 提取文本) 形式采集，类型供推送策略过滤
         if self.push_log_enabled and self.push_log_patterns_compiled:
-            for line in log_content[self._push_log_processed:]:
+            for line in log_content[self._push_log_processed :]:
                 extracted = apply_patterns(
                     line, matchers=self.push_log_patterns_compiled
                 )
                 if extracted is not None:
+                    log_type, text = extracted
                     self.push_log_buffer.append(
-                        self._format_push_log(
-                            line, latest_time, content_override=extracted
+                        (
+                            log_type,
+                            self._format_push_log(
+                                line, latest_time, content_override=text
+                            ),
                         )
                     )
             self._push_log_processed = len(log_content)
@@ -649,8 +657,17 @@ class AutoProxyTask(TaskExecuteBase):
                         break
                 else:
                     if await self.general_process_manager.is_running():
+                        self._process_seen = True
                         self.cur_user_log.status = "通用脚本正常运行中"
-                    elif self.success_log:
+                    elif not self._process_seen and datetime.now() - self.log_start_time < timedelta(
+                        seconds=90
+                    ):
+                        # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
+                        # 收尾日志触发了回调，不据此判定任务结束
+                        self.cur_user_log.status = "通用脚本正常运行中"
+                    elif not self._process_seen or self.success_log:
+                        # 宽限期内从未观测到进程（启动失败），或配置了成功标记但进程
+                        # 退出时未命中（不能确认成功）
                         self.cur_user_log.status = "脚本在完成任务前退出"
                     else:
                         self.cur_user_log.status = "Success!"
@@ -695,9 +712,13 @@ class AutoProxyTask(TaskExecuteBase):
         if self.push_log_enabled and self.push_log_patterns_compiled:
             flushed = flush_patterns(matchers=self.push_log_patterns_compiled)
             if flushed is not None:
+                log_type, text = flushed
                 self.push_log_buffer.append(
-                    self._format_push_log(
-                        "", datetime.now(), content_override=flushed
+                    (
+                        log_type,
+                        self._format_push_log(
+                            "", datetime.now(), content_override=text
+                        ),
                     )
                 )
 
