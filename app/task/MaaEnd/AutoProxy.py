@@ -253,7 +253,6 @@ class AutoProxyTask(TaskExecuteBase):
 
             self.script_info.log = "正在启动游戏..."
             # 启动游戏
-            controller_type = self.script_config.get("Game", "ControllerType")
             try:
                 if self.emulator_manager is None:
                     if is_process_running("Endfield.exe"):
@@ -340,7 +339,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
                     logger.error("静默模式: 隐藏 MaaEnd 窗口失败")
-            if controller_type == "Win32-Front":
+            if self.emulator_manager is None:
                 if await self.game_process_manager.activate_window():
                     logger.success("前置 Endfield 窗口成功")
                 else:
