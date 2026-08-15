@@ -27,6 +27,7 @@ from typing import Any
 import json5
 
 from app.utils import get_logger
+from app.utils.io import atomic_write
 
 
 logger = get_logger("MaaEnd 资源加载器")
@@ -196,13 +197,10 @@ class MaaEndResourceLoader:
             "options": self._options,
         }
         try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = cache_path.with_suffix(".tmp")
-            temp_path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
+            atomic_write(
+                cache_path,
+                json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
             )
-            temp_path.replace(cache_path)
             logger.debug(f"已写入 MaaEnd 本地资源缓存：{cache_path}")
         except Exception as error:
             logger.warning(f"写入 MaaEnd 本地资源缓存失败：{error}")
