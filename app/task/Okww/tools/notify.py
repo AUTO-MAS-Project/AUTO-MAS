@@ -17,16 +17,67 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 from app.core import Config
+from app.models.config import OkwwUserConfig
 from app.services import Notify
 from app.utils import get_logger
 
 logger = get_logger("OK-WW 通知工具")
 
 
-async def push_notification(mode: str, title: str, message: dict) -> None:
-    """通过已启用的全局渠道推送 OK-WW 任务报告。"""
+async def push_notification(
+    mode: str,
+    title: str,
+    message: dict,
+    user_config: OkwwUserConfig | None = None,
+) -> None:
+    """通过全局或用户配置的渠道推送 OK-WW 任务报告。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
+
+    if mode == "统计信息":
+        if user_config is None or not (
+            user_config.get("Notify", "Enabled")
+            and user_config.get("Notify", "IfSendStatistic")
+        ):
+            return
+
+        message_text = (
+            f"用户: {message['user_info']}\n"
+            f"开始时间: {message['start_time']}\n"
+            f"结束时间: {message['end_time']}\n"
+            f"执行结果: {message['user_result']}"
+        )
+        message_html = Config.notify_env.get_template(
+            "general_statistics.html"
+        ).render(message)
+        serverchan_message = message_text.replace("\n", "\n\n")
+
+        if user_config.get("Notify", "IfSendMail"):
+            if user_config.get("Notify", "ToAddress"):
+                await Notify.send_mail(
+                    "网页",
+                    title,
+                    message_html,
+                    user_config.get("Notify", "ToAddress"),
+                )
+            else:
+                logger.warning("用户邮箱地址为空, 无法发送 OK-WW 用户通知")
+
+        if user_config.get("Notify", "IfServerChan"):
+            if user_config.get("Notify", "ServerChanKey"):
+                await Notify.ServerChanPush(
+                    title,
+                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
+                    user_config.get("Notify", "ServerChanKey"),
+                )
+            else:
+                logger.warning("用户ServerChan密钥为空, 无法发送 OK-WW 用户通知")
+
+        for webhook in user_config.Notify_CustomWebhooks.values():
+            await Notify.WebhookPush(
+                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+            )
+        return
 
     if mode != "代理结果":
         return

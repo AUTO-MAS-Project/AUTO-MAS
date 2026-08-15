@@ -348,6 +348,7 @@ const isDiscoveringGame = ref(false)
 
 // ══ okww 项目结构常量（需与 app/task/Okww/AutoProxy.py 中的 _OKWW_REL_* 保持同步）══
 const OKWW_EXE_NAME = 'ok-ww.exe'
+const OKWW_APP_JSON_PATH = 'data/apps/ok-ww/app.json'
 
 interface OkwwInfoForm {
   Name: string
@@ -574,11 +575,17 @@ const selectRootPath = async () => {
   const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
-  const exePath = normalized + '/' + OKWW_EXE_NAME
-  if (!(await window.electronAPI.fileExists(exePath))) {
+  const sentinelPaths = [OKWW_EXE_NAME, OKWW_APP_JSON_PATH]
+  const exists = await Promise.all(
+    sentinelPaths.map(relativePath =>
+      window.electronAPI.fileExists(`${normalized}/${relativePath}`)
+    )
+  )
+  const missingPath = sentinelPaths.find((_, index) => !exists[index])
+  if (missingPath) {
     showPathRejectModal(
       '所选目录无效',
-      `所选目录下未找到 ${OKWW_EXE_NAME}，请选择包含 ${OKWW_EXE_NAME} 的 OK-WW 脚本根目录。`
+      `所选目录下未找到 ${missingPath}，请选择完整的 OK-WW 脚本根目录。`
     )
     return
   }

@@ -37,6 +37,8 @@ from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
 
+from .tools import push_notification
+
 logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
@@ -114,19 +116,21 @@ def _configure_okww_launcher(
         and profile not in available_profiles
     ):
         raise ValueError(f"当前 OK-WW 安装不支持{resource}资源")
-    if (
-        app_config.get("auto_start") is True
-        and app_config.get("current_profile") == profile
-        and app_config.get("update_method") == _OKWW_UPDATE_METHOD
-    ):
+    changed = False
+    if "auto_start" not in app_config:
+        app_config["auto_start"] = True
+        changed = True
+    if "update_method" not in app_config:
+        app_config["update_method"] = _OKWW_UPDATE_METHOD
+        changed = True
+    if resource is not None and app_config.get("current_profile") != profile:
+        app_config["current_profile"] = profile
+        changed = True
+    if not changed:
         return
 
-    app_config["auto_start"] = True
-    if resource is not None:
-        app_config["current_profile"] = profile
-    app_config["update_method"] = _OKWW_UPDATE_METHOD
     write_file(app_json_path, app_config)
-    logger.info("已设置 OK-WW 自动启动与正式版更新策略")
+    logger.info("已补齐 OK-WW 启动器默认设置")
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -152,6 +156,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item: UserItem = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkwwUserConfig = self.user_config[self.cur_user_uid]
+        self.cur_user_log: LogRecord | None = None
+        self.game_process_path: Path | None = None
+        self.okww_process_manager: ProcessManager | None = None
+        self.wait_event: asyncio.Event | None = None
+        self.script_root_path: Path | None = None
+        self.script_exe_path: Path | None = None
+        self.script_target_process_info: ProcessInfo | None = None
+        self.script_log_path: Path | None = None
+        self.log_monitor: LogMonitor | None = None
+        self.script_config_path: Path | None = None
 
     async def check(self) -> str:
         root = Path(self.script_config.get("Info", "RootPath"))
@@ -500,11 +514,13 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def final_task(self):
         # 结束时先清理进程与监控；任务结束后始终关闭游戏（由 Game.Enabled 总开关控制）
-        with suppress(Exception):
-            await self.log_monitor.stop()
+        if self.log_monitor is not None:
+            with suppress(Exception):
+                await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
+        statistic_paths: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = Config.build_history_log_path(
@@ -521,6 +537,30 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+            statistic_paths.append(log_path.with_suffix(".json"))
+
+        if statistic_paths:
+            try:
+                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics["user_info"] = self.cur_user_item.name
+                start_time = getattr(self, "user_start_time", datetime.now())
+                statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
+                statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                statistics["user_result"] = (
+                    "代理任务全部完成" if self.run_book else self.cur_user_item.result
+                )
+                success_symbol = "√" if self.run_book else "X"
+                await push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
+                    f"{self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"推送 OK-WW 用户统计通知时出现异常: {e}"
+                )
 
         await self._persist_user_run_result()
 
@@ -554,25 +594,28 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        if hasattr(self, "cur_user_log"):
+        if self.cur_user_log is not None:
             self.cur_user_log.status = f"OK-WW 运行异常: {e}"
         logger.opt(exception=True).warning(f"OK-WW 自动代理任务出现异常: {e}")
-        if hasattr(self, "wait_event"):
+        if self.wait_event is not None:
             self.wait_event.set()
-        await Config.send_websocket_message(
-            id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-WW 自动代理任务出现异常: {e}"},
-        )
-        await self.kill_managed_process(
-            kill_game=self._game_management_enabled()
-        )
-        await self._persist_user_run_result()
+        with suppress(Exception):
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"OK-WW 自动代理任务出现异常: {e}"},
+            )
+        with suppress(Exception):
+            await self.kill_managed_process(
+                kill_game=self._game_management_enabled()
+            )
+        with suppress(Exception):
+            await self._persist_user_run_result()
 
         # 推送通知（复用 Notify）
         try:
             if (
-                hasattr(self, "cur_user_log")
+                self.cur_user_log is not None
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
@@ -597,24 +640,30 @@ class AutoProxyTask(TaskExecuteBase):
         await self._kill_okww_process()
 
     async def _kill_okww_process(self) -> None:
-        try:
-            await self.okww_process_manager.kill()
-        except Exception as e:
-            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-WW 进程失败: {e}")
-        try:
-            await System.kill_process(self.script_exe_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
-        track_exe = self.script_root_path / _OKWW_REL_PYTHONW
-        try:
-            await System.kill_process(track_exe)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
+        if self.okww_process_manager is not None:
+            try:
+                await self.okww_process_manager.kill()
+            except Exception as e:
+                logger.opt(exception=True).warning(f"通过进程管理器中止 OK-WW 进程失败: {e}")
+        if self.script_exe_path is not None:
+            try:
+                await System.kill_process(self.script_exe_path)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
+        if self.script_root_path is not None:
+            track_exe = self.script_root_path / _OKWW_REL_PYTHONW
+            try:
+                await System.kill_process(track_exe)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
         if isinstance(self.game_manager, ProcessManager):
-            if self.game_manager.target_process is None:
+            if (
+                self.game_process_path is not None
+                and self.game_manager.target_process is None
+            ):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
@@ -626,10 +675,11 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.game_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(f"通过进程管理器关闭鸣潮客户端失败: {e}")
-        try:
-            await System.kill_process(self.game_process_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
+        if self.game_process_path is not None:
+            try:
+                await System.kill_process(self.game_process_path)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏"""
