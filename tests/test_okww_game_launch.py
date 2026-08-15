@@ -130,3 +130,27 @@ def test_okww_process_exit_without_window_closed_log_is_error() -> None:
     assert task.cur_user_log.status == "OK-WW 在完成任务前退出"
     assert task.cur_user_item.status == "异常"
     assert task.wait_event.is_set()
+
+
+def test_okww_crash_before_prepare_is_self_protected(monkeypatch) -> None:
+    task = AutoProxyTask.__new__(AutoProxyTask)
+    task.cur_user_item = SimpleNamespace(status="运行")
+    task.cur_user_log = None
+    task.wait_event = None
+    task.task_info = SimpleNamespace(task_id="task")
+    task.script_config = ConfigStub({("Game", "Enabled"): False})
+    task.kill_managed_process = AsyncMock()
+    task._persist_user_run_result = AsyncMock()
+    send_websocket_message = AsyncMock()
+    monkeypatch.setattr(
+        okww_auto_proxy.Config,
+        "send_websocket_message",
+        send_websocket_message,
+    )
+
+    asyncio.run(task.on_crash(RuntimeError("prepare failed")))
+
+    assert task.cur_user_item.status == "异常"
+    task.kill_managed_process.assert_awaited_once_with(kill_game=False)
+    task._persist_user_run_result.assert_awaited_once_with()
+    send_websocket_message.assert_awaited_once()

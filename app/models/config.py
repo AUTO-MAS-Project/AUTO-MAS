@@ -2425,18 +2425,25 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送用户统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
+        ## 是否发送邮件
         self.Notify_IfSendMail = ConfigItem(
             "Notify", "IfSendMail", False, BoolValidator()
         )
+        ## 用户收件地址
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
         )
+        ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
@@ -2749,25 +2756,34 @@ class OkwwConfig(ConfigBase):
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
+        ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
+        ## OK-WW 脚本根目录
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 兼容旧配置：游戏启动由 Enabled 统一控制
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
-        ## 游戏启动器路径
+        ## 鸣潮启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 鸣潮启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
+        ## 单次任务重试次数
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
+        ## 单次运行超时时间
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
         )

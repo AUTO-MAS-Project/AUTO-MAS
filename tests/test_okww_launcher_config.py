@@ -29,7 +29,7 @@ def test_configure_okww_launcher_selects_resource_profile(tmp_path: Path) -> Non
 
     assert json.loads(app_json_path.read_text(encoding="utf-8")) == {
         "name": "ok-ww",
-        "auto_start": True,
+        "auto_start": False,
         "current_profile": "Global",
         "update_method": "AUTO_UPDATE",
         "profiles": [{"name": "China"}, {"name": "Global"}],
@@ -53,9 +53,9 @@ def test_configure_okww_launcher_preserves_profile_for_gui(tmp_path: Path) -> No
     _configure_okww_launcher(tmp_path)
 
     assert json.loads(app_json_path.read_text(encoding="utf-8")) == {
-        "auto_start": True,
+        "auto_start": False,
         "current_profile": "Global",
-        "update_method": "AUTO_UPDATE",
+        "update_method": "MANUAL",
     }
 
 

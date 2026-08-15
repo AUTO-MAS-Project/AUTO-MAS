@@ -233,6 +233,7 @@ class OkwwManager(TaskExecuteBase):
                 )
                 continue
 
+            # OK-WW 的工作目录、脚本进程和日志文件属于安装级共享资源，用户必须串行执行。
             await self.spawn(method)
 
     async def final_task(self):
@@ -247,7 +248,8 @@ class OkwwManager(TaskExecuteBase):
                 await script_cfg.unlock()
 
             if self.check_result != "Pass" and not any(
-                user.status == "完成" for user in self.script_info.user_list
+                user.status in ("完成", "跳过")
+                for user in self.script_info.user_list
             ):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await script_cfg.UserData.load(await self.user_config.toDict())
@@ -333,23 +335,31 @@ class OkwwManager(TaskExecuteBase):
         logger.opt(exception=True).warning(f"OK-WW任务出现异常: {e}")
         script_uid = uuid.UUID(self.script_info.script_id)
 
-        await self._restore_script_config_from_temp()
-
-        # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
-        script_cfg = Config.ScriptConfig[script_uid]
-        if script_cfg.is_locked:
-            with suppress(Exception):
-                await script_cfg.unlock()
+        with suppress(Exception):
+            await self._restore_script_config_from_temp()
 
         try:
-            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                await script_cfg.UserData.load(
-                    await self.user_config.toDict()
-                )
+            script_cfg = Config.ScriptConfig[script_uid]
         except Exception:
-            logger.opt(exception=True).warning("on_crash 写回 UserConfig 失败，放弃本次状态变更")
-        await Config.send_websocket_message(
-            id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-WW任务出现异常: {e}"},
-        )
+            script_cfg = None
+
+        if script_cfg is not None:
+            if script_cfg.is_locked:
+                with suppress(Exception):
+                    await script_cfg.unlock()
+
+            try:
+                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+                    await script_cfg.UserData.load(await self.user_config.toDict())
+                    await Config.ScriptConfig.save()
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "on_crash 写回 UserConfig 失败，放弃本次状态变更"
+                )
+
+        with suppress(Exception):
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"OK-WW任务出现异常: {e}"},
+            )
