@@ -34,4 +34,3 @@ export type HistoryData = {
      */
     log_content?: (string | null);
 };
-

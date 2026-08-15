@@ -25,19 +25,29 @@ from loguru import logger as _logger
 import sys
 from pathlib import Path
 
+from .security import sanitize_log_message
+
 (Path.cwd() / "debug").mkdir(parents=True, exist_ok=True)
 
 
 _logger.remove()
 
 
+def _sanitize_record(record):
+    """在每个 Loguru sink 写出前过滤敏感字段。"""
+
+    record["message"] = sanitize_log_message(str(record["message"]))
+    return True
+
+
 _logger.add(
     sink=Path.cwd() / "debug/app.log",
     level="INFO",
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
+    filter=_sanitize_record,
     enqueue=True,
     backtrace=True,
-    diagnose=True,
+    diagnose=False,
     rotation="1 week",
     retention="1 month",
     compression="zip",
@@ -47,9 +57,10 @@ _logger.add(
     sink=sys.stderr,
     level="DEBUG",
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
+    filter=_sanitize_record,
     enqueue=True,
     backtrace=True,
-    diagnose=True,
+    diagnose=False,
     colorize=True,
 )
 

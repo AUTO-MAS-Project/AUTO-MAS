@@ -19,7 +19,12 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .skland import skland_sign_in
+from .skland import login_skland_with_password, skland_sign_in
 from .game_sign import run_all_sign_in, format_sign_results
 
-__all__ = ["skland_sign_in", "run_all_sign_in", "format_sign_results"]
+__all__ = [
+    "login_skland_with_password",
+    "skland_sign_in",
+    "run_all_sign_in",
+    "format_sign_results",
+]
