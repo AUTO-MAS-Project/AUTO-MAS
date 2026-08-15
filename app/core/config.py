@@ -1041,10 +1041,30 @@ class AppConfig(GlobalConfig):
     ) -> tuple[Any | None, Any | None]:
         """查找持有指定森空岛 Token 的工具账号。"""
 
-        token_value = str(token or "").strip()
-        accounts = getattr(
-            getattr(self, "ToolsConfig", None), "GameSign_Accounts", None
-        )
+        def token_identity(value: Any) -> str:
+            raw_value = str(value or "").strip()
+            if not raw_value:
+                return ""
+            try:
+                payload = json.loads(raw_value)
+            except (TypeError, json.JSONDecodeError):
+                return raw_value
+            if not isinstance(payload, dict):
+                return raw_value
+            data = payload.get("data")
+            if isinstance(data, dict) and data.get("content"):
+                return str(data["content"]).strip()
+            return str(
+                payload.get("oauthToken")
+                or payload.get("oauth_token")
+                or payload.get("accessToken")
+                or payload.get("access_token")
+                or payload.get("token")
+                or raw_value
+            ).strip()
+
+        token_value = token_identity(token)
+        accounts = getattr(getattr(self, "ToolsConfig", None), "GameSign_Accounts", None)
         if not token_value or accounts is None:
             return None, None
 
@@ -1054,11 +1074,10 @@ class AppConfig(GlobalConfig):
             return None, None
 
         for account_uid, account in account_items:
-            candidate_token = str(
+            candidate_token = token_identity(
                 self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
-                or ""
-            ).strip()
-            if candidate_token == token_value:
+            )
+            if candidate_token and candidate_token == token_value:
                 return account_uid, account
         return None, None
 
@@ -1891,7 +1910,12 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        credential_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
+        credential_fields = {
+            "MiyousheToken",
+            "KuroToken",
+            "SklandToken",
+            "TaygedoToken",
+        }
         credential_changed = False
 
         for group, items in data.items():

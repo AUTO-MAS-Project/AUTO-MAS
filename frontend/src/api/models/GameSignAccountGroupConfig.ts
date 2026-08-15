@@ -26,5 +26,9 @@ export type GameSignAccountGroupConfig = {
      * 森空岛登录凭证
      */
     SklandToken?: (string | null);
+    /**
+     * 塔吉多及云异环登录凭证
+     */
+    TaygedoToken?: (string | null);
 };
 

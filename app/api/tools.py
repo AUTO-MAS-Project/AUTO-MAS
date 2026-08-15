@@ -24,6 +24,7 @@
 from fastapi import APIRouter, Body
 from datetime import datetime
 from inspect import isawaitable
+from uuid import UUID
 
 from app.core import Config
 from app.models.schema import (
@@ -38,10 +39,21 @@ from app.models.schema import (
     GameSignAccountDeleteIn,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
+    SklandLoginIn,
+    TaygedoLoginIn,
 )
 from app.utils.constants import UTC8
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
+
+
+def _has_game_sign_credential(account: object, field: str) -> bool:
+    """读取签到凭据时兼容未包含新增字段的旧账号对象。"""
+
+    try:
+        return bool(account.get("GameSignAccount", field))  # type: ignore[attr-defined]
+    except (AttributeError, KeyError):
+        return False
 
 
 @router.post(
@@ -120,8 +132,13 @@ async def manual_game_sign() -> OutBase:
             all_signed = True
             for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
                 has_credentials = any(
-                    account.get("GameSignAccount", field)
-                    for field in ("MiyousheToken", "KuroToken", "SklandToken")
+                    _has_game_sign_credential(account, field)
+                    for field in (
+                        "MiyousheToken",
+                        "KuroToken",
+                        "SklandToken",
+                        "TaygedoToken",
+                    )
                 )
                 if account.get("GameSignAccount", "Enabled") and has_credentials:
                     if account.get("GameSignAccount", "LastSignDate") != today:
@@ -293,3 +310,107 @@ async def reorder_game_sign_accounts(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/sign/account/taygedo/login",
+    tags=["GameSign"],
+    summary="塔吉多账号密码登录",
+    response_model=OutBase,
+    status_code=200,
+)
+async def login_taygedo(
+    credential: TaygedoLoginIn = Body(...),
+) -> OutBase:
+    """一次性使用账号密码换取并保存塔吉多 Token，不保存密码。"""
+
+    try:
+        from app.tools.taygedo import (
+            login_taygedo_with_password,
+            parse_taygedo_credential,
+            serialize_taygedo_credential,
+        )
+
+        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
+        existing_token = str(
+            account.get("GameSignAccount", "TaygedoToken") or ""
+        ).strip()
+        refreshed = await login_taygedo_with_password(
+            credential.phone.strip(),
+            credential.password.get_secret_value(),
+            existing_raw=existing_token,
+            proxy=Config.proxy,
+        )
+        serialized = serialize_taygedo_credential(refreshed)
+        persisted = parse_taygedo_credential(serialized)
+        if any(
+            not str(persisted.get(field) or "").strip()
+            for field in ("accessToken", "refreshToken", "uid")
+        ):
+            raise ValueError("濉斿悏澶氱櫥褰曟湭杩斿洖瀹屾暣 Token")
+        await Config.update_game_sign_account(
+            credential.accountId,
+            {
+                "GameSignAccount": {
+                    "TaygedoToken": serialized,
+                }
+            },
+        )
+    except ValueError as e:
+        return OutBase(code=400, status="error", message=f"塔吉多登录失败：{e}")
+    except Exception:
+        # 不把请求对象、异常堆栈或上游响应内容写入日志，避免泄露密码。
+        return OutBase(
+            code=500,
+            status="error",
+            message="塔吉多登录失败，请检查账号、密码、网络或风控状态",
+        )
+
+    return OutBase(message="塔吉多登录成功，Token 已保存")
+
+
+@router.post(
+    "/sign/account/skland/login",
+    tags=["GameSign"],
+    summary="森空岛手机号密码登录",
+    response_model=OutBase,
+    status_code=200,
+)
+async def login_skland(
+    credential: SklandLoginIn = Body(...),
+) -> OutBase:
+    """一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。"""
+
+    try:
+        from app.tools.skland import (
+            login_skland_with_password,
+            parse_skland_credential,
+        )
+
+        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
+        serialized = await login_skland_with_password(
+            credential.phone.strip(),
+            credential.password.get_secret_value(),
+            proxy=Config.proxy,
+        )
+        parsed = parse_skland_credential(serialized)
+        if any(
+            not str(parsed.get(field) or "").strip()
+            for field in ("oauthToken", "token", "cred")
+        ):
+            raise ValueError("森空岛登录未返回完整凭据")
+        await Config.update_game_sign_account(
+            credential.accountId,
+            {"GameSignAccount": {"SklandToken": serialized}},
+        )
+    except ValueError as e:
+        return OutBase(code=400, status="error", message=f"森空岛登录失败：{e}")
+    except Exception:
+        # 不把请求对象、异常堆栈或上游响应内容写入日志，避免泄露密码。
+        return OutBase(
+            code=500,
+            status="error",
+            message="森空岛登录失败，请检查手机号、密码、网络或风控状态",
+        )
+
+    return OutBase(message="森空岛登录成功，Token 已保存")

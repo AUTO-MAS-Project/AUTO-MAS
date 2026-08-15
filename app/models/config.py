@@ -2904,6 +2904,11 @@ class GameSignAccountGroup(ConfigBase):
         self.SklandToken = ConfigItem(
             "GameSignAccount", "SklandToken", "", EncryptValidator()
         )
+        ## GameSignAccount - 塔吉多及云异环登录凭证 (DPAPI 加密)
+        ## 支持 refreshToken 纯文本或包含 cloudToken/cloudUserId 的 JSON。
+        self.TaygedoToken = ConfigItem(
+            "GameSignAccount", "TaygedoToken", "", EncryptValidator()
+        )
         ## GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
         self.LastSignDate = ConfigItem(
             "GameSignAccount",

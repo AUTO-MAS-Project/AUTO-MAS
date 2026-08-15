@@ -37,6 +37,10 @@ const {
 const logger = window.electronAPI.getLogger('游戏签到')
 const signLoading = ref(false)
 const notifySaving = ref(false)
+const credentialToolDescription =
+  '游戏签到社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。'
+const credentialPrivacyNotice =
+  '账密获取 Token 不保存任何账号密码；本次登录使用的账号密码仅存在于当前登录请求的内存中，登录完成或失败后立即清理，不写入配置、日志或通知。'
 
 // ==================== 账号管理 ====================
 
@@ -48,12 +52,15 @@ interface AccountInstance {
   MiyousheToken: string
   KuroToken: string
   SklandToken: string
+  TaygedoToken: string
 }
 
-const { addAccount, updateAccount, deleteAccount } = useGameSignAccountApi()
+const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
+  useGameSignAccountApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
+const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
@@ -73,6 +80,7 @@ const loadAccounts = async () => {
         MiyousheToken: accountData.MiyousheToken || '',
         KuroToken: accountData.KuroToken || '',
         SklandToken: accountData.SklandToken || '',
+        TaygedoToken: accountData.TaygedoToken || '',
       })
     }
     accounts.value = instances
@@ -88,6 +96,7 @@ const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig
   MiyousheToken: account.MiyousheToken,
   KuroToken: account.KuroToken,
   SklandToken: account.SklandToken,
+  TaygedoToken: account.TaygedoToken,
 })
 
 const handleAddAccount = async () => {
@@ -104,6 +113,7 @@ const handleAddAccount = async () => {
         MiyousheToken: '',
         KuroToken: '',
         SklandToken: '',
+        TaygedoToken: '',
       }
       accounts.value.push(newAccount)
       await updateAccount(result.accountId, getAccountAllData(newAccount))
@@ -163,10 +173,59 @@ const onDragEnd = async (evt: any) => {
 
 const editModalVisible = ref(false)
 const editingAccount = ref<AccountInstance | null>(null)
+const taygedoLoginModalVisible = ref(false)
+const taygedoLoginAccountId = ref('')
+const taygedoLoginPhone = ref('')
+const taygedoLoginPassword = ref('')
+const sklandLoginModalVisible = ref(false)
+const sklandLoginAccountId = ref('')
+const sklandLoginPhone = ref('')
+const sklandLoginPassword = ref('')
+
+const closeTaygedoLoginModal = () => {
+  taygedoLoginModalVisible.value = false
+  taygedoLoginAccountId.value = ''
+  taygedoLoginPhone.value = ''
+  taygedoLoginPassword.value = ''
+  credentialAction.value = null
+}
+
+const closeSklandLoginModal = () => {
+  sklandLoginModalVisible.value = false
+  sklandLoginAccountId.value = ''
+  sklandLoginPhone.value = ''
+  sklandLoginPassword.value = ''
+  credentialAction.value = null
+}
+
+const openTaygedoLoginModal = () => {
+  if (!editingAccount.value) return
+  taygedoLoginAccountId.value = editingAccount.value.uid
+  taygedoLoginPhone.value = ''
+  taygedoLoginPassword.value = ''
+  taygedoLoginModalVisible.value = true
+}
+
+const openSklandLoginModal = () => {
+  if (!editingAccount.value) return
+  sklandLoginAccountId.value = editingAccount.value.uid
+  sklandLoginPhone.value = ''
+  sklandLoginPassword.value = ''
+  sklandLoginModalVisible.value = true
+}
 
 const openEditModal = (account: AccountInstance) => {
+  closeTaygedoLoginModal()
+  closeSklandLoginModal()
   editingAccount.value = { ...account }
   editModalVisible.value = true
+}
+
+const handleEditModalCancel = () => {
+  closeTaygedoLoginModal()
+  closeSklandLoginModal()
+  editModalVisible.value = false
+  editingAccount.value = null
 }
 
 const handleEditModalOk = async () => {
@@ -186,6 +245,60 @@ const handleEditModalOk = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 Token 失败: ${errorMsg}`)
     message.error('保存失败，请重试')
+  }
+}
+
+const handleTaygedoLogin = async () => {
+  const accountId = taygedoLoginAccountId.value
+  const phone = taygedoLoginPhone.value.trim()
+  const password = taygedoLoginPassword.value
+  if (!accountId) return
+  if (!phone || !password) {
+    message.warning('请填写塔吉多账号和密码')
+    return
+  }
+  credentialAction.value = 'taygedo-login'
+  try {
+    await loginTaygedo(accountId, phone, password)
+    await loadAccounts()
+    const updated = accounts.value.find(item => item.uid === accountId)
+    if (updated && editingAccount.value?.uid === accountId) {
+      editingAccount.value = { ...updated }
+    }
+    closeTaygedoLoginModal()
+  } catch {
+    // loginTaygedo 已展示错误提示，保留二级弹窗供用户重新输入。
+  } finally {
+    taygedoLoginPhone.value = ''
+    taygedoLoginPassword.value = ''
+    credentialAction.value = null
+  }
+}
+
+const handleSklandLogin = async () => {
+  const accountId = sklandLoginAccountId.value
+  const phone = sklandLoginPhone.value.trim()
+  const password = sklandLoginPassword.value
+  if (!accountId) return
+  if (!phone || !password) {
+    message.warning('请填写森空岛手机号和密码')
+    return
+  }
+  credentialAction.value = 'skland-login'
+  try {
+    await loginSkland(accountId, phone, password)
+    await loadAccounts()
+    const updated = accounts.value.find(item => item.uid === accountId)
+    if (updated && editingAccount.value?.uid === accountId) {
+      editingAccount.value = { ...updated }
+    }
+    closeSklandLoginModal()
+  } catch {
+    // loginSkland 已展示错误提示，保留二级弹窗供用户重新输入。
+  } finally {
+    sklandLoginPhone.value = ''
+    sklandLoginPassword.value = ''
+    credentialAction.value = null
   }
 }
 
@@ -531,11 +644,26 @@ const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
 
   for (const account of accounts.value) {
     const tags: PlatformTag[] = []
-    for (const platform of ['米游社', '森空岛', '库街区']) {
+    const taygedoCredential = (() => {
+      const raw = account.TaygedoToken?.trim()
+      if (!raw) return { taygedo: false, cloud: false }
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>
+        return {
+          taygedo: Boolean(parsed.refreshToken || parsed.accessToken),
+          cloud: Boolean(parsed.cloudToken && parsed.cloudUserId),
+        }
+      } catch {
+        return { taygedo: true, cloud: false }
+      }
+    })()
+    for (const platform of ['米游社', '森空岛', '库街区', '塔吉多', '云异环']) {
       const hasToken =
         (platform === '米游社' && !!account.MiyousheToken) ||
         (platform === '库街区' && !!account.KuroToken) ||
-        (platform === '森空岛' && !!account.SklandToken)
+        (platform === '森空岛' && !!account.SklandToken) ||
+        (platform === '塔吉多' && taygedoCredential.taygedo) ||
+        (platform === '云异环' && taygedoCredential.cloud)
       if (!hasToken) continue
 
       const platformData = result[platform]
@@ -719,6 +847,13 @@ onMounted(() => {
           </a-button>
         </div>
       </div>
+      <a-alert class="game-sign-notice" type="info" show-icon>
+        <template #message>功能说明与隐私声明</template>
+        <template #description>
+          <div>{{ credentialToolDescription }}</div>
+          <div>{{ credentialPrivacyNotice }}</div>
+        </template>
+      </a-alert>
       <a-row :gutter="24">
         <a-col :span="8">
           <div class="form-item-vertical">
@@ -942,6 +1077,7 @@ onMounted(() => {
       cancel-text="取消"
       :width="560"
       @ok="handleEditModalOk"
+      @cancel="handleEditModalCancel"
     >
       <div v-if="editingAccount" class="modal-form">
         <div class="form-item-vertical">
@@ -956,9 +1092,16 @@ onMounted(() => {
             placeholder="浏览器 F12 → document.cookie 获取"
             allow-clear
           />
-          <a-button size="small" style="margin-top: 6px" :loading="qrLoading" @click="startQrLogin">
+          <a-button
+            size="small"
+            class="credential-helper-btn"
+            danger
+            style="margin-top: 6px"
+            :loading="qrLoading"
+            @click="startQrLogin"
+          >
             <template #icon><QrcodeOutlined /></template>
-            扫码登录获取 Token
+            扫码获取 Token
           </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">库街区</a-divider>
@@ -966,7 +1109,7 @@ onMounted(() => {
           <a-input-password
             v-model:value="editingAccount.KuroToken"
             size="large"
-            placeholder="抓包或短信验证码获取 Token"
+            placeholder="粘贴已从库街区客户端获取的 Token"
             allow-clear
           />
         </div>
@@ -978,7 +1121,140 @@ onMounted(() => {
             placeholder="鹰角网络通行证登录凭证"
             allow-clear
           />
+          <a-button
+            size="small"
+            class="credential-helper-btn"
+            danger
+            style="margin-top: 6px"
+            :loading="credentialAction === 'skland-login'"
+            :disabled="credentialAction !== null"
+            @click="openSklandLoginModal"
+          >
+            账密获取 Token
+          </a-button>
         </div>
+        <a-divider orientation="left" class="community-divider">塔吉多 / 云异环</a-divider>
+        <div class="form-item-vertical">
+          <a-input-password
+            v-model:value="editingAccount.TaygedoToken"
+            size="large"
+            placeholder="refreshToken 或凭据 JSON（可含 cloudToken/cloudUserId/cloudDeviceId）"
+            allow-clear
+          />
+          <a-button
+            size="small"
+            class="credential-helper-btn"
+            danger
+            style="margin-top: 6px"
+            :loading="credentialAction === 'taygedo-login'"
+            :disabled="credentialAction !== null"
+            @click="openTaygedoLoginModal"
+          >
+            账密获取 Token
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 塔吉多账号密码登录弹窗 -->
+    <a-modal
+      v-model:open="taygedoLoginModalVisible"
+      title="塔吉多账密获取 Token"
+      :footer="null"
+      :width="420"
+      @cancel="closeTaygedoLoginModal"
+    >
+      <div class="modal-form">
+        <a-alert class="credential-disclaimer" type="warning" show-icon>
+          <template #message>账密获取 Token 免责声明</template>
+          <template #description>{{ credentialPrivacyNotice }}</template>
+        </a-alert>
+        <div class="form-item-vertical">
+          <span class="form-label">当前账号</span>
+          <a-input :value="editingAccount?.Name || ''" disabled />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">账号或手机号</span>
+          <a-input
+            v-model:value="taygedoLoginPhone"
+            autocomplete="off"
+            placeholder="请输入塔吉多账号或手机号"
+            allow-clear
+          />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">密码</span>
+          <a-input-password
+            v-model:value="taygedoLoginPassword"
+            autocomplete="new-password"
+            placeholder="请输入塔吉多账号密码"
+            allow-clear
+          />
+        </div>
+        <a-space style="width: 100%; justify-content: flex-end">
+          <a-button @click="closeTaygedoLoginModal">取消</a-button>
+          <a-button
+            type="primary"
+            class="credential-helper-btn"
+            danger
+            :loading="credentialAction === 'taygedo-login'"
+            :disabled="credentialAction !== null"
+            @click="handleTaygedoLogin"
+          >
+            获取并保存 Token
+          </a-button>
+        </a-space>
+      </div>
+    </a-modal>
+
+    <!-- 森空岛账密获取 Token 弹窗 -->
+    <a-modal
+      v-model:open="sklandLoginModalVisible"
+      title="森空岛账密获取 Token"
+      :footer="null"
+      :width="420"
+      @cancel="closeSklandLoginModal"
+    >
+      <div class="modal-form">
+        <a-alert class="credential-disclaimer" type="warning" show-icon>
+          <template #message>账密获取 Token 免责声明</template>
+          <template #description>{{ credentialPrivacyNotice }}</template>
+        </a-alert>
+        <div class="form-item-vertical">
+          <span class="form-label">当前账号</span>
+          <a-input :value="editingAccount?.Name || ''" disabled />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">手机号</span>
+          <a-input
+            v-model:value="sklandLoginPhone"
+            autocomplete="off"
+            placeholder="请输入鹰角网络通行证手机号"
+            allow-clear
+          />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">密码</span>
+          <a-input-password
+            v-model:value="sklandLoginPassword"
+            autocomplete="new-password"
+            placeholder="请输入鹰角网络通行证密码"
+            allow-clear
+          />
+        </div>
+        <a-space style="width: 100%; justify-content: flex-end">
+          <a-button @click="closeSklandLoginModal">取消</a-button>
+          <a-button
+            type="primary"
+            class="credential-helper-btn"
+            danger
+            :loading="credentialAction === 'skland-login'"
+            :disabled="credentialAction !== null"
+            @click="handleSklandLogin"
+          >
+            获取并保存 Token
+          </a-button>
+        </a-space>
       </div>
     </a-modal>
 
@@ -1467,6 +1743,34 @@ onMounted(() => {
 /* ==================== 模态框 ==================== */
 .modal-form .form-item-vertical {
   margin-bottom: 16px;
+}
+
+.game-sign-notice,
+.credential-disclaimer {
+  margin-bottom: 16px;
+}
+
+.game-sign-notice {
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-color-border);
+}
+
+.game-sign-notice :deep(.ant-alert-icon),
+.game-sign-notice :deep(.ant-alert-message) {
+  color: var(--ant-color-text);
+}
+
+.game-sign-notice :deep(.ant-alert-description) {
+  color: var(--ant-color-text-secondary);
+}
+
+.game-sign-notice :deep(.ant-alert-description),
+.credential-disclaimer :deep(.ant-alert-description) {
+  line-height: 1.6;
+}
+
+.credential-helper-btn {
+  font-weight: 700;
 }
 
 .community-divider {
