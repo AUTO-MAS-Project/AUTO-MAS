@@ -1,6 +1,6 @@
 ---
 name: mas-code-standards
-description: Use when a task asks for AUTO-MAS project code style, maintainer-aligned style, Conventional Commit wording, backend docstrings, config-item comments, or general code convention review.
+description: Use when implementing, fixing, refactoring, or reviewing non-generated AUTO-MAS code, or when preparing code-style guidance, comments, docstrings, version notes, or Conventional Commit wording. Skip read-only diagnosis, explanation, exploration, and planning unless code conventions are requested.
 ---
 
 # MAS Code Standards
@@ -23,6 +23,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 4. Match nearby naming, logging tone, comment style, and result contracts.
 5. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
 6. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
+7. Before completing a user-visible feature or fix, add its `res/version.json` entry under the next unreleased version; treat the entry as part of the implementation rather than a reminder.
 
 ## Commit Lenses
 1. `e541fa5f`: small cleanup.
@@ -74,7 +75,7 @@ Protect these comments especially:
 7. Do not split equivalent behavior into multiple methods or API routes when a dict selector or type field represents the difference directly.
 8. Do not leave dead support paths for future detailed/raw config when there is no complete UI-to-runtime path yet.
 9. Do not add maintainer-facing "safety" code that only repeats guarantees already enforced by base classes or validators.
-10. Do not submit a versioned feature or fix without considering whether `res/version.json` needs a matching version-info entry under the next unreleased version.
+10. Do not complete a user-visible feature or fix without adding a matching `res/version.json` entry under the next unreleased version.
 11. Do not delete useful comments just to make a diff look cleaner.
 
 ## Review Checklist
@@ -90,3 +91,4 @@ Protect these comments especially:
 10. Commit messages and scopes follow the project convention when preparing commits.
 11. Backend comments and config-class annotations use the project style rather than ad hoc prose.
 12. Existing useful comments were preserved or updated accurately, not removed as noise.
+13. User-visible features and fixes include their matching `res/version.json` entry under the next unreleased version.
