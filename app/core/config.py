@@ -2384,12 +2384,11 @@ class AppConfig(GlobalConfig):
 
         from .emulator_manager import EmulatorManager
 
-        for index, device in (
-            await (await EmulatorManager.get_emulator_instance(emulator_id)).getInfo(
-                None
-            )
-        ).items():
-            data.append({"label": device.title, "value": index})
+        devices = await (
+            await EmulatorManager.get_emulator_instance(emulator_id)
+        ).list_devices()
+        for index, title in devices.items():
+            data.append({"label": title, "value": index})
 
         logger.success("模拟器下拉框信息获取成功")
 

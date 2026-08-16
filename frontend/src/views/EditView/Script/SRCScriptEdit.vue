@@ -212,6 +212,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '@/api'
 import {
@@ -225,6 +226,12 @@ const logger = window.electronAPI.getLogger('SRC脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -271,9 +278,7 @@ const rules = {
 
 // 模拟器相关状态
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 const handleChange = async (category: string, key: string, value: any) => {
@@ -341,7 +346,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (srcConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
       }
     } else {
       // 编辑现有脚本时，从API获取数据
@@ -360,7 +365,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (srcConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
       }
     }
   } catch (error) {
@@ -396,32 +401,13 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
-    })
-    if (response && response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    } else {
-      message.error('加载模拟器实例选项失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
-    message.error('加载模拟器实例选项失败')
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   srcConfig.Emulator.Index = ''
-  emulatorDeviceOptions.value = []
+  clearEmulatorDeviceOptions()
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  }
 
   // 保存模拟器选择和清空的实例字段
   isSaving.value = true
@@ -442,11 +428,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     logger.error(`保存模拟器配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
-  }
-
-  // 加载新的模拟器实例选项
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
   }
 }
 

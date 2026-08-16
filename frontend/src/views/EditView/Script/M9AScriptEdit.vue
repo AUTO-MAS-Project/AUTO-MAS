@@ -254,6 +254,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { M9AScriptConfig, ScriptType } from '../../../types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
 import {
@@ -267,6 +268,12 @@ const logger = window.electronAPI.getLogger('M9A脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -316,9 +323,7 @@ const rules = {
 }
 
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value || isSaving.value) return
@@ -377,7 +382,7 @@ const loadScript = async () => {
       }
 
       if (m9aConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
       }
     } else {
       const scriptDetail = await getScript(scriptId)
@@ -394,7 +399,7 @@ const loadScript = async () => {
       Object.assign(m9aConfig, scriptDetail.config as M9AScriptConfig)
 
       if (m9aConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
       }
     }
   } catch (error) {
@@ -426,28 +431,12 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
-    })
-    if (response && response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   m9aConfig.Emulator.Index = ''
-  emulatorDeviceOptions.value = []
+  clearEmulatorDeviceOptions()
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  }
 
   isSaving.value = true
   try {
@@ -467,10 +456,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     logger.error(`保存模拟器配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
-  }
-
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
   }
 }
 

@@ -438,6 +438,7 @@ import { message } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
@@ -452,6 +453,12 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -518,9 +525,7 @@ const accountSwitchMethodOptions = [
 ]
 
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 const controllerProtocol = computed(
   () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
@@ -575,22 +580,6 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId,
-    })
-    if (response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    }
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const loadMaaEndOptions = async () => {
   maaEndOptionsLoading.value = true
   try {
@@ -626,7 +615,7 @@ const loadScript = async () => {
     applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
 
     if (maaEndConfig.Game.EmulatorId) {
-      await loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
+      void loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
     }
   } finally {
     pageLoading.value = false
@@ -656,7 +645,7 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
           }
 
     if (protocol !== 'Adb') {
-      emulatorDeviceOptions.value = []
+      clearEmulatorDeviceOptions()
       maaEndConfig.Game.EmulatorId = ''
       maaEndConfig.Game.EmulatorIndex = ''
     } else {
@@ -679,7 +668,10 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
 
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   maaEndConfig.Game.EmulatorIndex = ''
-  emulatorDeviceOptions.value = []
+  clearEmulatorDeviceOptions()
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  }
 
   isSaving.value = true
   try {
@@ -694,10 +686,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     }
   } finally {
     isSaving.value = false
-  }
-
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
   }
 }
 
