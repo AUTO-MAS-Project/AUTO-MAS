@@ -148,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
@@ -190,6 +190,7 @@ const savedCustomStages = ref({
 
 // 用于触发下拉框选项刷新的响应式变量
 const customStageVersion = ref(0)
+let tableDataLoadVersion = 0
 
 // 计算属性：获取当前的自定义关卡列表（用于响应式更新）
 const currentCustomStages = computed(() => {
@@ -517,6 +518,7 @@ watch(
 watch(
   () => props.tableData,
   async newData => {
+    const loadVersion = ++tableDataLoadVersion
     if (newData) {
       // 检查是否是初始加载
       const isInitialLoad = (newData as any)._isInitialLoad === true
@@ -525,18 +527,24 @@ watch(
       const cleanData = { ...newData }
       delete (cleanData as any)._isInitialLoad
 
-      // 如果是首次加载，确保先完成关卡选项的预加载，避免将标准关卡误判为自定义关卡
+      // 先渲染后端已有配置，关卡资源在后台预加载。
       if (isInitialLoad) {
+        coordinator.fromApiData(cleanData, false, false)
         try {
           await preloadAllStageOptions()
         } catch {
-          // 预加载失败时降级为不阻塞——仍然尝试加载配置
-          // 错误已由 preloadAllStageOptions 内部记录
+          // 预加载失败时保留已渲染的配置
+          return
         }
+        if (loadVersion !== tableDataLoadVersion) return
+        coordinator.fromApiData(cleanData, true)
+        tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
+        savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
+        return
       }
 
       // 从后端数据加载到协调器
-      coordinator.fromApiData(cleanData, isInitialLoad)
+      coordinator.fromApiData(cleanData)
       // 同步到临时输入框
       tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
       // 非初始刷新可能保留了 fromApiData(false) 续住的未保存输入，
@@ -559,11 +567,6 @@ watch(
   },
   { deep: true }
 )
-
-// 组件挂载时预加载关卡选项
-onMounted(async () => {
-  await preloadAllStageOptions()
-})
 </script>
 
 <style scoped>

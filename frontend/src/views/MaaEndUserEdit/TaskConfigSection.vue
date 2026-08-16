@@ -168,6 +168,7 @@ import {
   SANITY_TASK_TYPE_OPTIONS,
   SANITY_TASK_TYPE_LABEL_MAP,
   getSanityTaskDisplayValue,
+  isProtocolSpaceRewardEnabled,
   normalizeMaaEndSanityConfig,
   type MaaEndSanityConfig,
   type MaaEndTaskSwitch,
@@ -235,7 +236,7 @@ const displaySanityTaskType = computed(() =>
 )
 const displayCurrentTask = computed(() =>
   displayPlanConfig.value
-    ? getSanityTaskDisplayValue(displayPlanConfig.value)
+    ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
     : '未读取到计划表配置'
 )
 const displayRewardsSet = computed(() =>
@@ -255,6 +256,10 @@ const normalizedSanityTaskType = computed<SanityTaskType>(() =>
   sanityTaskTypeOptions.value.some(option => option.value === formData.Task.SanityTaskType)
     ? formData.Task.SanityTaskType
     : 'OperatorProgression'
+)
+
+const effectiveSanityTaskType = computed<SanityTaskType>(
+  () => displayPlanConfig.value?.SanityTaskType ?? normalizedSanityTaskType.value
 )
 
 const currentField = computed(
@@ -303,16 +308,16 @@ const rewardGroupEnabled = computed(() => {
 })
 
 const taskOptionLabel = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
+  effectiveSanityTaskType.value === 'Essence'
     ? '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
+  effectiveSanityTaskType.value === 'Essence'
     ? '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
 
@@ -330,7 +335,12 @@ const showSanityDetail = computed(
   () => props.ifQuickConfig && activeGroupHasSanity.value && isTaskEnabled('Sanity')
 )
 const showRewardGroupSelect = computed(
-  () => showSanityDetail.value && (props.isPlanMode || rewardGroupEnabled.value)
+  () =>
+    showSanityDetail.value &&
+    (displayPlanConfig.value
+      ? displayPlanConfig.value.SanityTaskType !== 'Essence' &&
+        isProtocolSpaceRewardEnabled(displayPlanConfig.value)
+      : rewardGroupEnabled.value)
 )
 
 const handleGoToPlans = () => {

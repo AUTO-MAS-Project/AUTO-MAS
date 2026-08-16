@@ -91,7 +91,6 @@ import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { ComboBoxItem } from '@/api'
-import type { MaaEndPlanConfig } from '@/api/models/MaaEndPlanConfig'
 import { Service } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { useUserApi } from '@/composables/useUserApi'
@@ -330,14 +329,15 @@ const loadSanityPlan = async (planId: string) => {
 
   try {
     const response = await getPlans(planId)
-    const planData = response.data?.[planId] as MaaEndPlanConfig | undefined
+    const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
     const planIndex = response.index?.find(item => item.uid === planId)
     if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
       planModeConfig.value = null
       return
     }
     const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
-    const dayConfig = planData.Info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
+    const info = planData.Info as Record<string, unknown> | undefined
+    const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
     planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
   } catch (error) {
     planModeConfig.value = null

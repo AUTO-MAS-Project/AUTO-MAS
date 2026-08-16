@@ -118,7 +118,9 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
 
 // 预加载所有时间维度的关卡选项
 export async function preloadAllStageOptions(): Promise<void> {
-  const hasCompleteCache = TIME_KEYS.every(timeKey => Array.isArray(stageOptionsCache.value[timeKey]))
+  const hasCompleteCache = TIME_KEYS.every(timeKey =>
+    Array.isArray(stageOptionsCache.value[timeKey])
+  )
   if (hasCompleteCache) {
     return
   }
@@ -194,7 +196,11 @@ export function usePlanDataCoordinator() {
   initializeTimeConfigs()
 
   // 从API数据转换为内部数据结构
-  const fromApiData = (apiData: MaaPlanConfig, forceUpdateCustomStages = false) => {
+  const fromApiData = (
+    apiData: MaaPlanConfig,
+    forceUpdateCustomStages = false,
+    inferCustomStages = true
+  ) => {
     // 更新基础信息
     if (apiData.Info) {
       planData.value.info.name = apiData.Info.Name || ''
@@ -221,6 +227,10 @@ export function usePlanDataCoordinator() {
         }
       }
     })
+
+    if (!inferCustomStages) {
+      return
+    }
 
     // 从所有时间配置中推断自定义关卡定义
     const inferredStages = new Set<string>()

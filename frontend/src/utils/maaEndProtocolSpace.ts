@@ -1,5 +1,7 @@
-// Frontend mirror of app/utils/constants.py. Keep values in sync with the backend
-// constants and regenerate frontend/src/api when OpenAPI schemas change.
+import type { ComboBoxItem } from '@/api'
+
+// Frontend mirror of app/utils/constants.py. Keep fixed protocol-space values in sync
+// with the backend; AutoEssence locations come from MaaEnd's dynamic resource API.
 export const PROTOCOL_SPACE_OPTIONS = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
@@ -62,15 +64,6 @@ export const REWARD_OPTIONS = [
 export type RewardSetOption = (typeof REWARD_OPTIONS)[number]['value']
 
 export type AutoEssenceLocation = string
-
-export const AUTO_ESSENCE_LOCATION_OPTIONS = [
-  { label: '枢纽区', value: 'VFTheHub' },
-  { label: '源石研究园', value: 'VFOriginiumSciencePark' },
-  { label: '矿脉源区', value: 'VFOriginLodespring' },
-  { label: '供能高地', value: 'VFPowerPlateau' },
-  { label: '武陵城区', value: 'WLWulingCity' },
-  { label: '清波寨', value: 'WLQingboStockade' },
-] as const
 
 export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
   OperatorProgression: [
@@ -237,10 +230,6 @@ export const REWARD_LABEL_MAP = Object.fromEntries(
   REWARD_OPTIONS.map(option => [option.value, option.label])
 ) as Record<RewardSetOption, string>
 
-export const AUTO_ESSENCE_LOCATION_LABEL_MAP = Object.fromEntries(
-  AUTO_ESSENCE_LOCATION_OPTIONS.map(option => [option.value, option.label])
-) as Record<string, string>
-
 export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
   SanityTaskType: 'OperatorProgression',
   OperatorProgression: 'OperatorEXP',
@@ -274,12 +263,15 @@ export const isProtocolSpaceRewardEnabled = (config: MaaEndSanityConfig): boolea
   )
 }
 
-export const getSanityTaskDisplayValue = (rawConfig?: Partial<MaaEndSanityConfig> | null) => {
+export const getSanityTaskDisplayValue = (
+  rawConfig?: Partial<MaaEndSanityConfig> | null,
+  essenceLocationOptions: readonly ComboBoxItem[] = []
+) => {
   const config = normalizeMaaEndSanityConfig(rawConfig)
   if (config.SanityTaskType === 'Essence') {
     return (
-      AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation] ||
-      config.AutoEssenceSpecifiedLocation
+      essenceLocationOptions.find(option => option.value === config.AutoEssenceSpecifiedLocation)
+        ?.label || config.AutoEssenceSpecifiedLocation
     )
   }
   return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(config)]

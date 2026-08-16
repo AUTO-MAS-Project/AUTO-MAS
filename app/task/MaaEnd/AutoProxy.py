@@ -34,6 +34,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
+from app.utils.io import read_file, write_file
 from app.utils.constants import UTC4, UTC8, MAAEND_TASKS
 from .tools import login, push_notification, replace_account_switch_task
 from .resource_loader import (

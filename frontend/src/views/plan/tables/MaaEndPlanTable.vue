@@ -27,7 +27,7 @@
               @update:value="handleSanityTaskTypeChange(asTimeKey(column.key), $event)"
             >
               <a-select-option
-                v-for="option in SANITY_TASK_TYPE_OPTIONS"
+                v-for="option in sanityTaskTypeOptions"
                 :key="option.value"
                 :value="option.value"
               >
@@ -41,6 +41,7 @@
               size="small"
               class="config-select"
               :bordered="false"
+              :loading="isEssenceLocationLoading(asTimeKey(column.key))"
               :disabled="isColumnDisabled(asTimeKey(column.key))"
               @update:value="handleTaskChange(asTimeKey(column.key), $event)"
             >
@@ -104,7 +105,7 @@
             @update:value="handleSanityTaskTypeChange(record.key, $event)"
           >
             <a-select-option
-              v-for="option in SANITY_TASK_TYPE_OPTIONS"
+              v-for="option in sanityTaskTypeOptions"
               :key="option.value"
               :value="option.value"
             >
@@ -118,6 +119,7 @@
             size="small"
             class="config-select"
             :bordered="false"
+            :loading="isEssenceLocationLoading(record.key)"
             :disabled="isColumnDisabled(record.key)"
             @update:value="handleTaskChange(record.key, $event)"
           >
@@ -154,9 +156,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import type { ComboBoxItem } from '@/api'
+import { useScriptApi } from '@/composables/useScriptApi'
 import {
-  AUTO_ESSENCE_LOCATION_OPTIONS,
   MAAEND_PLAN_TIME_KEYS,
   MAAEND_PLAN_TIME_LABELS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -187,7 +190,45 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const { getScripts, getMaaEndOptions } = useScriptApi()
 const localTableData = ref<Partial<Record<PlanTimeKey, MaaEndSanityConfig>>>({})
+const essenceLocationOptions = ref<ComboBoxItem[]>([])
+const essenceOptionsLoading = ref(false)
+const essenceOptionsLoaded = ref(false)
+
+const sanityTaskTypeOptions = computed(() =>
+  SANITY_TASK_TYPE_OPTIONS.filter(
+    option =>
+      option.value !== 'Essence' ||
+      !essenceOptionsLoaded.value ||
+      essenceLocationOptions.value.length > 0 ||
+      Object.values(localTableData.value).some(config => config?.SanityTaskType === 'Essence')
+  )
+)
+
+const loadEssenceLocationOptions = async () => {
+  essenceOptionsLoading.value = true
+  try {
+    const scripts = await getScripts(false)
+    const responses = await Promise.all(
+      scripts.filter(script => script.type === 'MaaEnd').map(script => getMaaEndOptions(script.uid))
+    )
+    const optionsByValue = new Map<string, ComboBoxItem>()
+    responses.forEach(response => {
+      response?.essenceLocations.forEach(option => {
+        if (option.value && !optionsByValue.has(option.value)) {
+          optionsByValue.set(option.value, option)
+        }
+      })
+    })
+    essenceLocationOptions.value = [...optionsByValue.values()]
+  } finally {
+    essenceOptionsLoading.value = false
+    essenceOptionsLoaded.value = true
+  }
+}
+
+onMounted(loadEssenceLocationOptions)
 
 const syncLocalTableData = (tableData: Record<string, any> | null) => {
   localTableData.value = Object.fromEntries(
@@ -264,10 +305,23 @@ const getDayConfig = (timeKey: PlanTimeKey): MaaEndSanityConfig =>
 const getCurrentTaskOptions = (timeKey: PlanTimeKey) => {
   const dayConfig = getDayConfig(timeKey)
   if (dayConfig.SanityTaskType === 'Essence') {
-    return AUTO_ESSENCE_LOCATION_OPTIONS
+    const options = [...essenceLocationOptions.value]
+    if (
+      dayConfig.AutoEssenceSpecifiedLocation &&
+      !options.some(option => option.value === dayConfig.AutoEssenceSpecifiedLocation)
+    ) {
+      options.unshift({
+        label: dayConfig.AutoEssenceSpecifiedLocation,
+        value: dayConfig.AutoEssenceSpecifiedLocation,
+      })
+    }
+    return options
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[dayConfig.SanityTaskType as ProtocolSpaceTab]
 }
+
+const isEssenceLocationLoading = (timeKey: PlanTimeKey) =>
+  essenceOptionsLoading.value && getDayConfig(timeKey).SanityTaskType === 'Essence'
 
 const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) => {
   const dayConfig = getDayConfig(timeKey)

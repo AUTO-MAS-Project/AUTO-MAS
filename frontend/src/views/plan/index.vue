@@ -128,7 +128,7 @@ const currentPlanDescriptor = computed(() => {
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
-const clonePlanData = <T,>(value: T): T => structuredClone(value)
+const clonePlanData = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   const planData = planDataMap.value[planId]
@@ -412,44 +412,62 @@ const loadPlanData = async (planId: string, force = false, forceCustomStages = f
 const initPlans = async () => {
   try {
     const response = await getPlans()
-    if (response.index && response.index.length > 0) {
-      planDataMap.value = response.data
-      // 优化：预先收集所有名称，避免O(n²)复杂度
-      const allPlanNames: string[] = []
-
-      planList.value = response.index.map((item: PlanIndexItem) => {
-        const planId = item.uid
-        const planData = response.data[planId] as PlanConfigData | undefined
-        const planType = item.type as string
-        if (!isKnownPlanType(planType)) {
-          throw new Error(`未注册的计划表类型: ${planType}`)
-        }
-        const planDescriptor = PLAN_TYPE_REGISTRY[planType]
-        let planName = planData?.Info?.Name || ''
-
-        // 如果API中没有名称，或者名称是默认的模板名称，则生成唯一名称
-        if (!planName || planName === planDescriptor?.defaultName) {
-          planName = generateUniquePlanName(planType, allPlanNames)
-        }
-
-        allPlanNames.push(planName)
-        return { id: planId, name: planName, type: planType }
-      })
-
-      const queryPlanId = (route.query.planId as string) || ''
-      const target = queryPlanId ? planList.value.find(p => p.id === queryPlanId) : null
-      const selectedPlanId = target ? target.id : planList.value[0].id
-
-      activePlanId.value = selectedPlanId
-      syncCurrentPlan(selectedPlanId, true)
-      logger.info(`初始加载数据 (${selectedPlanId})`)
-    } else {
-      planDataMap.value = {}
+    if (response.code !== 200) {
+      throw new Error(response.message || '获取计划表失败')
     }
+
+    const nextPlanDataMap: Record<string, PlanConfigData> = {}
+    const nextPlanList: PlanListItem[] = []
+    const allPlanNames: string[] = []
+
+    response.index.forEach((item: PlanIndexItem) => {
+      const planId = item.uid
+      const planData = response.data[planId] as PlanConfigData | undefined
+      const planType = item.type as string
+
+      if (!isKnownPlanType(planType)) {
+        logger.error(`跳过未注册的计划表类型: ${planType}`)
+        return
+      }
+      if (!planData) {
+        logger.error(`跳过缺少配置数据的计划表: ${planId}`)
+        return
+      }
+
+      const planDescriptor = PLAN_TYPE_REGISTRY[planType]
+      let planName = planData.Info?.Name || ''
+      if (!planName || planName === planDescriptor.defaultName) {
+        planName = generateUniquePlanName(planType, allPlanNames)
+      }
+
+      allPlanNames.push(planName)
+      nextPlanDataMap[planId] = planData
+      nextPlanList.push({ id: planId, name: planName, type: planType })
+    })
+
+    planDataMap.value = nextPlanDataMap
+    planList.value = nextPlanList
+
+    if (!nextPlanList.length) {
+      activePlanId.value = ''
+      tableData.value = {}
+      return
+    }
+
+    const queryPlanId = (route.query.planId as string) || ''
+    const target = queryPlanId ? nextPlanList.find(plan => plan.id === queryPlanId) : null
+    const selectedPlanId = target?.id ?? nextPlanList[0].id
+
+    syncCurrentPlan(selectedPlanId, true)
+    activePlanId.value = selectedPlanId
+    logger.info(`初始加载数据 (${selectedPlanId})`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化计划失败: ${errorMsg}`)
     planDataMap.value = {}
+    planList.value = []
+    activePlanId.value = ''
+    tableData.value = {}
   } finally {
     loading.value = false
   }
