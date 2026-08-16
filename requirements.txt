@@ -29,3 +29,4 @@ json5==0.14.0
 PyYAML==6.0.3
 sentry-sdk==2.66.1
 tomli_w==1.2.0
+tzdata==2026.3

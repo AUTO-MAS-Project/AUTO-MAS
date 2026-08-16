@@ -33,7 +33,7 @@ logger = get_logger("游戏签到通知")
 NOTIFICATION_SEND_ATTEMPTS = 2
 NOTIFICATION_RETRY_DELAY_SECONDS = 1
 _SUCCESS_STATUSES = {"成功", "已签到"}
-_PLATFORM_ORDER = ("森空岛", "米游社", "库街区")
+_PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 
 
 def _result_status_text(item: dict) -> str:
@@ -110,7 +110,9 @@ def _format_notification_item(item: dict) -> str:
 
     game = str(item.get("game", "") or "").strip()
     game_text = f" {game}" if game else ""
-    return f"{identity}{game_text} {status}"
+    reward = str(item.get("reward", "") or "").strip()
+    reward_text = f" {reward}" if platform == "云异环" and reward else ""
+    return f"{identity}{game_text} {status}{reward_text}"
 
 
 def format_game_sign_notification(results: list[dict]) -> str:

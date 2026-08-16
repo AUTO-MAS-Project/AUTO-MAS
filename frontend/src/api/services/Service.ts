@@ -75,8 +75,10 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { SklandLoginIn } from '../models/SklandLoginIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -1705,6 +1707,46 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/reorder',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 塔吉多账号密码登录
+     * 一次性使用账号密码换取并保存塔吉多 Token，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginTaygedoApiToolsSignAccountTaygedoLoginPost(
+        requestBody: TaygedoLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/taygedo/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 森空岛手机号密码登录
+     * 一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginSklandApiToolsSignAccountSklandLoginPost(
+        requestBody: SklandLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/skland/login',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

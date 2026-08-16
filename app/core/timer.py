@@ -34,7 +34,12 @@ from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
 
-_GAME_SIGN_TOKEN_FIELDS = ("MiyousheToken", "KuroToken", "SklandToken")
+_GAME_SIGN_TOKEN_FIELDS = (
+    "MiyousheToken",
+    "KuroToken",
+    "SklandToken",
+    "TaygedoToken",
+)
 GameSignSource = Literal[
     "scheduled",
     "startup",
@@ -54,9 +59,13 @@ def _has_pending_game_sign_account(account, today: str) -> bool:
 
     if not account.get("GameSignAccount", "Enabled"):
         return False
-    if not any(
-        account.get("GameSignAccount", field) for field in _GAME_SIGN_TOKEN_FIELDS
-    ):
+    def has_token(field: str) -> bool:
+        try:
+            return bool(account.get("GameSignAccount", field))
+        except (AttributeError, KeyError):
+            return False
+
+    if not any(has_token(field) for field in _GAME_SIGN_TOKEN_FIELDS):
         return False
     return account.get("GameSignAccount", "LastSignDate") != today
 

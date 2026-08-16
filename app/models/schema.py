@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
 TPlanInfo = TypeVar("TPlanInfo")
@@ -162,6 +162,9 @@ class GameSignAccountGroupConfig(BaseModel):
     MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
     KuroToken: str | None = Field(default=None, description="库街区登录凭证")
     SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
+    TaygedoToken: str | None = Field(
+        default=None, description="塔吉多及云异环登录凭证"
+    )
 
 
 class GameSignAccountCreateOut(OutBase):
@@ -202,6 +205,22 @@ class GameSignAccountReorderIn(BaseModel):
     """游戏签到账号组排序请求"""
 
     order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
+class TaygedoLoginIn(BaseModel):
+    """塔吉多一次性账号密码登录请求。"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    phone: str = Field(..., min_length=1, description="塔吉多账号或手机号")
+    password: SecretStr = Field(..., min_length=1, description="塔吉多账号密码")
+
+
+class SklandLoginIn(BaseModel):
+    """森空岛一次性手机号密码登录请求。"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    phone: str = Field(..., min_length=1, description="鹰角网络通行证手机号")
+    password: SecretStr = Field(..., min_length=1, description="鹰角网络通行证密码")
 
 
 class ToolsConfig(BaseModel):

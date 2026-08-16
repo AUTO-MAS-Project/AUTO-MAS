@@ -182,7 +182,18 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
             try:
                 from .skland import skland_sign_in
 
-                skland_results = await skland_sign_in(skland_token, app_code="all")
+                async def save_skland_credential(updated_token: str) -> None:
+                    await account.set(
+                        "GameSignAccount",
+                        "SklandToken",
+                        updated_token,
+                    )
+
+                skland_results = await skland_sign_in(
+                    skland_token,
+                    app_code="all",
+                    on_credential_update=save_skland_credential,
+                )
                 if not any(
                     game_key in skland_results
                     for game_key in ("arknights", "endfield")
@@ -325,6 +336,83 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                     "reward": "",
                     "reason": str(e),
                 })
+
+        # 塔吉多社区签到和云异环时长查询
+        try:
+            taygedo_token = account.get("GameSignAccount", "TaygedoToken")
+        except (AttributeError, KeyError):
+            # 兼容尚未加载新字段的旧配置对象和外部调用方。
+            taygedo_token = ""
+        if taygedo_token:
+            platform_result_start = len(results)
+            credential: dict = {}
+            try:
+                from .taygedo import (
+                    parse_taygedo_credential,
+                    serialize_taygedo_credential,
+                    sign_taygedo,
+                )
+
+                credential = parse_taygedo_credential(taygedo_token)
+                if credential.get("refreshToken") or credential.get("accessToken"):
+                    if "塔吉多" not in enabled_platforms:
+                        enabled_platforms.append("塔吉多")
+                if credential.get("cloudToken") and credential.get("cloudUserId"):
+                    if "云异环" not in enabled_platforms:
+                        enabled_platforms.append("云异环")
+
+                taygedo_results, refreshed_credential = await sign_taygedo(
+                    taygedo_token,
+                    proxy=Config.proxy,
+                )
+                for item in taygedo_results:
+                    if not item.get("account") or item.get("account") == "未知用户":
+                        item["account"] = account_name
+                    item["account_uid"] = account_uid
+                results.extend(taygedo_results)
+
+                refreshed_token = serialize_taygedo_credential(refreshed_credential)
+                if refreshed_token and refreshed_token != str(taygedo_token).strip():
+                    await account.set("GameSignAccount", "TaygedoToken", refreshed_token)
+
+                for platform in ("塔吉多", "云异环"):
+                    if platform in enabled_platforms and not any(
+                        item.get("platform") == platform
+                        and item.get("account_uid") == account_uid
+                        for item in results[platform_result_start:]
+                    ):
+                        results.append(
+                            _empty_platform_result(
+                                account_name=account_name,
+                                account_uid=account_uid,
+                                platform=platform,
+                            )
+                        )
+            except Exception as e:
+                logger.error(f"[{account_name}] 塔吉多签到异常: {e}")
+                if not enabled_platforms:
+                    if credential.get("refreshToken") or credential.get("accessToken"):
+                        enabled_platforms.append("塔吉多")
+                    if credential.get("cloudToken") and credential.get("cloudUserId"):
+                        enabled_platforms.append("云异环")
+                for error_platform in ("塔吉多", "云异环"):
+                    if error_platform not in enabled_platforms:
+                        continue
+                    if any(
+                        item.get("platform") == error_platform
+                        and item.get("account_uid") == account_uid
+                        for item in results[platform_result_start:]
+                    ):
+                        continue
+                    results.append({
+                        "account": f"{account_name}/{error_platform}",
+                        "account_uid": account_uid,
+                        "game": "塔吉多社区" if error_platform == "塔吉多" else "云异环",
+                        "platform": error_platform,
+                        "status": "失败",
+                        "reward": "",
+                        "reason": str(e),
+                    })
 
         # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
         # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。
