@@ -5,17 +5,18 @@ import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SwapOutlined,
   QrcodeOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
-import dayjs from 'dayjs'
 import QRCode from 'qrcode'
 import draggable from 'vuedraggable'
 import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
 import { Service } from '@/api'
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
+import { handleExternalLink } from '@/utils/openExternal'
 
 const {
   config,
@@ -36,6 +37,10 @@ const {
 const logger = window.electronAPI.getLogger('游戏签到')
 const signLoading = ref(false)
 const notifySaving = ref(false)
+const credentialToolDescription =
+  '游戏签到社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。'
+const credentialPrivacyNotice =
+  '账密获取 Token 不保存任何账号密码；本次登录使用的账号密码仅存在于当前登录请求的内存中，登录完成或失败后立即清理，不写入配置、日志或通知。'
 
 // ==================== 账号管理 ====================
 
@@ -47,12 +52,15 @@ interface AccountInstance {
   MiyousheToken: string
   KuroToken: string
   SklandToken: string
+  TaygedoToken: string
 }
 
-const { addAccount, updateAccount, deleteAccount } = useGameSignAccountApi()
+const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
+  useGameSignAccountApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
+const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
@@ -72,6 +80,7 @@ const loadAccounts = async () => {
         MiyousheToken: accountData.MiyousheToken || '',
         KuroToken: accountData.KuroToken || '',
         SklandToken: accountData.SklandToken || '',
+        TaygedoToken: accountData.TaygedoToken || '',
       })
     }
     accounts.value = instances
@@ -87,6 +96,7 @@ const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig
   MiyousheToken: account.MiyousheToken,
   KuroToken: account.KuroToken,
   SklandToken: account.SklandToken,
+  TaygedoToken: account.TaygedoToken,
 })
 
 const handleAddAccount = async () => {
@@ -103,6 +113,7 @@ const handleAddAccount = async () => {
         MiyousheToken: '',
         KuroToken: '',
         SklandToken: '',
+        TaygedoToken: '',
       }
       accounts.value.push(newAccount)
       await updateAccount(result.accountId, getAccountAllData(newAccount))
@@ -162,10 +173,59 @@ const onDragEnd = async (evt: any) => {
 
 const editModalVisible = ref(false)
 const editingAccount = ref<AccountInstance | null>(null)
+const taygedoLoginModalVisible = ref(false)
+const taygedoLoginAccountId = ref('')
+const taygedoLoginPhone = ref('')
+const taygedoLoginPassword = ref('')
+const sklandLoginModalVisible = ref(false)
+const sklandLoginAccountId = ref('')
+const sklandLoginPhone = ref('')
+const sklandLoginPassword = ref('')
+
+const closeTaygedoLoginModal = () => {
+  taygedoLoginModalVisible.value = false
+  taygedoLoginAccountId.value = ''
+  taygedoLoginPhone.value = ''
+  taygedoLoginPassword.value = ''
+  credentialAction.value = null
+}
+
+const closeSklandLoginModal = () => {
+  sklandLoginModalVisible.value = false
+  sklandLoginAccountId.value = ''
+  sklandLoginPhone.value = ''
+  sklandLoginPassword.value = ''
+  credentialAction.value = null
+}
+
+const openTaygedoLoginModal = () => {
+  if (!editingAccount.value) return
+  taygedoLoginAccountId.value = editingAccount.value.uid
+  taygedoLoginPhone.value = ''
+  taygedoLoginPassword.value = ''
+  taygedoLoginModalVisible.value = true
+}
+
+const openSklandLoginModal = () => {
+  if (!editingAccount.value) return
+  sklandLoginAccountId.value = editingAccount.value.uid
+  sklandLoginPhone.value = ''
+  sklandLoginPassword.value = ''
+  sklandLoginModalVisible.value = true
+}
 
 const openEditModal = (account: AccountInstance) => {
+  closeTaygedoLoginModal()
+  closeSklandLoginModal()
   editingAccount.value = { ...account }
   editModalVisible.value = true
+}
+
+const handleEditModalCancel = () => {
+  closeTaygedoLoginModal()
+  closeSklandLoginModal()
+  editModalVisible.value = false
+  editingAccount.value = null
 }
 
 const handleEditModalOk = async () => {
@@ -173,89 +233,252 @@ const handleEditModalOk = async () => {
   try {
     const uid = editingAccount.value.uid
     const idx = accounts.value.findIndex(a => a.uid === uid)
+    const accountData = getAccountAllData(editingAccount.value)
+    await updateAccount(uid, accountData)
     if (idx >= 0) {
       accounts.value[idx] = { ...editingAccount.value }
-      await updateAccount(uid, getAccountAllData(editingAccount.value))
-      message.success('Token 已保存')
     }
-  } catch {
+    message.success('Token 已保存')
+    editModalVisible.value = false
+    editingAccount.value = null
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存 Token 失败: ${errorMsg}`)
     message.error('保存失败，请重试')
   }
-  editModalVisible.value = false
+}
+
+const handleTaygedoLogin = async () => {
+  const accountId = taygedoLoginAccountId.value
+  const phone = taygedoLoginPhone.value.trim()
+  const password = taygedoLoginPassword.value
+  if (!accountId) return
+  if (!phone || !password) {
+    message.warning('请填写塔吉多账号和密码')
+    return
+  }
+  credentialAction.value = 'taygedo-login'
+  try {
+    await loginTaygedo(accountId, phone, password)
+    await loadAccounts()
+    const updated = accounts.value.find(item => item.uid === accountId)
+    if (updated && editingAccount.value?.uid === accountId) {
+      editingAccount.value = { ...updated }
+    }
+    closeTaygedoLoginModal()
+  } catch {
+    // loginTaygedo 已展示错误提示，保留二级弹窗供用户重新输入。
+  } finally {
+    taygedoLoginPhone.value = ''
+    taygedoLoginPassword.value = ''
+    credentialAction.value = null
+  }
+}
+
+const handleSklandLogin = async () => {
+  const accountId = sklandLoginAccountId.value
+  const phone = sklandLoginPhone.value.trim()
+  const password = sklandLoginPassword.value
+  if (!accountId) return
+  if (!phone || !password) {
+    message.warning('请填写森空岛手机号和密码')
+    return
+  }
+  credentialAction.value = 'skland-login'
+  try {
+    await loginSkland(accountId, phone, password)
+    await loadAccounts()
+    const updated = accounts.value.find(item => item.uid === accountId)
+    if (updated && editingAccount.value?.uid === accountId) {
+      editingAccount.value = { ...updated }
+    }
+    closeSklandLoginModal()
+  } catch {
+    // loginSkland 已展示错误提示，保留二级弹窗供用户重新输入。
+  } finally {
+    sklandLoginPhone.value = ''
+    sklandLoginPassword.value = ''
+    credentialAction.value = null
+  }
 }
 
 // ==================== 米游社扫码登录 ====================
 
 const qrModalVisible = ref(false)
 const qrLoading = ref(false)
-const qrStatus = ref<'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'error'>(
-  'idle'
-)
+const qrStatus = ref<
+  'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'expired' | 'error'
+>('idle')
 const qrCodeDataUrl = ref('')
 const qrStatusText = ref('')
 const qrTicket = ref('')
 const qrDevice = ref('')
 const qrPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const qrPollInFlight = ref(false)
+let qrSessionId = 0
+let qrAbortController: AbortController | null = null
+let qrCloseTimer: ReturnType<typeof setTimeout> | null = null
 
-const qrFetch = async (path: string, body?: any) => {
+interface QrApiResponse {
+  code?: number
+  status?: string
+  message?: string
+  ticket?: string
+  qr_url?: string
+  device?: string
+  cookies_str?: string
+}
+
+const QR_RESPONSE_INVALID_MESSAGE = '二维码状态响应无效，请刷新后重试'
+const isQrExpiredMessage = (messageText: string) =>
+  /二维码|qr|expired|invalid|nonetype.*get|object has no attribute.*get/i.test(messageText)
+
+const stopQrPoll = () => {
+  if (qrPollTimer.value) {
+    clearInterval(qrPollTimer.value)
+    qrPollTimer.value = null
+  }
+}
+
+const clearQrCloseTimer = () => {
+  if (qrCloseTimer) {
+    clearTimeout(qrCloseTimer)
+    qrCloseTimer = null
+  }
+}
+
+const isCurrentQrSession = (sessionId: number) => sessionId === qrSessionId && qrModalVisible.value
+
+const invalidateQrSession = () => {
+  qrSessionId += 1
+  stopQrPoll()
+  clearQrCloseTimer()
+  qrAbortController?.abort()
+  qrAbortController = null
+  qrPollInFlight.value = false
+  return qrSessionId
+}
+
+const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
+
+const qrFetch = async (
+  path: string,
+  body?: Record<string, string>,
+  signal?: AbortSignal
+): Promise<QrApiResponse> => {
   const resp = await fetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
+    signal,
   })
   const text = await resp.text()
   if (!text) throw new Error('服务器无响应')
-  const data = JSON.parse(text)
-  logger.debug(`[QR ${path}] ${JSON.stringify(data)}`)
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+  }
+  const response = data as QrApiResponse
+  // Cookie 是登录凭据，禁止写入前端日志；其余字段仍保留便于排查状态流转。
+  const logData = { ...response, cookies_str: undefined }
+  logger.debug(`[QR ${path}] ${JSON.stringify(logData)}`)
   // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
-  return data
+  return response
+}
+
+const markQrExpired = (messageText = '二维码已过期，请刷新后重新扫码') => {
+  stopQrPoll()
+  qrStatus.value = 'expired'
+  qrStatusText.value = messageText
+  qrCodeDataUrl.value = ''
 }
 
 const startQrLogin = async () => {
-  stopQrPoll()
+  const sessionId = invalidateQrSession()
+  qrAbortController = new AbortController()
+  const { signal } = qrAbortController
   qrLoading.value = true
   qrStatus.value = 'loading'
   qrStatusText.value = '正在生成二维码...'
   qrCodeDataUrl.value = ''
+  qrTicket.value = ''
+  qrDevice.value = ''
   qrModalVisible.value = true
 
   try {
-    const data = await qrFetch('/create')
+    const data = await qrFetch('/create', undefined, signal)
+    if (!isCurrentQrSession(sessionId)) return
     if (data.code === 500 || data.status === 'error') {
       qrStatus.value = 'error'
       qrStatusText.value = data.message || '创建二维码失败'
       return
     }
-    if (!data.qr_url) {
-      throw new Error('创建二维码失败：服务端响应缺少登录地址')
+    if (!data.qr_url || !data.ticket || !data.device) {
+      throw new Error('创建二维码失败：服务端响应缺少登录信息')
     }
     qrCodeDataUrl.value = await QRCode.toDataURL(data.qr_url, {
       width: 240,
       margin: 2,
       errorCorrectionLevel: 'M',
     })
+    if (!isCurrentQrSession(sessionId)) return
     qrTicket.value = data.ticket
     qrDevice.value = data.device
     qrStatus.value = 'waiting'
     qrStatusText.value = '请使用米游社 APP 扫描二维码'
-    qrPollTimer.value = setInterval(pollQrStatus, 2000)
+    qrPollTimer.value = setInterval(() => {
+      void pollQrStatus(sessionId)
+    }, 2000)
   } catch (e) {
+    if (!isCurrentQrSession(sessionId) || isQrAbortError(e)) return
     qrStatus.value = 'error'
     qrStatusText.value = e instanceof Error ? e.message : String(e)
   } finally {
-    qrLoading.value = false
+    if (isCurrentQrSession(sessionId)) {
+      qrLoading.value = false
+    }
   }
 }
 
-const pollQrStatus = async () => {
+const pollQrStatus = async (sessionId: number) => {
+  if (
+    !isCurrentQrSession(sessionId) ||
+    qrPollInFlight.value ||
+    !qrTicket.value ||
+    !qrDevice.value
+  ) {
+    return
+  }
+  const ticket = qrTicket.value
+  const device = qrDevice.value
+  const signal = qrAbortController?.signal
+  if (!signal) return
+  qrPollInFlight.value = true
   try {
-    const data = await qrFetch('/check', { ticket: qrTicket.value, device: qrDevice.value })
+    const data = await qrFetch('/check', { ticket, device }, signal)
+    if (!isCurrentQrSession(sessionId)) return
+
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      markQrExpired('二维码已失效或服务端返回空响应，请刷新后重试')
+      return
+    }
+
+    const responseMessage = typeof data.message === 'string' ? data.message : ''
 
     // 后端错误响应（code=500 或 status=error）
     if (data.code === 500 || data.status === 'error') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = data.message || '查询状态失败'
+      if (isQrExpiredMessage(responseMessage)) {
+        markQrExpired(responseMessage)
+      } else {
+        stopQrPoll()
+        qrStatus.value = 'error'
+        qrStatusText.value = responseMessage || '查询状态失败'
+      }
       return
     }
 
@@ -264,51 +487,76 @@ const pollQrStatus = async () => {
       qrStatusText.value = '已扫码，等待确认...'
     } else if (data.status === 'Confirmed') {
       stopQrPoll()
-      await handleQrConfirmed(data.cookies_str)
+      await handleQrConfirmed(data.cookies_str || '', sessionId, signal)
     } else if (data.status === 'Canceled') {
       stopQrPoll()
       qrStatus.value = 'error'
-      qrStatusText.value = '登录已取消'
+      qrStatusText.value = responseMessage || '登录已取消'
     } else if (data.status === 'Expired') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = '二维码已过期，请重新生成'
+      markQrExpired(responseMessage || '二维码已过期，请刷新后重新扫码')
     } else if (data.status === 'Error') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = data.message || '查询状态失败'
+      if (isQrExpiredMessage(responseMessage)) {
+        markQrExpired(responseMessage)
+      } else {
+        stopQrPoll()
+        qrStatus.value = 'error'
+        qrStatusText.value = responseMessage || '查询状态失败'
+      }
     }
     // status === 'Init' 时不更新 UI，继续轮询
   } catch (e) {
-    // 网络错误不停止轮询，但记录日志便于调试
-    logger.warn(`[QR poll] 轮询异常: ${String(e)}`)
+    if (!isCurrentQrSession(sessionId) || isQrAbortError(e)) return
+    const errorMessage = e instanceof Error ? e.message : String(e)
+    if (isQrExpiredMessage(errorMessage) || errorMessage === QR_RESPONSE_INVALID_MESSAGE) {
+      markQrExpired('二维码已失效或服务端返回无效状态，请刷新后重试')
+    } else {
+      // 短暂网络错误不停止轮询，但记录日志便于调试。
+      logger.warn(`[QR poll] 轮询异常: ${errorMessage}`)
+    }
+  } finally {
+    if (isCurrentQrSession(sessionId)) {
+      qrPollInFlight.value = false
+    }
   }
 }
 
-const handleQrConfirmed = async (cookiesStr: string) => {
+const handleQrConfirmed = async (cookiesStr: string, sessionId: number, signal: AbortSignal) => {
+  if (!isCurrentQrSession(sessionId)) return
   if (!cookiesStr) {
     qrStatus.value = 'error'
-    qrStatusText.value = '扫码确认成功但未获取到凭据'
+    qrStatusText.value = '扫码确认成功但未获取到有效认证 Cookie，请重新生成二维码'
     return
   }
 
   // Passport 模式：cookies 直接从响应头获取，无需 exchange
-  if (editingAccount.value) {
-    editingAccount.value.MiyousheToken = cookiesStr
+  const accountId = editingAccount.value?.uid
+  if (accountId) {
+    qrStatus.value = 'exchanging'
+    qrStatusText.value = '正在保存登录凭据...'
     try {
-      const accountId = editingAccount.value.uid
-      const saveResponse = await qrFetch('/save', {
-        account_uid: accountId,
-        cookie: cookiesStr,
-      })
+      const saveResponse = await qrFetch(
+        '/save',
+        {
+          account_uid: accountId,
+          cookie: cookiesStr,
+        },
+        signal
+      )
+      if (!isCurrentQrSession(sessionId)) return
       if (saveResponse.code !== 200 || saveResponse.status === 'error') {
         throw new Error(saveResponse.message || '保存 Token 失败')
       }
+      if (editingAccount.value?.uid === accountId) {
+        editingAccount.value.MiyousheToken = cookiesStr
+      }
       await loadAccounts()
+      if (!isCurrentQrSession(sessionId)) return
       if (onRefreshConfig) {
         await onRefreshConfig()
       }
+      if (!isCurrentQrSession(sessionId)) return
     } catch (error) {
+      if (!isCurrentQrSession(sessionId) || isQrAbortError(error)) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`扫码保存 Token 失败: ${errorMsg}`)
       message.error('扫码成功，但保存 Token 失败')
@@ -321,30 +569,32 @@ const handleQrConfirmed = async (cookiesStr: string) => {
   qrStatusText.value = '登录成功！Token 已自动填入'
   message.success('米游社扫码登录成功')
   // 延迟关闭弹窗，让用户看到成功提示
-  setTimeout(() => closeQrModal(), 1200)
-}
-
-const stopQrPoll = () => {
-  if (qrPollTimer.value) {
-    clearInterval(qrPollTimer.value)
-    qrPollTimer.value = null
-  }
+  clearQrCloseTimer()
+  qrCloseTimer = setTimeout(() => {
+    qrCloseTimer = null
+    if (isCurrentQrSession(sessionId)) closeQrModal()
+  }, 1200)
 }
 
 const closeQrModal = () => {
-  stopQrPoll()
+  invalidateQrSession()
   qrModalVisible.value = false
+  qrLoading.value = false
   qrStatus.value = 'idle'
   qrCodeDataUrl.value = ''
+  qrStatusText.value = ''
+  qrTicket.value = ''
+  qrDevice.value = ''
 }
 
 onBeforeUnmount(() => {
-  stopQrPoll()
+  invalidateQrSession()
 })
 
 // ==================== 签到结果解析（按用户绑定） ====================
 
 interface GameItem {
+  account?: string
   game: string
   status: string
   reward: string
@@ -394,11 +644,26 @@ const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
 
   for (const account of accounts.value) {
     const tags: PlatformTag[] = []
-    for (const platform of ['米游社', '森空岛', '库街区']) {
+    const taygedoCredential = (() => {
+      const raw = account.TaygedoToken?.trim()
+      if (!raw) return { taygedo: false, cloud: false }
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>
+        return {
+          taygedo: Boolean(parsed.refreshToken || parsed.accessToken),
+          cloud: Boolean(parsed.cloudToken && parsed.cloudUserId),
+        }
+      } catch {
+        return { taygedo: true, cloud: false }
+      }
+    })()
+    for (const platform of ['米游社', '森空岛', '库街区', '塔吉多', '云异环']) {
       const hasToken =
         (platform === '米游社' && !!account.MiyousheToken) ||
         (platform === '库街区' && !!account.KuroToken) ||
-        (platform === '森空岛' && !!account.SklandToken)
+        (platform === '森空岛' && !!account.SklandToken) ||
+        (platform === '塔吉多' && taygedoCredential.taygedo) ||
+        (platform === '云异环' && taygedoCredential.cloud)
       if (!hasToken) continue
 
       const platformData = result[platform]
@@ -438,10 +703,10 @@ const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
         status,
         games,
         groups,
-        signedCount: status === 'unsigned' ? 0 : signedCount,
-        totalCount: status === 'unsigned' ? 0 : totalCount,
-        failedCount: status === 'unsigned' ? 0 : failedCount,
-        riskCount: status === 'unsigned' ? 0 : riskCount,
+        signedCount,
+        totalCount,
+        failedCount,
+        riskCount,
       })
     }
     map.set(account.uid, tags)
@@ -464,39 +729,34 @@ const getAccountGroupsForPlatformReactive = (
   return tag?.groups || []
 }
 
-// 标签文字 — 只显示社区名，状态由标签颜色表达
-const getTagText = (tag: {
-  platform: string
-  status: TagStatus
-  signedCount: number
-  totalCount: number
-  failedCount: number
-}) => {
-  return tag.platform
+const getSignDetailAlias = (group: AccountGroup, game: GameItem): string => {
+  const account = game.account?.trim() || ''
+  const alias = account.split('/', 1)[0]?.trim()
+  if (alias && alias !== '未知' && alias !== '未知用户') return alias
+  return group.account_alias?.trim() || '未知用户'
+}
+
+const getSignStatusText = (status: string): string => {
+  if (status === '成功' || status === '已签到') return '已签'
+  if (status === '风控') return '风控'
+  if (status === '失败') return '失败'
+  return '未签'
+}
+
+const getSignDetailClass = (status: string): string => {
+  if (status === '成功' || status === '已签到') return 'tt-signed'
+  if (status === '风控') return 'tt-risk'
+  if (status === '失败') return 'tt-failed'
+  return 'tt-unsigned'
+}
+
+// 标签文字 — 尚无结果时只显示社区名，执行后显示成功数/总数
+const getTagText = (tag: PlatformTag) => {
+  return tag.totalCount > 0 ? `${tag.platform}${tag.signedCount}/${tag.totalCount}` : tag.platform
 }
 
 // 标签 CSS 类
 const getTagClass = (status: TagStatus) => `tag-${status}`
-
-// ==================== 时间选择器 ====================
-
-const windowStartValue = computed(() => {
-  if (config.WindowStart) return dayjs(config.WindowStart, 'HH:mm')
-  return null
-})
-
-const windowEndValue = computed(() => {
-  if (config.WindowEnd) return dayjs(config.WindowEnd, 'HH:mm')
-  return null
-})
-
-const handleTimeChange = (key: string, dayjsValue: any) => {
-  if (dayjsValue) {
-    handleChange(key, dayjsValue.format('HH:mm'))
-  } else {
-    handleChange(key, '')
-  }
-}
 
 // ==================== 通用变更处理 ====================
 
@@ -527,6 +787,12 @@ const handleManualSign = async () => {
   signLoading.value = true
   try {
     const response = await Service.manualGameSignApiToolsSignPost()
+    if (response.code === 409) {
+      const warning = response.message || '自动签到正在执行，请稍后再试'
+      logger.warn(`手动签到被拒绝: ${warning}`)
+      message.warning(warning)
+      return
+    }
     if (response.code !== 200 && response.code !== 0) {
       throw new Error(response.message || '签到失败')
     }
@@ -561,18 +827,35 @@ onMounted(() => {
     <div class="form-section">
       <div class="section-header">
         <h3>游戏社区签到</h3>
-        <a-button
-          type="primary"
-          :loading="signLoading"
-          :disabled="disabled || !config.Enabled"
-          @click="handleManualSign"
-        >
-          <template #icon><SwapOutlined /></template>
-          全部签到
-        </a-button>
+        <div class="section-header-actions">
+          <a
+            href="https://doc.auto-mas.top/docs/script-guide/maa.html#%E6%A3%AE%E7%A9%BA%E5%B2%9B%E8%87%AA%E5%8A%A8%E7%AD%BE%E5%88%B0"
+            class="section-doc-link"
+            title="查看森空岛签到配置文档"
+            @click="handleExternalLink"
+          >
+            文档
+          </a>
+          <a-button
+            type="primary"
+            :loading="signLoading"
+            :disabled="disabled || !config.Enabled"
+            @click="handleManualSign"
+          >
+            <template #icon><SwapOutlined /></template>
+            全部签到
+          </a-button>
+        </div>
       </div>
+      <a-alert class="game-sign-notice" type="info" show-icon>
+        <template #message>功能说明与隐私声明</template>
+        <template #description>
+          <div>{{ credentialToolDescription }}</div>
+          <div>{{ credentialPrivacyNotice }}</div>
+        </template>
+      </a-alert>
       <a-row :gutter="24">
-        <a-col :span="6">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">启用签到</span>
@@ -593,7 +876,7 @@ onMounted(() => {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="6">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">签到后通知</span>
@@ -615,42 +898,25 @@ onMounted(() => {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="6">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">窗口起点</span>
-              <a-tooltip title="每日签到的最早时间">
+              <span class="form-label">启动时签到</span>
+              <a-tooltip title="应用启动后立即执行一次签到">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-time-picker
-              :value="windowStartValue"
-              format="HH:mm"
-              placeholder="08:00"
+            <a-select
+              :value="config.RunOnStartup"
               size="large"
               style="width: 100%"
               :disabled="disabled"
-              @change="handleTimeChange('WindowStart', $event)"
-            />
-          </div>
-        </a-col>
-        <a-col :span="6">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">窗口终点</span>
-              <a-tooltip title="每日签到的最晚时间">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-time-picker
-              :value="windowEndValue"
-              format="HH:mm"
-              placeholder="22:00"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled"
-              @change="handleTimeChange('WindowEnd', $event)"
-            />
+              @change="handleChange('RunOnStartup', $event)"
+              @dropdown-visible-change="onSelectVisibleChange"
+            >
+              <a-select-option :value="true">启用</a-select-option>
+              <a-select-option :value="false">禁用</a-select-option>
+            </a-select>
           </div>
         </a-col>
       </a-row>
@@ -715,7 +981,6 @@ onMounted(() => {
                   size="middle"
                   style="width: 100px"
                   :disabled="disabled"
-                  :class="{ 'select-enabled': account.Enabled }"
                   @change="handleAccountFieldSave(account)"
                   @dropdown-visible-change="onSelectVisibleChange"
                 >
@@ -729,6 +994,7 @@ onMounted(() => {
                   <a-tooltip
                     v-for="tag in getUserPlatformTagsReactive(account)"
                     :key="tag.platform"
+                    overlay-class-name="game-sign-tooltip-overlay"
                   >
                     <template #title>
                       <div class="sign-tooltip">
@@ -740,37 +1006,21 @@ onMounted(() => {
                           )"
                           :key="gIdx"
                         >
-                          <div class="sign-tooltip-alias">{{ group.account_alias }}</div>
-                          <div
+                          <template
                             v-for="game in group.games"
-                            :key="game.game"
-                            class="sign-tooltip-row"
+                            :key="`${game.account || group.account_alias}-${game.game}`"
                           >
-                            <span>{{ game.game }}</span>
-                            <span
-                              :class="
-                                game.status === '成功' || game.status === '已签到'
-                                  ? 'tt-signed'
-                                  : game.status === '风控'
-                                    ? 'tt-risk'
-                                    : game.status === '失败'
-                                      ? 'tt-failed'
-                                      : 'tt-unsigned'
-                              "
-                            >
-                              ●
-                              {{
-                                game.status === '成功' || game.status === '已签到'
-                                  ? '已签'
-                                  : game.status === '风控'
-                                    ? '风控'
-                                    : game.status === '失败'
-                                      ? '失败'
-                                      : '未签'
-                              }}
-                            </span>
-                            <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
-                          </div>
+                            <div class="sign-tooltip-alias">
+                              {{ getSignDetailAlias(group, game) }}
+                            </div>
+                            <div class="sign-tooltip-row">
+                              <span>{{ game.game }}</span>
+                              <span :class="getSignDetailClass(game.status)">
+                                ● {{ getSignStatusText(game.status) }}
+                              </span>
+                              <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
+                            </div>
+                          </template>
                         </template>
                         <div v-if="tag.games.length === 0" class="sign-tooltip-empty">
                           暂无签到数据
@@ -827,6 +1077,7 @@ onMounted(() => {
       cancel-text="取消"
       :width="560"
       @ok="handleEditModalOk"
+      @cancel="handleEditModalCancel"
     >
       <div v-if="editingAccount" class="modal-form">
         <div class="form-item-vertical">
@@ -841,9 +1092,16 @@ onMounted(() => {
             placeholder="浏览器 F12 → document.cookie 获取"
             allow-clear
           />
-          <a-button size="small" style="margin-top: 6px" :loading="qrLoading" @click="startQrLogin">
+          <a-button
+            size="small"
+            class="credential-helper-btn"
+            danger
+            style="margin-top: 6px"
+            :loading="qrLoading"
+            @click="startQrLogin"
+          >
             <template #icon><QrcodeOutlined /></template>
-            扫码登录获取 Token
+            扫码获取 Token
           </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">库街区</a-divider>
@@ -851,7 +1109,7 @@ onMounted(() => {
           <a-input-password
             v-model:value="editingAccount.KuroToken"
             size="large"
-            placeholder="抓包或短信验证码获取 Token"
+            placeholder="粘贴已从库街区客户端获取的 Token"
             allow-clear
           />
         </div>
@@ -863,7 +1121,140 @@ onMounted(() => {
             placeholder="鹰角网络通行证登录凭证"
             allow-clear
           />
+          <a-button
+            size="small"
+            class="credential-helper-btn"
+            danger
+            style="margin-top: 6px"
+            :loading="credentialAction === 'skland-login'"
+            :disabled="credentialAction !== null"
+            @click="openSklandLoginModal"
+          >
+            账密获取 Token
+          </a-button>
         </div>
+        <a-divider orientation="left" class="community-divider">塔吉多 / 云异环</a-divider>
+        <div class="form-item-vertical">
+          <a-input-password
+            v-model:value="editingAccount.TaygedoToken"
+            size="large"
+            placeholder="refreshToken 或凭据 JSON（可含 cloudToken/cloudUserId/cloudDeviceId）"
+            allow-clear
+          />
+          <a-button
+            size="small"
+            class="credential-helper-btn"
+            danger
+            style="margin-top: 6px"
+            :loading="credentialAction === 'taygedo-login'"
+            :disabled="credentialAction !== null"
+            @click="openTaygedoLoginModal"
+          >
+            账密获取 Token
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 塔吉多账号密码登录弹窗 -->
+    <a-modal
+      v-model:open="taygedoLoginModalVisible"
+      title="塔吉多账密获取 Token"
+      :footer="null"
+      :width="420"
+      @cancel="closeTaygedoLoginModal"
+    >
+      <div class="modal-form">
+        <a-alert class="credential-disclaimer" type="warning" show-icon>
+          <template #message>账密获取 Token 免责声明</template>
+          <template #description>{{ credentialPrivacyNotice }}</template>
+        </a-alert>
+        <div class="form-item-vertical">
+          <span class="form-label">当前账号</span>
+          <a-input :value="editingAccount?.Name || ''" disabled />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">账号或手机号</span>
+          <a-input
+            v-model:value="taygedoLoginPhone"
+            autocomplete="off"
+            placeholder="请输入塔吉多账号或手机号"
+            allow-clear
+          />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">密码</span>
+          <a-input-password
+            v-model:value="taygedoLoginPassword"
+            autocomplete="new-password"
+            placeholder="请输入塔吉多账号密码"
+            allow-clear
+          />
+        </div>
+        <a-space style="width: 100%; justify-content: flex-end">
+          <a-button @click="closeTaygedoLoginModal">取消</a-button>
+          <a-button
+            type="primary"
+            class="credential-helper-btn"
+            danger
+            :loading="credentialAction === 'taygedo-login'"
+            :disabled="credentialAction !== null"
+            @click="handleTaygedoLogin"
+          >
+            获取并保存 Token
+          </a-button>
+        </a-space>
+      </div>
+    </a-modal>
+
+    <!-- 森空岛账密获取 Token 弹窗 -->
+    <a-modal
+      v-model:open="sklandLoginModalVisible"
+      title="森空岛账密获取 Token"
+      :footer="null"
+      :width="420"
+      @cancel="closeSklandLoginModal"
+    >
+      <div class="modal-form">
+        <a-alert class="credential-disclaimer" type="warning" show-icon>
+          <template #message>账密获取 Token 免责声明</template>
+          <template #description>{{ credentialPrivacyNotice }}</template>
+        </a-alert>
+        <div class="form-item-vertical">
+          <span class="form-label">当前账号</span>
+          <a-input :value="editingAccount?.Name || ''" disabled />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">手机号</span>
+          <a-input
+            v-model:value="sklandLoginPhone"
+            autocomplete="off"
+            placeholder="请输入鹰角网络通行证手机号"
+            allow-clear
+          />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">密码</span>
+          <a-input-password
+            v-model:value="sklandLoginPassword"
+            autocomplete="new-password"
+            placeholder="请输入鹰角网络通行证密码"
+            allow-clear
+          />
+        </div>
+        <a-space style="width: 100%; justify-content: flex-end">
+          <a-button @click="closeSklandLoginModal">取消</a-button>
+          <a-button
+            type="primary"
+            class="credential-helper-btn"
+            danger
+            :loading="credentialAction === 'skland-login'"
+            :disabled="credentialAction !== null"
+            @click="handleSklandLogin"
+          >
+            获取并保存 Token
+          </a-button>
+        </a-space>
       </div>
     </a-modal>
 
@@ -877,7 +1268,10 @@ onMounted(() => {
     >
       <div class="qr-login-container">
         <!-- 二维码 -->
-        <div v-if="qrCodeDataUrl && qrStatus !== 'error'" class="qr-code-wrapper">
+        <div
+          v-if="qrCodeDataUrl && qrStatus !== 'error' && qrStatus !== 'expired'"
+          class="qr-code-wrapper"
+        >
           <img :src="qrCodeDataUrl" alt="扫码登录" class="qr-code-img" />
         </div>
 
@@ -901,21 +1295,59 @@ onMounted(() => {
           <span v-else-if="qrStatus === 'done'" class="qr-status-success">
             ✅ {{ qrStatusText }}
           </span>
+          <span v-else-if="qrStatus === 'expired'" class="qr-status-error">
+            ⚠️ {{ qrStatusText }}
+          </span>
           <span v-else-if="qrStatus === 'error'" class="qr-status-error">
             ❌ {{ qrStatusText }}
           </span>
         </div>
 
-        <div class="qr-hint">打开米游社 APP → 左上角扫码 → 扫描上方二维码</div>
+        <div v-if="qrStatus === 'waiting' || qrStatus === 'scanned'" class="qr-hint">
+          打开米游社 APP → 左上角扫码 → 扫描上方二维码
+        </div>
+
+        <div v-if="qrStatus === 'expired' || qrStatus === 'error'" class="qr-actions">
+          <a-button type="primary" size="small" :loading="qrLoading" @click="startQrLogin">
+            <template #icon><ReloadOutlined /></template>
+            重新生成二维码
+          </a-button>
+        </div>
       </div>
     </a-modal>
   </div>
 </template>
 
 <style scoped>
-/* ==================== 选中启用时边框变绿 ==================== */
-.select-enabled :deep(.ant-select-selector) {
-  border-color: var(--ant-color-success) !important;
+/* 用户启用状态通过选项文字表达，保留 Ant Design 默认边框。 */
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.section-doc-link {
+  color: var(--ant-color-primary) !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-primary);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-doc-link:hover {
+  color: var(--ant-color-primary-hover) !important;
+  background-color: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+  text-decoration: none;
 }
 
 /* ==================== 用户列表表格 ==================== */
@@ -1185,8 +1617,19 @@ onMounted(() => {
 }
 
 /* ==================== Tooltip 签到详情 ==================== */
+:global(.game-sign-tooltip-overlay.ant-tooltip) {
+  max-width: min(480px, calc(100vw - 32px));
+}
+
+:global(.game-sign-tooltip-overlay .ant-tooltip-inner) {
+  box-sizing: border-box;
+  min-width: min(320px, calc(100vw - 32px));
+  max-width: 100%;
+}
+
 .sign-tooltip {
-  min-width: 220px;
+  width: 100%;
+  min-width: 0;
   color: rgba(255, 255, 255, 0.85);
 }
 .sign-tooltip-title {
@@ -1203,17 +1646,27 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.95);
   padding: 4px 0 2px;
   margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 .sign-tooltip-alias:first-of-type {
   margin-top: 0;
 }
 .sign-tooltip-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   padding: 2px 0;
   font-size: 13px;
   gap: 12px;
+  overflow-wrap: anywhere;
+}
+.sign-tooltip-row > span:first-child {
+  min-width: 0;
+}
+.sign-tooltip-row > span:nth-child(2) {
+  white-space: nowrap;
 }
 .tt-signed {
   color: #52c41a;
@@ -1228,6 +1681,7 @@ onMounted(() => {
   color: #f5222d;
 }
 .tt-reward {
+  grid-column: 1 / -1;
   color: rgba(255, 255, 255, 0.55);
   font-size: 12px;
 }
@@ -1291,6 +1745,34 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.game-sign-notice,
+.credential-disclaimer {
+  margin-bottom: 16px;
+}
+
+.game-sign-notice {
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-color-border);
+}
+
+.game-sign-notice :deep(.ant-alert-icon),
+.game-sign-notice :deep(.ant-alert-message) {
+  color: var(--ant-color-text);
+}
+
+.game-sign-notice :deep(.ant-alert-description) {
+  color: var(--ant-color-text-secondary);
+}
+
+.game-sign-notice :deep(.ant-alert-description),
+.credential-disclaimer :deep(.ant-alert-description) {
+  line-height: 1.6;
+}
+
+.credential-helper-btn {
+  font-weight: 700;
+}
+
 .community-divider {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
@@ -1335,28 +1817,31 @@ onMounted(() => {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
 }
+.qr-actions {
+  margin-top: 4px;
+}
 
 /* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */
-:global(:root.dark) .tag-signed {
+:global(:root.dark .tag-signed) {
   background: rgba(82, 196, 26, 0.16);
   border-color: rgba(82, 196, 26, 0.45);
   color: #95de64;
 }
 
-:global(:root.dark) .tag-unsigned {
+:global(:root.dark .tag-unsigned) {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.18);
   color: var(--ant-color-text-secondary);
 }
 
-:global(:root.dark) .tag-failed {
+:global(:root.dark .tag-failed) {
   background: rgba(255, 77, 79, 0.16);
   border-color: rgba(255, 77, 79, 0.48);
   color: #ff7875;
 }
 
-:global(:root.dark) .tag-risk,
-:global(:root.dark) .tag-partial {
+:global(:root.dark .tag-risk),
+:global(:root.dark .tag-partial) {
   background: rgba(250, 173, 20, 0.16);
   border-color: rgba(250, 173, 20, 0.48);
   color: #ffc53d;

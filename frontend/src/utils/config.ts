@@ -1,4 +1,5 @@
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
+import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeLayoutConfig } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('配置管理')
@@ -7,6 +8,8 @@ export interface FrontendConfig {
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
+  cursorEffect?: CursorEffect
+  lowPerformanceMode?: boolean
 
   // 镜像源设置
   selectedGitMirror: string
@@ -15,14 +18,24 @@ export interface FrontendConfig {
 
   // 首页布局
   homeLayout?: HomeLayoutConfig
+
+  // 后端全局配置缓存（用于应用启动前读取）
+  Function?: {
+    IfEnableTelemetry?: boolean
+  }
 }
 
 const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
+  cursorEffect: 'none',
+  lowPerformanceMode: false,
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',
+  Function: {
+    IfEnableTelemetry: true,
+  },
 }
 
 // 读取配置（内部使用，不触发保存）

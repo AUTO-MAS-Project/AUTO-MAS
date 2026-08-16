@@ -14,19 +14,19 @@
 | MXU 线 | `MaaEnd` | 是否 [MaaEnd 项目](https://github.com/MaaEnd/MaaEnd) + [MXU](https://github.com/MistEO/MXU)（PI V2）？需 `mxu-*.json` / ScriptConfig 遮罩？详见 [examples-maaend.md](./examples-maaend.md)。 |
 | MFAA 线 | `M9A` | 是否 [M9A/MaaFramework](https://github.com/MAA1999/M9A) 类管线 + 任务队列 JSON？任务勾选/顺序语义是否对齐 [MFAA↔interface.json](https://github.com/trler/MFAA)？详见 [examples-m9a.md](./examples-m9a.md)。 |
 | General | `General` | 是否先走通用再专项化？ |
-| ok-script 线 | （规划 `Okww`；可先 `General`） | 是否 [OK-WW](https://github.com/ok-oldking/ok-wuthering-waves) / ok-script：`-t`/`-e` CLI？见 [examples-okww.md](./examples-okww.md)。 |
+| ok-script 线 | `Okww` | 是否 [OK-WW](https://github.com/ok-oldking/ok-wuthering-waves) / ok-script：`-t`/`-e` CLI + 本体 GUI 配置？见 [examples-okww.md](./examples-okww.md)。 |
 
 ## 表面对照总表
 
-| 表面 | MAA 线 | SRC 线 | MXU 线（MaaEnd） | MFAA 线（M9A） | General |
-|------|--------|--------|------------------|----------------|---------|
-| Hub 片段 | `maa` | `src` | `maaend` | `m9a` | `general` |
-| ScriptEdit | `MAAScriptEdit` | `SRCScriptEdit`（单文件大表单） | `MaaEndScriptEdit` | `M9AScriptEdit` | `GeneralScriptEdit` |
-| UserEdit 编排 | `MAAUserEdit` | `SRCUserEdit` | `MaaEndUserEdit` | `M9AUserEdit` | `GeneralUserEdit` |
-| Section 目录 | `MAAUserEdit/` | `SRCUserEdit/` | `MaaEndUserEdit/` | `M9AUserEdit/` | （较少拆分） |
-| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 无 |
-| 计划表 | `MaaPlanTable` | — | `MaaEndPlanTable`（#152） | — | — |
-| 任务队列 UI | — | — | TaskConfigSection | `TaskQueueSection` + draggable | — |
+| 表面 | MAA 线 | SRC 线 | MXU 线（MaaEnd） | MFAA 线（M9A） | ok-script（Okww） | General |
+|------|--------|--------|------------------|----------------|---------------------|---------|
+| Hub 片段 | `maa` | `src` | `maaend` | `m9a` | `okww` | `general` |
+| ScriptEdit | `MAAScriptEdit` | `SRCScriptEdit`（单文件大表单） | `MaaEndScriptEdit` | `M9AScriptEdit` | `OkwwScriptEdit` | `GeneralScriptEdit` |
+| UserEdit 编排 | `MAAUserEdit` | `SRCUserEdit` | `MaaEndUserEdit` | `M9AUserEdit` | `OkwwUserEdit` | `GeneralUserEdit` |
+| Section 目录 | `MAAUserEdit/` | `SRCUserEdit/` | `MaaEndUserEdit/` | `M9AUserEdit/` | 单文件编排 | （较少拆分） |
+| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 有：脚本级 + 用户级 | 无 |
+| 计划表 | `MaaPlanTable` | — | `MaaEndPlanTable`（#152） | — | — | — |
+| 任务队列 UI | — | — | TaskConfigSection | `TaskQueueSection` + draggable | `TaskIndex` + DailyTask 字段 | — |
 
 ---
 
@@ -65,7 +65,7 @@ if (script.type === 'MaaEnd') {
 - `getDefaultXxxUserData()` 在编排页内或 composable  
 - `handleFieldSave(group, key, value)` → `updateUser` 局部更新  
 
-### B. ScriptConfig 遮罩表面（MAA / MaaEnd）
+### B. ScriptConfig 遮罩表面（MAA / MaaEnd / Okww）
 
 - `teleport` 全屏 `mask`  
 - `useWebSocket` + `TaskCreateIn` 启动 ScriptConfig 任务  
@@ -73,7 +73,7 @@ if (script.type === 'MaaEnd') {
 
 **MFAA 线（`M9A`）不适用**：专项配置在 Vue 里写 `M9AUserConfig` / 任务 JSON，**不**用 ScriptConfig 调 Avalonia 壳；自动跑依赖写盘 + 启动 `exe`，见 [examples-m9a.md](./examples-m9a.md)。
 
-新类型若需外置程序配置 UI，**复制 MaaEnd 遮罩 + Header 按钮** 再改文案与 API。
+Okww 同时有脚本级共享配置入口和用户级配置入口，目标 ID 决定配置 owner。新类型若需外置程序配置 UI，先对照现有会话 helper 与任务生命周期，不复制两套未收尾的遮罩逻辑。
 
 ### C. 单文件 ScriptEdit（SRC）
 
@@ -118,6 +118,7 @@ const emit = defineEmits<{ save: [group: string, key: string, value: unknown] }>
 | MXU 线 | [examples-maaend.md](./examples-maaend.md)（[MaaEnd](https://github.com/MaaEnd/MaaEnd) / [MXU](https://github.com/MistEO/MXU)）、遮罩 + 计划表（若需要） |
 | MAA 线 | `MAAUserEdit`、`MaaPlanTable` |
 | SRC 线 | [examples-src.md](./examples-src.md)、`SRCScriptEdit` |
+| ok-script 线 | [examples-okww.md](./examples-okww.md)、`OkwwScriptEdit`、`OkwwUserEdit` |
 | General | `General*` 编辑页，再逐项专项化 |
 
 ---

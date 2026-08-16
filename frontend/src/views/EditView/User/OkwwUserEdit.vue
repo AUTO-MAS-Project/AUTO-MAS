@@ -18,6 +18,26 @@
       </div>
 
       <a-space size="middle">
+        <a-button
+          v-if="!showOkwwConfigMask"
+          type="primary"
+          ghost
+          size="large"
+          :loading="okwwConfigLoading"
+          :disabled="pageLoading || !userId"
+          @click="handleOkwwConfig"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          配置 ok-ww
+        </a-button>
+        <a-button v-else type="default" size="large" disabled class="configuring-button">
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          正在配置
+        </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
@@ -26,6 +46,32 @@
         </a-button>
       </a-space>
     </div>
+
+    <teleport to="body">
+      <div v-if="showOkwwConfigMask" class="okww-config-mask">
+        <div class="mask-content">
+          <div class="mask-icon">
+            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
+          </div>
+          <h2 class="mask-title">正在进行 ok-ww 设置</h2>
+          <p class="mask-description">
+            请在 ok-ww 界面完成设置。
+            <br />
+            完成后点击“保存设置”结束本次会话。
+          </p>
+          <div class="mask-actions">
+            <a-button
+              v-if="okwwWebsocketId"
+              type="primary"
+              size="large"
+              @click="handleSaveOkwwConfig"
+            >
+              保存设置
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <div class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
@@ -46,7 +92,13 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input v-model:value="formData.userName" placeholder="请输入用户名" size="large" class="modern-input" @blur="saveField('Info.Name', formData.userName)" />
+                  <a-input
+                    v-model:value="formData.userName"
+                    placeholder="请输入用户名"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Info.Name', formData.userName)"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -67,6 +119,22 @@
                   >
                     <a-select-option :value="true">是</a-select-option>
                     <a-select-option :value="false">否</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item label="配置模式">
+                  <a-select
+                    v-model:value="formData.Info.Mode"
+                    size="large"
+                    class="modern-select"
+                    @change="saveField('Info.Mode', formData.Info.Mode)"
+                  >
+                    <a-select-option value="简洁">简洁</a-select-option>
+                    <a-select-option value="详细">详细</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -177,7 +245,6 @@
         </a-form>
       </a-card>
 
-      <!-- OK-WW 配置编辑器 -->
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -196,8 +263,16 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select v-model:value="formData.Task.TaskIndex" size="large" @change="handleTaskIndexChange">
-                    <a-select-option v-for="item in okwwTaskOptions" :key="item.value" :value="item.value">
+                  <a-select
+                    v-model:value="formData.Task.TaskIndex"
+                    size="large"
+                    @change="handleTaskIndexChange"
+                  >
+                    <a-select-option
+                      v-for="item in okwwTaskOptions"
+                      :key="item.value"
+                      :value="item.value"
+                    >
                       {{ item.label }}
                     </a-select-option>
                   </a-select>
@@ -213,19 +288,79 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly class="modern-input" />
+                  <a-input
+                    :value="currentStartupArguments"
+                    size="large"
+                    readonly
+                    class="modern-input"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item label="消耗体力刷取">
+                  <a-select
+                    v-model:value="formData.Task.WhichToFarm"
+                    size="large"
+                    :options="farmOptions"
+                    @change="saveTaskConfig"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col v-if="formData.Task.WhichToFarm === 'Tacet Suppression'" :span="12">
+                <a-form-item label="F2 列表中的无音区序号">
+                  <a-input-number
+                    v-model:value="formData.Task.WhichTacetSuppressionToFarm"
+                    :min="1"
+                    :max="99"
+                    style="width: 100%"
+                    size="large"
+                    @blur="saveTaskConfig"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col v-else-if="formData.Task.WhichToFarm === 'Forgery Challenge'" :span="12">
+                <a-form-item label="F2 列表中的凝素领域序号">
+                  <a-input-number
+                    v-model:value="formData.Task.WhichForgeryChallengeToFarm"
+                    :min="1"
+                    :max="99"
+                    style="width: 100%"
+                    size="large"
+                    @blur="saveTaskConfig"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col v-else :span="12">
+                <a-form-item label="模拟领域材料">
+                  <a-select
+                    v-model:value="formData.Task.MaterialSelection"
+                    size="large"
+                    :options="materialOptions"
+                    @change="saveTaskConfig"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-form-item label="需要时使用梦魇巢穴完成日常声骸">
+              <a-switch
+                v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
+                @change="saveTaskConfig"
+              />
+            </a-form-item>
+
+            <a-form-item label="每日任务后运行的附加任务">
+              <a-checkbox-group
+                v-model:value="formData.Task.AdditionalTasks"
+                :options="additionalTaskOptions"
+                @change="saveTaskConfig"
+              />
+            </a-form-item>
           </div>
         </a-form>
-
-        <OkwwConfigEditor
-          v-if="userId"
-          :script-id="scriptId"
-          :user-id="userId"
-          @saved="handleConfigSaved"
-        />
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -320,21 +455,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { message, Modal } from 'ant-design-vue'
+import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { Service, type OkwwUserConfig } from '@/api'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 import WebhookManager from '@/components/WebhookManager.vue'
-import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser } = useUserApi()
+const { addUser, getUsers, updateUser, error: userApiError, addUserErrorCode } = useUserApi()
 const { getScript } = useScriptApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
@@ -344,63 +482,50 @@ const scriptName = ref('ok-ww脚本')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const okwwConfigLoading = ref(false)
+const okwwSubscriptionId = ref<string | null>(null)
+const okwwWebsocketId = ref<string | null>(null)
+const showOkwwConfigMask = ref(false)
+const stoppingOkwwConfig = ref(false)
+let okwwConfigTimeout: number | null = null
 
-/** ok-ww 已适配任务（-t 1..8）；9–11 不提供选项 */
-const OKWW_MAX_TASK_INDEX = 8
-
-const resourceOptions = [{ label: '官服', value: '官服' }]
+const resourceOptions = [
+  { label: '官服（China）', value: '官服' },
+  { label: '国际服（Global）', value: '国际服' },
+]
 
 const okwwTaskOptions = [
   { label: '1 - DailyTask（日常）', value: 1 },
-  { label: '2 - MultiAccountDailyTask（多账号日常）', value: 2 },
-  { label: '3 - FarmEchoTask（刷声骸）', value: 3 },
-  { label: '4 - AutoRogueTask（半自动肉鸽）', value: 4 },
-  { label: '5 - ForgeryTask（凝素领域）', value: 5 },
-  { label: '6 - NightmareNestTask（梦魇巢穴）', value: 6 },
-  { label: '7 - SimulationTask（模拟领域）', value: 7 },
-  { label: '8 - TacetTask（无音区）', value: 8 },
+  { label: '7 - MultiAccountDailyTask（多账号日常）', value: 7 },
 ]
 
-interface OkwwUserInfoForm {
-  Name: string
-  Status: boolean
-  Id: string
-  Password: string
-  Mode: '详细'
-  Resource: '官服'
-  RemainedDay: number
-  IfScriptBeforeTask: boolean
-  ScriptBeforeTask: string
-  IfScriptAfterTask: boolean
-  ScriptAfterTask: string
-  Notes: string
-}
+const farmOptions = [
+  { label: '无音区', value: 'Tacet Suppression' },
+  { label: '凝素领域', value: 'Forgery Challenge' },
+  { label: '模拟领域', value: 'Simulation Challenge' },
+]
 
-interface OkwwUserTaskForm {
-  TaskIndex: number
-}
+const materialOptions = [
+  { label: '共鸣者经验', value: 'Resonator EXP' },
+  { label: '武器经验', value: 'Weapon EXP' },
+  { label: '贝币', value: 'Shell Credit' },
+]
 
-interface OkwwUserNotifyForm {
-  Enabled: boolean
-  IfSendStatistic: boolean
-  IfSendMail: boolean
-  ToAddress: string
-  IfServerChan: boolean
-  ServerChanKey: string
-  CustomWebhooks: any[]
-}
+const additionalTaskOptions = [
+  { label: '检查每周乐园', value: 'Check Weekly Garden' },
+  { label: '自动刷所有梦魇巢穴', value: 'Auto Farm all Nightmare Nest' },
+  { label: '已弃置声骸超过 1000 时融合', value: 'Merge Echo If discarded > 1000' },
+  { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
+]
 
-interface OkwwUserDataForm {
-  LastProxyDate: string
-  ProxyTimes: number
-}
+type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
-interface OkwwUserFormData {
+type OkwwUserFormData = {
   userName: string
-  Info: OkwwUserInfoForm
-  Task: OkwwUserTaskForm
-  Notify: OkwwUserNotifyForm
-  Data: OkwwUserDataForm
+  Info: FormSection<NonNullable<OkwwUserConfig['Info']>>
+  Task: FormSection<NonNullable<OkwwUserConfig['Task']>>
+  Notify: FormSection<NonNullable<OkwwUserConfig['Notify']>>
+  Data: FormSection<NonNullable<OkwwUserConfig['Data']>>
 }
 
 const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
@@ -409,7 +534,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '详细',
+    Mode: '简洁',
     Resource: '官服',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -417,9 +542,16 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
     Notes: '',
+    Tag: '',
   },
   Task: {
     TaskIndex: 1,
+    WhichToFarm: 'Tacet Suppression',
+    WhichTacetSuppressionToFarm: 1,
+    WhichForgeryChallengeToFarm: 1,
+    MaterialSelection: 'Shell Credit',
+    FarmNightmareNestForDailyEcho: true,
+    AdditionalTasks: ['Check Weekly Garden'],
   },
   Notify: {
     Enabled: false,
@@ -428,11 +560,12 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     ToAddress: '',
     IfServerChan: false,
     ServerChanKey: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    LastProxyStatus: '',
+    LastTaskIndex: 0,
   },
 })
 
@@ -443,12 +576,67 @@ const formData = reactive<OkwwUserFormData>({
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
 
-const handleCancel = () => router.push('/scripts')
+const clearOkwwConfigSession = () => {
+  if (okwwSubscriptionId.value) {
+    unsubscribe(okwwSubscriptionId.value)
+    okwwSubscriptionId.value = null
+  }
+  okwwWebsocketId.value = null
+  showOkwwConfigMask.value = false
+  if (okwwConfigTimeout) {
+    window.clearTimeout(okwwConfigTimeout)
+    okwwConfigTimeout = null
+  }
+}
 
-const createUserImmediately = async () => {
-  const resp = await addUser(scriptId)
+const stopOkwwConfigSession = async (keepOnFailure = false): Promise<boolean> => {
+  const taskId = okwwWebsocketId.value
+  if (!taskId) {
+    clearOkwwConfigSession()
+    return true
+  }
+  if (stoppingOkwwConfig.value) return false
+
+  stoppingOkwwConfig.value = true
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    if (response.code !== 200) {
+      throw new Error(response.message || '停止 ok-ww 设置失败')
+    }
+    clearOkwwConfigSession()
+    return true
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    if (keepOnFailure) return false
+    clearOkwwConfigSession()
+    return false
+  } finally {
+    stoppingOkwwConfig.value = false
+  }
+}
+
+const handleCancel = async () => {
+  await stopOkwwConfigSession()
+  await router.push('/scripts')
+}
+
+const createUserImmediately = async (): Promise<boolean> => {
+  const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    throw new Error(resp?.message || '创建用户失败')
+    const errorMessage = userApiError.value || '创建用户失败'
+    if (addUserErrorCode.value === 409) {
+      Modal.warning({
+        title: '尚未生成 ok-ww 设置',
+        content:
+          '当前 ok-ww 安装中没有可用的设置目录。首次下载后，请先返回脚本列表点击“配置 ok-ww”，在本体中保存一次设置，再重新添加用户。',
+        okText: '返回脚本列表',
+        onOk: handleCancel,
+      })
+      return false
+    }
+    message.error(errorMessage)
+    handleCancel()
+    return false
   }
   userId.value = resp.userId
   isEdit.value = true
@@ -456,6 +644,7 @@ const createUserImmediately = async () => {
     name: 'OkwwUserEdit',
     params: { scriptId, userId: userId.value },
   })
+  return true
 }
 
 const saveField = async (key: string, value: unknown) => {
@@ -489,11 +678,17 @@ const saveTaskConfig = async () => {
   await updateUser(scriptId, userId.value, {
     Task: {
       TaskIndex: formData.Task.TaskIndex,
+      WhichToFarm: formData.Task.WhichToFarm,
+      WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
+      WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
+      MaterialSelection: formData.Task.MaterialSelection,
+      FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
+      AdditionalTasks: formData.Task.AdditionalTasks,
     },
   })
 }
 
-const handleTaskIndexChange = async (value: number) => {
+const handleTaskIndexChange = async (value: 1 | 7) => {
   formData.Task.TaskIndex = value
   try {
     await saveTaskConfig()
@@ -502,18 +697,73 @@ const handleTaskIndexChange = async (value: number) => {
   }
 }
 
-const loadScriptInfo = async () => {
-  const detail = await getScript(scriptId)
-  if (detail) {
-    scriptName.value = detail.name
+const handleOkwwConfig = async () => {
+  if (!userId.value) return
+  try {
+    okwwConfigLoading.value = true
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: userId.value,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+    if (response.code !== 200 || !response.taskId) {
+      throw new Error(response.message || '启动 ok-ww 设置失败')
+    }
+
+    showOkwwConfigMask.value = true
+    okwwWebsocketId.value = response.taskId
+    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+      if (wsMessage.type === 'error') {
+        message.error(`ok-ww 设置连接失败: ${String(wsMessage.data)}`)
+        void stopOkwwConfigSession()
+        return
+      }
+      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+        message.error(`ok-ww 设置失败: ${String(wsMessage.data.Error)}`)
+        void stopOkwwConfigSession()
+        return
+      }
+      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        clearOkwwConfigSession()
+      }
+    })
+    okwwSubscriptionId.value = subscriptionId
+    message.success(`已打开${formData.Info.Mode === '简洁' ? '共享' : '当前用户'}的 ok-ww 设置`)
+    okwwConfigTimeout = window.setTimeout(handleSaveOkwwConfig, 30 * 60 * 1000)
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : '启动 ok-ww 设置失败')
+    clearOkwwConfigSession()
+  } finally {
+    okwwConfigLoading.value = false
   }
+}
+
+const handleSaveOkwwConfig = async () => {
+  if (!okwwWebsocketId.value) return
+  if (await stopOkwwConfigSession(true)) {
+    message.success('ok-ww 设置已保存')
+  } else {
+    message.error('保存 ok-ww 设置失败')
+  }
+}
+
+const loadScriptInfo = async (): Promise<boolean> => {
+  const detail = await getScript(scriptId)
+  if (!detail || detail.type !== 'Okww') {
+    message.error('ok-ww 脚本不存在或加载失败')
+    handleCancel()
+    return false
+  }
+
+  scriptName.value = detail.name
+  return true
 }
 
 const loadUser = async () => {
   pageLoading.value = true
   try {
     if (!userId.value) {
-      await createUserImmediately()
+      if (!(await createUserImmediately())) return
     }
     const resp = await getUsers(scriptId, userId.value)
     const userIndex = resp?.index?.find(i => i.uid === userId.value)
@@ -522,7 +772,7 @@ const loadUser = async () => {
       throw new Error('用户不存在或加载失败')
     }
 
-    const userData = data as Partial<OkwwUserFormData>
+    const userData = data as OkwwUserConfig
 
     Object.assign(formData, {
       Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
@@ -530,22 +780,6 @@ const loadUser = async () => {
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
       Data: { ...getDefaultUserData().Data, ...(userData.Data || {}) },
     })
-    formData.Info.Mode = '详细'
-    const taskIndex = Number(formData.Task.TaskIndex)
-    let shouldPersistTaskIndex = false
-    if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKWW_MAX_TASK_INDEX) {
-      formData.Task.TaskIndex = 1
-      shouldPersistTaskIndex = true
-    }
-    const patch: Record<string, any> = {}
-    if (shouldPersistTaskIndex) {
-      patch.Task = {
-        TaskIndex: formData.Task.TaskIndex,
-      }
-    }
-    if (Object.keys(patch).length > 0) {
-      await updateUser(scriptId, userId.value, patch)
-    }
     await nextTick()
     formData.userName = formData.Info.Name || ''
   } catch (e) {
@@ -558,13 +792,14 @@ const loadUser = async () => {
   }
 }
 
-const handleConfigSaved = () => {
-  logger.info('OK-WW 配置已保存')
-}
-
 onMounted(async () => {
-  await loadScriptInfo()
-  await loadUser()
+  if (await loadScriptInfo()) {
+    await loadUser()
+  }
+})
+
+onUnmounted(() => {
+  void stopOkwwConfigSession()
 })
 </script>
 
@@ -595,6 +830,11 @@ onMounted(async () => {
   border: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
   color: var(--ant-color-text);
+}
+
+.configuring-button {
+  color: #52c41a;
+  border-color: #52c41a;
 }
 
 .user-edit-content {
@@ -640,6 +880,47 @@ onMounted(async () => {
   width: 100%;
 }
 
+.okww-config-mask {
+  position: fixed;
+  inset: 32px 0 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.mask-content {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px;
+  text-align: center;
+  background: var(--ant-color-bg-elevated);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+}
+
+.mask-icon {
+  margin-bottom: 16px;
+}
+
+.mask-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.mask-description {
+  margin: 0 0 24px;
+  color: var(--ant-color-text-secondary);
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
+}
+
 @media (max-width: 768px) {
   .user-edit-container {
     padding: 16px;
@@ -656,4 +937,3 @@ onMounted(async () => {
   }
 }
 </style>
-

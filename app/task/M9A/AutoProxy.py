@@ -34,6 +34,7 @@ from app.models.config import M9AConfig, M9AUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.io import read_file, write_file
 from app.utils.constants import UTC4,UTC8
 from .tools import push_notification
 from app.task.general.tools import execute_script_task
@@ -52,6 +53,7 @@ ENTRY_FALLBACK_NAMES = {
     "自动深眠": LIMBO_ENTRY,
     "自动醒梦": LUCIDSCAPE_ENTRY,
 }
+M9A_FAILURE_QUIET_SECONDS = 5
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -98,6 +100,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.completed_task_entries: set[str] = set()
         self.emulator_opened = False
         self.m9a_started = False
+        self._m9a_failed_task_names: set[str] = set()
+        self._m9a_failure_signal_seen = False
+        self._m9a_failure_quiet_task: asyncio.Task | None = None
 
     async def check(self) -> str:
 
@@ -160,6 +165,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(
                 f"用户 {self.cur_user_item.name} 自动代理模式 - 尝试次数: {i + 1}/{retry_limit}"
             )
+            await self._stop_failure_quiet_waiter()
+            self._m9a_failed_task_names.clear()
+            self._m9a_failure_signal_seen = False
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = (
                 self.cur_user_log
@@ -207,7 +215,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     self.emulator_opened = True
             except Exception as e:
-                logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -223,7 +231,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -239,7 +247,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index"), False
                     )
                 except Exception as e:
-                    logger.exception(f"模拟器隐藏失败: {e}")
+                    logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
@@ -257,7 +265,7 @@ class AutoProxyTask(TaskExecuteBase):
             
             # 检查 M9A 进程是否还在运行
             if not await self.m9a_process_manager.is_running():
-                logger.error("M9A 进程启动后立即退出，可能是 ADB 连接或模拟器问题")
+                logger.warning("M9A 进程启动后立即退出，可能是 ADB 连接或模拟器问题")
                 raise RuntimeError("M9A 进程启动失败，请检查模拟器和 ADB 连接")
             
             logger.info("M9A 进程正常运行中...")
@@ -266,6 +274,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()
+            await self._stop_failure_quiet_waiter()
 
             if not self.is_virtual_update_user:
                 completed_entries = self._collect_completed_task_entries()
@@ -286,7 +295,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 break
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = (
@@ -302,7 +311,7 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                         self.emulator_opened = False
                     except Exception as e:
-                        logger.exception(f"关闭模拟器失败: {e}")
+                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.m9a_exe_path)
                 self.m9a_started = False
 
@@ -332,7 +341,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
             except Exception as e:
                 error = f"任务队列 JSON 解析失败: {e}"
-                logger.error(error)
+                logger.warning(error)
                 return [], error
 
         if not isinstance(queue, list):
@@ -459,14 +468,11 @@ class AutoProxyTask(TaskExecuteBase):
                     account=account
                 )
         except Exception as e:
-            logger.error(f"构建 M9A 配置失败: {e}")
+            logger.warning(f"构建 M9A 配置失败: {e}")
             raise
 
         # 保存配置到 M9A 目录
-        self.m9a_tasks_path.write_text(
-            json.dumps(config, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        write_file(self.m9a_tasks_path, config)
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
 
         # Debug 备份：保存到 data/script_id 目录，按 testN.json 递增，保留最近 5 个
@@ -485,10 +491,7 @@ class AutoProxyTask(TaskExecuteBase):
         backup_path = debug_dir / f"test{next_num}.json"
         
         # 保存备份
-        backup_path.write_text(
-            json.dumps(config, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        write_file(backup_path, config)
         logger.info(f"Debug 备份已保存：{backup_path}")
         
         # 清理旧备份，只保留最近 5 个
@@ -510,6 +513,55 @@ class AutoProxyTask(TaskExecuteBase):
                 except Exception as e:
                     logger.warning(f"删除旧备份文件失败 {file_path}: {e}")
 
+
+    @staticmethod
+    def _extract_failed_task_names(log: str) -> set[str]:
+        return {
+            task_name.strip()
+            for task_name in re.findall(r"任务失败[:：]\s*(.+)", log)
+            if task_name.strip()
+        }
+
+    def _start_failure_quiet_waiter(self) -> None:
+        if self._m9a_failure_quiet_task is None or self._m9a_failure_quiet_task.done():
+            self._m9a_failure_quiet_task = asyncio.create_task(
+                self._wait_for_failure_quiet_period()
+            )
+
+    async def _wait_for_failure_quiet_period(self) -> None:
+        while not self.wait_event.is_set():
+            idle_seconds = (
+                datetime.now() - self.m9a_log_monitor.latest_time
+            ).total_seconds()
+            if idle_seconds >= M9A_FAILURE_QUIET_SECONDS:
+                failed_tasks = "、".join(sorted(self._m9a_failed_task_names)) or "未知任务"
+                self.cur_user_log.status = f"M9A 任务失败: {failed_tasks}"
+                self.script_info.log = (
+                    f"{self.cur_user_log.status}\n"
+                    f"{M9A_FAILURE_QUIET_SECONDS}秒无新动作，准备重试"
+                )
+                logger.warning(
+                    f"用户: {self.cur_user_uid} - {self.cur_user_log.status}，"
+                    f"{M9A_FAILURE_QUIET_SECONDS}秒无新动作"
+                )
+                self.wait_event.set()
+                return
+
+            await asyncio.sleep(
+                min(1, M9A_FAILURE_QUIET_SECONDS - max(idle_seconds, 0))
+            )
+
+    async def _stop_failure_quiet_waiter(self) -> None:
+        if self._m9a_failure_quiet_task is None:
+            return
+
+        if not self._m9a_failure_quiet_task.done():
+            self._m9a_failure_quiet_task.cancel()
+            try:
+                await self._m9a_failure_quiet_task
+            except asyncio.CancelledError:
+                pass
+        self._m9a_failure_quiet_task = None
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
 
@@ -536,6 +588,19 @@ class AutoProxyTask(TaskExecuteBase):
             version_match = re.search(r'最新资源版本：v([\d.]+)', log)
             if version_match:
                 self.script_info._m9a_latest_version = version_match.group(1)
+
+        if not self.is_virtual_update_user:
+            self._m9a_failed_task_names = self._extract_failed_task_names(log)
+            failure_signal_seen = "任务运行失败！" in log or "任务运行失败!" in log
+            all_done_with_failure = bool(self._m9a_failed_task_names) and (
+                "任务已全部完成！" in log or "All tasks completed" in log
+            )
+            if failure_signal_seen or all_done_with_failure:
+                if not self._m9a_failure_signal_seen:
+                    self._m9a_failure_signal_seen = True
+                    self._start_failure_quiet_waiter()
+                logger.debug("M9A 检测到任务失败结束信号，等待无新动作后收口")
+                return
 
         if "任务已全部完成！" in log or "All tasks completed" in log:
             if not self.is_virtual_update_user:
@@ -647,6 +712,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def final_task(self):
         """运行结束后的收尾工作"""
 
+        await self._stop_failure_quiet_waiter()
         try:
             if hasattr(self, "m9a_log_monitor") and self.m9a_log_monitor is not None:
                 await self.m9a_log_monitor.stop()
@@ -705,9 +771,10 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "任务被用户手动中止"
 
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=dt,
             )
             user_logs_list.append(log_path.with_suffix(".json"))
             user_log_records.append(
@@ -734,9 +801,12 @@ class AutoProxyTask(TaskExecuteBase):
         # 分析运行日志，获取任务详情
         task_details_text = ""
         try:
-            task_details_text = self._build_attempt_task_details(user_log_records)
+            task_details_text = self._build_attempt_task_details(
+                user_log_records,
+                final_success=self.run_complete,
+            )
         except Exception as e:
-            logger.exception(f"日志分析失败: {e}")
+            logger.opt(exception=True).warning(f"日志分析失败: {e}")
         statistics["task_details"] = task_details_text
 
         # 根据运行结果更新用户状态
@@ -776,7 +846,7 @@ class AutoProxyTask(TaskExecuteBase):
                 # 未检测到正常完成标志，置为异常
                 self.cur_user_item.status = "异常"
                 logger.warning(f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}")
-                logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+                logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
 
         try:
             await push_notification(
@@ -786,7 +856,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -810,7 +880,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         if self.template_path.exists():
             try:
-                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                config = read_file(self.template_path)
                 config["Resource"] = resource
                 logger.info(f"使用配置模板：{self.template_path}")
             except Exception as e:
@@ -933,7 +1003,7 @@ class AutoProxyTask(TaskExecuteBase):
         config = {}
         if self.template_path.exists():
             try:
-                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                config = read_file(self.template_path)
             except Exception:
                 pass
 
@@ -1240,21 +1310,26 @@ class AutoProxyTask(TaskExecuteBase):
             "AgentPath": "./MaaAgentBinary"
         }
 
-    def _build_attempt_task_details(self, user_log_records: list[dict]) -> str:
+    def _build_attempt_task_details(
+        self, user_log_records: list[dict], final_success: bool = False
+    ) -> str:
         """按本轮尝试顺序汇总 M9A 任务详情。"""
         if not user_log_records:
             return ""
 
         multiple_attempts = len(user_log_records) > 1
         detail_blocks = []
+        analyses = []
 
         for index, record in enumerate(user_log_records, start=1):
             try:
                 analysis = M9ALogAnalyzer.parse_lines(record["content"])
                 detail_text = M9ALogAnalyzer.build_notification_text(analysis)
             except Exception as e:
-                logger.exception(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
+                logger.opt(exception=True).warning(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
+                analysis = None
                 detail_text = ""
+            analyses.append(analysis)
 
             if not multiple_attempts:
                 return detail_text
@@ -1265,11 +1340,26 @@ class AutoProxyTask(TaskExecuteBase):
                 detail_text = "未解析到任务详情"
             detail_blocks.append(f"第 {index} 次尝试（{start_time}，{status}）\n{detail_text}")
 
+        if final_success:
+            merged_tasks = {}
+            for analysis in analyses:
+                if analysis is None:
+                    continue
+                for task in analysis.get("tasks", []):
+                    task_name = task.get("name")
+                    if task_name:
+                        merged_tasks[task_name] = task
+
+            if merged_tasks:
+                return M9ALogAnalyzer.build_notification_text(
+                    {"tasks": list(merged_tasks.values()), "duration": ""}
+                )
+
         return "\n\n".join(detail_blocks)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

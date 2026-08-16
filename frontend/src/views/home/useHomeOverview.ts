@@ -1,6 +1,13 @@
 import { ref } from 'vue'
 import { Service } from '@/api/services/Service'
-import type { ActivityItem, HomeOverviewResponse, ProxyInfo, ResourceItem } from '@/types/home'
+import {
+  createEmptyEndfieldActivityOverview,
+  type ActivityItem,
+  type EndfieldActivityOverview,
+  type HomeOverviewResponse,
+  type ProxyInfo,
+  type ResourceItem,
+} from '@/types/home'
 
 const logger = window.electronAPI.getLogger('首页')
 
@@ -10,6 +17,7 @@ export const useHomeOverview = () => {
   const activityData = ref<ActivityItem[]>([])
   const resourceData = ref<ResourceItem[]>([])
   const proxyData = ref<Record<string, ProxyInfo>>({})
+  const endfieldData = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
 
   const clearOverviewError = () => {
     error.value = ''
@@ -31,6 +39,7 @@ export const useHomeOverview = () => {
         if (data.Proxy) {
           proxyData.value = data.Proxy
         }
+        endfieldData.value = data.Endfield ?? createEmptyEndfieldActivityOverview()
       } else {
         error.value = response.message || '获取数据失败'
         logger.warn(`获取首页概览失败: ${error.value}`)
@@ -51,6 +60,7 @@ export const useHomeOverview = () => {
     activityData,
     resourceData,
     proxyData,
+    endfieldData,
     clearOverviewError,
     fetchOverviewData,
   }

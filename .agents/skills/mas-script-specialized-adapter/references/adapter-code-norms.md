@@ -22,6 +22,8 @@
 | 用户 **add**：先 `addUser` 再 `router.replace` 到带 `userId` 路由 | 参考 `GeneralUserEdit` |
 | WebSocket | `@/composables/useWebSocket`（勿造 `@/utils/websocketClient`） |
 | 展示文案 vs 技术标识分离 | 文案如 `ok-ww`；`ScriptType`/路由/OpenAPI 名保持 `Okww` 等 |
+| 自动发现与手动选择 | 使用同一组哨兵文件；保存失败恢复旧值并显示原因 |
+| 配置会话 | 启动、错误、完成、保存、超时、卸载均停止任务并清理订阅 |
 
 ## 3. 任务模块（`app/task/Xxx/`）
 
@@ -52,20 +54,21 @@
 
 | 架构线 | 模式区分 | 配置落盘 |
 |--------|----------|----------|
-| Okww（ok-script） | **无**：统一表单化编辑器 | `data/{scriptId}/Default/ConfigFile/` |
+| Okww（ok-script） | 简洁/详细 | 简洁→`Default/`；详细→`{userId}/` |
 | General | 简洁/详细 | 简洁→`Default/`；详细→`{userId}/` |
 | MaaEnd | 简洁/详细 | 同上 |
 | M9A | **无** | 队列 JSON，不套用此模式 |
 
 **规则**：
-- 如有简洁/详细：`AutoProxy.check()` 须按 `Mode` 校验对应目录存在；用户页仅 **详细** 显示配置按钮。
-- 如无简洁/详细（Okww 等）：配置编辑器始终可用，不因模式隐藏。
+- 如有简洁/详细：配置初始化、AutoProxy 和 ScriptConfig 必须使用同一 owner 规则。
+- 共享配置可提供脚本级入口，独立配置可提供用户级入口；先核对真实调用链，不机械隐藏按钮。
+- 如无简洁/详细：配置入口不得伪造 owner 分支。
 
 ## 5. 架构线选型（实现前只读）
 
 | 线 | 自启动 | 用户改设置 |
 |----|--------|------------|
-| ok-script（Okww） | CLI `-t`/`-e`，`AutoProxy` 拼 argv | 表单化编辑器读写 JSON（v5.3.0-beta.3+） |
+| ok-script（Okww） | CLI `-t`/`-e`，`AutoProxy` 拼 argv | `ScriptConfig` 无参启动本体 GUI，停止任务后同步配置 |
 | MFAA（M9A） | 写盘 + exe，无稳定 CLI | 写 JSON，勿套 ScriptConfig 壳 |
 | MXU（MaaEnd） | 文档化参数 / `mxu-*.json` | ScriptConfig + `mxu-*.json` |
 
@@ -152,14 +155,14 @@ except Exception as e:
 
 ### 6.5 显式属性类型声明
 
-所有实例属性在 `__init__` 中带类型注记：
+跨回调、`final_task` 或 `on_crash` 使用的实例属性在 `__init__` 中声明类型：
 
 ```python
 self.cur_user_config: OkwwUserConfig = self.user_config[self.cur_user_uid]
-self.task_index: int = 0
+self.task_index: int | None = None
 ```
 
-**禁止**延迟赋值（先 `= None` 再在 `check()/prepare()` 赋值）——这迫使下游代码用 `hasattr` 或 `is not None` 守卫。
+生命周期后期才可用的值允许初始化为 `None`，并在消费处做显式状态判断。禁止用 `hasattr` 隐藏未建模的生命周期。
 
 ---
 
@@ -246,9 +249,9 @@ else:
 | 状态 | `log_record[start_time] = LogRecord()`，只写 `status` |
 | pre/post 脚本 | `from app.task.general.tools import execute_script_task` |
 | 配置同步 | `ConfigFile` 目录约定 |
-| 跨类型重构 | `refactor(game): 为End、Okww和通用都加上防止重复启动` — 共用逻辑上提到 `app/task/general/tools` |
+| 跨类型重构 | 仅当已有多个真实调用者时上提共用逻辑；专项差异保留在所属模块 |
 
-**勿**为专项 fork 配置模型（`OkwwConfig_Game` 等）——在 task 代码中处理业务逻辑，配置模型保持与 General 结构对齐。
+专项 schema 只有在 UI/运行时契约确实不同且需要收窄字段时才独立定义；不要仅为改名复制 General 模型，也不要让 schema 暴露运行时未消费的虚假功能。
 
 ---
 

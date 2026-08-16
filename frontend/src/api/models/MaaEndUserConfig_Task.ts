@@ -26,7 +26,7 @@ export type MaaEndUserConfig_Task = {
     /**
      * 基质刷取指定地点
      */
-    AutoEssenceSpecifiedLocation?: ('VFTheHub' | 'VFOriginiumSciencePark' | 'VFOriginLodespring' | 'VFPowerPlateau' | 'WLWulingCity' | 'WLQingboStockade' | 'WLMarkerStone' | null);
+    AutoEssenceSpecifiedLocation?: (string | null);
     /**
      * 理智任务
      */
@@ -84,6 +84,10 @@ export type MaaEndUserConfig_Task = {
      */
     IfAutoCollect?: (boolean | null);
     /**
+     * 选剑演武
+     */
+    IfTrialOfSwordmancy?: (boolean | null);
+    /**
      * 日常奖励领取
      */
     IfDailyRewards?: (boolean | null);
@@ -91,5 +95,9 @@ export type MaaEndUserConfig_Task = {
      * 资源回收站
      */
     IfResourceRecycleStation?: (boolean | null);
+    /**
+     * 抽数计算
+     */
+    IfPullCountCalculator?: (boolean | null);
 };
 

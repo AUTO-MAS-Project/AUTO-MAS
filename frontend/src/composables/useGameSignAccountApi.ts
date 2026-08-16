@@ -55,6 +55,54 @@ export function useGameSignAccountApi() {
     }
 
     /**
+     * 使用塔吉多账号密码一次性换取并保存 Token。
+     * 密码只在本次请求中存在，不写入前端状态或日志。
+     */
+    const loginTaygedo = async (
+        accountId: string,
+        phone: string,
+        password: string,
+    ): Promise<void> => {
+        try {
+            const response = await Service.loginTaygedoApiToolsSignAccountTaygedoLoginPost({
+                accountId,
+                phone,
+                password,
+            })
+            if (Number(response.code) !== 200 || response.status !== 'success') {
+                throw new Error(response.message || '塔吉多账号密码登录失败')
+            }
+            message.success(response.message || '塔吉多登录成功，Token 已保存')
+        } catch (error) {
+            logger.error('塔吉多账号密码登录失败')
+            message.error(error instanceof Error ? error.message : '塔吉多账号密码登录失败')
+            throw error
+        }
+    }
+
+  /**
+   * 使用森空岛手机号密码一次性换取并保存凭据。
+   * 密码只在本次请求中存在，不写入前端状态或日志。
+   */
+  const loginSkland = async (accountId: string, phone: string, password: string): Promise<void> => {
+    try {
+      const response = await Service.loginSklandApiToolsSignAccountSklandLoginPost({
+        accountId,
+        phone,
+        password,
+      })
+      if (Number(response.code) !== 200 || response.status !== 'success') {
+        throw new Error(response.message || '森空岛手机号密码登录失败')
+      }
+      message.success(response.message || '森空岛登录成功，Token 已保存')
+    } catch (error) {
+      logger.error('森空岛手机号密码登录失败')
+      message.error(error instanceof Error ? error.message : '森空岛手机号密码登录失败')
+      throw error
+    }
+  }
+
+    /**
      * 删除账号组
      */
     const deleteAccount = async (accountId: string): Promise<void> => {
@@ -82,6 +130,8 @@ export function useGameSignAccountApi() {
         loading,
         addAccount,
         updateAccount,
+        loginTaygedo,
+    loginSkland,
         deleteAccount,
     }
 }

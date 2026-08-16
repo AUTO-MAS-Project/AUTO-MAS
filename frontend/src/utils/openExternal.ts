@@ -1,3 +1,5 @@
+export const MAS_QQ_GROUP_URL = 'https://qm.qq.com/q/bd9fISNoME'
+
 /**
  * 在系统默认浏览器中打开URL
  * @param url 要打开的URL

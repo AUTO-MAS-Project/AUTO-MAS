@@ -61,6 +61,14 @@ class M9ALogAnalyzer:
         return None
 
     @staticmethod
+    def _extract_task_failure(line: str) -> str | None:
+        """从"任务失败：XXX"行提取任务名"""
+        m = re.search(r"任务失败[:：]\s*(.+)$", line)
+        if m:
+            return m.group(1).strip()
+        return None
+
+    @staticmethod
     def _extract_record(line: str) -> str | None:
         """从 [Record] 行提取记录文本（已去除 HTML 标签）"""
         m = re.search(r"\[Record\] (.+)$", line)
@@ -160,6 +168,16 @@ class M9ALogAnalyzer:
                 tasks.append(current_task)
                 in_drops = False
                 drops = []
+                continue
+
+            failed_task_name = M9ALogAnalyzer._extract_task_failure(line)
+            if failed_task_name:
+                for task in reversed(tasks):
+                    if task.get("name") == failed_task_name:
+                        task["status"] = "失败"
+                        if task is current_task:
+                            save_drops()
+                        break
                 continue
 
             if M9ALogAnalyzer._is_all_done(line):
@@ -344,7 +362,7 @@ async def _send_to_user_channels(
 
     if user_config.get("Notify", "IfSendMail"):
         if not user_config.get("Notify", "ToAddress"):
-            logger.error("用户邮箱地址为空，无法发送邮件通知")
+            logger.warning("用户邮箱地址为空，无法发送邮件通知")
         else:
             await _safe_send_channel(
                 "用户邮件",
@@ -355,7 +373,7 @@ async def _send_to_user_channels(
 
     if user_config.get("Notify", "IfServerChan"):
         if not user_config.get("Notify", "ServerChanKey"):
-            logger.error("用户 ServerChan 密钥为空，无法发送通知")
+            logger.warning("用户 ServerChan 密钥为空，无法发送通知")
         else:
             await _safe_send_channel(
                 "用户 ServerChan",
@@ -417,7 +435,7 @@ async def push_version_update(title: str, message: dict) -> None:
 async def _push_proxy_result(title: str, message: dict) -> None:
     """推送全局代理结果通知"""
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
-    if result_time_setting != "任何时刻" and (
+    if not message.get("game_sign_summary", False) and result_time_setting != "任何时刻" and (
         result_time_setting != "仅失败时" or message["uncompleted_count"] == 0
     ):
         logger.debug("当前 SendTaskResultTime 配置不满足推送条件，跳过")

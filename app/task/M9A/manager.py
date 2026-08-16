@@ -33,7 +33,12 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import M9AConfig, M9AUserConfig
 from app.services import Notify, System
 from app.utils import get_logger
+from app.utils.io import read_file, write_file
 from app.utils.constants import TASK_MODE_ZH
+from app.tools.game_sign_notify import (
+    append_task_game_sign_summary,
+    mark_task_game_sign_summary_consumed,
+)
 from .tools import push_notification, push_version_update
 from .AutoProxy import AutoProxyTask
 from .task_loader import M9ATaskLoader
@@ -118,9 +123,9 @@ class M9AManager(TaskExecuteBase):
         if not config_json.exists():
             return
         try:
-            config = json.loads(config_json.read_text(encoding="utf-8"))
+            config = read_file(config_json)
             config["EnableAutoUpdateResource"] = enabled
-            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            write_file(config_json, config)
             status = "开启" if enabled else "关闭"
             logger.info(f"已{status} M9A 自动更新开关")
         except Exception:
@@ -133,12 +138,12 @@ class M9AManager(TaskExecuteBase):
         if not config_json.exists():
             return
         try:
-            config = json.loads(config_json.read_text(encoding="utf-8"))
+            config = read_file(config_json)
             is_silent = Config.get("Function", "IfSilence")
             config["AutoMinimize"] = is_silent
             config["AutoHide"] = is_silent
             config["ShouldMinimizeToTray"] = is_silent
-            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            write_file(config_json, config)
             status = "开启" if is_silent else "关闭"
             logger.info(f"已{status} M9A 静默模式（AutoMinimize={is_silent}, AutoHide={is_silent}, ShouldMinimizeToTray={is_silent}）")
         except Exception as e:
@@ -210,7 +215,7 @@ class M9AManager(TaskExecuteBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"未通过配置检查: {self.check_result}")
+            logger.warning(f"未通过配置检查: {self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -322,6 +327,10 @@ class M9AManager(TaskExecuteBase):
             ]
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+            task_result = append_task_game_sign_summary(
+                self.task_info, self.script_info.result
+            )
+            has_game_sign_summary = task_result != self.script_info.result
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -329,7 +338,8 @@ class M9AManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": len(over_user),
                 "uncompleted_count": len(error_user) + len(wait_user),
-                "result": self.script_info.result,
+                "result": task_result,
+                "game_sign_summary": has_game_sign_summary,
             }
 
             await Notify.push_plyer(
@@ -340,8 +350,10 @@ class M9AManager(TaskExecuteBase):
             )
             try:
                 await push_notification("代理结果", title, result, None)
+                if has_game_sign_summary:
+                    mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
-                logger.exception(f"推送代理结果时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -391,7 +403,7 @@ class M9AManager(TaskExecuteBase):
             try:
                 await Notify.push_plyer(update_title, update_message, update_message, 10)
             except Exception as e:
-                logger.exception(f"版本更新桌面通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新桌面通知发送失败: {e}")
 
             update_result = {
                 "title": update_title,
@@ -407,7 +419,7 @@ class M9AManager(TaskExecuteBase):
                 await push_version_update(update_title, update_result)
                 logger.info(f"已发送版本更新通知: {update_message}")
             except Exception as e:
-                logger.exception(f"版本更新通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新通知发送失败: {e}")
 
         elif not getattr(self.script_info, '_m9a_update_success', False) and self._virtual_user_old_version:
             err_log = getattr(self.script_info, '_m9a_err_log', [])
@@ -433,7 +445,7 @@ class M9AManager(TaskExecuteBase):
             try:
                 await Notify.push_plyer(fail_title, fail_message, fail_message, 10)
             except Exception as e:
-                logger.exception(f"版本更新失败桌面通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新失败桌面通知发送失败: {e}")
 
             fail_message = f"更新失败（{virtual_status}），当前版本: v{self._virtual_user_old_version}"
             fail_result = {
@@ -449,13 +461,13 @@ class M9AManager(TaskExecuteBase):
             try:
                 await push_version_update(fail_title, fail_result)
             except Exception as e:
-                logger.exception(f"版本更新失败通知发送失败: {e}")
+                logger.opt(exception=True).warning(f"版本更新失败通知发送失败: {e}")
             logger.warning(f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）")
 
     async def on_crash(self, e: Exception):
 
         self.script_info.status = "异常"
-        logger.exception(f"M9A任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"M9A任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

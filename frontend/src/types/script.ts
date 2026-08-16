@@ -165,7 +165,7 @@ export interface MaaEndScriptConfig {
     AccountSwitchMethod: 'MAS' | 'MAAEND'
   }
   Game: {
-    ControllerType: 'Win32-Front' | 'ADB' | null
+    ControllerType: string | null
     Path: string
     Arguments: string
     WaitTime: number

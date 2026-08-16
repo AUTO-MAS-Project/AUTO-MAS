@@ -52,11 +52,21 @@ TYPE_BOOK = {
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 
-MAA_TASKS = ["StartUp", "Fight", "Infrast", "Recruit", "Mall", "Award", "Roguelike"]
+MAA_TASKS = [
+    "StartUp",
+    "DepotMaintain",
+    "Fight",
+    "Infrast",
+    "Recruit",
+    "Mall",
+    "Award",
+    "Roguelike",
+]
 """MAA任务列表"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
+    "库存保持",
     "理智作战",
     "基建换班",
     "自动公招",
@@ -65,6 +75,38 @@ MAA_TASKS_ZH = [
     "自动肉鸽",
 ]
 """MAA任务列表"""
+
+MAA_DEPOT_EXCLUDED_ITEM_IDS = {
+    "3213",
+    "3223",
+    "3233",
+    "3243",
+    "3253",
+    "3263",
+    "3273",
+    "3283",
+    "7001",
+    "7002",
+    "7003",
+    "7004",
+    "4004",
+    "4005",
+    "3105",
+    "3131",
+    "3132",
+    "3133",
+    "6001",
+    "3141",
+    "4002",
+    "32001",
+    "30115",
+    "30125",
+    "30135",
+    "30145",
+    "30155",
+    "30165",
+}
+"""MAA 库存保持不可刷取物品 ID"""
 
 MAA_STAGE_KEY = [
     "MedicineNumb",
@@ -200,13 +242,6 @@ MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
-    "VFTheHub": "枢纽区",
-    "VFOriginiumSciencePark": "源石研究园",
-    "VFOriginLodespring": "矿脉源区",
-    "VFPowerPlateau": "供能高地",
-    "WLWulingCity": "武陵城区",
-    "WLQingboStockade": "清波寨",
-    "WLMarkerStone": "首墩",
 }
 """MaaEnd理智任务详细选项展示文案"""
 
@@ -230,17 +265,6 @@ MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     ),
 }
 """MaaEnd协议空间任务选项列表"""
-
-MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
-    "VFTheHub",
-    "VFOriginiumSciencePark",
-    "VFOriginLodespring",
-    "VFPowerPlateau",
-    "WLWulingCity",
-    "WLQingboStockade",
-    "WLMarkerStone",
-)
-"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
@@ -278,6 +302,7 @@ MAAEND_TASK_GROUPS = {
             ("AutoSell", "售卖弹性物资"),
             ("EnvironmentMonitoring", "环境监测"),
             ("AutoCollect", "自动采集"),
+            ("TrialOfSwordmancy", "选剑演武"),
         ),
     },
     "Rewards": {
@@ -286,6 +311,10 @@ MAAEND_TASK_GROUPS = {
             ("DailyRewards", "日常奖励领取"),
             ("ResourceRecycleStation", "资源回收站"),
         ),
+    },
+    "Statistics": {
+        "label": "数据统计",
+        "tasks": (("PullCountCalculator", "抽数计算"),),
     },
 }
 """MaaEnd任务分组"""
@@ -297,16 +326,13 @@ MAAEND_TASKS = tuple(
 )
 """MaaEnd托管任务列表"""
 
-MAAEND_CONTROLLER_TASKS = {"Win32-Front": MAAEND_TASKS}
-"""MaaEnd控制器支持的托管任务列表"""
-
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",
     "OperatorProgression": "OperatorEXP",
     "WeaponProgression": "WeaponEXP",
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
-    "AutoEssenceSpecifiedLocation": "VFTheHub",
+    "AutoEssenceSpecifiedLocation": "",
 }
 """MaaEnd理智任务字段默认值"""
 

@@ -1,4 +1,4 @@
-export type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy' | 'arknights'
+export type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy' | 'endfield' | 'arknights'
 
 export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
@@ -35,6 +35,17 @@ export interface ResourceItem {
   Activity: Pick<ActivityInfo, 'Tip' | 'StageName'>
 }
 
+export interface StageOption {
+  label: string
+  value: string | null
+}
+
+export interface StageOverview {
+  Activity: ActivityItem[]
+  Resource: ResourceItem[]
+  Options: StageOption[]
+}
+
 export interface ProxyInfo {
   LastProxyDate: string
   ProxyTimes: number
@@ -42,10 +53,52 @@ export interface ProxyInfo {
   ErrorInfo: Record<string, unknown>
 }
 
+export interface EndfieldActivityItem {
+  Id: string
+  Name: string
+  StartTime: string
+  EndTime: string
+  ImageUrl: string
+  Tags: string[]
+}
+
+export interface EndfieldPoolItem {
+  Id: string
+  Name: string
+  Type: string
+  StartTime: string
+  EndTime: string
+  ImageUrl: string
+  UpCharacters: string[]
+}
+
+export interface EndfieldActivityOverview {
+  Available: boolean
+  Stale: boolean
+  Message: string
+  Version: string
+  UpdatedAt: string
+  SourceName: string
+  SourceUrl: string
+  Pools: EndfieldPoolItem[]
+  Activities: EndfieldActivityItem[]
+}
+
+export const createEmptyEndfieldActivityOverview = (): EndfieldActivityOverview => ({
+  Available: false,
+  Stale: false,
+  Message: '',
+  Version: '',
+  UpdatedAt: '',
+  SourceName: 'AKEData',
+  SourceUrl: 'https://www.akedata.wiki',
+  Pools: [],
+  Activities: [],
+})
+
 export interface HomeOverviewResponse {
-  Stage: {
-    Activity: ActivityItem[]
-    Resource: ResourceItem[]
-  }
+  Stage: StageOverview
+  StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
+  Endfield: EndfieldActivityOverview
 }

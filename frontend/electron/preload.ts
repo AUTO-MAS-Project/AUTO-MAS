@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
+  discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
+  discoverWutheringWavesPath: () =>
+    ipcRenderer.invoke('okww-path-discovery:discover-wuthering-waves'),
 
   // 窗口控制
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
@@ -19,6 +22,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowFocus: () => ipcRenderer.invoke('window-focus'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
+
+  // 窗口可见性/后台状态
+  getWindowActivity: () => ipcRenderer.invoke('get-window-activity'),
+  onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, activity: unknown) => {
+      if (activity === 'visible' || activity === 'background') {
+        callback(activity)
+      }
+    }
+
+    ipcRenderer.on('window-activity-changed', listener)
+    return () => ipcRenderer.removeListener('window-activity-changed', listener)
+  },
 
   // 进程管理
   getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),
@@ -71,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
+  exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
   openLogWindow: () => ipcRenderer.invoke('log:openWindow'),

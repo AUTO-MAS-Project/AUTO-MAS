@@ -42,6 +42,8 @@ MUMU_FORCE_KILL_KEYWORDS = (
     "mumunxmain",
     "mumuvmmheadless",
 )
+MUMU_STORE_PACKAGE = "com.mumu.store"
+MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
 
 
 class MumuManager(DeviceBase):
@@ -195,6 +197,56 @@ class MumuManager(DeviceBase):
         )
         return False
 
+    async def _block_store_overlay_ads(self, idx: str) -> None:
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "adb",
+                "-v",
+                idx,
+                "shell",
+                "appops",
+                "set",
+                MUMU_STORE_PACKAGE,
+                MUMU_STORE_OVERLAY_APP_OP,
+                "deny",
+                timeout=10,
+                if_merge_std=True,
+            )
+        except Exception as e:
+            logger.warning(f"屏蔽 MuMu 应用商店悬浮广告失败: {e}")
+        else:
+            if result.returncode == 0:
+                logger.success("已屏蔽 MuMu 应用商店悬浮广告")
+            else:
+                logger.warning(
+                    f"屏蔽 MuMu 应用商店悬浮广告失败: {result.stdout.strip()}"
+                )
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "adb",
+                "-v",
+                idx,
+                "shell",
+                "am",
+                "force-stop",
+                MUMU_STORE_PACKAGE,
+                timeout=10,
+                if_merge_std=True,
+            )
+        except Exception as e:
+            logger.warning(f"停止 MuMu 应用商店广告进程失败: {e}")
+            return
+
+        if result.returncode == 0:
+            logger.success("已停止 MuMu 应用商店广告进程")
+        else:
+            logger.warning(
+                f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}"
+            )
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
@@ -207,6 +259,8 @@ class MumuManager(DeviceBase):
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
+                if Config.get("Function", "IfBlockAd"):
+                    await self._block_store_overlay_ads(idx)
                 return (await self.getInfo(idx))[idx]
             elif status == DeviceStatus.OFFLINE:
                 break
@@ -258,6 +312,8 @@ class MumuManager(DeviceBase):
             if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
+                if Config.get("Function", "IfBlockAd"):
+                    await self._block_store_overlay_ads(idx)
                 if package_name:
                     try:
                         await self._ensure_app_foreground(idx, package_name)

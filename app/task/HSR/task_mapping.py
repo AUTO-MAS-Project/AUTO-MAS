@@ -19,11 +19,12 @@
 #   Contact: DLmaster_361@163.com
 
 
+import json
 from dataclasses import dataclass, field
 from typing import Literal
 
 ScriptType = Literal["M7A", "SRA"]
-ModuleCategory = Literal["daily", "weekly", "monthly"]
+ModuleCategory = Literal["daily", "weekly"]
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class HSRTaskModule:
 HSR_TASK_MODULES: tuple[HSRTaskModule, ...] = (
     HSRTaskModule(
         key="Daily",
-        name="日常模块",
+        name="体力与培养目标",
         category="daily",
         description="清体力、历战余响",
         supported_scripts=("M7A", "SRA"),
@@ -53,7 +54,7 @@ HSR_TASK_MODULES: tuple[HSRTaskModule, ...] = (
     ),
     HSRTaskModule(
         key="ReceiveRewards",
-        name="领取奖励",
+        name="日常与奖励",
         category="daily",
         description="每日实训、活动检测、奖励领取、兑换码",
         supported_scripts=("M7A", "SRA"),
@@ -96,15 +97,6 @@ HSR_TASK_MODULES: tuple[HSRTaskModule, ...] = (
             }
         },
     ),
-    HSRTaskModule(
-        key="ForgottenHall",
-        name="三深渊",
-        category="monthly",
-        description="混沌回忆、虚构叙事、末日幻影",
-        supported_scripts=("M7A",),
-        default_script="M7A",
-        m7a_tasks=("forgottenhall", "purefiction", "apocalyptic"),
-    ),
 )
 
 HSR_TASK_MODULE_MAP: dict[str, HSRTaskModule] = {m.key: m for m in HSR_TASK_MODULES}
@@ -123,10 +115,35 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
     return script in module.supported_scripts
 
 
-def get_assigned_script(module: HSRTaskModule, script_config) -> ScriptType:
-    """获取模块执行脚本；三深渊当前固定由 M7A 执行。"""
+def get_assigned_script(
+    module: HSRTaskModule,
+    script_config,
+    *,
+    user_config=None,
+    effective_engines: tuple[ScriptType, ...] | None = None,
+) -> ScriptType:
+    """获取模块执行脚本；兼容用户级 Managed.TaskMapping 覆盖。"""
 
-    if module.key == "ForgottenHall":
-        return "M7A"
-    assigned = script_config.get("TaskMapping", module.key)
+    assigned = None
+    if user_config is not None:
+        try:
+            raw = user_config.get("Managed", "TaskMapping")
+        except (AttributeError, KeyError, TypeError):
+            raw = None
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                raw = None
+        if isinstance(raw, dict):
+            assigned = raw.get(module.key)
+    if assigned not in module.supported_scripts:
+        assigned = script_config.get("TaskMapping", module.key)
+    if assigned not in module.supported_scripts:
+        assigned = module.default_script
+    if effective_engines and assigned not in effective_engines:
+        assigned = next(
+            (engine for engine in module.supported_scripts if engine in effective_engines),
+            assigned,
+        )
     return "SRA" if assigned == "SRA" else "M7A"

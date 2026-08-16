@@ -19,12 +19,14 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import uuid
 import json
 import calendar
+from functools import partial
 from pathlib import Path
-from datetime import datetime
-from typing import Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 
 from app.utils.constants import (
     UTC4,
@@ -32,7 +34,6 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
-    MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
@@ -115,20 +116,27 @@ def init_maaend_task_config(config) -> None:
         "Task",
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
-        OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS)),
+        StringValidator(),
     )
 
     for task_name in MAAEND_TASKS:
         setattr(
             config,
             f"Task_If{task_name}",
-            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+            ConfigItem(
+                "Task",
+                f"If{task_name}",
+                task_name != "PullCountCalculator",
+                BoolValidator(),
+            ),
         )
+
 
 """
 脚本级和用户级的 MaaEnd 任务配置项结构相同。配置文件来源为脚本且启用快速配置时,
 任务开关读取脚本配置；理智任务选项始终读取用户配置。
 """
+
 
 def _normalize_maaend_sanity_task_type(task_data: object) -> None:
     """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
@@ -185,7 +193,7 @@ class EmulatorConfig(ConfigBase):
         )
         ## 关闭 MuMu 时强力清理残留进程
         self.Info_ForceKillOnClose = ConfigItem(
-            "Info", "ForceKillOnClose", True, BoolValidator()
+            "Info", "ForceKillOnClose", False, BoolValidator()
         )
 
         super().__init__()
@@ -470,6 +478,22 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfReclamation = ConfigItem(
             "Task", "IfReclamation", False, BoolValidator()
         )
+        ## 是否库存保持
+        self.Task_IfDepotMaintain = ConfigItem(
+            "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 活动期间是否优先刷活动关
+        self.Task_IfActivityFirst = ConfigItem(
+            "Task", "IfActivityFirst", False, BoolValidator()
+        )
+        ## 优先刷取的活动关卡序号
+        self.Task_ActivityStageIndex = ConfigItem(
+            "Task", "ActivityStageIndex", 1, RangeValidator(1, 9999)
+        )
+        ## 库存保持计划
+        self.Task_DepotMaintainPlans = ConfigItem(
+            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -745,6 +769,8 @@ class MaaEndUserConfig(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
+        self._maaend_essence_location_labels: dict[str, str] = {}
+        self._maaend_essence_location_label = ""
 
         ## Info ------------------------------------------------------------
         ## 用户名称
@@ -760,7 +786,9 @@ class MaaEndUserConfig(ConfigBase):
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
         ## 是否启用快速配置
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 理智任务配置模式
         self.Info_SanityMode = ConfigItem("Info", "SanityMode", "Fixed")
         ## 资源名称
@@ -856,7 +884,10 @@ class MaaEndUserConfig(ConfigBase):
             if info_data.get("Mode") == "自定义":
                 info_data["Mode"] = "详细"
                 info_data["IfQuickConfig"] = False
-            elif info_data.get("Mode") in ("简洁", "详细") and "SanityMode" not in info_data:
+            elif (
+                info_data.get("Mode") in ("简洁", "详细")
+                and "SanityMode" not in info_data
+            ):
                 info_data["Mode"] = "简洁"
                 info_data.pop("IfQuickConfig", None)
 
@@ -864,6 +895,28 @@ class MaaEndUserConfig(ConfigBase):
         if isinstance(task_data, dict):
             _normalize_maaend_sanity_task_type(task_data)
         await super().load(data)
+
+    def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
+        """缓存 MaaEnd 基质刷取地点资源。"""
+
+        self._maaend_essence_location_labels = {
+            str(item["value"]): str(item["label"])
+            for item in resource["essenceLocations"]
+        }
+        self._maaend_essence_location_label = self._get_maaend_location_label(
+            self.get("Task", "AutoEssenceSpecifiedLocation")
+        )
+
+    def _get_maaend_location_label(self, value: str) -> str:
+        return self._maaend_essence_location_labels[value] if value else ""
+
+    async def set(self, group: str, name: str, value: Any) -> None:
+        location_label = None
+        if group == "Task" and name == "AutoEssenceSpecifiedLocation":
+            location_label = self._get_maaend_location_label(str(value))
+        await super().set(group, name, value)
+        if location_label is not None:
+            self._maaend_essence_location_label = location_label
 
     def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
         """获取当前生效的理智任务配置"""
@@ -957,9 +1010,14 @@ class MaaEndUserConfig(ConfigBase):
                 if sanity_task_type == "Essence"
                 else task_config[sanity_task_type]
             )
+            detail_label = (
+                self._maaend_essence_location_label
+                if sanity_task_type == "Essence"
+                else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
+            )
             tags.append(
                 {
-                    "text": f"详细任务：{MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]}",
+                    "text": f"详细任务：{detail_label}",
                     "color": "blue",
                 }
             )
@@ -1029,13 +1087,8 @@ class MaaEndConfig(ConfigBase):
         self.Game_ControllerType = ConfigItem(
             "Game",
             "ControllerType",
-            "Win32-Front",
-            OptionsValidator(
-                [
-                    "Win32-Front",
-                    "ADB",
-                ]
-            ),
+            "",
+            StringValidator(),
         )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -1062,6 +1115,40 @@ class MaaEndConfig(ConfigBase):
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        is_dirty = await super().load(data)
+        root_path_value = str(self.get("Info", "Path")).strip()
+        resource_config_path = Path(root_path_value) / "config/mxu-MaaEnd.json"
+        if root_path_value and resource_config_path.is_file():
+            try:
+                await self.load_resource()
+            except Exception as error:
+                logger.warning(f"MaaEnd 动态资源加载失败: {error}")
+        return is_dirty
+
+    async def load_resource(self, force_reload: bool = False) -> dict[str, Any]:
+        """加载并缓存 MaaEnd 动态资源。"""
+
+        from app.task.MaaEnd.resource_loader import load_maaend_options
+
+        resource = await asyncio.to_thread(
+            partial(
+                load_maaend_options,
+                Path(self.get("Info", "Path")),
+                force_reload=force_reload,
+            )
+        )
+        for user_config in self.UserData.values():
+            user_config.cache_maaend_resource(resource)
+        return resource
+
+    def get_loaded_resource(self) -> dict[str, Any]:
+        """读取已经载入内存的 MaaEnd 动态资源。"""
+
+        from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
+
+        return get_loaded_maaend_options(Path(self.get("Info", "Path")))
 
 
 class SrcUserConfig(ConfigBase):
@@ -1142,6 +1229,7 @@ class SrcUserConfig(ConfigBase):
             OptionsValidator(
                 [
                     "-",
+                    "Cavern_of_Corrosion_Path_of_Insight",
                     "Cavern_of_Corrosion_Path_of_Possession",
                     "Cavern_of_Corrosion_Path_of_Hidden_Salvation",
                     "Cavern_of_Corrosion_Path_of_Thundersurge",
@@ -1169,22 +1257,23 @@ class SrcUserConfig(ConfigBase):
                 [
                     "-",
                     "Calyx_Golden_Memories_Planarcadia",
-                    "Calyx_Golden_Aether_Planarcadia",
-                    "Calyx_Golden_Treasures_Planarcadia",
                     "Calyx_Golden_Memories_Amphoreus",
-                    "Calyx_Golden_Aether_Amphoreus",
-                    "Calyx_Golden_Treasures_Amphoreus",
                     "Calyx_Golden_Memories_Penacony",
-                    "Calyx_Golden_Aether_Penacony",
-                    "Calyx_Golden_Treasures_Penacony",
                     "Calyx_Golden_Memories_The_Xianzhou_Luofu",
-                    "Calyx_Golden_Aether_The_Xianzhou_Luofu",
-                    "Calyx_Golden_Treasures_The_Xianzhou_Luofu",
                     "Calyx_Golden_Memories_Jarilo_VI",
+                    "Calyx_Golden_Aether_Planarcadia",
+                    "Calyx_Golden_Aether_Amphoreus",
+                    "Calyx_Golden_Aether_Penacony",
+                    "Calyx_Golden_Aether_The_Xianzhou_Luofu",
                     "Calyx_Golden_Aether_Jarilo_VI",
+                    "Calyx_Golden_Treasures_Planarcadia",
+                    "Calyx_Golden_Treasures_Amphoreus",
+                    "Calyx_Golden_Treasures_Penacony",
+                    "Calyx_Golden_Treasures_The_Xianzhou_Luofu",
                     "Calyx_Golden_Treasures_Jarilo_VI",
                     "Calyx_Crimson_Destruction_Herta_StorageZone",
                     "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape",
+                    "Calyx_Crimson_Destruction_Planarcadia_InkfordHermitage",
                     "Calyx_Crimson_Preservation_Herta_SupplyZone",
                     "Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark",
                     "Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains",
@@ -1194,40 +1283,43 @@ class SrcUserConfig(ConfigBase):
                     "Calyx_Crimson_Abundance_Luofu_FyxestrollGarden",
                     "Calyx_Crimson_Erudition_Jarilo_RivetTown",
                     "Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater",
+                    "Calyx_Crimson_Erudition_Planarcadia_SeafeldTVTower",
                     "Calyx_Crimson_Harmony_Jarilo_RobotSettlement",
                     "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape",
                     "Calyx_Crimson_Nihility_Jarilo_GreatMine",
                     "Calyx_Crimson_Nihility_Luofu_AlchemyCommission",
+                    "Calyx_Crimson_Nihility_Amphoreus_RadiantScarwoodGroveofEpiphany",
                     "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos",
                     "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern",
-                    "Stagnant_Shadow_Quanta",
-                    "Stagnant_Shadow_Gust",
-                    "Stagnant_Shadow_Fulmination",
-                    "Stagnant_Shadow_Blaze",
                     "Stagnant_Shadow_Spike",
-                    "Stagnant_Shadow_Rime",
-                    "Stagnant_Shadow_Mirage",
-                    "Stagnant_Shadow_Icicle",
-                    "Stagnant_Shadow_Doom",
-                    "Stagnant_Shadow_Puppetry",
-                    "Stagnant_Shadow_Abomination",
-                    "Stagnant_Shadow_Scorch",
-                    "Stagnant_Shadow_Celestial",
                     "Stagnant_Shadow_Perdition",
-                    "Stagnant_Shadow_Nectar",
+                    "Stagnant_Shadow_Duty",
+                    "Stagnant_Shadow_Deepsheaf",
+                    "Stagnant_Shadow_Blaze",
+                    "Stagnant_Shadow_Scorch",
                     "Stagnant_Shadow_Roast",
                     "Stagnant_Shadow_Ire",
-                    "Stagnant_Shadow_Duty",
-                    "Stagnant_Shadow_Timbre",
-                    "Stagnant_Shadow_Mechwolf",
-                    "Stagnant_Shadow_Gloam",
-                    "Stagnant_Shadow_Sloggyre",
-                    "Stagnant_Shadow_Gelidmoon",
-                    "Stagnant_Shadow_Deepsheaf",
-                    "Stagnant_Shadow_Cinders",
-                    "Stagnant_Shadow_Sirens",
                     "Stagnant_Shadow_Ashes",
+                    "Stagnant_Shadow_Rime",
+                    "Stagnant_Shadow_Icicle",
+                    "Stagnant_Shadow_Nectar",
+                    "Stagnant_Shadow_Sirens",
+                    "Stagnant_Shadow_Fulmination",
+                    "Stagnant_Shadow_Doom",
+                    "Stagnant_Shadow_Mechwolf",
                     "Stagnant_Shadow_Soundburst",
+                    "Stagnant_Shadow_Gust",
+                    "Stagnant_Shadow_Celestial",
+                    "Stagnant_Shadow_Gloam",
+                    "Stagnant_Shadow_Cinders",
+                    "Stagnant_Shadow_Quanta",
+                    "Stagnant_Shadow_Abomination",
+                    "Stagnant_Shadow_Gelidmoon",
+                    "Stagnant_Shadow_Devour",
+                    "Stagnant_Shadow_Mirage",
+                    "Stagnant_Shadow_Puppetry",
+                    "Stagnant_Shadow_Timbre",
+                    "Stagnant_Shadow_Sloggyre",
                 ]
             ),
         )
@@ -1239,6 +1331,8 @@ class SrcUserConfig(ConfigBase):
             OptionsValidator(
                 [
                     "-",
+                    "Divergent_Universe_Bugs_Incoming",
+                    "Divergent_Universe_Gilded_Recollection",
                     "Divergent_Universe_Within_the_West_Wind",
                     "Divergent_Universe_Moonlit_Blood",
                     "Divergent_Universe_Unceasing_Strife",
@@ -1272,6 +1366,7 @@ class SrcUserConfig(ConfigBase):
             OptionsValidator(
                 [
                     "-",
+                    "Echo_of_War_The_Comedy_of_Doom",
                     "Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass",
                     "Echo_of_War_Glance_of_Twilight",
                     "Echo_of_War_Inner_Beast_Battlefield",
@@ -1522,12 +1617,16 @@ class HSRUserConfig(ConfigBase):
         )
         ## 历战余响最近一次完成日期
         self.Data_EchoOfWarLastCompletionDate = ConfigItem(
-            "Data", "EchoOfWarLastCompletionDate", "2000-01-01",
+            "Data",
+            "EchoOfWarLastCompletionDate",
+            "2000-01-01",
             DateTimeValidator("%Y-%m-%d"),
         )
         ## 周常（差分宇宙/货币战争）最近一次完成日期
         self.Data_WeeklyLastCompletionDate = ConfigItem(
-            "Data", "WeeklyLastCompletionDate", "2000-01-01",
+            "Data",
+            "WeeklyLastCompletionDate",
+            "2000-01-01",
             DateTimeValidator("%Y-%m-%d"),
         )
         ## 本周是否已完成周常（仅依据 Data 字段判断）
@@ -1537,19 +1636,6 @@ class HSRUserConfig(ConfigBase):
         ## 周常上次重置 ISO 周（形如 "2025-W23"）
         self.Data_WeeklyLastResetWeek = ConfigItem(
             "Data", "WeeklyLastResetWeek", "2000-W01"
-        )
-        ## HSR 三深渊月度（每月一次）—— 三深渊最近一次完成日期
-        self.Data_AbyssLastCompletionDate = ConfigItem(
-            "Data", "AbyssLastCompletionDate", "2000-01-01",
-            DateTimeValidator("%Y-%m-%d"),
-        )
-        ## HSR 三深渊月度（每月一次）—— 本月是否已完成三深渊（仅依据 Data 字段判断）
-        self.Data_AbyssCompletedThisMonth = ConfigItem(
-            "Data", "AbyssCompletedThisMonth", False, BoolValidator()
-        )
-        ## HSR 三深渊月度（每月一次）—— 三深渊上次重置自然月（形如 "2025-06"）
-        self.Data_AbyssLastResetMonth = ConfigItem(
-            "Data", "AbyssLastResetMonth", "2000-01"
         )
         ## TaskSwitch ------------------------------------------------------
         ## 模块执行开关
@@ -1563,10 +1649,6 @@ class HSRUserConfig(ConfigBase):
         self.TaskSwitch_CurrencyWars = ConfigItem(
             "TaskSwitch", "CurrencyWars", False, BoolValidator()
         )
-        self.TaskSwitch_ForgottenHall = ConfigItem(
-            "TaskSwitch", "ForgottenHall", False, BoolValidator()
-        )
-
         ## Stage -----------------------------------------------------------
         ## 关卡通道
         self.Stage_Channel = ConfigItem(
@@ -1587,16 +1669,21 @@ class HSRUserConfig(ConfigBase):
         ## TaskOpt ---------------------------------------------------------
         ## 历战余响开始刷的星期（周一 ~ 周日）
         self.TaskOpt_EchoOfWarWeekday = ConfigItem(
-            "TaskOpt", "EchoOfWarWeekday", "Monday",
+            "TaskOpt",
+            "EchoOfWarWeekday",
+            "Monday",
             OptionsValidator(
-                ["Monday", "Tuesday", "Wednesday", "Thursday",
-                 "Friday", "Saturday", "Sunday"]
+                [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
             ),
         )
-
-        ## Abyss (三深渊) ---------------------------------------------------
-        ## 三深渊快照集合（从 M7A config.yaml 导入的 JSON 对象）
-        self.Abyss_Snapshots = ConfigItem("Abyss", "Snapshots", "{}", JSONValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -1619,6 +1706,37 @@ class HSRUserConfig(ConfigBase):
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        ## Control / Managed / Direct ------------------------------------
+        ## 兼容插件版的托管/直连配置形状。内置 HSRManager 按模式读取
+        ## 这些字段；普通用户 API 只返回非敏感元数据。
+        self.Control_Mode = ConfigItem(
+            "Control", "Mode", "managed", OptionsValidator(["managed", "direct"])
+        )
+        self.Control_SRA = ConfigItem("Control", "SRA", False, BoolValidator())
+        self.Control_M7A = ConfigItem("Control", "M7A", False, BoolValidator())
+        self.Managed_TaskMapping = ConfigItem(
+            "Managed", "TaskMapping", "{ }", JSONValidator()
+        )
+        self.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
+        self.Direct_SRAConfig = ConfigItem(
+            "Direct", "SRAConfig", "", EncryptValidator()
+        )
+        self.Direct_M7AConfig = ConfigItem(
+            "Direct", "M7AConfig", "", EncryptValidator()
+        )
+        self.Direct_SRAImportedAt = ConfigItem("Direct", "SRAImportedAt", "")
+        self.Direct_M7AImportedAt = ConfigItem("Direct", "M7AImportedAt", "")
+        self.Direct_SRASource = ConfigItem("Direct", "SRASource", "")
+        self.Direct_M7ASource = ConfigItem("Direct", "M7ASource", "")
+
+        ## 兑换码状态指纹（仅状态信息，不保存兑换码明文）
+        self.Data_SRARedeemCodeFingerprint = ConfigItem(
+            "Data", "SRARedeemCodeFingerprint", ""
+        )
+        self.Data_M7ARedeemCodeFingerprint = ConfigItem(
+            "Data", "M7ARedeemCodeFingerprint", ""
+        )
 
         super().__init__()
 
@@ -1677,7 +1795,6 @@ class HSRUserConfig(ConfigBase):
         now = datetime.now(tz=UTC8)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
-        current_month = now.strftime("%Y-%m")
 
         eow_done = (
             bool(self.get("Data", "EchoOfWarCompletedThisWeek"))
@@ -1706,17 +1823,6 @@ class HSRUserConfig(ConfigBase):
         else:
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
-
-        abyss_done = (
-            bool(self.get("Data", "AbyssCompletedThisMonth"))
-            and self.get("Data", "AbyssLastResetMonth") == current_month
-        )
-        tags.append(
-            {
-                "text": "三深渊：已完成" if abyss_done else "三深渊：未完成",
-                "color": "green" if abyss_done else "orange",
-            }
-        )
 
         notes = self.get("Info", "Notes")
         tags.append(
@@ -1747,13 +1853,21 @@ class HSRConfig(ConfigBase):
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
+        self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
-        self.Game_WaitTime = ConfigItem(
-            "Game", "WaitTime", 60, RangeValidator(0, 9999)
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
+        self.Game_ForceResolution1920x1080 = ConfigItem(
+            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        )
+        ## 仅在原生兑换码内容变化时执行兑换
+        self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
+            "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
         )
 
         ## Run -------------------------------------------------------------
@@ -1769,10 +1883,6 @@ class HSRConfig(ConfigBase):
         self.Run_WeeklyTimeLimit = ConfigItem(
             "Run", "WeeklyTimeLimit", 60, RangeValidator(1, 9999)
         )
-        ## 月常任务超时限制（分钟）
-        self.Run_MonthlyTimeLimit = ConfigItem(
-            "Run", "MonthlyTimeLimit", 60, RangeValidator(1, 9999)
-        )
         ## 低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）
         self.Run_LowPerformanceMode = ConfigItem(
             "Run", "LowPerformanceMode", False, BoolValidator()
@@ -1782,8 +1892,6 @@ class HSRConfig(ConfigBase):
         from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
 
         for module in _HSR_TASK_MODULES:
-            if module.key == "ForgottenHall":
-                continue
             self.__setattr__(
                 f"TaskMapping_{module.key}",
                 ConfigItem(
@@ -1846,10 +1954,7 @@ class M9AUserConfig(ConfigBase):
             "Task", "AvailableTasks", "[]", JSONValidator(list)
         )
         ## 运行任务队列 (用户在可用任务列表中选择)
-        self.Task_Queue = ConfigItem(
-            "Task", "Queue", "[]", JSONValidator(list)
-        )
- 
+        self.Task_Queue = ConfigItem("Task", "Queue", "[]", JSONValidator(list))
 
         ## Data ------------------------------------------------------------
         ## 上次代理日期
@@ -2012,7 +2117,6 @@ class M9AConfig(ConfigBase):
         self.UserData = MultipleConfig([M9AUserConfig])
 
         super().__init__()
-
 
 
 class MaaPlanConfig(ConfigBase):
@@ -2327,19 +2431,23 @@ class SimpleUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+class OkwwTaskIndexValidator(OptionsValidator):
+    """兼容旧版中以序号 2 保存的多账号日常任务。"""
+
+    def __init__(self) -> None:
+        super().__init__([1, 7])
+
+    def correct(self, value: Any) -> Any:
+        return 7 if value == 2 else super().correct(value)
+
+
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
 
     # 用户卡 Tag 仅展示中文简称（与编辑页下拉的 English（中文） 区分）
     OKWW_TASK_BOOK: dict[int, str] = {
         1: "日常",
-        2: "多账号日常",
-        3: "刷声骸",
-        4: "半自动肉鸽",
-        5: "凝素领域",
-        6: "梦魇巢穴",
-        7: "模拟领域",
-        8: "无音区",
+        7: "多账号日常",
     }
 
     def __init__(self) -> None:
@@ -2350,13 +2458,13 @@ class OkwwUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Resource = ConfigItem(
-            "Info", "Resource", "官服", OptionsValidator(["官服"])
+            "Info", "Resource", "官服", OptionsValidator(["官服", "国际服"])
         )
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "详细", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2376,9 +2484,52 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # ok-ww.exe -t N -e
+        # MAS 仅接管 DailyTask / MultiAccountDailyTask 及 DailyTask 高频设置。
+        ## 启动任务序号
         self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 1, RangeValidator(1, 8)
+            "Task", "TaskIndex", 1, OkwwTaskIndexValidator()
+        )
+        ## 每日任务体力用途
+        self.Task_WhichToFarm = ConfigItem(
+            "Task",
+            "WhichToFarm",
+            "Tacet Suppression",
+            OptionsValidator(
+                ["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
+            ),
+        )
+        ## 无音区序号
+        self.Task_WhichTacetSuppressionToFarm = ConfigItem(
+            "Task", "WhichTacetSuppressionToFarm", 1, RangeValidator(1, 99)
+        )
+        ## 凝素领域序号
+        self.Task_WhichForgeryChallengeToFarm = ConfigItem(
+            "Task", "WhichForgeryChallengeToFarm", 1, RangeValidator(1, 99)
+        )
+        ## 模拟领域材料
+        self.Task_MaterialSelection = ConfigItem(
+            "Task",
+            "MaterialSelection",
+            "Shell Credit",
+            OptionsValidator(["Resonator EXP", "Weapon EXP", "Shell Credit"]),
+        )
+        ## 使用梦魇巢穴完成日常声骸
+        self.Task_FarmNightmareNestForDailyEcho = ConfigItem(
+            "Task", "FarmNightmareNestForDailyEcho", True, BoolValidator()
+        )
+        ## 每日任务后运行的附加任务
+        self.Task_AdditionalTasks = ConfigItem(
+            "Task",
+            "AdditionalTasks",
+            ["Check Weekly Garden"],
+            MultipleOptionsValidator(
+                [
+                    "Check Weekly Garden",
+                    "Auto Farm all Nightmare Nest",
+                    "Merge Echo If discarded > 1000",
+                    "Teleport and Farm 4C Echo",
+                ]
+            ),
         )
 
         ## Data ------------------------------------------------------------
@@ -2399,16 +2550,25 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送用户统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
-        self.Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
         )
+        ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
@@ -2512,10 +2672,10 @@ class OkNteUserConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         # ok-nte.exe -t N -e；上游 DailyTask 是 -t 2
-        self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 2, RangeValidator(1, 11)
+        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 11))
+        self.Task_ExitOnFinish = ConfigItem(
+            "Task", "ExitOnFinish", True, BoolValidator()
         )
-        self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2539,7 +2699,9 @@ class OkNteUserConfig(ConfigBase):
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
-        self.Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
@@ -2607,15 +2769,11 @@ class GeneralConfig(ConfigBase):
         ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
         ## 根目录路径
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
-        )
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Script ----------------------------------------------------------
         ## 脚本路径
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
+        self.Script_ScriptPath = ConfigItem("Script", "ScriptPath", "", FileValidator())
         ## 脚本参数
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
@@ -2632,9 +2790,7 @@ class GeneralConfig(ConfigBase):
         self.Script_TrackProcessCmdline = ConfigItem(
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
+        self.Script_ConfigPath = ConfigItem("Script", "ConfigPath", "", FileValidator())
         ## 配置路径模式
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
@@ -2647,9 +2803,7 @@ class GeneralConfig(ConfigBase):
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
         ## 日志路径
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
+        self.Script_LogPath = ConfigItem("Script", "LogPath", "", FileValidator())
         ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         ## 日志时间戳开始位置
@@ -2814,26 +2968,34 @@ class OkwwConfig(ConfigBase):
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
+        ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
-        )
+        ## OK-WW 脚本根目录
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 兼容旧配置：游戏启动由 Enabled 统一控制
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
+        ## 鸣潮启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 鸣潮启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
+        ## 单次任务重试次数
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
+        ## 单次运行超时时间
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
         )
@@ -2850,14 +3012,10 @@ class OkNteConfig(ConfigBase):
 
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-NTE 脚本")
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
-        )
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Script ----------------------------------------------------------
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
+        self.Script_ScriptPath = ConfigItem("Script", "ScriptPath", "", FileValidator())
         # OkNte 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
@@ -2870,9 +3028,7 @@ class OkNteConfig(ConfigBase):
         self.Script_TrackProcessCmdline = ConfigItem(
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
+        self.Script_ConfigPath = ConfigItem("Script", "ConfigPath", "", FileValidator())
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
         )
@@ -2882,9 +3038,7 @@ class OkNteConfig(ConfigBase):
             "Always",
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
+        self.Script_LogPath = ConfigItem("Script", "LogPath", "", FileValidator())
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
         self.Script_LogTimeStart = ConfigItem(
             "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
@@ -2918,7 +3072,9 @@ class OkNteConfig(ConfigBase):
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        self.Game_IfForceClose = ConfigItem("Game", "IfForceClose", True, BoolValidator())
+        self.Game_IfForceClose = ConfigItem(
+            "Game", "IfForceClose", True, BoolValidator()
+        )
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
@@ -2945,13 +3101,9 @@ class GameSignAccountGroup(ConfigBase):
     def __init__(self) -> None:
 
         ## GameSignAccount - 账号组名称
-        self.Name = ConfigItem(
-            "GameSignAccount", "Name", "用户 1", StringValidator()
-        )
+        self.Name = ConfigItem("GameSignAccount", "Name", "用户 1", StringValidator())
         ## GameSignAccount - 是否启用（该用户是否参与签到）
-        self.Enabled = ConfigItem(
-            "GameSignAccount", "Enabled", True, BoolValidator()
-        )
+        self.Enabled = ConfigItem("GameSignAccount", "Enabled", True, BoolValidator())
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
@@ -2964,9 +3116,17 @@ class GameSignAccountGroup(ConfigBase):
         self.SklandToken = ConfigItem(
             "GameSignAccount", "SklandToken", "", EncryptValidator()
         )
+        ## GameSignAccount - 塔吉多及云异环登录凭证 (DPAPI 加密)
+        ## 支持 refreshToken 纯文本或包含 cloudToken/cloudUserId 的 JSON。
+        self.TaygedoToken = ConfigItem(
+            "GameSignAccount", "TaygedoToken", "", EncryptValidator()
+        )
         ## GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
         self.LastSignDate = ConfigItem(
-            "GameSignAccount", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+            "GameSignAccount",
+            "LastSignDate",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
         )
 
         super().__init__()
@@ -3013,11 +3173,11 @@ class ToolsConfig(ConfigBase):
         self.GameSign_NotifyEnabled = ConfigItem(
             "GameSign", "NotifyEnabled", False, BoolValidator()
         )
-        ## GameSign - 签到窗口起点 (HH:mm)
+        ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowStart = ConfigItem(
             "GameSign", "WindowStart", "08:00", DateTimeValidator("%H:%M")
         )
-        ## GameSign - 签到窗口终点 (HH:mm)
+        ## GameSign - 旧版签到窗口终点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowEnd = ConfigItem(
             "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
         )
@@ -3025,7 +3185,7 @@ class ToolsConfig(ConfigBase):
         self.GameSign_RunOnStartup = ConfigItem(
             "GameSign", "RunOnStartup", False, BoolValidator()
         )
-        ## GameSign - 定时运行
+        ## GameSign - 旧版自动签到开关（保留用于读取历史配置，不参与调度）
         self.GameSign_ScheduledRun = ConfigItem(
             "GameSign", "ScheduledRun", True, BoolValidator()
         )
@@ -3039,7 +3199,7 @@ class ToolsConfig(ConfigBase):
         self.GameSign_LastSignDate = ConfigItem(
             "GameSign", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## GameSign - 今日签到随机时间点 (HH:mm)
+        ## GameSign - 旧版今日随机签到时间（保留用于读取历史配置，不参与调度）
         self.GameSign_ScheduledTime = ConfigItem(
             "GameSign", "ScheduledTime", "", StringValidator()
         )
@@ -3138,6 +3298,10 @@ class GlobalConfig(ConfigBase):
         ## 是否屏蔽模拟器广告
         self.Function_IfBlockAd = ConfigItem(
             "Function", "IfBlockAd", False, BoolValidator()
+        )
+        ## 是否启用匿名遥测
+        self.Function_IfEnableTelemetry = ConfigItem(
+            "Function", "IfEnableTelemetry", True, BoolValidator()
         )
 
         ## Voice ------------------------------------------------------------
@@ -3340,62 +3504,80 @@ class GlobalConfig(ConfigBase):
 
         try:
             raw_stage_data = json.loads(self.get("Data", "StageData"))
+            if "Official" in raw_stage_data:
+                stage_data_by_server = {
+                    server: data.get("sideStoryStage", {})
+                    for server, data in raw_stage_data.items()
+                    if isinstance(data, dict)
+                }
+            else:
+                stage_data_by_server = {"Official": raw_stage_data}
 
-            activity_stage_drop_info = []
-            activity_stage_combox = []
+            all_stage_data = {}
+            for server, server_stage_data in stage_data_by_server.items():
+                activity_stage_drop_info = []
+                activity_stage_combox = []
 
-            for side_story in raw_stage_data.values():
-                if (
-                    datetime.strptime(
-                        side_story["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                    ).replace(tzinfo=UTC8)
-                    < datetime.now(tz=UTC8)
-                    < datetime.strptime(
-                        side_story["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                    ).replace(tzinfo=UTC8)
-                ):
-                    for stage in side_story["Stages"]:
-                        activity_stage_combox.append(
-                            {"label": stage["Display"], "value": stage["Value"]}
-                        )
-
-                        if "SSReopen" not in stage["Display"]:
-
-                            if stage["Drop"] in MATERIALS_MAP:
-                                drop_id = stage["Drop"]
-                            elif "玉" in stage["Drop"]:
-                                drop_id = "30012"
-                            else:
-                                drop_id = "NotFound"
-
-                            activity_stage_drop_info.append(
-                                {
-                                    "Display": stage["Display"],
-                                    "Value": stage["Value"],
-                                    "Drop": drop_id,
-                                    "DropName": MATERIALS_MAP.get(
-                                        stage["Drop"], stage["Drop"]
-                                    ),
-                                    "Activity": side_story["Activity"],
-                                }
+                for side_story in server_stage_data.values():
+                    activity = side_story["Activity"]
+                    activity_timezone = timezone(
+                        timedelta(hours=activity.get("TimeZone", 8))
+                    )
+                    if (
+                        datetime.strptime(
+                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                        ).replace(tzinfo=activity_timezone)
+                        < datetime.now(tz=activity_timezone)
+                        < datetime.strptime(
+                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                        ).replace(tzinfo=activity_timezone)
+                    ):
+                        for stage in side_story["Stages"]:
+                            activity_stage_combox.append(
+                                {"label": stage["Display"], "value": stage["Value"]}
                             )
-        except:
+
+                            if "SSReopen" not in stage["Display"]:
+
+                                if stage["Drop"] in MATERIALS_MAP:
+                                    drop_id = stage["Drop"]
+                                elif "玉" in stage["Drop"]:
+                                    drop_id = "30012"
+                                else:
+                                    drop_id = "NotFound"
+
+                                activity_stage_drop_info.append(
+                                    {
+                                        "Display": stage["Display"],
+                                        "Value": stage["Value"],
+                                        "Drop": drop_id,
+                                        "DropName": MATERIALS_MAP.get(
+                                            stage["Drop"], stage["Drop"]
+                                        ),
+                                        "Activity": activity,
+                                    }
+                                )
+
+                stage_data = {"Info": activity_stage_drop_info}
+
+                for day in range(0, 8):
+                    res_stage = []
+
+                    for stage in RESOURCE_STAGE_INFO:
+                        if day in stage["days"] or day == 0:
+                            res_stage.append(
+                                {"label": stage["text"], "value": stage["value"]}
+                            )
+
+                    stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
+                        res_stage[0:1] + activity_stage_combox + res_stage[1:]
+                    )
+
+                all_stage_data[server] = stage_data
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return "{ }"
 
-        stage_data = {"Info": activity_stage_drop_info}
-
-        for day in range(0, 8):
-            res_stage = []
-
-            for stage in RESOURCE_STAGE_INFO:
-                if day in stage["days"] or day == 0:
-                    res_stage.append({"label": stage["text"], "value": stage["value"]})
-
-            stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                res_stage[0:1] + activity_stage_combox + res_stage[1:]
-            )
-
-        return json.dumps(stage_data, ensure_ascii=False)
+        return json.dumps(all_stage_data, ensure_ascii=False)
 
 
 CLASS_BOOK = {

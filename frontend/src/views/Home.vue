@@ -44,7 +44,7 @@
       @visibility-change="setHomeModuleShown"
     />
 
-    <div v-if="layoutReady" class="home-content">
+    <div v-if="layoutReady && !isBootstrapping" class="home-content">
       <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
@@ -52,6 +52,7 @@
             v-model:selected-task-id="selectedHomeTaskId"
             :is-bootstrapping="isBootstrapping"
             :command-title="commandTitle"
+            :command-author="commandAuthor"
             :scheduler-task-options="schedulerTaskOptions"
             :scheduler-tasks-loading="schedulerTasksLoading"
             :starting-home-task="startingHomeTask"
@@ -62,13 +63,20 @@
           <HomeQuickActionsCard v-else-if="moduleKey === 'quick'" />
 
           <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
-            <SatelliteAnimation />
+            <SatelliteAnimation v-show="!performanceStore.isBackgrounded" />
           </section>
 
           <HomeProxyCard
             v-else-if="moduleKey === 'proxy'"
             :loading="loading"
             :proxy-data="proxyData"
+          />
+
+          <HomeEndfieldOverview
+            v-else-if="moduleKey === 'endfield'"
+            :loading="loading"
+            :overview="endfieldData"
+            @refresh="fetchOverviewData"
           />
 
           <HomeArknightsOverview
@@ -94,6 +102,7 @@ import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
+import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
@@ -101,12 +110,14 @@ import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
+import { usePerformanceStore } from '@/stores/performance'
 
 defineOptions({
   name: 'HomeView',
 })
 
 const { isBootstrapping } = useAppInitialization()
+const performanceStore = usePerformanceStore()
 const {
   layoutReady,
   layoutDrawerOpen,
@@ -121,6 +132,7 @@ const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfi
   useHomeNotice()
 const {
   commandTitle,
+  commandAuthor,
   schedulerTasksLoading,
   startingHomeTask,
   schedulerTaskOptions,
@@ -135,6 +147,7 @@ const {
   activityData,
   resourceData,
   proxyData,
+  endfieldData,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()

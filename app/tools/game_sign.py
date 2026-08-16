@@ -22,21 +22,38 @@
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 import httpx
 
 from app.core import Config
+from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
 
 _game_sign_lock = asyncio.Lock()
+_game_sign_flow_lock = asyncio.Lock()
 
 
 class GameSignInProgressError(RuntimeError):
     """游戏社区签到已在执行。"""
+
+
+@asynccontextmanager
+async def game_sign_flow():
+    """串行保护一次完整签到流程，包括结果持久化和通知。"""
+
+    if _game_sign_flow_lock.locked():
+        raise GameSignInProgressError("游戏社区签到正在执行，请稍后重试")
+
+    await _game_sign_flow_lock.acquire()
+    try:
+        yield
+    finally:
+        _game_sign_flow_lock.release()
 
 
 def _all_enabled_platforms_signed(
@@ -91,13 +108,33 @@ async def _check_system_time() -> bool:
         return True
 
 
+def _empty_platform_result(
+    *, account_name: str, account_uid: str, platform: str
+) -> dict:
+    """为没有返回可签到角色的平台保留通知占位，不写入前端结果列表。"""
+
+    return {
+        "account": account_name,
+        "account_uid": account_uid,
+        "game": "",
+        "platform": platform,
+        "status": "失败",
+        "reward": "",
+        "reason": "未获取到可签到角色",
+        "_notification_only": True,
+    }
+
+
 async def run_all_sign_in(force: bool = False) -> list[dict]:
     """串行执行游戏社区签到，避免重复签到和重复通知。"""
     if _game_sign_lock.locked():
         raise GameSignInProgressError("游戏社区签到正在执行，请稍后重试")
 
-    async with _game_sign_lock:
+    await _game_sign_lock.acquire()
+    try:
         return await _run_all_sign_in(force=force)
+    finally:
+        _game_sign_lock.release()
 
 
 async def _run_all_sign_in(force: bool = False) -> list[dict]:
@@ -112,7 +149,7 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         签到结果列表，每项包含 account, game, platform, status, reward, reason
     """
     results = []
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
     # 时间校准：偏差过大时跳过本轮签到，避免因时间错误导致 API 失败
     if not await _check_system_time():
@@ -141,10 +178,22 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         if skland_token:
             enabled_platforms.append("森空岛")
             logger.info(f"[{account_name}] 开始森空岛签到")
+            platform_result_start = len(results)
             try:
                 from .skland import skland_sign_in
 
-                skland_results = await skland_sign_in(skland_token, app_code="all")
+                async def save_skland_credential(updated_token: str) -> None:
+                    await account.set(
+                        "GameSignAccount",
+                        "SklandToken",
+                        updated_token,
+                    )
+
+                skland_results = await skland_sign_in(
+                    skland_token,
+                    app_code="all",
+                    on_credential_update=save_skland_credential,
+                )
                 if not any(
                     game_key in skland_results
                     for game_key in ("arknights", "endfield")
@@ -196,6 +245,14 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                             "reward": "",
                             "reason": "签到失败",
                         })
+                if len(results) == platform_result_start:
+                    results.append(
+                        _empty_platform_result(
+                            account_name=account_name,
+                            account_uid=account_uid,
+                            platform="森空岛",
+                        )
+                    )
 
             except Exception as e:
                 logger.error(f"[{account_name}] 森空岛签到异常: {e}")
@@ -214,14 +271,25 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         if miyoushe_token:
             enabled_platforms.append("米游社")
             logger.info(f"[{account_name}] 开始米游社签到")
+            platform_result_start = len(results)
             try:
                 from .miyoushe import miyoushe_sign_in
 
                 miyoushe_results = await miyoushe_sign_in(miyoushe_token)
                 for item in miyoushe_results:
-                    item["account"] = account_name
+                    # 签到适配器返回的角色名/UID比工具账号别名更具体，优先保留它。
+                    if not item.get("account"):
+                        item["account"] = account_name
                     item["account_uid"] = account_uid
                 results.extend(miyoushe_results)
+                if len(results) == platform_result_start:
+                    results.append(
+                        _empty_platform_result(
+                            account_name=account_name,
+                            account_uid=account_uid,
+                            platform="米游社",
+                        )
+                    )
             except Exception as e:
                 logger.error(f"[{account_name}] 米游社签到异常: {e}")
                 results.append({
@@ -239,14 +307,24 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         if kuro_token:
             enabled_platforms.append("库街区")
             logger.info(f"[{account_name}] 开始库街区签到")
+            platform_result_start = len(results)
             try:
                 from .kuro import kuro_sign_in
 
                 kuro_results = await kuro_sign_in(kuro_token)
                 for item in kuro_results:
-                    item["account"] = account_name
+                    if not item.get("account"):
+                        item["account"] = account_name
                     item["account_uid"] = account_uid
                 results.extend(kuro_results)
+                if len(results) == platform_result_start:
+                    results.append(
+                        _empty_platform_result(
+                            account_name=account_name,
+                            account_uid=account_uid,
+                            platform="库街区",
+                        )
+                    )
             except Exception as e:
                 logger.error(f"[{account_name}] 库街区签到异常: {e}")
                 results.append({
@@ -259,16 +337,110 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                     "reason": str(e),
                 })
 
-        # 每个已配置平台的全部角色或游戏均完成后，才标记该用户今日已签到
-        if _all_enabled_platforms_signed(
+        # 塔吉多社区签到和云异环时长查询
+        try:
+            taygedo_token = account.get("GameSignAccount", "TaygedoToken")
+        except (AttributeError, KeyError):
+            # 兼容尚未加载新字段的旧配置对象和外部调用方。
+            taygedo_token = ""
+        if taygedo_token:
+            platform_result_start = len(results)
+            credential: dict = {}
+            try:
+                from .taygedo import (
+                    parse_taygedo_credential,
+                    serialize_taygedo_credential,
+                    sign_taygedo,
+                )
+
+                credential = parse_taygedo_credential(taygedo_token)
+                if credential.get("refreshToken") or credential.get("accessToken"):
+                    if "塔吉多" not in enabled_platforms:
+                        enabled_platforms.append("塔吉多")
+                if credential.get("cloudToken") and credential.get("cloudUserId"):
+                    if "云异环" not in enabled_platforms:
+                        enabled_platforms.append("云异环")
+
+                taygedo_results, refreshed_credential = await sign_taygedo(
+                    taygedo_token,
+                    proxy=Config.proxy,
+                )
+                for item in taygedo_results:
+                    if not item.get("account") or item.get("account") == "未知用户":
+                        item["account"] = account_name
+                    item["account_uid"] = account_uid
+                results.extend(taygedo_results)
+
+                refreshed_token = serialize_taygedo_credential(refreshed_credential)
+                if refreshed_token and refreshed_token != str(taygedo_token).strip():
+                    await account.set("GameSignAccount", "TaygedoToken", refreshed_token)
+
+                for platform in ("塔吉多", "云异环"):
+                    if platform in enabled_platforms and not any(
+                        item.get("platform") == platform
+                        and item.get("account_uid") == account_uid
+                        for item in results[platform_result_start:]
+                    ):
+                        results.append(
+                            _empty_platform_result(
+                                account_name=account_name,
+                                account_uid=account_uid,
+                                platform=platform,
+                            )
+                        )
+            except Exception as e:
+                logger.error(f"[{account_name}] 塔吉多签到异常: {e}")
+                if not enabled_platforms:
+                    if credential.get("refreshToken") or credential.get("accessToken"):
+                        enabled_platforms.append("塔吉多")
+                    if credential.get("cloudToken") and credential.get("cloudUserId"):
+                        enabled_platforms.append("云异环")
+                for error_platform in ("塔吉多", "云异环"):
+                    if error_platform not in enabled_platforms:
+                        continue
+                    if any(
+                        item.get("platform") == error_platform
+                        and item.get("account_uid") == account_uid
+                        for item in results[platform_result_start:]
+                    ):
+                        continue
+                    results.append({
+                        "account": f"{account_name}/{error_platform}",
+                        "account_uid": account_uid,
+                        "game": "塔吉多社区" if error_platform == "塔吉多" else "云异环",
+                        "platform": error_platform,
+                        "status": "失败",
+                        "reward": "",
+                        "reason": str(e),
+                    })
+
+        # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
+        # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。
+        all_platforms_signed = _all_enabled_platforms_signed(
             results,
             account_uid=account_uid,
             enabled_platforms=enabled_platforms,
-        ):
+        )
+        should_mark_signed = bool(enabled_platforms) and (not force or all_platforms_signed)
+        if should_mark_signed:
             try:
                 await account.set("GameSignAccount", "LastSignDate", today)
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
+
+        if "森空岛" in enabled_platforms and _all_enabled_platforms_signed(
+            results,
+            account_uid=account_uid,
+            enabled_platforms=["森空岛"],
+        ):
+            sync_legacy_date = getattr(
+                Config, "_sync_legacy_skland_sign_date", None
+            )
+            if callable(sync_legacy_date):
+                try:
+                    await sync_legacy_date(token=skland_token, sign_date=today)
+                except Exception as e:
+                    logger.warning(f"[{account_name}] 回写旧用户森空岛日期失败: {e}")
 
     if not results:
         logger.info("没有配置任何签到平台")
@@ -322,11 +494,13 @@ def format_sign_results(results: list[dict]) -> dict:
     按平台分组，平台内按账号 UID 聚合
 
     Returns:
-        {platform: [{account_alias, account_uid, games: [{game, status, reward, reason}]}]}
+        {platform: [{account_alias, account_uid, games: [{account, game, status, reward, reason}]}]}
     """
     platforms: dict[str, dict[str, dict]] = {}
 
     for item in results:
+        if item.get("_notification_only"):
+            continue
         platform = item.get("platform", "未知")
         account = str(item.get("account", "未知"))
         account_uid = str(item.get("account_uid", ""))
@@ -345,6 +519,7 @@ def format_sign_results(results: list[dict]) -> dict:
             }
 
         platforms[platform][group_key]["games"].append({
+            "account": account,
             "game": item.get("game", "未知"),
             "status": item.get("status", "失败"),
             "reward": item.get("reward", ""),

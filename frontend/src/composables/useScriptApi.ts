@@ -10,6 +10,7 @@ import {
   type SrcConfig,
   type HSRConfig,
   type HSRStageOptionsData,
+  type MaaEndOptionsOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
@@ -703,7 +704,7 @@ export function useScriptApi() {
                         AutoEssenceSpecifiedLocation:
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
-                            : 'VFTheHub',
+                            : '',
                         IfSanity:
                           maaEndUserData.Task?.IfSanity != null
                             ? maaEndUserData.Task.IfSanity
@@ -759,6 +760,10 @@ export function useScriptApi() {
                         IfAutoCollect:
                           maaEndUserData.Task?.IfAutoCollect != null
                             ? maaEndUserData.Task.IfAutoCollect
+                            : true,
+                        IfTrialOfSwordmancy:
+                          maaEndUserData.Task?.IfTrialOfSwordmancy != null
+                            ? maaEndUserData.Task.IfTrialOfSwordmancy
                             : true,
                         IfDailyRewards:
                           maaEndUserData.Task?.IfDailyRewards != null
@@ -1084,10 +1089,6 @@ export function useScriptApi() {
                           hsrUserData.TaskSwitch?.CurrencyWars !== undefined
                             ? hsrUserData.TaskSwitch.CurrencyWars
                             : false,
-                        ForgottenHall:
-                          hsrUserData.TaskSwitch?.ForgottenHall !== undefined
-                            ? hsrUserData.TaskSwitch.ForgottenHall
-                            : false,
                       },
                       TaskOpt: {
                         EchoOfWarWeekday:
@@ -1239,6 +1240,20 @@ export function useScriptApi() {
     }
   }
 
+  const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
+    try {
+      const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
+      if (response?.code !== 200) throw new Error(response?.message || '接口返回异常')
+      return response
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
+      error.value = errorMsg
+      logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
+      message.error('MaaEnd 文件不完整，请卸载后重新安装 MaaEnd')
+      return null
+    }
+  }
+
   // 删除脚本
   const deleteScript = async (scriptId: string): Promise<boolean> => {
     loading.value = true
@@ -1345,6 +1360,7 @@ export function useScriptApi() {
     getScriptsWithUsers,
     getScript,
     getHsrStageOptions,
+    getMaaEndOptions,
     deleteScript,
     updateScript,
     reorderScript,

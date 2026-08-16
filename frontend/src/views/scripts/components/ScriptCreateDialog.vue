@@ -6,6 +6,7 @@
     :keyboard="!submitting"
     :mask-closable="!submitting"
     :confirm-loading="submitting"
+    :z-index="900"
     :footer="null"
     class="script-create-dialog"
     title="新建脚本"
@@ -121,45 +122,46 @@
                 <a-button size="small" @click="emit('request-templates')">重试</a-button>
               </template>
             </a-alert>
-            <a-spin :spinning="templateLoading">
-              <a-radio-group
-                v-if="filteredTemplates.length"
-                v-model:value="selectedTemplateUrl"
-                class="entity-list template-list"
+            <div v-if="templateLoading" class="template-loading-state">
+              <a-spin size="large" tip="正在加载配置模板..." />
+            </div>
+            <a-radio-group
+              v-else-if="filteredTemplates.length"
+              v-model:value="selectedTemplateUrl"
+              class="entity-list template-list"
+            >
+              <label
+                v-for="template in filteredTemplates"
+                :key="template.downloadUrl"
+                :class="[
+                  'entity-row template-row',
+                  { selected: selectedTemplateUrl === template.downloadUrl },
+                ]"
               >
-                <label
-                  v-for="template in filteredTemplates"
-                  :key="template.downloadUrl"
-                  :class="[
-                    'entity-row template-row',
-                    { selected: selectedTemplateUrl === template.downloadUrl },
-                  ]"
-                >
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ template.configName }}</span>
-                    <span class="template-meta">
-                      <span><UserOutlined /> {{ template.author || '未知作者' }}</span>
-                      <span><ClockCircleOutlined /> {{ template.createTime || '未知时间' }}</span>
-                    </span>
-                    <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
-                    <span
-                      class="template-description"
-                      @click="handleTemplateDescriptionClick"
-                      v-html="parseMarkdown(template.description)"
-                    ></span>
-                    <!-- eslint-enable vue/no-v-html -->
+                <span class="choice-copy">
+                  <span class="choice-title">{{ template.configName }}</span>
+                  <span class="template-meta">
+                    <span><UserOutlined /> {{ template.author || '未知作者' }}</span>
+                    <span><ClockCircleOutlined /> {{ template.createTime || '未知时间' }}</span>
                   </span>
-                  <a-radio :value="template.downloadUrl" />
-                </label>
-              </a-radio-group>
-              <a-empty
-                v-else-if="!templateLoading"
-                :description="templateKeyword ? '未找到匹配的模板' : '暂无可用模板'"
-              >
-                <a-button v-if="templateKeyword" @click="templateKeyword = ''">清空搜索</a-button>
-                <a-button v-else @click="chooseCustomConfig">改为自定义配置</a-button>
-              </a-empty>
-            </a-spin>
+                  <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
+                  <span
+                    class="template-description"
+                    @click="handleTemplateDescriptionClick"
+                    v-html="parseMarkdown(template.description)"
+                  ></span>
+                  <!-- eslint-enable vue/no-v-html -->
+                </span>
+                <a-radio :value="template.downloadUrl" />
+              </label>
+            </a-radio-group>
+            <a-empty
+              v-else
+              :description="templateKeyword ? '未找到匹配的模板' : '暂无可用模板'"
+            >
+              <a-button v-if="templateKeyword" @click="templateKeyword = ''">清空搜索</a-button>
+              <a-button v-else @click="chooseCustomConfig">改为自定义配置</a-button>
+            </a-empty>
           </template>
         </template>
 
@@ -386,43 +388,21 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 </script>
 
 <style scoped>
+:global(.script-create-dialog) {
+  top: 64px;
+  padding-bottom: 16px;
+}
+
+:global(.script-create-dialog .ant-modal-content) {
+  max-height: calc(100vh - 128px);
+  overflow: hidden;
+}
+
 .create-layout {
-  min-height: 500px;
+  height: min(500px, calc(100vh - 192px));
+  min-height: 0;
   margin: -8px -24px 0;
-}
-
-.type-grid,
-.type-sections,
-.entity-list {
-  scrollbar-color: var(--ant-color-border) transparent;
-  scrollbar-width: thin;
-}
-
-.type-grid::-webkit-scrollbar,
-.type-sections::-webkit-scrollbar,
-.entity-list::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
-}
-
-.type-grid::-webkit-scrollbar-track,
-.type-sections::-webkit-scrollbar-track,
-.entity-list::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-
-.type-grid::-webkit-scrollbar-thumb,
-.type-sections::-webkit-scrollbar-thumb,
-.entity-list::-webkit-scrollbar-thumb {
-  border-radius: 8px;
-  background: var(--ant-color-border) !important;
-}
-
-.type-grid::-webkit-scrollbar-thumb:hover,
-.type-sections::-webkit-scrollbar-thumb:hover,
-.entity-list::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary) !important;
+  overflow: hidden;
 }
 
 .choice-copy {
@@ -433,8 +413,10 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 }
 
 .step-content {
+  height: 100%;
   min-width: 0;
   padding: 24px 28px;
+  overflow-y: auto;
   background: var(--ant-color-bg-elevated);
 }
 
@@ -531,20 +513,15 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 .type-grid {
   display: grid;
   width: 100%;
-  max-height: 344px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  overflow-y: auto;
 }
 
 .type-sections {
   display: flex;
   width: 100%;
-  max-height: 360px;
   flex-direction: column;
   gap: 18px;
-  padding-right: 4px;
-  overflow-y: auto;
 }
 
 .type-section-heading {
@@ -585,9 +562,7 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 .entity-list,
 .template-list {
-  max-height: 344px;
-  padding-right: 4px;
-  overflow-y: auto;
+  width: 100%;
 }
 
 .ellipsis {
@@ -622,6 +597,13 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 .template-alert {
   margin-bottom: 12px;
+}
+
+.template-loading-state {
+  display: flex;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
 }
 
 .confirm-summary {

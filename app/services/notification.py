@@ -229,8 +229,7 @@ class Notification:
                 "time": datetime.now().strftime("%H:%M:%S"),
             }
 
-            logger.debug(f"原始模板: {template}")
-            logger.debug(f"模板变量: {template_vars}")
+            logger.debug("开始解析 Webhook 消息模板")
 
             # 先尝试作为JSON模板处理
             try:
@@ -252,7 +251,7 @@ class Notification:
                         return obj
 
                 data = replace_variables(template_obj)
-                logger.debug(f"成功解析JSON模板: {data}")
+                logger.debug("Webhook JSON 模板解析成功")
 
             except json.JSONDecodeError:
                 # 如果不是有效的JSON，作为字符串模板处理
@@ -273,11 +272,11 @@ class Notification:
                 # 再次尝试解析为JSON
                 try:
                     data = json.loads(formatted_template)
-                    logger.debug(f"字符串模板解析为JSON成功: {data}")
+                    logger.debug("Webhook 字符串模板已解析为 JSON")
                 except json.JSONDecodeError:
                     # 最终作为纯文本发送
                     data = formatted_template
-                    logger.debug(f"作为纯文本发送: {data}")
+                    logger.debug("Webhook 模板将作为纯文本发送")
 
         except Exception as e:
             logger.warning(f"模板解析失败，使用默认格式: {e}")

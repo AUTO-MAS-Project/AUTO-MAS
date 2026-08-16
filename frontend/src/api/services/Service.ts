@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
-import type { Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post } from '../models/Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
@@ -28,8 +26,13 @@ import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
+import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
+import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
+import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
+import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
@@ -71,8 +74,10 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { SklandLoginIn } from '../models/SklandLoginIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -87,7 +92,6 @@ import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
-import type { UserImportAbyssSnapshotIn } from '../models/UserImportAbyssSnapshotIn';
 import type { UserInBase } from '../models/UserInBase';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
@@ -445,6 +449,25 @@ export class Service {
         });
     }
     /**
+     * 获取 MaaEnd 动态选项
+     * @param requestBody
+     * @returns MaaEndOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<MaaEndOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询用户
      * @param requestBody
      * @returns UserGetOut Successful Response
@@ -494,26 +517,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 从 M7A config.yaml 导入三深渊快照
-     * 从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。
-     * @param requestBody
-     * @returns AbyssSnapshotImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importM7AAbyssSnapshotApiScriptsUserImportM7AAbyssSnapshotPost(
-        requestBody: UserImportAbyssSnapshotIn,
-    ): CancelablePromise<AbyssSnapshotImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/import-m7a-abyss-snapshot',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -590,6 +593,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/combox/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 库存保持物品可选项
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotItemsApiScriptsMaaDepotItemsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/items',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -724,15 +746,22 @@ export class Service {
     }
     /**
      * 获取 HSR 体力副本动态选项
-     * 按体力执行脚本返回 M7A / SRA 原生副本字段。
+     * 返回 M7A/SRA 原生副本字段。
+     *
+     * ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+     * 按引擎统一返回，不按 slot 生成不同结果。
      * @param scriptId
      * @param engine
+     * @param userId
+     * @param slot
      * @returns HSRStageOptionsOut Successful Response
      * @throws ApiError
      */
     public static getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
         scriptId?: (string | null),
         engine: 'M7A' | 'SRA' = 'M7A',
+        userId?: (string | null),
+        slot: 'main' | 'eow' = 'main',
     ): CancelablePromise<HSRStageOptionsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -740,6 +769,8 @@ export class Service {
             query: {
                 'scriptId': scriptId,
                 'engine': engine,
+                'userId': userId,
+                'slot': slot,
             },
             errors: {
                 422: `Validation Error`,
@@ -747,32 +778,44 @@ export class Service {
         });
     }
     /**
-     * 获取 OK-WW 配置文件列表及 schema
-     * 获取 OK-WW 配置文件列表及 schema 定义。
-     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 ok-ww configs 目录初始化默认配置。
-     *
-     * Args:
-     * script_id: OK-WW 脚本 ID
-     * user_id: 用户 ID
-     *
-     * Returns:
-     * dict: 包含配置文件列表和 schema 的响应
+     * 获取内置 HSR 能力快照
+     * 返回内置 HSR 的能力快照，不暴露原生编辑器会话。
+     * @param scriptId
+     * @returns HSRCapabilitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrCapabilitiesApiApiScriptsHsrCapabilitiesGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<HSRCapabilitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/capabilities',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 HSR 托管配置字段
+     * 返回原生动态托管字段；用户 ID 只负责归属校验。
      * @param scriptId
      * @param userId
-     * @returns any Successful Response
+     * @returns HSRManagedConfigOut Successful Response
      * @throws ApiError
      */
-    public static getOkwwConfigsListApiScriptsOkwwConfigsListPost(
-        scriptId: string,
-        userId: string,
-    ): CancelablePromise<any> {
+    public static getHsrManagedConfigApiApiScriptsHsrManagedConfigGet(
+        scriptId?: (string | null),
+        userId?: (string | null),
+    ): CancelablePromise<HSRManagedConfigOut> {
         return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/okww/configs/list',
+            method: 'GET',
+            url: '/api/scripts/hsr/managed-config',
             query: {
-                'script_id': scriptId,
-                'user_id': userId,
+                'scriptId': scriptId,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -780,26 +823,17 @@ export class Service {
         });
     }
     /**
-     * 批量更新 OK-WW 配置文件
-     * 批量更新 OK-WW 配置文件
-     *
-     * Args:
-     * script_id: OK-WW 脚本 ID
-     * user_id: 用户 ID
-     * configs: { filename: data } 格式的配置数据
-     *
-     * Returns:
-     * dict: 操作结果
+     * 导入 HSR 原生配置快照
      * @param requestBody
-     * @returns any Successful Response
+     * @returns HSRDirectConfigImportOut Successful Response
      * @throws ApiError
      */
-    public static batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost(
-        requestBody: Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post,
-    ): CancelablePromise<any> {
+    public static importHsrDirectConfigApiApiScriptsHsrDirectConfigImportPost(
+        requestBody: HSRDirectConfigImportIn,
+    ): CancelablePromise<HSRDirectConfigImportOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/okww/configs/batch-update',
+            url: '/api/scripts/hsr/direct-config/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1672,6 +1706,46 @@ export class Service {
         });
     }
     /**
+     * 塔吉多账号密码登录
+     * 一次性使用账号密码换取并保存塔吉多 Token，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginTaygedoApiToolsSignAccountTaygedoLoginPost(
+        requestBody: TaygedoLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/taygedo/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 森空岛手机号密码登录
+     * 一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginSklandApiToolsSignAccountSklandLoginPost(
+        requestBody: SklandLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/skland/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询配置
      * 查询配置
      * @returns SettingGetOut Successful Response
@@ -1907,7 +1981,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后 cookies 直接从响应头获取
+     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError
