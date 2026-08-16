@@ -8,6 +8,18 @@ export type M9AUserConfig_Data = {
      */
     LastProxyDate?: (string | null);
     /**
+     * 上次完成每日心相日期，格式 YYYY-MM-DD
+     */
+    LastPsychubeDate?: (string | null);
+    /**
+     * 上次完成自动深眠月份，格式 YYYY-MM
+     */
+    LastLimboMonth?: (string | null);
+    /**
+     * 上次完成自动醒梦月份，格式 YYYY-MM
+     */
+    LastLucidscapeMonth?: (string | null);
+    /**
      * 代理次数
      */
     ProxyTimes?: (number | null);

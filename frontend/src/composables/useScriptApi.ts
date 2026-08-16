@@ -6,15 +6,57 @@ import {
   type MaaEndConfig,
   type M9AConfig,
   type OkwwConfig,
+  type OkNteConfig,
   type SrcConfig,
+  type HSRConfig,
+  type HSRStageOptionsData,
+  type MaaEndOptionsOut,
   ScriptCreateIn,
   type ScriptReorderIn,
+  HsrService,
   Service,
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('脚本API')
+
+type ScriptListConfig =
+  | MaaConfig
+  | GeneralConfig
+  | OkwwConfig
+  | OkNteConfig
+  | SrcConfig
+  | MaaEndConfig
+  | M9AConfig
+  | HSRConfig
+
+type HSRStageEngine = 'M7A' | 'SRA'
+
+const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
+  MAA: ScriptCreateIn.type.MAA,
+  SRC: ScriptCreateIn.type.SRC,
+  MaaEnd: ScriptCreateIn.type.MAA_END,
+  M9A: ScriptCreateIn.type.M9A,
+  Okww: ScriptCreateIn.type.OKWW,
+  OkNte: ScriptCreateIn.type.OK_NTE,
+  HSR: ScriptCreateIn.type.HSR,
+  General: ScriptCreateIn.type.GENERAL,
+}
+
+const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
+  MaaConfig: 'MAA',
+  SrcConfig: 'SRC',
+  OkwwConfig: 'Okww',
+  OkNteConfig: 'OkNte',
+  MaaEndConfig: 'MaaEnd',
+  M9AConfig: 'M9A',
+  HSRConfig: 'HSR',
+}
+
+const resolveScriptType = (configType: string): ScriptType => {
+  return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
+}
 
 export function useScriptApi() {
   const loading = ref(false)
@@ -27,18 +69,7 @@ export function useScriptApi() {
 
     try {
       const requestData: ScriptCreateIn = {
-        type:
-          type === 'MAA'
-            ? ScriptCreateIn.type.MAA
-            : type === 'SRC'
-              ? ScriptCreateIn.type.SRC
-              : type === 'MaaEnd'
-                ? ScriptCreateIn.type.MAA_END
-                : type === 'M9A'
-                  ? ScriptCreateIn.type.M9A
-                  : type === 'Okww'
-                    ? ScriptCreateIn.type.OKWW
-                    : ScriptCreateIn.type.GENERAL,
+        type: SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE[type],
         scriptId: scriptId || null,
       }
 
@@ -79,7 +110,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+      config: ScriptListConfig
     }[]
   > => {
     if (manageLoading) {
@@ -102,18 +133,7 @@ export function useScriptApi() {
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
-        type:
-          indexItem.type === 'MaaConfig'
-            ? 'MAA'
-            : indexItem.type === 'SrcConfig'
-              ? 'SRC'
-              : indexItem.type === 'OkwwConfig'
-                ? 'Okww'
-              : indexItem.type === 'MaaEndConfig'
-                ? 'MaaEnd'
-                : indexItem.type === 'M9AConfig'
-                  ? 'M9A'
-                  : 'General',
+        type: resolveScriptType(indexItem.type),
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -138,7 +158,7 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+          config: ScriptListConfig
           users: (
             | {
                 id: string
@@ -225,14 +245,14 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
+          config: ScriptListConfig
           users: any[]
         }
       | {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
+          config: ScriptListConfig
           users: any[]
         }
     >[]
@@ -676,7 +696,7 @@ export function useScriptApi() {
                         AutoEssenceSpecifiedLocation:
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
-                            : 'VFTheHub',
+                            : '',
                         IfSanity:
                           maaEndUserData.Task?.IfSanity != null
                             ? maaEndUserData.Task.IfSanity
@@ -732,6 +752,10 @@ export function useScriptApi() {
                         IfAutoCollect:
                           maaEndUserData.Task?.IfAutoCollect != null
                             ? maaEndUserData.Task.IfAutoCollect
+                            : true,
+                        IfTrialOfSwordmancy:
+                          maaEndUserData.Task?.IfTrialOfSwordmancy != null
+                            ? maaEndUserData.Task.IfTrialOfSwordmancy
                             : true,
                         IfDailyRewards:
                           maaEndUserData.Task?.IfDailyRewards != null
@@ -789,6 +813,10 @@ export function useScriptApi() {
                           maaEndUserData.Data?.IfPassCheck !== undefined
                             ? maaEndUserData.Data.IfPassCheck
                             : false,
+                        LastProxyStatus:
+                          maaEndUserData.Data?.LastProxyStatus !== undefined
+                            ? maaEndUserData.Data.LastProxyStatus
+                            : '未知',
                       },
                     }
                   } else if (userIndex.type === 'M9AUserConfig' && userData) {
@@ -807,17 +835,14 @@ export function useScriptApi() {
                           m9aUserData.Info?.RemainedDay !== undefined
                             ? m9aUserData.Info.RemainedDay
                             : -1,
-                        Notes:
-                          m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
+                        Notes: m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
                         Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
                         Resource:
                           m9aUserData.Info?.Resource !== undefined
                             ? m9aUserData.Info.Resource
                             : '官服',
                         Account:
-                          m9aUserData.Info?.Account !== undefined
-                            ? m9aUserData.Info.Account
-                            : '',
+                          m9aUserData.Info?.Account !== undefined ? m9aUserData.Info.Account : '',
                         EmulatorId:
                           m9aUserData.Info?.EmulatorId !== undefined
                             ? m9aUserData.Info.EmulatorId
@@ -870,6 +895,18 @@ export function useScriptApi() {
                           m9aUserData.Data?.LastProxyDate !== undefined
                             ? m9aUserData.Data.LastProxyDate
                             : '',
+                        LastPsychubeDate:
+                          m9aUserData.Data?.LastPsychubeDate !== undefined
+                            ? m9aUserData.Data.LastPsychubeDate
+                            : '',
+                        LastLimboMonth:
+                          m9aUserData.Data?.LastLimboMonth !== undefined
+                            ? m9aUserData.Data.LastLimboMonth
+                            : '',
+                        LastLucidscapeMonth:
+                          m9aUserData.Data?.LastLucidscapeMonth !== undefined
+                            ? m9aUserData.Data.LastLucidscapeMonth
+                            : '',
                         ProxyTimes:
                           m9aUserData.Data?.ProxyTimes !== undefined
                             ? m9aUserData.Data.ProxyTimes
@@ -880,7 +917,10 @@ export function useScriptApi() {
                             : false,
                       },
                     }
-                  } else if (userIndex.type === 'OkwwUserConfig' && userData) {
+                  } else if (
+                    (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
+                    userData
+                  ) {
                     const okwwUserData = userData as any
                     return {
                       id: userIndex.uid,
@@ -891,19 +931,14 @@ export function useScriptApi() {
                             ? okwwUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Status:
-                          okwwUserData.Info?.Status !== undefined
-                            ? okwwUserData.Info.Status
-                            : true,
-                        Id:
-                          okwwUserData.Info?.Id !== undefined ? okwwUserData.Info.Id : '',
+                          okwwUserData.Info?.Status !== undefined ? okwwUserData.Info.Status : true,
+                        Id: okwwUserData.Info?.Id !== undefined ? okwwUserData.Info.Id : '',
                         Password:
                           okwwUserData.Info?.Password !== undefined
                             ? okwwUserData.Info.Password
                             : '',
                         Mode:
-                          okwwUserData.Info?.Mode !== undefined
-                            ? okwwUserData.Info.Mode
-                            : '简洁',
+                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '简洁',
                         Resource:
                           okwwUserData.Info?.Resource !== undefined
                             ? okwwUserData.Info.Resource
@@ -929,19 +964,16 @@ export function useScriptApi() {
                             ? okwwUserData.Info.ScriptAfterTask
                             : '',
                         Notes:
-                          okwwUserData.Info?.Notes !== undefined
-                            ? okwwUserData.Info.Notes
-                            : '',
-                        Tag:
-                          okwwUserData.Info?.Tag !== undefined
-                            ? okwwUserData.Info.Tag
-                            : null,
+                          okwwUserData.Info?.Notes !== undefined ? okwwUserData.Info.Notes : '',
+                        Tag: okwwUserData.Info?.Tag !== undefined ? okwwUserData.Info.Tag : null,
                       },
                       Task: {
                         TaskIndex:
                           okwwUserData.Task?.TaskIndex !== undefined
                             ? okwwUserData.Task.TaskIndex
-                            : 1,
+                            : userIndex.type === 'OkNteUserConfig'
+                              ? 2
+                              : 1,
                         ExitOnFinish:
                           okwwUserData.Task?.ExitOnFinish !== undefined
                             ? okwwUserData.Task.ExitOnFinish
@@ -986,6 +1018,115 @@ export function useScriptApi() {
                           okwwUserData.Data?.ProxyTimes !== undefined
                             ? okwwUserData.Data.ProxyTimes
                             : 0,
+                        LastProxyStatus:
+                          okwwUserData.Data?.LastProxyStatus !== undefined
+                            ? okwwUserData.Data.LastProxyStatus
+                            : '未知',
+                      },
+                    }
+                  } else if (userIndex.type === 'HSRUserConfig' && userData) {
+                    const hsrUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: hsrUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          hsrUserData.Info?.Name !== undefined
+                            ? hsrUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          hsrUserData.Info?.Status !== undefined ? hsrUserData.Info.Status : true,
+                        Id: hsrUserData.Info?.Id !== undefined ? hsrUserData.Info.Id : '',
+                        Password:
+                          hsrUserData.Info?.Password !== undefined ? hsrUserData.Info.Password : '',
+                        Server:
+                          hsrUserData.Info?.Server !== undefined
+                            ? hsrUserData.Info.Server
+                            : 'CN-Official',
+                        RemainedDay:
+                          hsrUserData.Info?.RemainedDay !== undefined
+                            ? hsrUserData.Info.RemainedDay
+                            : -1,
+                        Notes: hsrUserData.Info?.Notes !== undefined ? hsrUserData.Info.Notes : '',
+                        Tag: hsrUserData.Info?.Tag !== undefined ? hsrUserData.Info.Tag : null,
+                      },
+                      Stage: {
+                        Channel:
+                          hsrUserData.Stage?.Channel !== undefined
+                            ? hsrUserData.Stage.Channel
+                            : 'CalyxGolden',
+                        ScriptStage:
+                          hsrUserData.Stage?.ScriptStage !== undefined
+                            ? hsrUserData.Stage.ScriptStage
+                            : '{ }',
+                        ScriptEchoOfWar:
+                          hsrUserData.Stage?.ScriptEchoOfWar !== undefined
+                            ? hsrUserData.Stage.ScriptEchoOfWar
+                            : '{ }',
+                      },
+                      TaskSwitch: {
+                        Daily:
+                          hsrUserData.TaskSwitch?.Daily !== undefined
+                            ? hsrUserData.TaskSwitch.Daily
+                            : true,
+                        ReceiveRewards:
+                          hsrUserData.TaskSwitch?.ReceiveRewards !== undefined
+                            ? hsrUserData.TaskSwitch.ReceiveRewards
+                            : true,
+                        DivergentUniverse:
+                          hsrUserData.TaskSwitch?.DivergentUniverse !== undefined
+                            ? hsrUserData.TaskSwitch.DivergentUniverse
+                            : true,
+                        CurrencyWars:
+                          hsrUserData.TaskSwitch?.CurrencyWars !== undefined
+                            ? hsrUserData.TaskSwitch.CurrencyWars
+                            : false,
+                      },
+                      TaskOpt: {
+                        EchoOfWarWeekday:
+                          hsrUserData.TaskOpt?.EchoOfWarWeekday !== undefined
+                            ? hsrUserData.TaskOpt.EchoOfWarWeekday
+                            : 'Monday',
+                      },
+                      Notify: {
+                        Enabled:
+                          hsrUserData.Notify?.Enabled !== undefined
+                            ? hsrUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          hsrUserData.Notify?.IfSendStatistic !== undefined
+                            ? hsrUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          hsrUserData.Notify?.IfSendMail !== undefined
+                            ? hsrUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          hsrUserData.Notify?.ToAddress !== undefined
+                            ? hsrUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          hsrUserData.Notify?.IfServerChan !== undefined
+                            ? hsrUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          hsrUserData.Notify?.ServerChanKey !== undefined
+                            ? hsrUserData.Notify.ServerChanKey
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          hsrUserData.Data?.LastProxyDate !== undefined
+                            ? hsrUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          hsrUserData.Data?.ProxyTimes !== undefined
+                            ? hsrUserData.Data.ProxyTimes
+                            : 0,
+                        IfPassCheck:
+                          hsrUserData.Data?.IfPassCheck !== undefined
+                            ? hsrUserData.Data.IfPassCheck
+                            : false,
                       },
                     }
                   }
@@ -1050,18 +1191,7 @@ export function useScriptApi() {
 
       const item = response.index[0]
       const config = response.data[item.uid]
-      const scriptType: ScriptType =
-        item.type === 'MaaConfig'
-          ? 'MAA'
-          : item.type === 'SrcConfig'
-            ? 'SRC'
-            : item.type === 'OkwwConfig'
-              ? 'Okww'
-            : item.type === 'MaaEndConfig'
-              ? 'MaaEnd'
-              : item.type === 'M9AConfig'
-                ? 'M9A'
-                : 'General'
+      const scriptType = resolveScriptType(item.type)
 
       return {
         uid: item.uid,
@@ -1078,6 +1208,41 @@ export function useScriptApi() {
       return null
     } finally {
       loading.value = false
+    }
+  }
+
+  const getHsrStageOptions = async (
+    scriptId: string,
+    engine: HSRStageEngine
+  ): Promise<HSRStageOptionsData | null> => {
+    try {
+      const payload = await HsrService.getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
+        scriptId,
+        engine
+      )
+      if (payload?.code !== 200) {
+        throw new Error(payload?.message || '接口返回异常')
+      }
+      return payload.data ?? null
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '获取 HSR 体力副本选项失败'
+      error.value = errorMsg
+      logger.error(`获取 HSR 体力副本选项失败: ${errorMsg}`)
+      return null
+    }
+  }
+
+  const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
+    try {
+      const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
+      if (response?.code !== 200) throw new Error(response?.message || '接口返回异常')
+      return response
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
+      error.value = errorMsg
+      logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
+      message.error('MaaEnd 文件不完整，请卸载后重新安装 MaaEnd')
+      return null
     }
   }
 
@@ -1176,6 +1341,9 @@ export function useScriptApi() {
     }
   }
 
+  const importScriptConfigFile = (scriptId: string, userId: string | null) =>
+    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+
   return {
     loading,
     error,
@@ -1183,8 +1351,11 @@ export function useScriptApi() {
     getScripts,
     getScriptsWithUsers,
     getScript,
+    getHsrStageOptions,
+    getMaaEndOptions,
     deleteScript,
     updateScript,
     reorderScript,
+    importScriptConfigFile,
   }
 }

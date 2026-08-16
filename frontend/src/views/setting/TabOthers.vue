@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { GlobalConfig, VersionOut } from '@/api'
-import { handleExternalLink } from '@/utils/openExternal'
+import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 
 const logger = window.electronAPI.getLogger('设置-其他')
 
@@ -197,7 +197,7 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>用户QQ群</h4>
               <p>加入社区，获取帮助和交流</p>
-              <a href="https://qm.qq.com/q/bd9fISNoME" class="link-button" @click="handleExternalLink">加入群聊</a>
+              <a :href="MAS_QQ_GROUP_URL" class="link-button" @click="handleExternalLink">加入群聊</a>
             </div>
           </div>
         </div>

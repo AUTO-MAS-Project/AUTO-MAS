@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
 from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
+from app.utils.io import write_file
 from app.utils.constants import (
     RESERVED_NAMES,
     ILLEGAL_CHARS,
@@ -324,16 +325,16 @@ class FileValidator(ValidatorBase):
         except (OSError, ValueError):
             return ""
         if len(resolved.parts) == 1:
-            return ""
+            raise ValueError("不允许将驱动器根目录作为配置路径")
         for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
                 or forbidden.is_relative_to(resolved)
             ):
-                return ""
+                raise ValueError(f"不允许将系统目录或项目根目录作为配置路径: {value}")
         if resolved in FORBIDDEN_PATH_EXACT:
-            return ""
+            raise ValueError(f"不允许将系统程序目录作为配置路径: {value}")
         return resolved.as_posix()
 
 
@@ -380,16 +381,16 @@ class FolderValidator(ValidatorBase):
         except (OSError, ValueError):
             return ""
         if len(resolved.parts) == 1:
-            return ""
+            raise ValueError("不允许将驱动器根目录作为配置路径")
         for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
                 or forbidden.is_relative_to(resolved)
             ):
-                return ""
+                raise ValueError(f"不允许将系统目录或项目根目录作为配置路径: {value}")
         if resolved in FORBIDDEN_PATH_EXACT:
-            return ""
+            raise ValueError(f"不允许将系统程序目录作为配置路径: {value}")
         return resolved.as_posix()
 
 
@@ -434,9 +435,7 @@ class EmulatorPathValidator(FileValidator):
         try:
             from app.utils.emulator.tools import find_emulator_manager_path
 
-            return find_emulator_manager_path(
-                normalized, self.emulator_type.getValue()
-            )
+            return find_emulator_manager_path(normalized, self.emulator_type.getValue())
         except Exception:
             return Path(normalized).resolve().as_posix()
 
@@ -700,7 +699,11 @@ class ConfigItem:
                 self.value = dpapi_encrypt(self.value)
 
         if not self.validator.validate(self.value):
-            self.value = self.validator.correct(self.value)
+            try:
+                self.value = self.validator.correct(self.value)
+            except Exception:
+                self.value = old_value
+                raise
 
         changed = self.value != old_value
         if changed and len(self._slots) > 0:
@@ -712,11 +715,14 @@ class ConfigItem:
         获取配置项值
         """
 
-        v = (
-            self.value
-            if self.validator.validate(self.value)
-            else self.validator.correct(self.value)
-        )
+        try:
+            v = (
+                self.value
+                if self.validator.validate(self.value)
+                else self.validator.correct(self.value)
+            )
+        except Exception:
+            v = ""
 
         if isinstance(self.validator, EncryptValidator) and if_decrypt:
             return dpapi_decrypt(v)
@@ -1038,13 +1044,7 @@ class ConfigBase(ABC):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            json.dumps(
-                await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4
-            ),
-            encoding="utf-8",
-        )
+        write_file(self.file, await self.toDict(if_decrypt=False))
 
     async def lock(self):
         """
@@ -1320,13 +1320,7 @@ class MultipleConfig(Generic[T]):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            json.dumps(
-                await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4
-            ),
-            encoding="utf-8",
-        )
+        write_file(self.file, await self.toDict(if_decrypt=False))
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """

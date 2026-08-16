@@ -920,6 +920,12 @@
         ]
     },
     "等待加载完成[StarRailEmulator]": {
+        "action": {
+            "type": "StartApp",
+            "param": {
+                "package": "包名"
+            }
+        },
         "timeout": 600000,
         "next": [
             "识别加载完成[StarRailEmulator]"

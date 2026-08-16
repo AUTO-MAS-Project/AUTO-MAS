@@ -36,8 +36,8 @@ export const getQueueStatusColor = (status: string): string => {
 
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
-  { label: "自动代理", value: TaskCreateIn.mode.AUTO_PROXY },
-  { label: "人工排查", value: TaskCreateIn.mode.MANUAL_REVIEW },
+  { label: '自动代理', value: TaskCreateIn.mode.AUTO_PROXY },
+  { label: '人工排查', value: TaskCreateIn.mode.MANUAL_REVIEW },
 ]
 
 // 电源操作映射
@@ -48,7 +48,8 @@ export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
   [PowerIn.signal.REBOOT]: '重启',
   [PowerIn.signal.HIBERNATE]: '休眠',
   [PowerIn.signal.SLEEP]: '睡眠',
-  [PowerIn.signal.KILL_SELF]: '退出软件'
+  [PowerIn.signal.KILL_SELF]: '退出软件',
+  [PowerIn.signal.LOGOFF]: '注销此账户',
 }
 export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
 

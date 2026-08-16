@@ -30,7 +30,7 @@ import uvicorn
 import sqlite3
 import truststore
 from pathlib import Path
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
@@ -45,6 +45,9 @@ from app.models.config import (
     M9AConfig,
     MaaEndConfig,
     OkwwConfig,
+    OkNteConfig,
+    HSRConfig,
+    HSRUserConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
@@ -54,11 +57,13 @@ from app.models.config import (
     MaaEndUserConfig,
     GeneralUserConfig,
     OkwwUserConfig,
+    OkNteUserConfig,
     GlobalConfig,
     CLASS_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
+    GameSignAccountGroup,
 )
 from app.models.schema import WebSocketMessage
 from app.utils.constants import (
@@ -68,10 +73,51 @@ from app.utils.constants import (
     RESOURCE_STAGE_DROP_INFO,
     TYPE_BOOK,
     RESOURCE_STAGE_DATE_TEXT,
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
 from app.utils import get_logger
+from app.utils.io import write_file
 
 logger = get_logger("配置管理")
+
+GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
+
+
+def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str, Any]:
+    """读取当天的游戏签到结果快照。"""
+
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"读取游戏签到结果快照失败: {e}")
+        return {}
+
+    if not isinstance(payload, dict) or payload.get("date") != result_date:
+        return {}
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        logger.warning("游戏签到结果快照格式无效，已忽略")
+        return {}
+    return result
+
+
+def _save_game_sign_result_snapshot(
+    path: Path | None, result: dict[str, Any], *, result_date: str
+) -> None:
+    """原子保存游戏签到结果快照（走 ``app.utils.io.write_file``）。"""
+
+    if path is None:
+        return
+
+    try:
+        write_file(path, {"date": result_date, "result": result})
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning(f"保存游戏签到结果快照失败: {e}")
+
 
 if (Path.cwd() / "environment/git/bin/git.exe").exists():
     os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
@@ -85,7 +131,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.3.1"
+    VERSION = "v5.4.0-beta.7"
 
     def __init__(self) -> None:
         super().__init__()
@@ -131,8 +177,11 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        self._stage_refresh_task: Optional[asyncio.Task] = None
+        self._game_sign_result_date = ""
 
         truststore.inject_into_ssl()
 
@@ -148,12 +197,32 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
+        # 游戏签到：连接账号组 MultipleConfig
+        await self.ToolsConfig.GameSign_Accounts.connect(
+            self.config_path / "GameSignAccounts.json"
+        )
+
+        # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
+            self.config_path / GAME_SIGN_RESULT_FILENAME,
+            result_date=today,
+        )
+        self._game_sign_result_date = today
+
+        # 将旧 MAA/MaaEnd 用户侧的森空岛凭据迁移到统一签到工具账号。
+        # 先恢复快照，迁移时清理凭据变更账号才不会误清其它账号结果。
+        await self._sync_legacy_skland_accounts()
+
         from app.services import System
+        from app.services.telemetry import set_telemetry_enabled
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
         await System.set_SelfStart(self.get("Start", "IfSelfStart"))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+        set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
         self.loop = asyncio.get_running_loop()
 
@@ -486,9 +555,17 @@ class AppConfig(GlobalConfig):
         if Config.websocket is None:
             logger.warning("WebSocket 未连接")
         else:
-            await Config.websocket.send_json(
-                WebSocketMessage(id=id, type=type, data=data).model_dump()
-            )
+            websocket = Config.websocket
+            try:
+                await websocket.send_json(
+                    WebSocketMessage(id=id, type=type, data=data).model_dump()
+                )
+            except (RuntimeError, WebSocketDisconnect) as e:
+                if Config.websocket is websocket:
+                    Config.websocket = None
+                logger.warning(
+                    f"WebSocket 已断开，消息未发送: {e.__class__.__name__}: {e}"
+                )
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
@@ -529,11 +606,20 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww"],
+        script: Literal[
+            "MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"
+        ],
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
-        MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | OkwwConfig,
+        MaaConfig
+        | SrcConfig
+        | GeneralConfig
+        | MaaEndConfig
+        | M9AConfig
+        | OkwwConfig
+        | OkNteConfig
+        | HSRConfig,
     ]:
         """添加脚本配置"""
 
@@ -586,6 +672,18 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
+        """读取指定 MaaEnd 安装目录中的动态选项。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        root_path = str(script_config.get("Info", "Path")).strip()
+        if not root_path:
+            raise ValueError("MaaEnd 路径未配置")
+
+        return script_config.get_loaded_resource()
+
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
@@ -598,9 +696,10 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
+        script_config = self.ScriptConfig[uid]
         for group, items in data.items():
             for name, value in items.items():
-                await self.ScriptConfig[uid].set(group, name, value)
+                await script_config.set(group, name, value)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -785,9 +884,9 @@ class AppConfig(GlobalConfig):
             if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                config["Script"][
-                    path
-                ] = f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                config["Script"][path] = (
+                    f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                )
         config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
         return config
@@ -811,13 +910,18 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(self, script_id: str) -> tuple[
+    async def add_user(
+        self, script_id: str
+    ) -> tuple[
         uuid.UUID,
         MaaUserConfig
         | SrcUserConfig
         | GeneralUserConfig
         | MaaEndUserConfig
-        | M9AUserConfig,
+        | M9AUserConfig
+        | OkwwUserConfig
+        | OkNteUserConfig
+        | HSRUserConfig,
     ]:
         """添加用户配置"""
 
@@ -834,14 +938,318 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
         elif isinstance(script_config, OkwwConfig):
             uid, config = await script_config.UserData.add(OkwwUserConfig)
+            try:
+                await self.ensure_okww_user_config(
+                    script_id=script_id,
+                    user_id=str(uid),
+                    mode=str(config.get("Info", "Mode") or "简洁"),
+                )
+            except Exception:
+                # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
+                await script_config.UserData.remove(uid)
+                raise
+        elif isinstance(script_config, OkNteConfig):
+            uid, config = await script_config.UserData.add(OkNteUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, HSRConfig):
+            uid, config = await script_config.UserData.add(HSRUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         return uid, config
+
+    async def ensure_okww_user_config(
+        self,
+        script_id: str,
+        user_id: str,
+        mode: str,
+    ) -> Path:
+        """从 OK-WW 脚本当前配置初始化 MAS 用户配置目录。
+
+        已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
+        简洁模式使用脚本共享目录，详细模式使用当前用户独立目录。
+
+        Args:
+            script_id: OK-WW 脚本 ID。
+            user_id: OK-WW 用户 ID。
+            mode: 配置模式，支持“简洁”或“详细”。
+
+        Returns:
+            MAS 用户配置目录路径。
+
+        Raises:
+            TypeError: 脚本不是 OK-WW 类型。
+            ValueError: 配置模式非法或目标路径冲突。
+            FileNotFoundError: OK-WW 默认配置目录不存在或为空。
+        """
+
+        script_uid = uuid.UUID(script_id)
+        script_config = self.ScriptConfig[script_uid]
+        if not isinstance(script_config, OkwwConfig):
+            raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
+        if mode not in ("简洁", "详细"):
+            raise ValueError(f"不支持的 OK-WW 配置模式: {mode}")
+
+        owner = "Default" if mode == "简洁" else user_id
+        target_config_dir = Path.cwd() / "data" / script_id / owner / "ConfigFile"
+        if target_config_dir.exists() and not target_config_dir.is_dir():
+            raise ValueError(f"OK-WW 用户配置路径不是目录: {target_config_dir}")
+        if target_config_dir.is_dir() and any(
+            item.is_file() for item in target_config_dir.rglob("*")
+        ):
+            return target_config_dir
+
+        script_root = Path(script_config.get("Info", "RootPath")).expanduser()
+        source_config_dir = script_root / "data/apps/ok-ww/working/configs"
+        if not source_config_dir.is_dir() or not any(
+            item.is_file() for item in source_config_dir.rglob("*")
+        ):
+            raise FileNotFoundError(
+                "未找到 OK-WW 默认设置，请先运行一次 OK-WW 并保存设置"
+            )
+
+        temporary_path = target_config_dir.with_name(
+            f".{target_config_dir.name}.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            shutil.copytree(source_config_dir, temporary_path)
+            target_config_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(target_config_dir, ignore_errors=True)
+            temporary_path.rename(target_config_dir)
+        finally:
+            shutil.rmtree(temporary_path, ignore_errors=True)
+
+        logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
+        return target_config_dir
+
+    @staticmethod
+    def _safe_config_get(
+        config: Any, group: str, name: str, default: Any = None
+    ) -> Any:
+        """读取旧用户字段，兼容历史配置和测试替身缺少字段的情况。"""
+
+        try:
+            return config.get(group, name)
+        except (KeyError, TypeError, AttributeError):
+            return default
+
+    def _find_game_sign_account_by_skland_token(
+        self, token: str
+    ) -> tuple[Any | None, Any | None]:
+        """查找持有指定森空岛 Token 的工具账号。"""
+
+        def token_identity(value: Any) -> str:
+            raw_value = str(value or "").strip()
+            if not raw_value:
+                return ""
+            try:
+                payload = json.loads(raw_value)
+            except (TypeError, json.JSONDecodeError):
+                return raw_value
+            if not isinstance(payload, dict):
+                return raw_value
+            data = payload.get("data")
+            if isinstance(data, dict) and data.get("content"):
+                return str(data["content"]).strip()
+            return str(
+                payload.get("oauthToken")
+                or payload.get("oauth_token")
+                or payload.get("accessToken")
+                or payload.get("access_token")
+                or payload.get("token")
+                or raw_value
+            ).strip()
+
+        token_value = token_identity(token)
+        accounts = getattr(getattr(self, "ToolsConfig", None), "GameSign_Accounts", None)
+        if not token_value or accounts is None:
+            return None, None
+
+        try:
+            account_items = accounts.items()
+        except AttributeError:
+            return None, None
+
+        for account_uid, account in account_items:
+            candidate_token = token_identity(
+                self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
+            )
+            if candidate_token and candidate_token == token_value:
+                return account_uid, account
+        return None, None
+
+    def _legacy_skland_token_state(self, token: str) -> tuple[bool, bool | None]:
+        """返回旧用户是否仍引用 Token，以及共享账号的有效启用状态。"""
+
+        token_value = str(token or "").strip()
+        if not token_value:
+            return False, None
+
+        script_configs = getattr(self, "ScriptConfig", None)
+        if script_configs is None:
+            return False, None
+
+        references: list[bool] = []
+        try:
+            script_values = script_configs.values()
+        except AttributeError:
+            return False, None
+
+        for script_config in script_values:
+            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
+                continue
+            for user_config in script_config.UserData.values():
+                user_token = str(
+                    self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
+                ).strip()
+                if user_token == token_value:
+                    references.append(
+                        bool(
+                            self._safe_config_get(
+                                user_config, "Info", "IfSkland", False
+                            )
+                        )
+                    )
+
+        return bool(references), any(references)
+
+    async def _sync_legacy_skland_user(
+        self,
+        *,
+        user_config: Any,
+        user_id: str,
+        old_token: str | None = None,
+        token: str | None = None,
+        enabled: bool | None = None,
+        name: str | None = None,
+    ) -> None:
+        """同步单个 MAA/MaaEnd 用户到游戏签到工具账号。"""
+
+        tools_config = getattr(self, "ToolsConfig", None)
+        accounts = getattr(tools_config, "GameSign_Accounts", None)
+        if accounts is None:
+            return
+
+        old_token_value = str(old_token or "").strip()
+        new_token = (
+            str(token).strip()
+            if token is not None
+            else str(
+                self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
+            ).strip()
+        )
+        if not old_token and not new_token:
+            return
+
+        old_token_shared, _ = self._legacy_skland_token_state(old_token_value)
+        old_account_uid, old_account = self._find_game_sign_account_by_skland_token(
+            old_token_value
+        )
+        new_account_uid, new_account = self._find_game_sign_account_by_skland_token(
+            new_token
+        )
+
+        # 清空旧用户 Token 时只清空对应工具账号凭据，不删除可能包含其它社区凭据的账号。
+        if not new_token:
+            account_uid, account = old_account_uid, old_account
+            token_still_used, _ = self._legacy_skland_token_state(old_token_value)
+            if account is not None and not token_still_used:
+                await account.set("GameSignAccount", "SklandToken", "")
+                await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+                if account_uid is not None:
+                    self._clear_game_sign_account_results(str(account_uid))
+            return
+
+        # 新 Token 已有账号时直接复用，避免生成重复凭据并重复签到。
+        account_uid, account = new_account_uid, new_account
+        if account is not None:
+            if (
+                old_account is not None
+                and old_account_uid != account_uid
+                and not old_token_shared
+            ):
+                await old_account.set("GameSignAccount", "SklandToken", "")
+                await old_account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+                if old_account_uid is not None:
+                    self._clear_game_sign_account_results(str(old_account_uid))
+        elif old_account is not None and not old_token_shared:
+            account_uid, account = old_account_uid, old_account
+        else:
+            account_uid, account = await accounts.add(GameSignAccountGroup)
+
+        current_name = str(
+            name
+            if name is not None
+            else self._safe_config_get(user_config, "Info", "Name", "") or ""
+        ).strip()
+        account_name = current_name or f"用户 {str(user_id)[-8:]}"
+
+        _, shared_enabled = self._legacy_skland_token_state(new_token)
+        if shared_enabled is not None:
+            enabled_value = shared_enabled
+        elif enabled is None:
+            existing_enabled = self._safe_config_get(
+                account, "GameSignAccount", "Enabled", True
+            )
+            enabled_value = bool(existing_enabled)
+        else:
+            enabled_value = bool(enabled)
+
+        account_token = str(
+            self._safe_config_get(account, "GameSignAccount", "SklandToken", "") or ""
+        ).strip()
+        credential_changed = account_token != new_token
+        await account.set("GameSignAccount", "Name", account_name)
+        await account.set("GameSignAccount", "Enabled", enabled_value)
+        await account.set("GameSignAccount", "SklandToken", new_token)
+        if credential_changed:
+            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+            if account_uid is not None:
+                self._clear_game_sign_account_results(str(account_uid))
+
+    async def _sync_legacy_skland_sign_date(
+        self, *, token: str, sign_date: str
+    ) -> None:
+        """回写旧 MAA/MaaEnd 用户的森空岛签到日期，保持旧用户列表状态一致。"""
+
+        token_value = str(token or "").strip()
+        if not token_value:
+            return
+
+        for script_config in self.ScriptConfig.values():
+            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
+                continue
+            for user_config in script_config.UserData.values():
+                if (
+                    str(
+                        self._safe_config_get(user_config, "Info", "SklandToken", "")
+                        or ""
+                    ).strip()
+                    == token_value
+                    and self._safe_config_get(user_config, "Info", "IfSkland", False)
+                    and self._safe_config_get(user_config, "Data", "LastSklandDate", "")
+                    != sign_date
+                ):
+                    await user_config.set("Data", "LastSklandDate", sign_date)
+
+    async def _sync_legacy_skland_accounts(self) -> None:
+        """启动时迁移已有 MAA/MaaEnd 森空岛用户，避免旧配置失去签到能力。"""
+
+        for script_config in self.ScriptConfig.values():
+            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
+                continue
+            for user_uid, user_config in script_config.UserData.items():
+                await self._sync_legacy_skland_user(
+                    user_config=user_config,
+                    user_id=str(user_uid),
+                    enabled=bool(
+                        self._safe_config_get(user_config, "Info", "IfSkland", False)
+                    ),
+                    name=self._safe_config_get(user_config, "Info", "Name", ""),
+                )
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
@@ -852,13 +1260,51 @@ class AppConfig(GlobalConfig):
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
+        script_config = self.ScriptConfig[script_uid]
+        user_config = script_config.UserData[user_uid]
+
+        # A replaced Skland credential must be allowed to sign again today.
+        reset_skland_date = isinstance(script_config, (MaaConfig, MaaEndConfig))
+        skland_token_changed = False
+        legacy_skland_info = data.get("Info", {}) if reset_skland_date else {}
+        legacy_old_token = ""
+        if reset_skland_date:
+            legacy_old_token = str(
+                AppConfig._safe_config_get(user_config, "Info", "SklandToken", "") or ""
+            )
+        if reset_skland_date:
+            info_data = data.get("Info", {})
+            if isinstance(info_data, dict) and "SklandToken" in info_data:
+                skland_token_changed = (
+                    user_config.get("Info", "SklandToken") != info_data["SklandToken"]
+                )
 
         for group, items in data.items():
             for name, value in items.items():
-                await (
-                    self.ScriptConfig[script_uid]
-                    .UserData[user_uid]
-                    .set(group, name, value)
+                await user_config.set(group, name, value)
+
+        if skland_token_changed:
+            await user_config.set("Data", "LastSklandDate", "2000-01-01")
+
+        if reset_skland_date and isinstance(legacy_skland_info, dict):
+            if any(
+                key in legacy_skland_info for key in ("SklandToken", "IfSkland", "Name")
+            ):
+                await self._sync_legacy_skland_user(
+                    user_config=user_config,
+                    user_id=user_id,
+                    old_token=legacy_old_token,
+                    token=(
+                        str(legacy_skland_info.get("SklandToken") or "")
+                        if "SklandToken" in legacy_skland_info
+                        else None
+                    ),
+                    enabled=(
+                        bool(legacy_skland_info["IfSkland"])
+                        if "IfSkland" in legacy_skland_info
+                        else None
+                    ),
+                    name=legacy_skland_info.get("Name"),
                 )
 
     async def import_script_config_file(
@@ -891,8 +1337,28 @@ class AppConfig(GlobalConfig):
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
+        script_config = self.ScriptConfig[script_uid]
+        legacy_token = ""
+        if isinstance(script_config, (MaaConfig, MaaEndConfig)):
+            legacy_token = str(
+                self._safe_config_get(
+                    script_config.UserData[user_uid], "Info", "SklandToken", ""
+                )
+                or ""
+            ).strip()
 
-        await self.ScriptConfig[script_uid].UserData.remove(user_uid)
+        await script_config.UserData.remove(user_uid)
+        if legacy_token:
+            token_still_used, _ = self._legacy_skland_token_state(legacy_token)
+            if not token_still_used:
+                account_uid, account = self._find_game_sign_account_by_skland_token(
+                    legacy_token
+                )
+                if account is not None:
+                    await account.set("GameSignAccount", "SklandToken", "")
+                    await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+                    if account_uid is not None:
+                        self._clear_game_sign_account_results(str(account_uid))
         if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
             shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
@@ -931,8 +1397,10 @@ class AppConfig(GlobalConfig):
         if infrast_data.get("title", "文件标题") == "文件标题":
             infrast_data["title"] = json_path.stem
 
-        await self.ScriptConfig[script_uid].UserData[user_uid].set(
-            "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
+        await (
+            self.ScriptConfig[script_uid]
+            .UserData[user_uid]
+            .set("Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False))
         )
 
     async def get_user_combox_infrastructure(
@@ -957,11 +1425,41 @@ class AppConfig(GlobalConfig):
                 script_config.UserData[user_uid].get("Data", "CustomInfrast")
             ).get("plans", [])
         ):
-            data.append({"label": plan.get("name", f"排班 {i+1}"), "value": str(i)})
+            data.append({"label": plan.get("name", f"排班 {i + 1}"), "value": str(i)})
 
         logger.success("用户自定义基建排班下拉框信息获取成功")
 
         return data
+
+    async def get_maa_depot_items(self, script_id: str) -> list[dict[str, str]]:
+        """获取 MAA 库存保持物品选项。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        item_index_path = (
+            Path(script_config.get("Info", "Path")) / "resource" / "item_index.json"
+        )
+        if not item_index_path.exists():
+            raise FileNotFoundError(
+                f"未找到 MAA 物品资源: {item_index_path}，请更新 MAA 后重试"
+            )
+
+        items = json.loads(item_index_path.read_text(encoding="utf-8"))
+        return [
+            {"label": item.get("name") or item_id, "value": item_id}
+            for item_id, item in sorted(
+                (
+                    (item_id, item)
+                    for item_id, item in items.items()
+                    if item_id.isdigit()
+                    and item_id not in MAA_DEPOT_EXCLUDED_ITEM_IDS
+                    and isinstance(item, dict)
+                ),
+                key=lambda entry: int(entry[0]),
+            )
+        ]
 
     async def add_plan(
         self, script: Literal["MaaPlan"]
@@ -1011,7 +1509,7 @@ class AppConfig(GlobalConfig):
                     if user.get("Info", "StageMode") == str(plan_uid):
                         if user.is_locked:
                             raise RuntimeError(
-                                f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
+                                f"用户 {user.get('Info', 'Name')} 正在使用此计划表且被锁定, 无法完成删除"
                             )
                         user_list.append(user)
 
@@ -1073,7 +1571,7 @@ class AppConfig(GlobalConfig):
                 if script.get("Emulator", "Id") == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
-                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                            f"脚本 {script.get('Info', 'Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
                     script_list.append(script)
             elif isinstance(script, GeneralConfig):
@@ -1082,7 +1580,7 @@ class AppConfig(GlobalConfig):
                 ) == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
-                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                            f"脚本 {script.get('Info', 'Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
                     script_list.append(script)
 
@@ -1288,7 +1786,48 @@ class AppConfig(GlobalConfig):
 
         logger.debug("获取工具设置")
 
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        if self._game_sign_result_date != today:
+            self.ToolsConfig._game_sign_result_data = {}
+            self._game_sign_result_date = today
+
         return await self.ToolsConfig.toDict()
+
+    async def update_game_sign_results(
+        self, formatted: dict[str, Any], *, replace: bool = False
+    ) -> None:
+        """合并、持久化并广播游戏签到结果。
+
+        Args:
+            formatted: 已按平台和账号分组的签到结果。
+            replace: 是否按账号 UID 替换已有结果。
+        """
+
+        from app.tools.game_sign import merge_sign_results
+
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        existing = (
+            self.ToolsConfig._game_sign_result_data
+            if self._game_sign_result_date == today
+            else {}
+        )
+        result = merge_sign_results(existing, formatted, replace=replace)
+        self.ToolsConfig._game_sign_result_data = result
+        self._game_sign_result_date = today
+        _save_game_sign_result_snapshot(
+            self.config_path / GAME_SIGN_RESULT_FILENAME,
+            result,
+            result_date=today,
+        )
+
+        try:
+            await self.send_websocket_message(
+                id="GameSign",
+                type="Update",
+                data={"Result": json.dumps(result, ensure_ascii=False)},
+            )
+        except Exception as e:
+            logger.warning(f"广播游戏签到结果失败: {e}")
 
     async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新工具设置"""
@@ -1300,6 +1839,114 @@ class AppConfig(GlobalConfig):
                 await self.ToolsConfig.set(group, name, value)
 
         logger.success("工具设置更新成功")
+
+    # ==================== 游戏签到账号组 CRUD ====================
+
+    async def get_game_sign_accounts(
+        self, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
+        """获取所有游戏签到账号组"""
+
+        logger.debug("获取所有游戏签到账号组")
+
+        return await self.ToolsConfig.GameSign_Accounts.toDict(if_decrypt=if_decrypt)
+
+    async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
+        """添加游戏签到账号组"""
+
+        logger.info("添加游戏签到账号组")
+
+        uid, config = await self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
+        return uid, config
+
+    async def get_game_sign_account(
+        self, account_id: str, *, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
+        """获取游戏签到账号组详情"""
+
+        logger.debug(f"获取游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
+            if_decrypt=if_decrypt
+        )
+
+    def _clear_game_sign_account_results(self, account_id: str) -> None:
+        """清除指定游戏签到账号的结果。"""
+
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        result = self.ToolsConfig._game_sign_result_data
+        if getattr(self, "_game_sign_result_date", today) != today:
+            result.clear()
+            self._game_sign_result_date = today
+
+        for platform in list(result):
+            result[platform] = [
+                group
+                for group in result[platform]
+                if group.get("account_uid") != account_id
+            ]
+            if not result[platform]:
+                del result[platform]
+
+        tools_file = getattr(self.ToolsConfig, "file", None)
+        snapshot_path = (
+            tools_file.with_name(GAME_SIGN_RESULT_FILENAME)
+            if isinstance(tools_file, Path)
+            else None
+        )
+        _save_game_sign_result_snapshot(
+            snapshot_path,
+            result,
+            result_date=today,
+        )
+
+    async def update_game_sign_account(
+        self, account_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新游戏签到账号组配置"""
+
+        logger.info(f"更新游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        credential_fields = {
+            "MiyousheToken",
+            "KuroToken",
+            "SklandToken",
+            "TaygedoToken",
+        }
+        credential_changed = False
+
+        for group, items in data.items():
+            for name, value in items.items():
+                if (
+                    group == "GameSignAccount"
+                    and name in credential_fields
+                    and account.get(group, name) != value
+                ):
+                    credential_changed = True
+                await account.set(group, name, value)
+
+        if credential_changed:
+            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
+            self._clear_game_sign_account_results(account_id)
+
+    async def delete_game_sign_account(self, account_id: str) -> None:
+        """删除游戏签到账号组"""
+
+        logger.info(f"删除游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
+        self._clear_game_sign_account_results(account_id)
+
+    async def reorder_game_sign_accounts(self, order: list[str]) -> None:
+        """调整游戏签到账号组顺序"""
+
+        logger.info("调整游戏签到账号组顺序")
+
+        await self.ToolsConfig.GameSign_Accounts.setOrder([uuid.UUID(_) for _ in order])
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
@@ -1495,15 +2142,14 @@ class AppConfig(GlobalConfig):
             "Sunday",
             "Info",
         ],
+        refresh: bool = False,
+        server: str = "Official",
     ):
         """获取关卡信息"""
 
-        if json.loads(self.get("Data", "Stage")) != {}:
-            task = asyncio.create_task(self.get_stage())
-            self.temp_task.append(task)
-            task.add_done_callback(lambda t: self.temp_task.remove(t))
-        else:
-            await self.get_stage()
+        stage_by_server = await self.get_stage(refresh=refresh)
+        server = "Official" if server == "Bilibili" else server
+        stage_data = stage_by_server.get(server, {})
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
@@ -1514,23 +2160,27 @@ class AppConfig(GlobalConfig):
                     and stage["value"] in RESOURCE_STAGE_DROP_INFO
                 ):
                     res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
+            stage_options = [dict(item) for item in stage_data.get("ALL", [])]
+            for combox in stage_options:
+                combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
+                    combox["value"], combox["label"]
+                )
             return {
-                "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
+                "Activity": stage_data.get("Info", []),
                 "Resource": res_stage_info,
+                "Options": stage_options,
             }
         elif type == "User":
-            data = json.loads(self.get("Data", "Stage")).get("ALL", [])
+            data = stage_data.get("ALL", [])
             for combox in data:
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
             return data
         elif type == "Today":
-            return json.loads(self.get("Data", "Stage")).get(
-                datetime.now(tz=UTC4).strftime("%A"), []
-            )
+            return stage_data.get(datetime.now(tz=UTC4).strftime("%A"), [])
         else:
-            return json.loads(self.get("Data", "Stage")).get(type, [])
+            return stage_data.get(type, [])
 
     async def get_proxy_overview(self) -> Dict[str, Any]:
         """获取代理情况概览信息"""
@@ -1569,23 +2219,61 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
-        """更新活动关卡信息"""
+    async def get_stage(self, refresh: bool = False) -> Dict[str, Any]:
+        """更新活动关卡信息；需要最新数据时等待刷新，否则立即返回缓存。"""
 
-        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+        raw_stage_data = json.loads(self.get("Data", "StageData"))
+        has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
+            "sideStoryStage" in raw_stage_data["Official"]
+        )
+        refresh = refresh or not has_server_data
+        if not refresh and datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
 
+        if self._stage_refresh_task is None:
+            task = asyncio.create_task(self._refresh_stage())
+            self._stage_refresh_task = task
+            self.temp_task.append(task)
+
+            def _done(t: asyncio.Task) -> None:
+                if self._stage_refresh_task is t:
+                    self._stage_refresh_task = None
+                if t in self.temp_task:
+                    self.temp_task.remove(t)
+
+            task.add_done_callback(_done)
+        else:
+            logger.info("活动关卡信息更新任务已在进行中")
+
+        refresh_task = self._stage_refresh_task
+        if refresh and refresh_task is not None:
+            await asyncio.shield(refresh_task)
+
+        return json.loads(self.get("Data", "Stage"))
+
+    async def _refresh_stage(self) -> None:
+        """从远端刷新活动关卡信息（仅后台调用）。"""
+
         logger.info("开始获取活动关卡信息")
         try:
+            raw_stage_data = json.loads(self.get("Data", "StageData"))
+            has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
+                "sideStoryStage" in raw_stage_data["Official"]
+            )
+            headers = (
+                {"If-None-Match": self.get("Data", "StageETag")}
+                if has_server_data
+                else {}
+            )
             async with httpx.AsyncClient(
                 proxy=self.proxy, follow_redirects=True
             ) as client:
                 response = await client.get(
                     "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json",
-                    headers={"If-None-Match": self.get("Data", "StageETag")},
+                    headers=headers,
                 )
 
                 if response.status_code == 304:
@@ -1612,19 +2300,12 @@ class AppConfig(GlobalConfig):
                     await self.set(
                         "Data",
                         "StageData",
-                        json.dumps(
-                            response.json()
-                            .get("Official", {})
-                            .get("sideStoryStage", {}),
-                            ensure_ascii=False,
-                        ),
+                        json.dumps(response.json(), ensure_ascii=False),
                     )
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
-
-        return json.loads(self.get("Data", "Stage"))
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
@@ -1691,6 +2372,9 @@ class AppConfig(GlobalConfig):
         """获取模拟器多开实例下拉框信息"""
 
         logger.info("开始获取模拟器下拉框信息")
+
+        if emulator_id == "-":
+            return []
 
         if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Info", "Type") == "general":
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
@@ -1809,6 +2493,32 @@ class AppConfig(GlobalConfig):
         )
 
         return remote_web_config
+
+    def build_history_log_path(
+        self, *, script_name: str, user_name: str, log_time: datetime
+    ) -> Path:
+        """构建带脚本名称前缀的历史日志路径。
+
+        Args:
+            script_name: 脚本名称。
+            user_name: 用户名称。
+            log_time: 日志开始时间。
+
+        Returns:
+            历史日志文件路径。
+        """
+
+        safe_script_name = re.sub(r'[<>:"/\\|?*]', "_", str(script_name or "").strip())
+        safe_script_name = safe_script_name.rstrip(" .") or "空白"
+        time_suffix = f"-{log_time.strftime('%H-%M-%S')}.log"
+        safe_script_name = safe_script_name[: 255 - len(time_suffix)]
+
+        return (
+            self.history_path
+            / log_time.strftime("%Y-%m-%d")
+            / user_name
+            / f"{safe_script_name}{time_suffix}"
+        )
 
     async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """
@@ -1968,6 +2678,134 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    def parse_maaend_failed_tasks(self, logs: list[str]) -> List[str]:
+        """
+        解析MaaEnd失败任务名称
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            List[str]: 失败任务名称列表
+        """
+
+        failed_tasks: List[str] = []
+        ignored_tasks = {"停止任务", "⛔ 结束进程", "__MXU_KILLPROC__", "StopTask"}
+
+        for log_line in logs:
+            match = re.search(r"任务失败:\s*(.+)", log_line)
+            if match is None:
+                continue
+
+            task_name = match.group(1).strip()
+            if (
+                task_name
+                and task_name not in ignored_tasks
+                and task_name not in failed_tasks
+            ):
+                failed_tasks.append(task_name)
+
+        return failed_tasks
+
+    def parse_maaend_matrix_statistics(
+        self, logs: list[str]
+    ) -> tuple[Optional[Dict[str, str]], bool]:
+        """
+        解析MaaEnd基质刷取统计
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            tuple[Optional[Dict[str, str]], bool]: 基质统计数据与是否识别到基质流程
+        """
+
+        matrix_statistics: Dict[str, str] = {}
+        pending_statistics: Dict[str, str] = {}
+        current_matrix_skill = ""
+        has_matrix_flow = False
+        locked_count = 0
+
+        for log_line in logs:
+            skill_match = re.search(r"OCR到技能：(.+)", log_line)
+            if skill_match:
+                current_matrix_skill = skill_match.group(1).strip()
+                continue
+
+            weapon_match = re.search(r"匹配到武器：(.+)", log_line)
+            if weapon_match and current_matrix_skill:
+                pending_statistics[current_matrix_skill] = weapon_match.group(1).strip()
+                current_matrix_skill = ""
+                continue
+
+            completed_match = re.search(
+                r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
+                log_line,
+            )
+            if completed_match is None:
+                continue
+
+            has_matrix_flow = True
+            current_locked_count = int(completed_match.group(1))
+            locked_count += current_locked_count
+            if current_locked_count > 0:
+                matched_items = list(pending_statistics.items())[-current_locked_count:]
+                matrix_statistics.update(matched_items)
+
+            pending_statistics = {}
+            current_matrix_skill = ""
+
+        if not has_matrix_flow:
+            return None, False
+
+        if locked_count == 0:
+            return {}, True
+
+        return (matrix_statistics or None), True
+
+    def parse_maaend_pull_count_statistics(
+        self, logs: list[str]
+    ) -> Optional[Dict[str, int]]:
+        """解析 MaaEnd 抽数计算任务输出的统计结果。"""
+
+        content = "".join(logs)
+        field_patterns = {
+            "resource_pulls": (
+                r'"ResourcePulls"\s*:\s*(\d+)',
+                r"资源折算[：:]\s*(\d+)\s*抽",
+            ),
+            "carry_over_pulls": (
+                r'"CarryToNextPulls"\s*:\s*(\d+)',
+                r"可留到下版本的券[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_shop_pulls": (
+                r'"NextPoolShopPulls"\s*:\s*(\d+)',
+                r"下版本商店[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_signin_pulls": (
+                r'"NextPoolSigninPulls"\s*:\s*(\d+)',
+                r"下版本签到[：:]\s*(\d+)\s*抽",
+            ),
+            "current_pool_total": (
+                r'"CurrentPoolTotal"\s*:\s*(\d+)',
+                r"当前池可用[：:]\s*(\d+)\s*抽",
+            ),
+            "next_pool_total": (
+                r'"NextPoolTotal"\s*:\s*(\d+)',
+                r"下版本池子总计[：:]\s*(\d+)\s*抽",
+            ),
+        }
+
+        statistics: Dict[str, int] = {}
+        for field, patterns in field_patterns.items():
+            matches = [
+                match for pattern in patterns for match in re.finditer(pattern, content)
+            ]
+            if matches:
+                statistics[field] = int(matches[-1].group(1))
+
+        return statistics if len(statistics) == len(field_patterns) else None
+
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
     ) -> None:
@@ -1984,7 +2822,18 @@ class AppConfig(GlobalConfig):
             f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
         )
 
-        data: Dict[str, str] = {"maaend_result": maaend_result}
+        failed_tasks = self.parse_maaend_failed_tasks(logs)
+        matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
+        pull_count_statistics = self.parse_maaend_pull_count_statistics(logs)
+
+        if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
+            maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        data: Dict[str, Any] = {"maaend_result": maaend_result}
+        if has_matrix_flow and matrix_statistics is not None:
+            data["matrix_statistics"] = matrix_statistics
+        if pull_count_statistics is not None:
+            data["pull_count_statistics"] = pull_count_statistics
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2044,6 +2893,32 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
+    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
+        """
+        保存 HSR 专项日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param hsr_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
+        )
+
+        data: Dict[str, str] = {"hsr_result": hsr_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(
+            f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}"
+        )
+
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
         合并指定数据统计信息文件
@@ -2056,6 +2931,19 @@ class AppConfig(GlobalConfig):
         """
 
         data: Dict[str, Any] = {"index": {}}
+        hsr_success_results = {
+            "HSR 任务结束",
+            "HSR 用户任务完成",
+            "HSR 失败任务补跑完成",
+            "HSR 本轮无需执行，已跳过",
+        }
+
+        def is_success_result(result_key: str, result_value: Any) -> bool:
+            if result_value == "Success!":
+                return True
+            if result_key == "hsr_result" and result_value in hsr_success_results:
+                return True
+            return False
 
         for json_file in statistic_path_list:
             try:
@@ -2088,6 +2976,15 @@ class AppConfig(GlobalConfig):
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
 
+                # 合并基质统计
+                elif key == "matrix_statistics":
+                    for skill, weapon in single_data[key].items():
+                        data[key][skill] = weapon
+
+                # 抽数是当前资源快照，合并时使用最新一条记录
+                elif key == "pull_count_statistics":
+                    data[key] = single_data[key]
+
                 # 处理理智相关字段 - 使用最后一个文件的值
                 elif key in ["sanity", "sanity_full_at"]:
                     data[key] = single_data[key]
@@ -2098,17 +2995,21 @@ class AppConfig(GlobalConfig):
                     "maaend_result",
                     "src_result",
                     "general_result",
+                    "hsr_result",
                 ]:
+                    history_time = "-".join(json_file.stem.rsplit("-", 3)[-3:])
                     actual_date = (
                         datetime.strptime(
-                            f"{json_file.parent.parent.name} {json_file.stem}",
+                            f"{json_file.parent.parent.name} {history_time}",
                             "%Y-%m-%d %H-%M-%S",
                         )
                         .replace(tzinfo=UTC4)
                         .astimezone()
                     )
 
-                    if single_data[key] != "Success!":
+                    success = is_success_result(key, single_data[key])
+
+                    if not success:
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
@@ -2117,16 +3018,18 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": (
-                            "DONE" if single_data[key] == "Success!" else "ERROR"
-                        ),
+                        "status": "DONE" if success else "ERROR",
                         "jsonFile": str(json_file),
                     }
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
 
         # 确保返回的字典始终包含 index 字段，即使为空
-        result = {k: v for k, v in data.items() if v}
+        result = {
+            k: v
+            for k, v in data.items()
+            if v or (k == "matrix_statistics" and isinstance(v, dict))
+        }
         if "index" not in result:
             result["index"] = []
 
