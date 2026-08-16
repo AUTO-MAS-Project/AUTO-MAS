@@ -1,6 +1,6 @@
 ---
 name: mas-code-standards
-description: Use when a task asks for AUTO-MAS project code style, maintainer-aligned style, Conventional Commit wording, backend docstrings, config-item comments, or general code convention review.
+description: Use when implementing, fixing, refactoring, or reviewing non-generated AUTO-MAS code, or when preparing code-style guidance, comments, docstrings, version notes, or Conventional Commit wording. Skip read-only diagnosis, explanation, exploration, and planning unless code conventions are requested.
 ---
 
 # MAS Code Standards

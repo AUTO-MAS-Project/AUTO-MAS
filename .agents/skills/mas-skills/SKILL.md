@@ -61,8 +61,8 @@ Use `mas-schema-naming`.
 Use `mas-frontend-standards`.
 3. Task touches UI, layout, style, Ant Design Vue, components, forms, tables, modals, drawers, feedback, loading, empty, error states, drag interactions, dark mode, or visual polish:
 Use `mas-frontend-ui` with `mas-frontend-standards`.
-4. Task mentions project code standards, code conventions, matching representative `dev` commit style, or asks to follow current AUTO-MAS coding style:
-Use `mas-code-standards`.
+4. Task implements, fixes, refactors, or reviews repository code:
+Use `mas-code-standards` as the baseline, then add the minimum domain-specific `mas-*` skills. Skip it for read-only work unless code conventions or commit wording are requested.
 5. Task mentions layer ownership, imports, coupling, or where code should live:
 Use `mas-module-boundary`.
 6. Task mentions function splitting, signature quality, return/error behavior:
