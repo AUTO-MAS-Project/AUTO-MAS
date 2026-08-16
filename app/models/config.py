@@ -23,6 +23,7 @@ import asyncio
 import uuid
 import json
 import calendar
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -48,6 +49,7 @@ from app.utils.constants import (
 from . import schema as schema_model
 from .ConfigBase import (
     ConfigBase,
+    ValidatorBase,
     MultipleConfig,
     ConfigItem,
     MultipleUIDValidator,
@@ -154,6 +156,76 @@ def _normalize_maaend_sanity_task_type(task_data: object) -> None:
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
         if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
+
+
+def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
+    """将固定配置或旧计划表日期槽位转换为 MaaEnd key。"""
+
+    if isinstance(raw_key, dict) and "Key" in raw_key:
+        raw_key = raw_key["Key"]
+    data = raw_key if isinstance(raw_key, dict) else {}
+
+    sanity_task_type = data.get("SanityTaskType")
+    if sanity_task_type == "ProtocolSpace":
+        sanity_task_type = data.get("ProtocolSpaceTab")
+    elif sanity_task_type in ("Matrix", "AutoEssence"):
+        sanity_task_type = "Essence"
+
+    if sanity_task_type == "Essence":
+        location = data.get("AutoEssenceSpecifiedLocation", "")
+        candidate = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": location
+            if isinstance(location, str)
+            else "",
+        }
+    else:
+        if sanity_task_type not in MAAEND_SANITY_TASK_TYPES[:-1]:
+            sanity_task_type = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
+        candidate = {
+            "SanityTaskType": sanity_task_type,
+            "OperatorProgression": data.get(
+                "OperatorProgression",
+                MAAEND_SANITY_TASK_DEFAULTS["OperatorProgression"],
+            ),
+            "WeaponProgression": data.get(
+                "WeaponProgression",
+                MAAEND_SANITY_TASK_DEFAULTS["WeaponProgression"],
+            ),
+            "CrisisDrills": data.get(
+                "CrisisDrills", MAAEND_SANITY_TASK_DEFAULTS["CrisisDrills"]
+            ),
+            "RewardsSetOption": data.get(
+                "RewardsSetOption",
+                MAAEND_SANITY_TASK_DEFAULTS["RewardsSetOption"],
+            ),
+        }
+
+    try:
+        key = schema_model.MaaEndPlanConfig_Item(Key=candidate).Key
+    except ValueError:
+        key = schema_model.MaaEndProtocolSpacePlanKey()
+    return key.model_dump()
+
+
+def validate_maaend_plan_key(raw_key: object) -> dict[str, str]:
+    """严格校验并返回规范化的 MaaEnd key。"""
+
+    key = schema_model.MaaEndPlanConfig_Item(Key=raw_key).Key
+    return key.model_dump()
+
+
+class MaaEndPlanKeyValidator(ValidatorBase):
+    """MaaEnd 计划表 key 验证器。"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            return validate_maaend_plan_key(value) == value
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> dict[str, str]:
+        return normalize_maaend_plan_key(value)
 
 
 class EmulatorConfig(ConfigBase):
@@ -925,15 +997,17 @@ class MaaEndUserConfig(ConfigBase):
         if location_label is not None:
             self._maaend_essence_location_label = location_label
 
-    def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
-        """获取当前生效的理智任务配置"""
+    def get_effective_sanity_task_key(self) -> tuple[dict[str, str], str]:
+        """获取并校验当前生效的完整 MaaEnd key。"""
 
         mode = self.get("Info", "SanityMode")
         if mode == "Fixed":
-            return (
-                {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
-                mode,
-            )
+            return normalize_maaend_plan_key(
+                {
+                    field: self.get("Task", field)
+                    for field in MAAEND_SANITY_TASK_FIELDS
+                }
+            ), mode
 
         try:
             plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
@@ -943,13 +1017,10 @@ class MaaEndUserConfig(ConfigBase):
         if not isinstance(plan, MaaEndPlanConfig):
             raise TypeError(f"引用的计划表 {mode} 类型不是 MaaEnd 计划表")
 
-        return (
-            {
-                field: plan.get_current_info(field).getValue()
-                for field in MAAEND_SANITY_TASK_FIELDS
-            },
-            mode,
-        )
+        try:
+            return validate_maaend_plan_key(plan.get_current_key()), mode
+        except ValueError as e:
+            raise ValueError(f"引用的 MaaEnd 计划表 {mode} key 非法") from e
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -1021,8 +1092,8 @@ class MaaEndUserConfig(ConfigBase):
 
         # 理智任务标签
         if self.get("Task", "IfSanity"):
-            task_config, _ = self.get_effective_sanity_task_config()
-            sanity_task_type = task_config["SanityTaskType"]
+            task_key, _ = self.get_effective_sanity_task_key()
+            sanity_task_type = task_key["SanityTaskType"]
             tags.append(
                 {
                     "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
@@ -1031,9 +1102,9 @@ class MaaEndUserConfig(ConfigBase):
             )
 
             detail_key = (
-                task_config["AutoEssenceSpecifiedLocation"]
+                task_key["AutoEssenceSpecifiedLocation"]
                 if sanity_task_type == "Essence"
-                else task_config[sanity_task_type]
+                else task_key[sanity_task_type]
             )
             detail_label = (
                 self._maaend_essence_location_label
@@ -1052,7 +1123,7 @@ class MaaEndUserConfig(ConfigBase):
                     {
                         "text": (
                             "奖励组：奖励组 A"
-                            if task_config["RewardsSetOption"] == "RewardsSetA"
+                            if task_key["RewardsSetOption"] == "RewardsSetA"
                             else "奖励组：奖励组 B"
                         ),
                         "color": "blue",
@@ -2203,44 +2274,62 @@ class MaaPlanConfig(ConfigBase):
             raise ValueError("非法的计划表模式")
 
 
-class MaaEndPlanConfig(ConfigBase):
-    """MaaEnd计划表配置"""
+class WeeklyKeyPlanConfig(ConfigBase):
+    """只保存日期槽位并返回完整 key 的通用周计划表。"""
 
-    def __init__(self) -> None:
-        self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 计划表")
+    def __init__(
+        self,
+        default_name: str,
+        default_key: Any,
+        key_validator: ValidatorBase,
+    ) -> None:
+        self.Info_Name = ConfigItem("Info", "Name", default_name)
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
         )
 
-        self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
+        self.config_item_dict: dict[str, ConfigItem] = {}
         for group in ["ALL", *calendar.day_name]:
-            self.config_item_dict[group] = {}
-            for name in MAAEND_SANITY_TASK_FIELDS:
-                validator = (
-                    OptionsValidator(list(MAAEND_SANITY_TASK_TYPES))
-                    if name == "SanityTaskType"
-                    else StringValidator()
-                )
-                item = ConfigItem(
-                    group,
-                    name,
-                    MAAEND_SANITY_TASK_DEFAULTS[name],
-                    validator,
-                )
-                self.config_item_dict[group][name] = item
-                setattr(self, f"{group}_{name}", item)
+            item = ConfigItem(group, "Key", deepcopy(default_key), key_validator)
+            self.config_item_dict[group] = item
+            setattr(self, f"{group}_Key", item)
 
         super().__init__()
 
-    def get_current_info(self, name: str) -> ConfigItem:
-        """获取当前生效的计划表配置项"""
+    def get_current_key(self) -> Any:
+        """按当前模式返回完整 key，不解释 key 内容。"""
 
         if self.get("Info", "Mode") == "ALL":
-            return self.config_item_dict["ALL"][name]
+            return self.config_item_dict["ALL"].getValue()
         if self.get("Info", "Mode") == "Weekly":
             today = datetime.now(tz=UTC4).strftime("%A")
-            return self.config_item_dict.get(today, self.config_item_dict["ALL"])[name]
+            return self.config_item_dict.get(
+                today, self.config_item_dict["ALL"]
+            ).getValue()
         raise ValueError("非法的计划表模式")
+
+
+class MaaEndPlanConfig(WeeklyKeyPlanConfig):
+    """MaaEnd 计划表配置。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            default_name="新 MaaEnd 计划表",
+            default_key=normalize_maaend_plan_key({}),
+            key_validator=MaaEndPlanKeyValidator(),
+        )
+
+    async def load(self, data: dict) -> bool:
+        """加载计划表并迁移没有 Key 包装的旧日期槽位。"""
+
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        for group in ["ALL", *calendar.day_name]:
+            group_data = normalized_data.get(group)
+            if isinstance(group_data, dict):
+                normalized_data[group] = {
+                    "Key": normalize_maaend_plan_key(group_data)
+                }
+        return await super().load(normalized_data)
 
 
 class GeneralUserConfig(ConfigBase):

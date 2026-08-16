@@ -168,6 +168,26 @@ export interface MaaEndSanityConfig {
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
 }
 
+export interface MaaEndProtocolSpacePlanKey {
+  SanityTaskType: ProtocolSpaceTab
+  OperatorProgression: MaaEndSanityConfig['OperatorProgression']
+  WeaponProgression: MaaEndSanityConfig['WeaponProgression']
+  CrisisDrills: MaaEndSanityConfig['CrisisDrills']
+  RewardsSetOption: RewardSetOption
+}
+
+export interface MaaEndAutoEssencePlanKey {
+  SanityTaskType: 'Essence'
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
+export type MaaEndPlanKey = MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey
+
+type MaaEndLegacyPlanKey = Omit<Partial<MaaEndSanityConfig>, 'SanityTaskType'> & {
+  SanityTaskType?: SanityTaskType | 'ProtocolSpace' | 'Matrix' | 'AutoEssence'
+  ProtocolSpaceTab?: ProtocolSpaceTab
+}
+
 export interface MaaEndTaskSwitchItem {
   name: MaaEndTaskSwitch
   label: string
@@ -266,7 +286,7 @@ export const getSanityTaskDisplayValue = (rawConfig?: Partial<MaaEndSanityConfig
 }
 
 export const normalizeMaaEndSanityConfig = (
-  rawConfig?: Partial<MaaEndSanityConfig> | null
+  rawConfig?: MaaEndLegacyPlanKey | null
 ): MaaEndSanityConfig => {
   const config = {
     ...createDefaultMaaEndSanityConfig(),
@@ -295,6 +315,41 @@ export const normalizeMaaEndSanityConfig = (
   }
 
   return config
+}
+
+export const maaEndPlanKeyToSanityConfig = (rawSlot?: unknown): MaaEndSanityConfig => {
+  const slot = rawSlot && typeof rawSlot === 'object' ? (rawSlot as Record<string, unknown>) : {}
+  const rawKey = slot.Key && typeof slot.Key === 'object' ? slot.Key : slot
+  const legacyKey = { ...(rawKey as MaaEndLegacyPlanKey) }
+
+  if (legacyKey.SanityTaskType === 'ProtocolSpace') {
+    const protocolSpaceTab = legacyKey.ProtocolSpaceTab
+    if (PROTOCOL_SPACE_OPTIONS.some(option => option.value === protocolSpaceTab)) {
+      legacyKey.SanityTaskType = protocolSpaceTab as ProtocolSpaceTab
+    }
+  } else if (legacyKey.SanityTaskType === 'Matrix' || legacyKey.SanityTaskType === 'AutoEssence') {
+    legacyKey.SanityTaskType = 'Essence'
+  }
+
+  return normalizeMaaEndSanityConfig(legacyKey)
+}
+
+export const normalizeMaaEndPlanKey = (rawSlot?: unknown): MaaEndPlanKey => {
+  const config = maaEndPlanKeyToSanityConfig(rawSlot)
+  if (config.SanityTaskType === 'Essence') {
+    return {
+      SanityTaskType: 'Essence',
+      AutoEssenceSpecifiedLocation: config.AutoEssenceSpecifiedLocation,
+    }
+  }
+
+  return {
+    SanityTaskType: config.SanityTaskType,
+    OperatorProgression: config.OperatorProgression,
+    WeaponProgression: config.WeaponProgression,
+    CrisisDrills: config.CrisisDrills,
+    RewardsSetOption: config.RewardsSetOption,
+  }
 }
 
 // 保留旧导出，兼容既有调用

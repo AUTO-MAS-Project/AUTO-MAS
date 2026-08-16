@@ -165,6 +165,8 @@ import {
   SANITY_TASK_TYPE_OPTIONS,
   getCurrentTaskValue,
   isProtocolSpaceRewardEnabled,
+  maaEndPlanKeyToSanityConfig,
+  normalizeMaaEndPlanKey,
   normalizeMaaEndSanityConfig,
   type CurrentTaskValue,
   type MaaEndSanityConfig,
@@ -191,7 +193,7 @@ const syncLocalTableData = (tableData: Record<string, any> | null) => {
   localTableData.value = Object.fromEntries(
     MAAEND_PLAN_TIME_KEYS.map(timeKey => [
       timeKey,
-      normalizeMaaEndSanityConfig(tableData?.[timeKey]),
+      maaEndPlanKeyToSanityConfig(tableData?.[timeKey]),
     ])
   ) as Partial<Record<PlanTimeKey, MaaEndSanityConfig>>
 }
@@ -324,7 +326,11 @@ const saveDayConfig = async (timeKey: PlanTimeKey, config: Partial<MaaEndSanityC
     [timeKey]: normalized,
   }
 
-  const saved = await props.handlePlanChange(timeKey, normalized, false)
+  const saved = await props.handlePlanChange(
+    `${timeKey}.Key`,
+    normalizeMaaEndPlanKey(normalized),
+    false
+  )
   if (!saved) {
     localTableData.value = {
       ...localTableData.value,

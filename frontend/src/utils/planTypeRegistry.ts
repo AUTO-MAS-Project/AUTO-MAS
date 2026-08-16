@@ -1,5 +1,6 @@
 import { defineAsyncComponent, type Component } from 'vue'
-import { PlanCreateIn, PlanIndexItem } from '@/api'
+import { PlanCreateIn } from '@/api/models/PlanCreateIn'
+import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
 
 // ==================== 类型定义 ====================

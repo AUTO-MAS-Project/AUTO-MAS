@@ -101,7 +101,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import {
   MAAEND_PLAN_WEEKDAY_KEYS,
-  normalizeMaaEndSanityConfig,
+  maaEndPlanKeyToSanityConfig,
   type MaaEndSanityConfig,
 } from '@/utils/maaEndProtocolSpace'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
@@ -314,6 +314,8 @@ const loadSanityModeOptions = async () => {
     })
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data
+        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
+        .map(item => ({ label: item.label, value: item.value }))
     }
   } catch (error) {
     logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -336,7 +338,7 @@ const loadSanityPlan = async (planId: string) => {
     }
     const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
     const dayConfig = planData.Info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
-    planModeConfig.value = normalizeMaaEndSanityConfig(dayConfig)
+    planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
   } catch (error) {
     planModeConfig.value = null
     logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)

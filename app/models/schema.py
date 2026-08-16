@@ -22,7 +22,7 @@
 
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
+from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -1674,38 +1674,61 @@ class MaaPlanConfig(WeeklyPlanConfig[MaaPlanConfig_Info, MaaPlanConfig_Item]):
 
 
 class MaaEndPlanConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="计划表名称")
-    Mode: Optional[Literal["ALL", "Weekly"]] = Field(
-        default=None, description="计划表模式"
+    model_config = ConfigDict(extra="forbid")
+
+    Name: str = Field(default="新 MaaEnd 计划表", description="计划表名称")
+    Mode: Literal["ALL", "Weekly"] = Field(
+        default="ALL", description="计划表模式"
     )
+
+
+class MaaEndProtocolSpacePlanKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    SanityTaskType: Literal[
+        "OperatorProgression", "WeaponProgression", "CrisisDrills"
+    ] = Field(default="OperatorProgression", description="协议空间任务类型")
+    OperatorProgression: Literal[
+        "OperatorEXP", "Promotions", "T-Creds", "SkillUp"
+    ] = Field(default="OperatorEXP", description="干员养成任务")
+    WeaponProgression: Literal["WeaponEXP", "WeaponTune"] = Field(
+        default="WeaponEXP", description="武器养成任务"
+    )
+    CrisisDrills: Literal[
+        "AdvancedProgression1",
+        "AdvancedProgression2",
+        "AdvancedProgression3",
+        "AdvancedProgression4",
+        "AdvancedProgression5",
+    ] = Field(default="AdvancedProgression1", description="危境预演任务")
+    RewardsSetOption: Literal["RewardsSetA", "RewardsSetB"] = Field(
+        default="RewardsSetA", description="奖励组选项"
+    )
+
+
+class MaaEndAutoEssencePlanKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    SanityTaskType: Literal["Essence"] = Field(
+        default="Essence", description="基质刷取任务类型"
+    )
+    AutoEssenceSpecifiedLocation: str = Field(
+        default="", description="基质刷取指定地点"
+    )
+
+
+MaaEndPlanKey = Annotated[
+    MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey,
+    Field(discriminator="SanityTaskType"),
+]
 
 
 class MaaEndPlanConfig_Item(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    SanityTaskType: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
-    ] = Field(default=None, description="理智任务类型")
-    OperatorProgression: Optional[
-        Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
-    ] = Field(default=None, description="干员养成任务")
-    WeaponProgression: Optional[Literal["WeaponEXP", "WeaponTune"]] = Field(
-        default=None, description="武器养成任务"
-    )
-    CrisisDrills: Optional[
-        Literal[
-            "AdvancedProgression1",
-            "AdvancedProgression2",
-            "AdvancedProgression3",
-            "AdvancedProgression4",
-            "AdvancedProgression5",
-        ]
-    ] = Field(default=None, description="危境预演任务")
-    RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
-        default=None, description="奖励组选项"
-    )
-    AutoEssenceSpecifiedLocation: Optional[str] = Field(
-        default=None, description="基质刷取指定地点"
+    Key: MaaEndPlanKey = Field(
+        default_factory=MaaEndProtocolSpacePlanKey,
+        description="MaaEnd 计划表专项 key",
     )
 
 
