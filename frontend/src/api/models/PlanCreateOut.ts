@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaEndPlanConfig } from './MaaEndPlanConfig';
+import type { MaaEndPlanConfig_Output } from './MaaEndPlanConfig_Output';
 import type { MaaPlanConfig } from './MaaPlanConfig';
 export type PlanCreateOut = {
     /**
@@ -24,6 +24,6 @@ export type PlanCreateOut = {
     /**
      * 计划配置数据
      */
-    data: (MaaPlanConfig | MaaEndPlanConfig);
+    data: (MaaPlanConfig | MaaEndPlanConfig_Output);
 };
 

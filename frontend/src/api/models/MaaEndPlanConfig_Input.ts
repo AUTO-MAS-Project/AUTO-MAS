@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { MaaEndPlanConfig_Info } from './MaaEndPlanConfig_Info';
 import type { MaaEndPlanConfig_Item } from './MaaEndPlanConfig_Item';
-export type MaaEndPlanConfig = {
+export type MaaEndPlanConfig_Input = {
     /**
      * 基础信息
      */
@@ -42,3 +42,4 @@ export type MaaEndPlanConfig = {
      */
     Sunday?: (MaaEndPlanConfig_Item | null);
 };
+

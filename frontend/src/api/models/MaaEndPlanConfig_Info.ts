@@ -6,9 +6,19 @@ export type MaaEndPlanConfig_Info = {
     /**
      * 计划表名称
      */
-    Name?: (string | null);
+    Name?: string;
     /**
      * 计划表模式
      */
-    Mode?: ('ALL' | 'Weekly' | null);
+    Mode?: MaaEndPlanConfig_Info.Mode;
 };
+export namespace MaaEndPlanConfig_Info {
+    /**
+     * 计划表模式
+     */
+    export enum Mode {
+        ALL = 'ALL',
+        WEEKLY = 'Weekly',
+    }
+}
+
