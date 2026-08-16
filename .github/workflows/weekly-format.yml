@@ -1,0 +1,79 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+name: Timing formatting
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC，此处对应北京时间每周一 03:00。
+    # 避开 0 点的 github runner 高峰时段。
+    - cron: '0 19 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-format-dev
+  cancel-in-progress: false
+
+jobs:
+  format:
+    name: 格式化代码
+    if: >-
+      github.repository == 'AUTO-MAS-Project/AUTO-MAS' &&
+      (github.event_name == 'schedule' || github.ref == 'refs/heads/dev')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出 dev
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 使用 Ruff 格式化
+        run: |
+          python -m pip install ruff==0.15.14
+          ruff format .
+
+      - name: 设置 pnpm
+        uses: pnpm/action-setup@v6.0.10
+        with:
+          version: 10
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        env:
+          npm_config_package_manager_strict: 'false'
+        run: pnpm install --lockfile=false --ignore-scripts
+
+      - name: 格式化前端代码
+        working-directory: frontend
+        env:
+          npm_config_package_manager_strict: 'false'
+        run: pnpm format
+
+      - name: 提交格式化结果
+        run: |
+          git add --update
+          if git diff --cached --quiet; then
+            echo "没有需要提交的格式化变更。"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style: 自动格式化代码"
+          git pull --rebase origin dev
+          git push origin HEAD:dev
