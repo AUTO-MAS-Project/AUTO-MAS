@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS API Contract"
+  short_description: "Standardize backend API contracts"
+  default_prompt: "Apply backend API contract standards for endpoint naming, request/response schemas, error handling, websocket envelopes, and compatibility."

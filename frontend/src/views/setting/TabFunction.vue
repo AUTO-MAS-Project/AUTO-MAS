@@ -107,7 +107,20 @@ const {
         </a-col>
       </a-row>
       <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">匿名遥测</span>
+              <a-tooltip title="发送经脱敏的错误与性能数据，帮助定位问题；关闭后前后端均不再发送">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-switch :checked="settings.Function?.IfEnableTelemetry !== false" checked-children="已开启"
+              un-checked-children="已关闭" style="width: auto; align-self: flex-start"
+              @change="(checked: boolean) => handleSettingChange('Function', 'IfEnableTelemetry', checked)" />
+          </div>
+        </a-col>
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">托管Bilibili游戏隐私政策</span>
@@ -144,7 +157,7 @@ const {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">屏蔽模拟器广告</span>
@@ -167,9 +180,12 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfBlockAd" size="large" style="width: 100%" @change="
-              (checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)
-            ">
+            <a-select
+              :value="settings.Function?.IfBlockAd"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)"
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>

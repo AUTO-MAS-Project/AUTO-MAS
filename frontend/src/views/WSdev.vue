@@ -423,7 +423,7 @@ const sortedClientList = computed(() => {
   })
 })
 
-const isSelectedClientConnected = computed(() => {
+const _isSelectedClientConnected = computed(() => {
   if (!selectedClient.value) return false
   const client = clientList.value.find((c) => c.name === selectedClient.value)
   return client?.is_connected ?? false
@@ -714,7 +714,7 @@ async function clearHistory() {
     })
     messages.value = []
     message.success('已清空消息历史')
-  } catch (error: any) {
+  } catch {
     message.error('清空失败')
   }
 }

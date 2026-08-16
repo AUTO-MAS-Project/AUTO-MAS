@@ -1,19 +1,36 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
-import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
+import type {
+  UserInBase,
+  UserCreateOut,
+  UserUpdateIn,
+  UserDeleteIn,
+  UserGetIn,
+  UserReorderIn,
+} from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('用户API')
 
+interface AddUserOptions {
+  showError?: boolean
+}
+
 export function useUserApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const addUserErrorCode = ref<number | null>(null)
 
   // 添加用户
-  const addUser = async (scriptId: string): Promise<UserCreateOut | null> => {
+  const addUser = async (
+    scriptId: string,
+    options: AddUserOptions = {}
+  ): Promise<UserCreateOut | null> => {
     loading.value = true
     error.value = null
+    addUserErrorCode.value = null
+    const showError = options.showError ?? true
 
     try {
       const requestData: UserInBase = {
@@ -23,8 +40,8 @@ export function useUserApi() {
       const response = await Service.addUserApiScriptsUserAddPost(requestData)
 
       if (response.code !== 200) {
+        addUserErrorCode.value = response.code ?? null
         const errorMsg = response.message || '添加用户失败'
-        message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
@@ -36,7 +53,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加用户失败'
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
+      if (showError && err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -184,6 +201,7 @@ export function useUserApi() {
   return {
     loading,
     error,
+    addUserErrorCode,
     addUser,
     getUsers,
     updateUser,

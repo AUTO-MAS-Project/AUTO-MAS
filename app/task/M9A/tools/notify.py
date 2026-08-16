@@ -19,6 +19,7 @@
 #   Contact: DLmaster_361@163.com
 
 import re
+from collections.abc import Awaitable
 from pathlib import Path
 
 from app.core import Config
@@ -35,11 +36,11 @@ class M9ALogAnalyzer:
     并提供格式化通知文本的方法。
     """
 
-    SPECIAL_TASKS = {"切换账号", "常规作战"}
-    """需要提取额外详情的任务名集合"""
-
     DROP_KEYWORDS = ("掉落统计:", "材料掉落总结:")
     """掉落物统计行的关键词"""
+
+    SOURCE_TAGS = ("src=Monitor", "src=Worker", "src=Core")
+    """支持解析的 M9A 日志来源标记"""
 
     RARITY_TAGS_RE = re.compile(r"^\[.+?\]$")
     """稀有度标签正则，匹配 [黄色] [紫色] 等括号标签，在最终输出中过滤掉"""
@@ -55,6 +56,14 @@ class M9ALogAnalyzer:
     def _extract_task_start(line: str) -> str | None:
         """从"开始任务：XXX"行提取任务名"""
         m = re.search(r"开始任务：(.+)$", line)
+        if m:
+            return m.group(1).strip()
+        return None
+
+    @staticmethod
+    def _extract_task_failure(line: str) -> str | None:
+        """从"任务失败：XXX"行提取任务名"""
+        m = re.search(r"任务失败[:：]\s*(.+)$", line)
         if m:
             return m.group(1).strip()
         return None
@@ -84,6 +93,10 @@ class M9ALogAnalyzer:
         return any(kw in line for kw in M9ALogAnalyzer.DROP_KEYWORDS)
 
     @staticmethod
+    def _is_supported_source(line: str) -> bool:
+        return any(tag in line for tag in M9ALogAnalyzer.SOURCE_TAGS)
+
+    @staticmethod
     def parse_log(log_path: Path) -> dict:
         """解析 M9A 运行日志文件
 
@@ -99,9 +112,9 @@ class M9ALogAnalyzer:
                         "status": "完成" | "失败" | "开始",
                         "details": ["文本内容", ...],
                         "extra": {
-                            "stage": "12-5, 难度：Hard",   # 仅常规作战
-                            "count": "1",                   # 仅常规作战
-                            "drops": ["物品 x1", ...]       # 仅常规作战
+                            "stage": "12-5, 难度：Hard",
+                            "count": "1",
+                            "drops": ["物品 x1", ...]
                         }
                     },
                     ...
@@ -110,6 +123,19 @@ class M9ALogAnalyzer:
                 "duration": "00:05:30"
             }
         """
+        try:
+            return M9ALogAnalyzer.parse_lines(
+                log_path.read_text(encoding="utf-8").splitlines()
+            )
+        except Exception:
+            return {
+                "tasks": [],
+                "overall_status": "解析失败",
+                "duration": "",
+            }
+
+    @staticmethod
+    def parse_lines(lines: list[str]) -> dict:
         tasks = []
         current_task = None
         in_drops = False
@@ -117,23 +143,22 @@ class M9ALogAnalyzer:
         overall_status = "失败"
         duration = ""
 
-        try:
-            lines = log_path.read_text(encoding="utf-8").splitlines()
-        except Exception:
-            return {
-                "tasks": [],
-                "overall_status": "失败",
-                "duration": "",
-            }
+        def save_drops():
+            nonlocal drops, in_drops
+            if current_task and drops:
+                current_task["extra"]["drops"] = drops
+            drops = []
+            in_drops = False
 
         for i, line in enumerate(lines):
-            if "src=Monitor" not in line and "src=Worker" not in line:
+            if not M9ALogAnalyzer._is_supported_source(line):
                 continue
 
             task_name = M9ALogAnalyzer._extract_task_start(line)
             if task_name:
                 if current_task and current_task["status"] == "开始":
                     current_task["status"] = "失败"
+                    save_drops()
                 current_task = {
                     "name": task_name,
                     "status": "开始",
@@ -145,6 +170,16 @@ class M9ALogAnalyzer:
                 drops = []
                 continue
 
+            failed_task_name = M9ALogAnalyzer._extract_task_failure(line)
+            if failed_task_name:
+                for task in reversed(tasks):
+                    if task.get("name") == failed_task_name:
+                        task["status"] = "失败"
+                        if task is current_task:
+                            save_drops()
+                        break
+                continue
+
             if M9ALogAnalyzer._is_all_done(line):
                 overall_status = "成功"
                 if i + 1 < len(lines):
@@ -153,31 +188,26 @@ class M9ALogAnalyzer:
                         duration = m.group(1).rstrip(")")
                 if current_task and current_task["status"] == "开始":
                     current_task["status"] = "完成"
+                    save_drops()
                 continue
 
             if M9ALogAnalyzer._is_task_complete(line):
                 if current_task and current_task["status"] == "开始":
                     current_task["status"] = "完成"
-                    if current_task["name"] == "常规作战" and drops:
-                        current_task["extra"]["drops"] = drops
-                    drops = []
-                    in_drops = False
+                    save_drops()
                 continue
 
             if M9ALogAnalyzer._is_drop_line(line):
-                # 只在"材料掉落总结:"时开始采集，"掉落统计:"部分重复，直接忽略
-                if "材料掉落总结:" in line:
-                    in_drops = True
-                    drops.clear()
-                # 遇到"掉落统计:"时不启用采集
+                in_drops = True
+                drops.clear()
                 continue
 
-            if in_drops and current_task and current_task["name"] == "常规作战":
+            if in_drops and current_task:
                 if "MonitorMarkdown" in line:
                     idx = line.find("MonitorMarkdown")
                     raw = line[idx + len("MonitorMarkdown"):].lstrip("] ")
                     drop_text = M9ALogAnalyzer._strip_html(raw.strip())
-                    if drop_text and drop_text not in ("",) + M9ALogAnalyzer.DROP_KEYWORDS:
+                    if drop_text and drop_text not in M9ALogAnalyzer.DROP_KEYWORDS:
                         drops.append(drop_text)
                     continue
                 if "MonitorLog" not in line:
@@ -187,18 +217,18 @@ class M9ALogAnalyzer:
                 record = M9ALogAnalyzer._extract_record(line)
                 if record:
                     current_task["details"].append(record)
-                    if current_task["name"] == "常规作战":
-                        if "当前关卡" in record:
-                            current_task["extra"]["stage"] = record.replace(
-                                "当前关卡：", ""
-                            )
-                        elif "任务结束，总共刷了" in record:
-                            m = re.search(r"总共刷了 (\d+) 次", record)
-                            if m:
-                                current_task["extra"]["count"] = m.group(1)
+                    if "当前关卡" in record:
+                        current_task["extra"]["stage"] = record.replace(
+                            "当前关卡：", ""
+                        )
+                    elif "任务结束，总共刷了" in record:
+                        m = re.search(r"总共刷了 (\d+) 次", record)
+                        if m:
+                            current_task["extra"]["count"] = m.group(1)
 
         if current_task and current_task["status"] == "开始":
             current_task["status"] = "失败"
+            save_drops()
 
         return {
             "tasks": tasks,
@@ -210,9 +240,9 @@ class M9ALogAnalyzer:
     def build_notification_text(analysis: dict) -> str:
         """根据 parse_log 的分析结果构建可读的通知文本
 
-        特殊任务（切换账号、常规作战）会附加额外信息：
+        特殊任务会附加额外信息：
         - 切换账号：附加匹配到的目标账号
-        - 常规作战：附加关卡信息、刷图次数、每项掉落物
+        - 有关卡、刷图次数、掉落总结的任务：附加对应信息
 
         Args:
             analysis: parse_log 返回的分析结果字典
@@ -224,10 +254,6 @@ class M9ALogAnalyzer:
         for task in analysis["tasks"]:
             line = f"{task['name']} - {task['status']}"
 
-            if task["name"] not in M9ALogAnalyzer.SPECIAL_TASKS:
-                lines.append(line)
-                continue
-
             if task["name"] == "切换账号":
                 account_match = None
                 for d in task["details"]:
@@ -237,24 +263,23 @@ class M9ALogAnalyzer:
                 if account_match:
                     line += f"（{account_match}）"
 
-            elif task["name"] == "常规作战":
-                parts = []
-                stage = task["extra"].get("stage", "")
-                count = task["extra"].get("count", "")
-                if stage:
-                    parts.append(stage)
-                if count:
-                    parts.append(f"刷图{count}次")
-                if parts:
-                    line += f"（{', '.join(parts)}）"
+            parts = []
+            stage = task["extra"].get("stage", "")
+            count = task["extra"].get("count", "")
+            if stage:
+                parts.append(stage)
+            if count:
+                parts.append(f"刷图{count}次")
+            if parts:
+                line += f"（{', '.join(parts)}）"
 
-                drops = task["extra"].get("drops", [])
-                drops = [d for d in drops if not M9ALogAnalyzer.RARITY_TAGS_RE.match(d)]
-                if drops:
-                    lines.append(line)
-                    for d in drops:
-                        lines.append(f"  掉落：{d}")
-                    continue
+            drops = task["extra"].get("drops", [])
+            drops = [d for d in drops if not M9ALogAnalyzer.RARITY_TAGS_RE.match(d)]
+            if drops:
+                lines.append(line)
+                for d in drops:
+                    lines.append(f"  掉落：{d}")
+                continue
 
             lines.append(line)
 
@@ -265,6 +290,14 @@ class M9ALogAnalyzer:
 
 
 # ==================== 通知推送辅助函数 ====================
+
+
+async def _safe_send_channel(channel_name: str, send_coro: Awaitable[None]) -> None:
+    """单个通知渠道失败时不影响其他渠道。"""
+    try:
+        await send_coro
+    except Exception as e:
+        logger.warning(f"{channel_name} 通知发送失败: {e}")
 
 
 async def _send_to_all_global_channels(
@@ -280,22 +313,35 @@ async def _send_to_all_global_channels(
     serverchan_message = message_text.replace("\n", "\n\n")
 
     if Config.get("Notify", "IfSendMail"):
-        await Notify.send_mail(
-            "网页", title, message_html, Config.get("Notify", "ToAddress")
+        await _safe_send_channel(
+            "全局邮件",
+            Notify.send_mail(
+                "网页", title, message_html, Config.get("Notify", "ToAddress")
+            ),
         )
 
     if Config.get("Notify", "IfServerChan"):
-        await Notify.ServerChanPush(
-            title,
-            f"{serverchan_message}\n\nAUTO-MAS 敬上",
-            Config.get("Notify", "ServerChanKey"),
+        await _safe_send_channel(
+            "全局 ServerChan",
+            Notify.ServerChanPush(
+                title,
+                f"{serverchan_message}\n\nAUTO-MAS 敬上",
+                Config.get("Notify", "ServerChanKey"),
+            ),
         )
 
-    for webhook in Config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
+    custom_webhooks = Config.Notify_CustomWebhooks
+    for webhook in custom_webhooks.values():
+        await _safe_send_channel(
+            "全局自定义 Webhook",
+            Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook),
+        )
 
     if Config.get("Notify", "IfKoishiSupport"):
-        await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
+        await _safe_send_channel(
+            "全局 Koishi",
+            Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"),
+        )
 
 
 async def _send_to_user_channels(
@@ -316,24 +362,34 @@ async def _send_to_user_channels(
 
     if user_config.get("Notify", "IfSendMail"):
         if not user_config.get("Notify", "ToAddress"):
-            logger.error("用户邮箱地址为空，无法发送邮件通知")
+            logger.warning("用户邮箱地址为空，无法发送邮件通知")
         else:
-            await Notify.send_mail(
-                "网页", title, message_html, user_config.get("Notify", "ToAddress")
+            await _safe_send_channel(
+                "用户邮件",
+                Notify.send_mail(
+                    "网页", title, message_html, user_config.get("Notify", "ToAddress")
+                ),
             )
 
     if user_config.get("Notify", "IfServerChan"):
         if not user_config.get("Notify", "ServerChanKey"):
-            logger.error("用户 ServerChan 密钥为空，无法发送通知")
+            logger.warning("用户 ServerChan 密钥为空，无法发送通知")
         else:
-            await Notify.ServerChanPush(
-                title,
-                f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                user_config.get("Notify", "ServerChanKey"),
+            await _safe_send_channel(
+                "用户 ServerChan",
+                Notify.ServerChanPush(
+                    title,
+                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
+                    user_config.get("Notify", "ServerChanKey"),
+                ),
             )
 
-    for webhook in user_config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
+    custom_webhooks = user_config.Notify_CustomWebhooks
+    for webhook in custom_webhooks.values():
+        await _safe_send_channel(
+            "用户自定义 Webhook",
+            Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook),
+        )
 
 
 # ==================== 对外接口 ====================
@@ -379,7 +435,7 @@ async def push_version_update(title: str, message: dict) -> None:
 async def _push_proxy_result(title: str, message: dict) -> None:
     """推送全局代理结果通知"""
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
-    if result_time_setting != "任何时刻" and (
+    if not message.get("game_sign_summary", False) and result_time_setting != "任何时刻" and (
         result_time_setting != "仅失败时" or message["uncompleted_count"] == 0
     ):
         logger.debug("当前 SendTaskResultTime 配置不满足推送条件，跳过")
@@ -410,7 +466,7 @@ async def _push_statistics(
         f"{detail_str}\n"
     )
 
-    template = Config.notify_env.get_template("general_statistics.html")
+    template = Config.notify_env.get_template("m9a_statistics.html")
     message_html = template.render(message)
 
     if Config.get("Notify", "IfSendStatistic"):

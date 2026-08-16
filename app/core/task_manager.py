@@ -32,9 +32,17 @@ from .config import (
     MaaEndConfig,
     M9AConfig,
     OkwwConfig,
+    OkNteConfig,
+    HSRConfig,
 )
 from app.services import System
-from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
+from app.models.task import (
+    ScriptItem,
+    TaskExecuteBase,
+    TaskItem,
+    TaskTriggerSource,
+    UserItem,
+)
 from app.utils import get_logger
 from app.task import (
     MaaManager,
@@ -43,6 +51,8 @@ from app.task import (
     MaaEndManager,
     M9AManager,
     OkwwManager,
+    OkNteManager,
+    HSRManager,
 )
 from app.utils.constants import POWER_SIGN_MAP
 
@@ -105,6 +115,19 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
+
+        # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
+        if self.task_info.mode == "AutoProxy":
+            from app.core.timer import MainTimer
+
+            sign_source = {
+                "scheduled_task": "task_scheduled",
+                "manual_task": "task_manual",
+                "startup_task": "task_startup",
+            }.get(self.task_info.trigger_source, "task_manual")
+            self.task_info.game_sign_results = (
+                await MainTimer.try_game_sign_for_task(source=sign_source)
+            )
 
         await self.prepare()
 
@@ -174,10 +197,14 @@ class Task(TaskExecuteBase):
                 task_item = GeneralManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
                 task_item = OkwwManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], OkNteConfig):
+                task_item = OkNteManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
                 task_item = MaaEndManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
                 task_item = M9AManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], HSRConfig):
+                task_item = HSRManager(script_item)
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
@@ -202,7 +229,11 @@ class Task(TaskExecuteBase):
             data={"Accomplish": self.task_info.result},
         )
 
-        if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
+        if (
+            not self.is_closing
+            and self.task_info.mode == "AutoProxy"
+            and self.task_info.queue_id is not None
+        ):
 
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
@@ -229,6 +260,8 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        self._startup_queue_started = False
+        self._startup_queue_running = False
 
     async def add_task(
         self,
@@ -236,6 +269,7 @@ class _TaskManager:
         id: str,
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
+        trigger_source: TaskTriggerSource = "manual_task",
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -244,6 +278,7 @@ class _TaskManager:
             mode (str): 任务模式
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
+            trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
 
         Returns:
             uuid.UUID: 任务 UID
@@ -285,7 +320,7 @@ class _TaskManager:
                 f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
             )
 
-        logger.info(f"创建任务: {task_uid}, 模式: {mode}")
+        logger.info(f"创建任务: {task_uid}, 模式: {mode}, 触发来源: {trigger_source}")
         if new_task_info:
             new_task_info["newTask"] = str(task_uid)
             await Config.send_websocket_message(
@@ -298,6 +333,7 @@ class _TaskManager:
             script_id=str(script_uid) if script_uid else None,
             user_id=str(user_uid) if user_uid else None,
             resume_from_script_id=resume_from_script_id,
+            trigger_source=trigger_source,
         )
         self.task_handler[task_uid] = Task(self.task_info[task_uid])
         self.task_handler[task_uid].execute()
@@ -340,19 +376,32 @@ class _TaskManager:
 
         if task_id == "ALL":
             task_item_list = list(self.task_handler.values())
+
+            # 主动停止全部任务时，禁止触发队列完成后的电源操作
+            Config.power_sign = "NoAction"
             for task_item in task_item_list:
                 if not task_item.is_closing:
-                    task_item.cancel()
                     task_item.is_closing = True
-                    await task_item.accomplish.wait()
+                    task_item.cancel()
+
+            if System.power_task is not None and not System.power_task.done():
+                await System.cancel_power_task()
+
+            await asyncio.gather(
+                *(task_item.accomplish.wait() for task_item in task_item_list)
+            )
+            await Config.send_websocket_message(
+                id="Main", type="Update", data={"PowerSign": Config.power_sign}
+            )
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
-                raise ValueError("未找到对应任务")
+                # 任务已经结束时，中止操作仍视为成功。
+                return
             if self.task_handler[uid].is_closing:
                 raise RuntimeError("任务已在中止中")
-            self.task_handler[uid].cancel()
             self.task_handler[uid].is_closing = True
+            self.task_handler[uid].cancel()
             logger.info(f"等待任务 {task_id} 结束...")
             await self.task_handler[uid].accomplish.wait()
             logger.info(f"任务 {task_id} 已结束")
@@ -360,22 +409,40 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
-        await asyncio.sleep(10)
+        if self._startup_queue_started:
+            logger.info("启动时任务已触发，跳过重复运行")
+            return
+        if self._startup_queue_running:
+            logger.info("启动时任务正在等待运行，跳过重复触发")
+            return
 
-        logger.info("开始运行启动时任务")
-        for uid, queue in Config.QueueConfig.items():
+        self._startup_queue_running = True
 
-            if queue.get("Info", "StartUpEnabled"):
-                logger.info(f"启动时需要运行的队列：{uid}")
-                await TaskManager.add_task(
-                    "AutoProxy",
-                    str(uid),
-                    new_task_info={
-                        "queueId": str(uid),
-                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                        "taskType": "启动时代理",
-                    },
-                )
+        try:
+            await asyncio.sleep(10)
+
+            if Config.websocket is None:
+                logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
+                return
+
+            self._startup_queue_started = True
+            logger.info("开始运行启动时任务")
+            for uid, queue in Config.QueueConfig.items():
+
+                if queue.get("Info", "StartUpEnabled"):
+                    logger.info(f"启动时需要运行的队列：{uid}")
+                    await TaskManager.add_task(
+                        "AutoProxy",
+                        str(uid),
+                        new_task_info={
+                            "queueId": str(uid),
+                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                            "taskType": "启动时代理",
+                        },
+                        trigger_source="startup_task",
+                    )
+        finally:
+            self._startup_queue_running = False
 
         logger.success("启动时任务开始运行")
 

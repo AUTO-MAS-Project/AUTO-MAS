@@ -1,17 +1,37 @@
 // Electron API 类型定义
+export interface PathDiscoveryCandidate {
+  path: string
+  channel?: 'China' | 'Global'
+}
+
+export interface PathDiscoveryResult {
+  success: boolean
+  candidates?: PathDiscoveryCandidate[]
+  path?: string
+  channel?: 'China' | 'Global'
+  error?: string
+}
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string[]>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
+  discoverOkwwPath: () => Promise<PathDiscoveryResult>
+  discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 
   // 窗口控制
   windowMinimize: () => Promise<void>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  appRestart: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
+
+  // 窗口可见性/后台状态
+  getWindowActivity?: () => Promise<'visible' | 'background'>
+  onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
@@ -26,7 +46,6 @@ export interface ElectronAPI {
   }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<any>
-  installPip: () => Promise<any>
   downloadGit: () => Promise<any>
   installDependencies: (mirror?: string) => Promise<any>
   cloneBackend: (repoUrl?: string) => Promise<any>
@@ -81,7 +100,18 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{ success: boolean; path?: string; sourceDir?: string; error?: string }>
+  exportLogs: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportMaaEndIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
 
   // 获取模块化日志器（使用主进程配置）

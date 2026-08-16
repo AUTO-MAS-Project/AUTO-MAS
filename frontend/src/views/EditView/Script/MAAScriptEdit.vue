@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
+            <img src="@/assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -29,6 +29,15 @@
       <template #extra>
         <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
+
+      <a-alert message="使用说明" type="info" show-icon class="notice-alert">
+        <template #description>
+          <div class="notice-content">
+            <p>剿灭任务会独立启动一次 MAA。</p>
+            <p>MAA 专项仅支持模拟器；PC 版请使用通用脚本。</p>
+          </div>
+        </template>
+      </a-alert>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
@@ -245,9 +254,9 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
-import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service, type ComboBoxItem } from '../../../api'
+import type { MAAScriptConfig, ScriptType } from '@/types/script.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -258,7 +267,7 @@ const logger = window.electronAPI.getLogger('MAA脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -498,7 +507,7 @@ const selectMAAPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       maaConfig.Info.Path = path
       // 选择路径后立即保存
@@ -591,6 +600,19 @@ const selectMAAPath = async () => {
   padding: 8px 16px;
   border-radius: 8px;
   border: none;
+}
+
+.notice-alert {
+  margin-bottom: 24px;
+  border-radius: 8px;
+}
+
+.notice-content p {
+  margin: 0;
+}
+
+.notice-content p + p {
+  margin-top: 4px;
 }
 
 /* 表单样式 */

@@ -424,7 +424,7 @@ class AutoProxyTask(TaskExecuteBase):
                     await self.update_config()
 
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -459,14 +459,14 @@ class AutoProxyTask(TaskExecuteBase):
     ):
 
         if e is None:
-            logger.error(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
                 data={"Error": error_message},
             )
         else:
-            logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -510,7 +510,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.general_process_manager.kill()
             await System.kill_process(self.script_exe_path)
         except Exception as e:
-            logger.exception(f"中止通用脚本进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止通用脚本进程失败: {e}")
         if self.game_manager is not None:
             logger.info("中止游戏/模拟器进程")
             try:
@@ -525,7 +525,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Game", "EmulatorIndex"),
                     )
             except Exception as e:
-                logger.exception(f"关闭游戏/模拟器失败: {e}")
+                logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
@@ -601,9 +601,10 @@ class AutoProxyTask(TaskExecuteBase):
         for t, log_item in self.cur_user_item.log_record.items():
 
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=dt,
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
@@ -635,7 +636,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -666,12 +667,12 @@ class AutoProxyTask(TaskExecuteBase):
                 3,
             )
         else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

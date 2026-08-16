@@ -21,15 +21,64 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
+import json
 import uuid
 from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import HSRConfig as RuntimeHSRConfig
+from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+
+
+def _hsr_script_config(script_id: str):
+    """Resolve an HSR script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeHSRConfig):
+        raise TypeError("脚本配置类型错误, 不是 HSR 类型")
+    return script_config
+
+
+def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
+    user_config = script_config.UserData[uuid.UUID(user_id)]
+    return user_config
+
+
+def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
+    script_uid = uuid.UUID(script_id)
+    script_config = Config.ScriptConfig[script_uid]
+    if not isinstance(script_config, RuntimeOkNteConfig):
+        raise ValueError("脚本配置类型错误, 不是 OK-NTE 类型")
+    return script_uid, script_config
+
+
+def _oknte_legacy_mas_config_dir(script_id: str) -> Path:
+    script_uid, _ = _oknte_script_config(script_id)
+    return Path.cwd() / "data" / str(script_uid) / "Default" / "ConfigFile"
+
+
+def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
+    script_uid, _ = _oknte_script_config(script_id)
+    user_uid = uuid.UUID(user_id)
+    return Path.cwd() / "data" / str(script_uid) / str(user_uid) / "ConfigFile"
+
+
+def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
+    file_path = Path(filename)
+    if (
+        file_path.name != filename
+        or file_path.is_absolute()
+        or ".." in file_path.parts
+    ):
+        raise ValueError("配置文件名非法")
+    return config_dir / filename
 
 
 SCRIPT_BOOK = {
@@ -39,6 +88,8 @@ SCRIPT_BOOK = {
     "M9AConfig": M9AConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
+    "OkNteConfig": OkNteConfig,
+    "HSRConfig": HSRConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -47,6 +98,8 @@ USER_BOOK = {
     "M9AConfig": M9AUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
+    "OkNteConfig": OkNteUserConfig,
+    "HSRConfig": HSRUserConfig,
 }
 
 
@@ -253,6 +306,34 @@ async def import_script_config_file(
 
 
 @router.post(
+    "/maaend/options",
+    tags=["Get"],
+    summary="获取 MaaEnd 动态选项",
+    response_model=MaaEndOptionsOut,
+    status_code=200,
+)
+async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptionsOut:
+    try:
+        data = await Config.get_maaend_options(options.scriptId)
+        return MaaEndOptionsOut(
+            controllers=[ComboBoxItem(**item) for item in data["controllers"]],
+            controllerTypes=data["controllerTypes"],
+            essenceLocations=[
+                ComboBoxItem(**item) for item in data["essenceLocations"]
+            ],
+        )
+    except Exception as e:
+        return MaaEndOptionsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            controllers=[],
+            controllerTypes={},
+            essenceLocations=[],
+        )
+
+
+@router.post(
     "/user/get",
     tags=["Get"],
     summary="查询用户",
@@ -294,6 +375,14 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
         uid, config = await Config.add_user(user.scriptId)
         data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
             **(await config.toDict())
+        )
+    except FileNotFoundError as e:
+        return UserCreateOut(
+            code=409,
+            status="error",
+            message=str(e),
+            userId="",
+            data=GeneralUserConfig(**{}),
         )
     except Exception as e:
         return UserCreateOut(
@@ -394,6 +483,25 @@ async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> Comb
             user.scriptId, user.userId
         )
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/depot/items",
+    tags=["Get"],
+    summary="MAA 库存保持物品可选项",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_depot_items(script.scriptId)
+        data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -536,7 +644,7 @@ async def get_m9a_available_tasks(script_id: str):
     try:
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
-        loader = M9ATaskLoader(m9a_path)
+        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
         
         # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
         available_tasks = loader.get_available_tasks()
@@ -562,20 +670,179 @@ async def get_m9a_available_tasks(script_id: str):
         }
 
 
-@router.post(
-    "/okww/configs/list",
-    tags=["OKWW"],
-    summary="获取 OK-WW 配置文件列表及 schema",
+@router.get(
+    "/hsr/stage-options",
+    tags=["HSR"],
+    summary="获取 HSR 体力副本动态选项",
+    response_model=HSRStageOptionsOut,
     status_code=200,
 )
-async def get_okww_configs_list(script_id: str):
+async def get_hsr_stage_options_api(
+    scriptId: str | None = None,
+    engine: Literal["M7A", "SRA"] = "M7A",
+    userId: str | None = None,
+    slot: Literal["main", "eow"] = "main",
+) -> HSRStageOptionsOut:
+    """返回 M7A/SRA 原生副本字段。
+
+    ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+    按引擎统一返回，不按 slot 生成不同结果。
     """
-    获取 OK-WW 配置文件列表及 schema 定义。
-    读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
-    若为空则自动从 ok-ww configs 目录初始化默认配置。
+
+    try:
+        if not scriptId:
+            return HSRStageOptionsOut(
+                code=400,
+                status="error",
+                message="缺少 scriptId",
+            )
+
+        script_config = _hsr_script_config(scriptId)
+        if userId:
+            _hsr_user_config(script_config, userId)
+        from app.task.HSR.tools.api import build_stage_options
+
+        data = HSRStageOptionsData(
+            **build_stage_options(script_config, engine)
+        )
+        option_count = sum(len(category.options) for category in data.categories)
+        return HSRStageOptionsOut(
+            message=f"共 {option_count} 个 HSR 体力副本选项",
+            data=data,
+        )
+    except Exception as e:
+        return HSRStageOptionsOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/hsr/capabilities",
+    tags=["HSR"],
+    summary="获取内置 HSR 能力快照",
+    response_model=HSRCapabilitiesOut,
+    status_code=200,
+)
+async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabilitiesOut:
+    """返回内置 HSR 的能力快照，不暴露原生编辑器会话。"""
+
+    try:
+        if not scriptId:
+            return HSRCapabilitiesOut(code=400, status="error", message="缺少 scriptId")
+        script_config = _hsr_script_config(scriptId)
+        from app.task.HSR.tools.api import build_capabilities
+
+        data = HSRCapabilitiesData(**build_capabilities(script_config))
+        return HSRCapabilitiesOut(data=data)
+    except Exception as e:
+        return HSRCapabilitiesOut(
+            code=400
+            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/hsr/managed-config",
+    tags=["HSR"],
+    summary="获取 HSR 托管配置字段",
+    response_model=HSRManagedConfigOut,
+    status_code=200,
+)
+async def get_hsr_managed_config_api(
+    scriptId: str | None = None, userId: str | None = None
+) -> HSRManagedConfigOut:
+    """返回原生动态托管字段；用户 ID 只负责归属校验。"""
+
+    try:
+        if not scriptId:
+            return HSRManagedConfigOut(
+                code=400, status="error", message="缺少 scriptId"
+            )
+        script_config = _hsr_script_config(scriptId)
+        user_config = None
+        if userId:
+            user_config = _hsr_user_config(script_config, userId)
+        from app.task.HSR.tools.api import build_managed_config
+
+        data = HSRManagedConfigData(
+            **build_managed_config(script_config, user_config)
+        )
+        return HSRManagedConfigOut(data=data)
+    except Exception as e:
+        return HSRManagedConfigOut(
+            code=400
+            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/hsr/direct-config/import",
+    tags=["HSR"],
+    summary="导入 HSR 原生配置快照",
+    response_model=HSRDirectConfigImportOut,
+    status_code=200,
+)
+async def import_hsr_direct_config_api(
+    request: HSRDirectConfigImportIn = Body(...),
+) -> HSRDirectConfigImportOut:
+    from app.task.HSR.tools.api import import_direct_config
+    from app.task.HSR.tools.external_locks import HSRExternalPathBusyError
+
+    try:
+        script_config = _hsr_script_config(request.scriptId)
+        # 先校验用户归属，再让 provider 读取原生文件，避免无效请求触碰用户配置。
+        _hsr_user_config(script_config, request.userId)
+
+        result = await import_direct_config(
+            script_config,
+            request.engine,
+            script_id=request.scriptId,
+            user_id=request.userId,
+            update_user=Config.update_user,
+        )
+        return HSRDirectConfigImportOut(
+            message=f"{request.engine} 原生配置已导入",
+            data=HSRDirectConfigImportData(**result),
+        )
+    except HSRExternalPathBusyError as e:
+        return HSRDirectConfigImportOut(
+            code=409, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except (FileNotFoundError, KeyError, TypeError, ValueError, RuntimeError) as e:
+        return HSRDirectConfigImportOut(
+            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except OSError as e:
+        return HSRDirectConfigImportOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
+    "/oknte/configs/list",
+    tags=["OKNTE"],
+    summary="获取 OK-NTE 配置文件列表及 schema",
+    status_code=200,
+)
+async def get_oknte_configs_list(script_id: str, user_id: str):
+    """
+    获取 OK-NTE 配置文件列表及 schema 定义。
+    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
+    若为空则自动从 ok-nte configs 目录初始化默认配置。
 
     Args:
-        script_id: OK-WW 脚本 ID
+        script_id: OK-NTE 脚本 ID
+        user_id: 用户 ID
 
     Returns:
         dict: 包含配置文件列表和 schema 的响应
@@ -583,31 +850,41 @@ async def get_okww_configs_list(script_id: str):
     try:
         import json
         import shutil
-        from app.task.Okww.config_schema import (
-            get_all_config_info, build_fields_for_config, load_okww_option_labels,
+        from app.task.OkNte.config_schema import (
+            get_all_config_info, build_fields_for_config, load_oknte_option_labels,
         )
 
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        _, script_config = _oknte_script_config(script_id)
 
-        # 从 ok-ww 安装目录加载翻译 → option_labels
+        # 从 ok-nte 安装目录加载翻译 → option_labels
         root_path = script_config.get("Info", "RootPath")
-        option_labels = load_okww_option_labels(root_path) if root_path else {}
+        option_labels = load_oknte_option_labels(root_path) if root_path else {}
 
-        # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 用户配置目录；旧版 Default 目录仅作为升级后的初始化来源。
+        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
 
-        # ok-ww 源配置目录（用于自动初始化）
-        raw_config_path = script_config.get("Script", "ConfigPath")
-        okww_configs_dir = Path(raw_config_path) if raw_config_path else None
-        if not okww_configs_dir or not okww_configs_dir.exists():
+        # ok-nte 源配置目录（用于自动初始化）
+        legacy_config_dir = _oknte_legacy_mas_config_dir(script_id)
+        oknte_configs_dir = (
+            legacy_config_dir
+            if legacy_config_dir.is_dir() and any(legacy_config_dir.iterdir())
+            else None
+        )
+        if oknte_configs_dir is None:
+            raw_config_path = script_config.get("Script", "ConfigPath")
+            oknte_configs_dir = Path(raw_config_path) if raw_config_path else None
+        if not oknte_configs_dir or not oknte_configs_dir.exists():
             if root_path:
-                okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
+                root = Path(root_path)
+                packaged_dir = root / "data" / "apps" / "ok-nte" / "working" / "configs"
+                source_dir = root / "configs"
+                oknte_configs_dir = packaged_dir if packaged_dir.is_dir() else source_dir
 
-        # 自动初始化：per-user 目录为空时从 ok-ww configs 复制默认配置
+        # 自动初始化：用户目录为空时从旧版共享目录或 ok-nte configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
-        if need_init and okww_configs_dir and okww_configs_dir.is_dir():
+        if need_init and oknte_configs_dir and oknte_configs_dir.is_dir():
             mas_config_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(okww_configs_dir, mas_config_dir, dirs_exist_ok=True)
+            shutil.copytree(oknte_configs_dir, mas_config_dir, dirs_exist_ok=True)
 
         configs_info = get_all_config_info()
 
@@ -615,7 +892,7 @@ async def get_okww_configs_list(script_id: str):
         result = []
         for info in configs_info:
             filename = info["filename"]
-            filepath = mas_config_dir / filename
+            filepath = _oknte_config_file_path(mas_config_dir, filename)
             current_data: dict[str, Any] = {}
             if filepath.exists():
                 try:
@@ -623,7 +900,6 @@ async def get_okww_configs_list(script_id: str):
                 except Exception:
                     pass
 
-            # 核心：JSON 自动发现字段 + 选项映射 + 翻译标签
             fields = build_fields_for_config(filename, current_data, option_labels)
 
             result.append({
@@ -650,21 +926,23 @@ async def get_okww_configs_list(script_id: str):
 
 
 @router.post(
-    "/okww/configs/update",
-    tags=["OKWW"],
-    summary="更新 OK-WW 配置文件",
+    "/oknte/configs/update",
+    tags=["OKNTE"],
+    summary="更新 OK-NTE 配置文件",
     status_code=200,
 )
-async def update_okww_config(
+async def update_oknte_config(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     filename: str = Body(...),
     data: dict = Body(...),
 ):
     """
-    更新 OK-WW 配置文件
+    更新 OK-NTE 配置文件
 
     Args:
-        script_id: OK-WW 脚本 ID
+        script_id: OK-NTE 脚本 ID
+        user_id: 用户 ID
         filename: 配置文件名（如 DailyTask.json）
         data: 要更新的配置数据
 
@@ -674,22 +952,19 @@ async def update_okww_config(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 写入用户配置目录
+        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
-        filepath = mas_config_dir / filename
+        filepath = _oknte_config_file_path(mas_config_dir, filename)
 
-        # 读取现有配置
         existing_data = {}
         if filepath.exists():
             with open(filepath, "r", encoding="utf-8") as f:
                 existing_data = json.load(f)
 
-        # 合并更新
         existing_data.update(data)
 
-        # 写入 per-user 目录
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
@@ -708,20 +983,22 @@ async def update_okww_config(
 
 
 @router.post(
-    "/okww/configs/batch-update",
-    tags=["OKWW"],
-    summary="批量更新 OK-WW 配置文件",
+    "/oknte/configs/batch-update",
+    tags=["OKNTE"],
+    summary="批量更新 OK-NTE 配置文件",
     status_code=200,
 )
-async def batch_update_okww_configs(
+async def batch_update_oknte_configs(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     configs: dict = Body(...),
 ):
     """
-    批量更新 OK-WW 配置文件
+    批量更新 OK-NTE 配置文件
 
     Args:
-        script_id: OK-WW 脚本 ID
+        script_id: OK-NTE 脚本 ID
+        user_id: 用户 ID
         configs: { filename: data } 格式的配置数据
 
     Returns:
@@ -730,13 +1007,13 @@ async def batch_update_okww_configs(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 写入用户配置目录
+        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         updated_files = []
         for filename, data in configs.items():
-            filepath = mas_config_dir / filename
+            filepath = _oknte_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:
