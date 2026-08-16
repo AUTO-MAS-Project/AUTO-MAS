@@ -75,7 +75,7 @@ LAOHU_SDK_VERSION = "4.327.0"
 LAOHU_DEVICE_MODEL = "Pixel 6"
 LAOHU_DEVICE_SYS = "14"
 LAOHU_USER_AGENT = (
-    "LaohuSDK/4.327.0 (android os 14;mobile  manufacturer Google; model Pixel 6) "
+    "LaohuSDK/4.327.0 (android os 14;mobile manufacturer Google; model Pixel 6)"
 )
 LAOHU_LOGIN_URL = f"{LAOHU_BASE_URL}/openApi/secureLogin"
 
