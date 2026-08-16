@@ -1,4 +1,4 @@
 interface:
   display_name: "MAS Code Standards"
-  short_description: "Apply AUTO-MAS code standards"
-  default_prompt: "Edit this AUTO-MAS code following the project code standards derived from representative dev commits and existing modules."
+  short_description: "Apply maintainer-aligned AUTO-MAS code standards"
+  default_prompt: "Use $mas-code-standards to implement or review this AUTO-MAS change in the project's maintainer-aligned style."
