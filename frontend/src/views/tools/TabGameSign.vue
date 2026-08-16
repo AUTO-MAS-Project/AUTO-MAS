@@ -829,7 +829,7 @@ onMounted(() => {
         <h3>游戏社区签到</h3>
         <div class="section-header-actions">
           <a
-            href="https://doc.auto-mas.top/docs/script-guide/maa.html#%E6%A3%AE%E7%A9%BA%E5%B2%9B%E8%87%AA%E5%8A%A8%E7%AD%BE%E5%88%B0"
+            href="https://doc.auto-mas.top/docs/advanced-features/game-sign.html"
             class="section-doc-link"
             title="查看森空岛签到配置文档"
             @click="handleExternalLink"
