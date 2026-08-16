@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -6,6 +6,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
@@ -119,13 +120,23 @@ const messageModalVisible = ref(false)
 const currentMessage = ref<TaskMessage | null>(null)
 const messageResponse = ref('')
 
+interface StartedTaskTracking {
+  taskId: string
+  selectedTaskId: string
+  selectedMode: TaskCreateIn.mode
+  taskLabel: string
+  modeLabel: string
+}
+
 // 初始化标志 - 确保某些操作只执行一次
 let _initialized = false
 let _watchInitialized = false
+let maaEndFailureModalOpen = false
 
 export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
+  const { exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
   // TaskManager消息处理函数（供全局WebSocket调用）
   const handleTaskManagerMessage = (wsMessage: any) => {
@@ -225,6 +236,35 @@ export function useSchedulerLogic() {
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
 
+    return tab
+  }
+
+  const trackStartedTask = ({
+    taskId,
+    selectedTaskId,
+    selectedMode,
+    taskLabel,
+    modeLabel,
+  }: StartedTaskTracking) => {
+    const existingTab = schedulerTabs.value.find(tab => tab.websocketId === taskId)
+    if (existingTab) {
+      activeSchedulerTab.value = existingTab.key
+      subscribeToTask(existingTab)
+      return existingTab
+    }
+
+    const tab = addSchedulerTab({
+      title: taskLabel,
+      status: '运行',
+      websocketId: taskId,
+      selectedTaskId,
+    })
+    tab.selectedMode = selectedMode
+    tab.runningTaskLabel = taskLabel
+    tab.runningModeLabel = modeLabel
+    tab.logMode = 'follow'
+    subscribeToTask(tab)
+    saveTabsToStorage(schedulerTabs.value)
     return tab
   }
 
@@ -458,20 +498,21 @@ export function useSchedulerLogic() {
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
+    const taskId = tab.websocketId
     try {
-      await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
+      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      if (response.code !== 200) {
+        throw new Error(response.message || '停止任务失败')
+      }
 
-      // 播放任务中止音频
-      const { playSound } = useAudioPlayer()
-      await playSound('maa_task_aborted')
-
-      // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
-      message.info('正在停止任务，请稍候...')
-      saveTabsToStorage(schedulerTabs.value)
+      // HTTP 返回时后端已完成收尾；WebSocket 断线时由这里补齐前端状态。
+      if (tab.websocketId === taskId) {
+        await handleSignalMessage(tab, { Accomplish: '任务已停止', Stopped: true })
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`停止任务失败: ${errorMsg}`)
-      message.error('停止任务失败')
+      message.error(errorMsg)
       saveTabsToStorage(schedulerTabs.value)
     }
   }
@@ -539,7 +580,7 @@ export function useSchedulerLogic() {
         break
       case 'Info':
         logger.debug(`处理Info消息: ${JSON.stringify(data)}`)
-        handleInfoMessage(data)
+        handleInfoMessage(tab, data)
         break
       case 'Message':
         logger.debug(`处理Message消息: ${JSON.stringify(data)}`)
@@ -563,7 +604,7 @@ export function useSchedulerLogic() {
           }
           // 尝试处理可能的错误/警告/信息
           if (data.Error || data.Warning || data.Info) {
-            handleInfoMessage(data)
+            handleInfoMessage(tab, data)
           }
         }
     }
@@ -676,11 +717,15 @@ export function useSchedulerLogic() {
     // saveTabsToStorage(schedulerTabs.value)
   }
 
-  const handleInfoMessage = async (data: any) => {
+  const handleInfoMessage = async (tab: SchedulerTab, data: any) => {
     const { playSound } = useAudioPlayer()
 
     if (data.Error) {
       const errorMsg = String(data.Error).toLowerCase()
+      const taskLabel = taskOptions.value.find(item => item.value === tab.selectedTaskId)?.label || ''
+      const isMaaEndTask = [taskLabel, tab.runningTaskLabel, tab.runningModeLabel]
+        .filter(Boolean)
+        .some(value => value?.toLowerCase().includes('maaend') ?? false)
 
       // 根据错误内容匹配具体的 noisy 模式音频
       if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
@@ -702,7 +747,34 @@ export function useSchedulerLogic() {
         await playSound('error_occurred')
       }
 
-      notification.error({ message: '任务错误', description: data.Error })
+      const isMaaEndError = isMaaEndTask || errorMsg.includes('maaend')
+      if (isMaaEndError) {
+        if (!maaEndFailureModalOpen) {
+          maaEndFailureModalOpen = true
+          Modal.error({
+            centered: true,
+            closable: true,
+            maskClosable: true,
+            keyboard: true,
+            title: 'MaaEnd 任务失败',
+            content: h('div', [
+              h('p', String(data.Error)),
+              h('p', '你可以立即导出问题包，并将 ZIP 原文件发送到 MAS 群协助排查。'),
+            ]),
+            okCancel: true,
+            okText: '导出问题包',
+            cancelText: '暂不导出',
+            onOk: () => {
+              void exportMaaEndIssueReport()
+            },
+            afterClose: () => {
+              maaEndFailureModalOpen = false
+            },
+          })
+        }
+      } else {
+        notification.error({ message: '任务错误', description: data.Error })
+      }
     } else if (data.Warning) {
       // 播放异常音频
       await playSound('exception_occurred')
@@ -753,9 +825,10 @@ export function useSchedulerLogic() {
   const handleSignalMessage = async (tab: SchedulerTab, data: any) => {
     logger.debug(`处理Signal消息: ${JSON.stringify(data)}`)
 
-    // 只有收到WebSocket的Accomplish信号才将任务标记为结束状态
-    // 这确保了调度台状态与实际任务执行状态严格同步
+    // 收到 WebSocket 完成信号或停止接口确认后，才将任务标记为结束。
+    // 后者用于 WebSocket 断线导致完成信号丢失的场景。
     if (data && data.Accomplish) {
+      const stopped = data.Stopped === true
       logger.info('收到Accomplish信号，设置任务状态为结束')
 
       // 清空日志并显示原始代理结果信息
@@ -804,11 +877,11 @@ export function useSchedulerLogic() {
         tab.websocketId = null
       }
 
-      // 播放任务完成音频
+      // 播放任务结束音频
       const { playSound } = useAudioPlayer()
-      await playSound('task_completed')
+      await playSound(stopped ? 'maa_task_aborted' : 'task_completed')
 
-      message.success('任务完成')
+      message.success(stopped ? '任务已停止' : '任务完成')
       saveTabsToStorage(schedulerTabs.value)
 
       // 触发Vue的响应式更新
@@ -907,6 +980,9 @@ export function useSchedulerLogic() {
       case 'KillSelf':
         newPowerAction = PowerIn.signal.KILL_SELF
         break
+      case 'Logoff':
+        newPowerAction = PowerIn.signal.LOGOFF
+        break
       default:
         logger.warn(`未知的PowerSign值: ${powerSign}`)
         return
@@ -991,6 +1067,7 @@ export function useSchedulerLogic() {
           'Hibernate': PowerIn.signal.HIBERNATE,
           'Sleep': PowerIn.signal.SLEEP,
           'KillSelf': PowerIn.signal.KILL_SELF,
+          'Logoff': PowerIn.signal.LOGOFF,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {
@@ -1247,6 +1324,7 @@ export function useSchedulerLogic() {
     removeAllNonRunningTabs,
 
     // 任务操作
+    trackStartedTask,
     startTask,
     stopTask,
     handleTaskSelectionChange,

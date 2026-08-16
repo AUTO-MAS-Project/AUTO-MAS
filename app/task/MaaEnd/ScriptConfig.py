@@ -32,6 +32,7 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from app.utils.io import read_file, write_file
 
 logger = get_logger("MaaEnd 脚本设置")
 
@@ -39,7 +40,7 @@ logger = get_logger("MaaEnd 脚本设置")
 def normalize_maaend_config(
     maaend_set: dict[str, Any],
     controller_type: str,
-    template_set: dict[str, Any] | None = None,
+    fallback_set: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """将 MaaEnd 配置收束为 AUTO-MAS 单实例配置"""
 
@@ -61,8 +62,8 @@ def normalize_maaend_config(
         return None
 
     selected_instance = select_instance(maaend_set)
-    if selected_instance is None and template_set is not None:
-        selected_instance = select_instance(template_set)
+    if selected_instance is None and fallback_set is not None:
+        selected_instance = select_instance(fallback_set)
     if selected_instance is None:
         raise ValueError("MaaEnd 配置文件中未找到可用实例")
 
@@ -131,16 +132,12 @@ class ScriptConfigTask(TaskExecuteBase):
         if (self.config_file_path / "mxu-MaaEnd.json").exists():
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             shutil.copytree(self.config_file_path, self.maaend_set_path)
-        else:
-            maaend_template_path = (
-                Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
+        elif self.maaend_set_path.exists():
+            shutil.copytree(
+                self.maaend_set_path,
+                self.config_file_path,
+                dirs_exist_ok=True,
             )
-            if maaend_template_path.exists():
-                shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-                self.maaend_set_path.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(
-                    maaend_template_path, self.maaend_set_path / "mxu-MaaEnd.json"
-                )
 
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
         if not maaend_set_path.exists():
@@ -148,25 +145,21 @@ class ScriptConfigTask(TaskExecuteBase):
                 "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
             )
 
-        maaend_set = json.loads(maaend_set_path.read_text(encoding="utf-8"))
+        maaend_set = read_file(maaend_set_path)
         maaend_template_path = (
             Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
         )
         template_config = (
-            json.loads(maaend_template_path.read_text(encoding="utf-8"))
+            read_file(maaend_template_path)
             if maaend_template_path.exists()
             else None
         )
         maaend_set = normalize_maaend_config(
             maaend_set,
             self.script_config.get("Game", "ControllerType"),
-            template_config,
         )
 
-        maaend_set_path.write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4),
-            encoding="utf-8",
-        )
+        write_file(maaend_set_path, maaend_set)
         logger.success(
             f"MaaEnd 运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}"
         )
@@ -180,17 +173,15 @@ class ScriptConfigTask(TaskExecuteBase):
         self.config_file_path.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
         config_path = self.config_file_path / "mxu-MaaEnd.json"
-        maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
+        maaend_set = read_file(config_path)
         maaend_set = normalize_maaend_config(
             maaend_set, self.script_config.get("Game", "ControllerType")
         )
-        config_path.write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(config_path, maaend_set)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"脚本设置任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

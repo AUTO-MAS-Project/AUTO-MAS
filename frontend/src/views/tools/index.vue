@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
+import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
+import TabGameSign from './TabGameSign.vue'
+
+defineOptions({ name: 'ToolsPage' })
+
 const logger = window.electronAPI.getLogger('工具')
 
 const { loading, getTools, updateTools } = useToolsApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 // 活动标签
 const activeKey = ref('arknightspc')
@@ -24,6 +31,14 @@ const toolsConfig = reactive<ToolsConfig>({
         AnotherQuitKey: 'space',
         Status: '-',
     },
+    GameSign: {
+        Enabled: false,
+        NotifyEnabled: false,
+        RunOnStartup: false,
+        LastSignDate: '2000-01-01',
+        Status: '-',
+        Result: '{}',
+    },
 })
 
 // 本地编辑状态
@@ -38,6 +53,14 @@ const editingConfig = reactive<ToolsConfig>({
         AnotherQuitKey: 'space',
         Status: '-',
     },
+    GameSign: {
+        Enabled: false,
+        NotifyEnabled: false,
+        RunOnStartup: false,
+        LastSignDate: '2000-01-01',
+        Status: '-',
+        Result: '{}',
+    },
 })
 
 // 使用通用的状态标签解析
@@ -46,24 +69,79 @@ const arknightsPCStatusTag = useStatusTag(
     createStatusTag('未启用', 'default')
 )
 
-// 轮询定时器
-let pollTimer: NodeJS.Timeout | null = null
+const gameSignStatusTag = useStatusTag(
+    () => toolsConfig.GameSign?.Status,
+    createStatusTag('未启用', 'default')
+)
 
-// 仅更新状态（不影响编辑状态）
+// 轮询定时器
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let gameSignSubscriptionId: string | null = null
+let statusPollFailed = false
+
+// 卸载守卫：组件卸载后阻止异步回调写入响应式状态
+let isMounted = true
+
+const syncGameSignResult = (result: unknown) => {
+    if (!isMounted || typeof result !== 'string') return
+    if (toolsConfig.GameSign) {
+        toolsConfig.GameSign.Result = result
+    }
+    if (editingConfig.GameSign) {
+        editingConfig.GameSign.Result = result
+    }
+}
+
+// 仅更新状态（不影响编辑状态，不触发 loading）
 const updateStatus = async () => {
     // 如果下拉框正在打开，跳过更新避免干扰用户操作
     if (isSelectOpen.value) {
         return
     }
     try {
-        const data = await getTools()
+        // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
+        const response = await Service.getToolsApiToolsGetPost()
+        if (!isMounted) return
+        if (response.code !== 200 || !response.data) {
+            throw new Error(response.message || '工具状态响应无效')
+        }
+        const data = response.data
+        statusPollFailed = false
         if (data.ArknightsPC?.Status) {
             // 只更新 toolsConfig 的状态，不更新 editingConfig
             // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
             toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
         }
+        if (data.GameSign?.Status) {
+            toolsConfig.GameSign!.Status = data.GameSign.Status
+        }
+        // 同步签到结果到编辑状态，否则展示组件读到的是初始空值
+        syncGameSignResult(data.GameSign?.Result)
     } catch (error) {
-        // 静默失败，不影响用户操作
+        if (!statusPollFailed) {
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.warn(`更新工具状态失败，将继续重试: ${errorMsg}`)
+            statusPollFailed = true
+        }
+    }
+}
+
+// 签到完成后立即刷新配置（不等轮询）
+const refreshGameSignConfig = async () => {
+    try {
+        const response = await Service.getToolsApiToolsGetPost()
+        if (!isMounted) return
+        if (response.code !== 200 || !response.data) {
+            throw new Error(response.message || '签到结果响应无效')
+        }
+        const data = response.data
+        if (data.GameSign?.Status) {
+            toolsConfig.GameSign!.Status = data.GameSign.Status
+        }
+        syncGameSignResult(data.GameSign?.Result)
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`刷新签到结果失败: ${errorMsg}`)
     }
 }
 
@@ -102,6 +180,17 @@ const loadTools = async () => {
                 Status: '-',
             }
         }
+        // 确保 GameSign 配置存在
+        if (!data.GameSign) {
+            data.GameSign = {
+                Enabled: false,
+                NotifyEnabled: false,
+                RunOnStartup: false,
+                LastSignDate: '2000-01-01',
+                Status: '-',
+                Result: '{}',
+            }
+        }
         Object.assign(toolsConfig, data)
         Object.assign(editingConfig, JSON.parse(JSON.stringify(data)))
         logger.info('工具加载完成')
@@ -134,6 +223,31 @@ const handleFieldChange = async (key: string, value: any) => {
     }
 }
 
+// 保存 GameSign 字段的变更
+const handleGameSignFieldChange = async (key: string, value: any) => {
+    if (!editingConfig.GameSign) return
+
+    const previousValue = toolsConfig.GameSign
+        ? (toolsConfig.GameSign as any)[key]
+        : undefined
+
+    try {
+        (editingConfig.GameSign as any)[key] = value
+        await updateTools(editingConfig)
+
+        if (toolsConfig.GameSign && key !== 'Status' && key !== 'Result') {
+            (toolsConfig.GameSign as any)[key] = value
+        }
+
+        logger.info(`GameSign.${key} 已保存`)
+    } catch (error) {
+        (editingConfig.GameSign as any)[key] = previousValue
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`保存 GameSign.${key} 失败: ${errorMsg}`)
+        throw error
+    }
+}
+
 // 键位录制状态
 const recordingKeyField = ref<string | null>(null)
 
@@ -147,6 +261,7 @@ const handleSelectVisibleChange = (visible: boolean) => {
         logger.debug('下拉框打开，暂停轮询')
     } else {
         logger.debug('下拉框关闭，恢复轮询')
+        void updateStatus()
     }
 }
 
@@ -193,16 +308,31 @@ const handleKeyDown = async (event: KeyboardEvent) => {
 
 // 使用 VueUse 的 useEventListener 管理键盘事件
 useEventListener(document, 'keydown', handleKeyDown)
+useEventListener(window, 'focus', () => void updateStatus())
+useEventListener(document, 'visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        void updateStatus()
+    }
+})
 
 // 生命周期：加载配置并启动轮询
 onMounted(async () => {
+    gameSignSubscriptionId = subscribe({ id: 'GameSign', type: 'Update' }, message => {
+        const data = message.data as { Result?: unknown } | undefined
+        syncGameSignResult(data?.Result)
+    })
     await loadTools()
     startStatusPolling()
 })
 
-// 生命周期：停止轮询
+// 生命周期：停止轮询，标记组件已卸载
 onUnmounted(() => {
+    isMounted = false
     stopStatusPolling()
+    if (gameSignSubscriptionId) {
+        unsubscribe(gameSignSubscriptionId)
+        gameSignSubscriptionId = null
+    }
 })
 </script>
 
@@ -227,6 +357,21 @@ onUnmounted(() => {
                         :disabled="loading" :on-field-change="handleFieldChange"
                         :recording-key-field="recordingKeyField" :start-record-key="startRecordKey"
                         :stop-record-key="stopRecordKey" :on-select-visible-change="handleSelectVisibleChange" />
+                </a-tab-pane>
+                <a-tab-pane key="gamesign">
+                    <template #tab>
+                        <span style="display: flex; align-items: center; gap: 8px;">
+                            <span>游戏社区签到</span>
+                            <a-tag v-if="gameSignStatusTag" :color="gameSignStatusTag.color"
+                                style="margin: 0; font-size: 12px;">
+                                {{ gameSignStatusTag.text }}
+                            </a-tag>
+                        </span>
+                    </template>
+                    <TabGameSign v-if="editingConfig.GameSign" :config="editingConfig.GameSign"
+                        :disabled="loading" :on-field-change="handleGameSignFieldChange"
+                        :on-select-visible-change="handleSelectVisibleChange"
+                        :on-refresh-config="refreshGameSignConfig" />
                 </a-tab-pane>
             </a-tabs>
         </div>

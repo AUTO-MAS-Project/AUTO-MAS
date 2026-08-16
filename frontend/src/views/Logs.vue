@@ -4,15 +4,16 @@ import { message } from 'ant-design-vue'
 import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useTheme } from '@/composables/useTheme'
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 const logger = window.electronAPI.getLogger('日志查看')
 const { themeMode } = useTheme()
+const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
 
 const logs = ref<string>('')
 const loading = ref(false)
-const exporting = ref(false)
 const logMode = ref<LogMode>('follow')
 const selectedLogFile = ref<'app' | 'frontend'>('app')
 const realTimeEnabled = ref(true)
@@ -43,7 +44,7 @@ const editorOptions = {
         horizontal: 'auto',
         useShadows: false,
     },
-}
+} as const
 
 // 处理编辑器挂载
 const handleEditorMount = (editor: any) => {
@@ -137,39 +138,6 @@ const toggleRealTime = () => {
     }
 }
 
-// 导出日志压缩包
-const exportLogsZip = async () => {
-    exporting.value = true
-    try {
-        const result = await (window as any).electronAPI?.exportLogs?.()
-
-        if (!result) {
-            message.error('导出功能未响应，请检查程序')
-            logger.error('导出日志失败: 未收到响应')
-            return
-        }
-
-        if (result?.success) {
-            message.success(result.message || '日志压缩包导出成功')
-            logger.info(`日志导出成功: ${result.zipPath}`)
-            // 打开文件夹并定位到压缩包
-            if (result.zipPath) {
-                await (window as any).electronAPI?.showItemInFolder?.(result.zipPath)
-            }
-        } else {
-            const errorMsg = result?.error || '日志导出失败'
-            logger.error(`导出日志失败: ${errorMsg}`)
-            message.error(errorMsg)
-        }
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`导出日志失败: ${errorMsg}`)
-        message.error(`导出日志异常: ${errorMsg}`)
-    } finally {
-        exporting.value = false
-    }
-}
-
 // 切换日志文件
 const onLogFileChange = () => {
     loadLogs()
@@ -216,11 +184,11 @@ onUnmounted(() => {
                         {{ realTimeEnabled ? '自动更新' : '停止更新' }}
                     </a-button>
 
-                    <a-button @click="exportLogsZip" :loading="exporting" type="primary">
+                    <a-button @click="exportMaaEndIssueReport" :loading="exporting" type="primary">
                         <template #icon>
                             <DownloadOutlined />
                         </template>
-                        导出压缩包
+                        导出 MaaEnd 问题包
                     </a-button>
                 </a-space>
             </div>

@@ -1,24 +1,3 @@
-## gui.json
-| 字段                                    | 类型   | 类型 / 典型值                                                | 释义                                                         |
-| :-------------------------------------- | ------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| MainFunction.PostActions                | 子配置 | "8"<br/>"9"<br/>"12"                                         | 完成后退出MAA<br/>完成后退出MAA和游戏<br/>完成后退出MAA和模拟器 |
-| Timer.Timer1                            | 全局   | bool                                                         | 定时设置 - 1                                                 |
-| Connect.AdbPath                         | 子配置 | 127.0.0.1:16384                                              | ADB 路径                                                     |
-| Connect.Address                         | 子配置 | path                                                         | 连接地址                                                     |
-| VersionUpdate.ScheduledUpdateCheck      | 全局   | bool                                                         | 定时检查更新                                                 |
-| VersionUpdate.AutoDownloadUpdatePackage | 全局   | bool                                                         | 自动下载更新包                                               |
-| VersionUpdate.AutoInstallUpdatePackage  | 全局   | bool                                                         | 自动安装更新包                                               |
-| Start.MinimizeDirectly                  | 全局   | bool                                                         | 启动 MAA 后直接最小化                                        |
-| Start.RunDirectly                       | 子配置 | bool                                                         | 启动 MAA 后直接运行                                          |
-| Start.OpenEmulatorAfterLaunch           | 全局   | bool                                                         | 启动 MAA 后自动开启模拟器                                    |
-| GUI.Localization                        | 全局   | "zh-cn"                                                      | 语言                                                         |
-| GUI.UseTray                             | 全局   | bool                                                         | 显示托盘图标                                                 |
-| GUI.MinimizeToTray                      | 全局   | bool                                                         | 最小化时隐藏至托盘                                           |
-| VersionUpdate.package                   | 全局   | FileName                                                     | 更新包标识                                                   |
-| Start.ClientType                        | 子配置 | "Official"<br />"Bilibili"<br />"YoStarEN"<br />"YoStarJP"<br />"YoStarKR"<br />"txwy" | 官服<br />B服<br />外服<br />日服<br />韩服<br />繁中服      |
-| Start.StartGame                         | 子配置 | bool                                                         | 是否启动客户端                                               |
-| Start.AutoRestartOnDrop                 | 子配置 | bool                                                         | 游戏掉线时自动重连                                           |
-
 ## gui.new.json
 
 ### 基础字段
@@ -114,12 +93,72 @@
 | ---- | ----------- | ---- |
 |      |             |      |
 
+---
 
+### 根级设置
 
+新版 MAA（PR #17392 后）将原本 `gui.json` 中的扁平字段迁移至 `gui.new.json` 的嵌套结构，以下是 AUTO-MAS 当前写入的字段。
 
+#### Gui 全局设置
 
+| 字段              | 类型/典型值 | 释义                          | 旧版 gui.json 字段            |
+| ----------------- | ----------- | ----------------------------- | ----------------------------- |
+| Localization      | "zh-cn"     | 语言                          | GUI.Localization              |
+| UseTray           | bool        | 显示托盘图标                  | GUI.UseTray                   |
+| MinimizeToTray    | bool        | 最小化时隐藏至托盘            | GUI.MinimizeToTray            |
+| MinimizeOnStartup | bool        | 启动 MAA 后直接最小化         | Start.MinimizeDirectly        |
 
+#### Update 更新设置
 
+| 字段                       | 类型/常用值 | 释义           | 旧版 gui.json 字段                          |
+| -------------------------- | ----------- | -------------- | ------------------------------------------- |
+| CheckOnSchedule            | bool        | 定时检查更新   | VersionUpdate.ScheduledUpdateCheck          |
+| AutoDownloadUpdatePackage  | bool        | 自动下载更新包 | VersionUpdate.AutoDownloadUpdatePackage     |
+| AutoInstallUpdatePackage   | bool        | 自动安装更新包 | VersionUpdate.AutoInstallUpdatePackage      |
 
+#### Timers 定时设置
 
+| 字段 | 类型/常用值 | 释义         |
+| ---- | ----------- | ------------ |
+| List | Timer[]     | 定时器列表   |
 
+List 中每项：
+
+| 字段      | 类型/常用值 | 释义     |
+| --------- | ----------- | -------- |
+| IsEnabled | bool        | 是否启用 |
+
+#### Configurations.Default.Gui 单配置设置
+
+**ConnectSettings**
+
+| 字段    | 类型/常用值       | 释义     | 旧版 gui.json 字段  |
+| ------- | ----------------- | -------- | ------------------- |
+| Address | 127.0.0.1:16384   | 连接地址 | Connect.Address     |
+
+**StartUpSettings**
+
+| 字段          | 类型/常用值 | 释义                        | 旧版 gui.json 字段            |
+| ------------- | ----------- | --------------------------- | ----------------------------- |
+| RunDirectly   | bool        | 启动 MAA 后直接运行         | Start.RunDirectly             |
+| StartEmulator | bool        | 启动 MAA 后自动开启模拟器   | Start.OpenEmulatorAfterLaunch |
+
+**RuntimeSettings**
+
+| 字段       | 类型/常用值 | 释义                     | 旧版 gui.json 字段  |
+| ---------- | ----------- | ------------------------ | ------------------- |
+| StartGame  | bool        | 是否启动客户端           | Start.StartGame     |
+| ClientType | int (0~5)   | 客户端类型（枚举整数）   | Start.ClientType    |
+
+ClientType 枚举值：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
+
+**PostActions**
+
+完成后动作，`[Flags]` 枚举存储为整数：
+
+| 整数 | 位组合 | 释义 |
+| ---- | ------ | ---- |
+| 0    | None   | 无动作 |
+| 8    | ExitSelf | 完成后退出MAA |
+| 9    | ExitSelf \| ExitArknights | 完成后退出MAA和游戏 |
+| 12   | ExitSelf \| ExitEmulator | 完成后退出MAA和模拟器 |

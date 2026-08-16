@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Schema Naming"
+  short_description: "Standardize future schema naming"
+  default_prompt: "Apply canonical naming for shared fields in new backend schema domains, with compatibility-first handling for legacy modules."

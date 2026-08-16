@@ -77,7 +77,7 @@
       <!-- 空状态 -->
       <div v-if="timeSets.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="../../../assets/NoData.png" alt="无数据" class="empty-image" />
+          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
         </div>
       </div>
     </div>
@@ -151,7 +151,7 @@ const sortDays = (days: string[]): DayOfWeek[] => {
 }
 
 // 表格列配置
-const timeColumns = [
+const _timeColumns = [
   {
     title: '序号',
     dataIndex: 'index',

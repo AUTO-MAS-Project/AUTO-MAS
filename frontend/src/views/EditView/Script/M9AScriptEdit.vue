@@ -174,6 +174,38 @@
                   @blur="handleChange('Run', 'RunTimesLimit', m9aConfig.Run.RunTimesLimit)" />
               </a-form-item>
             </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务">
+                    <span class="form-label">
+                      每日心相每日只执行一次
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="m9aConfig.Run.IfPsychubeDailyOnce"
+                  @change="handleChange('Run', 'IfPsychubeDailyOnce', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务">
+                    <span class="form-label">
+                      深眠浅梦每月只执行一次
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="m9aConfig.Run.IfSleepDreamMonthlyOnce"
+                  @change="handleChange('Run', 'IfSleepDreamMonthlyOnce', $event)"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="8">
@@ -228,14 +260,13 @@ import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
-  BookOutlined,
 } from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('M9A脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -264,6 +295,8 @@ const m9aConfig = reactive<M9AScriptConfig>({
     RunTimesLimit: 3,
     RunTimeLimit: 30,
     IfAutoUpdateAfterQueue: false,
+    IfPsychubeDailyOnce: false,
+    IfSleepDreamMonthlyOnce: false,
   },
   Emulator: {
     Id: '',

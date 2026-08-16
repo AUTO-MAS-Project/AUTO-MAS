@@ -11,7 +11,7 @@
       </a-button>
     </div>
     <a-row :gutter="24">
-      <a-col :span="12">
+      <a-col :xs="24" :md="12">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="剿灭代理关卡选择">
@@ -30,7 +30,7 @@
           ]" :disabled="loading" size="large" @change="emitSave('Info.Annihilation', formData.Info.Annihilation)" />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :xs="24" :md="12">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="可选择「固定」或「计划表」">
@@ -46,7 +46,7 @@
       </a-col>
     </a-row>
     <a-row :gutter="24">
-      <a-col :span="6">
+      <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
             <a-tooltip title="吃理智药数量">
@@ -61,6 +61,7 @@
             <div class="plan-value">{{ displayMedicineNumb }}</div>
             <a-tooltip>
               <template #title>
+                <!-- eslint-disable vue/no-v-html -- formatTooltip escapes all HTML before converting newlines to br tags. -->
                 <div class="plan-tooltip" v-html="formatTooltip(medicineNumbTooltip)"></div>
               </template>
               <div class="plan-source">来自计划表</div>
@@ -71,7 +72,7 @@
             size="large" style="width: 100%" @update:value="$emit('update-medicine-numb', $event)" />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定">
@@ -113,7 +114,7 @@
         </a-form-item>
       </a-col>
 
-      <a-col :span="12">
+      <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="关卡选择">
@@ -143,7 +144,7 @@
       </a-col>
     </a-row>
     <a-row :gutter="24">
-      <a-col :span="6">
+      <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
@@ -171,7 +172,7 @@
             @add-custom-stage="handleAddCustomStage1" />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
@@ -199,7 +200,7 @@
             @add-custom-stage="handleAddCustomStage2" />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
@@ -227,7 +228,7 @@
             @add-custom-stage="handleAddCustomStage3" />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
             <a-tooltip title="剩余理智关卡，选择「不选择」时视为不使用剩余理智关卡">
@@ -245,6 +246,7 @@
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stageRemainTooltip)"></div>
+                <!-- eslint-enable vue/no-v-html -->
               </template>
               <div class="plan-source">来自计划表</div>
             </a-tooltip>

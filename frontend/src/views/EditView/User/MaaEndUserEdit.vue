@@ -60,11 +60,14 @@
             :form-data="formData"
             :loading="loading"
             :if-quick-config="formData.Info.IfQuickConfig"
-            :controller-type="controllerType"
+            :essence-location-options="essenceLocationOptions"
+            :options-loading="maaEndOptionsLoading"
+            :options-loaded="maaEndOptionsLoaded"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
             :form-data="formData"
             :loading="loading"
@@ -84,37 +87,41 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { OpenAPI, Service } from '@/api'
+import type { ComboBoxItem } from '@/api'
+import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
-import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
-import BasicInfoSection from '../../MaaEndUserEdit/BasicInfoSection.vue'
-import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '../../MaaEndUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '../../MaaEndUserEdit/NotifyConfigSection.vue'
+import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
+import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
+import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
+import SkylandConfigSection from '@/views/MaaEndUserEdit/SkylandConfigSection.vue'
+import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
-const loading = computed(() => userLoading.value)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const loading = computed(() => isInitializing.value || userLoading.value)
+const maaEndOptionsLoading = ref(false)
+const maaEndOptionsLoaded = ref(false)
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
-const presetSupported = computed(() => controllerType.value === 'Win32-Front')
+const presetSupported = ref(true)
 
 const maaEndConfigLoading = ref(false)
 const maaEndImportLoading = ref(false)
@@ -123,6 +130,7 @@ const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
+const essenceLocationOptions = ref<ComboBoxItem[]>([])
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -135,6 +143,10 @@ const getDefaultMaaEndUserData = () => ({
     SanityMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     IfSkland: false,
     SklandToken: '',
     Notes: '',
@@ -146,7 +158,7 @@ const getDefaultMaaEndUserData = () => ({
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
-    AutoEssenceSpecifiedLocation: 'VFTheHub',
+    AutoEssenceSpecifiedLocation: '',
     IfSanity: true,
     IfAutoUseSpMedication: true,
     IfDijiangRewards: true,
@@ -161,6 +173,7 @@ const getDefaultMaaEndUserData = () => ({
     IfAutoSell: true,
     IfEnvironmentMonitoring: true,
     IfAutoCollect: true,
+    IfTrialOfSwordmancy: true,
     IfDailyRewards: true,
     IfResourceRecycleStation: true,
   },
@@ -258,6 +271,20 @@ const loadScriptInfo = async () => {
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
+  }
+}
+
+const loadMaaEndOptions = async () => {
+  maaEndOptionsLoading.value = true
+  try {
+    const response = await getMaaEndOptions(scriptId)
+    if (response?.code === 200) {
+      essenceLocationOptions.value = response.essenceLocations
+      presetSupported.value = response.controllerTypes[controllerType.value ?? ''] === 'Win32'
+      maaEndOptionsLoaded.value = true
+    }
+  } finally {
+    maaEndOptionsLoading.value = false
   }
 }
 
@@ -381,17 +408,12 @@ const handleMaaEndConfig = async () => {
 const handleImportMaaEndConfig = async () => {
   try {
     maaEndImportLoading.value = true
-    const response = await fetch(`${OpenAPI.BASE}/api/scripts/config/import`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scriptId,
-        userId: formData.Info.Mode === '简洁' ? null : userId,
-      }),
-    })
-    const result = await response.json()
-    if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || '导入脚本配置文件失败')
+    const response = await importScriptConfigFile(
+      scriptId,
+      formData.Info.Mode === '简洁' ? null : userId
+    )
+    if (response.code !== 200) {
+      throw new Error(response.message || '导入脚本配置文件失败')
     }
     message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
   } catch (error) {
@@ -426,6 +448,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
+  await loadMaaEndOptions()
 
   if (isEdit.value) {
     await loadUserData()

@@ -29,6 +29,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Bodies, Body, Composite, Engine, Events, World, type Body as MatterBody } from 'matter-js'
+import { usePerformanceStore } from '@/stores/performance'
 
 interface Props {
   modelValue?: boolean
@@ -58,6 +59,7 @@ const comboSerial = ref(0)
 const freezeFlashVisible = ref(false)
 
 const isOpen = computed(() => props.visible ?? props.modelValue)
+const performanceStore = usePerformanceStore()
 const safeOpacity = computed(() => Math.min(1, Math.max(0, props.opacity)))
 const safeBlockSize = computed(() => Math.min(256, Math.max(24, Math.round(props.blockSize))))
 const maskBackgroundStyle = computed(() => {
@@ -123,6 +125,7 @@ let shakeStartAt = 0
 let shakeEndAt = 0
 let shakeMagnitude = 0
 let emergencyStopped = false
+let isUnmounted = false
 const GOLD_BLOCK_PROBABILITY = 0.01
 const FLOATING_TEXT_POOL = [
   '愚人节快乐',
@@ -502,6 +505,8 @@ const spawnBlock = () => {
 }
 
 const startSpawning = () => {
+  if (performanceStore.isLowPower || isUnmounted) return
+
   stopSpawning()
   spawnBlock()
   spawnTimerId = window.setInterval(spawnBlock, 110)
@@ -678,6 +683,8 @@ const stopAnimationLoop = () => {
 }
 
 const startAnimationLoop = () => {
+  if (performanceStore.isLowPower || isUnmounted) return
+
   stopAnimationLoop()
 
   const tick = () => {
@@ -760,6 +767,8 @@ const destroyPhysics = () => {
 
 const initPhysics = async () => {
   await nextTick()
+  if (isUnmounted || !isOpen.value || performanceStore.isLowPower) return
+
   destroyPhysics()
 
   const canvas = canvasRef.value
@@ -771,6 +780,11 @@ const initPhysics = async () => {
     await loadLogoImage()
   } catch {
     // logo 加载失败时退化为纯色方块，不影响交互与停机逻辑
+  }
+
+  if (isUnmounted || !isOpen.value || performanceStore.isLowPower) {
+    destroyPhysics()
+    return
   }
 
   engine = Engine.create({
@@ -814,8 +828,12 @@ const handleMaskClick = () => {
 watch(
   isOpen,
   open => {
-    if (open) {
+    if (open && !performanceStore.isLowPower) {
       void initPhysics()
+    } else if (open && performanceStore.lowPerformanceMode) {
+      emit('update:modelValue', false)
+      emit('update:visible', false)
+      destroyPhysics()
     } else {
       destroyPhysics()
     }
@@ -824,14 +842,38 @@ watch(
 )
 
 watch(
+  [() => performanceStore.lowPerformanceMode, () => performanceStore.isBackgrounded],
+  ([lowPerformanceMode, isBackgrounded]) => {
+    if (lowPerformanceMode) {
+      destroyPhysics()
+      if (isOpen.value) {
+        emit('update:modelValue', false)
+        emit('update:visible', false)
+      }
+      return
+    }
+
+    if (isBackgrounded) {
+      destroyPhysics()
+      return
+    }
+
+    if (isOpen.value) {
+      void initPhysics()
+    }
+  }
+)
+
+watch(
   () => props.blockSize,
   () => {
-    if (!isOpen.value) return
+    if (!isOpen.value || performanceStore.isLowPower) return
     void initPhysics()
   }
 )
 
 onBeforeUnmount(() => {
+  isUnmounted = true
   destroyPhysics()
 })
 </script>

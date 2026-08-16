@@ -60,6 +60,7 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { message, Modal } from 'ant-design-vue'
 
 const logger = window.electronAPI.getLogger('快速导航页面')
 
@@ -123,22 +124,28 @@ const openDevtool = () => {
 
 // 清除本地存储
 const clearStorage = () => {
-  try {
-    const confirmed = confirm('确定要清除所有本地存储数据吗？这将清除应用的所有缓存数据。')
-    if (confirmed) {
-      localStorage.clear()
-      sessionStorage.clear()
-      // 清除IndexedDB（如果有）
-      if (window.indexedDB) {
-        // 这里可以添加更复杂的IndexedDB清理逻辑
+  Modal.confirm({
+    title: '确定要清除所有本地存储数据吗？',
+    content: '这将清除应用的所有缓存数据。',
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => {
+      try {
+        localStorage.clear()
+        sessionStorage.clear()
+        // 清除IndexedDB（如果有）
+        if (window.indexedDB) {
+          // 这里可以添加更复杂的IndexedDB清理逻辑
+        }
+        logger.info('本地存储已清除')
+        message.success('本地存储已清除，建议刷新页面')
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`清除存储失败: ${errorMsg}`)
       }
-      logger.info('本地存储已清除')
-      alert('本地存储已清除，建议刷新页面')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`清除存储失败: ${errorMsg}`)
-  }
+    },
+  })
 }
 
 // 重新加载页面

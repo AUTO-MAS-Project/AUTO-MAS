@@ -27,6 +27,8 @@ from .SRC import SrcManager
 from .M9A import M9AManager
 from .general import GeneralManager
 from .Okww import OkwwManager
+from .OkNte import OkNteManager
+from .HSR import HSRManager
 
 __all__ = [
     "MaaManager",
@@ -35,4 +37,6 @@ __all__ = [
     "GeneralManager",
     "MaaEndManager",
     "OkwwManager",
+    "OkNteManager",
+    "HSRManager",
 ]

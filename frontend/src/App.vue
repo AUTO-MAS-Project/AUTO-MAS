@@ -15,6 +15,9 @@ import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
+import CursorEffectLayer from './components/CursorEffectLayer.vue'
+import { useCursorEffectStore } from './stores/cursorEffect'
+import { usePerformanceStore } from './stores/performance'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 const logger = window.electronAPI.getLogger('App组件')
@@ -25,6 +28,8 @@ const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdat
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
 const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
+const cursorEffectStore = useCursorEffectStore()
+const performanceStore = usePerformanceStore()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -36,6 +41,10 @@ onMounted(async () => {
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
+  await performanceStore.initialize()
+  logger.info(`性能模式初始化完成: ${performanceStore.lowPerformanceMode ? '低性能' : '标准'}`)
+  await cursorEffectStore.load()
+  logger.info(`光标效果初始化完成: ${cursorEffectStore.effect}`)
   logger.info(`初始化状态:
     isInitializationPage: ${isInitializationPage.value},
     isInitialized: ${isInitialized.value}
@@ -69,7 +78,7 @@ onMounted(async () => {
       <router-view />
     </div>
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
-    <div v-else-if="isAppReady" class="app-container">
+    <div v-else-if="isAppReady && performanceStore.initialized" class="app-container">
       <TitleBar />
       <AppLayout />
     </div>
@@ -97,6 +106,7 @@ onMounted(async () => {
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
     <BackendStartupOverlay :visible="isBootstrapping" />
+    <CursorEffectLayer v-if="isAppReady && performanceStore.initialized" />
   </ConfigProvider>
 </template>
 
