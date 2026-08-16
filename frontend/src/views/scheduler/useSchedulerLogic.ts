@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -6,6 +6,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
@@ -45,6 +46,9 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       status: '空闲',
       selectedTaskId: null,
       selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      resumeFromScriptId: null,
+      resumeScriptOptions: [],
+      resumeScriptLoading: false,
       websocketId: null,
       taskQueue: [],
       userQueue: [],
@@ -96,6 +100,7 @@ initTabCounter()
 // 任务选项
 const taskOptionsLoading = ref(false)
 const taskOptions = ref<ComboBoxItem[]>([])
+const scriptOptionsMap = ref<Record<string, string>>({})
 
 // 电源操作状态
 const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
@@ -115,13 +120,23 @@ const messageModalVisible = ref(false)
 const currentMessage = ref<TaskMessage | null>(null)
 const messageResponse = ref('')
 
+interface StartedTaskTracking {
+  taskId: string
+  selectedTaskId: string
+  selectedMode: TaskCreateIn.mode
+  taskLabel: string
+  modeLabel: string
+}
+
 // 初始化标志 - 确保某些操作只执行一次
 let _initialized = false
 let _watchInitialized = false
+let maaEndFailureModalOpen = false
 
 export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
+  const { exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
   // TaskManager消息处理函数（供全局WebSocket调用）
   const handleTaskManagerMessage = (wsMessage: any) => {
@@ -208,6 +223,9 @@ export function useSchedulerLogic() {
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.websocketId || null,
       selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      resumeFromScriptId: null,
+      resumeScriptOptions: [],
+      resumeScriptLoading: false,
       websocketId: options?.websocketId || null,
       taskQueue: [],
       userQueue: [],
@@ -218,6 +236,35 @@ export function useSchedulerLogic() {
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
 
+    return tab
+  }
+
+  const trackStartedTask = ({
+    taskId,
+    selectedTaskId,
+    selectedMode,
+    taskLabel,
+    modeLabel,
+  }: StartedTaskTracking) => {
+    const existingTab = schedulerTabs.value.find(tab => tab.websocketId === taskId)
+    if (existingTab) {
+      activeSchedulerTab.value = existingTab.key
+      subscribeToTask(existingTab)
+      return existingTab
+    }
+
+    const tab = addSchedulerTab({
+      title: taskLabel,
+      status: '运行',
+      websocketId: taskId,
+      selectedTaskId,
+    })
+    tab.selectedMode = selectedMode
+    tab.runningTaskLabel = taskLabel
+    tab.runningModeLabel = modeLabel
+    tab.logMode = 'follow'
+    subscribeToTask(tab)
+    saveTabsToStorage(schedulerTabs.value)
     return tab
   }
 
@@ -319,6 +366,81 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
+  // 注：当前通过任务选项 label 的 "队列 - " 前缀判断是否为队列任务。
+  //     这是对后端 ComboBox label 格式的隐式依赖；若 label 格式变更需同步调整。
+  const isQueueTask = (tab: SchedulerTab) => {
+    const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
+    return Boolean(taskOption?.label.startsWith('队列 - '))
+  }
+
+  const loadScriptLabelMap = async () => {
+    try {
+      const response = await Service.getScriptComboxApiInfoComboxScriptPost()
+      if (response.code === 200 && Array.isArray(response.data)) {
+        const mapped: Record<string, string> = {}
+        response.data.forEach(item => {
+          if (item.value && item.label) {
+            mapped[item.value] = item.label
+          }
+        })
+        scriptOptionsMap.value = mapped
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`加载脚本下拉信息失败，将回退为脚本ID显示: ${errorMsg}`)
+    }
+  }
+
+  const loadResumeScriptOptions = async (tab: SchedulerTab) => {
+    if (!tab.selectedTaskId || !isQueueTask(tab)) {
+      tab.resumeScriptOptions = []
+      tab.resumeFromScriptId = null
+      return
+    }
+
+    tab.resumeScriptLoading = true
+    try {
+      await loadScriptLabelMap()
+      const response = await Service.getItemApiQueueItemGetPost({ queueId: tab.selectedTaskId })
+      if (response.code !== 200) {
+        tab.resumeScriptOptions = []
+        tab.resumeFromScriptId = null
+        return
+      }
+
+      const options: Array<{ label: string; value: string }> = []
+      const scriptSeen = new Set<string>()
+      response.index.forEach(item => {
+        const scriptId = response.data?.[item.uid]?.Info?.ScriptId
+        if (!scriptId || scriptSeen.has(scriptId)) return
+        scriptSeen.add(scriptId)
+        options.push({
+          value: scriptId,
+          label: scriptOptionsMap.value[scriptId] || scriptId,
+        })
+      })
+
+      tab.resumeScriptOptions = options
+      if (tab.resumeFromScriptId && !options.some(item => item.value === tab.resumeFromScriptId)) {
+        tab.resumeFromScriptId = null
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`加载恢复脚本列表失败: ${errorMsg}`)
+      tab.resumeScriptOptions = []
+      tab.resumeFromScriptId = null
+      message.error('加载队列脚本失败，无法按脚本ID恢复')
+    } finally {
+      tab.resumeScriptLoading = false
+    }
+  }
+
+  const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
+    tab.selectedTaskId = taskId
+    tab.resumeFromScriptId = null
+    await loadResumeScriptOptions(tab)
+  }
+
   const startTask = async (tab: SchedulerTab) => {
     if (!tab.selectedTaskId || !tab.selectedMode) {
       message.error('请选择任务项和执行模式')
@@ -326,10 +448,15 @@ export function useSchedulerLogic() {
     }
 
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
+      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
         taskId: tab.selectedTaskId,
         mode: tab.selectedMode,
-      })
+      }
+      if (tab.resumeFromScriptId) {
+        requestBody.resumeFromScriptId = tab.resumeFromScriptId
+      }
+
+      const response = await Service.addTaskApiDispatchStartPost(requestBody)
 
       if (response.code === 200) {
         tab.status = '运行'
@@ -371,20 +498,21 @@ export function useSchedulerLogic() {
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
+    const taskId = tab.websocketId
     try {
-      await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
+      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      if (response.code !== 200) {
+        throw new Error(response.message || '停止任务失败')
+      }
 
-      // 播放任务中止音频
-      const { playSound } = useAudioPlayer()
-      await playSound('maa_task_aborted')
-
-      // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
-      message.info('正在停止任务，请稍候...')
-      saveTabsToStorage(schedulerTabs.value)
+      // HTTP 返回时后端已完成收尾；WebSocket 断线时由这里补齐前端状态。
+      if (tab.websocketId === taskId) {
+        await handleSignalMessage(tab, { Accomplish: '任务已停止', Stopped: true })
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`停止任务失败: ${errorMsg}`)
-      message.error('停止任务失败')
+      message.error(errorMsg)
       saveTabsToStorage(schedulerTabs.value)
     }
   }
@@ -452,7 +580,7 @@ export function useSchedulerLogic() {
         break
       case 'Info':
         logger.debug(`处理Info消息: ${JSON.stringify(data)}`)
-        handleInfoMessage(data)
+        handleInfoMessage(tab, data)
         break
       case 'Message':
         logger.debug(`处理Message消息: ${JSON.stringify(data)}`)
@@ -476,7 +604,7 @@ export function useSchedulerLogic() {
           }
           // 尝试处理可能的错误/警告/信息
           if (data.Error || data.Warning || data.Info) {
-            handleInfoMessage(data)
+            handleInfoMessage(tab, data)
           }
         }
     }
@@ -589,11 +717,15 @@ export function useSchedulerLogic() {
     // saveTabsToStorage(schedulerTabs.value)
   }
 
-  const handleInfoMessage = async (data: any) => {
+  const handleInfoMessage = async (tab: SchedulerTab, data: any) => {
     const { playSound } = useAudioPlayer()
 
     if (data.Error) {
       const errorMsg = String(data.Error).toLowerCase()
+      const taskLabel = taskOptions.value.find(item => item.value === tab.selectedTaskId)?.label || ''
+      const isMaaEndTask = [taskLabel, tab.runningTaskLabel, tab.runningModeLabel]
+        .filter(Boolean)
+        .some(value => value?.toLowerCase().includes('maaend') ?? false)
 
       // 根据错误内容匹配具体的 noisy 模式音频
       if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
@@ -615,7 +747,34 @@ export function useSchedulerLogic() {
         await playSound('error_occurred')
       }
 
-      notification.error({ message: '任务错误', description: data.Error })
+      const isMaaEndError = isMaaEndTask || errorMsg.includes('maaend')
+      if (isMaaEndError) {
+        if (!maaEndFailureModalOpen) {
+          maaEndFailureModalOpen = true
+          Modal.error({
+            centered: true,
+            closable: true,
+            maskClosable: true,
+            keyboard: true,
+            title: 'MaaEnd 任务失败',
+            content: h('div', [
+              h('p', String(data.Error)),
+              h('p', '你可以立即导出问题包，并将 ZIP 原文件发送到 MAS 群协助排查。'),
+            ]),
+            okCancel: true,
+            okText: '导出问题包',
+            cancelText: '暂不导出',
+            onOk: () => {
+              void exportMaaEndIssueReport()
+            },
+            afterClose: () => {
+              maaEndFailureModalOpen = false
+            },
+          })
+        }
+      } else {
+        notification.error({ message: '任务错误', description: data.Error })
+      }
     } else if (data.Warning) {
       // 播放异常音频
       await playSound('exception_occurred')
@@ -666,9 +825,10 @@ export function useSchedulerLogic() {
   const handleSignalMessage = async (tab: SchedulerTab, data: any) => {
     logger.debug(`处理Signal消息: ${JSON.stringify(data)}`)
 
-    // 只有收到WebSocket的Accomplish信号才将任务标记为结束状态
-    // 这确保了调度台状态与实际任务执行状态严格同步
+    // 收到 WebSocket 完成信号或停止接口确认后，才将任务标记为结束。
+    // 后者用于 WebSocket 断线导致完成信号丢失的场景。
     if (data && data.Accomplish) {
+      const stopped = data.Stopped === true
       logger.info('收到Accomplish信号，设置任务状态为结束')
 
       // 清空日志并显示原始代理结果信息
@@ -717,11 +877,11 @@ export function useSchedulerLogic() {
         tab.websocketId = null
       }
 
-      // 播放任务完成音频
+      // 播放任务结束音频
       const { playSound } = useAudioPlayer()
-      await playSound('task_completed')
+      await playSound(stopped ? 'maa_task_aborted' : 'task_completed')
 
-      message.success('任务完成')
+      message.success(stopped ? '任务已停止' : '任务完成')
       saveTabsToStorage(schedulerTabs.value)
 
       // 触发Vue的响应式更新
@@ -820,6 +980,9 @@ export function useSchedulerLogic() {
       case 'KillSelf':
         newPowerAction = PowerIn.signal.KILL_SELF
         break
+      case 'Logoff':
+        newPowerAction = PowerIn.signal.LOGOFF
+        break
       default:
         logger.warn(`未知的PowerSign值: ${powerSign}`)
         return
@@ -904,6 +1067,7 @@ export function useSchedulerLogic() {
           'Hibernate': PowerIn.signal.HIBERNATE,
           'Sleep': PowerIn.signal.SLEEP,
           'KillSelf': PowerIn.signal.KILL_SELF,
+          'Logoff': PowerIn.signal.LOGOFF,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {
@@ -986,6 +1150,13 @@ export function useSchedulerLogic() {
 
     // 获取后端当前的电源状态
     getPowerState()
+
+    // 为已有调度台预加载恢复脚本选项，确保刷新后恢复交互可用
+    schedulerTabs.value.forEach(tab => {
+      if (tab.status !== '运行' && isQueueTask(tab)) {
+        loadResumeScriptOptions(tab)
+      }
+    })
 
     // 回放 pending tabs（如果有的话）- 会被 consume 掉，所以多次调用是安全的
     try {
@@ -1153,8 +1324,11 @@ export function useSchedulerLogic() {
     removeAllNonRunningTabs,
 
     // 任务操作
+    trackStartedTask,
     startTask,
     stopTask,
+    handleTaskSelectionChange,
+    loadResumeScriptOptions,
 
     // 日志操作
     onLogScroll,

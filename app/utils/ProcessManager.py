@@ -70,6 +70,18 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     return True
 
 
+def is_process_running(process_name: str) -> bool:
+    """检查指定进程名是否正在运行且存在可见窗口"""
+
+    for proc in psutil.process_iter(["name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            if proc.info.get("name") == process_name:
+                for hwnd in get_window_handles(proc.pid):
+                    if win32gui.IsWindowVisible(hwnd):
+                        return True
+    return False
+
+
 def get_window_handles(pid: int) -> list[int]:
     """获取指定进程的所有窗口句柄"""
 
@@ -86,27 +98,99 @@ def get_window_handles(pid: int) -> list[int]:
     return window_handles
 
 
-def get_main_window_handle(pid: int) -> int | None:
-    """获取指定进程的主窗口句柄, 优先返回可见窗口"""
+def get_main_window_handle(
+    pid: int,
+    window_title: str | None = None,
+    window_class_name: str | None = None,
+) -> int | None:
+    """获取指定进程的主窗口句柄
 
-    handles = get_window_handles(pid)
-    for hwnd in handles:
-        if win32gui.IsWindowVisible(hwnd):
-            return hwnd
-    for hwnd in handles:
-        if win32gui.IsWindow(hwnd):
-            return hwnd
-    return None
+    优先按标题或类名定位, 若未命中则回退到 PID 下最合适的顶层窗口。
+    """
+
+    # 候选过滤: 仅保留可作为主窗口的顶层窗口
+    handles: list[int] = []
+    for hwnd in get_window_handles(pid):
+        try:
+            if not win32gui.IsWindow(hwnd):
+                continue
+            if win32gui.GetParent(hwnd) not in (0, None):
+                continue
+            if win32gui.GetWindow(hwnd, win32con.GW_OWNER):
+                continue
+
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            if ex_style & win32con.WS_EX_TOOLWINDOW:
+                continue
+        except Exception:
+            continue
+
+        handles.append(hwnd)
+
+    # 主流程: 无候选直接失败
+    if not handles:
+        return None
+
+    # 提示匹配: 按标题或类名进一步过滤
+    hinted_handles: list[int] = []
+    if window_title is not None or window_class_name is not None:
+        for hwnd in handles:
+            try:
+                if window_title is not None:
+                    title = win32gui.GetWindowText(hwnd)
+                    if not title or window_title.lower() not in title.lower():
+                        continue
+
+                if window_class_name is not None:
+                    class_name = win32gui.GetClassName(hwnd)
+                    if (
+                        not class_name
+                        or window_class_name.lower() not in class_name.lower()
+                    ):
+                        continue
+            except Exception:
+                continue
+
+            hinted_handles.append(hwnd)
+
+    # 候选排序: 可见优先, 面积次之, 句柄值作为稳定兜底
+    candidates = hinted_handles if hinted_handles else handles
+    best_hwnd: int | None = None
+    best_score: tuple[int, int, int] | None = None
+
+    for hwnd in candidates:
+        try:
+            visible_score = 1 if win32gui.IsWindowVisible(hwnd) else 0
+        except Exception:
+            visible_score = 0
+
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            area_score = max(0, right - left) * max(0, bottom - top)
+        except Exception:
+            area_score = -1
+
+        score = (visible_score, area_score, -hwnd)
+        if best_score is None or score > best_score:
+            best_score = score
+            best_hwnd = hwnd
+
+    return best_hwnd
 
 
 class ProcessManager:
     """进程监视器类, 用于跟踪主进程及其所有子进程的状态"""
 
-    def __init__(self):
+    def __init__(
+        self, window_title: str | None = None, window_class_name: str | None = None
+    ):
         super().__init__()
 
         self.process: asyncio.subprocess.Process | None = None
         self.target_process: psutil.Process | None = None
+        self.window_title = window_title
+        self.window_class_name = window_class_name
+        self._drain_tasks: list[asyncio.Task[None]] = []
 
     @property
     def main_pid(self) -> int | None:
@@ -134,7 +218,9 @@ class ProcessManager:
 
         if self.main_pid is None:
             return None
-        return get_main_window_handle(self.main_pid)
+        return get_main_window_handle(
+            self.main_pid, self.window_title, self.window_class_name
+        )
 
     async def open_process(
         self,
@@ -142,8 +228,10 @@ class ProcessManager:
         *args: str,
         cwd: Path | None = None,
         target_process: ProcessInfo | None = None,
+        stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
+        null_stream_to_pipe: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -153,8 +241,10 @@ class ProcessManager:
             *args (str): 传递给可执行文件的参数
             cwd (Path | None): 可选的工作目录, 默认为可执行文件所在目录
             target_process (ProcessInfo | None): 期望目标进程信息, 用于跟踪主进程及其子进程, 默认为 None 表示跟踪直接启动的子进程
+            stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
+            null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
         """
 
         if await self.is_running():
@@ -171,21 +261,55 @@ class ProcessManager:
 
         await self.clear()
 
+        # 若指定了 null_stream_to_pipe, 将 stdout/stderr 为 DEVNULL 的流替换为管道, 并在后台消费以防止阻塞
+        drain_streams = []
+        if null_stream_to_pipe:
+            if stdout == asyncio.subprocess.DEVNULL:
+                stdout = asyncio.subprocess.PIPE
+                drain_streams.append("stdout")
+            if stderr == asyncio.subprocess.DEVNULL:
+                stderr = asyncio.subprocess.PIPE
+                drain_streams.append("stderr")
+
         self.process = await asyncio.create_subprocess_exec(
             program,
             *args,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=stdin,
             stdout=stdout,
             stderr=stderr,
             creationflags=CREATION_FLAGS,
         )
+
+        # 启动协程消费管道流以防止阻塞
+        if drain_streams:
+            for name in drain_streams:
+                stream = getattr(self.process, name)
+                if stream is not None:
+                    self._drain_tasks.append(asyncio.create_task(self._drain(stream)))
 
         if target_process is not None:
 
             await self.search_process(
                 target_process, datetime.now() + timedelta(seconds=60)
             )
+
+    async def _drain(self, stream: asyncio.StreamReader) -> None:
+        """
+        消费子进程标准流, 丢弃写入, 防止管道背压阻塞子进程。
+
+        Args:
+            stream (asyncio.StreamReader): 子进程的标准流对象
+        """
+
+        try:
+            while _ := await stream.readline():
+                pass
+        except (ValueError, OSError):
+            # 管道读端在子进程退出后被关闭, 属正常终止; 忽略无效句柄冲突
+            pass
+        except Exception:
+            pass
 
     async def open_protocol(
         self, protocol_url: str, target_process: ProcessInfo
@@ -269,6 +393,15 @@ class ProcessManager:
 
     async def clear(self) -> None:
         """清空跟踪的进程信息"""
+
+        # 清理残留的排水任务, 避免泄漏
+        if self._drain_tasks:
+            for task in self._drain_tasks:
+                if not task.done():
+                    task.cancel()
+            with suppress(asyncio.CancelledError):
+                await asyncio.gather(*self._drain_tasks, return_exceptions=True)
+            self._drain_tasks = []
 
         self.process = None
         self.target_process = None

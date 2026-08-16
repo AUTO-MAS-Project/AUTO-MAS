@@ -9,6 +9,7 @@ import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PowerIn } from '../models/PowerIn';
+import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
@@ -60,6 +61,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/Upload/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从脚本目录导入配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptConfigFileApiScriptsConfigImportPost(
+        requestBody: ScriptConfigImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/config/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -155,6 +175,18 @@ export class ActionService {
         });
     }
     /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
+    /**
      * 测试通知
      * 测试通知
      * @returns OutBase Successful Response
@@ -188,13 +220,44 @@ export class ActionService {
     }
     /**
      * 下载更新
+     * @param version
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static downloadUpdateApiUpdateDownloadPost(): CancelablePromise<OutBase> {
+    public static downloadUpdateApiUpdateDownloadPost(
+        version?: (string | null),
+    ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
+            query: {
+                'version': version,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消下载更新
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static cancelUpdateDownloadApiUpdateCancelDownloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/cancel-download',
+        });
+    }
+    /**
+     * 切换下载源到 CNB
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/switch-to-cnb',
         });
     }
     /**

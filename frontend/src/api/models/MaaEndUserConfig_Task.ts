@@ -26,6 +26,78 @@ export type MaaEndUserConfig_Task = {
     /**
      * 基质刷取指定地点
      */
-    AutoEssenceSpecifiedLocation?: ('VFTheHub' | 'VFOriginiumSciencePark' | 'VFOriginLodespring' | 'VFPowerPlateau' | 'WLWulingCity' | 'WLQingboStockade' | null);
+    AutoEssenceSpecifiedLocation?: (string | null);
+    /**
+     * 理智任务
+     */
+    IfSanity?: (boolean | null);
+    /**
+     * 应急理智加强剂
+     */
+    IfAutoUseSpMedication?: (boolean | null);
+    /**
+     * 基建任务
+     */
+    IfDijiangRewards?: (boolean | null);
+    /**
+     * 转交委托
+     */
+    IfDeliveryJobs?: (boolean | null);
+    /**
+     * 售卖产品
+     */
+    IfSellProduct?: (boolean | null);
+    /**
+     * 自动囤货
+     */
+    IfAutoStockpile?: (boolean | null);
+    /**
+     * 购买稳定物资
+     */
+    IfAutoStockStaple?: (boolean | null);
+    /**
+     * 拜访好友
+     */
+    IfVisitFriends?: (boolean | null);
+    /**
+     * 信用点购物
+     */
+    IfCreditShoppingN2?: (boolean | null);
+    /**
+     * 抢委托
+     */
+    IfSeizeEntrustTask?: (boolean | null);
+    /**
+     * 生态农场
+     */
+    IfAutoEcoFarm?: (boolean | null);
+    /**
+     * 售卖弹性物资
+     */
+    IfAutoSell?: (boolean | null);
+    /**
+     * 环境监测
+     */
+    IfEnvironmentMonitoring?: (boolean | null);
+    /**
+     * 自动采集
+     */
+    IfAutoCollect?: (boolean | null);
+    /**
+     * 选剑演武
+     */
+    IfTrialOfSwordmancy?: (boolean | null);
+    /**
+     * 日常奖励领取
+     */
+    IfDailyRewards?: (boolean | null);
+    /**
+     * 资源回收站
+     */
+    IfResourceRecycleStation?: (boolean | null);
+    /**
+     * 抽数计算
+     */
+    IfPullCountCalculator?: (boolean | null);
 };
 

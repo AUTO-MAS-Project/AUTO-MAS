@@ -1,6 +1,7 @@
 // websocket.ts
 import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
+import { OpenAPI } from '@/api'
 import { Modal } from 'ant-design-vue'
 import { useAppClosing } from '@/composables/useAppClosing'
 const logger = window.electronAPI.getLogger('WebSocket连接')
@@ -8,10 +9,22 @@ const logger = window.electronAPI.getLogger('WebSocket连接')
 // ====== 配置项 ======
 // 动态获取 WebSocket 端点
 let BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
+const DEFAULT_WS_PATH = '/api/core/ws'
+const WS_META_URL = '/api/core/ws_meta'
+const WS_META_TIMEOUT = 3000
+const DEV_MODE_RETRY_DELAY = 3000
+const FRONTEND_DEV_MODE =
+  (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
+
+interface NegotiatedWebSocketMeta {
+  devMode?: boolean
+  wsPath?: string
+}
 
 // 从 Electron 获取实际端点
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI.getApiEndpoint('websocket')
+  window.electronAPI
+    .getApiEndpoint('websocket')
     .then(endpoint => {
       BASE_WS_URL = `${endpoint}/api/core/ws`
       logger.info(`WebSocket 端点已更新: ${BASE_WS_URL}`)
@@ -25,13 +38,13 @@ if (window.electronAPI?.getApiEndpoint) {
 const HEARTBEAT_INTERVAL = 30000 // 30秒心跳间隔，与后端保持一致
 const HEARTBEAT_TIMEOUT = 45000 // 45秒超时，给网络延迟留够时间
 const BACKEND_CHECK_INTERVAL = 6000 // 6秒检查间隔
-const MAX_RESTART_ATTEMPTS = 3
+const MAX_BACKEND_RESTART_ATTEMPTS = 3
 const RESTART_DELAY = 2000
 const MAX_QUEUE_SIZE = 50 // 每个 ID 或全局 type 队列最大条数
 const MESSAGE_TTL = 60000 // 60 秒过期
 
 // WebSocket重连相关配置
-const MAX_WS_RECONNECT_ATTEMPTS = 5 // WebSocket最大重连尝试次数
+const WS_RECONNECT_CYCLE_ATTEMPTS = 5 // 每轮 WebSocket 重连尝试次数
 const WS_RECONNECT_DELAY = 3000 // WebSocket重连延迟（3秒）
 const WS_RECONNECT_DELAY_MAX = 30000 // WebSocket重连最大延迟（30秒）
 const WS_RECONNECT_BACKOFF = 1.5 // WebSocket重连退避倍数
@@ -87,8 +100,10 @@ interface GlobalWSStorage {
   hasEverConnected: boolean
   reconnectAttempts: number
   backendStatus: Ref<BackendStatus>
+  backendDevMode: boolean
   backendCheckTimer?: number
   backendRestartAttempts: number
+  backendRestartFailureShown: boolean
   isRestartingBackend: boolean
   lastBackendCheck: number
   lastConnectAttempt: number
@@ -100,8 +115,7 @@ interface GlobalWSStorage {
   wsReconnectTimer?: number
   isAutoReconnecting: boolean
   lastDisconnectTime: number
-  reconnectFailureModalShown: boolean
-  autoRestartTimer?: number // 添加自动重启定时器
+  lastDisconnectWasHeartbeatTimeout: boolean
   // 全局订阅ID，避免重复订阅
   globalTaskManagerSubscriptionId?: string
   globalMainSubscriptionId?: string
@@ -126,8 +140,10 @@ const initGlobalStorage = (): GlobalWSStorage => ({
   hasEverConnected: false,
   reconnectAttempts: 0,
   backendStatus: ref<BackendStatus>('unknown'),
+  backendDevMode: FRONTEND_DEV_MODE,
   backendCheckTimer: undefined,
   backendRestartAttempts: 0,
+  backendRestartFailureShown: false,
   isRestartingBackend: false,
   lastBackendCheck: 0,
   lastConnectAttempt: 0,
@@ -139,8 +155,7 @@ const initGlobalStorage = (): GlobalWSStorage => ({
   wsReconnectTimer: undefined,
   isAutoReconnecting: false,
   lastDisconnectTime: 0,
-  reconnectFailureModalShown: false,
-  autoRestartTimer: undefined, // 初始化自动重启定时器
+  lastDisconnectWasHeartbeatTimeout: false,
   // 初始化全局订阅ID
   globalTaskManagerSubscriptionId: undefined,
   globalMainSubscriptionId: undefined,
@@ -150,7 +165,7 @@ const initGlobalStorage = (): GlobalWSStorage => ({
 
 const getGlobalStorage = (): GlobalWSStorage => {
   if (!(window as any)[WS_STORAGE_KEY]) {
-    ; (window as any)[WS_STORAGE_KEY] = initGlobalStorage()
+    ;(window as any)[WS_STORAGE_KEY] = initGlobalStorage()
   }
   return (window as any)[WS_STORAGE_KEY]
 }
@@ -161,6 +176,103 @@ const setGlobalStatus = (status: WebSocketStatus) => {
 }
 const setBackendStatus = (status: BackendStatus) => {
   getGlobalStorage().backendStatus.value = status
+}
+
+const normalizeWsPath = (value?: string): string => {
+  if (!value) return DEFAULT_WS_PATH
+  return value.startsWith('/') ? value : `/${value}`
+}
+
+const joinBaseAndPath = (base: string, path: string): string => {
+  const normalizedBase = base.replace(/\/+$/, '')
+  const normalizedPath = normalizeWsPath(path)
+  return `${normalizedBase}${normalizedPath}`
+}
+
+const toWebSocketBase = (value: string): string => {
+  if (value.startsWith('ws://') || value.startsWith('wss://')) {
+    return value.replace(/\/+$/, '')
+  }
+  if (value.startsWith('https://')) {
+    return `wss://${value.slice('https://'.length)}`.replace(/\/+$/, '')
+  }
+  if (value.startsWith('http://')) {
+    return `ws://${value.slice('http://'.length)}`.replace(/\/+$/, '')
+  }
+  return `ws://${value}`.replace(/\/+$/, '')
+}
+
+const fetchWithTimeout = async (
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs: number
+) => {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+const negotiateWebSocketUrl = async (reason: string): Promise<string> => {
+  let httpBase = OpenAPI.BASE || 'http://localhost:36163'
+  let websocketBase = toWebSocketBase(httpBase)
+  let wsPath = DEFAULT_WS_PATH
+  let negotiatedDevMode = FRONTEND_DEV_MODE
+
+  if (window.electronAPI?.getApiEndpoint) {
+    try {
+      httpBase = await window.electronAPI.getApiEndpoint('local')
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取 HTTP 端点失败，继续使用当前 OpenAPI.BASE: ${errorMsg}`)
+    }
+
+    try {
+      const endpoint = await window.electronAPI.getApiEndpoint('websocket')
+      websocketBase = toWebSocketBase(endpoint)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取 WebSocket 基础端点失败，将从 HTTP 端点推导: ${errorMsg}`)
+      websocketBase = toWebSocketBase(httpBase)
+    }
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `${httpBase.replace(/\/+$/, '')}${WS_META_URL}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      },
+      WS_META_TIMEOUT
+    )
+
+    if (response.ok) {
+      const meta = (await response.json()) as NegotiatedWebSocketMeta
+      if (typeof meta.devMode === 'boolean') {
+        negotiatedDevMode = meta.devMode
+      }
+      if (typeof meta.wsPath === 'string' && meta.wsPath.trim()) {
+        wsPath = normalizeWsPath(meta.wsPath.trim())
+      }
+    } else {
+      logger.warn(`协商 WebSocket 元信息失败，HTTP 状态: ${response.status}`)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`协商 WebSocket 元信息失败，继续使用本地回退配置: ${errorMsg}`)
+  }
+
+  OpenAPI.BASE = httpBase
+  BASE_WS_URL = joinBaseAndPath(websocketBase, wsPath)
+  const global = getGlobalStorage()
+  global.backendDevMode = negotiatedDevMode
+  logger.info(`已协商 WebSocket 链接 (${reason}): ${BASE_WS_URL}, devMode=${negotiatedDevMode}`)
+  return BASE_WS_URL
 }
 
 // ====== 后端管理 ======
@@ -190,7 +302,6 @@ const restartBackend = async (): Promise<boolean> => {
       const result = await (window.electronAPI as any).startBackend()
       if (result?.success) {
         setBackendStatus('running')
-        global.backendRestartAttempts = 0
 
         // 重启成功后自动重连WebSocket
         setTimeout(async () => {
@@ -221,7 +332,7 @@ const restartBackend = async (): Promise<boolean> => {
     }
     setBackendStatus('error')
     return false
-  } catch (e) {
+  } catch {
     setBackendStatus('error')
     return false
   } finally {
@@ -229,18 +340,105 @@ const restartBackend = async (): Promise<boolean> => {
   }
 }
 
+const isTrackedBackendRunning = async (): Promise<boolean | null> => {
+  try {
+    const status = await (window.electronAPI as any)?.backendStatus?.()
+    if (typeof status?.isRunning === 'boolean') {
+      return status.isRunning
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`查询后端进程状态失败: ${errorMsg}`)
+  }
+  return null
+}
+
+const scheduleNextReconnectCycle = (delay: number) => {
+  const global = getGlobalStorage()
+  global.wsReconnectTimer = window.setTimeout(() => {
+    startAutoReconnect()
+  }, delay)
+}
+
+const showBackendRestartFailureModal = () => {
+  const global = getGlobalStorage()
+  if (global.backendRestartFailureShown) return
+
+  global.backendRestartFailureShown = true
+  global.isAutoReconnecting = false
+  setBackendStatus('error')
+
+  if (global.wsReconnectTimer) {
+    clearTimeout(global.wsReconnectTimer)
+    global.wsReconnectTimer = undefined
+  }
+
+  Modal.error({
+    title: '后端服务恢复失败',
+    content: '后端服务多次重启后仍无法建立连接，请重启整个应用后再试。',
+    okText: '重启应用',
+    onOk: () => {
+      const { showClosingOverlay } = useAppClosing()
+      showClosingOverlay()
+
+      if ((window.electronAPI as any)?.appRestart) {
+        ;(window.electronAPI as any).appRestart()
+      } else if ((window.electronAPI as any)?.windowClose) {
+        ;(window.electronAPI as any).windowClose()
+      } else {
+        window.location.reload()
+      }
+    },
+  })
+}
+
+const handleReconnectCycleFailure = async () => {
+  const global = getGlobalStorage()
+  global.isAutoReconnecting = false
+  global.wsReconnectAttempts = 0
+
+  const backendRunning = await isTrackedBackendRunning()
+  if (
+    backendRunning === false ||
+    (backendRunning === true && global.lastDisconnectWasHeartbeatTimeout)
+  ) {
+    logger.warn(
+      backendRunning
+        ? '心跳超时后重连失败，尝试重启无响应的后端服务'
+        : '后端进程已停止，尝试重启后端服务'
+    )
+    if (global.backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
+      showBackendRestartFailureModal()
+      return
+    }
+
+    const restarted = await restartBackend()
+    if (restarted) {
+      return
+    }
+    if (global.backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
+      showBackendRestartFailureModal()
+      return
+    }
+  }
+
+  scheduleNextReconnectCycle(global.backendDevMode ? DEV_MODE_RETRY_DELAY : WS_RECONNECT_DELAY_MAX)
+}
+
 // WebSocket自动重连功能
 const startAutoReconnect = () => {
   logger.info('startAutoReconnect函数被调用')
   const global = getGlobalStorage()
 
-  logger.info(`重连状态检查: isAutoReconnecting=${global.isAutoReconnecting}, reconnectFailureModalShown=${global.reconnectFailureModalShown}`)
+  logger.info(`重连状态检查: isAutoReconnecting=${global.isAutoReconnecting}`)
 
-  // 如果已经在重连中或者已经显示过失败弹窗，则不再重连
-  if (global.isAutoReconnecting || global.reconnectFailureModalShown) {
-    logger.warn(
-      `跳过重连: 已在重连中=${global.isAutoReconnecting}, 已显示弹窗=${global.reconnectFailureModalShown}`
-    )
+  if (global.backendRestartFailureShown) {
+    logger.warn('后端恢复失败弹窗已显示，停止自动重连')
+    return
+  }
+
+  if (global.isAutoReconnecting) {
+    logger.warn(`跳过重连: 已在重连中=${global.isAutoReconnecting}`)
     return
   }
 
@@ -261,14 +459,13 @@ const startAutoReconnect = () => {
   global.lastDisconnectTime = Date.now()
 
   logger.info(
-    `开始WebSocket自动重连，当前重试次数: ${global.wsReconnectAttempts}，最大重试次数: ${MAX_WS_RECONNECT_ATTEMPTS}`
+    `开始WebSocket自动重连，当前重试次数: ${global.wsReconnectAttempts}，每轮重试次数: ${WS_RECONNECT_CYCLE_ATTEMPTS}`
   )
 
   const attemptReconnect = () => {
-    if (global.wsReconnectAttempts >= MAX_WS_RECONNECT_ATTEMPTS) {
-      logger.debug(`达到最大重连次数 ${MAX_WS_RECONNECT_ATTEMPTS}，显示失败弹窗`)
-      global.isAutoReconnecting = false
-      showReconnectFailureModal()
+    if (global.wsReconnectAttempts >= WS_RECONNECT_CYCLE_ATTEMPTS) {
+      logger.warn(`本轮重连失败，${WS_RECONNECT_DELAY_MAX}ms 后继续尝试`)
+      void handleReconnectCycleFailure()
       return
     }
 
@@ -286,7 +483,9 @@ const startAutoReconnect = () => {
 
     global.wsReconnectTimer = window.setTimeout(async () => {
       try {
-        logger.info(`执行第 ${attempt} 次重连尝试，当前wsReconnectAttempts=${global.wsReconnectAttempts}`)
+        logger.info(
+          `执行第 ${attempt} 次重连尝试，当前wsReconnectAttempts=${global.wsReconnectAttempts}`
+        )
         setConnectionPermission(true, 'WebSocket自动重连')
 
         // 不要在这里设置isConnecting，让connectGlobalWebSocket函数内部处理
@@ -309,7 +508,11 @@ const startAutoReconnect = () => {
             if (global.wsRef && global.wsRef.readyState === WebSocket.OPEN) {
               logger.info('WebSocket连接确认成功')
               startBackendMonitoring() // 启动后端监控
-            } else if (global.wsRef && (global.wsRef.readyState === WebSocket.CLOSED || global.wsRef.readyState === WebSocket.CLOSING)) {
+            } else if (
+              global.wsRef &&
+              (global.wsRef.readyState === WebSocket.CLOSED ||
+                global.wsRef.readyState === WebSocket.CLOSING)
+            ) {
               logger.info('WebSocket连接失败，继续下一次重连尝试')
               // 连接失败，继续下一次尝试
               global.isConnecting = false
@@ -365,162 +568,6 @@ const stopAutoReconnect = () => {
   }
 }
 
-// 显示重连失败弹窗
-const showReconnectFailureModal = () => {
-  const global = getGlobalStorage()
-
-  // 防止重复显示弹窗
-  if (global.reconnectFailureModalShown) {
-    logger.debug('重连失败弹窗已显示过，跳过')
-    return
-  }
-
-  logger.debug(
-    `显示重连失败弹窗，重试次数已达到: ${global.wsReconnectAttempts}/${MAX_WS_RECONNECT_ATTEMPTS}`
-  )
-  global.reconnectFailureModalShown = true
-  global.isAutoReconnecting = false
-
-  // 清除之前的自动重启定时器（如果存在）
-  if (global.autoRestartTimer) {
-    clearTimeout(global.autoRestartTimer)
-    global.autoRestartTimer = undefined
-  }
-
-  // 设置10秒后自动重启后端服务
-  let autoRestartExecuted = false
-  global.autoRestartTimer = window.setTimeout(async () => {
-    if (!autoRestartExecuted) {
-      autoRestartExecuted = true
-      logger.debug('用户10秒内无响应，自动重启后端服务')
-
-      // 关闭可能存在的弹窗
-      Modal.destroyAll()
-
-      // 执行重启后端服务的逻辑
-      global.reconnectFailureModalShown = false
-      resetReconnectState()
-
-      try {
-        const success = await restartBackend()
-        if (success) {
-          logger.debug('自动重启后端成功，开始重新连接')
-          setConnectionPermission(true, '后端重启后重连')
-
-          setTimeout(async () => {
-            try {
-              const connected = await connectGlobalWebSocket('后端重启后重连')
-              if (connected) {
-                logger.debug('自动重启后端后WebSocket重连成功')
-                setTimeout(() => {
-                  setConnectionPermission(false, '正常运行中')
-                }, 1000)
-                startBackendMonitoring()
-              } else {
-                logger.warn('自动重启后端后WebSocket重连失败，启动自动重连')
-                startAutoReconnect()
-              }
-            } catch (e) {
-              const errorMsg = e instanceof Error ? e.message : String(e)
-              logger.warn(`自动重启后端后重连异常: ${errorMsg}`)
-              startAutoReconnect()
-            }
-          }, RESTART_DELAY)
-        } else {
-          logger.warn('自动重启后端失败，启动自动重连')
-          startAutoReconnect()
-        }
-      } catch (e) {
-        const errorMsg = e instanceof Error ? e.message : String(e)
-        logger.warn(`自动重启后端异常: ${errorMsg}`)
-        startAutoReconnect()
-      }
-    }
-  }, 10000) // 10秒
-
-  Modal.confirm({
-    title: 'WebSocket连接异常',
-    content: 'WebSocket连接已断开且多次重连失败，这可能是因为后端服务异常。请选择处理方式：（10秒后将自动重启后端服务）',
-    okText: '重启整个应用',
-    cancelText: '重启后端服务',
-    centered: true,
-    maskClosable: false,
-    onOk: () => {
-      // 清除自动重启定时器
-      if (global.autoRestartTimer) {
-        clearTimeout(global.autoRestartTimer)
-        global.autoRestartTimer = undefined
-      }
-      autoRestartExecuted = true
-
-      logger.debug('用户选择重启整个应用')
-      // 显示关闭遮罩
-      const { showClosingOverlay } = useAppClosing()
-      showClosingOverlay()
-
-      // 重启整个应用
-      if ((window.electronAPI as any)?.appRestart) {
-        ; (window.electronAPI as any).appRestart()
-      } else if ((window.electronAPI as any)?.windowClose) {
-        ; (window.electronAPI as any).windowClose()
-      } else {
-        window.location.reload()
-      }
-    },
-    onCancel: async () => {
-      // 清除自动重启定时器
-      if (global.autoRestartTimer) {
-        clearTimeout(global.autoRestartTimer)
-        global.autoRestartTimer = undefined
-      }
-      autoRestartExecuted = true
-
-      logger.debug('用户选择重启后端服务')
-      // 重置重连状态并重启后端服务
-      global.reconnectFailureModalShown = false
-      resetReconnectState()
-
-      try {
-        // 重启后端服务
-        const success = await restartBackend()
-        if (success) {
-          logger.debug('后端重启成功，开始重新连接')
-          // 设置连接权限
-          setConnectionPermission(true, '后端重启后重连')
-
-          // 等待后端完全启动后重连
-          setTimeout(async () => {
-            try {
-              const connected = await connectGlobalWebSocket('后端重启后重连')
-              if (connected) {
-                logger.debug('重启后端后WebSocket重连成功')
-                setTimeout(() => {
-                  setConnectionPermission(false, '正常运行中')
-                }, 1000)
-                startBackendMonitoring()
-              } else {
-                logger.warn('重启后端后WebSocket重连失败，启动自动重连')
-                startAutoReconnect()
-              }
-            } catch (e) {
-              const errorMsg = e instanceof Error ? e.message : String(e)
-              logger.warn(`重启后端后重连异常: ${errorMsg}`)
-              startAutoReconnect()
-            }
-          }, RESTART_DELAY)
-        } else {
-          logger.warn('后端重启失败，启动自动重连')
-          startAutoReconnect()
-        }
-      } catch (e) {
-        const errorMsg = e instanceof Error ? e.message : String(e)
-        logger.warn(`后端重启异常: ${errorMsg}`)
-        startAutoReconnect()
-      }
-    },
-  })
-}
-
 // 重置重连状态
 const resetReconnectState = () => {
   const global = getGlobalStorage()
@@ -528,14 +575,7 @@ const resetReconnectState = () => {
     `重置重连状态，之前的重试次数: ${global.wsReconnectAttempts}，自动重连中: ${global.isAutoReconnecting}`
   )
   global.wsReconnectAttempts = 0
-  global.reconnectFailureModalShown = false
-
-  // 清除自动重启定时器
-  if (global.autoRestartTimer) {
-    clearTimeout(global.autoRestartTimer)
-    global.autoRestartTimer = undefined
-    logger.debug('已清除自动重启定时器')
-  }
+  global.lastDisconnectWasHeartbeatTimeout = false
 
   stopAutoReconnect()
   logger.debug(`重连状态已重置，当前自动重连状态: ${global.isAutoReconnecting}`)
@@ -554,7 +594,8 @@ const resetWebSocketState = () => {
   // 重置重连状态
   global.wsReconnectAttempts = 0
   global.isAutoReconnecting = false
-  global.reconnectFailureModalShown = false
+  global.backendRestartFailureShown = false
+  global.lastDisconnectWasHeartbeatTimeout = false
 
   // 清除所有定时器
   if (global.wsReconnectTimer) {
@@ -562,84 +603,10 @@ const resetWebSocketState = () => {
     global.wsReconnectTimer = undefined
   }
 
-  if (global.autoRestartTimer) {
-    clearTimeout(global.autoRestartTimer)
-    global.autoRestartTimer = undefined
-  }
-
   // 重置连接权限
   setConnectionPermission(true, '状态重置')
 
   logger.debug('WebSocket状态完全重置完成')
-}
-
-const handleBackendFailure = async () => {
-  const global = getGlobalStorage()
-  logger.debug(`后端故障处理开始，当前重启尝试次数: ${global.backendRestartAttempts}`)
-
-  if (global.backendRestartAttempts >= MAX_RESTART_ATTEMPTS) {
-    logger.warn('后端多次重启失败，显示最终错误弹窗')
-    Modal.error({
-      title: '后端服务异常',
-      content: '后端服务多次重启失败，请重启整个应用程序。',
-      okText: '重启应用',
-      onOk: () => {
-        // 显示关闭遮罩
-        const { showClosingOverlay } = useAppClosing()
-        showClosingOverlay()
-
-        if ((window.electronAPI as any)?.appRestart) {
-          ; (window.electronAPI as any).appRestart()
-        } else if ((window.electronAPI as any)?.windowClose) {
-          ; (window.electronAPI as any).windowClose()
-        } else {
-          window.location.reload()
-        }
-      },
-    })
-    return
-  }
-
-  setTimeout(async () => {
-    logger.debug('尝试重启后端服务...')
-    const success = await restartBackend()
-    if (success) {
-      logger.debug('后端重启成功，准备重新连接')
-      // 统一在一个地方管理连接权限
-      setConnectionPermission(true, '后端重启后重连')
-
-      // 等待后端完全启动
-      setTimeout(async () => {
-        try {
-          logger.debug('尝试重新建立WebSocket连接')
-          const connected = await connectGlobalWebSocket('后端重启后重连')
-          if (connected) {
-            logger.debug('后端重启后WebSocket重连成功')
-            // 连接成功后再禁用权限
-            setTimeout(() => {
-              setConnectionPermission(false, '正常运行中')
-              resetReconnectState() // 重置重连状态
-            }, 1000)
-            startBackendMonitoring() // 启动后端监控
-          } else {
-            logger.warn('后端重启后WebSocket重连失败')
-            setConnectionPermission(false, '连接失败')
-            // 如果重连失败，可以尝试启动自动重连
-            startAutoReconnect()
-          }
-        } catch (e) {
-          const errorMsg = e instanceof Error ? e.message : String(e)
-          logger.warn(`重启后重连异常: ${errorMsg}`)
-          setConnectionPermission(false, '连接失败')
-          startAutoReconnect()
-        }
-      }, RESTART_DELAY)
-    } else {
-      logger.warn('后端重启失败，继续尝试')
-      // 重启失败，继续尝试
-      setTimeout(handleBackendFailure, RESTART_DELAY)
-    }
-  }, RESTART_DELAY)
 }
 
 const startBackendMonitoring = () => {
@@ -694,7 +661,9 @@ const startGlobalHeartbeat = (ws: WebSocket) => {
             data: { Ping: pingTime, connectionId: global.connectionId },
           })
         )
-      } catch { }
+      } catch {
+        logger.debug('Heartbeat ping send failed')
+      }
     }
   }, HEARTBEAT_INTERVAL)
 }
@@ -792,31 +761,22 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   const now = Date.now()
 
   const subscriptionCount = global.subscriptions.value.size
-  logger.debug(`处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
+  if (raw.type !== 'Update') {
+    logger.debug(`处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
+  }
 
   let dispatched = false
-  let matchingSubscriptions = 0
-
   // 使用副本进行迭代，防止在处理函数中修改订阅列表导致的问题
   const subscriptionsCopy = new Map(global.subscriptions.value)
-
-  // 输出所有订阅的详细信息
-  logger.debug(`当前所有订阅:`)
-  subscriptionsCopy.forEach((subscription, id) => {
-    logger.debug(`  - ${id}: ${JSON.stringify(subscription.filter)}`)
-  })
 
   // 分发给所有匹配的订阅者
   subscriptionsCopy.forEach(subscription => {
     if (messageMatchesFilter(raw, subscription.filter)) {
-      matchingSubscriptions++
-      logger.debug(`匹配订阅: ${subscription.subscriptionId}`)
       try {
         // 再次检查订阅是否仍然存在，因为在同一个事件循环中它可能已被删除
         if (global.subscriptions.value.has(subscription.subscriptionId)) {
           subscription.handler(raw)
           dispatched = true
-          logger.debug(`已分发给: ${subscription.subscriptionId}`)
         } else {
           logger.warn(`订阅已被删除: ${subscription.subscriptionId}`)
         }
@@ -834,7 +794,9 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
     if (global.cachedMessages.value.length > MAX_QUEUE_SIZE) {
       global.cachedMessages.value = global.cachedMessages.value.slice(-MAX_QUEUE_SIZE)
     }
-    logger.debug(`消息已缓存: type=${raw.type}, id=${raw.id}`)
+    if (raw.type !== 'Update') {
+      logger.debug(`消息已缓存: type=${raw.type}, id=${raw.id}`)
+    }
   }
 
   // 定期清理过期消息（每处理50条消息触发一次，避免频繁且更可预测）
@@ -843,7 +805,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   }
 
   if (!dispatched) {
-    logger.debug(`无订阅者接收此消息: ${JSON.stringify(raw)}`)
+    logger.debug(`无订阅者接收此消息: type=${raw.type}, id=${raw.id}`)
   }
 }
 
@@ -986,6 +948,9 @@ const createGlobalWebSocket = (): WebSocket => {
     global.reconnectAttempts = 0
     setGlobalStatus('已连接')
     setBackendStatus('running') // WebSocket连接成功时设置后端为运行状态
+    global.backendRestartAttempts = 0
+    global.backendRestartFailureShown = false
+    global.lastDisconnectWasHeartbeatTimeout = false
     startGlobalHeartbeat(ws)
 
     // 立即重置WebSocket重连状态
@@ -1044,30 +1009,29 @@ const createGlobalWebSocket = (): WebSocket => {
   }
 
   ws.onclose = event => {
-    logger.info(`WebSocket连接关闭事件触发: code=${event.code}, reason="${event.reason}"`)
-    setGlobalStatus('已断开')
-    // WebSocket断开时设置后端状态
-    if (event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')) {
-      setBackendStatus('error')
+    const isHeartbeatTimeout =
+      event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')
+
+    if (isHeartbeatTimeout) {
+      logger.error(`WebSocket连接因心跳超时关闭: code=${event.code}, reason="${event.reason}"`)
     } else {
-      setBackendStatus('stopped')
+      logger.info(`WebSocket连接关闭事件触发: code=${event.code}, reason="${event.reason}"`)
     }
+    setGlobalStatus('已断开')
+    setBackendStatus('stopped')
+    global.lastDisconnectWasHeartbeatTimeout = isHeartbeatTimeout
     stopGlobalHeartbeat()
     global.isConnecting = false
 
-    logger.info(`WebSocket连接关闭详情: code=${event.code}, reason="${event.reason}"`)
+    if (!isHeartbeatTimeout) {
+      logger.info(`WebSocket连接关闭详情: code=${event.code}, reason="${event.reason}"`)
+    }
 
     // 重置一些可能阻止重连的状态
     global.lastConnectAttempt = 0
 
     // 根据关闭原因决定处理方式
-    if (event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')) {
-      // 心跳超时通常意味着后端有问题，直接处理后端故障
-      handleBackendFailure().catch(e => {
-        const errorMsg = e instanceof Error ? e.message : String(e)
-        logger.error(`后端故障处理失败: ${errorMsg}`)
-      })
-    } else if (event.code === 1000 && event.reason === '正常关闭') {
+    if (event.code === 1000 && event.reason === '正常关闭') {
       // 明确的正常关闭，不重连
       logger.debug('WebSocket正常关闭，不启动重连')
     } else {
@@ -1089,7 +1053,7 @@ const createGlobalWebSocket = (): WebSocket => {
         // 直接调用attemptReconnect来继续重连流程
         // 但是我们需要访问attemptReconnect函数，这里先用一个简单的方法
         setTimeout(() => {
-          if (global.wsReconnectAttempts < 5) { // MAX_WS_RECONNECT_ATTEMPTS
+          if (global.wsReconnectAttempts < WS_RECONNECT_CYCLE_ATTEMPTS) {
             logger.info('延迟触发下一次重连尝试')
             // 这里我们需要一个方法来继续重连，暂时重置状态让新的重连开始
             global.isAutoReconnecting = false
@@ -1167,6 +1131,7 @@ const connectGlobalWebSocket = async (reason: string = '手动重连'): Promise<
     }
 
     logger.info('开始创建新的WebSocket连接')
+    await negotiateWebSocketUrl(reason)
     global.isConnecting = true
     global.lastConnectAttempt = now
     if (global.wsRef?.readyState === WebSocket.CLOSED) global.wsRef = null
@@ -1341,13 +1306,17 @@ const initializeGlobalSubscriptions = () => {
   }
 
   // 创建新的订阅
-  global.globalTaskManagerSubscriptionId = subscribe({ id: 'TaskManager' }, (msg: WebSocketBaseMessage) => {
-    try {
-      ExternalWSHandlers.taskManagerMessage(msg)
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e)
+  global.globalTaskManagerSubscriptionId = subscribe(
+    { id: 'TaskManager' },
+    (msg: WebSocketBaseMessage) => {
+      try {
+        ExternalWSHandlers.taskManagerMessage(msg)
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e)
+        logger.warn('External taskManagerMessage handler error:', errorMsg)
+      }
     }
-  })
+  )
 
   global.globalMainSubscriptionId = subscribe({ id: 'Main' }, (msg: WebSocketBaseMessage) => {
     if (msg.type === 'Signal' && msg.data) {
@@ -1366,7 +1335,9 @@ const initializeGlobalSubscriptions = () => {
                 data: { Pong: msg.data.Ping, connectionId: global.connectionId },
               })
             )
-          } catch { }
+          } catch {
+            logger.debug('Heartbeat pong send failed')
+          }
         }
         return
       }
@@ -1378,7 +1349,9 @@ const initializeGlobalSubscriptions = () => {
     }
   })
 
-  logger.info(`全局订阅已初始化: TaskManager=${global.globalTaskManagerSubscriptionId}, Main=${global.globalMainSubscriptionId}`)
+  logger.info(
+    `全局订阅已初始化: TaskManager=${global.globalTaskManagerSubscriptionId}, Main=${global.globalMainSubscriptionId}`
+  )
   logger.info(`初始化后订阅数量: ${global.subscriptions.value.size}`)
 }
 
@@ -1403,7 +1376,9 @@ export function useWebSocket() {
         return false
       }
     } else {
-      logger.warn(`WebSocket未连接，无法发送消息: ${JSON.stringify({ readyState: ws?.readyState, message: { id, type, data } })}`)
+      logger.warn(
+        `WebSocket未连接，无法发送消息: ${JSON.stringify({ readyState: ws?.readyState, message: { id, type, data } })}`
+      )
       return false
     }
   }
@@ -1423,12 +1398,12 @@ export function useWebSocket() {
     wsReconnectAttempts: global.wsReconnectAttempts,
     isAutoReconnecting: global.isAutoReconnecting,
     lastDisconnectTime: global.lastDisconnectTime,
-    reconnectFailureModalShown: global.reconnectFailureModalShown,
   })
 
   const restartBackendManually = async () => {
     const g = getGlobalStorage()
     g.backendRestartAttempts = 0
+    g.backendRestartFailureShown = false
     return await restartBackend()
   }
 
@@ -1450,7 +1425,7 @@ export function useWebSocket() {
     // 重置所有可能阻止重连的状态
     global.isConnecting = false
     global.lastConnectAttempt = 0
-    global.reconnectFailureModalShown = false
+    global.backendRestartFailureShown = false
 
     // 停止现有的重连尝试
     stopAutoReconnect()

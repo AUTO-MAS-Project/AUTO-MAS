@@ -9,9 +9,7 @@ logs/
 
 # Virtual environments
 .venv
-.python-version
 list/
-uv.lock
 
 # IDE and editors
 .vscode/
@@ -25,7 +23,9 @@ uv.lock
 /data/
 /debug/
 /history/
+/runtime/
 /script/
+/environment/
 
 # Frontend dependencies & caches
 /frontend/node_modules/
@@ -48,3 +48,30 @@ uv.lock
 /frontend/app
 # Local AI/agent metadata
 /.claude/
+/.trae/
+
+# Local checkouts of split repositories
+/AUTO-MAS-docs/
+/skills/
+.ace-tool/
+
+# Plugin workspace (external plugin sources stay ignored)
+/plugins/*
+!/plugins/auto_mas_core/
+!/plugins/auto_mas_core/**
+!/plugins/okww_adapter/
+!/plugins/okww_adapter/**
+!/plugins/ok_script_adapter/
+!/plugins/ok_script_adapter/**
+/plugins/**/__pycache__/
+/plugins/**/*.py[oc]
+/plugins/**/*.egg-info/
+/app/core/plugins/_generated/
+
+# Test artifacts
+/test-results/
+
+res/docs/ok-series-common-script-report.md
+
+# 强制加入的测试源产生的字节码不纳入版本库
+tests/**/__pycache__/

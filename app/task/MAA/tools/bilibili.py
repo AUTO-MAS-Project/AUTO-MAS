@@ -20,15 +20,16 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
 from pathlib import Path
 from app.core import Config
+from typing import Any, Dict, cast
+from app.utils.io import read_file, write_file
 
 
 async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
     """向MAA写入Bilibili协议相关任务"""
 
-    data: dict = json.loads(maa_tasks_path.read_text(encoding="utf-8"))
+    data: Any = read_file(maa_tasks_path, format=".json5")
     if if_agree and Config.get("Function", "IfAgreeBilibili"):
         data["BilibiliAgreement_AUTO"] = {
             "algorithm": "OcrDetect",
@@ -45,6 +46,4 @@ async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
             data.pop("BilibiliAgreement_AUTO")
         if "BilibiliAgreement_AUTO" in data["StartUpThemes"]["next"]:
             data["StartUpThemes"]["next"].remove("BilibiliAgreement_AUTO")
-    maa_tasks_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-    )
+    write_file(maa_tasks_path, data)

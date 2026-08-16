@@ -45,14 +45,21 @@ async def login(
     """
 
     if emulator_info.status != DeviceStatus.ONLINE:
-        logger.error(f"模拟器{emulator_info.title}不在线，无法登录")
+        logger.warning(f"模拟器{emulator_info.title}不在线，无法登录")
         return False
 
     logger.info(f"开始登录: {emulator_info.title} - {package_name}")
 
     from app.core import Config, MaaFWManager
 
-    if (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
+    if id == "":
+        logger.info("未输入账号，将跳过账号切换，等待游戏加载")
+        pipeline_override = {
+            "等待加载完成[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            }
+        }
+    elif (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
         pipeline_override = {
             "切换账号[StarRailEmulator]": {
@@ -134,12 +141,19 @@ async def login(
     try:
         tasker = await MaaFWManager.get_adb_tasker(emulator_info)
     except Exception as e:
-        logger.error(f"获取模拟器{emulator_info.title}的ADB控制器时出现异常: {e}")
+        logger.warning(f"获取模拟器{emulator_info.title}的ADB控制器时出现异常: {e}")
         return False
 
     try:
         await MaaFWManager.do_job(
-            tasker.post_task("切换账号[StarRailEmulator]", pipeline_override)
+            tasker.post_task(
+                (
+                    "切换账号[StarRailEmulator]"
+                    if id
+                    else "等待加载完成[StarRailEmulator]"
+                ),
+                pipeline_override,
+            )
         )
         logger.success(f"模拟器{emulator_info.title}登录成功")
         await asyncio.sleep(10)  # 等待资源释放
@@ -150,7 +164,7 @@ async def login(
             error_msg = error_msg.replace(id, "id***")
         if password:
             error_msg = error_msg.replace(password, "password***")
-        logger.error(f"模拟器{emulator_info.title}切换账号时出现异常: {error_msg}")
+        logger.warning(f"模拟器{emulator_info.title}切换账号时出现异常: {error_msg}")
         return False
     except asyncio.CancelledError:
         with suppress(Exception):

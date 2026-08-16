@@ -1,8 +1,28 @@
 // 脚本类型定义
-import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
+import type {
+  HSRConfig,
+  HSRConfig_TaskMapping,
+  HSRUserConfig,
+  MaaConfig,
+  GeneralConfig,
+  OkwwConfig,
+  OkNteConfig,
+  SrcConfig,
+  MaaEndConfig,
+  M9AConfig,
+} from '@/api'
+import type {
+  AutoEssenceLocation,
+  MaaEndTaskSwitch,
+  ProtocolSpaceTaskValue,
+  RewardSetOption,
+  SanityTaskType,
+} from '@/utils/maaEndProtocolSpace'
 
-11
+export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
 
+export type OkwwScriptConfig = OkwwConfig
+export type OkNteScriptConfig = OkNteConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -95,6 +115,17 @@ export interface SRCScriptConfig {
   }
 }
 
+export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean>
+
+export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+  SanityTaskType: SanityTaskType
+  OperatorProgression: ProtocolSpaceTaskValue
+  WeaponProgression: ProtocolSpaceTaskValue
+  CrisisDrills: ProtocolSpaceTaskValue
+  RewardsSetOption: RewardSetOption
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
 // MaaEnd脚本配置
 export interface MaaEndScriptConfig {
   Info: {
@@ -105,9 +136,10 @@ export interface MaaEndScriptConfig {
     RunTimeLimit: number
     ProxyTimesLimit: number
     RunTimesLimit: number
+    AccountSwitchMethod: 'MAS' | 'MAAEND'
   }
   Game: {
-    ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' | null
+    ControllerType: string | null
     Path: string
     Arguments: string
     WaitTime: number
@@ -117,12 +149,72 @@ export interface MaaEndScriptConfig {
   }
 }
 
+// M9A脚本配置
+export interface M9AScriptConfig {
+  Info: {
+    Name: string
+    Path: string
+  }
+  Emulator: {
+    Id: string
+    Index: string
+  }
+  Run: {
+    ProxyTimesLimit: number
+    RunTimesLimit: number
+    RunTimeLimit: number
+    IfAutoUpdateAfterQueue: boolean
+    IfPsychubeDailyOnce: boolean
+    IfSleepDreamMonthlyOnce: boolean
+  }
+  SubConfigsInfo: {
+    UserData: {
+      instances: any[]
+    }
+  }
+}
+
+// HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
+export type HSRScriptConfig = HSRConfig
+
+// HSR TaskMapping 默认值（Daily / ReceiveRewards / DivergentUniverse / CurrencyWars 默认走 SRA）
+export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
+  Daily: 'SRA',
+  ReceiveRewards: 'SRA',
+  DivergentUniverse: 'SRA',
+  CurrencyWars: 'SRA',
+}
+
+/**
+ * 解析 HSR 单个模块的执行脚本。
+ * current 可用且在 available 中时优先保留，否则回退到仍可用的脚本。
+ */
+export function resolveTaskMappingValue(
+  current: string | undefined,
+  available: Set<'M7A' | 'SRA'>,
+): 'M7A' | 'SRA' | undefined {
+  if (current && available.has(current as 'M7A' | 'SRA')) {
+    return current as 'M7A' | 'SRA'
+  }
+  if (available.has('M7A')) return 'M7A'
+  if (available.has('SRA')) return 'SRA'
+  return undefined
+}
+
 // 脚本基础信息
 export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+  config:
+    | MaaConfig
+    | GeneralConfig
+    | OkwwConfig
+    | OkNteConfig
+    | SrcConfig
+    | MaaEndConfig
+    | M9AConfig
+    | HSRConfig
   users: User[]
 }
 
@@ -133,6 +225,9 @@ export interface User {
   Data: {
     IfPassCheck: boolean
     LastProxyDate: string
+    LastPsychubeDate?: string
+    LastLimboMonth?: string
+    LastLucidscapeMonth?: string
     LastSklandDate: string
     ProxyTimes: number
   }
@@ -146,9 +241,9 @@ export interface User {
     MedicineNumb: number
     Mode: string
     Name: string
+    SanityMode?: string
     Notes: string
     Password: string
-    SanityMode?: string
     RemainedDay: number
     SeriesNumb: string
     Server: string
@@ -183,12 +278,6 @@ export interface User {
     ToAddress: string
   }
   Task: {
-    SanityTaskType?: string
-    OperatorProgression?: string
-    WeaponProgression?: string
-    CrisisDrills?: string
-    RewardsSetOption?: string
-    AutoEssenceSpecifiedLocation?: string
     IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean
@@ -197,6 +286,12 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
+    OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
+    WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
+    CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
+    RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
+    AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
   }
   QFluentWidgets: {
     ThemeColor: string
@@ -210,13 +305,29 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig
+  data:
+    | MAAScriptConfig
+    | GeneralScriptConfig
+    | OkwwScriptConfig
+    | OkNteScriptConfig
+    | SRCScriptConfig
+    | MaaEndScriptConfig
+    | M9AScriptConfig
+    | HSRScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig' | 'MaaEndConfig'
+  type:
+    | 'MaaConfig'
+    | 'GeneralConfig'
+    | 'OkwwConfig'
+    | 'OkNteConfig'
+    | 'SrcConfig'
+    | 'MaaEndConfig'
+    | 'M9AConfig'
+    | 'HSRConfig'
 }
 
 // 获取脚本API响应
@@ -225,7 +336,17 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig>
+  data: Record<
+    string,
+    | MAAScriptConfig
+    | GeneralScriptConfig
+    | OkwwScriptConfig
+    | OkNteScriptConfig
+    | SRCScriptConfig
+    | MaaEndScriptConfig
+    | M9AScriptConfig
+    | HSRScriptConfig
+  >
 }
 
 // 脚本详情（用于前端展示）
@@ -233,7 +354,15 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+  config:
+    | MaaConfig
+    | GeneralConfig
+    | OkwwConfig
+    | OkNteConfig
+    | SrcConfig
+    | MaaEndConfig
+    | M9AConfig
+    | HSRConfig
   users?: User[]
   createTime?: string
 }
@@ -243,6 +372,21 @@ export interface DeleteScriptResponse {
   code: number
   status: string
   message: string
+}
+
+// M9A 任务选项类型
+export interface M9ATaskOption {
+  name: string
+  index: number
+  sub_options?: M9ATaskOption[]
+  input_values?: Record<string, string | number>
+  selected_cases?: string[]
+}
+
+// M9A 任务队列项类型
+export interface M9ATaskQueueItem {
+  name: string
+  options: M9ATaskOption[]
 }
 
 // 更新脚本API响应

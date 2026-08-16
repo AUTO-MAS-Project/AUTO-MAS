@@ -20,6 +20,7 @@ export namespace PowerIn {
         HIBERNATE = 'Hibernate',
         SLEEP = 'Sleep',
         KILL_SELF = 'KillSelf',
+        LOGOFF = 'Logoff',
     }
 }
 

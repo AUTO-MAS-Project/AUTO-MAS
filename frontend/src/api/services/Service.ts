@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
+import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
@@ -13,12 +15,24 @@ import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
+import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
+import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
+import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
+import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
+import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
+import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
+import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
+import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
+import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
+import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
@@ -31,6 +45,10 @@ import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { PowerOut } from '../models/PowerOut';
+import type { QrCheckIn } from '../models/QrCheckIn';
+import type { QrCheckOut } from '../models/QrCheckOut';
+import type { QrCreateOut } from '../models/QrCreateOut';
+import type { QrSaveIn } from '../models/QrSaveIn';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -44,6 +62,7 @@ import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueReorderIn } from '../models/QueueReorderIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
@@ -418,6 +437,44 @@ export class Service {
         });
     }
     /**
+     * 从脚本目录导入配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptConfigFileApiScriptsConfigImportPost(
+        requestBody: ScriptConfigImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 MaaEnd 动态选项
+     * @param requestBody
+     * @returns MaaEndOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<MaaEndOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询用户
      * @param requestBody
      * @returns UserGetOut Successful Response
@@ -551,6 +608,25 @@ export class Service {
         });
     }
     /**
+     * MAA 库存保持物品可选项
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotItemsApiScriptsMaaDepotItemsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/items',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询 webhook 配置
      * @param requestBody
      * @returns WebhookGetOut Successful Response
@@ -638,6 +714,223 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 M9A 可用任务列表（排除 standalone 任务）
+     * 获取 M9A 可用任务列表（排除 standalone 任务）
+     *
+     * 前端调用此接口获取可选择的任务列表，
+     * 用于展示在用户编辑界面的任务选择区域。
+     *
+     * Args:
+     * script_id: M9A 脚本 ID
+     *
+     * Returns:
+     * dict: 包含任务列表的响应
+     * @param scriptId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getM9AAvailableTasksApiScriptsM9ATasksAvailablePost(
+        scriptId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/m9a/tasks/available',
+            query: {
+                'script_id': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 HSR 体力副本动态选项
+     * 返回 M7A/SRA 原生副本字段。
+     *
+     * ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+     * 按引擎统一返回，不按 slot 生成不同结果。
+     * @param scriptId
+     * @param engine
+     * @param userId
+     * @param slot
+     * @returns HSRStageOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
+        scriptId?: (string | null),
+        engine: 'M7A' | 'SRA' = 'M7A',
+        userId?: (string | null),
+        slot: 'main' | 'eow' = 'main',
+    ): CancelablePromise<HSRStageOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/stage-options',
+            query: {
+                'scriptId': scriptId,
+                'engine': engine,
+                'userId': userId,
+                'slot': slot,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取内置 HSR 能力快照
+     * 返回内置 HSR 的能力快照，不暴露原生编辑器会话。
+     * @param scriptId
+     * @returns HSRCapabilitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrCapabilitiesApiApiScriptsHsrCapabilitiesGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<HSRCapabilitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/capabilities',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 HSR 托管配置字段
+     * 返回原生动态托管字段；用户 ID 只负责归属校验。
+     * @param scriptId
+     * @param userId
+     * @returns HSRManagedConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrManagedConfigApiApiScriptsHsrManagedConfigGet(
+        scriptId?: (string | null),
+        userId?: (string | null),
+    ): CancelablePromise<HSRManagedConfigOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/managed-config',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 导入 HSR 原生配置快照
+     * @param requestBody
+     * @returns HSRDirectConfigImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importHsrDirectConfigApiApiScriptsHsrDirectConfigImportPost(
+        requestBody: HSRDirectConfigImportIn,
+    ): CancelablePromise<HSRDirectConfigImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/direct-config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 OK-NTE 配置文件列表及 schema
+     * 获取 OK-NTE 配置文件列表及 schema 定义。
+     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
+     * 若为空则自动从 ok-nte configs 目录初始化默认配置。
+     *
+     * Args:
+     * script_id: OK-NTE 脚本 ID
+     * user_id: 用户 ID
+     *
+     * Returns:
+     * dict: 包含配置文件列表和 schema 的响应
+     * @param scriptId
+     * @param userId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getOknteConfigsListApiScriptsOknteConfigsListPost(
+        scriptId: string,
+        userId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/configs/list',
+            query: {
+                'script_id': scriptId,
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新 OK-NTE 配置文件
+     * 更新 OK-NTE 配置文件
+     *
+     * Args:
+     * script_id: OK-NTE 脚本 ID
+     * user_id: 用户 ID
+     * filename: 配置文件名（如 DailyTask.json）
+     * data: 要更新的配置数据
+     *
+     * Returns:
+     * dict: 操作结果
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static updateOknteConfigApiScriptsOknteConfigsUpdatePost(
+        requestBody: Body_update_oknte_config_api_scripts_oknte_configs_update_post,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/configs/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 批量更新 OK-NTE 配置文件
+     * 批量更新 OK-NTE 配置文件
+     *
+     * Args:
+     * script_id: OK-NTE 脚本 ID
+     * user_id: 用户 ID
+     * configs: { filename: data } 格式的配置数据
+     *
+     * Returns:
+     * dict: 操作结果
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static batchUpdateOknteConfigsApiScriptsOknteConfigsBatchUpdatePost(
+        requestBody: Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/configs/batch-update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -867,7 +1160,7 @@ export class Service {
     }
     /**
      * 搜索已安装的模拟器
-     * 自动搜索系统中已安装的模拟器
+     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
      * @returns EmulatorSearchOut Successful Response
      * @throws ApiError
      */
@@ -1273,7 +1566,7 @@ export class Service {
     }
     /**
      * 查询工具配置
-     * 查询工具配置
+     * 获取工具设置
      * @returns ToolsGetOut Successful Response
      * @throws ApiError
      */
@@ -1296,6 +1589,122 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
+    /**
+     * 获取所有游戏签到账号组
+     * 获取所有游戏签到账号组
+     * @returns GameSignAccountsListOut Successful Response
+     * @throws ApiError
+     */
+    public static listGameSignAccountsApiToolsSignAccountListPost(): CancelablePromise<GameSignAccountsListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/list',
+        });
+    }
+    /**
+     * 添加游戏签到账号组
+     * 添加游戏签到账号组
+     * @returns GameSignAccountCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addGameSignAccountApiToolsSignAccountAddPost(): CancelablePromise<GameSignAccountCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/add',
+        });
+    }
+    /**
+     * 获取游戏签到账号组详情
+     * 获取游戏签到账号组详情
+     * @param requestBody
+     * @returns GameSignAccountCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static getGameSignAccountApiToolsSignAccountGetPost(
+        requestBody: GameSignAccountGetIn,
+    ): CancelablePromise<GameSignAccountCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新游戏签到账号组配置
+     * 更新游戏签到账号组配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateGameSignAccountApiToolsSignAccountUpdatePost(
+        requestBody: GameSignAccountUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除游戏签到账号组
+     * 删除游戏签到账号组
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteGameSignAccountApiToolsSignAccountDeletePost(
+        requestBody: GameSignAccountDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 调整游戏签到账号组顺序
+     * 调整游戏签到账号组顺序
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderGameSignAccountsApiToolsSignAccountReorderPost(
+        requestBody: GameSignAccountReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/reorder',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1475,13 +1884,44 @@ export class Service {
     }
     /**
      * 下载更新
+     * @param version
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static downloadUpdateApiUpdateDownloadPost(): CancelablePromise<OutBase> {
+    public static downloadUpdateApiUpdateDownloadPost(
+        version?: (string | null),
+    ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
+            query: {
+                'version': version,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消下载更新
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static cancelUpdateDownloadApiUpdateCancelDownloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/cancel-download',
+        });
+    }
+    /**
+     * 切换下载源到 CNB
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/switch-to-cnb',
         });
     }
     /**
@@ -1493,6 +1933,56 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns QrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
+     * @param requestBody
+     * @returns QrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignMiyousheQrCheckPost(
+        requestBody: QrCheckIn,
+    ): CancelablePromise<QrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 cookie 到账号配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignMiyousheQrSavePost(
+        requestBody: QrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

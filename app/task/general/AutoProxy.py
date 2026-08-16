@@ -24,6 +24,7 @@ import uuid
 import shlex
 import shutil
 import asyncio
+import re
 from pathlib import Path
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -34,11 +35,47 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
+from app.utils import (
+    get_logger,
+    LogMonitor,
+    ProcessManager,
+    ProcessInfo,
+    strptime,
+    is_process_running,
+)
 from app.utils.constants import UTC4
 from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")
+
+_PREFIX_SENTINEL = "******"
+
+_STRPTIME_DIRECTIVES: dict[str, str] = {
+    "%Y": r"\d{4}", "%y": r"\d{2}",
+    "%m": r"\d{1,2}", "%d": r"\d{1,2}",
+    "%H": r"\d{1,2}", "%I": r"\d{1,2}",
+    "%M": r"\d{1,2}", "%S": r"\d{1,2}",
+    "%f": r"\d+", "%j": r"\d{1,3}",
+    "%U": r"\d{1,2}", "%W": r"\d{1,2}", "%w": r"\d",
+    "%A": r"\w+", "%a": r"\w+", "%B": r"\w+", "%b": r"\w+",
+    "%p": r"[APap][Mm]", "%%": r"%",
+}
+
+
+def _format_to_prefix_regex(fmt: str) -> re.Pattern[str]:
+    """strptime format（不含 ****** 哨兵）→ 前缀匹配正则。"""
+    parts: list[str] = []
+    i = 0
+    while i < len(fmt):
+        if fmt[i] == "%" and i + 1 < len(fmt):
+            d = fmt[i : i + 2]
+            if d in _STRPTIME_DIRECTIVES:
+                parts.append(_STRPTIME_DIRECTIVES[d])
+                i += 2
+                continue
+        parts.append(re.escape(fmt[i]))
+        i += 1
+    return re.compile("^" + "".join(parts))  # 不加 $ → re.match 做前缀匹配
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -140,7 +177,14 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
         self.log_format = self.script_config.get("Script", "LogPathFormat")
-        if self.log_format:
+        self.log_use_prefix = bool(self.log_format) and self.log_format.endswith(_PREFIX_SENTINEL)
+        if self.log_use_prefix:
+            prefix_re = _format_to_prefix_regex(self.log_format[: -len(_PREFIX_SENTINEL)])
+            if not prefix_re.match(self.script_log_path.stem):
+                logger.warning(
+                    f"LogPathFormat 与 LogPath 不匹配: {self.log_format} vs {self.script_log_path}"
+                )
+        elif self.log_format:
             with suppress(ValueError):
                 datetime.strptime(self.script_log_path.stem, self.log_format)
                 self.log_format = f"{self.log_format}{self.script_log_path.suffix}"
@@ -224,27 +268,47 @@ class AutoProxyTask(TaskExecuteBase):
                     if isinstance(self.game_manager, ProcessManager):
 
                         if self.script_config.get("Game", "Type") == "URL":
-                            logger.info(
-                                f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
-                            )
-                            await self.game_manager.open_protocol(
-                                self.game_url, ProcessInfo(name=self.game_process_name)
-                            )
-                            await asyncio.sleep(2)
+                            if self.game_process_name and is_process_running(
+                                self.game_process_name
+                            ):
+                                logger.info(
+                                    f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {self.game_process_name}"
+                                )
+                                await asyncio.sleep(2)
+                            else:
+                                logger.info(
+                                    f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
+                                )
+                                await self.game_manager.open_protocol(
+                                    self.game_url,
+                                    ProcessInfo(name=self.game_process_name),
+                                )
+                                await asyncio.sleep(2)
                         else:
-                            logger.info(
-                                f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
-                            )
-                            await self.game_manager.open_process(
-                                self.game_path,
-                                *str(self.script_config.get("Game", "Arguments")).split(
-                                    " "
-                                ),
-                            )
-                            self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
-                            await asyncio.sleep(
-                                self.script_config.get("Game", "WaitTime")
-                            )
+                            game_process_name = self.game_path.name
+                            if game_process_name and is_process_running(
+                                game_process_name
+                            ):
+                                logger.info(
+                                    f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
+                                )
+                                await asyncio.sleep(
+                                    self.script_config.get("Game", "WaitTime")
+                                )
+                            else:
+                                logger.info(
+                                    f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                                )
+                                await self.game_manager.open_process(
+                                    self.game_path,
+                                    *str(
+                                        self.script_config.get("Game", "Arguments")
+                                    ).split(" "),
+                                )
+                                self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
+                                await asyncio.sleep(
+                                    self.script_config.get("Game", "WaitTime")
+                                )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
                             f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
@@ -272,23 +336,65 @@ class AutoProxyTask(TaskExecuteBase):
             # 等待日志文件生成
             self.script_info.log = "正在等待脚本日志文件生成"
             if_get_file = False
+            target_suffix: int | None = None  # None = 未锁定
             while datetime.now() - t < timedelta(minutes=1):
+                if self.log_use_prefix:
+                    prefix_fmt = self.log_format[: -len(_PREFIX_SENTINEL)]
+                    pattern = _format_to_prefix_regex(prefix_fmt)
+                    today = t.date()
 
-                for log_file in self.script_log_path.parent.iterdir():
-                    if log_file.is_file():
+                    current_suffix = 0
+                    current_file: Path | None = None
+                    for log_file in self.script_log_path.parent.iterdir():
+                        if not log_file.is_file():
+                            continue
+                        m = pattern.match(log_file.name)
+                        if not m:
+                            continue
                         with suppress(ValueError):
-                            if strptime(log_file.name, self.log_format, t) >= t:
-                                self.script_log_path = log_file
-                                logger.success(
-                                    f"成功定位到日志文件: {self.script_log_path}"
-                                )
-                                if_get_file = True
-                                break
-                else:
-                    await asyncio.sleep(1)
+                            file_time = strptime(m.group(0), prefix_fmt, t)
+                        if file_time.date() != today:
+                            continue
+                        tail = log_file.name[m.end() :]
+                        num_match = re.search(r"(\d+)\s*$", tail.rsplit(".", 1)[0])
+                        suffix = int(num_match.group(1)) if num_match else 0
+                        if suffix > current_suffix:
+                            current_suffix = suffix
+                            current_file = log_file
 
-                if if_get_file:
-                    break
+                    if target_suffix is None:
+                        # 首轮锁定：空目录就是 0+1=1（等 -1），有 N 就是 N+1
+                        target_suffix = current_suffix + 1
+
+                    if current_suffix >= target_suffix and current_file is not None:
+                        self.script_log_path = current_file
+                        logger.success(
+                            f"成功定位到日志文件（按日期前缀）: {self.script_log_path} "
+                            f"(suffix={current_suffix})"
+                        )
+                        if_get_file = True
+                        break
+
+                    self.script_info.log = (
+                        f"正在等待脚本日志文件生成（按日期前缀，"
+                        f"目标后缀 -{target_suffix}）"
+                    )
+                    await asyncio.sleep(1)
+                else:
+                    for log_file in self.script_log_path.parent.iterdir():
+                        if log_file.is_file():
+                            with suppress(ValueError):
+                                if strptime(log_file.name, self.log_format, t) >= t:
+                                    self.script_log_path = log_file
+                                    logger.success(
+                                        f"成功定位到日志文件: {self.script_log_path}"
+                                    )
+                                    if_get_file = True
+                                    break
+                    else:
+                        await asyncio.sleep(1)
+                    if if_get_file:
+                        break
             else:
                 await self.handle_pre_script_error("未找到日志文件")
                 continue
@@ -318,7 +424,7 @@ class AutoProxyTask(TaskExecuteBase):
                     await self.update_config()
 
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -353,14 +459,14 @@ class AutoProxyTask(TaskExecuteBase):
     ):
 
         if e is None:
-            logger.error(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
                 data={"Error": error_message},
             )
         else:
-            logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -404,7 +510,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.general_process_manager.kill()
             await System.kill_process(self.script_exe_path)
         except Exception as e:
-            logger.exception(f"中止通用脚本进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止通用脚本进程失败: {e}")
         if self.game_manager is not None:
             logger.info("中止游戏/模拟器进程")
             try:
@@ -419,7 +525,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Game", "EmulatorIndex"),
                     )
             except Exception as e:
-                logger.exception(f"关闭游戏/模拟器失败: {e}")
+                logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
@@ -495,9 +601,10 @@ class AutoProxyTask(TaskExecuteBase):
         for t, log_item in self.cur_user_item.log_record.items():
 
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=dt,
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
@@ -529,7 +636,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -560,12 +667,12 @@ class AutoProxyTask(TaskExecuteBase):
                 3,
             )
         else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

@@ -11,6 +11,10 @@ export type TaskCreateIn = {
      * 任务模式
      */
     mode: TaskCreateIn.mode;
+    /**
+     * 可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）
+     */
+    resumeFromScriptId?: (string | null);
 };
 export namespace TaskCreateIn {
     /**

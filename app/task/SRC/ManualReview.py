@@ -119,7 +119,7 @@ class ManualReviewTask(TaskExecuteBase):
                 )
             except Exception as e:
 
-                logger.exception(
+                logger.opt(exception=True).warning(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
                 self.script_info.log = (
@@ -130,7 +130,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -152,7 +152,7 @@ class ManualReviewTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动模拟器\n模拟器已启动，正在登录「崩坏·星穹铁道」..."
             )
-            if self.cur_user_config.get("Info", "Id") == "" or await login(
+            if await login(
                 emulator_info,
                 STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 self.cur_user_config.get("Info", "Id"),
@@ -161,7 +161,7 @@ class ManualReviewTask(TaskExecuteBase):
                 self.run_book["SignIn"] = True
                 break
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_item.user_id} - 「崩坏·星穹铁道」登录失败"
                 )
                 self.script_info.log = "正在启动模拟器\n模拟器已启动，正在登录「崩坏·星穹铁道」...\n「崩坏·星穹铁道」登录失败\n正在中止相关程序"
@@ -171,7 +171,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -196,7 +196,7 @@ class ManualReviewTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index"), True
                 )
             except Exception as e:
-                logger.exception(f"模拟器显示失败: {e}")
+                logger.opt(exception=True).warning(f"模拟器显示失败: {e}")
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -205,7 +205,7 @@ class ManualReviewTask(TaskExecuteBase):
                     "message_id": uid,
                     "type": "Question",
                     "title": "操作提示",
-                    "message": "请检查用户代理情况, 该用户是否正确完成代理任务？",
+                    "message": f"请检查用户代理情况, 「{self.cur_user_item.name}」是否正确完成代理任务？",
                     "options": ["是", "否"],
                 },
             )
@@ -241,7 +241,7 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"人工排查任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"人工排查任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

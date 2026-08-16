@@ -77,6 +77,7 @@ import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
   isKnownPlanType,
+  type PlanChangeOptions,
   type PlanConfigData,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
@@ -129,7 +130,7 @@ const isActivePlan = (planId: string) => activePlanId.value === planId
 
 const clonePlanData = <T,>(value: T): T => structuredClone(value)
 
-const syncCurrentPlan = (planId: string) => {
+const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   const planData = planDataMap.value[planId]
   if (!planData) {
     tableData.value = {}
@@ -149,7 +150,7 @@ const syncCurrentPlan = (planId: string) => {
   }
 
   currentMode.value = planData.Info?.Mode || 'ALL'
-  tableData.value = clonePlanData(planData)
+  tableData.value = { ...clonePlanData(planData), _isInitialLoad: forceCustomStages }
   return true
 }
 
@@ -267,7 +268,11 @@ const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => 
   return planData
 }
 
-const handlePlanChange = async (path: string, value: any, reload?: boolean): Promise<boolean> => {
+const handlePlanChange = async (
+  path: string,
+  value: any,
+  reloadOrOptions?: boolean | PlanChangeOptions
+): Promise<boolean> => {
   const planId = activePlanId.value
   if (!planId) {
     return false
@@ -275,7 +280,11 @@ const handlePlanChange = async (path: string, value: any, reload?: boolean): Pro
 
   // 构建只包含修改字段的更新数据
   const changes = buildNestedObject(path, value)
-  const shouldReload = reload ?? currentPlanDescriptor.value?.reloadAfterSave ?? true
+  const options = typeof reloadOrOptions === 'object' ? reloadOrOptions : undefined
+  const shouldReload =
+    typeof reloadOrOptions === 'boolean'
+      ? reloadOrOptions
+      : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
   const success = await savePlanField(planId, changes)
 
   if (!success) {
@@ -289,7 +298,7 @@ const handlePlanChange = async (path: string, value: any, reload?: boolean): Pro
 
   if (shouldReload) {
     if (isActivePlan(planId)) {
-      await loadPlanData(planId, true)
+      await loadPlanData(planId, true, options?.forceCustomStages === true)
     } else {
       await fetchPlanData(planId)
     }
@@ -372,7 +381,7 @@ const onModeChange = async () => {
   await handlePlanChange('Info.Mode', currentMode.value)
 }
 
-const loadPlanData = async (planId: string, force = false) => {
+const loadPlanData = async (planId: string, force = false, forceCustomStages = false) => {
   try {
     if (!force && isActivePlan(planId) && syncCurrentPlan(planId)) {
       logger.info(`从缓存切换计划 (${planId})`)
@@ -392,7 +401,7 @@ const loadPlanData = async (planId: string, force = false) => {
       return
     }
 
-    syncCurrentPlan(planId)
+    syncCurrentPlan(planId, forceCustomStages)
     logger.info(`从后端加载数据 (${planId})`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -432,7 +441,7 @@ const initPlans = async () => {
       const selectedPlanId = target ? target.id : planList.value[0].id
 
       activePlanId.value = selectedPlanId
-      syncCurrentPlan(selectedPlanId)
+      syncCurrentPlan(selectedPlanId, true)
       logger.info(`初始加载数据 (${selectedPlanId})`)
     } else {
       planDataMap.value = {}

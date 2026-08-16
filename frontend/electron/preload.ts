@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
+  discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
+  discoverWutheringWavesPath: () =>
+    ipcRenderer.invoke('okww-path-discovery:discover-wuthering-waves'),
 
   // 窗口控制
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
@@ -20,6 +23,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
+  // 窗口可见性/后台状态
+  getWindowActivity: () => ipcRenderer.invoke('get-window-activity'),
+  onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, activity: unknown) => {
+      if (activity === 'visible' || activity === 'background') {
+        callback(activity)
+      }
+    }
+
+    ipcRenderer.on('window-activity-changed', listener)
+    return () => ipcRenderer.removeListener('window-activity-changed', listener)
+  },
+
   // 进程管理
   getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),
   killAllProcesses: () => ipcRenderer.invoke('kill-all-processes'),
@@ -29,7 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkCriticalFiles: () => ipcRenderer.invoke('check-critical-files'),
   downloadPython: (mirror?: string) => ipcRenderer.invoke('download-python', mirror),
   downloadGit: () => ipcRenderer.invoke('download-git'),
-  checkGitUpdate: () => ipcRenderer.invoke('check-git-update'), cloneBackend: (repoUrl?: string) => ipcRenderer.invoke('clone-backend', repoUrl),
+  checkGitUpdate: () => ipcRenderer.invoke('check-git-update'),
+  cloneBackend: (repoUrl?: string) => ipcRenderer.invoke('clone-backend', repoUrl),
   updateBackend: (repoUrl?: string) => ipcRenderer.invoke('update-backend', repoUrl),
   // 快速安装相关
   downloadQuickEnvironment: () => ipcRenderer.invoke('download-quick-environment'),
@@ -58,7 +75,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 应用初始化版本（保存前端版本号用于比对）
   getInitializedVersion: () => ipcRenderer.invoke('get-initialized-version'),
-  setInitializedVersion: (version: string) => ipcRenderer.invoke('set-initialized-version', version),
+  setInitializedVersion: (version: string) =>
+    ipcRenderer.invoke('set-initialized-version', version),
 
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
@@ -69,7 +87,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
-  getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('log:getContent', lines, fileName),
+  exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
+  getLogs: (lines?: number, fileName?: string) =>
+    ipcRenderer.invoke('log:getContent', lines, fileName),
   openLogWindow: () => ipcRenderer.invoke('log:openWindow'),
 
   // 获取模块化日志器（使用 electron-log）
@@ -86,17 +106,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     initialize: (config?: any) => ipcRenderer.invoke('logManagement:initialize', config),
 
     // 日志处理
-    processLog: (rawLog: string, source?: string) => ipcRenderer.invoke('logManagement:processLog', rawLog, source),
-    processBatchLogs: (rawLogs: string[], source?: string) => ipcRenderer.invoke('logManagement:processBatchLogs', rawLogs, source),
+    processLog: (rawLog: string, source?: string) =>
+      ipcRenderer.invoke('logManagement:processLog', rawLog, source),
+    processBatchLogs: (rawLogs: string[], source?: string) =>
+      ipcRenderer.invoke('logManagement:processBatchLogs', rawLogs, source),
 
     // 日志订阅
-    subscribe: (id: string, filter?: any) => ipcRenderer.invoke('logManagement:subscribe', id, filter),
+    subscribe: (id: string, filter?: any) =>
+      ipcRenderer.invoke('logManagement:subscribe', id, filter),
     unsubscribe: (id: string) => ipcRenderer.invoke('logManagement:unsubscribe', id),
-    toggleSubscriber: (id: string, enabled: boolean) => ipcRenderer.invoke('logManagement:toggleSubscriber', id, enabled),
+    toggleSubscriber: (id: string, enabled: boolean) =>
+      ipcRenderer.invoke('logManagement:toggleSubscriber', id, enabled),
 
     // 日志获取
-    getLogs: (conditions?: any, limit?: number, offset?: number) => ipcRenderer.invoke('logManagement:getLogs', conditions, limit, offset),
-    exportLogs: (conditions?: any, format?: string) => ipcRenderer.invoke('logManagement:exportLogs', conditions, format),
+    getLogs: (conditions?: any, limit?: number, offset?: number) =>
+      ipcRenderer.invoke('logManagement:getLogs', conditions, limit, offset),
+    exportLogs: (conditions?: any, format?: string) =>
+      ipcRenderer.invoke('logManagement:exportLogs', conditions, format),
     clearLogs: () => ipcRenderer.invoke('logManagement:clearLogs'),
 
     // 统计信息
@@ -108,7 +134,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateConfig: (config: any) => ipcRenderer.invoke('logManagement:updateConfig', config),
 
     // 订阅者管理
-    getSubscribers: () => ipcRenderer.invoke('logManagement:getSubscribers')
+    getSubscribers: () => ipcRenderer.invoke('logManagement:getSubscribers'),
   },
 
   // 日志管道
@@ -119,7 +145,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // 解析器管理
     getParserStats: () => ipcRenderer.invoke('logPipeline:getParserStats'),
-    toggleParser: (parserName: string, enabled: boolean) => ipcRenderer.invoke('logPipeline:toggleParser', parserName, enabled),
+    toggleParser: (parserName: string, enabled: boolean) =>
+      ipcRenderer.invoke('logPipeline:toggleParser', parserName, enabled),
 
     // 缓存管理
     clearCache: () => ipcRenderer.invoke('logPipeline:clearCache'),
@@ -127,7 +154,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // 批处理
     flush: () => ipcRenderer.invoke('logPipeline:flush'),
-    getBatchStats: () => ipcRenderer.invoke('logPipeline:getBatchStats')
+    getBatchStats: () => ipcRenderer.invoke('logPipeline:getBatchStats'),
   },
 
   // 保留原有方法以兼容现有代码
@@ -138,6 +165,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
 
   // 主题信息获取
   getThemeInfo: () => ipcRenderer.invoke('get-theme-info'),
@@ -174,8 +202,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('initialize', targetBranch, startBackend),
 
   // 仅更新模式
-  updateOnly: (targetBranch?: string) =>
-    ipcRenderer.invoke('update-only', targetBranch),
+  updateOnly: (targetBranch?: string) => ipcRenderer.invoke('update-only', targetBranch),
 
   // 后端服务管理
   backendStart: () => ipcRenderer.invoke('backend-start'),

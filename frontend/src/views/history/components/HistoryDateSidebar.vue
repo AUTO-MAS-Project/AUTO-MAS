@@ -35,7 +35,7 @@
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <img src="../../../assets/NoData.png" alt="无数据" class="empty-image" />
+        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
         <span class="empty-text">暂无数据</span>
       </div>
     </div>

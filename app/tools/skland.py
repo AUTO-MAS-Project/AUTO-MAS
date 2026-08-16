@@ -47,11 +47,28 @@ from Crypto.Util.Padding import pad
 
 from typing import Dict, Any
 
-from app.core import Config
-from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
+from app.utils.constants import BROWSER_ENV, DES_RULE, SKLAND_SM_CONFIG, UTC8
 from app.utils.logger import get_logger
+from .skland_response import is_skland_already_signed
+
+_skland_sign_lock = asyncio.Lock()
 
 logger = get_logger("森空岛签到任务")
+
+
+def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
+    """创建不继承本地环境代理的森空岛 HTTP 客户端。"""
+
+    return httpx.AsyncClient(proxy=proxy, trust_env=False)
+
+
+def _parse_json_object(response: httpx.Response) -> dict[str, Any]:
+    """解析森空岛响应，并拒绝空值或非对象 JSON。"""
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("森空岛接口返回格式无效")
+    return payload
 
 
 def md5_hash(data: str) -> str:
@@ -204,19 +221,22 @@ async def get_device_id(proxy: str | None = None) -> str:
 
     devices_info_url = f"{SKLAND_SM_CONFIG['protocol']}://{SKLAND_SM_CONFIG['apiHost']}{SKLAND_SM_CONFIG['apiPath']}"
 
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
+    async with _create_skland_client(proxy) as client:
         response = await client.post(
             devices_info_url,
             json=body,
             headers={"Content-Type": "application/json"},
             timeout=30.0,
         )
-        resp = response.json()
+        resp = _parse_json_object(response)
 
     if resp.get("code") != 1100:
         raise Exception(f"设备ID计算失败: {resp}")
 
-    return f"B{resp['detail']['deviceId']}"
+    detail = resp.get("detail")
+    if not isinstance(detail, dict) or not detail.get("deviceId"):
+        raise ValueError("设备ID响应格式无效")
+    return f"B{detail['deviceId']}"
 
 
 _cached_device_id = None
@@ -235,6 +255,21 @@ async def get_cached_device_id(proxy: str | None = None) -> str:
 
 
 async def skland_sign_in(
+    token: str,
+    app_code: str = "arknights",
+    proxy: str | None = None,
+) -> dict:
+    """串行执行森空岛签到，协调旧用户链路与工具链路。"""
+
+    async with _skland_sign_lock:
+        return await _run_skland_sign_in(
+            token,
+            app_code=app_code,
+            proxy=proxy,
+        )
+
+
+async def _run_skland_sign_in(
     token: str,
     app_code: str = "arknights",
     proxy: str | None = None,
@@ -338,38 +373,49 @@ async def skland_sign_in(
             "vName": "1.0.0",
         }
 
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.post(
                 cred_code_url,
                 json={"code": grant, "kind": 1},
                 headers=web_headers,
             )
-            rsp = response.json()
-        if rsp["code"] != 0:
+            rsp = _parse_json_object(response)
+        if rsp.get("code") != 0:
             raise Exception(f"获得cred失败: {rsp.get('message')}")
-        sign_token = rsp["data"]["token"]
-        cred = rsp["data"]["cred"]
+        data = rsp.get("data")
+        if not isinstance(data, dict) or not data.get("token") or not data.get("cred"):
+            raise ValueError("cred响应格式无效")
+        sign_token = data["token"]
+        cred = data["cred"]
         return cred, sign_token
 
     async def get_grant_code(token_value):
         """通过token获取grant code"""
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.post(
                 grant_code_url,
                 json={"appCode": "4ca99fa6b56cc2ba", "token": token_value, "type": 0},
                 headers=header_login,
             )
-            rsp = response.json()
-        if rsp["status"] != 0:
+            rsp = _parse_json_object(response)
+        if rsp.get("status") != 0:
             raise Exception(
                 f"使用token: {token_value[:3]}******{token_value[-3:]} 获得认证代码失败: {rsp.get('msg')}"
             )
-        return rsp["data"]["code"]
+        data = rsp.get("data")
+        if not isinstance(data, dict) or not data.get("code"):
+            raise ValueError("认证代码响应格式无效")
+        return data["code"]
 
-    async def get_binding_list(cred, sign_token):
-        """查询已绑定的角色列表"""
+    async def get_binding_list(cred, sign_token, app_code_override: str | None = None):
+        """查询已绑定的角色列表
+
+        Args:
+            app_code_override: 覆盖外层 app_code，用于 all 模式下按游戏过滤
+        """
+        code = app_code_override if app_code_override else app_code
         v = []
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.get(
                 binding_url,
                 headers=await get_sign_header(
@@ -380,16 +426,23 @@ async def skland_sign_in(
                     sign_token,
                 ),
             )
-            rsp = response.json()
-        if rsp["code"] != 0:
-            logger.error(f"请求角色列表出现问题: {rsp['message']}")
+            rsp = _parse_json_object(response)
+        if rsp.get("code") != 0:
+            logger.error(f"请求角色列表出现问题: {rsp.get('message')}")
             if rsp.get("message") == "用户未登录":
                 logger.error("用户登录可能失效了, 请重新登录！")
                 return v
-        for item in rsp["data"]["list"]:
-            if item.get("appCode") != app_code:
+        data = rsp.get("data") or {}
+        if not isinstance(data, dict):
+            return v
+        for item in data.get("list") or []:
+            if not isinstance(item, dict):
                 continue
-            v.extend(item.get("bindingList"))
+            if item.get("appCode") != code:
+                continue
+            binding_list = item.get("bindingList") or []
+            if isinstance(binding_list, list):
+                v.extend(entry for entry in binding_list if isinstance(entry, dict))
         return v
 
     async def check_attendance_today(cred, sign_token, uid, game_id) -> bool:
@@ -397,7 +450,7 @@ async def skland_sign_in(
         query_url = f"{arknights_sign_url}?uid={uid}&gameId={game_id}"
 
         try:
-            async with httpx.AsyncClient(proxy=Config.proxy) as client:
+            async with _create_skland_client(proxy) as client:
                 response = await client.get(
                     query_url,
                     headers=await get_sign_header(
@@ -408,16 +461,21 @@ async def skland_sign_in(
                         sign_token,
                     ),
                 )
-                rsp = response.json()
+                rsp = _parse_json_object(response)
 
-            if rsp["code"] != 0:
+            if rsp.get("code") != 0:
                 logger.warning(f"检查签到状态失败: {rsp.get('message')}")
                 return False
 
-            records = rsp["data"].get("records", [])
-            today = time.time() // 86400 * 86400
+            data = rsp.get("data") or {}
+            records = data.get("records", []) if isinstance(data, dict) else []
+            now = datetime.now(tz=UTC8)
+            today = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
-            for record in records:
+            record_list = records if isinstance(records, list) else []
+            for record in record_list:
+                if not isinstance(record, dict):
+                    continue
                 record_time = int(record.get("ts", 0))
                 if record_time >= today:
                     return True
@@ -429,14 +487,15 @@ async def skland_sign_in(
 
     async def sign_for_arknights(cred, sign_token) -> dict:
         """方舟签到"""
-        characters = await get_binding_list(cred, sign_token)
+        characters = await get_binding_list(cred, sign_token, app_code_override="arknights")
         result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
 
         for character in characters:
-            character_name = (
-                f"{character.get('nickName')}（{character.get('channelName')}）"
-            )
-            uid = character.get("uid")
+            nick_name = character.get("nickName", "")
+            channel_name = character.get("channelName", "森空岛")
+            uid = character.get("uid", "")
+            # 统一 account 格式: 别名/昵称(uid)
+            character_name = f"{nick_name}/{nick_name}({uid})" if uid else f"{nick_name}/{channel_name}"
             game_id = character.get("channelMasterId")
 
             if await check_attendance_today(cred, sign_token, uid, game_id):
@@ -446,12 +505,12 @@ async def skland_sign_in(
                 continue
 
             body = {
-                "uid": uid,
                 "gameId": game_id,
+                "uid": uid,
             }
 
             try:
-                async with httpx.AsyncClient(proxy=Config.proxy) as client:
+                async with _create_skland_client(proxy) as client:
                     sign_headers = await get_sign_header(
                         arknights_sign_url,
                         "post",
@@ -464,10 +523,10 @@ async def skland_sign_in(
                         headers=sign_headers,
                         content=json.dumps(body),
                     )
-                    rsp = response.json()
+                    rsp = _parse_json_object(response)
 
-                if rsp["code"] != 0:
-                    if rsp.get("message") == "请勿重复签到！":
+                if rsp.get("code") != 0:
+                    if is_skland_already_signed(rsp):
                         result["重复"].append(character_name)
                         logger.info(f"{character_name} 重复签到")
                     else:
@@ -489,7 +548,7 @@ async def skland_sign_in(
         headers = await get_sign_header(
             endfield_sign_url,
             "post",
-            None,
+            "",  # 终末地签到不发 body，签名计算使用空字符串
             copy_header(cred, sign_token),
             sign_token,
         )
@@ -502,49 +561,63 @@ async def skland_sign_in(
             }
         )
 
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        async with _create_skland_client(proxy) as client:
             response = await client.post(endfield_sign_url, headers=headers)
-            return response.json()
+            return _parse_json_object(response)
 
     async def sign_for_endfield(cred, sign_token) -> dict:
         """终末地签到"""
-        characters = await get_binding_list(cred, sign_token)
+        characters = await get_binding_list(cred, sign_token, app_code_override="endfield")
         result = {"成功": [], "重复": [], "失败": [], "总计": 0}
 
         for character in characters:
             roles = character.get("roles") or []
+            if not isinstance(roles, list):
+                roles = []
+            roles = [role for role in roles if isinstance(role, dict)]
             game_name = character.get("gameName")
             channel_name = character.get("channelName")
             result["总计"] += len(roles)
 
             for role in roles:
                 nickname = str(role.get("nickname") or "").strip()
-                character_name = f"{nickname}（{channel_name}）"
+                role_id = role.get("roleId", "")
+                # 统一 account 格式: 别名/昵称(角色ID)
+                character_name = f"{nickname}/{nickname}({role_id})" if role_id else f"{nickname}/{channel_name}"
 
                 try:
                     rsp = await do_sign_for_endfield(cred, sign_token, role)
                     if rsp.get("code") != 0:
-                        message = rsp.get("message", "")
-                        if (
-                            "请勿重复签到" in message
-                            or "Please do not sign in again!" in message
-                        ):
+                        if is_skland_already_signed(rsp):
                             result["重复"].append(character_name)
                             logger.info(f"{character_name} 重复签到")
                         else:
                             result["失败"].append(character_name)
-                            logger.error(f"{character_name} 签到失败: {message}")
+                            logger.error(
+                                f"{character_name} 签到失败: {rsp.get('message')}"
+                            )
                     else:
-                        award_ids = rsp.get("data", {}).get("awardIds", [])
-                        resource_map = rsp.get("data", {}).get("resourceInfoMap", {})
+                        data = rsp.get("data") or {}
+                        if not isinstance(data, dict):
+                            data = {}
+                        award_ids = data.get("awardIds", [])
+                        resource_map = data.get("resourceInfoMap", {})
                         awards = []
-                        for award in award_ids:
+                        award_list = award_ids if isinstance(award_ids, list) else []
+                        for award in award_list:
+                            if not isinstance(award, dict):
+                                continue
                             award_id = award.get("id")
-                            if award_id and award_id in resource_map:
+                            if (
+                                award_id
+                                and isinstance(resource_map, dict)
+                                and award_id in resource_map
+                            ):
                                 resource = resource_map[award_id]
-                                awards.append(
-                                    f'{resource["name"]}x{resource.get("count", 1)}'
-                                )
+                                if isinstance(resource, dict) and resource.get("name"):
+                                    awards.append(
+                                        f'{resource["name"]}x{resource.get("count", 1)}'
+                                    )
                         if awards:
                             logger.info(
                                 f"[{game_name}] {character_name} 签到成功: {'、'.join(awards)}"
@@ -562,9 +635,14 @@ async def skland_sign_in(
     try:
         cred, sign_token = await login_by_token(token)
         await asyncio.sleep(1)
+        if app_code == "all":
+            ar = await sign_for_arknights(cred, sign_token)
+            await asyncio.sleep(3)
+            ef = await sign_for_endfield(cred, sign_token)
+            return {"arknights": ar, "endfield": ef}
         if app_code == "endfield":
             return await sign_for_endfield(cred, sign_token)
         return await sign_for_arknights(cred, sign_token)
     except Exception as e:
         logger.error(f"森空岛签到失败: {e}")
-        return {"成功": [], "重复": [], "失败": [], "总计": 0}
+        return {"成功": [], "重复": [], "失败": [str(e)], "总计": 0}

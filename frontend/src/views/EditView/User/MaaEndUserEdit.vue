@@ -30,10 +30,6 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Mode"
-      :maa-end-config-loading="maaEndConfigLoading"
-      :show-maa-end-config-mask="showMaaEndConfigMask"
-      @handle-maa-end-config="handleMaaEndConfig"
       @handle-cancel="handleCancel"
     />
 
@@ -50,21 +46,31 @@
             :form-data="formData"
             :loading="loading"
             :resource-options="resourceOptions"
+            :preset-supported="presetSupported"
+            :config-loading="maaEndConfigLoading"
+            :import-loading="maaEndImportLoading"
+            :show-config-mask="showMaaEndConfigMask"
             @save="handleFieldSave"
+            @configure="handleMaaEndConfig"
+            @import-config="handleImportMaaEndConfig"
+            @script-config="handleScriptConfig"
           />
           <TaskConfigSection
+            v-if="formData.Info.IfQuickConfig"
             :form-data="formData"
             :loading="loading"
+            :if-quick-config="formData.Info.IfQuickConfig"
+            :essence-location-options="essenceLocationOptions"
+            :options-loading="maaEndOptionsLoading"
+            :options-loaded="maaEndOptionsLoaded"
             :is-plan-mode="isSanityPlanMode"
             :sanity-mode-options="sanityModeOptions"
             :plan-mode-config="planModeConfig"
-            :sanity-task-type-tooltip="sanityTaskTypeTooltip"
-            :current-task-tooltip="currentTaskTooltip"
-            :rewards-tooltip="rewardsTooltip"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
             :form-data="formData"
             :loading="loading"
@@ -84,63 +90,66 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { PlanComboxIn, Service } from '@/api'
-import type { MaaEndPlanConfig } from '@/api'
+import type { ComboBoxItem } from '@/api'
+import type { MaaEndPlanConfig } from '@/api/models/MaaEndPlanConfig'
+import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import {
-  MAAEND_PLAN_TIME_LABELS,
   MAAEND_PLAN_WEEKDAY_KEYS,
-  SANITY_TASK_TYPE_LABEL_MAP,
-  REWARD_LABEL_MAP,
-  getSanityTaskDisplayValue,
   normalizeMaaEndSanityConfig,
-  type PlanWeekdayKey,
   type MaaEndSanityConfig,
 } from '@/utils/maaEndProtocolSpace'
+import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
-import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
-import BasicInfoSection from '../../MaaEndUserEdit/BasicInfoSection.vue'
-import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '../../MaaEndUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '../../MaaEndUserEdit/NotifyConfigSection.vue'
+import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
+import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
+import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
+import SkylandConfigSection from '@/views/MaaEndUserEdit/SkylandConfigSection.vue'
+import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
-const loading = computed(() => userLoading.value)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const loading = computed(() => isInitializing.value || userLoading.value)
+const maaEndOptionsLoading = ref(false)
+const maaEndOptionsLoaded = ref(false)
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
+const controllerType = ref<string | null>(null)
+const presetSupported = ref(true)
 
 const maaEndConfigLoading = ref(false)
+const maaEndImportLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
 const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
+const essenceLocationOptions = ref<ComboBoxItem[]>([])
 const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: '固定', value: 'Fixed' },
 ])
-const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
-const fullPlanData = ref<MaaEndPlanConfig | null>(null)
+const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -149,9 +158,14 @@ const getDefaultMaaEndUserData = () => ({
     Id: '',
     Password: '',
     Mode: '简洁',
+    IfQuickConfig: true,
     SanityMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     IfSkland: false,
     SklandToken: '',
     Notes: '',
@@ -163,7 +177,24 @@ const getDefaultMaaEndUserData = () => ({
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
-    AutoEssenceSpecifiedLocation: 'VFTheHub',
+    AutoEssenceSpecifiedLocation: '',
+    IfSanity: true,
+    IfAutoUseSpMedication: true,
+    IfDijiangRewards: true,
+    IfDeliveryJobs: true,
+    IfSellProduct: true,
+    IfAutoStockpile: true,
+    IfAutoStockStaple: true,
+    IfVisitFriends: true,
+    IfCreditShoppingN2: true,
+    IfSeizeEntrustTask: true,
+    IfAutoEcoFarm: true,
+    IfAutoSell: true,
+    IfEnvironmentMonitoring: true,
+    IfAutoCollect: true,
+    IfTrialOfSwordmancy: true,
+    IfDailyRewards: true,
+    IfResourceRecycleStation: true,
   },
   Notify: {
     Enabled: false,
@@ -180,58 +211,6 @@ const getDefaultMaaEndUserData = () => ({
     IfPassCheck: false,
   },
 })
-
-const getPlanDayConfig = (planData: MaaEndPlanConfig, dayKey: PlanWeekdayKey | 'ALL') =>
-  planData[dayKey] as Partial<MaaEndSanityConfig> | null | undefined
-
-const getPlanCurrentConfig = (planData?: MaaEndPlanConfig | null): MaaEndSanityConfig | null => {
-  if (!planData) return null
-
-  if (planData.Info?.Mode === 'Weekly') {
-    const weekday = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
-    return normalizeMaaEndSanityConfig(getPlanDayConfig(planData, weekday) ?? planData.ALL)
-  }
-
-  return normalizeMaaEndSanityConfig(planData.ALL)
-}
-
-const formatPlanValue = (
-  dayConfig: Partial<MaaEndSanityConfig> | null | undefined,
-  field: 'SanityTaskType' | 'CurrentTask' | 'RewardsSetOption'
-) => {
-  const normalized = normalizeMaaEndSanityConfig(dayConfig)
-
-  if (field === 'SanityTaskType') {
-    return SANITY_TASK_TYPE_LABEL_MAP[normalized.SanityTaskType]
-  }
-
-  if (field === 'CurrentTask') {
-    return getSanityTaskDisplayValue(normalized)
-  }
-
-  return REWARD_LABEL_MAP[normalized.RewardsSetOption]
-}
-
-const getPlanTooltip = (field: 'SanityTaskType' | 'CurrentTask' | 'RewardsSetOption') => {
-  if (!isSanityPlanMode.value || !fullPlanData.value) return ''
-
-  if (fullPlanData.value.Info?.Mode !== 'Weekly') {
-    return '此项由全局计划表控制'
-  }
-
-  const lines = ['此项由周计划表控制:']
-
-  MAAEND_PLAN_WEEKDAY_KEYS.forEach(dayKey => {
-    const dayConfig = getPlanDayConfig(fullPlanData.value, dayKey) ?? fullPlanData.value?.ALL
-    lines.push(`${MAAEND_PLAN_TIME_LABELS[dayKey]}: ${formatPlanValue(dayConfig, field)}`)
-  })
-
-  return lines.join('\n')
-}
-
-const sanityTaskTypeTooltip = computed(() => getPlanTooltip('SanityTaskType'))
-const currentTaskTooltip = computed(() => getPlanTooltip('CurrentTask'))
-const rewardsTooltip = computed(() => getPlanTooltip('RewardsSetOption'))
 
 interface FieldChange {
   key: string
@@ -301,89 +280,87 @@ const handleFieldsSave = async (changes: FieldChange[]) => {
   await saveUserFields(changes)
 }
 
+const handleScriptConfig = () => {
+  cleanupConfigSession()
+  router.push(`/scripts/${scriptId}/edit/maaend`)
+}
+
 const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
+  }
+}
+
+const loadMaaEndOptions = async () => {
+  maaEndOptionsLoading.value = true
+  try {
+    const response = await getMaaEndOptions(scriptId)
+    if (response?.code === 200) {
+      essenceLocationOptions.value = response.essenceLocations
+      presetSupported.value = response.controllerTypes[controllerType.value ?? ''] === 'Win32'
+      maaEndOptionsLoaded.value = true
+    }
+  } finally {
+    maaEndOptionsLoading.value = false
   }
 }
 
 const loadSanityModeOptions = async () => {
   try {
-    const requestBody: PlanComboxIn = { consumer: PlanComboxIn.consumer.MAAEND }
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost(requestBody)
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MAAEND,
+    })
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data
     }
   } catch (error) {
-    logger.error(
-      `加载理智任务配置模式选项失败: ${error instanceof Error ? error.message : String(error)}`
-    )
+    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
-const isCurrentSanityPlan = (planId: string) => formData.Info.SanityMode === planId
-
-const loadSanityPlan = async (planId?: string | null) => {
+const loadSanityPlan = async (planId: string) => {
   if (!planId || planId === 'Fixed') {
-    logger.debug('切换到固定理智任务模式')
     planModeConfig.value = null
-    fullPlanData.value = null
     return
   }
 
   try {
-    logger.debug(`开始加载理智任务计划配置: ${planId}`)
     const response = await getPlans(planId)
-    const planData = response?.data?.[planId] as MaaEndPlanConfig | undefined
-    const planIndex = response?.index?.find(item => item.uid === planId)
-
-    if (!isCurrentSanityPlan(planId)) {
-      logger.debug(`理智任务计划配置已切换，跳过过期响应: ${planId}`)
-      return
-    }
-
-    if (!planData || planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END) {
-      logger.warn(`理智任务计划配置响应不完整: ${JSON.stringify({ response, planId })}`)
+    const planData = response.data?.[planId] as MaaEndPlanConfig | undefined
+    const planIndex = response.index?.find(item => item.uid === planId)
+    if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
       planModeConfig.value = null
-      fullPlanData.value = null
-      message.warning('计划表不存在或已失效')
       return
     }
-
-    const currentConfig = getPlanCurrentConfig(planData)
-
-    logger.debug(`获取到理智任务计划数据: ${JSON.stringify(planData)}`)
-    logger.debug(`getPlanCurrentConfig返回: ${JSON.stringify(currentConfig)}`)
-
-    planModeConfig.value = currentConfig
-    fullPlanData.value = planData
-
-    logger.info(
-      `理智任务计划配置加载成功:${JSON.stringify({
-        planId,
-        currentConfig: JSON.parse(JSON.stringify(currentConfig)),
-        planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
-      })}`
-    )
-
-    const planOption = sanityModeOptions.value.find(option => option.value === planId)
-    const planName = planOption ? planOption.label : planId
-
-    message.success(`已切换到理智任务计划模式：${planName}`)
+    const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
+    const dayConfig = planData.Info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
+    planModeConfig.value = normalizeMaaEndSanityConfig(dayConfig)
   } catch (error) {
-    const errorInfo = {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      type: typeof error,
-      name: error instanceof Error ? error.name : error?.constructor?.name,
-    }
-    logger.error(`加载理智任务计划配置失败: ${JSON.stringify(errorInfo)}`)
-    if (planId && isCurrentSanityPlan(planId)) {
-      planModeConfig.value = null
-      fullPlanData.value = null
-      message.error('加载计划配置时发生错误')
-    }
+    planModeConfig.value = null
+    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+const normalizeQuickConfig = async () => {
+  if (!userId) return
+
+  const infoPayload: Record<string, unknown> = {}
+  if (formData.Info.Mode === '自定义') {
+    formData.Info.Mode = '详细'
+    formData.Info.IfQuickConfig = false
+    infoPayload.Mode = formData.Info.Mode
+    infoPayload.IfQuickConfig = formData.Info.IfQuickConfig
+  }
+
+  if (!presetSupported.value && formData.Info.IfQuickConfig) {
+    formData.Info.IfQuickConfig = false
+    infoPayload.IfQuickConfig = false
+  }
+
+  if (Object.keys(infoPayload).length) {
+    await updateUser(scriptId, userId, { Info: infoPayload })
   }
 }
 
@@ -437,8 +414,9 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
+    const configTaskTargetId = formData.Info.Mode === '简洁' ? scriptId : userId
     const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
+      taskId: configTaskTargetId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
@@ -466,7 +444,7 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionId.value = subscriptionId
     maaEndWebsocketId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success(`已启动用户 ${formData.Info.Name || formData.userName} 的 MaaEnd 配置`)
+    message.success(`已启动 ${formData.Info.Mode === '简洁' ? '脚本' : '用户'} MaaEnd 配置`)
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
@@ -479,6 +457,24 @@ const handleMaaEndConfig = async () => {
     message.error(error instanceof Error ? error.message : '启动 MaaEnd 配置失败')
   } finally {
     maaEndConfigLoading.value = false
+  }
+}
+
+const handleImportMaaEndConfig = async () => {
+  try {
+    maaEndImportLoading.value = true
+    const response = await importScriptConfigFile(
+      scriptId,
+      formData.Info.Mode === '简洁' ? null : userId
+    )
+    if (response.code !== 200) {
+      throw new Error(response.message || '导入脚本配置文件失败')
+    }
+    message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
+  } finally {
+    maaEndImportLoading.value = false
   }
 }
 
@@ -507,23 +503,18 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
+  await loadMaaEndOptions()
   await loadSanityModeOptions()
-
-  watch(
-    () => formData.Info.SanityMode,
-    async newMode => {
-      await loadSanityPlan(newMode)
-    },
-    { immediate: false }
-  )
 
   if (isEdit.value) {
     await loadUserData()
+    await normalizeQuickConfig()
   } else {
     const result = await addUser(scriptId)
     if (result?.userId) {
       userId = result.userId
       isEdit.value = true
+      await normalizeQuickConfig()
     } else {
       message.error('创建用户失败')
       router.push('/scripts')
@@ -532,8 +523,16 @@ onMounted(async () => {
   }
 
   await nextTick()
+  await loadSanityPlan(formData.Info.SanityMode)
   isInitializing.value = false
 })
+
+watch(
+  () => formData.Info.SanityMode,
+  value => {
+    void loadSanityPlan(value)
+  }
+)
 </script>
 
 <style scoped>

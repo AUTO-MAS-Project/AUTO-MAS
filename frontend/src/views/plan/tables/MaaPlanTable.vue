@@ -2,39 +2,67 @@
   <div>
     <!-- 配置视图 -->
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
-      <a-table :key="`config-table-${currentMode}`" :columns="configColumns"
-        :data-source="coordinator.configViewData.value" :pagination="false"
-        :class="['config-table', `mode-${currentMode}`]" size="middle" :bordered="true" :scroll="{ x: 'max-content' }">
+      <a-table
+        :key="`config-table-${currentMode}`"
+        :columns="configColumns"
+        :data-source="coordinator.configViewData.value"
+        :pagination="false"
+        :class="['config-table', `mode-${currentMode}`]"
+        size="middle"
+        :bordered="true"
+        :scroll="{ x: 'max-content' }"
+      >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'taskName'">
             {{ record.taskName }}
           </template>
 
           <template v-else-if="record.taskName === '吃理智药'">
-            <a-input-number :value="(record as any)[column.key]" size="small" :min="0" :max="9999"
-              class="config-input-number" :controls="false" :bordered="false"
+            <a-input-number
+              :value="(record as any)[column.key]"
+              size="small"
+              :min="0"
+              :max="9999"
+              class="config-input-number"
+              :controls="false"
+              :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)" />
+              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
+            />
           </template>
 
           <template v-else>
-            <a-select :value="(record as any)[column.key]" size="small" :class="[
-              'config-select',
-              {
-                'custom-stage-selected': isCustomStage((record as any)[column.key]),
-              },
-            ]" :allow-clear="false" :bordered="false" :disabled="isColumnDisabled(column.key as string)"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)">
-              <a-select-option v-for="option in getSelectOptions(
-                column.key as string,
-                record.taskName,
-                (record as any)[column.key] as string
-              )" :key="option.value" :value="option.value" :disabled="option.disabled"
-                :class="{ 'custom-stage-option': isCustomStage(option.value) }">
-                <span :style="{
-                  color: isCustomStage(option.value) ? 'var(--ant-color-primary)' : undefined,
-                  fontWeight: isCustomStage(option.value) ? '500' : 'normal',
-                }">
+            <a-select
+              :value="(record as any)[column.key]"
+              size="small"
+              :class="[
+                'config-select',
+                {
+                  'custom-stage-selected': isCustomStage((record as any)[column.key]),
+                },
+              ]"
+              :allow-clear="false"
+              :bordered="false"
+              :disabled="isColumnDisabled(column.key as string)"
+              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
+            >
+              <a-select-option
+                v-for="option in getSelectOptions(
+                  column.key as string,
+                  record.taskName,
+                  (record as any)[column.key] as string
+                )"
+                :key="option.value"
+                :value="option.value"
+                :disabled="option.disabled"
+                :class="{ 'custom-stage-option': isCustomStage(option.value) }"
+              >
+                <span
+                  :style="{
+                    color: isCustomStage(option.value) ? 'var(--ant-color-primary)' : undefined,
+                    fontWeight: isCustomStage(option.value) ? '500' : 'normal',
+                  }"
+                >
                   {{ option.label }}
                 </span>
               </a-select-option>
@@ -46,28 +74,43 @@
 
     <!-- 简化视图 -->
     <div v-show="viewMode === 'simple'" class="simple-table-wrapper">
-      <a-table :key="`simple-table-${currentMode}`" :columns="simpleColumns"
-        :data-source="coordinator.simpleViewData.value" :pagination="false" class="simple-table" size="small"
-        :bordered="true" :scroll="{ x: 'max-content' }">
+      <a-table
+        :key="`simple-table-${currentMode}`"
+        :columns="simpleColumns"
+        :data-source="coordinator.simpleViewData.value"
+        :pagination="false"
+        class="simple-table"
+        size="small"
+        :bordered="true"
+        :scroll="{ x: 'max-content' }"
+      >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'globalControl'">
             <a-space>
-              <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">开</a-button>
+              <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)"
+                >开</a-button
+              >
               <a-button size="small" danger @click="disableAllStages(record.key)">关</a-button>
             </a-space>
           </template>
 
           <template v-else-if="column.key === 'taskName'">
-            <a-tag :color="getStageTagColor(record.taskName, record.isCustom)" class="task-tag"
-              :class="{ 'custom-stage-tag': record.isCustom }">
+            <a-tag
+              :color="getStageTagColor(record.taskName, record.isCustom)"
+              class="task-tag"
+              :class="{ 'custom-stage-tag': record.isCustom }"
+            >
               {{ record.taskName }}
             </a-tag>
           </template>
 
           <template v-else>
-            <a-switch v-if="isStageAvailable(record.key, column.key as string)" :checked="record[column.key]"
+            <a-switch
+              v-if="isStageAvailable(record.key, column.key as string)"
+              :checked="record[column.key]"
               :disabled="isSwitchDisabled(column.key as string, record)"
-              @change="handleStageToggle(record.key, column.key as TimeKey, $event)" />
+              @change="handleStageToggle(record.key, column.key as TimeKey, $event)"
+            />
           </template>
         </template>
       </a-table>
@@ -86,10 +129,17 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-input v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
-              placeholder="输入关卡号" :maxlength="50" allow-clear size="large" class="modern-input"
-              @input="onCustomStageInput(i as 1 | 2 | 3 | 4)" @blur="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
-              @press-enter="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)" />
+            <a-input
+              v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
+              placeholder="输入关卡号"
+              :maxlength="50"
+              allow-clear
+              size="large"
+              class="modern-input"
+              @input="onCustomStageInput(i as 1 | 2 | 3 | 4)"
+              @blur="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
+              @press-enter="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
+            />
           </a-form-item>
         </a-col>
       </a-row>
@@ -98,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
@@ -112,17 +162,26 @@ interface Props {
   currentMode: 'ALL' | 'Weekly'
   viewMode: 'config' | 'simple'
   planId?: string
-  handlePlanChange: (path: string, value: any) => Promise<void>
+  handlePlanChange: import('@/utils/planTypeRegistry').PlanChangeHandler
 }
 
 const props = defineProps<Props>()
 
 // 使用数据协调器 - 单一数据源
 const coordinator = usePlanDataCoordinator()
-const lastSyncedPlanId = ref<string | null>(null)
 
 // 临时自定义关卡输入
 const tempCustomStages = ref({
+  custom_stage_1: '',
+  custom_stage_2: '',
+  custom_stage_3: '',
+  custom_stage_4: '',
+})
+
+// 记录最近一次从后端加载或保存成功的自定义关卡。
+// 输入事件会为了实时刷新下拉选项提前修改 coordinator，
+// 因此保存判断必须和这份快照比较，不能直接读取当前定义。
+const savedCustomStages = ref({
   custom_stage_1: '',
   custom_stage_2: '',
   custom_stage_3: '',
@@ -135,7 +194,7 @@ const customStageVersion = ref(0)
 // 计算属性：获取当前的自定义关卡列表（用于响应式更新）
 const currentCustomStages = computed(() => {
   // 访问 customStageVersion 以触发响应式更新
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+
   customStageVersion.value
 
   return Object.values(coordinator.planData.customStageDefinitions).filter(stageName =>
@@ -191,7 +250,7 @@ const updateConfigValue = async (rowKey: string, timeKey: TimeKey, value: any) =
 const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
   const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
   const newValue = tempCustomStages.value[key].trim()
-  const oldValue = coordinator.planData.customStageDefinitions[key]
+  const oldValue = savedCustomStages.value[key].trim()
 
   // 如果值没有变化，不需要保存
   if (newValue === oldValue) {
@@ -216,7 +275,9 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
     'Saturday',
     'Sunday',
   ]
-  for (const timeKey of timeKeys) {
+  let allSaved = true
+  for (let i = 0; i < timeKeys.length; i++) {
+    const timeKey = timeKeys[i]
     const timeConfig = planConfig[timeKey] as Record<string, any>
     if (timeConfig) {
       // 检查每个关卡字段是否使用了旧的自定义关卡
@@ -228,8 +289,16 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
         }
       }
       // 保存更新后的时间配置
-      await props.handlePlanChange(timeKey, timeConfig)
+      const saved = await props.handlePlanChange(timeKey, timeConfig, {
+        refresh: i === timeKeys.length - 1,
+        forceCustomStages: false,
+      })
+      allSaved = allSaved && saved
     }
+  }
+
+  if (allSaved) {
+    savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
   }
 }
 
@@ -310,20 +379,6 @@ const getUsedStagesInColumn = (columnKey: string): string[] => {
 }
 
 // 工具函数
-const DAY_NUMBER_MAP = {
-  ALL: 0,
-  Monday: 1,
-  Tuesday: 2,
-  Wednesday: 3,
-  Thursday: 4,
-  Friday: 5,
-  Saturday: 6,
-  Sunday: 7,
-} as const
-
-const getDayNumber = (columnKey: string) =>
-  DAY_NUMBER_MAP[columnKey as keyof typeof DAY_NUMBER_MAP] || 0
-
 const isColumnDisabled = (columnKey: string): boolean => {
   if (props.currentMode === 'ALL') return columnKey !== 'ALL'
   if (props.currentMode === 'Weekly') return columnKey === 'ALL'
@@ -447,20 +502,31 @@ const handleStageToggle = async (stageKey: string, timeKey: TimeKey, enabled: bo
   }
 }
 
+// 监听 planId 变化
+watch(
+  () => props.planId,
+  newPlanId => {
+    if (newPlanId) {
+      coordinator.updatePlanId(newPlanId)
+    }
+  },
+  { immediate: true }
+)
+
 // 监听外部数据变化 - 这是数据的唯一来源
 watch(
-  [() => props.planId, () => props.tableData],
-  async ([planId, newData]) => {
-    if (planId) {
-      coordinator.updatePlanId(planId)
-    }
-
+  () => props.tableData,
+  async newData => {
     if (newData) {
-      const shouldResetCustomStages =
-        lastSyncedPlanId.value === null || (planId ? planId !== lastSyncedPlanId.value : false)
+      // 检查是否是初始加载
+      const isInitialLoad = (newData as any)._isInitialLoad === true
 
-      // 首次进入或切换计划时才阻塞等待预加载，避免把标准关卡误判为自定义关卡。
-      if (shouldResetCustomStages) {
+      // 清理标记后传递给协调器
+      const cleanData = { ...newData }
+      delete (cleanData as any)._isInitialLoad
+
+      // 如果是首次加载，确保先完成关卡选项的预加载，避免将标准关卡误判为自定义关卡
+      if (isInitialLoad) {
         try {
           await preloadAllStageOptions()
         } catch {
@@ -470,12 +536,13 @@ watch(
       }
 
       // 从后端数据加载到协调器
-      coordinator.fromApiData(newData, shouldResetCustomStages)
+      coordinator.fromApiData(cleanData, isInitialLoad)
       // 同步到临时输入框
       tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
-
-      if (planId) {
-        lastSyncedPlanId.value = planId
+      // 非初始刷新可能保留了 fromApiData(false) 续住的未保存输入，
+      // 不能把它们当作后端确认值写入 savedCustomStages。
+      if (isInitialLoad) {
+        savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
       }
     }
   },
@@ -493,6 +560,10 @@ watch(
   { deep: true }
 )
 
+// 组件挂载时预加载关卡选项
+onMounted(async () => {
+  await preloadAllStageOptions()
+})
 </script>
 
 <style scoped>

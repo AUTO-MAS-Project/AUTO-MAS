@@ -30,14 +30,14 @@
       <h4>📚 路由历史 (最近10条)</h4>
       <div class="route-history">
         <div
-          v-for="(route, index) in routeHistory"
+          v-for="(historyRoute, index) in routeHistory"
           :key="index"
           class="history-item"
           :class="{ current: index === 0 }"
         >
-          <span class="time">{{ route.time }}</span>
-          <span class="path">{{ route.path }}</span>
-          <span class="name">{{ route.name }}</span>
+          <span class="time">{{ historyRoute.time }}</span>
+          <span class="path">{{ historyRoute.path }}</span>
+          <span class="name">{{ historyRoute.name }}</span>
         </div>
       </div>
     </div>

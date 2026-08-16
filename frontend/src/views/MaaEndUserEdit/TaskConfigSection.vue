@@ -2,30 +2,15 @@
   <div class="form-section">
     <div class="section-header">
       <h3>任务配置</h3>
-      <a-button
-        v-if="isPlanMode && formData.Info.SanityMode && formData.Info.SanityMode !== 'Fixed'"
-        type="link"
-        class="plans-button"
-        @click="handleGoToPlans"
-      >
-        <template #icon>
-          <CalendarOutlined />
-        </template>
+      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
+        <template #icon><CalendarOutlined /></template>
         跳转到计划表
       </a-button>
     </div>
 
     <a-row :gutter="24">
       <a-col :span="12">
-        <a-form-item>
-          <template #label>
-            <a-tooltip title="可选择固定配置或引用 MaaEnd 计划表">
-              <span class="form-label">
-                理智任务配置模式
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
+        <a-form-item label="理智任务配置模式">
           <a-select
             v-model:value="formData.Info.SanityMode"
             :options="sanityModeOptions"
@@ -37,13 +22,59 @@
       </a-col>
     </a-row>
 
-    <a-row :gutter="24">
-      <a-col :span="8">
+    <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
+      <div class="task-group-sidebar">
+        <button
+          v-for="group in visibleTaskGroups"
+          :key="group.key"
+          class="task-group-item"
+          :class="{ active: group.key === activeGroupKey }"
+          type="button"
+          @click="activeGroupKey = group.key"
+        >
+          <span class="task-group-main">
+            <span class="task-group-title">{{ group.label }}</span>
+            <span class="task-group-count">
+              {{ enabledGroupTaskCount(group) }}/{{ group.tasks.length }}
+            </span>
+          </span>
+          <span class="task-group-switch" @click.stop>
+            <a-switch
+              :checked="isGroupEnabled(group)"
+              :disabled="controlsDisabled"
+              size="small"
+              @change="handleGroupSwitchChange(group, $event)"
+            />
+          </span>
+        </button>
+      </div>
+
+      <div v-if="activeGroup" class="task-group-detail">
+        <div class="task-group-detail-header">
+          <span>{{ activeGroup.label }}</span>
+          <span class="task-group-count">
+            {{ enabledGroupTaskCount(activeGroup) }}/{{ activeGroup.tasks.length }}
+          </span>
+        </div>
+
+        <div class="task-switch-list">
+          <div v-for="task in activeGroup.tasks" :key="task.name" class="task-switch-row">
+            <span class="task-switch-label">{{ task.label }}</span>
+            <a-switch
+              v-model:checked="formData.Task[taskSwitchKey(task.name)]"
+              :disabled="controlsDisabled"
+              @change="handleTaskSwitchChange(task.name)"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <a-row v-if="showSanityDetail" :gutter="24">
+      <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              :title="isPlanMode ? '当前生效理智任务来自计划表' : '选择当前执行的理智任务类型'"
-            >
+            <a-tooltip title="选择当前执行的理智任务类型">
               <span class="form-label">
                 理智任务
                 <QuestionCircleOutlined class="help-icon" />
@@ -51,29 +82,24 @@
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
-            <div class="plan-value">{{ displaySanityTaskType }}</div>
-            <a-tooltip>
-              <template #title>
-                <div class="plan-tooltip">{{ sanityTaskTypeTooltip }}</div>
-              </template>
-              <div class="plan-source">来自计划表</div>
-            </a-tooltip>
+            <span>{{ displaySanityTaskType }}</span>
+            <span class="plan-source">来自计划表</span>
           </div>
           <a-select
             v-else
             v-model:value="formData.Task.SanityTaskType"
-            :options="SANITY_TASK_TYPE_OPTIONS"
-            :disabled="loading"
+            :options="sanityTaskTypeOptions"
+            :disabled="optionControlsDisabled"
             size="large"
             @change="handleSanityTaskTypeChange"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="8">
+      <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="isPlanMode ? '当前生效任务来自计划表' : taskOptionTooltip">
+            <a-tooltip :title="taskOptionTooltip">
               <span class="form-label">
                 {{ taskOptionLabel }}
                 <QuestionCircleOutlined class="help-icon" />
@@ -81,19 +107,15 @@
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
-            <div class="plan-value">{{ displayCurrentTask }}</div>
-            <a-tooltip>
-              <template #title>
-                <div class="plan-tooltip">{{ currentTaskTooltip }}</div>
-              </template>
-              <div class="plan-source">来自计划表</div>
-            </a-tooltip>
+            <span>{{ displayCurrentTask }}</span>
+            <span class="plan-source">来自计划表</span>
           </div>
           <a-select
             v-else
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
-            :disabled="loading"
+            :disabled="optionControlsDisabled"
+            :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
             size="large"
             @change="handleTaskOptionChange"
           />
@@ -101,17 +123,11 @@
       </a-col>
     </a-row>
 
-    <a-row :gutter="24">
+    <a-row v-if="showRewardGroupSelect" :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              :title="
-                isPlanMode
-                  ? '当前生效奖励组来自计划表；非协议空间奖励任务会固定为奖励组 A'
-                  : '协议空间奖励任务可在这里选择奖励组，基质刷取固定奖励组 A'
-              "
-            >
+            <a-tooltip title="协议空间奖励任务可在这里选择奖励组">
               <span class="form-label">
                 可选奖励组
                 <QuestionCircleOutlined class="help-icon" />
@@ -119,19 +135,14 @@
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
-            <div class="plan-value">{{ displayRewardsSet }}</div>
-            <a-tooltip>
-              <template #title>
-                <div class="plan-tooltip">{{ rewardsTooltip }}</div>
-              </template>
-              <div class="plan-source">来自计划表</div>
-            </a-tooltip>
+            <span>{{ displayRewardsSet }}</span>
+            <span class="plan-source">来自计划表</span>
           </div>
           <a-select
             v-else
             v-model:value="formData.Task.RewardsSetOption"
             :options="REWARD_OPTIONS"
-            :disabled="loading || !rewardGroupEnabled"
+            :disabled="optionControlsDisabled"
             size="large"
             @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
           />
@@ -142,22 +153,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import type { ComboBoxItem } from '@/api'
 import { navigateTo } from '@/router'
 import {
-  SANITY_TASK_TYPE_OPTIONS,
-  SANITY_TASK_TYPE_LABEL_MAP,
+  MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
   PROTOCOL_SPACE_TASK_TOOLTIP_MAP,
-  REWARD_LABEL_MAP,
   REWARD_OPTIONS,
-  AUTO_ESSENCE_LOCATION_OPTIONS,
+  REWARD_LABEL_MAP,
+  SANITY_TASK_TYPE_OPTIONS,
+  SANITY_TASK_TYPE_LABEL_MAP,
   getSanityTaskDisplayValue,
   normalizeMaaEndSanityConfig,
   type MaaEndSanityConfig,
+  type MaaEndTaskSwitch,
   type ProtocolSpaceTab,
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
@@ -167,16 +180,28 @@ interface FieldChange {
   value: any
 }
 
-const props = defineProps<{
-  formData: any
-  loading: boolean
-  isPlanMode: boolean
-  sanityModeOptions: Array<{ label: string; value: string }>
-  planModeConfig: MaaEndSanityConfig | null
-  sanityTaskTypeTooltip: string
-  currentTaskTooltip: string
-  rewardsTooltip: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    formData: any
+    loading?: boolean
+    ifQuickConfig?: boolean
+    essenceLocationOptions: ComboBoxItem[]
+    optionsLoading?: boolean
+    optionsLoaded?: boolean
+    isPlanMode?: boolean
+    sanityModeOptions?: Array<{ label: string; value: string }>
+    planModeConfig?: MaaEndSanityConfig | null
+  }>(),
+  {
+    loading: false,
+    ifQuickConfig: true,
+    optionsLoading: false,
+    optionsLoaded: false,
+    isPlanMode: false,
+    sanityModeOptions: () => [{ label: '固定', value: 'Fixed' }],
+    planModeConfig: null,
+  }
+)
 
 const emit = defineEmits<{
   save: [key: string, value: any]
@@ -184,27 +209,79 @@ const emit = defineEmits<{
 }>()
 
 const formData = props.formData
+const optionColumnSpan = 12
+const activeGroupKey = ref('')
+const showManagedTaskConfig = computed(() => props.ifQuickConfig)
+const visibleTaskGroups = computed(() => MAAEND_TASK_GROUPS)
+const activeGroup = computed(
+  () => visibleTaskGroups.value.find(group => group.key === activeGroupKey.value) ?? null
+)
+const activeGroupHasSanity = computed(
+  () => activeGroup.value?.tasks.some(task => task.name === 'Sanity') ?? false
+)
+
+const controlsDisabled = computed(() => {
+  return props.loading || !props.ifQuickConfig
+})
+
+const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const displayPlanConfig = computed(() =>
+  props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
+)
+const displaySanityTaskType = computed(() =>
+  displayPlanConfig.value
+    ? SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
+    : '未读取到计划表配置'
+)
+const displayCurrentTask = computed(() =>
+  displayPlanConfig.value
+    ? getSanityTaskDisplayValue(displayPlanConfig.value)
+    : '未读取到计划表配置'
+)
+const displayRewardsSet = computed(() =>
+  displayPlanConfig.value
+    ? REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
+    : '未读取到计划表配置'
+)
+
+const sanityTaskTypeOptions = computed(() =>
+  SANITY_TASK_TYPE_OPTIONS.filter(
+    option =>
+      option.value !== 'Essence' || !props.optionsLoaded || props.essenceLocationOptions.length > 0
+  )
+)
+
+const normalizedSanityTaskType = computed<SanityTaskType>(() =>
+  sanityTaskTypeOptions.value.some(option => option.value === formData.Task.SanityTaskType)
+    ? formData.Task.SanityTaskType
+    : 'OperatorProgression'
+)
 
 const currentField = computed(
-  () => PROTOCOL_SPACE_TASK_FIELD_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
+  () => PROTOCOL_SPACE_TASK_FIELD_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
+)
+const currentTaskSaveKey = computed(() =>
+  normalizedSanityTaskType.value === 'Essence'
+    ? 'Task.AutoEssenceSpecifiedLocation'
+    : `Task.${currentField.value}`
 )
 
 const currentTaskOptions = computed(() => {
-  if (formData.Task.SanityTaskType === 'Essence') {
-    return AUTO_ESSENCE_LOCATION_OPTIONS
+  if (normalizedSanityTaskType.value === 'Essence') {
+    return props.essenceLocationOptions
   }
-  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
+  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
 })
 
 const currentTaskValue = computed({
   get: () => {
-    if (formData.Task.SanityTaskType === 'Essence') {
+    if (normalizedSanityTaskType.value === 'Essence') {
       return formData.Task.AutoEssenceSpecifiedLocation
     }
     return formData.Task[currentField.value]
   },
   set: value => {
-    if (formData.Task.SanityTaskType === 'Essence') {
+    if (normalizedSanityTaskType.value === 'Essence') {
       formData.Task.AutoEssenceSpecifiedLocation = value
       return
     }
@@ -217,71 +294,86 @@ const currentTaskOption = computed(() =>
 )
 
 const rewardGroupEnabled = computed(() => {
-  if (formData.Task.SanityTaskType === 'Essence') return false
-  return Boolean(currentTaskOption.value?.rewards)
-})
-
-const displayPlanConfig = computed(() =>
-  props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
-)
-
-const displaySanityTaskType = computed(() => {
-  if (!displayPlanConfig.value) return '未读取到计划表配置'
-  return SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
-})
-
-const displayCurrentTask = computed(() => {
-  if (!displayPlanConfig.value) return '未读取到计划表配置'
-  return getSanityTaskDisplayValue(displayPlanConfig.value)
-})
-
-const displayRewardsSet = computed(() => {
-  if (!displayPlanConfig.value) return '未读取到计划表配置'
-  return REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
+  if (normalizedSanityTaskType.value === 'Essence') return false
+  return Boolean(
+    currentTaskOption.value &&
+    'rewards' in currentTaskOption.value &&
+    currentTaskOption.value.rewards
+  )
 })
 
 const taskOptionLabel = computed(() =>
-  formData.Task.SanityTaskType === 'Essence'
+  normalizedSanityTaskType.value === 'Essence'
     ? '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
-  formData.Task.SanityTaskType === 'Essence'
+  normalizedSanityTaskType.value === 'Essence'
     ? '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
 
 const emitSave = (key: string, value: any) => {
+  if (controlsDisabled.value) return
   emit('save', key, value)
 }
 
+const taskSwitchKey = (taskName: MaaEndTaskSwitch) => `If${taskName}` as const
+
+const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
+  Boolean(formData.Task[taskSwitchKey(taskName)])
+
+const showSanityDetail = computed(
+  () => props.ifQuickConfig && activeGroupHasSanity.value && isTaskEnabled('Sanity')
+)
+const showRewardGroupSelect = computed(
+  () => showSanityDetail.value && (props.isPlanMode || rewardGroupEnabled.value)
+)
+
+const handleGoToPlans = () => {
+  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
+}
+
+const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
+  emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
+}
+
+const enabledGroupTaskCount = (group: (typeof visibleTaskGroups.value)[number]) =>
+  group.tasks.filter(task => isTaskEnabled(task.name)).length
+
+const isGroupEnabled = (group: (typeof visibleTaskGroups.value)[number]) =>
+  enabledGroupTaskCount(group) === group.tasks.length
+
+const handleGroupSwitchChange = (
+  group: (typeof visibleTaskGroups.value)[number],
+  checked: boolean | string | number
+) => {
+  if (controlsDisabled.value) return
+  const enabled = Boolean(checked)
+  const changes = group.tasks.map(task => {
+    const key = taskSwitchKey(task.name)
+    formData.Task[key] = enabled
+    return { key: `Task.${key}`, value: enabled }
+  })
+  emitSaveBatch(changes)
+}
+
 const emitSaveBatch = (changes: FieldChange[]) => {
-  if (!changes.length) return
+  if (controlsDisabled.value || !changes.length) return
   emit('saveBatch', changes)
 }
 
-const handleGoToPlans = () => {
-  const planId =
-    props.isPlanMode && formData.Info.SanityMode && formData.Info.SanityMode !== 'Fixed'
-      ? formData.Info.SanityMode
-      : undefined
-
-  navigateTo('/plans', {
-    query: {
-      from: 'sanity-task-config',
-      ...(planId ? { planId } : {}),
-    },
-  })
-}
-
-const ensureCurrentTaskValue = () => {
+const ensureCurrentTaskValue = (): FieldChange | null => {
+  if (optionControlsDisabled.value) return null
   const options = currentTaskOptions.value
-  if (!options.some(option => option.value === currentTaskValue.value)) {
-    currentTaskValue.value = options[0].value
-  }
+  if (!options.length) return null
+  if (options.some(option => option.value === currentTaskValue.value)) return null
+
+  currentTaskValue.value = options[0].value
+  return { key: currentTaskSaveKey.value, value: currentTaskValue.value }
 }
 
 const normalizeRewardGroupState = (): FieldChange | null => {
@@ -289,26 +381,18 @@ const normalizeRewardGroupState = (): FieldChange | null => {
     formData.Task.RewardsSetOption = 'RewardsSetA'
     return { key: 'Task.RewardsSetOption', value: formData.Task.RewardsSetOption }
   }
-
   return null
 }
 
 const handleSanityTaskTypeChange = (value: SanityTaskType) => {
+  if (optionControlsDisabled.value) return
   formData.Task.SanityTaskType = value
-  ensureCurrentTaskValue()
+  const taskValueChange = ensureCurrentTaskValue()
 
   const changes: FieldChange[] = [
     { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
+    taskValueChange ?? { key: currentTaskSaveKey.value, value: currentTaskValue.value },
   ]
-
-  if (value === 'Essence') {
-    changes.push({
-      key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub',
-    })
-  } else {
-    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
-  }
 
   const rewardGroupChange = normalizeRewardGroupState()
   if (rewardGroupChange) {
@@ -319,16 +403,8 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
 }
 
 const handleTaskOptionChange = () => {
-  const changes: FieldChange[] = []
-
-  if (formData.Task.SanityTaskType === 'Essence') {
-    changes.push({
-      key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation,
-    })
-  } else {
-    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
-  }
+  if (optionControlsDisabled.value) return
+  const changes: FieldChange[] = [{ key: currentTaskSaveKey.value, value: currentTaskValue.value }]
 
   const rewardGroupChange = normalizeRewardGroupState()
   if (rewardGroupChange) {
@@ -339,11 +415,44 @@ const handleTaskOptionChange = () => {
 }
 
 watch(
-  () => formData.Task.SanityTaskType,
+  [
+    () => props.loading,
+    () => props.optionsLoading,
+    () => formData.Task.SanityTaskType,
+    () => props.essenceLocationOptions,
+  ],
   () => {
-    if (props.isPlanMode) return
-    ensureCurrentTaskValue()
-    normalizeRewardGroupState()
+    if (optionControlsDisabled.value) return
+    const changes: FieldChange[] = []
+    if (formData.Task.SanityTaskType !== normalizedSanityTaskType.value) {
+      formData.Task.SanityTaskType = normalizedSanityTaskType.value
+      changes.push({ key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType })
+    }
+    const taskValueChange = ensureCurrentTaskValue()
+    if (taskValueChange) {
+      changes.push(taskValueChange)
+    }
+    const rewardGroupChange = normalizeRewardGroupState()
+    if (rewardGroupChange) {
+      changes.push(rewardGroupChange)
+    }
+    if (changes.length) {
+      emitSaveBatch(changes)
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  visibleTaskGroups,
+  groups => {
+    if (!groups.length) {
+      activeGroupKey.value = ''
+      return
+    }
+    if (!groups.some(group => group.key === activeGroupKey.value)) {
+      activeGroupKey.value = groups[0].key
+    }
   },
   { immediate: true }
 )
@@ -361,6 +470,100 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.mode-notice {
+  margin-bottom: 16px;
+}
+
+.task-switch-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.task-group-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-group-item {
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.task-group-item.active {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.task-group-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-group-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.task-group-count {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.task-group-detail {
+  min-height: 220px;
+  padding: 4px 0;
+}
+
+.task-group-detail-header {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ant-color-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.task-switch-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 20px;
+}
+
+.task-switch-row {
+  min-height: 44px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-switch-label {
+  color: var(--ant-color-text);
+  font-size: 14px;
 }
 
 .section-header h3 {
@@ -382,12 +585,25 @@ watch(
 }
 
 .plans-button {
-  font-size: 14px;
-  color: var(--ant-color-primary);
-  font-weight: 500;
+  padding-inline: 0;
+}
+
+.plan-mode-display {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-source {
+  flex-shrink: 0;
+  color: var(--ant-color-primary);
+  font-size: 12px;
 }
 
 .form-label {
@@ -410,35 +626,18 @@ watch(
   color: var(--ant-color-primary);
 }
 
-.plan-mode-display {
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  background: var(--ant-color-bg-container);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
+@media (max-width: 900px) {
+  .task-switch-layout {
+    grid-template-columns: 1fr;
+  }
 
-.plan-value {
-  font-size: 14px;
-  color: var(--ant-color-text);
-  font-weight: 500;
-  flex: 1;
-}
+  .task-group-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-.plan-source {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--ant-color-primary);
-  cursor: help;
-}
-
-.plan-tooltip {
-  max-width: 360px;
-  line-height: 1.6;
-  white-space: pre-line;
+  .task-switch-list {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

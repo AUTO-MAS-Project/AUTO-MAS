@@ -13,11 +13,18 @@ export const PLAN_CONFIG_TYPES = {
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
 } as const
 
+export interface PlanChangeOptions {
+  refresh?: boolean
+  forceCustomStages?: boolean
+}
+
+/* eslint-disable no-unused-vars */
 export type PlanChangeHandler = (
-  path: string,
-  value: any,
-  reload?: boolean
+  _path: string,
+  _value: any,
+  _reloadOrOptions?: boolean | PlanChangeOptions
 ) => Promise<boolean>
+/* eslint-enable no-unused-vars */
 
 export interface PlanTypeDescriptor {
   configType: PlanConfigType

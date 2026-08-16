@@ -1,4 +1,30 @@
 <template>
+  <teleport to="body">
+    <div v-if="showMaaEndConfigMask" class="maaend-config-mask">
+      <div class="mask-content">
+        <div class="mask-icon">
+          <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
+        </div>
+        <h2 class="mask-title">正在进行 MaaEnd 配置</h2>
+        <p class="mask-description">
+          当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。
+          <br />
+          配置完成后，点击“保存配置”结束本次会话。
+        </p>
+        <div class="mask-actions">
+          <a-button
+            v-if="maaEndWebsocketId"
+            type="primary"
+            size="large"
+            @click="handleSaveMaaEndConfig"
+          >
+            保存配置
+          </a-button>
+        </div>
+      </div>
+    </div>
+  </teleport>
+
   <div class="script-edit-header">
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
@@ -7,14 +33,26 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
+            <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
-    <a-space size="middle">
+    <a-space size="middle" wrap>
+      <a-button
+        type="primary"
+        size="large"
+        :loading="maaEndConfigLoading"
+        :disabled="pageLoading || showMaaEndConfigMask"
+        @click="handleMaaEndConfig"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
+      </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -37,7 +75,7 @@
             <p>
               MaaEnd专项还在积极测试中，如有问题请加入
               <a
-                href="https://qm.qq.com/q/1FKvD6Q8H6"
+                :href="MAS_QQ_GROUP_URL"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click="handleExternalLink"
@@ -129,6 +167,8 @@
                   v-model:value="maaEndConfig.Game.ControllerType"
                   size="large"
                   :options="controllerOptions"
+                  :loading="maaEndOptionsLoading"
+                  :disabled="maaEndOptionsLoading || isSaving"
                   @change="handleControllerTypeChange"
                 />
               </a-form-item>
@@ -159,7 +199,7 @@
                 <template #label>
                   <span class="form-label">
                     游戏路径
-                    <a-tooltip title="选择游戏本体可执行文件的路径">
+                    <a-tooltip title="选择 Endfield.exe 文件路径">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -212,7 +252,7 @@
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.WaitTime"
-                  :min="0"
+                  :min="60"
                   :max="9999"
                   size="large"
                   style="width: 100%"
@@ -222,7 +262,7 @@
             </a-col>
           </a-row>
 
-          <a-row v-else :gutter="24">
+          <a-row v-else-if="isAdbController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
@@ -301,7 +341,27 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    账号切换方式
+                    <a-tooltip
+                      title="选择由 MAS 切换游戏内已保存账号，或由 MAAEND 内置任务按账号末四位切换"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  :options="accountSwitchMethodOptions"
+                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -323,7 +383,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -343,7 +403,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -371,7 +431,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -379,22 +439,32 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { handleExternalLink } from '@/utils/openExternal'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
+  SettingOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const maaEndOptionsLoading = ref(false)
+const maaEndConfigLoading = ref(false)
+const showMaaEndConfigMask = ref(false)
+const maaEndSubscriptionId = ref<string | null>(null)
+const maaEndWebsocketId = ref<string | null>(null)
+let maaEndConfigTimeout: number | null = null
 
 const formData = reactive({
   name: '',
@@ -416,9 +486,10 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
+    AccountSwitchMethod: 'MAS',
   },
   Game: {
-    ControllerType: 'Win32-Window',
+    ControllerType: '',
     Path: '',
     Arguments: '',
     WaitTime: 60,
@@ -433,16 +504,17 @@ const rules = {
   path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
 }
 
-const controllerOptions = [
-  { label: '电脑端-通用', value: 'Win32-Window' },
-  { label: '电脑端-后台', value: 'Win32-Window-Background' },
-  { label: '电脑端-前台', value: 'Win32-Front' },
-  { label: '安卓端', value: 'ADB' },
-]
+const controllerOptions = ref<ComboBoxItem[]>([])
+const controllerProtocols = ref<Record<string, string>>({})
 
 const booleanOptions = [
   { label: '是', value: true },
   { label: '否', value: false },
+]
+
+const accountSwitchMethodOptions = [
+  { label: 'MAS 自建账号切换', value: 'MAS' },
+  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
 ]
 
 const emulatorLoading = ref(false)
@@ -450,7 +522,11 @@ const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
-const isWinController = computed(() => maaEndConfig.Game.ControllerType !== 'ADB')
+const controllerProtocol = computed(
+  () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
+)
+const isWinController = computed(() => controllerProtocol.value === 'Win32')
+const isAdbController = computed(() => controllerProtocol.value === 'Adb')
 const showManualEmulatorIndexInput = computed(
   () =>
     emulatorDeviceOptions.value.length === 0 &&
@@ -474,10 +550,16 @@ const handleChange = async (category: string, key: string, value: unknown) => {
   }
 }
 
+const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
+  Object.assign(maaEndConfig.Info, config.Info ?? {})
+  Object.assign(maaEndConfig.Run, config.Run ?? {})
+  Object.assign(maaEndConfig.Game, config.Game ?? {})
+}
+
 const refreshScript = async () => {
   const scriptDetail = await getScript(scriptId)
   if (!scriptDetail) return
-  Object.assign(maaEndConfig, scriptDetail.config as MaaEndScriptConfig)
+  applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
   formData.name = scriptDetail.name
 }
 
@@ -509,6 +591,19 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   }
 }
 
+const loadMaaEndOptions = async () => {
+  maaEndOptionsLoading.value = true
+  try {
+    const response = await getMaaEndOptions(scriptId)
+    if (response?.code !== 200) return
+
+    controllerOptions.value = response.controllers
+    controllerProtocols.value = response.controllerTypes
+  } finally {
+    maaEndOptionsLoading.value = false
+  }
+}
+
 const loadScript = async () => {
   pageLoading.value = true
   try {
@@ -516,7 +611,7 @@ const loadScript = async () => {
     if (routeState?.scriptData) {
       const config = routeState.scriptData.config as MaaEndScriptConfig
       formData.name = config.Info?.Name || '新建 MaaEnd 脚本'
-      Object.assign(maaEndConfig, config)
+      applyMaaEndConfig(config)
     }
 
     const scriptDetail = await getScript(scriptId)
@@ -528,7 +623,7 @@ const loadScript = async () => {
 
     formData.type = scriptDetail.type
     formData.name = scriptDetail.name
-    Object.assign(maaEndConfig, scriptDetail.config as MaaEndScriptConfig)
+    applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
 
     if (maaEndConfig.Game.EmulatorId) {
       await loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
@@ -539,15 +634,20 @@ const loadScript = async () => {
 }
 
 const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['ControllerType']) => {
+  if (!value) return
+
+  const protocol = controllerProtocols.value[value]
+  if (!protocol) return
+
   isSaving.value = true
   try {
     const gamePayload =
-      value === 'ADB'
+      protocol === 'Adb'
         ? {
             ControllerType: value,
             Path: '',
             Arguments: '',
-            WaitTime: 90,
+            WaitTime: 60,
           }
         : {
             ControllerType: value,
@@ -555,7 +655,7 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
             EmulatorIndex: '',
           }
 
-    if (value !== 'ADB') {
+    if (protocol !== 'Adb') {
       emulatorDeviceOptions.value = []
       maaEndConfig.Game.EmulatorId = ''
       maaEndConfig.Game.EmulatorIndex = ''
@@ -572,7 +672,7 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     isSaving.value = false
   }
 
-  if (value === 'ADB') {
+  if (protocol === 'Adb') {
     await loadEmulatorOptions()
   }
 }
@@ -606,29 +706,122 @@ const selectMaaEndPath = async () => {
   if (!path) return
   maaEndConfig.Info.Path = path
   await handleChange('Info', 'Path', path)
+  await loadMaaEndOptions()
 }
 
 const selectGamePath = async () => {
   const paths = await window.electronAPI?.selectFile([
     {
-      name: 'Executable',
+      name: 'Endfield.exe',
       extensions: ['exe'],
     },
   ])
   const path = paths?.[0]
   if (!path) return
+  const fileName = path.split(/[\\/]/).pop()
+  if (fileName?.toLowerCase() !== 'endfield.exe') {
+    message.error('请选择 Endfield.exe')
+    return
+  }
   maaEndConfig.Game.Path = path
   await handleChange('Game', 'Path', path)
 }
 
+const cleanupConfigSession = () => {
+  if (maaEndSubscriptionId.value) {
+    unsubscribe(maaEndSubscriptionId.value)
+    maaEndSubscriptionId.value = null
+  }
+  maaEndWebsocketId.value = null
+  showMaaEndConfigMask.value = false
+  if (maaEndConfigTimeout) {
+    window.clearTimeout(maaEndConfigTimeout)
+    maaEndConfigTimeout = null
+  }
+}
+
+const handleMaaEndConfig = async () => {
+  try {
+    maaEndConfigLoading.value = true
+    cleanupConfigSession()
+
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: scriptId,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+
+    if (!response?.taskId) {
+      throw new Error(response?.message || '启动 MaaEnd 配置失败')
+    }
+
+    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+      if (wsMessage.type === 'error') {
+        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+        cleanupConfigSession()
+        return
+      }
+
+      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
+        return
+      }
+
+      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        cleanupConfigSession()
+      }
+    })
+
+    maaEndSubscriptionId.value = subscriptionId
+    maaEndWebsocketId.value = response.taskId
+    showMaaEndConfigMask.value = true
+    message.success('已启动脚本级 MaaEnd 配置')
+
+    maaEndConfigTimeout = window.setTimeout(
+      () => {
+        cleanupConfigSession()
+        message.info('MaaEnd 配置会话已超时断开')
+      },
+      30 * 60 * 1000
+    )
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动 MaaEnd 配置失败')
+  } finally {
+    maaEndConfigLoading.value = false
+  }
+}
+
+const handleSaveMaaEndConfig = async () => {
+  try {
+    if (!maaEndWebsocketId.value) {
+      throw new Error('未找到活动配置会话')
+    }
+
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    if (response.code !== 200) {
+      throw new Error(response.message || '保存配置失败')
+    }
+
+    cleanupConfigSession()
+    message.success('MaaEnd 配置已保存')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存配置失败')
+  }
+}
+
 const handleCancel = () => {
+  cleanupConfigSession()
   router.push('/scripts')
 }
 
 onMounted(async () => {
   await loadScript()
+  await loadMaaEndOptions()
   await loadEmulatorOptions()
   isInitializing.value = false
+})
+
+onBeforeUnmount(() => {
+  cleanupConfigSession()
 })
 </script>
 
@@ -703,21 +896,15 @@ onMounted(async () => {
   background: var(--ant-color-primary-bg);
 }
 
-.notice-alert {
+.maaend-tip {
   margin-bottom: 24px;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
-.notice-content p {
-  margin: 0;
-}
-
-.notice-content p + p {
-  margin-top: 6px;
-}
-
-.notice-content a {
-  font-weight: 600;
+.maaend-tip :deep(.ant-alert-description) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .form-section {
@@ -790,6 +977,48 @@ onMounted(async () => {
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 24px;
+}
+
+.maaend-config-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.mask-content {
+  background: var(--ant-color-bg-elevated);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  border: 1px solid var(--ant-color-border);
+}
+
+.mask-icon {
+  margin-bottom: 16px;
+}
+
+.mask-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.mask-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
 }
 
 @media (max-width: 768px) {

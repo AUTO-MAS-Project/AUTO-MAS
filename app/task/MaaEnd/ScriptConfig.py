@@ -23,6 +23,7 @@ import json
 import shutil
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -31,8 +32,50 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from app.utils.io import read_file, write_file
 
 logger = get_logger("MaaEnd 脚本设置")
+
+
+def normalize_maaend_config(
+    maaend_set: dict[str, Any],
+    controller_type: str,
+    fallback_set: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """将 MaaEnd 配置收束为 AUTO-MAS 单实例配置"""
+
+    def select_instance(source_set: dict[str, Any]) -> dict[str, Any] | None:
+        instances = source_set.get("instances")
+        if not isinstance(instances, list) or len(instances) == 0:
+            return None
+
+        last_active_instance_id = source_set.get("lastActiveInstanceId")
+        for instance in instances:
+            if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
+                return instance
+            if isinstance(instance, dict) and instance.get("id") == last_active_instance_id:
+                return instance
+
+        for instance in instances:
+            if isinstance(instance, dict):
+                return instance
+        return None
+
+    selected_instance = select_instance(maaend_set)
+    if selected_instance is None and fallback_set is not None:
+        selected_instance = select_instance(fallback_set)
+    if selected_instance is None:
+        raise ValueError("MaaEnd 配置文件中未找到可用实例")
+
+    selected_instance["id"] = "automas"
+    selected_instance["name"] = "AUTO-MAS"
+    selected_instance.pop("customName", None)
+    selected_instance["controllerName"] = controller_type
+    selected_instance.setdefault("tasks", [])
+
+    maaend_set["instances"] = [selected_instance]
+    maaend_set["lastActiveInstanceId"] = "automas"
+    return maaend_set
 
 
 class ScriptConfigTask(TaskExecuteBase):
@@ -53,7 +96,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.script_config = script_config
-        self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
 
     async def prepare(self):
@@ -87,52 +129,37 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        if self.config_file_path.exists():
+        if (self.config_file_path / "mxu-MaaEnd.json").exists():
+            shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+            shutil.copytree(self.config_file_path, self.maaend_set_path)
+        elif self.maaend_set_path.exists():
             shutil.copytree(
-                self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
+                self.maaend_set_path,
+                self.config_file_path,
+                dirs_exist_ok=True,
             )
 
-        # 初始化任务实例
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-        )
-        maaend_instances = maaend_set["instances"]
-
-        # 创建任务项单例
-        selected_instance = None
-        for instance in maaend_instances:
-            if instance["id"] == "automas":
-                selected_instance = instance
-                break
-        else:
-            for instance in maaend_instances:
-                if instance["id"] == maaend_set["lastActiveInstanceId"]:
-                    selected_instance = instance
-                    break
-        if selected_instance is None:
-            selected_instance = (
-                maaend_instances[0]
-                if len(maaend_instances) > 0
-                else {"id": "automas", "name": "AUTO-MAS", "tasks": []}
+        maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
+        if not maaend_set_path.exists():
+            raise FileNotFoundError(
+                "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
             )
 
-        if "tasks" not in selected_instance:
-            selected_instance["tasks"] = []
-        selected_instance["id"] = "automas"
-        selected_instance["name"] = "AUTO-MAS"
-        maaend_set["instances"] = [selected_instance]
-        maaend_set["lastActiveInstanceId"] = "automas"
-
-        # 移除冗余任务项信息
-        maaend_set["recentlyClosed"] = []
-
-        # 不直接运行任务
-        maaend_set["settings"]["autoStartInstanceId"] = "automas"
-        maaend_set["settings"]["autoRunOnLaunch"] = False
-
-        (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
+        maaend_set = read_file(maaend_set_path)
+        maaend_template_path = (
+            Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
         )
+        template_config = (
+            read_file(maaend_template_path)
+            if maaend_template_path.exists()
+            else None
+        )
+        maaend_set = normalize_maaend_config(
+            maaend_set,
+            self.script_config.get("Game", "ControllerType"),
+        )
+
+        write_file(maaend_set_path, maaend_set)
         logger.success(
             f"MaaEnd 运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}"
         )
@@ -145,10 +172,16 @@ class ScriptConfigTask(TaskExecuteBase):
         shutil.rmtree(self.config_file_path, ignore_errors=True)
         self.config_file_path.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
+        config_path = self.config_file_path / "mxu-MaaEnd.json"
+        maaend_set = read_file(config_path)
+        maaend_set = normalize_maaend_config(
+            maaend_set, self.script_config.get("Game", "ControllerType")
+        )
+        write_file(config_path, maaend_set)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"脚本设置任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

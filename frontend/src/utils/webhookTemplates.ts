@@ -90,6 +90,17 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     },
   },
   {
+    name: 'OneBot 私聊',
+    description: '通过 OneBot HTTP API 发送 QQ 私聊消息',
+    template:
+      '{"user_id": "YOUR_QQ_NUMBER", "message": [{"type": "text", "data": {"text": "{title}\\n{content}"}}]}',
+    method: 'POST',
+    example: 'http://服务器IP:端口/send_private_msg?access_token=YOUR_ACCESS_TOKEN',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  },
+  {
     name: '自定义JSON',
     description: '自定义JSON格式推送',
     template: '{"message": "{title}: {content}", "timestamp": "{datetime}"}',
