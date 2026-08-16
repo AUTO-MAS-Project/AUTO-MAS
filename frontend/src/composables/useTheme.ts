@@ -158,7 +158,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--app-menu-item-selected-bg-hex', addAlpha(primaryColor, selectedAlpha))
 }
 
-// ===== 新增缺失基础函数（从旧版本恢复） =====
+// ===== 颜色辅助函数 =====
 const addAlpha = (hex: string, alpha: number) => {
   const a = alpha > 1 ? alpha / 100 : alpha
   const clamped = Math.min(1, Math.max(0, a))

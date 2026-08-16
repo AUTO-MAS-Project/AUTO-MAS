@@ -32,6 +32,10 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.services import Notify
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
+from app.tools.game_sign_notify import (
+    append_task_game_sign_summary,
+    mark_task_game_sign_summary_consumed,
+)
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -194,7 +198,7 @@ class GeneralManager(TaskExecuteBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"未通过配置检查: {self.check_result}")
+            logger.warning(f"未通过配置检查: {self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -242,6 +246,7 @@ class GeneralManager(TaskExecuteBase):
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
+            await Config.ScriptConfig.save()
 
             error_user = [
                 u.name for u in self.script_info.user_list if u.status == "异常"
@@ -254,6 +259,10 @@ class GeneralManager(TaskExecuteBase):
             ]
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+            task_result = append_task_game_sign_summary(
+                self.task_info, self.script_info.result
+            )
+            has_game_sign_summary = task_result != self.script_info.result
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -261,7 +270,8 @@ class GeneralManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": len(over_user),
                 "uncompleted_count": len(error_user) + len(wait_user),
-                "result": self.script_info.result,
+                "result": task_result,
+                "game_sign_summary": has_game_sign_summary,
             }
 
             await Notify.push_plyer(
@@ -272,8 +282,10 @@ class GeneralManager(TaskExecuteBase):
             )
             try:
                 await push_notification("代理结果", title, result, None)
+                if has_game_sign_summary:
+                    mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
-                logger.exception(f"推送代理结果时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -302,7 +314,7 @@ class GeneralManager(TaskExecuteBase):
     async def on_crash(self, e: Exception):
 
         self.script_info.status = "异常"
-        logger.exception(f"通用脚本任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"通用脚本任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

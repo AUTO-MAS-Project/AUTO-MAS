@@ -30,8 +30,12 @@ from pathlib import Path
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
+if __name__ == "__main__":
+    os.chdir(current_dir)
 
 from app.utils import get_logger, sanitize_log_message
+from app.core import Config
+from app.services.telemetry import init_sentry, is_telemetry_enabled
 
 logger = get_logger("主程序")
 
@@ -63,9 +67,31 @@ def is_admin() -> bool:
         return False
 
 
+def is_development_environment() -> bool:
+    """识别显式开发模式或仓库内的标准 .venv。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+
+    return (current_dir / ".git").exists() and Path(sys.prefix).resolve() == (
+        current_dir / ".venv"
+    ).resolve()
+
+
 @logger.catch
 def main():
-    if is_admin():
+    development_environment = is_development_environment()
+    if development_environment:
+        os.environ["AUTO_MAS_DEV"] = "1"
+
+    init_sentry(
+        release=Config.VERSION,
+        development=development_environment,
+        enabled=is_telemetry_enabled(current_dir / "config" / "Config.json"),
+    )
+
+    if is_admin() or development_environment:
         import asyncio
         import uvicorn
         from fastapi import FastAPI
@@ -128,6 +154,7 @@ def main():
             update_router,
             ocr_router,
             ws_debug_router,
+            qr_login_router,
         )
 
         app = FastAPI(
@@ -158,6 +185,10 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(ws_debug_router)
+
+        # 可选补丁：米游社扫码登录
+        if qr_login_router is not None:
+            app.include_router(qr_login_router)
 
         app.mount(
             "/api/res/materials",

@@ -1,7 +1,7 @@
 <template>
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
-    <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
+    <draggable v-model="localScripts" item-key="id" :animation="200" :disabled="props.searching" ghost-class="script-ghost"
       chosen-class="script-chosen" drag-class="script-drag" handle=".script-drag-handle" class="draggable-scripts"
       @end="onScriptDragEnd">
       <template #item="{ element: script }">
@@ -20,6 +20,8 @@
                     class="script-logo" />
                   <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
                   <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
+                  <img v-else-if="script.type === 'OkNte'" src="@/assets/ok-nte.ico" alt="ok-nte" class="script-logo" />
+                  <img v-else-if="script.type === 'HSR'" src="@/assets/hsr.png" alt="HSR" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -34,7 +36,11 @@
                           ? 'cyan'
                           : script.type === 'Okww'
                             ? 'blue'
-                            : 'green'
+                            : script.type === 'OkNte'
+                              ? 'blue'
+                              : script.type === 'HSR'
+                                ? 'purple'
+                                : 'green'
                     " class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
@@ -83,6 +89,30 @@
                   </template>
                   正在配置
                 </a-button>
+                <a-button
+                  v-if="script.type === 'Okww' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  @click="handleStartOkwwConfig(script)"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置ok-ww
+                </a-button>
+                <a-button
+                  v-if="script.type === 'Okww' && props.activeConnections.has(script.id)"
+                  type="default"
+                  size="middle"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
@@ -95,22 +125,58 @@
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm title="确定要删除这个脚本吗？" description="删除后将无法恢复，请谨慎操作" ok-text="确定" cancel-text="取消"
-                  @confirm="handleDelete(script)">
-                  <a-button danger size="middle" class="action-button delete-button">
+                <a-dropdown :trigger="['click']">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :loading="props.copyingScriptId === script.id"
+                    :disabled="Boolean(props.copyingScriptId)"
+                  >
                     <template #icon>
-                      <DeleteOutlined />
+                      <EllipsisOutlined />
                     </template>
-                    删除脚本
+                    更多
                   </a-button>
-                </a-popconfirm>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item key="copy" @click="handleCopy(script)">
+                        <CopyOutlined />
+                        复制脚本
+                      </a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
+                        <DeleteOutlined />
+                        删除脚本
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+                <a-tooltip :title="props.searching ? '搜索时自动展开用户' : isUsersCollapsed(script.id) ? '展开用户' : '收起用户'">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :disabled="props.searching"
+                    :aria-label="isUsersCollapsed(script.id) ? '展开用户' : '收起用户'"
+                    @click="toggleUsersCollapsed(script.id)"
+                  >
+                    <template #icon>
+                      <DownOutlined v-if="isUsersCollapsed(script.id)" />
+                      <UpOutlined v-else />
+                    </template>
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
 
             <!-- 用户列表 -->
-            <div v-if="script.users && script.users.length > 0" class="users-section">
+            <div
+              v-if="
+                !isUsersCollapsed(script.id) && script.users && script.users.length > 0
+              "
+              class="users-section"
+            >
               <!-- 使用vuedraggable包装用户列表 -->
-              <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
+              <draggable v-model="script.users" item-key="id" :animation="200" :disabled="props.searching" ghost-class="user-ghost"
                 chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
                 @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
@@ -122,7 +188,7 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
+                          <!-- MAA、SRC、MaaEnd 和 HSR 脚本显示服务器标签 -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -140,7 +206,7 @@
                             {{ user.Info.Resource || '官服' }}
                           </a-tag>
 
-                          <!-- 账号标签 -->
+                          <!-- 账号标签 (HSR 不显示账号/密码) -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -152,7 +218,7 @@
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
-                          <!-- 密码标签 -->
+                          <!-- 密码标签 (HSR 不显示账号/密码) -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -178,16 +244,16 @@
                             {{ tag.text }}
                           </a-tag>
                         </div>
-                        <!-- 用户详细信息 - 通用脚本用户 -->
-                        <div v-if="script.type === 'General'" class="user-info-tags">
+                        <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
+                        <div
+                          v-if="
+                            script.type === 'General' ||
+                            script.type === 'Okww' ||
+                            script.type === 'OkNte'
+                          "
+                          class="user-info-tags"
+                        >
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text" class="info-tag" :color="tag.color">
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - ok-ww 脚本用户 -->
-                        <div v-if="script.type === 'Okww'" class="user-info-tags">
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
@@ -201,9 +267,21 @@
                             {{ truncateText(user.Info.Notes, 10) }}
                           </a-tag>
 
+                          <a-tag v-for="(tag, index) in getM9AOnceStatusTags(script, user)" :key="`m9a-once-${index}`"
+                                 :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+
                           <!-- 后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                                  :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - HSR脚本用户 -->
+                        <div v-if="script.type === 'HSR'" class="user-info-tags">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -271,7 +349,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else class="empty-users">
+            <div v-else-if="!isUsersCollapsed(script.id)" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -286,9 +364,13 @@
 <script setup lang="ts">
 import type { Script, User } from '../types/script'
 import {
+  CopyOutlined,
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
+  EllipsisOutlined,
   SettingOutlined,
+  UpOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -303,14 +385,18 @@ import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/d
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
+  searching?: boolean
 }
 
 interface Emits {
   (e: 'edit', script: Script): void
 
   (e: 'delete', script: Script): void
+
+  (e: 'copy', script: Script): void
 
   (e: 'addUser', script: Script): void
 
@@ -331,6 +417,8 @@ interface Emits {
   (e: 'startMaaEndUserConfig', script: Script, user: User): void
 
   (e: 'saveMaaEndConfig', script: Script): void
+
+  (e: 'startOkwwConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
 
@@ -364,11 +452,44 @@ const STAGE_NAME_MAP: Record<string, string> = {
   'PR-D-2': '近/特芯片组',
 }
 
+const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
+const M9A_LIMBO_NAMES = ['自动深眠']
+const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
+
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
+// 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
+const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
+
+const loadCollapsedScriptIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SCRIPTS_STORAGE_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const collapsedScriptIds = ref<Set<string>>(loadCollapsedScriptIds())
+
+const saveCollapsedScriptIds = () => {
+  try {
+    localStorage.setItem(
+      COLLAPSED_SCRIPTS_STORAGE_KEY,
+      JSON.stringify([...collapsedScriptIds.value])
+    )
+  } catch {
+    // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
+  }
+}
+
+const isUsersCollapsed = (scriptId: string) =>
+  !props.searching && collapsedScriptIds.value.has(scriptId)
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
@@ -390,6 +511,44 @@ const handleEdit = (script: Script) => {
 const handleDelete = (script: Script) => {
   emit('delete', script)
 }
+
+const handleCopy = (script: Script) => {
+  emit('copy', script)
+}
+
+const handleDeleteConfirm = (script: Script) => {
+  Modal.confirm({
+    title: '确定要删除这个脚本吗？',
+    content: '删除后将无法恢复，请谨慎操作',
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleDelete(script),
+  })
+}
+
+const toggleUsersCollapsed = (scriptId: string) => {
+  const next = new Set(collapsedScriptIds.value)
+  if (next.has(scriptId)) {
+    next.delete(scriptId)
+  } else {
+    next.add(scriptId)
+  }
+  collapsedScriptIds.value = next
+  saveCollapsedScriptIds()
+}
+
+const collapseAllUsers = () => {
+  collapsedScriptIds.value = new Set(localScripts.value.map(script => script.id))
+  saveCollapsedScriptIds()
+}
+
+const expandAllUsers = () => {
+  collapsedScriptIds.value = new Set()
+  saveCollapsedScriptIds()
+}
+
+defineExpose({ collapseAllUsers, expandAllUsers })
 
 const handleAddUser = (script: Script) => {
   emit('addUser', script)
@@ -440,12 +599,17 @@ const handleSaveMaaEndConfig = (script: Script) => {
   emit('saveMaaEndConfig', script)
 }
 
+const handleStartOkwwConfig = (script: Script) => {
+  emit('startOkwwConfig', script)
+}
+
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
 const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
+  if (type === 'OkNte') return 'ok-nte'
   return type
 }
 
@@ -650,6 +814,67 @@ const getServerDisplayName = (server: string): string => {
 // M9A服务器标签颜色映射
 const getM9AServerTagColor = (_resource: string): string => {
   return 'blue'
+}
+
+const getM9ATodayString = (): string => {
+  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+const getM9ACurrentMonthString = (): string => {
+  return getM9ATodayString().slice(0, 7)
+}
+
+const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
+  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
+  if (typeof queue !== 'string') return []
+
+  try {
+    const parsed = JSON.parse(queue)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
+  return queue.some(item => item.name && names.includes(item.name))
+}
+
+const getM9AOnceStatusTags = (script: Script, user: User) => {
+  const runConfig = (script.config as any)?.Run || {}
+  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
+  const data = (user as any).Data || {}
+  const tags: Array<{ text: string; color: string }> = []
+
+  if (data.IfPassCheck === false) {
+    return tags
+  }
+
+  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
+    const completed = data.LastPsychubeDate === getM9ATodayString()
+    tags.push({
+      text: `每日心相：${completed ? '已完成' : '未完成'}`,
+      color: completed ? 'green' : 'orange',
+    })
+  }
+
+  if (runConfig.IfSleepDreamMonthlyOnce) {
+    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
+    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
+    if (hasLimbo || hasLucidscape) {
+      const currentMonth = getM9ACurrentMonthString()
+      const completed =
+        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
+        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
+
+      tags.push({
+        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
+        color: completed ? 'green' : 'orange',
+      })
+    }
+  }
+
+  return tags
 }
 
 // M9A剩余天数颜色（智能着色）
@@ -1248,10 +1473,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   background: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-hover);
   color: var(--ant-color-primary-hover);
-}
-
-.delete-button:hover {
-  background: linear-gradient(135deg, var(--ant-color-error), var(--ant-color-error-hover));
 }
 
 /* 用户区域 */

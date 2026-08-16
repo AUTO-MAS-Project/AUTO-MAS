@@ -1,22 +1,24 @@
+export const MAS_QQ_GROUP_URL = 'https://qm.qq.com/q/bd9fISNoME'
+
 /**
  * 在系统默认浏览器中打开URL
  * @param url 要打开的URL
  * @returns Promise<boolean> 是否成功打开
  */
 export async function openExternalUrl(url: string): Promise<boolean> {
-    try {
-        if (window.electronAPI && window.electronAPI.openUrl) {
-            const result = await window.electronAPI.openUrl(url)
-            return result.success
-        } else {
-            // 如果不在Electron环境中，使用普通的window.open
-            window.open(url, '_blank')
-            return true
-        }
-    } catch (error) {
-        console.error('打开链接失败:', error)
-        return false
+  try {
+    if (window.electronAPI && window.electronAPI.openUrl) {
+      const result = await window.electronAPI.openUrl(url)
+      return result.success
+    } else {
+      // 如果不在Electron环境中，使用普通的window.open
+      window.open(url, '_blank')
+      return true
     }
+  } catch (error) {
+    window.electronAPI?.getLogger('外部链接').error(`打开链接失败: ${String(error)}`)
+    return false
+  }
 }
 
 /**
@@ -24,9 +26,9 @@ export async function openExternalUrl(url: string): Promise<boolean> {
  * @param event 点击事件
  */
 export function handleExternalLink(event: MouseEvent) {
-    event.preventDefault()
-    const target = event.currentTarget as HTMLAnchorElement
-    if (target && target.href) {
-        openExternalUrl(target.href)
-    }
+  event.preventDefault()
+  const target = event.currentTarget as HTMLAnchorElement
+  if (target && target.href) {
+    openExternalUrl(target.href)
+  }
 }

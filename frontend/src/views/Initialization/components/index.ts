@@ -1,4 +1,3 @@
-export { default as InitializationMain } from './InitializationMain.vue'
 export { default as MirrorConfigStep } from './MirrorConfigStep.vue'
 export { default as EnvironmentStep } from './EnvironmentStep.vue'
 export { default as RepositoryStep } from './RepositoryStep.vue'

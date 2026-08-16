@@ -19,5 +19,13 @@ export type M9AConfig_Run = {
      * 是否在队列结束后自动更新M9A
      */
     IfAutoUpdateAfterQueue?: (boolean | null);
+    /**
+     * 每日心相每日只执行一次
+     */
+    IfPsychubeDailyOnce?: (boolean | null);
+    /**
+     * 深眠浅梦每月只执行一次
+     */
+    IfSleepDreamMonthlyOnce?: (boolean | null);
 };
 

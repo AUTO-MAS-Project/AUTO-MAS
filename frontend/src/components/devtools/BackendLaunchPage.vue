@@ -196,7 +196,7 @@ import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSoc
 const logger = window.electronAPI.getLogger('后端调试面板')
 
 // 临时的类型断言，确保能访问到完整的electronAPI
-const electronAPI = (window as any).electronAPI
+const electronAPI = window.electronAPI
 
 // WebSocket相关
 const {
@@ -286,7 +286,7 @@ const handleManualReconnect = async () => {
     } else {
       addLog('❌ WebSocket重连失败', 'error')
     }
-  } catch (error) {
+  } catch {
     addLog('❌ WebSocket重连异常', 'error')
   } finally {
     isWsReconnecting.value = false
@@ -549,7 +549,7 @@ const refreshStatus = async () => {
           backendPid.value = null
           addLog(`⚠️ 无法获取后端进程PID，但WebSocket已连接`, 'info')
         }
-      } catch (e) {
+      } catch {
         // 获取PID失败不影响状态判断
         backendPid.value = null
         addLog(`⚠️ 获取进程信息失败，但WebSocket已连接`, 'info')
