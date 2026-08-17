@@ -33,7 +33,7 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
     """执行脚本任务并等待结束"""
 
     if not script_path.exists():
-        logger.error(f"{task_name}脚本不存在")
+        logger.warning(f"{task_name}脚本不存在")
         return False
 
     try:
@@ -64,11 +64,11 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
             logger.success(f"{task_name}执行成功, 输出:\n{result.stdout}")
             return True
         else:
-            logger.error(f"{task_name}执行失败({result.returncode}):")
-            logger.error(f"  - 标准输出:{result.stdout}")
-            logger.error(f"  - 错误输出:{result.stderr}")
+            logger.warning(f"{task_name}执行失败({result.returncode}):")
+            logger.warning(f"  - 标准输出:{result.stdout}")
+            logger.warning(f"  - 错误输出:{result.stderr}")
             return False
 
     except Exception as e:
-        logger.exception(f"执行{task_name}时出现异常: {e}")
+        logger.opt(exception=True).warning(f"执行{task_name}时出现异常: {e}")
         return False

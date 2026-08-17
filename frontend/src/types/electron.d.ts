@@ -29,6 +29,10 @@ export interface ElectronAPI {
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
 
+  // 窗口可见性/后台状态
+  getWindowActivity?: () => Promise<'visible' | 'background'>
+  onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
+
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
   killAllProcesses: () => Promise<{ success: boolean; error?: string }>
@@ -97,6 +101,12 @@ export interface ElectronAPI {
 
   // 日志文件操作
   exportLogs: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportMaaEndIssueReport: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string

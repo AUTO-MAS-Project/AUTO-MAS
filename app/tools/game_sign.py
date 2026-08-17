@@ -83,29 +83,31 @@ def _all_enabled_platforms_signed(
     return True
 
 
-async def _check_system_time() -> bool:
-    """校准系统时间，避免因时间偏差导致签到失败
+async def _check_system_time() -> None:
+    """检查系统时间偏差并提示用户，不阻断签到流程。
 
-    Returns:
-        True: 时间正常; False: 偏差过大
+    时间源不可信或不可用时（服务退役、被劫持的网络等）仅记录日志；
+    真正对时间敏感的只有米游社 DS 签名，其容差远大于此处阈值，
+    因此偏差过大时也只告警，由具体平台的签到结果反映实际影响。
     """
     try:
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             resp = await client.get(
-                "http://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
+                "https://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
             )
         api_time = resp.json().get("unixtime", 0)
+        if not api_time:
+            return
         local_time = time.time()
         offset = abs(api_time - local_time)
         if offset > 300:
-            logger.warning(f"系统时间偏差 {offset:.0f} 秒，签到可能失败，请校准系统时间")
-            return False
-        if offset > 30:
+            logger.warning(
+                f"系统时间与网络时间偏差约 {offset:.0f} 秒，部分平台签到可能失败，建议校准系统时间"
+            )
+        elif offset > 30:
             logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
-        return True
     except Exception as e:
         logger.debug(f"时间校准跳过: {e}")
-        return True
 
 
 def _empty_platform_result(
@@ -151,10 +153,8 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
     results = []
     today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
-    # 时间校准：偏差过大时跳过本轮签到，避免因时间错误导致 API 失败
-    if not await _check_system_time():
-        logger.warning("系统时间偏差过大，跳过本轮游戏社区签到")
-        return results
+    # 时间检查仅告警，不阻断签到（时间源可能不可用或不可信）
+    await _check_system_time()
 
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
@@ -182,7 +182,18 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
             try:
                 from .skland import skland_sign_in
 
-                skland_results = await skland_sign_in(skland_token, app_code="all")
+                async def save_skland_credential(updated_token: str) -> None:
+                    await account.set(
+                        "GameSignAccount",
+                        "SklandToken",
+                        updated_token,
+                    )
+
+                skland_results = await skland_sign_in(
+                    skland_token,
+                    app_code="all",
+                    on_credential_update=save_skland_credential,
+                )
                 if not any(
                     game_key in skland_results
                     for game_key in ("arknights", "endfield")
@@ -326,6 +337,83 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                     "reason": str(e),
                 })
 
+        # 塔吉多社区签到和云异环时长查询
+        try:
+            taygedo_token = account.get("GameSignAccount", "TaygedoToken")
+        except (AttributeError, KeyError):
+            # 兼容尚未加载新字段的旧配置对象和外部调用方。
+            taygedo_token = ""
+        if taygedo_token:
+            platform_result_start = len(results)
+            credential: dict = {}
+            try:
+                from .taygedo import (
+                    parse_taygedo_credential,
+                    serialize_taygedo_credential,
+                    sign_taygedo,
+                )
+
+                credential = parse_taygedo_credential(taygedo_token)
+                if credential.get("refreshToken") or credential.get("accessToken"):
+                    if "塔吉多" not in enabled_platforms:
+                        enabled_platforms.append("塔吉多")
+                if credential.get("cloudToken") and credential.get("cloudUserId"):
+                    if "云异环" not in enabled_platforms:
+                        enabled_platforms.append("云异环")
+
+                taygedo_results, refreshed_credential = await sign_taygedo(
+                    taygedo_token,
+                    proxy=Config.proxy,
+                )
+                for item in taygedo_results:
+                    if not item.get("account") or item.get("account") == "未知用户":
+                        item["account"] = account_name
+                    item["account_uid"] = account_uid
+                results.extend(taygedo_results)
+
+                refreshed_token = serialize_taygedo_credential(refreshed_credential)
+                if refreshed_token and refreshed_token != str(taygedo_token).strip():
+                    await account.set("GameSignAccount", "TaygedoToken", refreshed_token)
+
+                for platform in ("塔吉多", "云异环"):
+                    if platform in enabled_platforms and not any(
+                        item.get("platform") == platform
+                        and item.get("account_uid") == account_uid
+                        for item in results[platform_result_start:]
+                    ):
+                        results.append(
+                            _empty_platform_result(
+                                account_name=account_name,
+                                account_uid=account_uid,
+                                platform=platform,
+                            )
+                        )
+            except Exception as e:
+                logger.error(f"[{account_name}] 塔吉多签到异常: {e}")
+                if not enabled_platforms:
+                    if credential.get("refreshToken") or credential.get("accessToken"):
+                        enabled_platforms.append("塔吉多")
+                    if credential.get("cloudToken") and credential.get("cloudUserId"):
+                        enabled_platforms.append("云异环")
+                for error_platform in ("塔吉多", "云异环"):
+                    if error_platform not in enabled_platforms:
+                        continue
+                    if any(
+                        item.get("platform") == error_platform
+                        and item.get("account_uid") == account_uid
+                        for item in results[platform_result_start:]
+                    ):
+                        continue
+                    results.append({
+                        "account": f"{account_name}/{error_platform}",
+                        "account_uid": account_uid,
+                        "game": "塔吉多社区" if error_platform == "塔吉多" else "云异环",
+                        "platform": error_platform,
+                        "status": "失败",
+                        "reward": "",
+                        "reason": str(e),
+                    })
+
         # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
         # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。
         all_platforms_signed = _all_enabled_platforms_signed(
@@ -336,7 +424,10 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         should_mark_signed = bool(enabled_platforms) and (not force or all_platforms_signed)
         if should_mark_signed:
             try:
-                await account.set("GameSignAccount", "LastSignDate", today)
+                # 多账号串行签到可能跨越 0 点，写入时重新取当前日期，
+                # 避免把新一天的签到记成旧日期导致次日误判。
+                sign_date = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+                await account.set("GameSignAccount", "LastSignDate", sign_date)
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
 

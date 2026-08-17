@@ -27,6 +27,7 @@ import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
+import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
@@ -190,6 +191,9 @@ interface AppConfig {
   Update: {
     IfAutoUpdate: boolean
   }
+  Function: {
+    IfEnableTelemetry: boolean
+  }
 
   [key: string]: any
 }
@@ -211,6 +215,9 @@ const defaultConfig: AppConfig = {
   Update: {
     IfAutoUpdate: false,
   },
+  Function: {
+    IfEnableTelemetry: true,
+  },
 }
 
 //加载配置
@@ -218,12 +225,22 @@ function loadConfig(): AppConfig {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    let config = { ...defaultConfig }
 
     if (fs.existsSync(configPath)) {
       const configData = fs.readFileSync(configPath, 'utf8')
-      const config = JSON.parse(configData)
-      return { ...defaultConfig, ...config }
+      config = { ...config, ...JSON.parse(configData) }
     }
+
+    const backendConfigPath = path.join(appRoot, 'config', 'Config.json')
+    if (fs.existsSync(backendConfigPath)) {
+      const backendConfig = JSON.parse(fs.readFileSync(backendConfigPath, 'utf8'))
+      const enabled = backendConfig.Function?.IfEnableTelemetry
+      if (typeof enabled === 'boolean') {
+        config.Function = { ...config.Function, IfEnableTelemetry: enabled }
+      }
+    }
+    return config
   } catch {
     logger.error('加载配置失败')
   }
@@ -389,6 +406,17 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+type WindowActivity = 'visible' | 'background'
+let lastWindowActivity: WindowActivity | null = null
+
+function notifyWindowActivity(activity: WindowActivity) {
+  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+    return
+  }
+
+  lastWindowActivity = activity
+  mainWindow.webContents.send('window-activity-changed', activity)
+}
 
 const TITLE_BAR_HEIGHT = 32
 const RECOVERY_DRAG_HANDLE_WIDTH = 64
@@ -503,6 +531,7 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  lastWindowActivity = null
 
   // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
   let restoreToMaximized = Boolean(config.UI.maximized)
@@ -513,6 +542,7 @@ function createWindow() {
     restoreToMaximized = false
   })
   win.on('restore', () => {
+    notifyWindowActivity('visible')
     if (restoreToMaximized && !win.isMaximized()) {
       win.maximize()
     }
@@ -524,6 +554,9 @@ function createWindow() {
     if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
       logger.info('页面加载完成，窗口已显示')
+    } else {
+      notifyWindowActivity('background')
+      logger.info('页面加载完成，窗口保持后台状态')
     }
   })
 
@@ -670,6 +703,7 @@ function createWindow() {
   })
 
   win.on('minimize', () => {
+    notifyWindowActivity('background')
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.hide()
@@ -680,6 +714,7 @@ function createWindow() {
   })
 
   win.on('show', () => {
+    notifyWindowActivity('visible')
     if (restoreToMaximized && !win.isMaximized() && !win.isMinimized()) {
       win.maximize()
     }
@@ -690,6 +725,7 @@ function createWindow() {
   })
 
   win.on('hide', () => {
+    notifyWindowActivity('background')
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.setSkipTaskbar(true)
@@ -906,6 +942,30 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
+ipcMain.handle('maaend:exportIssueReport', async () => {
+  try {
+    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出 MaaEnd 问题包',
+      defaultPath: `MaaEnd-logs-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+
+    return createMaaEndIssueReport(getAppRoot(), result.filePath)
+  } catch (error) {
+    logger.error('导出 MaaEnd 问题包失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
 ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: string) => {
   try {
     const appRoot = getAppRoot()
@@ -973,6 +1033,18 @@ ipcMain.handle('window-close', () => {
     isQuitting = true
     mainWindow.close()
   }
+})
+
+ipcMain.handle('get-window-activity', () => {
+  if (lastWindowActivity) {
+    return lastWindowActivity
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return 'background' as const
+  }
+
+  return mainWindow.isVisible() && !mainWindow.isMinimized() ? 'visible' : 'background'
 })
 
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
@@ -1315,6 +1387,11 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
     // 同步Update配置
     if (backendSettings.Update) {
       currentConfig.Update = { ...currentConfig.Update, ...backendSettings.Update }
+    }
+
+    // 同步遥测开关，供渲染进程在 Sentry 初始化前读取
+    if (backendSettings.Function) {
+      currentConfig.Function = { ...currentConfig.Function, ...backendSettings.Function }
     }
 
     // 保存到前端配置文件

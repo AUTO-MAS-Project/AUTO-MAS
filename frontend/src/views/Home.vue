@@ -63,7 +63,7 @@
           <HomeQuickActionsCard v-else-if="moduleKey === 'quick'" />
 
           <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
-            <SatelliteAnimation />
+            <SatelliteAnimation v-show="!performanceStore.isBackgrounded" />
           </section>
 
           <HomeProxyCard
@@ -118,12 +118,14 @@ import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
+import { usePerformanceStore } from '@/stores/performance'
 
 defineOptions({
   name: 'HomeView',
 })
 
 const { isBootstrapping } = useAppInitialization()
+const performanceStore = usePerformanceStore()
 const {
   layoutReady,
   layoutDrawerOpen,

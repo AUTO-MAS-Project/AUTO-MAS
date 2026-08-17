@@ -32,6 +32,7 @@ import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOu
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
@@ -73,8 +74,10 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { SklandLoginIn } from '../models/SklandLoginIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -438,6 +441,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 MaaEnd 动态选项
+     * @param requestBody
+     * @returns MaaEndOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendOptionsApiScriptsMaaendOptionsPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<MaaEndOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1684,6 +1706,46 @@ export class Service {
         });
     }
     /**
+     * 塔吉多账号密码登录
+     * 一次性使用账号密码换取并保存塔吉多 Token，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginTaygedoApiToolsSignAccountTaygedoLoginPost(
+        requestBody: TaygedoLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/taygedo/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 森空岛手机号密码登录
+     * 一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginSklandApiToolsSignAccountSklandLoginPost(
+        requestBody: SklandLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/skland/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询配置
      * 查询配置
      * @returns SettingGetOut Successful Response
@@ -1919,7 +1981,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后 cookies 直接从响应头获取
+     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError

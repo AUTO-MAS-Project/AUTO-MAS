@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
+from app.utils.io import atomic_write, read_file, write_file
 
 from .log_detect import (
     can_read_stream_live,
@@ -42,7 +43,6 @@ from .stage_runtime import (
     read_native_main_stage,
     read_native_stage,
 )
-
 
 logger = get_logger("HSR SRA 运行器")
 
@@ -118,12 +118,18 @@ def discover_sra_managed_options(
         predicate = lambda key: key not in {"enabled", "redeemCodes"}
     else:
         if module_key == "DivergentUniverse":
-            predicate = lambda key: (
-                key == "pointRewards.enabled"
-                or key.startswith("divergentUniverse.")
-            ) and key != "divergentUniverse.enabled"
+            predicate = (
+                lambda key: (
+                    key == "pointRewards.enabled"
+                    or key.startswith("divergentUniverse.")
+                )
+                and key != "divergentUniverse.enabled"
+            )
         else:
-            predicate = lambda key: key.startswith("currencyWars.") and key != "currencyWars.enabled"
+            predicate = (
+                lambda key: key.startswith("currencyWars.")
+                and key != "currencyWars.enabled"
+            )
     section = payload.get(section_name)
     if not isinstance(section, dict):
         return {}, section_name
@@ -131,7 +137,9 @@ def discover_sra_managed_options(
     if module_key == "ReceiveRewards":
         rewards = options.pop("rewards", None)
         if isinstance(rewards, list):
-            options.update({f"rewards.{index}": value for index, value in enumerate(rewards)})
+            options.update(
+                {f"rewards.{index}": value for index, value in enumerate(rewards)}
+            )
     return options, section_name
 
 
@@ -204,10 +212,9 @@ def write_sra_temp_config(
     """写出 SRA 运行 JSON，避免 SRA CLI 按 ANSI 读取时编码炸裂。"""
 
     target_path = _sra_temp_path(script_uid, user_uid, module_key)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(
-        json.dumps(config, ensure_ascii=True, indent=4),
-        encoding="utf-8",
+    atomic_write(
+        target_path,
+        json.dumps(config, ensure_ascii=True, indent=4).encode("utf-8"),
     )
     logger.debug(f"SRA temp config written: {target_path}")
     return target_path
@@ -344,8 +351,7 @@ def build_sra_module_config(
             bool(native_options.get("rewards.3", True)),
             bool(native_options.get("rewards.4", True)),
             bool(native_options.get("rewards.5", True)),
-            bool(native_options.get("rewards.6", True))
-            and bool(redeem_codes_enabled),
+            bool(native_options.get("rewards.6", True)) and bool(redeem_codes_enabled),
         ]
 
     elif module.key == "DivergentUniverse":
@@ -354,9 +360,7 @@ def build_sra_module_config(
         )
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
         config["cosmicStrife"]["divergentUniverse.mode"] = int(
-            native_options.get(
-                "divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE
-            )
+            native_options.get("divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE)
         )
         config["cosmicStrife"]["divergentUniverse.runtimes"] = int(
             native_options.get(
@@ -385,10 +389,16 @@ def build_sra_module_config(
             "currencyWars.difficulty", SRA_CURRENCY_WARS_DIFFICULTY
         )
         config["cosmicStrife"]["currencyWars.mode"] = {
-            "normal": 0, "overclock": 1, 0: 0, 1: 1,
+            "normal": 0,
+            "overclock": 1,
+            0: 0,
+            1: 1,
         }.get(mode, SRA_CURRENCY_WARS_MODE)
         config["cosmicStrife"]["currencyWars.difficulty"] = {
-            "lowest": 0, "highest": 1, 0: 0, 1: 1,
+            "lowest": 0,
+            "highest": 1,
+            0: 0,
+            1: 1,
         }.get(difficulty, SRA_CURRENCY_WARS_DIFFICULTY)
         config["cosmicStrife"]["currencyWars.policy"] = 0
         config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
@@ -455,15 +465,23 @@ def resolve_sra_profile(
     the first profile in stable filename order is selected.
     """
 
-    root = Path(config_root) if config_root is not None else get_sra_app_data_dir() / "configs"
+    root = (
+        Path(config_root)
+        if config_root is not None
+        else get_sra_app_data_dir() / "configs"
+    )
     default_path = root / "Default.json"
     if default_path.is_file():
         return "Default", default_path
 
-    candidates = sorted(
-        (item for item in root.glob("*.json") if item.is_file()),
-        key=lambda item: item.name.casefold(),
-    ) if root.is_dir() else []
+    candidates = (
+        sorted(
+            (item for item in root.glob("*.json") if item.is_file()),
+            key=lambda item: item.name.casefold(),
+        )
+        if root.is_dir()
+        else []
+    )
     if candidates:
         selected = candidates[0]
         return selected.stem, selected
@@ -477,7 +495,7 @@ def disable_sra_windows_notifications() -> Path:
     cache: dict = {}
     if cache_path.exists():
         try:
-            raw_cache = json.loads(cache_path.read_text(encoding="utf-8-sig"))
+            raw_cache = read_file(cache_path)
         except json.JSONDecodeError:
             raw_cache = {}
         if isinstance(raw_cache, dict):
@@ -487,12 +505,7 @@ def disable_sra_windows_notifications() -> Path:
         return cache_path
 
     cache[SRA_CACHE_NO_NOTIFY_KEY] = True
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(
-        json.dumps(cache, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_file(cache_path, cache)
     logger.info(f"SRA cache.json 已关闭 Windows 通知：{cache_path}")
     return cache_path
 
@@ -621,7 +634,7 @@ async def run_sra_single_task(
         raise
 
     except Exception as e:
-        logger.exception(f"SRA 单任务 {task_class} 执行失败：{e}")
+        logger.opt(exception=True).warning(f"SRA 单任务 {task_class} 执行失败：{e}")
         return SRACommandResult(
             task_class=task_class,
             config_path=str(config_path),
@@ -703,7 +716,7 @@ async def run_sra_config(
         await registry.terminate_current_process()
         raise
     except Exception as exc:  # noqa: BLE001
-        logger.exception(f"SRA 原生配置执行失败：{exc}")
+        logger.opt(exception=True).warning(f"SRA 原生配置执行失败：{exc}")
         return SRACommandResult(
             task_class="run",
             config_path=str(config_path),
@@ -838,9 +851,7 @@ def _build_sra_trailblaze_tasklist(
 
     if eow_enabled:
         # SRA autoDetect 路径不读取 RunTimes，这里只保留结构占位。
-        native_eow = _native_stage_to_sra_tp_item(
-            user_config, "ScriptEchoOfWar", 1
-        )
+        native_eow = _native_stage_to_sra_tp_item(user_config, "ScriptEchoOfWar", 1)
         if native_eow is None:
             raise RuntimeError(
                 "本周需要执行历战余响，但 Stage.ScriptEchoOfWar 缺少 SRA 原生"
@@ -933,10 +944,7 @@ async def _communicate_sra_with_live_output(
 
     stdout_stream = getattr(proc, "stdout", None)
     stderr_stream = getattr(proc, "stderr", None)
-    if not (
-        can_read_stream_live(stdout_stream)
-        or can_read_stream_live(stderr_stream)
-    ):
+    if not (can_read_stream_live(stdout_stream) or can_read_stream_live(stderr_stream)):
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             proc.communicate(), timeout=timeout
         )

@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.utils import get_logger
+from app.utils.io import write_file
 
 logger = get_logger("终末地活动服务")
 
@@ -356,16 +357,8 @@ class EndfieldActivityService:
                 for item in self._pools
             ],
         }
-        temporary_path = AKEDATA_CACHE_PATH.with_name(
-            f"{AKEDATA_CACHE_PATH.name}.tmp"
-        )
         try:
-            AKEDATA_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            temporary_path.write_text(
-                json.dumps(cache, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            temporary_path.replace(AKEDATA_CACHE_PATH)
+            write_file(AKEDATA_CACHE_PATH, cache)
         except (OSError, TypeError, ValueError) as error:
             logger.warning(f"保存终末地活动缓存失败: {error}")
 

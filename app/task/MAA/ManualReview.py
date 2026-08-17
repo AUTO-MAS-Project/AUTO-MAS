@@ -35,6 +35,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, MAA_STARTUP_BASE, ARKNIGHTS_PACKAGE_NAME
+from app.utils.io import read_file, write_file
 from .tools import agree_bilibili
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -143,7 +144,7 @@ class ManualReviewTask(TaskExecuteBase):
                 )
             except Exception as e:
 
-                logger.exception(
+                logger.opt(exception=True).warning(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
                 self.script_info.log = (
@@ -154,7 +155,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -195,7 +196,7 @@ class ManualReviewTask(TaskExecuteBase):
                 break
             else:
 
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_item.user_id} - MAA进程异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -206,7 +207,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.maa_exe_path)
 
                 uid = str(uuid.uuid4())
@@ -232,7 +233,7 @@ class ManualReviewTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index"), True
                 )
             except Exception as e:
-                logger.exception(f"模拟器显示失败: {e}")
+                logger.opt(exception=True).warning(f"模拟器显示失败: {e}")
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -289,12 +290,8 @@ class ManualReviewTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
+        gui_set = read_file(self.maa_set_path / "gui.json")
+        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
         # 多配置使用默认配置
         if gui_set["Current"] != "Default":
@@ -402,9 +399,7 @@ class ManualReviewTask(TaskExecuteBase):
             json.dumps(gui_set, ensure_ascii=False, indent=4),
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         logger.success("MAA运行参数配置完成: 人工排查")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
@@ -460,7 +455,7 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"人工排查任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"人工排查任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

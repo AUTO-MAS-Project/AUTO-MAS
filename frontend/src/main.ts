@@ -6,6 +6,8 @@ import App from './App.vue'
 import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
+import { getConfig } from '@/utils/config'
+import { configureSentry } from '@/utils/sentry'
 
 configureLocalMonaco()
 
@@ -38,7 +40,8 @@ dayjs.locale('zh-cn')
 
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI.getApiEndpoint('local')
+  window.electronAPI
+    .getApiEndpoint('local')
     .then(endpoint => {
       OpenAPI.BASE = endpoint
       logger.info('前端应用开始初始化')
@@ -71,10 +74,17 @@ app.config.errorHandler = (err, instance, info) => {
   logger.error(`Vue应用错误: ${errorMsg}, 组件信息: ${info}`)
 }
 
-// 挂载应用
-app.mount('#app')
+const bootstrap = async () => {
+  const frontendConfig = await getConfig()
+  configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
 
-// 注册WebSocket消息监听组件
-app.component('WebSocketMessageListener', WebSocketMessageListener)
+  // 挂载应用
+  app.mount('#app')
 
-logger.info('前端应用初始化完成')
+  // 注册WebSocket消息监听组件
+  app.component('WebSocketMessageListener', WebSocketMessageListener)
+
+  logger.info('前端应用初始化完成')
+}
+
+void bootstrap()

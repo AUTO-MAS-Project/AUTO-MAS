@@ -54,6 +54,7 @@ import {
   ApiOutlined,
   BugOutlined,
   CalendarOutlined,
+  CarryOutOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FileTextOutlined,
@@ -109,6 +110,7 @@ const devMenuItems = [
 ]
 
 const bottomMenuItems = [
+  { key: '/gamesign', label: '游戏签到', icon: icon(CarryOutOutlined) },
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
   { key: '/tools', label: '工具', icon: icon(ToolOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },

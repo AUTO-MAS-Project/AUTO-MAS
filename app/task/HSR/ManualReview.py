@@ -31,7 +31,11 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from .tools.run_model import HSRRuntimeState
-from .tools.account_switch import HSRAccountSwitcher, check_user_credentials
+from .tools.account_switch import (
+    HSRAccountSwitcher,
+    check_user_credentials,
+    is_game_management_enabled,
+)
 from .tools.native_control import resolve_script_path
 from .tools.sra_runtime import cleanup_sra_temp_config
 
@@ -40,7 +44,7 @@ logger = get_logger("HSR 人工排查")
 
 
 class HSRManualReviewTask(TaskExecuteBase):
-    """HSR 人工检查模式：只启动游戏并通过 SRA StartGame 切号。"""
+    """HSR 人工检查模式：通过 SRA StartGame 切号，按开关管理游戏。"""
 
     def __init__(
         self,
@@ -208,7 +212,14 @@ class HSRManualReviewTask(TaskExecuteBase):
 
         sra_exe_path = Path(resolve_script_path(self.script_config, "SRA")) / "SRA-cli.exe"
         while True:
-            self._append_log(f"正在启动游戏并切换到用户「{self.cur_user_item.name}」")
+            if is_game_management_enabled(self.script_config):
+                self._append_log(
+                    f"正在由 MAS 启动游戏并切换到用户「{self.cur_user_item.name}」"
+                )
+            else:
+                self._append_log(
+                    f"MAS 未管理游戏，正在运行 SRA StartGameTask 并切换到用户「{self.cur_user_item.name}」"
+                )
             await self._account_switcher.prepare_game_for_account_switch(
                 self.cur_user_item.name
             )
@@ -270,7 +281,7 @@ class HSRManualReviewTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         if self._current_user_log is not None:
             self._current_user_log.status = f"HSR 人工排查异常: {e}"
-        logger.exception(f"HSR 用户「{self.cur_user_item.name}」人工排查异常：{e}")
+        logger.opt(exception=True).warning(f"HSR 用户「{self.cur_user_item.name}」人工排查异常：{e}")
 
         try:
             await self.cur_user_config.set("Data", "IfPassCheck", False)

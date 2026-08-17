@@ -39,6 +39,7 @@ from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ManualReview import ManualReviewTask
 from .ScriptConfig import ScriptConfigTask
+from .resource_loader import load_maaend_controller_protocol
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -47,7 +48,6 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]
     "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
-
 
 class MaaEndManager(TaskExecuteBase):
     """MaaEnd 控制器"""
@@ -61,6 +61,7 @@ class MaaEndManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.controller_protocol = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -74,17 +75,23 @@ class MaaEndManager(TaskExecuteBase):
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
-        if (script_config.get("Game", "ControllerType") == "ADB") and (
+        try:
+            self.controller_protocol = load_maaend_controller_protocol(
+                Path(script_config.get("Info", "Path")),
+                script_config.get("Game", "ControllerType"),
+            )
+        except (OSError, KeyError, ValueError) as error:
+            return f"MaaEnd 控制器配置读取失败: {error}"
+
+        if self.controller_protocol == "Adb" and (
             script_config.get("Game", "EmulatorId") == "-"
             or script_config.get("Game", "EmulatorIndex") in ["", "-"]
         ):
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-        elif (
-            script_config.get("Game", "ControllerType").startswith("Win32")
-            and not Path(script_config.get("Game", "Path")).exists()
-        ):
+        elif self.controller_protocol == "Win32" and not Path(
+            script_config.get("Game", "Path")
+        ).exists():
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
-
         if self.task_info.mode == "AutoProxy" and not (
             Path(
                 Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
@@ -110,7 +117,7 @@ class MaaEndManager(TaskExecuteBase):
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
         # 初始化模拟器管理器
-        if self.script_config.get("Game", "ControllerType") == "ADB":
+        if self.controller_protocol == "Adb":
             self.emulator_manager = await EmulatorManager.get_emulator_instance(
                 self.script_config.get("Game", "EmulatorId")
             )
@@ -147,7 +154,7 @@ class MaaEndManager(TaskExecuteBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"未通过配置检查: {self.check_result}")
+            logger.warning(f"未通过配置检查: {self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -189,6 +196,7 @@ class MaaEndManager(TaskExecuteBase):
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
+            await self.script_config.load_resource(force_reload=True)
             await Config.ScriptConfig.save()
 
             error_user = [
@@ -228,7 +236,7 @@ class MaaEndManager(TaskExecuteBase):
                 if has_game_sign_summary:
                     mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
-                logger.exception(f"推送代理结果时出现异常: {e}")
+                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -245,7 +253,7 @@ class MaaEndManager(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
-        logger.exception(f"MaaEnd任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

@@ -19,9 +19,11 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import uuid
 import json
 import calendar
+from functools import partial
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -32,7 +34,6 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
-    MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
@@ -115,7 +116,7 @@ def init_maaend_task_config(config) -> None:
         "Task",
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
-        OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS)),
+        StringValidator(),
     )
 
     for task_name in MAAEND_TASKS:
@@ -768,6 +769,8 @@ class MaaEndUserConfig(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
+        self._maaend_essence_location_labels: dict[str, str] = {}
+        self._maaend_essence_location_label = ""
 
         ## Info ------------------------------------------------------------
         ## 用户名称
@@ -893,6 +896,28 @@ class MaaEndUserConfig(ConfigBase):
             _normalize_maaend_sanity_task_type(task_data)
         await super().load(data)
 
+    def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
+        """缓存 MaaEnd 基质刷取地点资源。"""
+
+        self._maaend_essence_location_labels = {
+            str(item["value"]): str(item["label"])
+            for item in resource["essenceLocations"]
+        }
+        self._maaend_essence_location_label = self._get_maaend_location_label(
+            self.get("Task", "AutoEssenceSpecifiedLocation")
+        )
+
+    def _get_maaend_location_label(self, value: str) -> str:
+        return self._maaend_essence_location_labels[value] if value else ""
+
+    async def set(self, group: str, name: str, value: Any) -> None:
+        location_label = None
+        if group == "Task" and name == "AutoEssenceSpecifiedLocation":
+            location_label = self._get_maaend_location_label(str(value))
+        await super().set(group, name, value)
+        if location_label is not None:
+            self._maaend_essence_location_label = location_label
+
     def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
         """获取当前生效的理智任务配置"""
 
@@ -985,9 +1010,14 @@ class MaaEndUserConfig(ConfigBase):
                 if sanity_task_type == "Essence"
                 else task_config[sanity_task_type]
             )
+            detail_label = (
+                self._maaend_essence_location_label
+                if sanity_task_type == "Essence"
+                else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
+            )
             tags.append(
                 {
-                    "text": f"详细任务：{MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]}",
+                    "text": f"详细任务：{detail_label}",
                     "color": "blue",
                 }
             )
@@ -1057,13 +1087,8 @@ class MaaEndConfig(ConfigBase):
         self.Game_ControllerType = ConfigItem(
             "Game",
             "ControllerType",
-            "Win32-Front",
-            OptionsValidator(
-                [
-                    "Win32-Front",
-                    "ADB",
-                ]
-            ),
+            "",
+            StringValidator(),
         )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -1090,6 +1115,40 @@ class MaaEndConfig(ConfigBase):
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        is_dirty = await super().load(data)
+        root_path_value = str(self.get("Info", "Path")).strip()
+        resource_config_path = Path(root_path_value) / "config/mxu-MaaEnd.json"
+        if root_path_value and resource_config_path.is_file():
+            try:
+                await self.load_resource()
+            except Exception as error:
+                logger.warning(f"MaaEnd 动态资源加载失败: {error}")
+        return is_dirty
+
+    async def load_resource(self, force_reload: bool = False) -> dict[str, Any]:
+        """加载并缓存 MaaEnd 动态资源。"""
+
+        from app.task.MaaEnd.resource_loader import load_maaend_options
+
+        resource = await asyncio.to_thread(
+            partial(
+                load_maaend_options,
+                Path(self.get("Info", "Path")),
+                force_reload=force_reload,
+            )
+        )
+        for user_config in self.UserData.values():
+            user_config.cache_maaend_resource(resource)
+        return resource
+
+    def get_loaded_resource(self) -> dict[str, Any]:
+        """读取已经载入内存的 MaaEnd 动态资源。"""
+
+        from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
+
+        return get_loaded_maaend_options(Path(self.get("Info", "Path")))
 
 
 class SrcUserConfig(ConfigBase):
@@ -1794,6 +1853,8 @@ class HSRConfig(ConfigBase):
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
+        self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 游戏启动参数
@@ -2364,18 +2425,25 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送用户统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
+        ## 是否发送邮件
         self.Notify_IfSendMail = ConfigItem(
             "Notify", "IfSendMail", False, BoolValidator()
         )
+        ## 用户收件地址
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
         )
+        ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
@@ -2433,15 +2501,23 @@ class OkNteUserConfig(ConfigBase):
     OKNTE_TASK_BOOK: dict[int, str] = {
         1: "启动游戏",
         2: "日常任务",
-        3: "一咖舍",
-        4: "钓鱼",
-        5: "异象界域",
+        3: "自动钓鱼",
+        4: "异象界域",
+        5: "异象追猎",
         6: "音游",
-        7: "业主选拔",
+        7: "店长特供",
         8: "粉爪大劫案",
-        9: "暗域任务",
-        10: "呗果智能体",
-        11: "诊断",
+        9: "呗果智能体",
+        10: "自动小旋风",
+        11: "九百九十九夜",
+        12: "自动战斗检测诊断",
+        13: "诊断",
+        14: "日常领取",
+        15: "羁遇赠礼",
+        16: "一咖舍",
+        17: "喷泉签到",
+        18: "异象家具",
+        19: "影院约会",
     }
 
     def __init__(self) -> None:
@@ -2478,8 +2554,8 @@ class OkNteUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # ok-nte.exe -t N -e；上游 DailyTask 是 -t 2
-        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 11))
+        # ok-nte.exe -t N -e；新版上游 DailyRoutineTask 是 -t 2
+        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 19))
         self.Task_ExitOnFinish = ConfigItem(
             "Task", "ExitOnFinish", True, BoolValidator()
         )
@@ -2688,25 +2764,34 @@ class OkwwConfig(ConfigBase):
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
+        ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
+        ## OK-WW 脚本根目录
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 兼容旧配置：游戏启动由 Enabled 统一控制
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
-        ## 游戏启动器路径
+        ## 鸣潮启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 鸣潮启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
+        ## 单次任务重试次数
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
+        ## 单次运行超时时间
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
         )
@@ -2826,6 +2911,11 @@ class GameSignAccountGroup(ConfigBase):
         ## GameSignAccount - 森空岛登录凭证 (DPAPI 加密)
         self.SklandToken = ConfigItem(
             "GameSignAccount", "SklandToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 塔吉多及云异环登录凭证 (DPAPI 加密)
+        ## 支持 refreshToken 纯文本或包含 cloudToken/cloudUserId 的 JSON。
+        self.TaygedoToken = ConfigItem(
+            "GameSignAccount", "TaygedoToken", "", EncryptValidator()
         )
         ## GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
         self.LastSignDate = ConfigItem(
@@ -3004,6 +3094,10 @@ class GlobalConfig(ConfigBase):
         ## 是否屏蔽模拟器广告
         self.Function_IfBlockAd = ConfigItem(
             "Function", "IfBlockAd", False, BoolValidator()
+        )
+        ## 是否启用匿名遥测
+        self.Function_IfEnableTelemetry = ConfigItem(
+            "Function", "IfEnableTelemetry", True, BoolValidator()
         )
 
         ## Voice ------------------------------------------------------------

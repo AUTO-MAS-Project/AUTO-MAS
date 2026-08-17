@@ -45,7 +45,7 @@ async def login(
     """
 
     if emulator_info.status != DeviceStatus.ONLINE:
-        logger.error(f"模拟器{emulator_info.title}不在线，无法登录")
+        logger.warning(f"模拟器{emulator_info.title}不在线，无法登录")
         return False
 
     logger.info(f"开始登录: {emulator_info.title} - {package_name}")
@@ -141,7 +141,7 @@ async def login(
     try:
         tasker = await MaaFWManager.get_adb_tasker(emulator_info)
     except Exception as e:
-        logger.error(f"获取模拟器{emulator_info.title}的ADB控制器时出现异常: {e}")
+        logger.warning(f"获取模拟器{emulator_info.title}的ADB控制器时出现异常: {e}")
         return False
 
     try:
@@ -164,7 +164,7 @@ async def login(
             error_msg = error_msg.replace(id, "id***")
         if password:
             error_msg = error_msg.replace(password, "password***")
-        logger.error(f"模拟器{emulator_info.title}切换账号时出现异常: {error_msg}")
+        logger.warning(f"模拟器{emulator_info.title}切换账号时出现异常: {error_msg}")
         return False
     except asyncio.CancelledError:
         with suppress(Exception):

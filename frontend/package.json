@@ -8,8 +8,8 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"yarn watch:main\" \"yarn electron-dev\"",
     "dev:fullstack": "concurrently \"yarn backend\" \"vite\" \"yarn watch:main\" \"yarn electron-dev:wait\"",
-    "backend": "python ../main.py",
-    "electron-dev:wait": "wait-on http://localhost:5173 http://localhost:36163 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/electron-spawn.mjs .",
+    "backend": "cross-env PYTHONIOENCODING=utf-8 python ../main.py",
+    "electron-dev:wait": "wait-on http://localhost:5173 http://localhost:36163/openapi.json && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/electron-spawn.mjs .",
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/electron-spawn.mjs .",
     "build:main": "tsc -p tsconfig.electron.json",
@@ -67,6 +67,7 @@
   },
   "dependencies": {
     "@inspira-ui/plugins": "^0.0.2",
+    "@sentry/vue": "10.67.0",
     "adm-zip": "^0.5.16",
     "axios": "1.15.2",
     "electron-log": "^5.4.3",

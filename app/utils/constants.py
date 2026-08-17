@@ -241,13 +241,6 @@ MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
-    "VFTheHub": "枢纽区",
-    "VFOriginiumSciencePark": "源石研究园",
-    "VFOriginLodespring": "矿脉源区",
-    "VFPowerPlateau": "供能高地",
-    "WLWulingCity": "武陵城区",
-    "WLQingboStockade": "清波寨",
-    "WLMarkerStone": "首墩",
 }
 """MaaEnd理智任务详细选项展示文案"""
 
@@ -271,17 +264,6 @@ MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     ),
 }
 """MaaEnd协议空间任务选项列表"""
-
-MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
-    "VFTheHub",
-    "VFOriginiumSciencePark",
-    "VFOriginLodespring",
-    "VFPowerPlateau",
-    "WLWulingCity",
-    "WLQingboStockade",
-    "WLMarkerStone",
-)
-"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
@@ -319,6 +301,7 @@ MAAEND_TASK_GROUPS = {
             ("AutoSell", "售卖弹性物资"),
             ("EnvironmentMonitoring", "环境监测"),
             ("AutoCollect", "自动采集"),
+            ("TrialOfSwordmancy", "选剑演武"),
         ),
     },
     "Rewards": {
@@ -342,16 +325,13 @@ MAAEND_TASKS = tuple(
 )
 """MaaEnd托管任务列表"""
 
-MAAEND_CONTROLLER_TASKS = {"Win32-Front": MAAEND_TASKS}
-"""MaaEnd控制器支持的托管任务列表"""
-
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",
     "OperatorProgression": "OperatorEXP",
     "WeaponProgression": "WeaponEXP",
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
-    "AutoEssenceSpecifiedLocation": "VFTheHub",
+    "AutoEssenceSpecifiedLocation": "",
 }
 """MaaEnd理智任务字段默认值"""
 
@@ -771,6 +751,11 @@ STARRAIL_STAGE_BOOK = {
     "Divergent_Universe_Gentle_Words": "饰品：商业公司 & 差分机（温柔话语）",
     "Divergent_Universe_Smelted_Heart": "饰品：盗贼 & 翁瓦克（浴火钢心）",
     "Divergent_Universe_Untoppled_Walls": "饰品：太空 & 仙舟（坚城不倒）",
+    "Simulated_Universe_World_3": "第三世界",
+    "Simulated_Universe_World_4": "第四世界",
+    "Simulated_Universe_World_5": "第五世界",
+    "Simulated_Universe_World_6": "第六世界",
+    "Simulated_Universe_World_8": "第八世界",
 }
 """星穹铁道关卡文本索引表"""
 

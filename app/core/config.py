@@ -76,6 +76,7 @@ from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
 from app.utils import get_logger
+from app.utils.io import write_file
 
 logger = get_logger("配置管理")
 
@@ -107,23 +108,13 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏签到结果快照。"""
+    """原子保存游戏签到结果快照（走 ``app.utils.io.write_file``）。"""
 
     if path is None:
         return
 
-    temporary_path = path.with_name(f"{path.name}.tmp")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path.write_text(
-            json.dumps(
-                {"date": result_date, "result": result},
-                ensure_ascii=False,
-                indent=4,
-            ),
-            encoding="utf-8",
-        )
-        temporary_path.replace(path)
+        write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
@@ -224,11 +215,14 @@ class AppConfig(GlobalConfig):
         await self._sync_legacy_skland_accounts()
 
         from app.services import System
+        from app.services.telemetry import set_telemetry_enabled
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
         await System.set_SelfStart(self.get("Start", "IfSelfStart"))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+        set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
         self.loop = asyncio.get_running_loop()
 
@@ -678,6 +672,18 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
+    async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
+        """读取指定 MaaEnd 安装目录中的动态选项。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        root_path = str(script_config.get("Info", "Path")).strip()
+        if not root_path:
+            raise ValueError("MaaEnd 路径未配置")
+
+        return script_config.get_loaded_resource()
+
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
@@ -1035,10 +1041,30 @@ class AppConfig(GlobalConfig):
     ) -> tuple[Any | None, Any | None]:
         """查找持有指定森空岛 Token 的工具账号。"""
 
-        token_value = str(token or "").strip()
-        accounts = getattr(
-            getattr(self, "ToolsConfig", None), "GameSign_Accounts", None
-        )
+        def token_identity(value: Any) -> str:
+            raw_value = str(value or "").strip()
+            if not raw_value:
+                return ""
+            try:
+                payload = json.loads(raw_value)
+            except (TypeError, json.JSONDecodeError):
+                return raw_value
+            if not isinstance(payload, dict):
+                return raw_value
+            data = payload.get("data")
+            if isinstance(data, dict) and data.get("content"):
+                return str(data["content"]).strip()
+            return str(
+                payload.get("oauthToken")
+                or payload.get("oauth_token")
+                or payload.get("accessToken")
+                or payload.get("access_token")
+                or payload.get("token")
+                or raw_value
+            ).strip()
+
+        token_value = token_identity(token)
+        accounts = getattr(getattr(self, "ToolsConfig", None), "GameSign_Accounts", None)
         if not token_value or accounts is None:
             return None, None
 
@@ -1048,11 +1074,10 @@ class AppConfig(GlobalConfig):
             return None, None
 
         for account_uid, account in account_items:
-            candidate_token = str(
+            candidate_token = token_identity(
                 self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
-                or ""
-            ).strip()
-            if candidate_token == token_value:
+            )
+            if candidate_token and candidate_token == token_value:
                 return account_uid, account
         return None, None
 
@@ -1885,7 +1910,12 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        credential_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
+        credential_fields = {
+            "MiyousheToken",
+            "KuroToken",
+            "SklandToken",
+            "TaygedoToken",
+        }
         credential_changed = False
 
         for group, items in data.items():

@@ -419,23 +419,31 @@ const showOkNteConfigMask = ref(false)
 const oknteConfigRefreshToken = ref(0)
 let oknteConfigTimeout: number | null = null
 
-/** OK-NTE 已适配任务（-t 1..11）；上游 DailyTask 是 -t 2 */
-const OKNTE_MAX_TASK_INDEX = 11
+/** OK-NTE 已适配任务（-t 1..19）；新版上游 DailyRoutineTask 是 -t 2 */
+const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
 
 const oknteTaskOptions = [
   { label: '1 - LauncherTask（启动游戏）', value: 1 },
-  { label: '2 - DailyTask（日常任务）', value: 2 },
-  { label: '3 - CoffeeTask（一咖舍自动化）', value: 3 },
-  { label: '4 - FishingTask（自动钓鱼）', value: 4 },
-  { label: '5 - AnomalyTask（异象界域）', value: 5 },
+  { label: '2 - DailyRoutineTask（日常任务）', value: 2 },
+  { label: '3 - FishingTask（自动钓鱼）', value: 3 },
+  { label: '4 - AnomalyTask（异象界域）', value: 4 },
+  { label: '5 - AnomalyHunter（异象追猎）', value: 5 },
   { label: '6 - RhythmTask（自动音游）', value: 6 },
-  { label: '7 - OwnerSelectionTask（业主选拔）', value: 7 },
+  { label: '7 - OwnerSelectionTask（店长特供）', value: 7 },
   { label: '8 - AutoHeistTask（自动粉爪大劫案）', value: 8 },
-  { label: '9 - DarkTask（暗域任务）', value: 9 },
-  { label: '10 - BagelAITools（呗果智能体）', value: 10 },
-  { label: '11 - DiagnosisTask（诊断）', value: 11 },
+  { label: '9 - BagelAITools（呗果智能体）', value: 9 },
+  { label: '10 - WhirlwindTask（自动小旋风）', value: 10 },
+  { label: '11 - DSDFarmTask（九百九十九夜）', value: 11 },
+  { label: '12 - CombatDetectionTestTask（自动战斗检测诊断）', value: 12 },
+  { label: '13 - DiagnosisTask（诊断）', value: 13 },
+  { label: '14 - DailyClaimTask（日常领取）', value: 14 },
+  { label: '15 - GiftTask（羁遇赠礼）', value: 15 },
+  { label: '16 - CoffeeTask（一咖舍）', value: 16 },
+  { label: '17 - FountainTask（喷泉签到）', value: 17 },
+  { label: '18 - FurnitureTask（异象家具）', value: 18 },
+  { label: '19 - CinemaDateTask（影院约会）', value: 19 },
 ]
 
 const getDefaultUserData = () => ({

@@ -35,6 +35,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.io import read_file, write_file
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -327,7 +328,7 @@ class AutoProxyTask(TaskExecuteBase):
                         ],
                     )
                 except Exception as e:
-                    logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                    logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
@@ -343,7 +344,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Emulator", "Index")
                         )
                     except Exception as e:
-                        logger.exception(f"关闭模拟器失败: {e}")
+                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -359,7 +360,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Emulator", "Index"), False
                         )
                     except Exception as e:
-                        logger.exception(f"模拟器隐藏失败: {e}")
+                        logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
                 await self.set_maa(emulator_info)
 
@@ -380,7 +381,7 @@ class AutoProxyTask(TaskExecuteBase):
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
                     )
                 else:
-                    logger.error(
+                    logger.warning(
                         f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                     )
                     self.script_info.log = (
@@ -393,7 +394,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Emulator", "Index")
                         )
                     except Exception as e:
-                        logger.exception(f"关闭模拟器失败: {e}")
+                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                     await System.kill_process(self.maa_exe_path)
 
                     await Notify.push_plyer(
@@ -444,12 +445,8 @@ class AutoProxyTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
+        gui_set = read_file(self.maa_set_path / "gui.json")
+        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
         # 多配置使用默认配置
         if gui_set["Current"] != "Default":
@@ -772,9 +769,7 @@ class AutoProxyTask(TaskExecuteBase):
             json.dumps(gui_set, ensure_ascii=False, indent=4),
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
 
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
@@ -853,7 +848,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index")
                 )
             except Exception as e:
-                logger.exception(f"关闭模拟器失败: {e}")
+                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
         user_logs_list = []
         if_six_star = False
@@ -902,7 +897,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -948,12 +943,12 @@ class AutoProxyTask(TaskExecuteBase):
                 3,
             )
         else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

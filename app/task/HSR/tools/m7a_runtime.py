@@ -284,7 +284,7 @@ class M7ARunner:
 
         if not self._m7a_exe.exists():
             msg = f"March7th Assistant.exe does not exist: {self._m7a_exe}"
-            logger.error(msg)
+            logger.warning(msg)
             return M7ACommandResult(
                 task_name=task_name,
                 exe_path=str(self._m7a_exe),
@@ -330,7 +330,7 @@ class M7ARunner:
             )
 
         except asyncio.TimeoutError:
-            logger.error(f"M7A {task_name} timed out after {timeout}s")
+            logger.warning(f"M7A {task_name} timed out after {timeout}s")
             await self.terminate_current_process()
             return M7ACommandResult(
                 task_name=task_name,
@@ -347,7 +347,7 @@ class M7ARunner:
             raise
 
         except Exception as e:
-            logger.exception(f"M7A {task_name} error: {e}")
+            logger.opt(exception=True).warning(f"M7A {task_name} error: {e}")
             return M7ACommandResult(
                 task_name=task_name,
                 exe_path=str(self._m7a_exe),

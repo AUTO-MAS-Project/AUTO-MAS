@@ -28,3 +28,4 @@ export type M9AConfig_Run = {
      */
     IfSleepDreamMonthlyOnce?: (boolean | null);
 };
+

@@ -306,6 +306,34 @@ async def import_script_config_file(
 
 
 @router.post(
+    "/maaend/options",
+    tags=["Get"],
+    summary="获取 MaaEnd 动态选项",
+    response_model=MaaEndOptionsOut,
+    status_code=200,
+)
+async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptionsOut:
+    try:
+        data = await Config.get_maaend_options(options.scriptId)
+        return MaaEndOptionsOut(
+            controllers=[ComboBoxItem(**item) for item in data["controllers"]],
+            controllerTypes=data["controllerTypes"],
+            essenceLocations=[
+                ComboBoxItem(**item) for item in data["essenceLocations"]
+            ],
+        )
+    except Exception as e:
+        return MaaEndOptionsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            controllers=[],
+            controllerTypes={},
+            essenceLocations=[],
+        )
+
+
+@router.post(
     "/user/get",
     tags=["Get"],
     summary="查询用户",
@@ -823,7 +851,10 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
         import json
         import shutil
         from app.task.OkNte.config_schema import (
-            get_all_config_info, build_fields_for_config, load_oknte_option_labels,
+            get_all_config_info,
+            build_fields_for_config,
+            load_oknte_option_labels,
+            ensure_oknte_daily_routine_configs,
         )
 
         _, script_config = _oknte_script_config(script_id)
@@ -857,6 +888,8 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
         if need_init and oknte_configs_dir and oknte_configs_dir.is_dir():
             mas_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copytree(oknte_configs_dir, mas_config_dir, dirs_exist_ok=True)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+        ensure_oknte_daily_routine_configs(mas_config_dir)
 
         configs_info = get_all_config_info()
 
@@ -922,7 +955,7 @@ async def update_oknte_config(
         dict: 操作结果
     """
     try:
-        import json
+        from app.task.OkNte.config_schema import update_oknte_config_data
 
         # 写入用户配置目录
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
@@ -930,15 +963,7 @@ async def update_oknte_config(
 
         filepath = _oknte_config_file_path(mas_config_dir, filename)
 
-        existing_data = {}
-        if filepath.exists():
-            with open(filepath, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-
-        existing_data.update(data)
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, ensure_ascii=False, indent=4)
+        existing_data = update_oknte_config_data(filepath, data)
 
         return {
             "code": 200,
@@ -977,7 +1002,7 @@ async def batch_update_oknte_configs(
         dict: 操作结果
     """
     try:
-        import json
+        from app.task.OkNte.config_schema import update_oknte_config_data
 
         # 写入用户配置目录
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
@@ -986,13 +1011,7 @@ async def batch_update_oknte_configs(
         updated_files = []
         for filename, data in configs.items():
             filepath = _oknte_config_file_path(mas_config_dir, filename)
-            existing_data = {}
-            if filepath.exists():
-                with open(filepath, "r", encoding="utf-8") as f:
-                    existing_data = json.load(f)
-            existing_data.update(data)
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(existing_data, f, ensure_ascii=False, indent=4)
+            update_oknte_config_data(filepath, data)
             updated_files.append(filename)
 
         return {

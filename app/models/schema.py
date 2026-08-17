@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from typing import Any, Dict, List, Union, Optional, Literal
 
 
@@ -74,6 +74,12 @@ class ComboBoxItem(BaseModel):
 
 class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class MaaEndOptionsOut(OutBase):
+    controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
+    controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
+    essenceLocations: List[ComboBoxItem] = Field(..., description="MaaEnd 基质刷取地点选项")
 
 
 class GetStageIn(BaseModel):
@@ -153,6 +159,9 @@ class GameSignAccountGroupConfig(BaseModel):
     MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
     KuroToken: str | None = Field(default=None, description="库街区登录凭证")
     SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
+    TaygedoToken: str | None = Field(
+        default=None, description="塔吉多及云异环登录凭证"
+    )
 
 
 class GameSignAccountCreateOut(OutBase):
@@ -193,6 +202,22 @@ class GameSignAccountReorderIn(BaseModel):
     """游戏签到账号组排序请求"""
 
     order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
+class TaygedoLoginIn(BaseModel):
+    """塔吉多一次性账号密码登录请求。"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    phone: str = Field(..., min_length=1, description="塔吉多账号或手机号")
+    password: SecretStr = Field(..., min_length=1, description="塔吉多账号密码")
+
+
+class SklandLoginIn(BaseModel):
+    """森空岛一次性手机号密码登录请求。"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    phone: str = Field(..., min_length=1, description="鹰角网络通行证手机号")
+    password: SecretStr = Field(..., min_length=1, description="鹰角网络通行证密码")
 
 
 class ToolsConfig(BaseModel):
@@ -238,6 +263,9 @@ class GlobalConfig_Function(BaseModel):
         default=None, description="同意哔哩哔哩用户协议"
     )
     IfBlockAd: Optional[bool] = Field(default=None, description="屏蔽模拟器广告")
+    IfEnableTelemetry: Optional[bool] = Field(
+        default=None, description="启用匿名错误与性能遥测"
+    )
 
 
 class GlobalConfig_Voice(BaseModel):
@@ -892,17 +920,9 @@ class MaaEndUserConfig_Task(BaseModel):
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
         default=None, description="奖励组选项"
     )
-    AutoEssenceSpecifiedLocation: Optional[
-        Literal[
-            "VFTheHub",
-            "VFOriginiumSciencePark",
-            "VFOriginLodespring",
-            "VFPowerPlateau",
-            "WLWulingCity",
-            "WLQingboStockade",
-            "WLMarkerStone",
-        ]
-    ] = Field(default=None, description="基质刷取指定地点")
+    AutoEssenceSpecifiedLocation: Optional[str] = Field(
+        default=None, description="基质刷取指定地点"
+    )
     IfSanity: Optional[bool] = Field(default=None, description="理智任务")
     IfAutoUseSpMedication: Optional[bool] = Field(
         default=None, description="应急理智加强剂"
@@ -921,6 +941,7 @@ class MaaEndUserConfig_Task(BaseModel):
         default=None, description="环境监测"
     )
     IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(
         default=None, description="资源回收站"
@@ -975,9 +996,7 @@ class MaaEndConfig_Run(BaseModel):
 
 
 class MaaEndConfig_Game(BaseModel):
-    ControllerType: Optional[Literal["Win32-Front", "ADB"]] = Field(
-        default=None, description="控制器类型"
-    )
+    ControllerType: Optional[str] = Field(default=None, description="控制器类型")
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
@@ -1204,6 +1223,7 @@ class HSRConfig_Info(BaseModel):
 
 
 class HSRConfig_Game(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")

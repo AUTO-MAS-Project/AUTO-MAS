@@ -47,6 +47,7 @@ from .tools.account_switch import (
     HSRAccountSwitcher,
     check_user_credentials,
     close_game_if_needed,
+    is_game_management_enabled,
     restore_game_resolution_if_needed,
     resolve_game_executable_path,
     stop_external_processes,
@@ -223,7 +224,7 @@ class HSRManager(TaskExecuteBase):
                 _restore_path_from_backup(label, source, backup)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{label}: {e}")
-                logger.exception(f"恢复 HSR 外部配置失败：{label}: {e}")
+                logger.opt(exception=True).warning(f"恢复 HSR 外部配置失败：{label}: {e}")
 
         shutil.rmtree(self.temp_path / "ExternalConfig", ignore_errors=True)
         try:
@@ -295,6 +296,8 @@ class HSRManager(TaskExecuteBase):
         script_config = Config.ScriptConfig[script_id]
         if not isinstance(script_config, HSRConfig):
             return "脚本配置类型错误，不是 HSR 脚本类型"
+
+        game_management_enabled = is_game_management_enabled(script_config)
 
         if self.task_info.mode == "ManualReview":
             return self._check_manual_review(script_config)
@@ -389,7 +392,7 @@ class HSRManager(TaskExecuteBase):
         if not has_executable_user:
             return "未找到任何可执行用户，请确保至少有一个启用且剩余天数不为 0 的用户"
 
-        if enabled_module_keys or has_direct_user:
+        if game_management_enabled and (enabled_module_keys or has_direct_user):
             if not str(script_config.get("Game", "Path") or "").strip():
                 return "请设置游戏路径"
             game_exe_path = resolve_game_executable_path(script_config)
@@ -397,7 +400,9 @@ class HSRManager(TaskExecuteBase):
                 return f"游戏启动文件不存在：{game_exe_path}"
 
         if sra_needed and not sra_available:
-            return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+            if game_management_enabled:
+                return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
+            return "HSR 自动代理需要配置 SRA 路径"
 
         try:
             if m7a_needed:
@@ -476,9 +481,10 @@ class HSRManager(TaskExecuteBase):
         if not sra_exe.exists():
             return f"SRA 路径中未找到 SRA-cli.exe：{sra_exe}"
 
-        game_exe_path = resolve_game_executable_path(script_config)
-        if not game_exe_path.exists():
-            return f"游戏启动文件不存在：{game_exe_path}"
+        if is_game_management_enabled(script_config):
+            game_exe_path = resolve_game_executable_path(script_config)
+            if not game_exe_path.exists():
+                return f"游戏启动文件不存在：{game_exe_path}"
 
         has_executable_user = False
         for _uid, user_config in script_config.UserData.items():
@@ -578,7 +584,7 @@ class HSRManager(TaskExecuteBase):
         self._append_log("开始 HSR 配置检查")
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"HSR 配置检查未通过：{self.check_result}")
+            logger.warning(f"HSR 配置检查未通过：{self.check_result}")
             self._append_log(f"HSR 配置检查未通过：{self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -640,7 +646,7 @@ class HSRManager(TaskExecuteBase):
                     user_log.status = f"HSR 执行异常: {e}"
                     user_log.content.append(str(e))
                     user_errors.append(f"用户「{user_item.name}」执行异常：{e}")
-                    logger.exception(f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}")
+                    logger.opt(exception=True).warning(f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}")
                     self._append_log(
                         f"用户「{user_item.name}」执行异常，继续处理后续用户：{e}"
                     )
@@ -649,7 +655,7 @@ class HSRManager(TaskExecuteBase):
                 if proxy is not None and proxy.crashed:
                     error_message = proxy.error_message or "HSR 用户任务异常"
                     user_errors.append(f"用户「{user_item.name}」执行异常：{error_message}")
-                    logger.error(
+                    logger.warning(
                         f"HSR 用户「{user_item.name}」执行异常，继续后续用户："
                         f"{error_message}"
                     )
@@ -688,8 +694,9 @@ class HSRManager(TaskExecuteBase):
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
         """运行一个用户导入的原生 SRA/M7A 快照。
 
-        直控只把外部配置交给对应 CLI；MAS 仍负责游戏启动、日志、取消和
-        会话收尾。没有新 ``Control``/``Direct`` 字段时不会进入此路径。
+        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
+        日志、取消和会话收尾始终由 MAS 负责。没有新 ``Control``/``Direct``
+        字段时不会进入此路径。
         """
 
         if self.script_config is None:
@@ -709,10 +716,16 @@ class HSRManager(TaskExecuteBase):
         )
         self._runtime.game_launch_checked = False
         await switcher.ensure_game_started_by_mas()
-        self._append_log(
-            f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
-            f"原生配置原样执行：{'、'.join(control.engines)}"
-        )
+        if is_game_management_enabled(self.script_config):
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
+                f"原生配置原样执行：{'、'.join(control.engines)}"
+            )
+        else:
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
+                f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
+            )
 
         summaries: list[str] = []
         try:
@@ -793,7 +806,7 @@ class HSRManager(TaskExecuteBase):
             self._append_log("HSR 外部脚本配置已恢复")
             return ""
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"HSR 外部脚本配置恢复失败：{e}")
+            logger.opt(exception=True).warning(f"HSR 外部脚本配置恢复失败：{e}")
             self._append_log(f"HSR 外部脚本配置恢复失败：{e}")
             return f"HSR 外部脚本配置恢复失败：{e}"
 
@@ -864,7 +877,7 @@ class HSRManager(TaskExecuteBase):
                 10,
             )
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"推送 HSR 系统通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送 HSR 系统通知时出现异常: {e}")
             await self._send_notification_error(
                 f"推送 HSR 系统通知时出现异常: {e}"
             )
@@ -874,7 +887,7 @@ class HSRManager(TaskExecuteBase):
             if has_game_sign_summary:
                 mark_task_game_sign_summary_consumed(self.task_info)
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"推送 HSR 代理结果时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")
             await self._send_notification_error(
                 f"推送 HSR 代理结果时出现异常: {e}"
             )
@@ -899,7 +912,7 @@ class HSRManager(TaskExecuteBase):
             await self._stop_external_processes()
         except Exception as e:  # noqa: BLE001
             msg = f"停止 SRA/M7A 外部进程失败：{e}"
-            logger.exception(msg)
+            logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)
 
@@ -907,20 +920,21 @@ class HSRManager(TaskExecuteBase):
             await self._close_game_if_needed()
         except Exception as e:  # noqa: BLE001
             msg = f"关闭 HSR 游戏进程失败：{e}"
-            logger.exception(msg)
+            logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)
 
         try:
             # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
             # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
-            restore_game_resolution_if_needed(
-                self._runtime,
-                self._append_log,
-            )
+            if is_game_management_enabled(self.script_config):
+                restore_game_resolution_if_needed(
+                    self._runtime,
+                    self._append_log,
+                )
         except Exception as e:  # noqa: BLE001
             msg = f"恢复星铁分辨率注册表失败：{e}"
-            logger.exception(msg)
+            logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)
 
@@ -949,7 +963,7 @@ class HSRManager(TaskExecuteBase):
                     await self._sync_manual_review_user_data()
             except Exception as e:  # noqa: BLE001
                 msg = f"HSR 已完成模块状态写回失败：{e}"
-                logger.exception(msg)
+                logger.opt(exception=True).warning(msg)
                 self._append_log(msg)
                 final_errors.append(msg)
             await self._persist_user_logs()
@@ -969,7 +983,7 @@ class HSRManager(TaskExecuteBase):
                 await self._sync_manual_review_user_data()
         except Exception as e:
             self.script_info.status = "异常"
-            logger.exception(f"HSR 用户数据写回失败：{e}")
+            logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
             self._append_log(f"HSR 用户数据写回失败：{e}")
             return f"HSR 用户数据写回失败：{e}"
 
@@ -986,7 +1000,7 @@ class HSRManager(TaskExecuteBase):
 
         self.crashed = True
         self.script_info.status = "异常"
-        logger.exception(f"HSR 任务出现异常：{e}")
+        logger.opt(exception=True).warning(f"HSR 任务出现异常：{e}")
         self._append_log(f"HSR 任务出现异常：{e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,

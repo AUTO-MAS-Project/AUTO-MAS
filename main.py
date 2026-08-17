@@ -34,6 +34,8 @@ if __name__ == "__main__":
     os.chdir(current_dir)
 
 from app.utils import get_logger, sanitize_log_message
+from app.core import Config
+from app.services.telemetry import init_sentry, is_telemetry_enabled
 
 logger = get_logger("主程序")
 
@@ -66,24 +68,40 @@ def is_admin() -> bool:
 
 
 def is_development_environment() -> bool:
-    """识别显式开发模式或仓库内的标准 .venv。"""
+    """识别开发环境：前端传入的环境变量，或仓库根目录的 .env 标记文件。
 
-    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
-    if raw in {"1", "true", "yes", "on"}:
+    .env 不纳入版本库，模板见 .env.example；更新器也不会把它复制到
+    用户安装目录，因此用户直接启动后端时仍按生产环境上报。
+    """
+
+    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
+    if raw in {"dev", "development"}:
         return True
 
-    return (current_dir / ".git").exists() and Path(sys.prefix).resolve() == (
-        current_dir / ".venv"
-    ).resolve()
+    return (current_dir / ".env").is_file()
+
+
+def is_hosted_launch() -> bool:
+    """识别由前端拉起的后端进程，此时提权由前端负责，无需自行提权。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 @logger.catch
 def main():
     development_environment = is_development_environment()
     if development_environment:
-        os.environ["AUTO_MAS_DEV"] = "1"
+        os.environ["AUTO_MAS_ENV"] = "development"
 
-    if is_admin() or development_environment:
+    # 开发环境不上报遥测数据
+    init_sentry(
+        release=Config.VERSION,
+        development=development_environment,
+        enabled=is_telemetry_enabled(current_dir / "config" / "Config.json"),
+    )
+
+    if is_admin() or is_hosted_launch() or development_environment:
         import asyncio
         import uvicorn
         from fastapi import FastAPI

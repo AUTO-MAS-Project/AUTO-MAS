@@ -32,6 +32,7 @@ from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import MAA_TASKS
+from app.utils.io import read_file, write_file
 
 logger = get_logger("MAA 脚本设置")
 
@@ -97,12 +98,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
+        gui_set = read_file(self.maa_set_path / "gui.json")
+        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
         # 多配置使用默认配置
         if gui_set["Current"] != "Default":
@@ -173,9 +170,7 @@ class ScriptConfigTask(TaskExecuteBase):
             json.dumps(gui_set, ensure_ascii=False, indent=4),
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
     async def final_task(self):
@@ -201,7 +196,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"脚本设置任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
