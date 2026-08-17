@@ -61,6 +61,7 @@ class GeneralManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.use_mas_config = True
 
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
@@ -70,6 +71,16 @@ class GeneralManager(TaskExecuteBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
         ):
             return "脚本配置类型错误, 不是通用脚本类型"
+        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if self.task_info.mode == "AutoProxy":
+            config_modes = {
+                bool(config.get("Info", "IfUseMasConfig"))
+                for config in script_config.UserData.values()
+                if config.get("Info", "Status")
+                and config.get("Info", "RemainedDay") != 0
+            }
+            if len(config_modes) > 1:
+                return "同一通用脚本下不能混用 MAS 侧独立配置和外侧配置"
         if (
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
                 "Script", "IfTrackProcess"
@@ -144,6 +155,7 @@ class GeneralManager(TaskExecuteBase):
 
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+        self.use_mas_config = True
 
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Game", "Enabled"
@@ -162,17 +174,6 @@ class GeneralManager(TaskExecuteBase):
                 "Game", "Type"
             ) in ["Client", "URL"]:
                 self.game_process_manager = ProcessManager()
-
-        # 备份原始配置
-        logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
-        self.temp_path.mkdir(parents=True, exist_ok=True)
-        if self.script_config_path.exists():
-            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                shutil.copytree(
-                    self.script_config_path, self.temp_path, dirs_exist_ok=True
-                )
-            elif self.script_config.get("Script", "ConfigPathMode") == "File":
-                shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -193,6 +194,28 @@ class GeneralManager(TaskExecuteBase):
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
+
+        if self.script_info.user_list:
+            user_id = self.script_info.user_list[0].user_id
+            if user_id != "Default":
+                self.use_mas_config = bool(
+                    self.user_config[uuid.UUID(user_id)].get(
+                        "Info", "IfUseMasConfig"
+                    )
+                )
+
+        if self.use_mas_config:
+            logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
+            self.temp_path.mkdir(parents=True, exist_ok=True)
+            if self.script_config_path.exists():
+                if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                    shutil.copytree(
+                        self.script_config_path, self.temp_path, dirs_exist_ok=True
+                    )
+                elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                    shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+        else:
+            logger.info("外侧配置模式：跳过备份脚本配置文件")
 
     async def main_task(self):
 
@@ -294,7 +317,8 @@ class GeneralManager(TaskExecuteBase):
 
         # 复原通用脚本配置文件
         if (
-            self.script_config.get("Script", "ConfigPathMode") == "Folder"
+            self.use_mas_config
+            and self.script_config.get("Script", "ConfigPathMode") == "Folder"
             and self.temp_path.exists()
         ):
             logger.info(f"复原通用脚本配置文件: {self.temp_path}")
@@ -302,12 +326,15 @@ class GeneralManager(TaskExecuteBase):
             shutil.copytree(self.temp_path, self.script_config_path, dirs_exist_ok=True)
             shutil.rmtree(self.temp_path)
         elif (
-            self.script_config.get("Script", "ConfigPathMode") == "File"
+            self.use_mas_config
+            and self.script_config.get("Script", "ConfigPathMode") == "File"
             and (self.temp_path / "config.temp").exists()
         ):
             logger.info(f"复原通用脚本配置文件: {self.temp_path / 'config.temp'}")
             shutil.copy(self.temp_path / "config.temp", self.script_config_path)
             shutil.rmtree(self.temp_path)
+        elif not self.use_mas_config:
+            logger.info("外侧配置模式：跳过恢复脚本配置文件")
 
         self.script_info.status = "完成"
 
