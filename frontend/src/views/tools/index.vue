@@ -4,17 +4,14 @@ import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
-import { useWebSocket } from '@/composables/useWebSocket'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
-import TabGameSign from './TabGameSign.vue'
 
 defineOptions({ name: 'ToolsPage' })
 
 const logger = window.electronAPI.getLogger('工具')
 
 const { loading, getTools, updateTools } = useToolsApi()
-const { subscribe, unsubscribe } = useWebSocket()
 
 // 活动标签
 const activeKey = ref('arknightspc')
@@ -69,27 +66,18 @@ const arknightsPCStatusTag = useStatusTag(
     createStatusTag('未启用', 'default')
 )
 
-const gameSignStatusTag = useStatusTag(
-    () => toolsConfig.GameSign?.Status,
-    createStatusTag('未启用', 'default')
-)
-
 // 轮询定时器
 let pollTimer: ReturnType<typeof setInterval> | null = null
-let gameSignSubscriptionId: string | null = null
 let statusPollFailed = false
 
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
 
-const syncGameSignResult = (result: unknown) => {
-    if (!isMounted || typeof result !== 'string') return
-    if (toolsConfig.GameSign) {
-        toolsConfig.GameSign.Result = result
-    }
-    if (editingConfig.GameSign) {
-        editingConfig.GameSign.Result = result
-    }
+// GameSign 配置随 ToolsConfig 一并保存，此处仅同步最新值避免覆盖签到页的修改
+const syncGameSignConfig = (gameSign: unknown) => {
+    if (!isMounted || !gameSign) return
+    ;(toolsConfig as any).GameSign = gameSign
+    ;(editingConfig as any).GameSign = JSON.parse(JSON.stringify(gameSign))
 }
 
 // 仅更新状态（不影响编辑状态，不触发 loading）
@@ -112,36 +100,14 @@ const updateStatus = async () => {
             // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
             toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
         }
-        if (data.GameSign?.Status) {
-            toolsConfig.GameSign!.Status = data.GameSign.Status
-        }
-        // 同步签到结果到编辑状态，否则展示组件读到的是初始空值
-        syncGameSignResult(data.GameSign?.Result)
+        // 同步最新的 GameSign 配置，保证保存时不会用旧数据覆盖签到页的修改
+        syncGameSignConfig(data.GameSign)
     } catch (error) {
         if (!statusPollFailed) {
             const errorMsg = error instanceof Error ? error.message : String(error)
             logger.warn(`更新工具状态失败，将继续重试: ${errorMsg}`)
             statusPollFailed = true
         }
-    }
-}
-
-// 签到完成后立即刷新配置（不等轮询）
-const refreshGameSignConfig = async () => {
-    try {
-        const response = await Service.getToolsApiToolsGetPost()
-        if (!isMounted) return
-        if (response.code !== 200 || !response.data) {
-            throw new Error(response.message || '签到结果响应无效')
-        }
-        const data = response.data
-        if (data.GameSign?.Status) {
-            toolsConfig.GameSign!.Status = data.GameSign.Status
-        }
-        syncGameSignResult(data.GameSign?.Result)
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.warn(`刷新签到结果失败: ${errorMsg}`)
     }
 }
 
@@ -223,31 +189,6 @@ const handleFieldChange = async (key: string, value: any) => {
     }
 }
 
-// 保存 GameSign 字段的变更
-const handleGameSignFieldChange = async (key: string, value: any) => {
-    if (!editingConfig.GameSign) return
-
-    const previousValue = toolsConfig.GameSign
-        ? (toolsConfig.GameSign as any)[key]
-        : undefined
-
-    try {
-        (editingConfig.GameSign as any)[key] = value
-        await updateTools(editingConfig)
-
-        if (toolsConfig.GameSign && key !== 'Status' && key !== 'Result') {
-            (toolsConfig.GameSign as any)[key] = value
-        }
-
-        logger.info(`GameSign.${key} 已保存`)
-    } catch (error) {
-        (editingConfig.GameSign as any)[key] = previousValue
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`保存 GameSign.${key} 失败: ${errorMsg}`)
-        throw error
-    }
-}
-
 // 键位录制状态
 const recordingKeyField = ref<string | null>(null)
 
@@ -317,10 +258,6 @@ useEventListener(document, 'visibilitychange', () => {
 
 // 生命周期：加载配置并启动轮询
 onMounted(async () => {
-    gameSignSubscriptionId = subscribe({ id: 'GameSign', type: 'Update' }, message => {
-        const data = message.data as { Result?: unknown } | undefined
-        syncGameSignResult(data?.Result)
-    })
     await loadTools()
     startStatusPolling()
 })
@@ -329,10 +266,6 @@ onMounted(async () => {
 onUnmounted(() => {
     isMounted = false
     stopStatusPolling()
-    if (gameSignSubscriptionId) {
-        unsubscribe(gameSignSubscriptionId)
-        gameSignSubscriptionId = null
-    }
 })
 </script>
 
@@ -357,21 +290,6 @@ onUnmounted(() => {
                         :disabled="loading" :on-field-change="handleFieldChange"
                         :recording-key-field="recordingKeyField" :start-record-key="startRecordKey"
                         :stop-record-key="stopRecordKey" :on-select-visible-change="handleSelectVisibleChange" />
-                </a-tab-pane>
-                <a-tab-pane key="gamesign">
-                    <template #tab>
-                        <span style="display: flex; align-items: center; gap: 8px;">
-                            <span>游戏社区签到</span>
-                            <a-tag v-if="gameSignStatusTag" :color="gameSignStatusTag.color"
-                                style="margin: 0; font-size: 12px;">
-                                {{ gameSignStatusTag.text }}
-                            </a-tag>
-                        </span>
-                    </template>
-                    <TabGameSign v-if="editingConfig.GameSign" :config="editingConfig.GameSign"
-                        :disabled="loading" :on-field-change="handleGameSignFieldChange"
-                        :on-select-visible-change="handleSelectVisibleChange"
-                        :on-refresh-config="refreshGameSignConfig" />
                 </a-tab-pane>
             </a-tabs>
         </div>
