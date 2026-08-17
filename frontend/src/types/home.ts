@@ -108,6 +108,7 @@ export interface StarRailActivityItem {
   description: string
   startTime: string
   endTime: string
+  cover?: string
 }
 
 export interface StarRailActivityOverview {
@@ -116,6 +117,7 @@ export interface StarRailActivityOverview {
   Message: string
   version: string
   versionName: string
+  cover?: string
   startTime: string
   endTime: string
   activities: StarRailActivityItem[]
@@ -127,6 +129,7 @@ export const createEmptyStarRailActivityOverview = (): StarRailActivityOverview 
   Message: '',
   version: '',
   versionName: '',
+  cover: '',
   startTime: '',
   endTime: '',
   activities: [],
