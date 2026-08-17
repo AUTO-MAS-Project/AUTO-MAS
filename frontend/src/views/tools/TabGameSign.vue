@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import {
-  QuestionCircleOutlined,
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
@@ -22,14 +21,12 @@ const {
   config,
   disabled = false,
   onFieldChange = undefined,
-  onSelectVisibleChange = undefined,
   onRefreshConfig = undefined,
 } = defineProps<{
   config: ToolsConfig_GameSign
   disabled?: boolean
   /* eslint-disable no-unused-vars -- Callback parameter names document the prop contract. */
   onFieldChange?: (key: string, value: any) => void | Promise<void>
-  onSelectVisibleChange?: (visible: boolean) => void
   /* eslint-enable no-unused-vars */
   onRefreshConfig?: () => Promise<void>
 }>()
@@ -826,7 +823,7 @@ onMounted(() => {
     <!-- 全局设置区 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>游戏社区签到</h3>
+        <h3>签到设置</h3>
         <div class="section-header-actions">
           <a
             href="https://doc.auto-mas.top/docs/advanced-features/game-sign.html"
@@ -854,72 +851,51 @@ onMounted(() => {
           <div>{{ credentialPrivacyNotice }}</div>
         </template>
       </a-alert>
-      <a-row :gutter="24">
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">启用签到</span>
-              <a-tooltip title="是否启用每日自动游戏社区签到">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="config.Enabled"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled"
-              @change="handleChange('Enabled', $event)"
-              @dropdown-visible-change="onSelectVisibleChange"
-            >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
+      <div class="settings-list">
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">自动签到</span>
+            <span class="setting-desc">按每日调度自动执行各社区签到，也可随时点击「全部签到」手动执行</span>
           </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">签到后通知</span>
-              <a-tooltip title="签到完成后通过已配置的通知渠道推送结果">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="config.NotifyEnabled"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled || notifySaving"
-              :loading="notifySaving"
-              @change="handleNotifyEnabledChange"
-              @dropdown-visible-change="onSelectVisibleChange"
-            >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
+          <a-switch
+            :checked="config.Enabled"
+            :disabled="disabled"
+            @change="handleChange('Enabled', $event)"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">结果通知</span>
+            <span class="setting-desc">签到完成后通过已配置的通知渠道推送结果</span>
           </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">启动时签到</span>
-              <a-tooltip title="应用启动后立即执行一次签到">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="config.RunOnStartup"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled"
-              @change="handleChange('RunOnStartup', $event)"
-              @dropdown-visible-change="onSelectVisibleChange"
-            >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
+          <a-switch
+            :checked="config.NotifyEnabled"
+            :disabled="disabled"
+            :loading="notifySaving"
+            @change="handleNotifyEnabledChange"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">启动时签到</span>
+            <span class="setting-desc">应用启动后立即执行一次签到</span>
           </div>
-        </a-col>
-      </a-row>
+          <a-switch
+            :checked="config.RunOnStartup"
+            :disabled="disabled"
+            @change="handleChange('RunOnStartup', $event)"
+          />
+        </div>
+        <div class="setting-row setting-row-static">
+          <div class="setting-info">
+            <span class="setting-title">上次签到</span>
+            <span class="setting-desc">最近一次完成签到的日期</span>
+          </div>
+          <span class="setting-value">{{
+            config.LastSignDate && config.LastSignDate !== '2000-01-01' ? config.LastSignDate : '从未签到'
+          }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- 用户列表 -->
@@ -944,7 +920,7 @@ onMounted(() => {
         <div class="user-table-header">
           <div class="header-cell drag-cell"></div>
           <div class="header-cell name-cell">用户名</div>
-          <div class="header-cell status-cell">状态</div>
+          <div class="header-cell status-cell">启用</div>
           <div class="header-cell tags-cell">各社区签到情况</div>
           <div class="header-cell actions-cell">操作</div>
         </div>
@@ -974,19 +950,14 @@ onMounted(() => {
               <div class="row-cell name-cell">
                 <span class="user-name-text">{{ account.Name }}</span>
               </div>
-              <!-- 状态 -->
+              <!-- 启用开关 -->
               <div class="row-cell status-cell">
-                <a-select
-                  v-model:value="account.Enabled"
-                  size="middle"
-                  style="width: 100px"
+                <a-switch
+                  v-model:checked="account.Enabled"
+                  size="small"
                   :disabled="disabled"
                   @change="handleAccountFieldSave(account)"
-                  @dropdown-visible-change="onSelectVisibleChange"
-                >
-                  <a-select-option :value="true">启用</a-select-option>
-                  <a-select-option :value="false">禁用</a-select-option>
-                </a-select>
+                />
               </div>
               <!-- 社区签到情况（标签云） -->
               <div class="row-cell tags-cell">
@@ -1350,6 +1321,52 @@ onMounted(() => {
   text-decoration: none;
 }
 
+/* ==================== 签到设置（开关列表） ==================== */
+.settings-list {
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ant-color-bg-container);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setting-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.setting-desc {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.setting-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
+}
+
 /* ==================== 用户列表表格 ==================== */
 .user-table-container {
   border: 1px solid var(--ant-color-border);
@@ -1390,8 +1407,10 @@ onMounted(() => {
   text-align: center;
 }
 .status-cell {
-  width: 120px;
-  min-width: 120px;
+  width: 80px;
+  min-width: 80px;
+  text-align: center;
+  justify-content: center;
 }
 .tags-cell {
   flex: 1;
@@ -1500,71 +1519,6 @@ onMounted(() => {
   font-weight: 600;
   font-size: 14px;
   color: var(--ant-color-text);
-}
-
-/* ==================== 状态下拉框 - 对齐 TimeSetManager ==================== */
-.status-select :deep(.ant-select-selector) {
-  background: transparent !important;
-  border: none !important;
-  padding: 0 6px !important;
-  min-height: 28px !important;
-  line-height: 26px !important;
-  box-shadow: none !important;
-  text-align: center;
-}
-
-.status-select :deep(.ant-select-selection-item) {
-  line-height: 26px !important;
-  color: var(--ant-color-text) !important;
-  font-weight: 500;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-selection-placeholder) {
-  line-height: 26px !important;
-  color: var(--ant-color-text-placeholder) !important;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-clear) {
-  display: none !important;
-}
-
-.status-select :deep(.ant-select-selection-search) {
-  margin: 0 !important;
-  padding: 0;
-}
-
-.status-select :deep(.ant-select-selection-search-input) {
-  padding: 0 !important;
-  margin: 0 !important;
-  height: 26px !important;
-}
-
-.status-select:hover :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-.status-select:focus-within :deep(.ant-select-selector),
-.status-select.ant-select-focused :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  outline: none !important;
-}
-
-.status-select :deep(.ant-select-arrow) {
-  right: 4px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 10px;
-}
-
-.status-select :deep(.ant-select-arrow:hover) {
-  color: var(--ant-color-primary);
 }
 
 /* ==================== 社区标签云（小标签 + 红绿黄） ==================== */

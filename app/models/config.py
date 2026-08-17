@@ -2501,15 +2501,23 @@ class OkNteUserConfig(ConfigBase):
     OKNTE_TASK_BOOK: dict[int, str] = {
         1: "启动游戏",
         2: "日常任务",
-        3: "一咖舍",
-        4: "钓鱼",
-        5: "异象界域",
+        3: "自动钓鱼",
+        4: "异象界域",
+        5: "异象追猎",
         6: "音游",
-        7: "业主选拔",
+        7: "店长特供",
         8: "粉爪大劫案",
-        9: "暗域任务",
-        10: "呗果智能体",
-        11: "诊断",
+        9: "呗果智能体",
+        10: "自动小旋风",
+        11: "九百九十九夜",
+        12: "自动战斗检测诊断",
+        13: "诊断",
+        14: "日常领取",
+        15: "羁遇赠礼",
+        16: "一咖舍",
+        17: "喷泉签到",
+        18: "异象家具",
+        19: "影院约会",
     }
 
     def __init__(self) -> None:
@@ -2546,8 +2554,8 @@ class OkNteUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # ok-nte.exe -t N -e；上游 DailyTask 是 -t 2
-        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 11))
+        # ok-nte.exe -t N -e；新版上游 DailyRoutineTask 是 -t 2
+        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 19))
         self.Task_ExitOnFinish = ConfigItem(
             "Task", "ExitOnFinish", True, BoolValidator()
         )
