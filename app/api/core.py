@@ -28,12 +28,13 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
-from app.models.schema import *
+from app.models.schema import BackendHealthOut, OutBase, WebSocketMessage
 from app.api.ws_command import ws_command
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
+RUNTIME_PROTOCOL_VERSION = 1
 
 
 def is_backend_dev_mode() -> bool:
@@ -41,6 +42,44 @@ def is_backend_dev_mode() -> bool:
 
     raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+@router.get(
+    "/health",
+    summary="获取后端健康状态",
+    response_model=BackendHealthOut,
+    status_code=200,
+)
+async def get_health() -> BackendHealthOut:
+    """返回 Runtime 监督所需的后端状态与身份。"""
+
+    if os.getenv("AUTO_MAS_SUPERVISED") != "1":
+        return BackendHealthOut(
+            protocol=RUNTIME_PROTOCOL_VERSION,
+            version=Config.VERSION,
+            commit="",
+        )
+
+    raw_protocol = os.getenv("AUTO_MAS_RUNTIME_PROTOCOL", "")
+    try:
+        protocol = int(raw_protocol)
+    except ValueError:
+        protocol = 0
+
+    expected_version = os.getenv("AUTO_MAS_EXPECTED_VERSION")
+    expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT")
+    if expected_version is None and expected_commit is None:
+        return BackendHealthOut(
+            protocol=protocol,
+            version=Config.VERSION,
+            commit="",
+        )
+
+    return BackendHealthOut(
+        protocol=protocol,
+        version=expected_version or "",
+        commit=expected_commit or "",
+    )
 
 
 @router.websocket("/ws")
