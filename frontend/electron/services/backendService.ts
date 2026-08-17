@@ -10,6 +10,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 
 import { killAllRelatedProcesses } from '../utils/processManager'
 import { MirrorService } from './mirrorService'
+import { isDevelopmentEnvironment } from './environmentService'
 
 import { getLogger } from './logger'
 const logger = getLogger('后端服务')
@@ -472,7 +473,14 @@ export class BackendService {
       env[process.platform === 'win32' ? 'Path' : 'PATH'] = inheritedPath
     }
     env.PYTHONIOENCODING = 'utf-8'
+    // 由前端拉起的后端无需自行提权
     env.AUTO_MAS_DEV = '1'
+    // 仅开发环境标记运行环境，打包版必须清除继承值以正常上报遥测
+    if (isDevelopmentEnvironment()) {
+      env.AUTO_MAS_ENV = 'development'
+    } else {
+      delete env.AUTO_MAS_ENV
+    }
     return env
   }
 

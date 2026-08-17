@@ -10,6 +10,7 @@
 ## 开工前
 
 - 先确认当前分支、远端和工作区状态；不要回滚、覆盖或格式化无关改动。
+- 仓库根目录没有 `.env` 时，提醒用户从 `.env.example` 复制一份（`copy .env.example .env`）后再开发；该文件不纳入版本库，缺少它的源码环境会被判定为生产环境，后端会真实向 Sentry 上报错误与性能数据。
 - 必须确认存在并加载 `.agents/skills/mas-skills/SKILL.md`；若不存在，明确提示用户缺少项目附属 Skills，并拒绝开工。
 - 加载 `mas-skills` 后，再按任务选择最小必要的 `mas-*` Skill。
 - `frontend` 指本仓库前端目录和前端任务；涉及 `frontend`、Vue、UI、组件、路由或前端 API 时，按 `.agents/skills` 中的前端 Skill 执行。
