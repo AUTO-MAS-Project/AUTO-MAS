@@ -37,7 +37,22 @@ from datetime import datetime
 from typing import Dict, Any
 
 from app.core import Config
+from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+
+
+def _safe_json(response: httpx.Response) -> dict:
+    """解析库街区响应；非 JSON（通常是风控/维护页）时给出可读错误。"""
+
+    try:
+        data = response.json()
+    except Exception:
+        raise Exception(
+            f"库街区返回了非 JSON 响应（HTTP {response.status_code}），疑似风控或服务维护"
+        )
+    if not isinstance(data, dict):
+        raise Exception("库街区返回了异常响应格式，疑似风控或服务维护")
+    return data
 
 logger = get_logger("库街区签到任务")
 
@@ -192,7 +207,7 @@ async def _get_user_info(
             data="",
             timeout=30.0,
         )
-        rsp = response.json()
+        rsp = _safe_json(response)
 
     if rsp.get("code") != 200:
         raise Exception(f"获取用户信息失败: {rsp.get('msg', rsp.get('message', ''))}")
@@ -219,7 +234,7 @@ async def _get_role_list(
                 data=f"gameId={game_id}&userId={user_id}",
                 timeout=30.0,
             )
-            rsp = response.json()
+            rsp = _safe_json(response)
 
         if rsp.get("code") != 200:
             logger.warning(f"获取 gameId={game_id} 角色失败: {rsp.get('msg', '')}")
@@ -248,7 +263,8 @@ async def _do_sign(
     headers["token"] = token
     headers["devcode"] = f"{dev_code}, Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) "
 
-    req_month = datetime.now().strftime("%m")
+    # 库街区服务端按北京时间计月，本地时区可能不同，统一使用 UTC+8
+    req_month = datetime.now(tz=UTC8).strftime("%m")
     body = f"gameId={game_id}&serverId={server_id}&roleId={role_id}&userId={user_id}&reqMonth={req_month}"
 
     async with httpx.AsyncClient(proxy=Config.proxy) as client:
@@ -258,7 +274,7 @@ async def _do_sign(
             data=body,
             timeout=30.0,
         )
-        rsp = response.json()
+        rsp = _safe_json(response)
 
     code = rsp.get("code", -1)
 
