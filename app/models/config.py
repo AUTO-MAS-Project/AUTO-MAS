@@ -2192,6 +2192,10 @@ class GeneralUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
+        ## 是否由 MAS 维护用户独立脚本配置
+        self.Info_IfUseMasConfig = ConfigItem(
+            "Info", "IfUseMasConfig", True, BoolValidator()
+        )
         ## 是否在任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()

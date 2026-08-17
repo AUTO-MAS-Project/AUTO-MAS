@@ -23,6 +23,7 @@
 import shlex
 import shutil
 import asyncio
+import uuid
 from pathlib import Path
 
 from app.core import Config
@@ -57,6 +58,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        self.use_mas_config = True
+        if self.cur_user_item.user_id != "Default":
+            self.use_mas_config = bool(
+                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                    "Info", "IfUseMasConfig"
+                )
+            )
 
     async def prepare(self):
 
@@ -118,6 +126,10 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await System.kill_process(self.script_set_exe_path)
 
+        if not self.use_mas_config:
+            logger.info("外侧配置模式：跳过写入脚本配置")
+            return
+
         if (
             self.script_config.get("Script", "ConfigPathMode") == "Folder"
             and (
@@ -153,6 +165,10 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.general_process_manager.kill()
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
+
+        if not self.use_mas_config:
+            logger.info("外侧配置模式：跳过回写 MAS 用户配置")
+            return
 
         shutil.rmtree(
             Path.cwd()

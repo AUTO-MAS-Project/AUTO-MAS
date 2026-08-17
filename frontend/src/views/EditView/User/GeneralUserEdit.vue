@@ -118,7 +118,30 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <!-- 占位列 -->
+              <a-form-item name="configSource">
+                <template #label>
+                  <a-tooltip
+                    title="MAS侧独立配置会在运行前写入脚本，并按任务结束策略保存；外侧配置完全不由 MAS 写入脚本配置"
+                  >
+                    <span class="form-label">
+                      配置来源
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="formData.Info.IfUseMasConfig"
+                  :checked-children="'MAS侧独立配置'"
+                  :un-checked-children="'外侧配置'"
+                  :disabled="loading"
+                  @change="handleFieldSave('Info.IfUseMasConfig', formData.Info.IfUseMasConfig)"
+                />
+                <span class="switch-description">
+                  {{
+                    formData.Info.IfUseMasConfig ? '由 MAS 隔离该用户配置' : '直接使用脚本外侧配置'
+                  }}
+                </span>
+              </a-form-item>
             </a-col>
           </a-row>
 
@@ -256,6 +279,7 @@ const getDefaultGeneralUserData = () => ({
     Notes: '',
     Status: true,
     RemainedDay: -1,
+    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
     ScriptBeforeTask: '',
