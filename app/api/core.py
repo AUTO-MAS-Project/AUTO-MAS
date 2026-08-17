@@ -21,7 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
 import time
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -34,13 +33,6 @@ from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
-
-
-def is_backend_dev_mode() -> bool:
-    """判断后端是否处于开发模式。"""
-
-    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
 
 
 @router.websocket("/ws")
