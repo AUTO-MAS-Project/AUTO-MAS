@@ -490,10 +490,15 @@ class AutoProxyTask(TaskExecuteBase):
     async def update_config(self):
 
         if not self.use_mas_config:
-            logger.info("外侧配置模式：跳过回写 MAS 用户配置")
+            logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.rmtree(
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                ignore_errors=True,
+            )
             shutil.copytree(
                 self.script_config_path,
                 Path.cwd()
@@ -542,11 +547,15 @@ class AutoProxyTask(TaskExecuteBase):
         await System.kill_process(self.script_exe_path)
 
         if not self.use_mas_config:
-            logger.info("外侧配置模式：跳过写入脚本配置")
+            logger.info("脚本直控配置：跳过写入脚本配置")
             return
 
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if self.script_config_path.is_dir():
+                shutil.rmtree(self.script_config_path)
+            elif self.script_config_path.exists():
+                self.script_config_path.unlink()
             shutil.copytree(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",

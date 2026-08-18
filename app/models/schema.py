@@ -598,7 +598,7 @@ class GeneralUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     IfUseMasConfig: Optional[bool] = Field(
-        default=None, description="是否由 MAS 维护用户独立脚本配置"
+        default=None, description="是否使用用户独立脚本配置"
     )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"

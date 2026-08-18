@@ -117,31 +117,13 @@
                   @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)" />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item name="configSource">
-                <template #label>
-                  <a-tooltip
-                    title="MAS侧独立配置会在运行前写入脚本，并按任务结束策略保存；外侧配置完全不由 MAS 写入脚本配置"
-                  >
-                    <span class="form-label">
-                      配置来源
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-switch
-                  v-model:checked="formData.Info.IfUseMasConfig"
-                  :checked-children="'MAS侧独立配置'"
-                  :un-checked-children="'外侧配置'"
-                  :disabled="loading"
-                  @change="handleFieldSave('Info.IfUseMasConfig', formData.Info.IfUseMasConfig)"
-                />
-                <span class="switch-description">
-                  {{
-                    formData.Info.IfUseMasConfig ? '由 MAS 隔离该用户配置' : '直接使用脚本外侧配置'
-                  }}
-                </span>
-              </a-form-item>
+            <a-col :span="24">
+              <GeneralConfigModeSelector
+                :model-value="formData.Info.IfUseMasConfig"
+                :disabled="loading"
+                :saving="configModeSaving"
+                @change="handleConfigModeChange"
+              />
             </a-col>
           </a-row>
 
@@ -242,6 +224,7 @@ import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -266,6 +249,7 @@ const scriptName = ref('')
 
 // 通用配置相关
 const generalConfigLoading = ref(false)
+const configModeSaving = ref(false)
 const generalSubscriptionId = ref<string | null>(null)
 const generalWebsocketId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
@@ -372,6 +356,37 @@ const handleFieldSave = async (key: string, value: any) => {
     logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
+  }
+}
+
+const handleConfigModeChange = async (value: boolean) => {
+  if (
+    isInitializing.value ||
+    configModeSaving.value ||
+    !userId ||
+    formData.Info.IfUseMasConfig === value
+  ) {
+    return
+  }
+
+  const previousValue = formData.Info.IfUseMasConfig
+  formData.Info.IfUseMasConfig = value
+  configModeSaving.value = true
+
+  try {
+    const saved = await updateUser(scriptId, userId, {
+      Info: { IfUseMasConfig: value },
+    })
+
+    if (!saved) {
+      formData.Info.IfUseMasConfig = previousValue
+      return
+    }
+
+    await loadUserData()
+    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+  } finally {
+    configModeSaving.value = false
   }
 }
 

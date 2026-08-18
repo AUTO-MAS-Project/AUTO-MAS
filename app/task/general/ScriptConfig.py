@@ -127,7 +127,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await System.kill_process(self.script_set_exe_path)
 
         if not self.use_mas_config:
-            logger.info("外侧配置模式：跳过写入脚本配置")
+            logger.info("脚本直控配置：跳过写入脚本配置")
             return
 
         if (
@@ -137,6 +137,10 @@ class ScriptConfigTask(TaskExecuteBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
             ).exists()
         ):
+            if self.script_config_path.is_dir():
+                shutil.rmtree(self.script_config_path)
+            elif self.script_config_path.exists():
+                self.script_config_path.unlink()
             shutil.copytree(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
@@ -167,7 +171,7 @@ class ScriptConfigTask(TaskExecuteBase):
         del self.general_process_manager
 
         if not self.use_mas_config:
-            logger.info("外侧配置模式：跳过回写 MAS 用户配置")
+            logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
         shutil.rmtree(
