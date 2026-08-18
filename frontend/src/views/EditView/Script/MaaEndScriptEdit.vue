@@ -668,9 +668,10 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
 
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   maaEndConfig.Game.EmulatorIndex = ''
-  clearEmulatorDeviceOptions()
   if (emulatorId) {
     void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
   }
 
   isSaving.value = true

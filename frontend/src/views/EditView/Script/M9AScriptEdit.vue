@@ -433,9 +433,10 @@ const loadEmulatorOptions = async () => {
 
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   m9aConfig.Emulator.Index = ''
-  clearEmulatorDeviceOptions()
   if (emulatorId) {
     void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
   }
 
   isSaving.value = true

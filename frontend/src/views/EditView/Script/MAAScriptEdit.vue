@@ -453,9 +453,10 @@ const loadEmulatorOptions = async () => {
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   maaConfig.Emulator.Index = ''
-  clearEmulatorDeviceOptions()
   if (emulatorId) {
     void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
   }
 
   // 保存模拟器选择和清空的实例字段
