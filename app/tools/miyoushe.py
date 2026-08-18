@@ -36,6 +36,7 @@ import random
 import string
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -69,6 +70,25 @@ SALT_DATA = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"      # 有 body/query 的请求�
 # 验证码重试配置
 CAPTCHA_MAX_RETRIES = 3
 CAPTCHA_RETRY_DELAY = (6, 15)  # 秒，随机范围
+
+
+class _SignOutcome(tuple):
+    """签到结果与刷新凭据的兼容返回值。
+
+    新版调用方可继续解包为 ``(result, cookie)``；旧调用方读取
+    ``outcome["status"]`` 时仍会得到签到结果字段。
+    """
+
+    def __new__(cls, result: dict, cookie: str):
+        return super().__new__(cls, (result, cookie))
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return super().__getitem__(0)[key]
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        return super().__getitem__(0).get(key, default)
 
 # 游戏配置（整合 MihoyoBBSTools 全部支持的游戏）
 GAME_CONFIG = {
@@ -293,6 +313,22 @@ def _ensure_auth_aliases(cookies: Dict[str, str]) -> None:
             cookies[target] = cookies[source]
 
 
+def validate_miyoushe_cookie(cookie: str) -> None:
+    """校验米游社凭据包含签到所需的 UID 和认证字段。"""
+
+    cookies = _parse_cookie(cookie)
+    _ensure_auth_aliases(cookies)
+    if not _get_stuid(cookies):
+        raise ValueError("Cookie 缺少 UID 字段")
+    if cookies.get("cookie_token"):
+        return
+    if cookies.get("stoken") and cookies.get("mid"):
+        return
+    if cookies.get("stoken"):
+        raise ValueError("stoken Cookie 缺少 mid 字段")
+    raise ValueError("Cookie 缺少认证字段 (cookie_token 或 stoken)")
+
+
 # ==================== Token 派生 ====================
 
 
@@ -325,7 +361,8 @@ async def _derive_cookie_token(
         "stuid": stuid,
     }
 
-    async with httpx.AsyncClient(proxy=proxy or Config.proxy) as client:
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
         response = await client.get(
             PASSPORT_COOKIE_URL,
             headers=headers,
@@ -350,7 +387,12 @@ async def _derive_cookie_token(
 # ==================== 签到主流程 ====================
 
 
-async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
+async def miyoushe_sign_in(
+    cookie: str,
+    proxy: str | None = None,
+    *,
+    on_credential_update: Callable[[str], Awaitable[None]] | None = None,
+) -> list[dict]:
     """米游社游戏签到
 
     支持多种 cookie 认证策略：
@@ -362,11 +404,22 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
     Args:
         cookie: cookie 字符串，至少包含 UID 字段 + (cookie_token 或 stoken)
         proxy: 代理地址
+        on_credential_update: 凭据被替换后的可选回写回调
 
     Returns:
         签到结果列表，每项包含 account, game, platform, status, reward, reason
     """
     results = []
+    updated_cookie = ""
+
+    async def report_credential_update() -> None:
+        if on_credential_update is None or not updated_cookie:
+            return
+        try:
+            await on_credential_update(updated_cookie)
+        except Exception as e:
+            logger.warning(f"米游社凭据回写失败: {e}")
+
     cookies = _parse_cookie(cookie)
     _ensure_auth_aliases(cookies)
     stuid = _get_stuid(cookies)
@@ -401,6 +454,7 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
             effective_cookies["cookie_token"] = derived_token
             if derived_uid:
                 _ensure_uid_aliases(effective_cookies, derived_uid)
+            updated_cookie = _build_cookie_str(effective_cookies)
         except Exception as e:
             logger.error(f"从 stoken 派生 cookie_token 失败: {e}")
             return [{
@@ -439,9 +493,10 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
 
     # 获取游戏角色列表
     try:
-        roles = await _get_game_roles(effective_cookie)
+        roles = await _get_game_roles(effective_cookie, proxy=proxy)
     except _RiskControlError:
         logger.warning("获取米游社游戏角色被风控")
+        await report_credential_update()
         return [{
             "account": f"{stuid}/米游社",
             "game": "米游社",
@@ -452,6 +507,7 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
         }]
     except Exception as e:
         logger.error(f"获取米游社游戏角色失败: {e}")
+        await report_credential_update()
         return [{
             "account": f"{stuid}/米游社",
             "game": "米游社",
@@ -463,10 +519,11 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
 
     if not roles:
         logger.warning("未找到米游社绑定的游戏角色")
+        await report_credential_update()
         return results
 
     # 逐游戏签到
-    for role in roles:
+    for index, role in enumerate(roles):
         game_biz = role.get("game_biz", "")
         region = role.get("region", "")
         game_uid = role.get("game_uid", "")
@@ -481,7 +538,13 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
 
         # 检查今日是否已签到
         try:
-            is_signed = await _check_sign_info(effective_cookie, game_cfg, region, game_uid)
+            is_signed = await _check_sign_info(
+                effective_cookie,
+                game_cfg,
+                region,
+                game_uid,
+                proxy=proxy,
+            )
             if is_signed:
                 results.append({
                     "account": account,
@@ -510,13 +573,19 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
         # 执行签到
         try:
             sign_result, refreshed_cookie = await _do_sign(
-                effective_cookie, game_cfg, region, game_uid, account
+                effective_cookie,
+                game_cfg,
+                region,
+                game_uid,
+                account,
+                proxy=proxy,
             )
             results.append(sign_result)
             # cookie_token 过期被刷新后，同一轮后续游戏复用新 cookie，
             # 避免每个游戏重复走派生接口增加风控概率。
             if refreshed_cookie and refreshed_cookie != effective_cookie:
                 effective_cookie = refreshed_cookie
+                updated_cookie = refreshed_cookie
         except _RiskControlError:
             results.append({
                 "account": account,
@@ -539,12 +608,19 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
             logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
 
         # 间隔防风控（对齐 MihoyoBBSTools：随机 2-8 秒）
-        await asyncio.sleep(random.uniform(2.0, 8.0))
+        if index < len(roles) - 1:
+            await asyncio.sleep(random.uniform(2.0, 8.0))
+
+    await report_credential_update()
 
     return results
 
 
-async def _get_game_roles(cookie: str) -> list[dict]:
+async def _get_game_roles(
+    cookie: str,
+    *,
+    proxy: str | None = None,
+) -> list[dict]:
     """获取游戏角色列表
 
     兼容两种 API 返回结构：
@@ -555,7 +631,8 @@ async def _get_game_roles(cookie: str) -> list[dict]:
     headers["DS"] = _generate_ds()
     headers["x-rpc-device_id"] = _generate_device_id(cookie)
 
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
         response = await client.get(
             ROLES_URL,
             headers=headers,
@@ -590,7 +667,12 @@ async def _get_game_roles(cookie: str) -> list[dict]:
 
 
 async def _check_sign_info(
-    cookie: str, game_cfg: dict, region: str, uid: str
+    cookie: str,
+    game_cfg: dict,
+    region: str,
+    uid: str,
+    *,
+    proxy: str | None = None,
 ) -> bool:
     """检查今日是否已签到"""
     headers = BASE_HEADERS.copy()
@@ -601,7 +683,8 @@ async def _check_sign_info(
 
     url = f"{game_cfg.get('info_url', INFO_URL)}?{query}"
 
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
         response = await client.get(
             url,
             headers=headers,
@@ -619,7 +702,13 @@ async def _check_sign_info(
 
 
 async def _do_sign(
-    cookie: str, game_cfg: dict, region: str, uid: str, account: str = ""
+    cookie: str,
+    game_cfg: dict,
+    region: str,
+    uid: str,
+    account: str = "",
+    *,
+    proxy: str | None = None,
 ) -> tuple[dict, str]:
     """执行签到（含验证码重试）
 
@@ -654,7 +743,8 @@ async def _do_sign(
         headers["x-rpc-device_id"] = _generate_device_id(cookie)
         headers.update(game_cfg.get("extra_headers", {}))
 
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+        resolved_proxy = proxy if proxy is not None else Config.proxy
+        async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
             response = await client.post(
                 sign_url,
                 headers=headers,
@@ -674,7 +764,7 @@ async def _do_sign(
             if award:
                 reward = f"{award.get('name', '')}x{award.get('cnt', 1)}"
             logger.info(f"{account} {game_cfg['name']} 签到成功")
-            return ({
+            return _SignOutcome({
                 "account": account,
                 "game": game_cfg["name"],
                 "platform": "米游社",
@@ -685,7 +775,7 @@ async def _do_sign(
 
         # ---- 已签到 ----
         if retcode == -5003 or "请勿重复签到" in rsp.get("message", ""):
-            return ({
+            return _SignOutcome({
                 "account": account,
                 "game": game_cfg["name"],
                 "platform": "米游社",
@@ -711,7 +801,7 @@ async def _do_sign(
                 )
                 try:
                     new_token, new_uid = await _derive_cookie_token(
-                        parsed["stoken"], parsed["mid"], stuid,
+                        parsed["stoken"], parsed["mid"], stuid, proxy=proxy,
                     )
                     parsed["cookie_token"] = new_token
                     if new_uid:
@@ -744,7 +834,7 @@ async def _do_sign(
                 await asyncio.sleep(random.uniform(1.0, 3.0))
                 continue
 
-            return ({
+            return _SignOutcome({
                 "account": account,
                 "game": game_cfg["name"],
                 "platform": "米游社",
@@ -768,7 +858,7 @@ async def _do_sign(
                 logger.error(
                     f"{account} {game_cfg['name']} 验证码重试耗尽，签到失败"
                 )
-                return ({
+                return _SignOutcome({
                     "account": account,
                     "game": game_cfg["name"],
                     "platform": "米游社",
@@ -789,7 +879,7 @@ async def _do_sign(
                 await asyncio.sleep(delay)
                 continue
             else:
-                return ({
+                return _SignOutcome({
                     "account": account,
                     "game": game_cfg["name"],
                     "platform": "米游社",
@@ -801,7 +891,7 @@ async def _do_sign(
         # ---- 其他失败 ----
         message = rsp.get("message", "未知错误")
         logger.error(f"{account} {game_cfg['name']} 签到失败: {message}")
-        return ({
+        return _SignOutcome({
             "account": account,
             "game": game_cfg["name"],
             "platform": "米游社",
@@ -811,7 +901,7 @@ async def _do_sign(
         }, cookie)
 
     # 理论上不会到这里
-    return ({
+    return _SignOutcome({
         "account": account,
         "game": game_cfg["name"],
         "platform": "米游社",

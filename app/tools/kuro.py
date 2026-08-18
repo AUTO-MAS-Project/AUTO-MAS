@@ -119,80 +119,93 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
     dev_code = str(uuid.uuid4())
     distinct_id = str(uuid.uuid4())
 
-    # 获取用户信息
-    try:
-        user_info = await _get_user_info(token, dev_code, distinct_id)
-    except Exception as e:
-        logger.error(f"获取库街区用户信息失败: {e}")
-        return [{
-            "account": "未知/库街区",
-            "game": "库街区",
-            "platform": "库街区",
-            "status": "失败",
-            "reward": "",
-            "reason": f"获取用户信息失败: {e}",
-        }]
-
-    user_id = user_info.get("userId", "")
-    nick_name = user_info.get("nickName", user_id)
-
-    # 获取游戏角色列表
-    try:
-        roles = await _get_role_list(token, dev_code, distinct_id, user_id)
-    except Exception as e:
-        logger.error(f"获取库街区游戏角色失败: {e}")
-        return [{
-            "account": f"{nick_name}/库街区",
-            "game": "库街区",
-            "platform": "库街区",
-            "status": "失败",
-            "reward": "",
-            "reason": f"获取角色列表失败: {e}",
-        }]
-
-    if not roles:
-        logger.warning("未找到库街区绑定的游戏角色")
-        return results
-
-    # 逐游戏签到
-    for role in roles:
-        game_id = str(role.get("gameId", ""))
-        server_id = role.get("serverId", "")
-        role_id = role.get("roleId", "")
-        role_name = role.get("roleName", "")
-
-        game_cfg = GAME_CONFIG.get(game_id)
-        if not game_cfg:
-            continue
-
-        # account 格式: 别名/角色名(角色ID)
-        account = f"{nick_name}/{role_name}({role_id})" if role_id else f"{nick_name}/库街区"
-
-        # 执行签到
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+        # 获取用户信息
         try:
-            sign_result = await _do_sign(
-                token, dev_code, game_id, server_id, role_id, user_id, account, game_cfg
-            )
-            results.append(sign_result)
+            user_info = await _get_user_info(token, dev_code, distinct_id, client)
         except Exception as e:
-            results.append({
-                "account": account,
-                "game": game_cfg["name"],
+            logger.error(f"获取库街区用户信息失败: {e}")
+            return [{
+                "account": "未知/库街区",
+                "game": "库街区",
                 "platform": "库街区",
                 "status": "失败",
                 "reward": "",
-                "reason": str(e),
-            })
-            logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
+                "reason": f"获取用户信息失败: {e}",
+            }]
 
-        # 间隔
-        await asyncio.sleep(3)
+        user_id = user_info.get("userId", "")
+        nick_name = user_info.get("nickName", user_id)
+
+        # 获取游戏角色列表
+        try:
+            roles = await _get_role_list(token, dev_code, distinct_id, user_id, client)
+        except Exception as e:
+            logger.error(f"获取库街区游戏角色失败: {e}")
+            return [{
+                "account": f"{nick_name}/库街区",
+                "game": "库街区",
+                "platform": "库街区",
+                "status": "失败",
+                "reward": "",
+                "reason": f"获取角色列表失败: {e}",
+            }]
+
+        signable_roles = [
+            role for role in roles if str(role.get("gameId", "")) in GAME_CONFIG
+        ]
+        if not signable_roles:
+            logger.warning("未找到库街区绑定的游戏角色")
+            return results
+
+        # 逐游戏签到
+        for index, role in enumerate(signable_roles):
+            game_id = str(role.get("gameId", ""))
+            server_id = role.get("serverId", "")
+            role_id = role.get("roleId", "")
+            role_name = role.get("roleName", "")
+            game_cfg = GAME_CONFIG[game_id]
+
+            # account 格式: 别名/角色名(角色ID)
+            account = f"{nick_name}/{role_name}({role_id})" if role_id else f"{nick_name}/库街区"
+
+            # 执行签到
+            try:
+                sign_result = await _do_sign(
+                    token,
+                    dev_code,
+                    game_id,
+                    server_id,
+                    role_id,
+                    user_id,
+                    account,
+                    game_cfg,
+                    client,
+                )
+                results.append(sign_result)
+            except Exception as e:
+                results.append({
+                    "account": account,
+                    "game": game_cfg["name"],
+                    "platform": "库街区",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": str(e),
+                })
+                logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
+
+            if index < len(signable_roles) - 1:
+                await asyncio.sleep(3)
 
     return results
 
 
 async def _get_user_info(
-    token: str, dev_code: str, distinct_id: str
+    token: str,
+    dev_code: str,
+    distinct_id: str,
+    client: httpx.AsyncClient,
 ) -> dict:
     """获取用户信息"""
     headers = BBS_HEADERS.copy()
@@ -200,14 +213,13 @@ async def _get_user_info(
     headers["devcode"] = dev_code
     headers["distinct_id"] = distinct_id
 
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
-        response = await client.post(
-            USER_INFO_URL,
-            headers=headers,
-            data="",
-            timeout=30.0,
-        )
-        rsp = _safe_json(response)
+    response = await client.post(
+        USER_INFO_URL,
+        headers=headers,
+        data="",
+        timeout=30.0,
+    )
+    rsp = _safe_json(response)
 
     if rsp.get("code") != 200:
         raise Exception(f"获取用户信息失败: {rsp.get('msg', rsp.get('message', ''))}")
@@ -216,7 +228,11 @@ async def _get_user_info(
 
 
 async def _get_role_list(
-    token: str, dev_code: str, distinct_id: str, user_id: str
+    token: str,
+    dev_code: str,
+    distinct_id: str,
+    user_id: str,
+    client: httpx.AsyncClient,
 ) -> list[dict]:
     """获取游戏角色列表"""
     headers = BBS_HEADERS.copy()
@@ -227,14 +243,13 @@ async def _get_role_list(
     all_roles = []
 
     for game_id in GAME_CONFIG:
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(
-                ROLE_LIST_URL,
-                headers=headers,
-                data=f"gameId={game_id}&userId={user_id}",
-                timeout=30.0,
-            )
-            rsp = _safe_json(response)
+        response = await client.post(
+            ROLE_LIST_URL,
+            headers=headers,
+            data=f"gameId={game_id}&userId={user_id}",
+            timeout=30.0,
+        )
+        rsp = _safe_json(response)
 
         if rsp.get("code") != 200:
             logger.warning(f"获取 gameId={game_id} 角色失败: {rsp.get('msg', '')}")
@@ -256,6 +271,7 @@ async def _do_sign(
     user_id: str,
     account: str,
     game_cfg: dict,
+    client: httpx.AsyncClient,
 ) -> dict:
     """执行库街区签到"""
 
@@ -267,14 +283,13 @@ async def _do_sign(
     req_month = datetime.now(tz=UTC8).strftime("%m")
     body = f"gameId={game_id}&serverId={server_id}&roleId={role_id}&userId={user_id}&reqMonth={req_month}"
 
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
-        response = await client.post(
-            SIGN_URL,
-            headers=headers,
-            data=body,
-            timeout=30.0,
-        )
-        rsp = _safe_json(response)
+    response = await client.post(
+        SIGN_URL,
+        headers=headers,
+        data=body,
+        timeout=30.0,
+    )
+    rsp = _safe_json(response)
 
     code = rsp.get("code", -1)
 

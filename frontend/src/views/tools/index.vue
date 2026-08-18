@@ -28,14 +28,6 @@ const toolsConfig = reactive<ToolsConfig>({
         AnotherQuitKey: 'space',
         Status: '-',
     },
-    GameSign: {
-        Enabled: false,
-        NotifyEnabled: false,
-        RunOnStartup: false,
-        LastSignDate: '2000-01-01',
-        Status: '-',
-        Result: '{}',
-    },
 })
 
 // 本地编辑状态
@@ -49,14 +41,6 @@ const editingConfig = reactive<ToolsConfig>({
         NextFrameKey: 'f',
         AnotherQuitKey: 'space',
         Status: '-',
-    },
-    GameSign: {
-        Enabled: false,
-        NotifyEnabled: false,
-        RunOnStartup: false,
-        LastSignDate: '2000-01-01',
-        Status: '-',
-        Result: '{}',
     },
 })
 
@@ -73,19 +57,8 @@ let statusPollFailed = false
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
 
-// GameSign 配置随 ToolsConfig 一并保存，此处仅同步最新值避免覆盖签到页的修改
-const syncGameSignConfig = (gameSign: unknown) => {
-    if (!isMounted || !gameSign) return
-    ;(toolsConfig as any).GameSign = gameSign
-    ;(editingConfig as any).GameSign = JSON.parse(JSON.stringify(gameSign))
-}
-
 // 仅更新状态（不影响编辑状态，不触发 loading）
 const updateStatus = async () => {
-    // 如果下拉框正在打开，跳过更新避免干扰用户操作
-    if (isSelectOpen.value) {
-        return
-    }
     try {
         // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
         const response = await Service.getToolsApiToolsGetPost()
@@ -100,8 +73,6 @@ const updateStatus = async () => {
             // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
             toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
         }
-        // 同步最新的 GameSign 配置，保证保存时不会用旧数据覆盖签到页的修改
-        syncGameSignConfig(data.GameSign)
     } catch (error) {
         if (!statusPollFailed) {
             const errorMsg = error instanceof Error ? error.message : String(error)
@@ -146,19 +117,11 @@ const loadTools = async () => {
                 Status: '-',
             }
         }
-        // 确保 GameSign 配置存在
-        if (!data.GameSign) {
-            data.GameSign = {
-                Enabled: false,
-                NotifyEnabled: false,
-                RunOnStartup: false,
-                LastSignDate: '2000-01-01',
-                Status: '-',
-                Result: '{}',
-            }
-        }
-        Object.assign(toolsConfig, data)
-        Object.assign(editingConfig, JSON.parse(JSON.stringify(data)))
+        // 游戏签到由侧边栏独立页面单独维护，工具页只接管明日方舟 PC 配置。
+        Object.assign(toolsConfig, { ArknightsPC: data.ArknightsPC })
+        Object.assign(editingConfig, {
+            ArknightsPC: JSON.parse(JSON.stringify(data.ArknightsPC)),
+        })
         logger.info('工具加载完成')
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
@@ -170,12 +133,15 @@ const loadTools = async () => {
 const handleFieldChange = async (key: string, value: any) => {
     if (!editingConfig.ArknightsPC) return
 
+    const previousValue = (editingConfig.ArknightsPC as any)[key]
     try {
         // 更新编辑状态
         (editingConfig.ArknightsPC as any)[key] = value
 
-        // 立即保存到后端
-        await updateTools(editingConfig)
+        // 只提交当前字段，避免旧状态覆盖运行中的工具配置。
+        await updateTools({
+            ArknightsPC: { [key]: value },
+        })
 
         // 保存成功后只同步修改的字段到 toolsConfig，不触碰 Status
         if (toolsConfig.ArknightsPC && key !== 'Status') {
@@ -184,6 +150,10 @@ const handleFieldChange = async (key: string, value: any) => {
 
         logger.info(`${key} 已保存`)
     } catch (error) {
+        // 并发保存时只回滚仍保持本次值的字段，避免覆盖用户后续输入。
+        if ((editingConfig.ArknightsPC as any)[key] === value) {
+            (editingConfig.ArknightsPC as any)[key] = previousValue
+        }
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`保存 ${key} 失败: ${errorMsg}`)
     }
@@ -191,20 +161,6 @@ const handleFieldChange = async (key: string, value: any) => {
 
 // 键位录制状态
 const recordingKeyField = ref<string | null>(null)
-
-// 下拉框打开状态
-const isSelectOpen = ref<boolean>(false)
-
-// 处理下拉框可见性变化
-const handleSelectVisibleChange = (visible: boolean) => {
-    isSelectOpen.value = visible
-    if (visible) {
-        logger.debug('下拉框打开，暂停轮询')
-    } else {
-        logger.debug('下拉框关闭，恢复轮询')
-        void updateStatus()
-    }
-}
 
 // 开始录制键位
 const startRecordKey = (fieldName: string) => {
@@ -289,7 +245,7 @@ onUnmounted(() => {
                     <TabArknightsPC v-if="editingConfig.ArknightsPC" :config="editingConfig.ArknightsPC"
                         :disabled="loading" :on-field-change="handleFieldChange"
                         :recording-key-field="recordingKeyField" :start-record-key="startRecordKey"
-                        :stop-record-key="stopRecordKey" :on-select-visible-change="handleSelectVisibleChange" />
+                        :stop-record-key="stopRecordKey" />
                 </a-tab-pane>
             </a-tabs>
         </div>

@@ -1204,10 +1204,12 @@ class AppConfig(GlobalConfig):
         account_token = str(
             self._safe_config_get(account, "GameSignAccount", "SklandToken", "") or ""
         ).strip()
-        credential_changed = account_token != new_token
+        # 旧用户只保存 OAuth Token；匹配到工具账号时保留其已刷新的完整凭据。
+        target_token = account_token if new_account is account else new_token
+        credential_changed = account_token != target_token
         await account.set("GameSignAccount", "Name", account_name)
         await account.set("GameSignAccount", "Enabled", enabled_value)
-        await account.set("GameSignAccount", "SklandToken", new_token)
+        await account.set("GameSignAccount", "SklandToken", target_token)
         if credential_changed:
             await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
             if account_uid is not None:
@@ -1924,12 +1926,9 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        credential_fields = {
-            "MiyousheToken",
-            "KuroToken",
-            "SklandToken",
-            "TaygedoToken",
-        }
+        from app.tools.game_sign import GAME_SIGN_TOKEN_FIELDS
+
+        credential_fields = set(GAME_SIGN_TOKEN_FIELDS)
         credential_changed = False
 
         for group, items in data.items():

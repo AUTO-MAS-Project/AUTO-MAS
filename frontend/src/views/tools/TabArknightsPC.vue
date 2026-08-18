@@ -2,14 +2,13 @@
 import { QuestionCircleOutlined, WarningOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import type { ToolsConfig_ArknightsPC } from '@/api'
 
-const { config, disabled, onFieldChange, recordingKeyField, startRecordKey, stopRecordKey, onSelectVisibleChange } = defineProps<{
+const { config, disabled, onFieldChange, recordingKeyField, startRecordKey, stopRecordKey } = defineProps<{
     config: ToolsConfig_ArknightsPC
     disabled?: boolean
     onFieldChange?: (key: string, value: any) => void
     recordingKeyField?: string | null
     startRecordKey?: (fieldName: string) => void
     stopRecordKey?: () => void
-    onSelectVisibleChange?: (visible: boolean) => void
 }>()
 
 // 处理字段变更
@@ -92,11 +91,8 @@ const isRecording = (fieldName: string) => {
                                 <QuestionCircleOutlined class="help-icon" />
                             </a-tooltip>
                         </div>
-                        <a-select v-model:value="config.Enabled" size="large" style="width: 100%" :disabled="disabled"
-                            @change="handleChange('Enabled', $event)" @dropdownVisibleChange="onSelectVisibleChange">
-                            <a-select-option :value="true">启用</a-select-option>
-                            <a-select-option :value="false">禁用</a-select-option>
-                        </a-select>
+                        <a-switch :checked="config.Enabled" :disabled="disabled"
+                            @change="handleChange('Enabled', $event)" />
                     </div>
                 </a-col>
             </a-row>

@@ -34,6 +34,7 @@ JSON 形式与公开参考项目的账号结构兼容，可选携带 cloudToken/
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -56,12 +57,27 @@ LAOHU_BASE_URL = "https://user.laohu.com"
 REFRESH_TOKEN_URL = f"{TAYGEDO_BASE_URL}/usercenter/api/refreshToken"
 USER_CENTER_LOGIN_URL = f"{TAYGEDO_BASE_URL}/usercenter/api/login"
 GAME_ROLES_URL = f"{TAYGEDO_BASE_URL}/usercenter/api/v2/getGameRoles"
+GAME_RECORD_CARDS_URL = f"{TAYGEDO_BASE_URL}/apihub/api/getGameRecordCard"
 APP_SIGNIN_URL = f"{TAYGEDO_BASE_URL}/apihub/api/signin"
+GAME_SIGNIN_STATE_URL = f"{TAYGEDO_BASE_URL}/apihub/awapi/signin/state"
+GAME_SIGNIN_URL = f"{TAYGEDO_BASE_URL}/apihub/awapi/sign"
 CLOUD_USER_INFO_URL = "https://user.laohu.com/cloud/game/getUserInfo"
 
 DEFAULT_GAME_ID = "1289"
+TAYGEDO_GAME_IDS = ("1256", "1257", "1289")
+TAYGEDO_GAME_NAMES = {
+    "1256": "幻塔",
+    "1257": "异环",
+    "1289": "异环",
+}
 APP_VERSION = "1.1.0"
-APP_SIGN_COMMUNITY_ID = "1"
+# 用户中心刷新接口仍使用 1.1.0；角色卡、角色列表和社区接口使用当前原生协议版本。
+TAYGEDO_NATIVE_APP_VERSION = "1.2.5"
+TAYGEDO_COMMUNITY_IDS = ("1", "2")
+TAYGEDO_COMMUNITY_NAMES = {
+    "1": "幻塔社区",
+    "2": "异环社区",
+}
 APP_USER_AGENT = "okhttp/4.12.0"
 TAYGEDO_LOGIN_APP_ID = "10551"
 TAYGEDO_LOGIN_APP_VERSION = "1.2.5"
@@ -127,6 +143,7 @@ def parse_taygedo_credential(raw: str) -> dict[str, Any]:
         "cloudToken",
         "cloudUserId",
         "cloudDeviceId",
+        "cloudRemainingDuration",
         "roleName",
     ):
         if credential.get(key) is not None:
@@ -138,6 +155,12 @@ def parse_taygedo_credential(raw: str) -> dict[str, Any]:
             for part in credential["roleIds"].split(",")
             if part.strip()
         ]
+
+    # 丢弃不在已知游戏集合中的旧元数据，避免刷新凭据时复用未知角色名。
+    if credential.get("gameId") not in (None, "") and credential["gameId"] not in TAYGEDO_GAME_IDS:
+        credential.pop("gameId", None)
+        credential.pop("roleName", None)
+        credential.pop("roleIds", None)
 
     return credential
 
@@ -156,6 +179,7 @@ def serialize_taygedo_credential(credential: Mapping[str, Any]) -> str:
         "cloudToken",
         "cloudUserId",
         "cloudDeviceId",
+        "cloudRemainingDuration",
     ):
         value = credential.get(key)
         if value not in (None, ""):
@@ -215,6 +239,10 @@ async def login_taygedo_with_password(
             "uid": user_center["uid"],
             "deviceId": login_device_id,
             "gameId": credential.get("gameId") or DEFAULT_GAME_ID,
+            # Laohu 登录凭据同时用于云异环每日首次登录时长查询。
+            "cloudToken": laohu_token,
+            "cloudUserId": laohu_user_id,
+            "cloudDeviceId": login_device_id,
         }
     )
     try:
@@ -447,7 +475,7 @@ async def refresh_taygedo_credential(
             timeout=30.0,
         )
     data = _read_json(response, "塔吉多刷新 Token")
-    if data.get("code") != 0 or not isinstance(data.get("data"), dict):
+    if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
         raise _api_error("塔吉多刷新 Token", response, data)
 
     refreshed = data["data"]
@@ -473,7 +501,7 @@ async def sign_taygedo(
     *,
     proxy: str | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    """执行塔吉多社区签到和可选的云异环时长查询。"""
+    """执行塔吉多社区、应用内游戏签到和云异环时长查询。"""
 
     credential = parse_taygedo_credential(raw)
     refresh_error: Exception | None = None
@@ -490,84 +518,181 @@ async def sign_taygedo(
     device_id = str(credential.get("deviceId") or "").strip()
     account = str(credential.get("roleName") or uid or "未知用户")
 
-    if refresh_error is not None:
-        results.append(
-            {
-                "account": account,
-                "game": "塔吉多社区",
-                "platform": "塔吉多",
-                "status": "失败",
-                "reward": "",
-                "reason": str(refresh_error),
-            }
-        )
-    elif access_token and uid:
-        try:
-            status, reason, reward = await _community_sign(
-                access_token,
-                uid,
-                device_id or _stable_device_id(access_token),
-                proxy=proxy,
-            )
-            results.append(
-                {
-                    "account": account,
-                    "game": "塔吉多社区",
-                    "platform": "塔吉多",
-                    "status": status,
-                    "reward": reward,
-                    "reason": reason,
-                }
-            )
-        except Exception as exc:
-            results.append(
-                {
-                    "account": account,
-                    "game": "塔吉多社区",
-                    "platform": "塔吉多",
-                    "status": "失败",
-                    "reward": "",
-                    "reason": str(exc),
-                }
-            )
-    elif access_token or credential.get("refreshToken"):
-        results.append(
-            {
-                "account": account,
-                "game": "塔吉多社区",
-                "platform": "塔吉多",
-                "status": "失败",
-                "reward": "",
-                "reason": "刷新后缺少 uid 或 accessToken",
-            }
-        )
-
+    community_task: asyncio.Task[list[tuple[str, str, str, str]]] | None = None
+    game_task: asyncio.Task[list[dict[str, str]]] | None = None
+    cloud_task: asyncio.Task[dict[str, int | None]] | None = None
     cloud_token = str(credential.get("cloudToken") or "").strip()
     cloud_user_id = str(credential.get("cloudUserId") or "").strip()
+    cloud_account = account if account != "未知用户" else cloud_user_id
+    cloud_before = _to_optional_int(credential.get("cloudRemainingDuration"))
+
+    async def cancel_pending_tasks() -> None:
+        pending_tasks = [
+            task
+            for task in (community_task, game_task, cloud_task)
+            if task is not None and not task.done()
+        ]
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+    # 云异环每日首次登录时长与两个签到接口互不依赖，并发发起以缩短等待时间。
     if cloud_token and cloud_user_id:
         cloud_device_id = str(
             credential.get("cloudDeviceId")
             or device_id
             or _stable_device_id(cloud_user_id)
         )
-        cloud_account = account if account != "未知用户" else cloud_user_id
-        try:
-            duration = await get_cloud_duration(
+        cloud_task = asyncio.create_task(
+            get_cloud_duration(
                 cloud_token,
                 cloud_user_id,
                 cloud_device_id,
                 proxy=proxy,
             )
+        )
+
+    if access_token and uid:
+        request_device_id = device_id or _stable_device_id(access_token)
+        cached_roles = credential.pop("_gameRoles", None)
+        cached_lookup_complete = credential.pop("_gameRolesComplete", None)
+        if not isinstance(cached_roles, list):
+            cached_roles = None
+        # 社区签到和应用内游戏签到互不依赖，同时发起以减少整体等待时间。
+        community_task = asyncio.create_task(
+            _community_sign(
+                access_token,
+                uid,
+                request_device_id,
+                proxy=proxy,
+            )
+        )
+        game_task = asyncio.create_task(
+            _sign_taygedo_games(
+                access_token,
+                uid,
+                request_device_id,
+                account,
+                proxy=proxy,
+                roles=cached_roles,
+                lookup_complete=(
+                    bool(cached_lookup_complete)
+                    if cached_roles is not None
+                    else None
+                ),
+            )
+        )
+
+        try:
+            community_results = await community_task
+        except asyncio.CancelledError:
+            await cancel_pending_tasks()
+            raise
+        except Exception as exc:
+            failure_reason = str(exc)
+            if refresh_error is not None:
+                failure_reason = f"刷新 Token 失败: {refresh_error}; {failure_reason}"
+            community_results = [
+                (
+                    TAYGEDO_COMMUNITY_NAMES[community_id],
+                    "失败",
+                    failure_reason,
+                    "",
+                )
+                for community_id in TAYGEDO_COMMUNITY_IDS
+            ]
+        for community_name, status, reason, reward in community_results:
+            results.append(
+                {
+                    "account": account,
+                    "game": community_name,
+                    "platform": "塔吉多",
+                    "status": status,
+                    "reward": reward,
+                    "reason": reason,
+                }
+            )
+
+        try:
+            results.extend(await game_task)
+        except asyncio.CancelledError:
+            await cancel_pending_tasks()
+            raise
+        except Exception as exc:
+            logger.warning(f"塔吉多应用内游戏签到异常: {exc}")
+            results.append(
+                {
+                    "account": account,
+                    "game": "应用内游戏",
+                    "platform": "塔吉多",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": str(exc),
+                }
+            )
+    elif refresh_error is not None:
+        results.extend(
+            {
+                "account": account,
+                "game": TAYGEDO_COMMUNITY_NAMES[community_id],
+                "platform": "塔吉多",
+                "status": "失败",
+                "reward": "",
+                "reason": str(refresh_error),
+            }
+            for community_id in TAYGEDO_COMMUNITY_IDS
+        )
+    elif access_token or credential.get("refreshToken"):
+        results.extend(
+            {
+                "account": account,
+                "game": TAYGEDO_COMMUNITY_NAMES[community_id],
+                "platform": "塔吉多",
+                "status": "失败",
+                "reward": "",
+                "reason": "刷新后缺少 uid 或 accessToken",
+            }
+            for community_id in TAYGEDO_COMMUNITY_IDS
+        )
+
+    if cloud_task is not None:
+        try:
+            duration = await cloud_task
+            cloud_verified, cloud_completed, cloud_reason = _verify_cloud_duration(
+                before=cloud_before,
+                duration=duration,
+            )
+            cloud_already_claimed = (
+                duration.get("gave") is not None and duration["gave"] <= 0
+            )
+            if duration.get("remained") is not None:
+                credential["cloudRemainingDuration"] = str(duration["remained"])
             results.append(
                 {
                     "account": cloud_account,
                     "game": "云异环",
                     "platform": "云异环",
-                    "status": "成功",
-                    "reward": _format_duration(duration),
-                    "reason": "",
+                    "status": (
+                        "成功"
+                        if cloud_verified
+                        else "已签到"
+                        if cloud_already_claimed
+                        else "失败"
+                    ),
+                    # 返回剩余时长不等于确认了每日首登奖励；未确认时不把时长混入失败通知。
+                    "reward": (
+                        _format_duration(duration)
+                        if cloud_verified or cloud_already_claimed
+                        else ""
+                    ),
+                    "reason": cloud_reason,
+                    "_completed": cloud_completed or cloud_already_claimed,
                 }
             )
+        except asyncio.CancelledError:
+            await cancel_pending_tasks()
+            raise
         except Exception as exc:
             results.append(
                 {
@@ -581,6 +706,435 @@ async def sign_taygedo(
             )
 
     return results, credential
+
+
+async def _sign_taygedo_games(
+    access_token: str,
+    uid: str,
+    device_id: str,
+    account: str,
+    *,
+    proxy: str | None,
+    roles: list[dict[str, str]] | None = None,
+    lookup_complete: bool | None = None,
+) -> list[dict[str, str]]:
+    """遍历塔吉多绑定游戏并执行每日游戏签到。"""
+
+    if roles is None:
+        roles, lookup_complete = await _get_taygedo_game_roles_with_status(
+            access_token,
+            uid,
+            device_id,
+            proxy=proxy,
+        )
+    elif lookup_complete is None:
+        lookup_complete = True
+    assert lookup_complete is not None
+    if not roles:
+        if lookup_complete:
+            logger.info("塔吉多未绑定应用内游戏，跳过游戏签到")
+            return []
+        logger.warning(
+            "塔吉多游戏角色接口未完成，应用内游戏签到跳过"
+        )
+        return [
+            {
+                "account": f"{account}/应用内游戏",
+                "game": "应用内游戏",
+                "platform": "塔吉多",
+                "status": "失败",
+                "reward": "",
+                "reason": "游戏角色接口获取失败，无法确认应用内游戏签到",
+            }
+        ]
+
+    async def sign_role(
+        role: dict[str, str], client: httpx.AsyncClient
+    ) -> dict[str, str]:
+        game_id = role["gameId"]
+        role_id = role["roleId"]
+        role_name = role.get("roleName") or role_id
+        game_name = role.get("gameName") or TAYGEDO_GAME_NAMES.get(game_id, game_id)
+        # 角色卡是本次结果的权威名称，不能继续沿用旧凭据中的异环别名。
+        role_account = f"{role_name}/{role_name}({role_id})"
+        try:
+            state = await _get_game_sign_state(
+                access_token,
+                game_id,
+                client=client,
+                proxy=proxy,
+            )
+            if _is_game_signed(state):
+                status = "已签到"
+            else:
+                status = await _submit_game_sign(
+                    access_token,
+                    game_id,
+                    role_id,
+                    client=client,
+                    proxy=proxy,
+                )
+            return {
+                "account": role_account,
+                "game": game_name,
+                "platform": "塔吉多",
+                "status": status,
+                "reward": "",
+                "reason": "",
+            }
+        except Exception as exc:
+            return {
+                "account": role_account,
+                "game": game_name,
+                "platform": "塔吉多",
+                "status": "失败",
+                "reward": "",
+                "reason": str(exc),
+            }
+
+    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+        results = list(await asyncio.gather(*(sign_role(role, client) for role in roles)))
+
+    if not lookup_complete:
+        results.append(
+            {
+                "account": f"{account}/应用内游戏",
+                "game": "应用内游戏",
+                "platform": "塔吉多",
+                "status": "失败",
+                "reward": "",
+                "reason": "部分游戏角色接口获取失败，无法确认全部应用内游戏签到",
+            }
+        )
+    return results
+
+
+async def _get_taygedo_game_roles(
+    access_token: str,
+    uid: str,
+    device_id: str,
+    *,
+    proxy: str | None,
+) -> list[dict[str, str]]:
+    """兼容旧调用方，仅返回已发现的绑定角色列表。"""
+
+    roles, _ = await _get_taygedo_game_roles_with_status(
+        access_token,
+        uid,
+        device_id,
+        proxy=proxy,
+    )
+    return roles
+
+
+async def _get_taygedo_game_roles_with_status(
+    access_token: str,
+    uid: str,
+    device_id: str,
+    *,
+    proxy: str | None,
+) -> tuple[list[dict[str, str]], bool]:
+    """读取带游戏归属的角色卡，旧接口仅作为兼容回退。"""
+
+    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+        # 角色卡响应带有明确 gameId，是区分幻塔和异环的唯一可靠来源。
+        try:
+            response = await client.get(
+                GAME_RECORD_CARDS_URL,
+                params={"uid": uid},
+                headers=_native_headers(access_token, uid, device_id),
+                timeout=30.0,
+            )
+            data = _read_json(response, "塔吉多游戏角色卡")
+            raw_cards = data.get("data")
+            if not _is_code(data.get("code"), 0) or not _is_game_record_cards_payload(raw_cards):
+                raise ValueError("角色卡响应格式无效")
+            roles = [
+                role
+                for raw_role in _extract_role_records(raw_cards)
+                if (role := _normalise_game_role(raw_role))
+            ]
+            if roles:
+                return _deduplicate_game_roles(roles), True
+            # 角色卡可能只返回未绑定的空卡，继续查询角色列表获取已绑定角色。
+        except Exception as exc:
+            logger.debug(f"获取塔吉多游戏角色卡跳过: {type(exc).__name__}")
+
+        roles: list[dict[str, str]] = []
+        failed_game_ids: set[str] = set()
+
+        async def load_roles(
+            game_id: str,
+        ) -> tuple[list[dict[str, str]], bool]:
+            try:
+                response = await client.get(
+                    GAME_ROLES_URL,
+                    params={"gameId": game_id},
+                    headers=_native_headers(access_token, uid, device_id),
+                    timeout=30.0,
+                )
+                data = _read_json(response, f"塔吉多角色({game_id})")
+                if not _is_code(data.get("code"), 0):
+                    return [], False
+                # getGameRoles 的响应只返回 roleId/roleName，游戏归属由本次查询参数决定。
+                roles = [
+                    role
+                    for raw_role in _extract_role_records(data.get("data"))
+                    if (role := _normalise_game_role(
+                        raw_role,
+                        expected_game_id=game_id,
+                    ))
+                ]
+                return roles, True
+            except Exception as exc:
+                logger.debug(f"获取塔吉多游戏角色 {game_id} 跳过: {type(exc).__name__}")
+                return [], False
+
+        # 旧接口按请求参数返回角色；最终按角色 ID 去重，避免重复映射到多个游戏。
+        role_batches = await asyncio.gather(
+            *(load_roles(game_id) for game_id in TAYGEDO_GAME_IDS)
+        )
+        for game_id, (batch, query_ok) in zip(TAYGEDO_GAME_IDS, role_batches):
+            roles.extend(batch)
+            if not query_ok:
+                failed_game_ids.add(game_id)
+
+    return _deduplicate_game_roles(roles), not failed_game_ids
+
+
+def _is_game_record_cards_payload(value: Any) -> bool:
+    """判断角色卡响应是否是可解析的列表或包装对象。"""
+
+    if isinstance(value, list):
+        return True
+    if not isinstance(value, dict):
+        return False
+    return any(
+        key in value
+        for key in (
+            "gameId",
+            "game_id",
+            "gameID",
+            "gameName",
+            "bindRoleInfo",
+            "roles",
+            "cards",
+            "list",
+            "roleList",
+            "data",
+        )
+    )
+
+
+def _extract_role_records(value: Any, fallback_game_id: str = "") -> list[dict[str, Any]]:
+    """兼容角色卡、roles、cards、list 和 bindRoleInfo 的返回结构。"""
+
+    if isinstance(value, list):
+        records: list[dict[str, Any]] = []
+        for item in value:
+            records.extend(_extract_role_records(item, fallback_game_id))
+        return records
+    if not isinstance(value, dict):
+        return []
+
+    game_id = str(
+        value.get("gameId") or value.get("game_id") or value.get("gameID") or fallback_game_id
+    ).strip()
+    records: list[dict[str, Any]] = []
+    bind_role = value.get("bindRoleInfo")
+    if isinstance(bind_role, str):
+        try:
+            bind_role = json.loads(bind_role)
+        except json.JSONDecodeError:
+            bind_role = None
+    if bind_role not in (None, ""):
+        bind_records = _extract_role_records(bind_role, game_id)
+        if game_id:
+            # 角色卡的 gameId 是游戏归属的权威字段，不能被嵌套旧字段覆盖。
+            for record in bind_records:
+                record["gameId"] = game_id
+        if value.get("gameName"):
+            for record in bind_records:
+                record.setdefault("gameName", value["gameName"])
+        records.extend(bind_records)
+    if any(value.get(key) not in (None, "") for key in ("roleId", "role_id", "roleID")):
+        records.append({**value, "gameId": game_id})
+
+    for key in ("roles", "cards", "list", "roleList", "data"):
+        if key in value:
+            child_records = _extract_role_records(value[key], game_id)
+            if game_id:
+                for record in child_records:
+                    record["gameId"] = game_id
+            records.extend(child_records)
+    for key in ("roleInfo", "role"):
+        if key in value:
+            child_records = _extract_role_records(value[key], game_id)
+            if game_id:
+                for record in child_records:
+                    record["gameId"] = game_id
+            records.extend(child_records)
+    return records
+
+
+def _normalise_game_role(
+    raw_role: Mapping[str, Any],
+    fallback_game_id: str = "",
+    *,
+    expected_game_id: str | None = None,
+    require_reported_game_id: bool = False,
+) -> dict[str, str] | None:
+    reported_game_id = str(
+        raw_role.get("gameId")
+        or raw_role.get("game_id")
+        or raw_role.get("gameID")
+        or ""
+    ).strip()
+    if expected_game_id and reported_game_id and reported_game_id != expected_game_id:
+        return None
+    if require_reported_game_id and not reported_game_id:
+        return None
+    game_id = str(expected_game_id or reported_game_id or fallback_game_id).strip()
+    role_id = str(
+        raw_role.get("roleId") or raw_role.get("role_id") or raw_role.get("roleID") or ""
+    ).strip()
+    if game_id not in TAYGEDO_GAME_IDS or not role_id:
+        return None
+    role_name = next(
+        (
+            str(raw_role.get(key)).strip()
+            for key in ("roleName", "role_name", "nickname", "characterName", "name")
+            if raw_role.get(key) not in (None, "")
+        ),
+        "",
+    )
+    return {
+        "gameId": game_id,
+        # 服务端偶尔会沿用上一个子社区的 gameName，gameId 才是角色归属依据。
+        "gameName": TAYGEDO_GAME_NAMES.get(
+            game_id,
+            str(raw_role.get("gameName") or game_id).strip(),
+        ),
+        "roleId": role_id,
+        "roleName": role_name,
+    }
+
+
+def _deduplicate_game_roles(roles: list[dict[str, str]]) -> list[dict[str, str]]:
+    # 角色 ID 在塔吉多账号下是全局唯一的，避免旧接口在多个 gameId 查询中
+    # 重复返回同一角色时，把一个角色错误展示为多个游戏角色。
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for role in roles:
+        role_id = role.get("roleId", "")
+        if not role_id or role_id in seen:
+            continue
+        seen.add(role_id)
+        unique.append(role)
+    return unique
+
+
+async def _get_game_sign_state(
+    access_token: str,
+    game_id: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+    proxy: str | None,
+) -> dict[str, Any]:
+    if client is None:
+        async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
+            return await _get_game_sign_state(
+                access_token,
+                game_id,
+                client=owned_client,
+                proxy=proxy,
+            )
+
+    response = await client.get(
+        GAME_SIGNIN_STATE_URL,
+        params={"gameId": game_id},
+        headers=_h5_headers(access_token),
+        timeout=30.0,
+    )
+    data = _read_json(response, f"塔吉多游戏签到状态({game_id})")
+    if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
+        raise _api_error(f"塔吉多游戏签到状态({game_id})", response, data)
+    return data["data"]
+
+
+def _is_game_signed(state: Mapping[str, Any]) -> bool:
+    """读取不同版本接口返回的“今日已签到”字段。"""
+
+    for key in ("todaySign", "todaySigned", "isSign", "isSigned", "signed", "alreadySigned"):
+        value = state.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str) and value.strip().lower() in {
+            "1", "true", "yes", "signed", "already",
+        }:
+            return True
+    return False
+
+
+async def _submit_game_sign(
+    access_token: str,
+    game_id: str,
+    role_id: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+    proxy: str | None,
+) -> str:
+    if client is None:
+        async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
+            return await _submit_game_sign(
+                access_token,
+                game_id,
+                role_id,
+                client=owned_client,
+                proxy=proxy,
+            )
+
+    response = await client.post(
+        GAME_SIGNIN_URL,
+        headers={
+            **_h5_headers(access_token),
+            "content-type": "application/x-www-form-urlencoded",
+        },
+        data={"gameId": game_id, "roleId": role_id},
+        timeout=30.0,
+    )
+    data = _read_json(response, f"塔吉多游戏签到({game_id})")
+    message = str(data.get("msg") or data.get("message") or "").strip()
+    if _is_code(data.get("code"), 0):
+        return "成功"
+    if str(data.get("code")) == "5052" or _is_already_signed(message):
+        return "已签到"
+    raise _api_error(f"塔吉多游戏签到({game_id})", response, data)
+
+
+def _native_headers(access_token: str, uid: str, device_id: str) -> dict[str, str]:
+    return {
+        "accept": "application/json, text/plain, */*",
+        "authorization": access_token,
+        "uid": uid,
+        "deviceid": device_id,
+        "appversion": TAYGEDO_NATIVE_APP_VERSION,
+        "platform": "android",
+        "ds": _make_login_ds(),
+        "user-agent": APP_USER_AGENT,
+    }
+
+
+def _h5_headers(access_token: str) -> dict[str, str]:
+    return {
+        "accept": "application/json",
+        "authorization": access_token,
+        "origin": "https://webstatic.tajiduo.com",
+        "referer": "https://webstatic.tajiduo.com/",
+        "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Tajiduo/1.2.2",
+    }
 
 
 async def get_cloud_duration(
@@ -623,13 +1177,46 @@ async def get_cloud_duration(
             timeout=30.0,
         )
     data = _read_json(response, "云异环时长")
-    if data.get("code") != 0 or not isinstance(data.get("result"), dict):
+    if not _is_code(data.get("code"), 0) or not isinstance(data.get("result"), dict):
         raise _api_error("云异环时长", response, data)
     result = data["result"]
     return {
-        "gave": _to_int(result.get("perDayFirstLoginGiveDuration")),
+        "gave": _to_optional_int(result.get("perDayFirstLoginGiveDuration")),
         "remained": _to_optional_int(result.get("remainedDuration")),
     }
+
+
+def _verify_cloud_duration(
+    *,
+    before: int | None,
+    duration: Mapping[str, int | None],
+) -> tuple[bool, bool, str]:
+    """验证云异环每日首登时长，避免把用户消耗误判为签到成功。"""
+
+    gave = duration.get("gave")
+    remained = duration.get("remained")
+    if gave is None or remained is None:
+        return False, False, "服务端未返回完整时长，无法确认每日首登奖励"
+
+    if gave <= 0:
+        return False, True, "今日未检测到新增的每日首登时长"
+    if before is None:
+        # 首次运行没有历史快照时，服务端明确返回 gave > 0 已足以确认本次赠送。
+        # 后续运行仍必须校验剩余时长的增长量，避免用户自行消耗被误判为成功。
+        return (
+            True,
+            True,
+            "",
+        )
+
+    delta = remained - before
+    if delta > 0:
+        # 服务端的 gave 表示本次首登奖励；剩余时长可能在查询前后被用户消耗，
+        # 因此只要求快照确实增长，不再要求增量必须与奖励值严格相等。
+        return True, True, ""
+    if delta == 0:
+        return False, True, "剩余时长未增加，无法确认每日首登奖励"
+    return False, True, f"剩余时长减少 {abs(delta)} 分钟，未确认每日首登奖励"
 
 
 async def _attach_role_name(
@@ -642,34 +1229,31 @@ async def _attach_role_name(
     if not access_token or not uid:
         return credential
 
+    # 角色查询失败或返回空列表时不能继续使用旧凭据中的游戏名。
+    credential.pop("gameId", None)
+    credential.pop("roleName", None)
+    credential.pop("roleIds", None)
     device_id = str(credential.get("deviceId") or _stable_device_id(access_token))
-    game_id = str(credential.get("gameId") or DEFAULT_GAME_ID)
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
-        response = await client.get(
-            GAME_ROLES_URL,
-            params={"gameId": game_id},
-            headers={
-                "platform": "android",
-                "authorization": access_token,
-                "uid": uid,
-                "deviceid": device_id,
-                "appversion": APP_VERSION,
-                "user-agent": APP_USER_AGENT,
-            },
-            timeout=30.0,
-        )
-    data = _read_json(response, "塔吉多角色")
-    if data.get("code") != 0 or not isinstance(data.get("data"), dict):
+    roles, lookup_complete = await _get_taygedo_game_roles_with_status(
+        access_token,
+        uid,
+        device_id,
+        proxy=proxy,
+    )
+    credential["_gameRoles"] = roles
+    credential["_gameRolesComplete"] = lookup_complete
+    if not roles:
+        if lookup_complete:
+            credential.pop("gameId", None)
+            credential.pop("roleName", None)
+            credential.pop("roleIds", None)
         return credential
-    roles = data["data"].get("roles")
-    if not isinstance(roles, list) or not roles:
-        return credential
-    first = roles[0]
-    if isinstance(first, dict):
-        if first.get("roleName"):
-            credential["roleName"] = str(first["roleName"])
-        if first.get("roleId"):
-            credential["roleIds"] = [str(first["roleId"])]
+    first = next((role for role in roles if role.get("roleName")), roles[0])
+    credential["gameId"] = first["gameId"]
+    if first.get("roleName"):
+        credential["roleName"] = first["roleName"]
+    if first.get("roleId"):
+        credential["roleIds"] = [first["roleId"]]
     return credential
 
 
@@ -679,29 +1263,34 @@ async def _community_sign(
     device_id: str,
     *,
     proxy: str | None,
-) -> tuple[str, str, str]:
+) -> list[tuple[str, str, str, str]]:
+    """并发执行塔吉多应用社区和异环社区签到。"""
+
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
-        response = await client.post(
-            APP_SIGNIN_URL,
-            headers={
-                "authorization": access_token,
-                "uid": uid,
-                "deviceid": device_id,
-                "appversion": APP_VERSION,
-                "content-type": "application/x-www-form-urlencoded",
-                "user-agent": APP_USER_AGENT,
-            },
-            data={"communityId": APP_SIGN_COMMUNITY_ID},
-            timeout=30.0,
-        )
-    data = _read_json(response, "塔吉多社区签到")
-    message = str(data.get("msg") or data.get("message") or "").strip()
-    if data.get("code") == 0:
-        reward = _format_community_reward(data.get("data"))
-        return "成功", "", reward
-    if _is_already_signed(message):
-        return "已签到", "", ""
-    return "失败", message or f"HTTP {response.status_code}", ""
+        async def sign_community(community_id: str) -> tuple[str, str, str, str]:
+            community_name = TAYGEDO_COMMUNITY_NAMES.get(community_id, community_id)
+            try:
+                response = await client.post(
+                    APP_SIGNIN_URL,
+                    headers={
+                        **_native_headers(access_token, uid, device_id),
+                        "content-type": "application/x-www-form-urlencoded",
+                    },
+                    data={"communityId": community_id},
+                    timeout=30.0,
+                )
+                data = _read_json(response, f"{community_name}签到")
+                message = str(data.get("msg") or data.get("message") or "").strip()
+                if _is_code(data.get("code"), 0):
+                    # 社区签到接口会同时返回经验、塔塔币等社区奖励，签到通知不展示这些字段。
+                    return community_name, "成功", "", ""
+                if _is_already_signed(message):
+                    return community_name, "已签到", "", ""
+                return community_name, "失败", message or f"HTTP {response.status_code}", ""
+            except Exception as exc:
+                return community_name, "失败", str(exc), ""
+
+        return list(await asyncio.gather(*(sign_community(community_id) for community_id in TAYGEDO_COMMUNITY_IDS)))
 
 
 def _read_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
@@ -723,22 +1312,11 @@ def _is_already_signed(message: str) -> bool:
     return any(marker in message for marker in ("已签到", "已经签到", "签到过", "重复签到"))
 
 
-def _format_community_reward(value: Any) -> str:
-    if not isinstance(value, dict):
-        return ""
-    parts = []
-    if value.get("exp") is not None:
-        parts.append(f"经验{value['exp']}")
-    if value.get("goldCoin") is not None:
-        parts.append(f"金币{value['goldCoin']}")
-    return ",".join(parts)
-
-
 def _format_duration(duration: Mapping[str, int | None]) -> str:
     parts = []
     gave = duration.get("gave")
     remained = duration.get("remained")
-    if gave is not None:
+    if gave is not None and gave > 0:
         parts.append(f"每日首登{gave}分钟")
     if remained is not None:
         parts.append(f"剩余{remained}分钟")
