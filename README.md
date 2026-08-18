@@ -83,6 +83,16 @@ Visit the official AUTO-MAS documentation site for user guides and additional pr
 
 - [Official Documentation](https://doc.auto-mas.top)
 
+## 参与贡献 / Contributing
+
+如需参与项目开发或提交贡献，请先阅读开发与贡献指南：
+
+- [开发与贡献指南](https://doc.auto-mas.top/developer/)
+
+To participate in development or contribute to the project, please read the development and contribution guide first:
+
+- [Development and Contribution Guide](https://doc.auto-mas.top/developer/)
+
 ## 代码签名策略 / Code Signing Policy
 
 免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
