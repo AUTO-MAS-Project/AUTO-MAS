@@ -135,15 +135,21 @@ export async function preloadAllStageOptions(): Promise<void> {
 
   if (!stageOptionsPreloadPromise) {
     const generation = stageOptionsGeneration
-    stageOptionsPreloadPromise = Promise.all(TIME_KEYS.map(timeKey => loadStageOptions(timeKey)))
+    const preloadPromise: Promise<void> = Promise.all(
+      TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
+    )
       .then(() => {
         if (generation === stageOptionsGeneration) {
           logger.info('关卡选项预加载完成')
         }
       })
       .finally(() => {
-        stageOptionsPreloadPromise = null
+        // 仅清理自己持有的 promise：refresh 后启动的新 preload 不应被过期轮次清掉
+        if (stageOptionsPreloadPromise === preloadPromise) {
+          stageOptionsPreloadPromise = null
+        }
       })
+    stageOptionsPreloadPromise = preloadPromise
   }
 
   await stageOptionsPreloadPromise
