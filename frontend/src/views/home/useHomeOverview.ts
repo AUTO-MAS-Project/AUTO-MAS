@@ -25,6 +25,7 @@ export const useHomeOverview = () => {
   const zenlessZoneZeroData = ref<SraActivityOverview>(createEmptySraActivityOverview())
   const wutheringWavesData = ref<SraActivityOverview>(createEmptySraActivityOverview())
   const nevernessToEvernessData = ref<SraActivityOverview>(createEmptySraActivityOverview())
+  const reverse1999Data = ref<SraActivityOverview>(createEmptySraActivityOverview())
 
   const clearOverviewError = () => {
     error.value = ''
@@ -52,6 +53,7 @@ export const useHomeOverview = () => {
         wutheringWavesData.value = data.WutheringWaves ?? createEmptySraActivityOverview()
         nevernessToEvernessData.value =
           data.NevernessToEverness ?? createEmptySraActivityOverview()
+        reverse1999Data.value = data.Reverse1999 ?? createEmptySraActivityOverview()
         endfieldData.value = data.Endfield ?? createEmptyEndfieldActivityOverview()
       } else {
         error.value = response.message || '获取数据失败'
@@ -79,6 +81,7 @@ export const useHomeOverview = () => {
     zenlessZoneZeroData,
     wutheringWavesData,
     nevernessToEvernessData,
+    reverse1999Data,
     clearOverviewError,
     fetchOverviewData,
   }

@@ -15,6 +15,7 @@ export const defaultHomeModuleOrder: HomeModuleKey[] = [
   'zenless',
   'wutheringwaves',
   'nte',
+  'reverse1999',
   'arknights',
 ]
 
@@ -29,6 +30,7 @@ export const moduleTitleMap: Record<HomeModuleKey, string> = {
   zenless: '绝区零活动信息',
   wutheringwaves: '鸣潮活动信息',
   nte: '异环活动信息',
+  reverse1999: '重返未来：1999活动信息',
   arknights: '明日方舟活动信息',
 }
 

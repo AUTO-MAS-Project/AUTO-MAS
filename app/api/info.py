@@ -28,6 +28,7 @@ from fastapi import APIRouter, Body
 from app.core import Config
 from app.models.schema import *
 from app.services.endfield_activity import endfield_activity_service
+from app.services.reverse1999_activity import reverse1999_activity_service
 from app.services.starrail_activity import (
     genshin_activity_service,
     neverness_to_everness_activity_service,
@@ -274,6 +275,7 @@ async def get_overview() -> InfoOut:
         zenless_overview,
         wuthering_waves_overview,
         neverness_to_everness_overview,
+        reverse1999_overview,
     ) = await asyncio.gather(
         endfield_activity_service.get_overview(),
         starrail_activity_service.get_overview(),
@@ -281,6 +283,7 @@ async def get_overview() -> InfoOut:
         zenless_zone_zero_activity_service.get_overview(),
         wuthering_waves_activity_service.get_overview(),
         neverness_to_everness_activity_service.get_overview(),
+        reverse1999_activity_service.get_overview(),
     )
     try:
         stage_by_server = {
@@ -309,6 +312,7 @@ async def get_overview() -> InfoOut:
                 "ZenlessZoneZero": zenless_overview,
                 "WutheringWaves": wuthering_waves_overview,
                 "NevernessToEverness": neverness_to_everness_overview,
+                "Reverse1999": reverse1999_overview,
             },
         )
     return InfoOut(
@@ -322,5 +326,6 @@ async def get_overview() -> InfoOut:
             "ZenlessZoneZero": zenless_overview,
             "WutheringWaves": wuthering_waves_overview,
             "NevernessToEverness": neverness_to_everness_overview,
+            "Reverse1999": reverse1999_overview,
         }
     )

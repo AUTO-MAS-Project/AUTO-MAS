@@ -1,21 +1,15 @@
 <template>
-  <a-card
-    :title="title"
-    class="sra-card"
-    :class="{ 'is-plain': activityPlain }"
-    :style="cardStyle"
-    :loading="loading"
-  >
+  <a-card title="重返未来：1999活动信息" class="r1999-card" :style="cardStyle" :loading="loading">
     <template #extra>
       <div class="card-extra">
         <a-typography-link
-          :href="sourceUrl"
+          href="https://api.1999.fan"
           target="_blank"
           rel="noreferrer"
           class="source-link"
           @click="handleExternalLink"
         >
-          由 {{ sourceName }} 强力支持
+          由 M9A 强力支持
         </a-typography-link>
         <a-tag v-if="overview.Stale" color="orange">缓存数据</a-tag>
       </div>
@@ -29,13 +23,12 @@
       class="status-alert"
     />
 
-    <!-- 有版本封面：HSR 风格深色大横幅 -->
+    <!-- 版本 Banner（超高竖图只显示上部条带） -->
     <div v-if="overview.Available && !loading && versionCover" class="version-banner">
       <img
         :src="versionCover"
         :alt="overview.versionName"
         class="version-cover"
-        :style="{ objectPosition: coverPosition }"
         @error="failedVersionCover = true"
       />
       <div class="version-overlay" />
@@ -52,6 +45,16 @@
           <ClockCircleOutlined class="version-time-icon" />
           <span>{{ formatTime(overview.endTime) }} 结束</span>
         </div>
+
+        <div v-if="activeActivities.length" class="activity-tags">
+          <a-tag
+            v-for="activity in activeActivities"
+            :key="`${activity.name}-${activity.endTime}`"
+            class="activity-tag"
+          >
+            {{ activity.name }}
+          </a-tag>
+        </div>
       </div>
 
       <div class="version-remaining">
@@ -65,7 +68,7 @@
       </div>
     </div>
 
-    <!-- 无版本封面：MAA 风格浅色简洁信息条 -->
+    <!-- 无版本封面：简洁信息条 -->
     <div v-else-if="overview.Available && !loading" class="version-info">
       <div class="version-info-left">
         <div class="version-info-name">{{ overview.versionName }}</div>
@@ -85,42 +88,6 @@
         />
       </div>
     </div>
-
-    <div
-      v-if="activeActivities.length"
-      class="activity-list"
-      :class="{ 'is-plain': activityPlain }"
-    >
-      <div
-        v-for="activity in activeActivities"
-        :key="activity.name"
-        class="activity-item"
-        :class="{ 'is-fallback': !getActivityImage(activity) }"
-      >
-        <img
-          v-if="getActivityImage(activity)"
-          :src="getActivityImage(activity)"
-          :alt="activity.name"
-          class="activity-image"
-          @error="handleImageError(activity.name)"
-        />
-        <div class="activity-overlay" />
-        <div class="activity-content">
-          <div class="activity-name">{{ activity.name }}</div>
-          <div class="activity-meta">
-            <a-statistic-countdown
-              :value="getCountdownValue(activity.endTime)"
-              format="D 天 H 时"
-              :value-style="activityCountdownStyle"
-              @finish="emit('refresh')"
-            />
-            <div class="activity-end-time">{{ formatTime(activity.endTime) }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <a-empty v-else-if="!loading && overview.Available" :description="emptyText" />
   </a-card>
 </template>
 
@@ -128,43 +95,27 @@
 import { computed, ref } from 'vue'
 import type { CSSProperties } from 'vue'
 import { ClockCircleOutlined } from '@ant-design/icons-vue'
-import type { SraActivityOverview } from '@/types/home'
+import type { Reverse1999ActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
 
-defineOptions({ name: 'HomeSraActivityOverview' })
+defineOptions({ name: 'HomeReverse1999Overview' })
 
 const props = withDefaults(
   defineProps<{
-    title: string
-    accent: string
     loading: boolean
-    overview: SraActivityOverview
-    emptyText: string
-    /** 活动卡片始终使用无封面浅色样式（Banner 有图时也生效） */
-    plainActivities?: boolean
-    sourceName?: string
-    sourceUrl?: string
-    /** 版本封面裁切位置（object-position），用于超高竖图只显示特定条带 */
-    coverPosition?: string
+    overview: Reverse1999ActivityOverview
   }>(),
-  {
-    plainActivities: false,
-    sourceName: 'SRA',
-    sourceUrl: 'https://starrailassistant.top',
-    coverPosition: 'right center',
-  }
+  {}
 )
 
-const emit = defineEmits<{ refresh: [] }>()
-
+const ACCENT = '#e0484f'
 const MAX_VISIBLE_ACTIVITIES = 4
-const failedImageNames = ref(new Set<string>())
 const failedVersionCover = ref(false)
 
 const cardStyle = computed<CSSProperties>(
   () =>
     ({
-      '--sra-accent': props.accent,
+      '--r1999-accent': ACCENT,
     }) as CSSProperties
 )
 
@@ -185,19 +136,8 @@ const versionCover = computed(() => {
   return props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
 })
 
-const activityPlain = computed(() => props.plainActivities || !versionCover.value)
-
-const getActivityImage = (activity: SraActivityOverview['activities'][number]) => {
-  if (failedImageNames.value.has(activity.name)) return ''
-  return activity.cover || ''
-}
-
-const handleImageError = (activityName: string) => {
-  failedImageNames.value = new Set(failedImageNames.value).add(activityName)
-}
-
 const remainingCountdownStyle = computed<CSSProperties>(() => ({
-  color: props.accent,
+  color: ACCENT,
   fontSize: '34px',
   fontWeight: 700,
   lineHeight: 1.1,
@@ -222,12 +162,6 @@ const plainRemainingCountdownStyle = computed<CSSProperties>(() => {
   return { color: 'var(--ant-color-text)', fontWeight: 600, fontSize: '18px' }
 })
 
-const activityCountdownStyle = computed<CSSProperties>(() => ({
-  color: props.accent,
-  fontSize: '14px',
-  fontWeight: 700,
-}))
-
 const getCountdownValue = (value: string) => new Date(value).getTime()
 
 const formatTime = (value: string) =>
@@ -241,12 +175,12 @@ const formatTime = (value: string) =>
 </script>
 
 <style scoped>
-.sra-card {
+.r1999-card {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
-.sra-card :deep(.ant-card-head-title) {
+.r1999-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
 }
@@ -265,19 +199,18 @@ const formatTime = (value: string) =>
   margin-bottom: 16px;
 }
 
-/* ---------- 有封面：HSR 风格顶部版本横幅 ---------- */
+/* ---------- 版本 Banner ---------- */
 .version-banner {
   position: relative;
   display: flex;
   align-items: stretch;
   justify-content: space-between;
   min-height: 300px;
-  margin-bottom: 16px;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 10px;
   background:
-    radial-gradient(ellipse at 78% 20%, color-mix(in srgb, var(--sra-accent) 14%, transparent), transparent 55%),
+    radial-gradient(ellipse at 78% 20%, color-mix(in srgb, var(--r1999-accent) 14%, transparent), transparent 55%),
     radial-gradient(ellipse at 90% 85%, rgba(64, 128, 255, 0.18), transparent 60%),
     linear-gradient(135deg, #0b1220 0%, #101a2e 55%, #0e1a2b 100%);
 }
@@ -288,7 +221,8 @@ const formatTime = (value: string) =>
   position: absolute;
   inset: 0;
   object-fit: cover;
-  object-position: right center;
+  /* 官网图是 1920x3902 的超高竖图，只显示上部约 14% 处的条带 */
+  object-position: right 14%;
 }
 
 .version-overlay {
@@ -321,7 +255,7 @@ const formatTime = (value: string) =>
   align-self: flex-start;
   padding: 4px 12px;
   margin-bottom: 12px;
-  border: 1px solid color-mix(in srgb, var(--sra-accent) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--r1999-accent) 45%, transparent);
   border-radius: 999px;
   background: rgba(11, 18, 32, 0.55);
 }
@@ -330,12 +264,12 @@ const formatTime = (value: string) =>
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--sra-accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--sra-accent) 80%, transparent);
+  background: var(--r1999-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--r1999-accent) 80%, transparent);
 }
 
 .badge-text {
-  color: var(--sra-accent);
+  color: var(--r1999-accent);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -366,10 +300,30 @@ const formatTime = (value: string) =>
 }
 
 .version-time-icon {
-  color: var(--sra-accent);
+  color: var(--r1999-accent);
   font-size: 15px;
 }
 
+/* ---------- 活动类型标签 ---------- */
+.activity-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.activity-tag {
+  margin-inline-end: 0;
+  border: 1px solid color-mix(in srgb, var(--r1999-accent) 45%, transparent);
+  border-radius: 999px;
+  background: rgba(11, 18, 32, 0.55);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+/* ---------- 版本剩余时间 ---------- */
 .version-remaining {
   position: relative;
   z-index: 1;
@@ -380,13 +334,13 @@ const formatTime = (value: string) =>
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  border: 1px solid color-mix(in srgb, var(--sra-accent) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--r1999-accent) 35%, transparent);
   border-radius: 14px;
   background: rgba(11, 18, 32, 0.6);
   backdrop-filter: blur(10px);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 0 24px color-mix(in srgb, var(--sra-accent) 5%, transparent);
+    inset 0 0 24px color-mix(in srgb, var(--r1999-accent) 5%, transparent);
   white-space: nowrap;
 }
 
@@ -398,12 +352,12 @@ const formatTime = (value: string) =>
 }
 
 .version-remaining :deep(.ant-statistic-content) {
-  color: var(--sra-accent);
+  color: var(--r1999-accent);
   font-size: 34px;
   font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 20px color-mix(in srgb, var(--sra-accent) 35%, transparent);
+  text-shadow: 0 0 20px color-mix(in srgb, var(--r1999-accent) 35%, transparent);
 }
 
 .remaining-sub {
@@ -412,9 +366,8 @@ const formatTime = (value: string) =>
   line-height: 1;
 }
 
-/* ---------- 无封面：MAA 风格浅色简洁版本信息条 ---------- */
+/* ---------- 无封面：简洁信息条 ---------- */
 .version-info {
-  margin-bottom: 24px;
   padding: 16px;
   display: flex;
   align-items: flex-start;
@@ -462,155 +415,6 @@ const formatTime = (value: string) =>
   text-align: right;
 }
 
-/* ---------- 活动列表（有封面：深色封面卡片） ---------- */
-.activity-list {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.activity-item {
-  min-width: 0;
-  height: 150px;
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  overflow: hidden;
-  border-radius: 10px;
-  background:
-    radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--sra-accent) 16%, transparent), transparent 55%),
-    linear-gradient(150deg, #14203a 0%, #0b1220 60%, #101a2e 100%);
-  transition:
-    transform 0.25s ease,
-    box-shadow 0.25s ease;
-}
-
-.activity-item:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-}
-
-.activity-image {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  transition: transform 0.35s ease;
-}
-
-.activity-item:hover .activity-image {
-  transform: scale(1.05);
-}
-
-.activity-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(11, 18, 32, 0.05) 0%,
-    rgba(11, 18, 32, 0.3) 40%,
-    rgba(11, 18, 32, 0.88) 100%
-  );
-}
-
-.activity-content {
-  width: 100%;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-  padding: 14px 16px;
-}
-
-.activity-name {
-  min-width: 0;
-  margin-bottom: 8px;
-  overflow: hidden;
-  color: white;
-  font-size: 15px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-.activity-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.activity-meta :deep(.ant-statistic-content) {
-  line-height: 1.4;
-}
-
-.activity-end-time {
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---------- 活动列表（无封面：MAA 风格浅色边框卡片） ---------- */
-.activity-list.is-plain .activity-item {
-  height: auto;
-  min-height: 82px;
-  align-items: center;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: transparent;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.activity-list.is-plain .activity-item:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.activity-list.is-plain .activity-item:hover .activity-image {
-  transform: none;
-}
-
-.activity-list.is-plain .activity-overlay {
-  display: none;
-}
-
-.activity-list.is-plain .activity-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0;
-}
-
-.activity-list.is-plain .activity-name {
-  margin-bottom: 0;
-  color: var(--ant-color-text);
-  font-size: 16px;
-  font-weight: 600;
-  text-shadow: none;
-}
-
-.activity-list.is-plain .activity-meta {
-  flex-shrink: 0;
-}
-
-.activity-list.is-plain .activity-end-time {
-  color: var(--ant-color-text-secondary);
-}
-
-@media (max-width: 1240px) {
-  .activity-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 800px) {
   .version-banner {
     flex-direction: column;
@@ -634,16 +438,6 @@ const formatTime = (value: string) =>
 
   .version-info-right {
     text-align: left;
-  }
-
-  .activity-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .activity-list {
-    grid-template-columns: 1fr;
   }
 }
 </style>

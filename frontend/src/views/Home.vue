@@ -135,6 +135,12 @@
             :overview="nevernessToEvernessData"
             @refresh="fetchOverviewData"
           />
+
+          <HomeReverse1999Overview
+            v-else-if="moduleKey === 'reverse1999'"
+            :loading="loading"
+            :overview="reverse1999Data"
+          />
         </section>
       </template>
     </div>
@@ -153,6 +159,7 @@ import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.v
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
+import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
 import HomeStarRailOverview from '@/views/home/components/HomeStarRailOverview.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
@@ -202,6 +209,7 @@ const {
   zenlessZoneZeroData,
   wutheringWavesData,
   nevernessToEvernessData,
+  reverse1999Data,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()

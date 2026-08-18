@@ -9,6 +9,7 @@ export type HomeModuleKey =
   | 'zenless'
   | 'wutheringwaves'
   | 'nte'
+  | 'reverse1999'
   | 'arknights'
 
 export interface HomeLayoutConfig {
@@ -132,6 +133,7 @@ export type GenshinActivityOverview = SraActivityOverview
 export type ZenlessZoneZeroActivityOverview = SraActivityOverview
 export type WutheringWavesActivityOverview = SraActivityOverview
 export type NevernessToEvernessActivityOverview = SraActivityOverview
+export type Reverse1999ActivityOverview = SraActivityOverview
 
 export const createEmptySraActivityOverview = (): SraActivityOverview => ({
   Available: false,
@@ -158,4 +160,5 @@ export interface HomeOverviewResponse {
   ZenlessZoneZero: ZenlessZoneZeroActivityOverview
   WutheringWaves: WutheringWavesActivityOverview
   NevernessToEverness: NevernessToEvernessActivityOverview
+  Reverse1999: Reverse1999ActivityOverview
 }
