@@ -5,7 +5,7 @@ import types
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 EXPECTED_BRANDS = frozenset({"mumu", "ldplayer", "nox", "memu", "bluestacks"})
 
