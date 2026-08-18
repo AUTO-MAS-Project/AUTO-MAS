@@ -597,6 +597,9 @@ class GeneralUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfUseMasConfig: Optional[bool] = Field(
+        default=None, description="是否使用用户独立脚本配置"
+    )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
     )
@@ -660,8 +663,11 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式（简洁共用，详细独立）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本共享、用户独立、直控优先读取脚本原配置）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置覆盖 OK-WW 高频任务字段"
     )
     Resource: Optional[Literal["官服", "国际服"]] = Field(
         default=None, description="游戏资源"

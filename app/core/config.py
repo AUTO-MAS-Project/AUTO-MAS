@@ -942,7 +942,7 @@ class AppConfig(GlobalConfig):
                 await self.ensure_okww_user_config(
                     script_id=script_id,
                     user_id=str(uid),
-                    mode=str(config.get("Info", "Mode") or "简洁"),
+                    mode=str(config.get("Info", "Mode") or "脚本"),
                 )
             except Exception:
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
@@ -970,12 +970,12 @@ class AppConfig(GlobalConfig):
         """从 OK-WW 脚本当前配置初始化 MAS 用户配置目录。
 
         已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
-        简洁模式使用脚本共享目录，详细模式使用当前用户独立目录。
+        脚本来源使用脚本共享目录，用户来源使用当前用户独立目录。
 
         Args:
             script_id: OK-WW 脚本 ID。
             user_id: OK-WW 用户 ID。
-            mode: 配置模式，支持“简洁”或“详细”。
+            mode: 配置来源，支持“脚本”或“用户”；“简洁”/“详细”仅兼容旧配置。
 
         Returns:
             MAS 用户配置目录路径。
@@ -990,10 +990,11 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         if not isinstance(script_config, OkwwConfig):
             raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
-        if mode not in ("简洁", "详细"):
+        mode = {"简洁": "脚本", "详细": "用户"}.get(mode, mode)
+        if mode not in ("脚本", "用户"):
             raise ValueError(f"不支持的 OK-WW 配置模式: {mode}")
 
-        owner = "Default" if mode == "简洁" else user_id
+        owner = "Default" if mode == "脚本" else user_id
         target_config_dir = Path.cwd() / "data" / script_id / owner / "ConfigFile"
         if target_config_dir.exists() and not target_config_dir.is_dir():
             raise ValueError(f"OK-WW 用户配置路径不是目录: {target_config_dir}")

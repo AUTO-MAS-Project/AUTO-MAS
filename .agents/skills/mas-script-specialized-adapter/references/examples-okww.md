@@ -1,6 +1,6 @@
-# 案例：OK-WW / Okww 专项适配
+# 案例：ok-script 家族中的 OK-WW / Okww 专项适配
 
-本案例描述当前 `dev` 的 Okww 实现。维护 Okww 或复用 ok-script 架构时，以代码和专项测试为准，不沿用旧版本的表单化配置编辑器方案。
+本案例描述当前 `dev` 的 Okww 实现。`ok-script` 是脚本家族，不是单一脚本；OkNte 等子项目必须单独确认启动参数、配置目录和原生 GUI。维护 Okww 或复用 ok-script 架构时，以代码和专项测试为准，不沿用旧版本的表单化配置编辑器方案。
 
 ## 架构事实
 
@@ -10,9 +10,11 @@
 | 自动运行 | `ok-ww.exe -t N -e` |
 | MAS 任务 | `1 = DailyTask`、`7 = MultiAccountDailyTask`；旧值 `2` 自动纠正为 `7` |
 | 配置 UI | `ScriptConfig.py` 无参数启动本体 GUI，前端用 WebSocket 遮罩会话控制保存 |
-| 配置归属 | 简洁：`data/{scriptId}/Default/ConfigFile`；详细：`data/{scriptId}/{userId}/ConfigFile` |
-| 运行时配置 | 配置副本写入 `data/apps/ok-ww/working/configs`，任务结束后恢复原目录 |
-| 路径发现 | Electron 从 Windows 卸载信息发现 ok-ww，并发现鸣潮官方启动器或 WeGame |
+| 配置来源 | `脚本`、`用户`、`直控` 三级；旧值 `简洁`/`详细` 读取时迁移为 `脚本`/`用户` |
+| MAS 配置归属 | `脚本`：`data/{scriptId}/Default/ConfigFile`；`用户`：`data/{scriptId}/{userId}/ConfigFile`；`直控`优先读取 Okww 脚本原有 working 配置 |
+| 快速配置 | `Info.IfQuickConfig` 开启时，MAS 仅用本页高频字段覆盖脚本；关闭时保留配置文件中的完整任务设置 |
+| 运行时配置 | 自动代理前备份脚本原有 `working/configs`；按用户来源加载或覆盖；任务成功、失败、取消、异常后恢复原目录 |
+| 路径发现 | Electron 只发现 Okww 官方资源与官方启动器；不读取、不保存、不接管 WeGame 侧资源 |
 | 游戏控制 | `Game.Enabled` 为总开关：任务前启动或接管，结束、失败和异常时关闭 |
 | 判态 | 内置 fatal 日志 + `Window closed exit_event.is_set` 成功标记 |
 
@@ -22,19 +24,19 @@
 
 1. `OkwwManager.check()` 校验模式和用户列表。
 2. `OkwwManager.prepare()` 锁定脚本配置、复制用户配置、备份 OK-WW working 配置目录。
-3. `AutoProxyTask.check()` 校验根目录、游戏启动器、次数限制，并初始化用户配置目录。
+3. `AutoProxyTask.check()` 校验根目录、游戏启动器、次数限制；仅 `脚本`/`用户` 来源初始化 MAS 配置目录，`直控`直接使用脚本原配置。
 4. `AutoProxyTask.set_okww()`：
    - 设置 `app.json` 的 `auto_start`、`current_profile`、`update_method`。
-   - 将 MAS 配置原子同步到 working 配置目录。
-   - 覆盖 `DailyTask.json` 的 MAS 管理字段和 `Basic Options.json` 的退出设置。
+   - `脚本`/`用户`来源将对应 MAS 配置原子同步到 working 配置目录；`直控`先恢复脚本原配置。
+   - 启用快速配置时，再覆盖 `DailyTask.json` 的 MAS 管理字段；始终补齐 `Basic Options.json` 的退出设置。
 5. 使用 `-t {TaskIndex} -e` 启动，并监控 `ok-script.log`。
 6. `final_task()` 保存历史日志和用户运行结果；Manager 解锁、写回用户数据并恢复 working 配置。
 
 ### 配置会话
 
-- 脚本列表的“配置 ok-ww”以脚本 ID 启动 `ScriptConfig`，目标为共享 `Default` 配置。
-- 用户编辑页以用户 ID 启动 `ScriptConfig`，按 `Info.Mode` 选择共享或用户独立配置。
-- `ScriptConfigTask` 启动前将 MAS 配置复制到 working 目录；用户点击“保存设置”后停止任务，再将 working 配置原子复制回 MAS 目录。
+- 脚本列表的“配置 ok-ww”以脚本 ID 启动 `ScriptConfig`，目标为 `脚本`级共享配置。
+- 用户编辑页以用户 ID 启动 `ScriptConfig`，`脚本`使用共享配置，`用户`使用用户独立配置，`直控`直接打开脚本原生配置。
+- `ScriptConfigTask` 只有在 `脚本`/`用户`来源时才把 MAS 配置复制到 working 目录并保存回 MAS 目录；`直控`不另建一份全量 MAS 配置，保存由 Okww 原生 GUI 写回脚本配置。
 - Manager 始终负责备份和恢复 OK-WW 原 working 配置，避免配置会话污染本体原状态。
 - 前端遮罩必须处理启动失败、WebSocket 错误、任务完成、主动保存、超时和组件卸载；清理 UI 订阅不能替代停止后端任务。
 
@@ -51,18 +53,19 @@ data/apps/ok-ww/app.json
 
 自动发现、手动选择、前端保存和后端 `check()` 必须使用同一组哨兵。只校验 exe 会把不完整安装保存为看似有效的路径。
 
-### 鸣潮启动器
+### 鸣潮官方启动器
 
-- 前端保存 `launcher.exe` 或 `wegame.exe` 的完整路径。
-- 官方启动器由后端读取 `kr_game_cache/kr_game_temp.bin`，解析实际 `Client-Win64-Shipping.exe`。
-- WeGame 由后端从卸载信息解析实际客户端路径。
+- 前端和后端只接受官方 `launcher.exe` 完整路径。
+- 后端读取官方启动器缓存解析实际 `Client-Win64-Shipping.exe`。
+- 不接受、不解析、不回退到 WeGame 路径；官方启动器接管游戏更新等未来能力也只针对官方资源。
 - 启动前若客户端已运行，只接管进程，不重复启动。
 
 ## 配置与运行字段
 
 ### 用户配置
 
-- `Info.Mode`：`简洁` / `详细`
+- `Info.Mode`：`脚本` / `用户` / `直控`（旧 `简洁` / `详细` 仅用于兼容迁移）
+- `Info.IfQuickConfig`：是否启用快速配置；启用时 MAS 高频字段覆盖脚本，关闭时使用来源配置中的完整任务设置
 - `Info.Resource`：`官服` / `国际服`，映射到 OK-WW `China` / `Global` profile
 - `Task.TaskIndex`：仅 `1` / `7`
 - DailyTask 高频字段：体力用途、无音区/凝素序号、材料、梦魇巢穴、附加任务
@@ -110,20 +113,19 @@ data/apps/ok-ww/app.json
 
 - [ ] `OkwwManager` 同时支持 `AutoProxy` 与 `ScriptConfig`
 - [ ] 脚本级和用户级配置入口传入正确目标 ID
-- [ ] 简洁/详细模式映射到正确配置 owner
+- [ ] 脚本/用户/直控模式映射到正确配置 owner
+- [ ] 旧简洁/详细配置读取后迁移且不改变用户实际来源
+- [ ] 快速配置开关真实控制是否覆盖 DailyTask 高频字段
+- [ ] 直控优先读取脚本原配置，并在任务前后保留原配置快照
 - [ ] 自动发现与手动选择校验同一组 ok-ww 哨兵
 - [ ] 启动器路径与实际游戏进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile
 - [ ] working 配置在成功、失败、取消、异常时都能恢复
 - [ ] 配置会话离开页面或超时时会停止任务并释放锁
 - [ ] schema、前端表单与运行时字段没有虚假功能分支
-- [ ] 成功日志、进程提前退出和超时均有专项测试
-- [ ] 手动路径选择与配置会话生命周期有前端测试
+- [ ] 仅在改动需要固定可复现回归时补最小专项测试
+- [ ] 仅在前端行为实际变更时补对应的前端最小测试
 
 ## 最小验证
 
-```powershell
-python -m pytest tests/test_okww_game_launch.py tests/test_okww_launcher_config.py tests/test_okww_user_config_init.py -q
-cd frontend
-yarn test okwwPathDiscoveryService.test.ts
-```
+按仓库根目录的 [`tests/AGENTS.md`](../../../../tests/AGENTS.md) 选择受影响的最小测试。当前 `dev` 不保留散落在 `tests/` 根目录的 Okww 测试入口；需要固定回归时，测试文件放入 `tests/task/`，并只运行该文件。前端测试同理，仅在实际存在且受影响时运行对应文件。
