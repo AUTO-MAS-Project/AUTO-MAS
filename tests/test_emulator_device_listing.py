@@ -43,6 +43,31 @@ class EmulatorDeviceListingTest(unittest.IsolatedAsyncioTestCase):
         manager.get_device_info.assert_awaited_once_with("all")
         manager.get_adb_info.assert_not_awaited()
 
+    async def test_mumu_methods_support_single_instance_info(self) -> None:
+        manager = MumuManager.__new__(MumuManager)
+        manager.get_device_info = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "index": 3,
+                    "name": "MuMu 3",
+                    "is_android_started": True,
+                    "is_process_started": True,
+                }
+            )
+        )
+        manager.get_adb_info = AsyncMock(
+            return_value=json.dumps(
+                {"adb_host_ip": "127.0.0.1", "adb_port": 16448}
+            )
+        )
+
+        devices = await manager.list_devices()
+        info = await manager.getInfo("3")
+
+        self.assertEqual(devices, {"3": "MuMu 3"})
+        self.assertEqual(info["3"].status, DeviceStatus.ONLINE)
+        self.assertEqual(info["3"].adb_address, "127.0.0.1:16448")
+
     async def test_ldplayer_list_devices_only_runs_list2(self) -> None:
         manager = LDManager.__new__(LDManager)
         manager.emulator_path = Path("dnconsole.exe")
