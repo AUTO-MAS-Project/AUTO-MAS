@@ -2,13 +2,13 @@ import { ref } from 'vue'
 import { Service } from '@/api/services/Service'
 import {
   createEmptyEndfieldActivityOverview,
-  createEmptyStarRailActivityOverview,
+  createEmptySraActivityOverview,
   type ActivityItem,
   type EndfieldActivityOverview,
   type HomeOverviewResponse,
   type ProxyInfo,
   type ResourceItem,
-  type StarRailActivityOverview,
+  type SraActivityOverview,
 } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('首页')
@@ -20,7 +20,11 @@ export const useHomeOverview = () => {
   const resourceData = ref<ResourceItem[]>([])
   const proxyData = ref<Record<string, ProxyInfo>>({})
   const endfieldData = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
-  const starRailData = ref<StarRailActivityOverview>(createEmptyStarRailActivityOverview())
+  const starRailData = ref<SraActivityOverview>(createEmptySraActivityOverview())
+  const genshinData = ref<SraActivityOverview>(createEmptySraActivityOverview())
+  const zenlessZoneZeroData = ref<SraActivityOverview>(createEmptySraActivityOverview())
+  const wutheringWavesData = ref<SraActivityOverview>(createEmptySraActivityOverview())
+  const nevernessToEvernessData = ref<SraActivityOverview>(createEmptySraActivityOverview())
 
   const clearOverviewError = () => {
     error.value = ''
@@ -42,8 +46,12 @@ export const useHomeOverview = () => {
         if (data.Proxy) {
           proxyData.value = data.Proxy
         }
-        starRailData.value = data.StarRail ??
-        createEmptyStarRailActivityOverview()
+        starRailData.value = data.StarRail ?? createEmptySraActivityOverview()
+        genshinData.value = data.Genshin ?? createEmptySraActivityOverview()
+        zenlessZoneZeroData.value = data.ZenlessZoneZero ?? createEmptySraActivityOverview()
+        wutheringWavesData.value = data.WutheringWaves ?? createEmptySraActivityOverview()
+        nevernessToEvernessData.value =
+          data.NevernessToEverness ?? createEmptySraActivityOverview()
         endfieldData.value = data.Endfield ?? createEmptyEndfieldActivityOverview()
       } else {
         error.value = response.message || '获取数据失败'
@@ -67,6 +75,10 @@ export const useHomeOverview = () => {
     proxyData,
     endfieldData,
     starRailData,
+    genshinData,
+    zenlessZoneZeroData,
+    wutheringWavesData,
+    nevernessToEvernessData,
     clearOverviewError,
     fetchOverviewData,
   }

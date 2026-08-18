@@ -5,6 +5,10 @@ export type HomeModuleKey =
   | 'proxy'
   | 'endfield'
   | 'starrail'
+  | 'genshin'
+  | 'zenless'
+  | 'wutheringwaves'
+  | 'nte'
   | 'arknights'
 
 export interface HomeLayoutConfig {
@@ -103,7 +107,7 @@ export const createEmptyEndfieldActivityOverview = (): EndfieldActivityOverview 
   Activities: [],
 })
 
-export interface StarRailActivityItem {
+export interface SraActivityItem {
   name: string
   description: string
   startTime: string
@@ -111,7 +115,7 @@ export interface StarRailActivityItem {
   cover?: string
 }
 
-export interface StarRailActivityOverview {
+export interface SraActivityOverview {
   Available: boolean
   Stale: boolean
   Message: string
@@ -120,10 +124,16 @@ export interface StarRailActivityOverview {
   cover?: string
   startTime: string
   endTime: string
-  activities: StarRailActivityItem[]
+  activities: SraActivityItem[]
 }
 
-export const createEmptyStarRailActivityOverview = (): StarRailActivityOverview => ({
+export type StarRailActivityOverview = SraActivityOverview
+export type GenshinActivityOverview = SraActivityOverview
+export type ZenlessZoneZeroActivityOverview = SraActivityOverview
+export type WutheringWavesActivityOverview = SraActivityOverview
+export type NevernessToEvernessActivityOverview = SraActivityOverview
+
+export const createEmptySraActivityOverview = (): SraActivityOverview => ({
   Available: false,
   Stale: false,
   Message: '',
@@ -135,10 +145,17 @@ export const createEmptyStarRailActivityOverview = (): StarRailActivityOverview 
   activities: [],
 })
 
+/** @deprecated 请改用 createEmptySraActivityOverview */
+export const createEmptyStarRailActivityOverview = createEmptySraActivityOverview
+
 export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
   Endfield: EndfieldActivityOverview
   StarRail: StarRailActivityOverview
+  Genshin: GenshinActivityOverview
+  ZenlessZoneZero: ZenlessZoneZeroActivityOverview
+  WutheringWaves: WutheringWavesActivityOverview
+  NevernessToEverness: NevernessToEvernessActivityOverview
 }
