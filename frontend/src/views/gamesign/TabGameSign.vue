@@ -11,11 +11,17 @@ import {
 import { message, Modal } from 'ant-design-vue'
 import QRCode from 'qrcode'
 import draggable from 'vuedraggable'
-import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
-import { Service } from '@/api'
-import { OpenAPI } from '@/api/core/OpenAPI'
+import type {
+  CancelablePromise,
+  GameSignAccountGroupConfig,
+  OutBase,
+  QrCheckOut,
+  QrCreateOut,
+  ToolsConfig_GameSign,
+} from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import { handleExternalLink } from '@/utils/openExternal'
+import { useGameSignApi } from './useGameSignApi'
 
 const {
   config,
@@ -54,6 +60,14 @@ interface AccountInstance {
 
 const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
   useGameSignAccountApi()
+const {
+  listAccounts,
+  reorderAccounts,
+  manualSign,
+  createMiyousheQr,
+  checkMiyousheQr,
+  saveMiyousheQr,
+} = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
@@ -61,7 +75,7 @@ const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
-    const response = await Service.listGameSignAccountsApiToolsSignAccountListPost()
+    const response = await listAccounts()
     if (response.code !== 200) return
     const data = response.data as any
     const instances: AccountInstance[] = []
@@ -102,18 +116,18 @@ const handleAddAccount = async () => {
     const result = await addAccount()
     if (result) {
       const defaultName = `用户 ${accounts.value.length + 1}`
+      const data = result.data || {}
       const newAccount: AccountInstance = {
         uid: result.accountId,
         type: 'GameSignAccountGroup',
-        Name: defaultName,
-        Enabled: true,
-        MiyousheToken: '',
-        KuroToken: '',
-        SklandToken: '',
-        TaygedoToken: '',
+        Name: data.Name || defaultName,
+        Enabled: data.Enabled ?? true,
+        MiyousheToken: data.MiyousheToken || '',
+        KuroToken: data.KuroToken || '',
+        SklandToken: data.SklandToken || '',
+        TaygedoToken: data.TaygedoToken || '',
       }
       accounts.value.push(newAccount)
-      await updateAccount(result.accountId, getAccountAllData(newAccount))
       message.success('用户已添加')
       openEditModal(newAccount)
     }
@@ -136,10 +150,13 @@ const handleDeleteAccount = (account: AccountInstance) => {
   })
 }
 
-const handleAccountFieldSave = async (account: AccountInstance) => {
+const handleAccountEnabledChange = async (account: AccountInstance, enabled: boolean) => {
+  const previousEnabled = account.Enabled
+  account.Enabled = enabled
   try {
-    await updateAccount(account.uid, getAccountAllData(account))
+    await updateAccount(account.uid, { Enabled: enabled })
   } catch {
+    account.Enabled = previousEnabled
     message.error('保存失败，请重试')
   }
 }
@@ -151,7 +168,7 @@ const onDragEnd = async (evt: any) => {
   isDragging.value = true
   try {
     const order = accounts.value.map(a => a.uid)
-    const response = await Service.reorderGameSignAccountsApiToolsSignAccountReorderPost({ order })
+    const response = await reorderAccounts(order)
     if (response.code !== 200) {
       throw new Error(response.message || '排序保存失败')
     }
@@ -219,6 +236,7 @@ const openEditModal = (account: AccountInstance) => {
 }
 
 const handleEditModalCancel = () => {
+  closeQrModal()
   closeTaygedoLoginModal()
   closeSklandLoginModal()
   editModalVisible.value = false
@@ -236,6 +254,7 @@ const handleEditModalOk = async () => {
       accounts.value[idx] = { ...editingAccount.value }
     }
     message.success('Token 已保存')
+    closeQrModal()
     editModalVisible.value = false
     editingAccount.value = null
   } catch (error) {
@@ -316,15 +335,7 @@ let qrSessionId = 0
 let qrAbortController: AbortController | null = null
 let qrCloseTimer: ReturnType<typeof setTimeout> | null = null
 
-interface QrApiResponse {
-  code?: number
-  status?: string
-  message?: string
-  ticket?: string
-  qr_url?: string
-  device?: string
-  cookies_str?: string
-}
+type QrApiResponse = QrCreateOut & QrCheckOut & OutBase
 
 const QR_RESPONSE_INVALID_MESSAGE = '二维码状态响应无效，请刷新后重试'
 const isQrExpiredMessage = (messageText: string) =>
@@ -358,31 +369,64 @@ const invalidateQrSession = () => {
 
 const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
 
+const abortableQrRequest = async <T,>(
+  request: CancelablePromise<T>,
+  signal?: AbortSignal
+): Promise<T> => {
+  let aborted = signal?.aborted ?? false
+  const handleAbort = () => {
+    aborted = true
+    request.cancel()
+  }
+  signal?.addEventListener('abort', handleAbort, { once: true })
+  if (aborted) request.cancel()
+
+  try {
+    return await request
+  } catch (error) {
+    if (aborted) {
+      const abortError = new Error('Request aborted')
+      abortError.name = 'AbortError'
+      throw abortError
+    }
+    throw error
+  } finally {
+    signal?.removeEventListener('abort', handleAbort)
+  }
+}
+
 const qrFetch = async (
   path: string,
   body?: Record<string, string>,
   signal?: AbortSignal
 ): Promise<QrApiResponse> => {
-  const resp = await fetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    signal,
-  })
-  const text = await resp.text()
-  if (!text) throw new Error('服务器无响应')
-  let data: unknown
-  try {
-    data = JSON.parse(text)
-  } catch {
+  let response: QrApiResponse
+  if (path === '/create') {
+    response = await abortableQrRequest(createMiyousheQr(), signal)
+  } else if (path === '/check') {
+    response = await abortableQrRequest(
+      checkMiyousheQr(body?.ticket || '', body?.device || ''),
+      signal
+    )
+  } else if (path === '/save') {
+    response = await abortableQrRequest(
+      saveMiyousheQr(body?.account_uid || '', body?.cookie || ''),
+      signal
+    )
+  } else {
+    throw new Error('未知二维码请求')
+  }
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
     throw new Error(QR_RESPONSE_INVALID_MESSAGE)
   }
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+  // 二维码 URL、ticket、设备标识和 Cookie 都是登录凭据，禁止写入前端日志。
+  const logData = {
+    ...response,
+    ticket: undefined,
+    qr_url: undefined,
+    device: undefined,
+    cookies_str: undefined,
   }
-  const response = data as QrApiResponse
-  // Cookie 是登录凭据，禁止写入前端日志；其余字段仍保留便于排查状态流转。
-  const logData = { ...response, cookies_str: undefined }
   logger.debug(`[QR ${path}] ${JSON.stringify(logData)}`)
   // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
   return response
@@ -783,7 +827,7 @@ const handleNotifyEnabledChange = async (value: boolean) => {
 const handleManualSign = async () => {
   signLoading.value = true
   try {
-    const response = await Service.manualGameSignApiToolsSignPost()
+    const response = await manualSign()
     if (response.code === 409) {
       const warning = response.message || '自动签到正在执行，请稍后再试'
       logger.warn(`手动签到被拒绝: ${warning}`)
@@ -835,6 +879,8 @@ onMounted(() => {
           </a>
           <a-button
             type="primary"
+            size="small"
+            class="section-update-button primary-style"
             :loading="signLoading"
             :disabled="disabled || !config.Enabled"
             @click="handleManualSign"
@@ -854,8 +900,10 @@ onMounted(() => {
       <div class="settings-list">
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">自动签到</span>
-            <span class="setting-desc">按每日调度自动执行各社区签到，也可随时点击「全部签到」手动执行</span>
+            <span class="setting-title">启用签到工具</span>
+            <span class="setting-desc"
+              >启用后按 MAS 任务调度执行签到，手动签到不受每日自动签到限制</span
+            >
           </div>
           <a-switch
             :checked="config.Enabled"
@@ -892,7 +940,9 @@ onMounted(() => {
             <span class="setting-desc">最近一次完成签到的日期</span>
           </div>
           <span class="setting-value">{{
-            config.LastSignDate && config.LastSignDate !== '2000-01-01' ? config.LastSignDate : '从未签到'
+            config.LastSignDate && config.LastSignDate !== '2000-01-01'
+              ? config.LastSignDate
+              : '从未签到'
           }}</span>
         </div>
       </div>
@@ -953,10 +1003,9 @@ onMounted(() => {
               <!-- 启用开关 -->
               <div class="row-cell status-cell">
                 <a-switch
-                  v-model:checked="account.Enabled"
-                  size="small"
+                  :checked="account.Enabled"
                   :disabled="disabled"
-                  @change="handleAccountFieldSave(account)"
+                  @change="handleAccountEnabledChange(account, $event)"
                 />
               </div>
               <!-- 社区签到情况（标签云） -->
@@ -1015,17 +1064,14 @@ onMounted(() => {
                     <template #icon><EditOutlined /></template>
                     编辑
                   </a-button>
-                  <a-popconfirm
-                    title="确定要删除此用户吗？"
-                    ok-text="确定"
-                    cancel-text="取消"
-                    @confirm="handleDeleteAccount(account)"
+                  <a-button
+                    size="middle"
+                    class="action-btn delete-btn"
+                    @click="handleDeleteAccount(account)"
                   >
-                    <a-button size="middle" class="action-btn delete-btn">
-                      <template #icon><DeleteOutlined /></template>
-                      删除
-                    </a-button>
-                  </a-popconfirm>
+                    <template #icon><DeleteOutlined /></template>
+                    删除
+                  </a-button>
                 </a-space>
               </div>
             </div>
@@ -1290,7 +1336,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 用户启用状态通过选项文字表达，保留 Ant Design 默认边框。 */
+/* 布尔设置统一使用 Ant Design 开关，避免同类值出现不同交互。 */
 
 .section-header-actions {
   display: flex;
@@ -1298,6 +1344,43 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 复用新版通知页的页眉操作按钮规格，保持文档入口和主操作高度一致。 */
+.section-header-actions .section-update-button {
+  height: 32px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-header-actions .section-update-button.primary-style {
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary),
+    var(--ant-color-primary-hover)
+  ) !important;
+  border: 1px solid var(--ant-color-primary) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.section-header-actions .section-update-button.primary-style:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(22, 119, 255, 0.22);
+}
+
+.section-header-actions .section-update-button.primary-style:disabled {
+  transform: none;
+  box-shadow: none;
 }
 
 .section-doc-link {

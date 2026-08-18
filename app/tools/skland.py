@@ -75,6 +75,12 @@ SKLAND_SIGN_INTERVAL = 1.0
 logger = get_logger("森空岛签到任务")
 
 
+def _get_arknights_game_id(character: dict[str, Any]) -> Any:
+    """读取方舟绑定对象的游戏 ID，兼容旧响应中的 channelMasterId。"""
+
+    return character.get("gameId") or character.get("channelMasterId")
+
+
 def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
     """创建不继承本地环境代理的森空岛 HTTP 客户端。"""
 
@@ -654,23 +660,48 @@ async def _run_skland_sign_in(
                 sign_token,
             ),
         )
+        if response.status_code == 401:
+            raise SklandCredentialExpiredError("森空岛凭据已失效")
         rsp = _parse_json_object(response)
-        if rsp.get("code") != 0:
+        if not response.is_success or rsp.get("code") != 0:
             message = str(rsp.get("message") or "")
             if "未登录" in message:
                 raise SklandCredentialExpiredError("森空岛凭据已失效")
-            logger.error(f"请求角色列表出现问题: {message}")
-        data = rsp.get("data") or {}
-        if not isinstance(data, dict):
-            return v
-        for item in data.get("list") or []:
+            reason = message or f"HTTP {response.status_code}"
+            raise ValueError(f"森空岛角色列表请求失败: {reason}")
+        data = rsp.get("data")
+        if isinstance(data, list):
+            binding_groups = data
+        elif isinstance(data, dict):
+            binding_groups = data.get("list")
+            if binding_groups is None and data.get("appCode"):
+                binding_groups = [data]
+            elif binding_groups is None and isinstance(data.get("bindingList"), list):
+                # 兼容部分版本直接返回单个 app 的绑定列表。
+                binding_groups = [
+                    {"appCode": code, "bindingList": data["bindingList"]}
+                ]
+            elif binding_groups is None and isinstance(data.get("binding_list"), list):
+                binding_groups = [
+                    {"appCode": code, "binding_list": data["binding_list"]}
+                ]
+        else:
+            binding_groups = None
+        if not isinstance(binding_groups, list):
+            raise ValueError("森空岛角色列表响应缺少绑定列表")
+        for item in binding_groups:
             if not isinstance(item, dict):
                 continue
-            if item.get("appCode") != code:
+            item_app_code = item.get("appCode") or item.get("app_code")
+            if item_app_code != code:
                 continue
-            binding_list = item.get("bindingList") or []
-            if isinstance(binding_list, list):
-                v.extend(entry for entry in binding_list if isinstance(entry, dict))
+            binding_list = item.get("bindingList")
+            if binding_list is None and isinstance(item.get("binding_list"), list):
+                binding_list = item["binding_list"]
+            binding_list = binding_list or []
+            if not isinstance(binding_list, list):
+                raise ValueError("森空岛角色绑定列表响应格式无效")
+            v.extend(entry for entry in binding_list if isinstance(entry, dict))
         return v
 
     async def check_attendance_today(cred, sign_token, uid, game_id) -> bool:
@@ -724,7 +755,7 @@ async def _run_skland_sign_in(
                     cred,
                     sign_token,
                     character.get("uid", ""),
-                    character.get("channelMasterId"),
+                    _get_arknights_game_id(character),
                 )
                 for character in characters
             )
@@ -736,7 +767,7 @@ async def _run_skland_sign_in(
             uid = character.get("uid", "")
             # 统一 account 格式: 别名/昵称(uid)
             character_name = f"{nick_name}/{nick_name}({uid})" if uid else f"{nick_name}/{channel_name}"
-            game_id = character.get("channelMasterId")
+            game_id = _get_arknights_game_id(character)
 
             if attendance_states[index]:
                 result["重复"].append(character_name)
@@ -881,8 +912,21 @@ async def _run_skland_sign_in(
         if not cred or not sign_token:
             raise ValueError("森空岛凭据不完整")
         if app_code == "all":
-            ar = await sign_for_arknights(cred, sign_token)
-            ef = await sign_for_endfield(cred, sign_token)
+            # 两个游戏的角色绑定彼此独立；单个游戏接口异常时保留另一侧结果。
+            try:
+                ar = await sign_for_arknights(cred, sign_token)
+            except SklandCredentialExpiredError:
+                raise
+            except Exception as exc:
+                logger.error(f"明日方舟角色列表/签到失败: {exc}")
+                ar = {"成功": [], "重复": [], "失败": [str(exc)], "总计": 0}
+            try:
+                ef = await sign_for_endfield(cred, sign_token)
+            except SklandCredentialExpiredError:
+                raise
+            except Exception as exc:
+                logger.error(f"终末地角色列表/签到失败: {exc}")
+                ef = {"成功": [], "重复": [], "失败": [str(exc)], "总计": 0}
             return {"arknights": ar, "endfield": ef}
         if app_code == "endfield":
             return await sign_for_endfield(cred, sign_token)

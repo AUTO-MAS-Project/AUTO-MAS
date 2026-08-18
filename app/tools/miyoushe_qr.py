@@ -163,25 +163,28 @@ async def create_qr_login(proxy: str | None = None) -> dict:
                 timeout=30.0,
             )
             data = resp.json()
-        logger.debug(f"QR create 响应: {data}")
-
         if not isinstance(data, dict):
             return {"error": "服务器返回空响应，无法创建二维码"}
+
+        qr_data = data.get("data")
+        data_keys = sorted(qr_data) if isinstance(qr_data, dict) else []
+        logger.debug(
+            f"QR create 响应: retcode={data.get('retcode')}, data_keys={data_keys}"
+        )
 
         if data.get("retcode") != 0:
             message = data.get("message")
             return {"error": message if isinstance(message, str) and message else "创建二维码失败"}
 
-        qr_data = data.get("data")
         if not isinstance(qr_data, dict):
             return {"error": "服务器返回空响应，无法创建二维码"}
         qr_url = qr_data.get("url", "")
         ticket = qr_data.get("ticket", "")
 
         if not qr_url or not ticket:
-            return {"error": f"返回数据缺少 url 或 ticket: {qr_data}"}
+            return {"error": "返回数据缺少二维码 url 或 ticket"}
 
-        logger.info(f"QR 创建成功, ticket={ticket[:8]}...")
+        logger.info("QR 创建成功")
         return {"ticket": ticket, "qr_url": qr_url, "device": device}
     except Exception as e:
         logger.error(f"创建扫码登录失败: {e}")

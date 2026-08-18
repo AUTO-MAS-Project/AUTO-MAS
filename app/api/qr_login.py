@@ -127,8 +127,14 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
 @router.post("/save", summary="保存 cookie 到账号配置", response_model=OutBase)
 async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
     try:
-        data = {"GameSignAccount": {"MiyousheToken": body.cookie}}
+        from app.tools.miyoushe import validate_miyoushe_cookie
+
+        cookie = body.cookie.strip()
+        validate_miyoushe_cookie(cookie)
+        data = {"GameSignAccount": {"MiyousheToken": cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
+    except ValueError as e:
+        return OutBase(code=400, status="error", message=f"米游社 Token 无效：{e}")
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase(message="米游社 Token 已保存")

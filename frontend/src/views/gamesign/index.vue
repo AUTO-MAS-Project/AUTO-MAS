@@ -5,7 +5,7 @@ import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import TabGameSign from '@/views/tools/TabGameSign.vue'
+import TabGameSign from './TabGameSign.vue'
 
 defineOptions({ name: 'GameSignPage' })
 
@@ -135,27 +135,15 @@ const loadTools = async () => {
     }
 }
 
-// 保存 GameSign 字段的变更（先同步其它工具的最新配置，避免覆盖）
+// 只提交当前 GameSign 字段，避免并发覆盖签到状态或其它工具配置。
 const handleGameSignFieldChange = async (key: string, value: any) => {
     if (!editingConfig.GameSign) return
 
-    const previousValue = toolsConfig.GameSign
-        ? (toolsConfig.GameSign as any)[key]
-        : undefined
+    const previousValue = (editingConfig.GameSign as any)[key]
 
     try {
-        // 拉取服务端最新配置，合并非 GameSign 部分，防止用旧数据覆盖其它工具设置
-        const latest = await Service.getToolsApiToolsGetPost()
-        if (latest.code === 200 && latest.data) {
-            for (const [section, sectionValue] of Object.entries(latest.data)) {
-                if (section !== 'GameSign') {
-                    (editingConfig as any)[section] = sectionValue
-                }
-            }
-        }
-
         (editingConfig.GameSign as any)[key] = value
-        await updateTools(editingConfig)
+        await updateTools({ GameSign: { [key]: value } })
 
         if (toolsConfig.GameSign && key !== 'Status' && key !== 'Result') {
             (toolsConfig.GameSign as any)[key] = value
@@ -163,7 +151,10 @@ const handleGameSignFieldChange = async (key: string, value: any) => {
 
         logger.info(`GameSign.${key} 已保存`)
     } catch (error) {
-        (editingConfig.GameSign as any)[key] = previousValue
+        // 仅在当前值仍是本次提交值时回滚，避免较早请求失败覆盖更新后的操作。
+        if ((editingConfig.GameSign as any)[key] === value) {
+            (editingConfig.GameSign as any)[key] = previousValue
+        }
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`保存 GameSign.${key} 失败: ${errorMsg}`)
         throw error

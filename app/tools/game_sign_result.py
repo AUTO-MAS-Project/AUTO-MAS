@@ -5,7 +5,7 @@ SKLAND_GAME_MAPPING = {
 
 
 def build_skland_sign_results(
-    raw_result: dict,
+    raw_result: object,
     *,
     account_name: str,
     account_uid: str,
@@ -18,9 +18,50 @@ def build_skland_sign_results(
         "失败": "失败",
     }
 
+    if not isinstance(raw_result, dict):
+        return [
+            {
+                "account": f"{account_name}/森空岛",
+                "account_uid": account_uid,
+                "game": "森空岛",
+                "platform": "森空岛",
+                "status": "失败",
+                "reward": "",
+                "reason": "森空岛未返回可识别的签到结果",
+            }
+        ]
+
     if any(game_key in raw_result for game_key in SKLAND_GAME_MAPPING):
         for game_key, game_name in SKLAND_GAME_MAPPING.items():
             game_result = raw_result.get(game_key, {})
+            if not isinstance(game_result, dict):
+                results.append(
+                    {
+                        "account": f"{account_name}/森空岛",
+                        "account_uid": account_uid,
+                        "game": game_name,
+                        "platform": "森空岛",
+                        "status": "失败",
+                        "reward": "",
+                        "reason": f"{game_name}角色列表响应格式无效",
+                    }
+                )
+                continue
+            failures = game_result.get("失败", [])
+            if game_result.get("总计") == 0 and failures:
+                reason = str(failures[0])
+                results.append(
+                    {
+                        "account": f"{account_name}/森空岛",
+                        "account_uid": account_uid,
+                        "game": game_name,
+                        "platform": "森空岛",
+                        "status": "失败",
+                        "reward": "",
+                        "reason": reason,
+                    }
+                )
+                continue
             for source_status, status in status_mapping.items():
                 for item in game_result.get(source_status, []):
                     results.append(
