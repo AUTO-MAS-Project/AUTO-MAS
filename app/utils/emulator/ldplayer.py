@@ -312,6 +312,10 @@ class LDManager(DeviceBase):
 
         return result
 
+    async def list_devices(self) -> dict[str, str]:
+        data = await self.get_device_info(None)
+        return {idx: info.title for idx, info in data.items()}
+
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:

@@ -110,6 +110,9 @@ class GeneralDeviceManager(DeviceBase):
         else:
             return DeviceStatus.OFFLINE
 
+    async def list_devices(self) -> dict[str, str]:
+        return {}
+
     async def getInfo(self, idx: str | None) -> Dict[str, DeviceInfo]:
 
         data = {}
