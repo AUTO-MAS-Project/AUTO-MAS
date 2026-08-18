@@ -1,4 +1,11 @@
-export type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy' | 'endfield' | 'arknights'
+export type HomeModuleKey =
+  | 'command'
+  | 'quick'
+  | 'satellite'
+  | 'proxy'
+  | 'endfield'
+  | 'starrail'
+  | 'arknights'
 
 export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
@@ -96,9 +103,42 @@ export const createEmptyEndfieldActivityOverview = (): EndfieldActivityOverview 
   Activities: [],
 })
 
+export interface StarRailActivityItem {
+  name: string
+  description: string
+  startTime: string
+  endTime: string
+  cover?: string
+}
+
+export interface StarRailActivityOverview {
+  Available: boolean
+  Stale: boolean
+  Message: string
+  version: string
+  versionName: string
+  cover?: string
+  startTime: string
+  endTime: string
+  activities: StarRailActivityItem[]
+}
+
+export const createEmptyStarRailActivityOverview = (): StarRailActivityOverview => ({
+  Available: false,
+  Stale: false,
+  Message: '',
+  version: '',
+  versionName: '',
+  cover: '',
+  startTime: '',
+  endTime: '',
+  activities: [],
+})
+
 export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
   Endfield: EndfieldActivityOverview
+  StarRail: StarRailActivityOverview
 }
