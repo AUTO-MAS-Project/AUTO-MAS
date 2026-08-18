@@ -88,6 +88,13 @@
             @refresh="fetchOverviewData"
             @clear-error="clearOverviewError"
           />
+
+          <HomeStarRailOverview
+            v-else-if="moduleKey === 'starrail'"
+            :loading="loading"
+            :overview="starRailData"
+            @refresh="fetchOverviewData"
+          />
         </section>
       </template>
     </div>
@@ -106,6 +113,7 @@ import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.v
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
+import HomeStarRailOverview from '@/views/home/components/HomeStarRailOverview.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
@@ -148,6 +156,7 @@ const {
   resourceData,
   proxyData,
   endfieldData,
+  starRailData,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()
