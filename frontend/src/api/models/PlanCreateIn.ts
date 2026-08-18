@@ -3,6 +3,12 @@
 /* tslint:disable */
 /* eslint-disable */
 export type PlanCreateIn = {
-    type: string;
+    type: PlanCreateIn.type;
 };
+export namespace PlanCreateIn {
+    export enum type {
+        MAA_PLAN = 'MaaPlan',
+        MAA_END_PLAN = 'MaaEndPlan',
+    }
+}
 

@@ -2,6 +2,7 @@ import asyncio
 import errno
 import json
 import unittest
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
@@ -10,7 +11,9 @@ from app.models.ConfigBase import (
     BoolValidator,
     ConfigBase,
     ConfigItem,
+    MultipleUIDValidator,
     RangeValidator,
+    TypedMultipleUIDValidator,
 )
 
 
@@ -231,6 +234,57 @@ class ConfigBaseSaveTest(ConfigBaseTestCase):
 
         self.assertEqual(self.config_path.read_text(encoding="utf-8"), original_content)
         self.assertEqual(list(self.config_path.parent.glob("Config.json.tmp")), [])
+
+
+class FakeMaaPlanConfig:
+    """模拟 MaaPlanConfig 配置类型"""
+
+
+class FakeMaaEndPlanConfig:
+    """模拟 MaaEndPlanConfig 配置类型"""
+
+
+class TypedMultipleUIDValidatorTest(unittest.TestCase):
+    """TypedMultipleUIDValidator：UID 存在且指向的配置类型符合预期"""
+
+    def setUp(self) -> None:
+        self.plan_uid = uuid.uuid4()
+        self.end_plan_uid = uuid.uuid4()
+        self.related_config = {
+            "PlanConfig": {
+                self.plan_uid: FakeMaaPlanConfig(),
+                self.end_plan_uid: FakeMaaEndPlanConfig(),
+            }
+        }
+        self.validator = TypedMultipleUIDValidator(
+            "Fixed", self.related_config, "PlanConfig", FakeMaaPlanConfig
+        )
+
+    def test_inherits_multiple_uid_validator(self) -> None:
+        self.assertIsInstance(self.validator, MultipleUIDValidator)
+
+    def test_default_value_passes(self) -> None:
+        self.assertTrue(self.validator.validate("Fixed"))
+
+    def test_existing_uid_with_matching_type_passes(self) -> None:
+        self.assertTrue(self.validator.validate(str(self.plan_uid)))
+
+    def test_existing_uid_with_wrong_type_fails(self) -> None:
+        self.assertFalse(self.validator.validate(str(self.end_plan_uid)))
+
+    def test_unknown_uid_fails(self) -> None:
+        self.assertFalse(self.validator.validate(str(uuid.uuid4())))
+
+    def test_invalid_uuid_fails(self) -> None:
+        self.assertFalse(self.validator.validate("not-a-uuid"))
+
+    def test_non_string_fails(self) -> None:
+        self.assertFalse(self.validator.validate(123))
+
+    def test_correct_falls_back_to_default(self) -> None:
+        self.assertEqual(self.validator.correct("bad"), "Fixed")
+        self.assertEqual(self.validator.correct(str(self.end_plan_uid)), "Fixed")
+        self.assertEqual(self.validator.correct(str(self.plan_uid)), str(self.plan_uid))
 
 
 if __name__ == "__main__":

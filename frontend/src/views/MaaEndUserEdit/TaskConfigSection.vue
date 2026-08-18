@@ -2,7 +2,25 @@
   <div class="form-section">
     <div class="section-header">
       <h3>任务配置</h3>
+      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
+        <template #icon><CalendarOutlined /></template>
+        跳转到计划表
+      </a-button>
     </div>
+
+    <a-row :gutter="24">
+      <a-col :span="12">
+        <a-form-item label="理智任务配置模式">
+          <a-select
+            v-model:value="formData.Info.SanityMode"
+            :options="sanityModeOptions"
+            :disabled="loading"
+            size="large"
+            @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
 
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
       <div class="task-group-sidebar">
@@ -63,7 +81,12 @@
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displaySanityTaskType }}</span>
+            <span class="plan-source">来自计划表</span>
+          </div>
           <a-select
+            v-else
             v-model:value="formData.Task.SanityTaskType"
             :options="sanityTaskTypeOptions"
             :disabled="optionControlsDisabled"
@@ -83,7 +106,12 @@
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayCurrentTask }}</span>
+            <span class="plan-source">来自计划表</span>
+          </div>
           <a-select
+            v-else
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
             :disabled="optionControlsDisabled"
@@ -106,7 +134,12 @@
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayRewardsSet }}</span>
+            <span class="plan-source">来自计划表</span>
+          </div>
           <a-select
+            v-else
             v-model:value="formData.Task.RewardsSetOption"
             :options="REWARD_OPTIONS"
             :disabled="optionControlsDisabled"
@@ -121,8 +154,9 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
+import { navigateTo } from '@/router'
 import {
   MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -130,7 +164,13 @@ import {
   PROTOCOL_SPACE_TASK_TITLE_MAP,
   PROTOCOL_SPACE_TASK_TOOLTIP_MAP,
   REWARD_OPTIONS,
+  REWARD_LABEL_MAP,
   SANITY_TASK_TYPE_OPTIONS,
+  SANITY_TASK_TYPE_LABEL_MAP,
+  getSanityTaskDisplayValue,
+  isProtocolSpaceRewardEnabled,
+  normalizeMaaEndSanityConfig,
+  type MaaEndSanityConfig,
   type MaaEndTaskSwitch,
   type ProtocolSpaceTab,
   type SanityTaskType,
@@ -149,12 +189,18 @@ const props = withDefaults(
     essenceLocationOptions: ComboBoxItem[]
     optionsLoading?: boolean
     optionsLoaded?: boolean
+    isPlanMode?: boolean
+    sanityModeOptions?: Array<{ label: string; value: string }>
+    planModeConfig?: MaaEndSanityConfig | null
   }>(),
   {
     loading: false,
     ifQuickConfig: true,
     optionsLoading: false,
     optionsLoaded: false,
+    isPlanMode: false,
+    sanityModeOptions: () => [{ label: '固定', value: 'Fixed' }],
+    planModeConfig: null,
   }
 )
 
@@ -180,6 +226,24 @@ const controlsDisabled = computed(() => {
 })
 
 const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const displayPlanConfig = computed(() =>
+  props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
+)
+const displaySanityTaskType = computed(() =>
+  displayPlanConfig.value
+    ? SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
+    : '未读取到计划表配置'
+)
+const displayCurrentTask = computed(() =>
+  displayPlanConfig.value
+    ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
+    : '未读取到计划表配置'
+)
+const displayRewardsSet = computed(() =>
+  displayPlanConfig.value
+    ? REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
+    : '未读取到计划表配置'
+)
 
 const sanityTaskTypeOptions = computed(() =>
   SANITY_TASK_TYPE_OPTIONS.filter(
@@ -192,6 +256,10 @@ const normalizedSanityTaskType = computed<SanityTaskType>(() =>
   sanityTaskTypeOptions.value.some(option => option.value === formData.Task.SanityTaskType)
     ? formData.Task.SanityTaskType
     : 'OperatorProgression'
+)
+
+const effectiveSanityTaskType = computed<SanityTaskType>(
+  () => displayPlanConfig.value?.SanityTaskType ?? normalizedSanityTaskType.value
 )
 
 const currentField = computed(
@@ -240,16 +308,16 @@ const rewardGroupEnabled = computed(() => {
 })
 
 const taskOptionLabel = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
+  effectiveSanityTaskType.value === 'Essence'
     ? '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
+  effectiveSanityTaskType.value === 'Essence'
     ? '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
 
@@ -266,7 +334,18 @@ const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
 const showSanityDetail = computed(
   () => props.ifQuickConfig && activeGroupHasSanity.value && isTaskEnabled('Sanity')
 )
-const showRewardGroupSelect = computed(() => showSanityDetail.value && rewardGroupEnabled.value)
+const showRewardGroupSelect = computed(
+  () =>
+    showSanityDetail.value &&
+    (displayPlanConfig.value
+      ? displayPlanConfig.value.SanityTaskType !== 'Essence' &&
+        isProtocolSpaceRewardEnabled(displayPlanConfig.value)
+      : rewardGroupEnabled.value)
+)
+
+const handleGoToPlans = () => {
+  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
+}
 
 const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
   emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
@@ -513,6 +592,28 @@ watch(
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
+}
+
+.plans-button {
+  padding-inline: 0;
+}
+
+.plan-mode-display {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-source {
+  flex-shrink: 0;
+  color: var(--ant-color-primary);
+  font-size: 12px;
 }
 
 .form-label {
