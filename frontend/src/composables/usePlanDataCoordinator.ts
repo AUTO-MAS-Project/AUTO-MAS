@@ -12,6 +12,7 @@ import { ref, computed } from 'vue'
 import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 const logger = window.electronAPI.getLogger('计划数据协调器')
 
 // 时间维度常量
@@ -74,6 +75,9 @@ export interface StageAvailability {
 
 // 标准关卡选项缓存（按时间维度）
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
+let stageOptionsPreloadPromise: Promise<void> | null = null
+// 缓存代次：clearStageOptionsCache 自增，清缓存前发出的请求完成后不得写入新缓存
+let stageOptionsGeneration = 0
 
 // 加载标准关卡选项
 export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
@@ -81,6 +85,8 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
   if (stageOptionsCache.value[timeKey]) {
     return stageOptionsCache.value[timeKey]
   }
+
+  const generation = stageOptionsGeneration
 
   try {
     // 映射时间维度到 API 参数
@@ -100,6 +106,10 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
     })
 
     if (response.code === 200 || response.code === undefined) {
+      // 缓存已被清除：丢弃过期响应，避免旧数据覆盖刷新后的新缓存
+      if (generation !== stageOptionsGeneration) {
+        return []
+      }
       // 缓存结果
       stageOptionsCache.value[timeKey] = response.data
       return response.data
@@ -116,14 +126,41 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
 
 // 预加载所有时间维度的关卡选项
 export async function preloadAllStageOptions(): Promise<void> {
-  const loadPromises = TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
-  await Promise.all(loadPromises)
-  logger.info('关卡选项预加载完成')
+  const hasCompleteCache = TIME_KEYS.every(timeKey =>
+    Array.isArray(stageOptionsCache.value[timeKey])
+  )
+  if (hasCompleteCache) {
+    return
+  }
+
+  if (!stageOptionsPreloadPromise) {
+    const generation = stageOptionsGeneration
+    const preloadPromise: Promise<void> = Promise.all(
+      TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
+    )
+      .then(() => {
+        if (generation === stageOptionsGeneration) {
+          logger.info('关卡选项预加载完成')
+        }
+      })
+      .finally(() => {
+        // 仅清理自己持有的 promise：refresh 后启动的新 preload 不应被过期轮次清掉
+        if (stageOptionsPreloadPromise === preloadPromise) {
+          stageOptionsPreloadPromise = null
+        }
+      })
+    stageOptionsPreloadPromise = preloadPromise
+  }
+
+  await stageOptionsPreloadPromise
 }
 
 // 清除缓存（用于刷新数据）
 export function clearStageOptionsCache(): void {
+  // 自增代次，使清缓存前发出的在途请求全部失效
+  stageOptionsGeneration += 1
   stageOptionsCache.value = {}
+  stageOptionsPreloadPromise = null
   logger.info('关卡选项缓存已清除')
 }
 
@@ -151,7 +188,7 @@ export function usePlanDataCoordinator() {
     info: {
       name: '',
       mode: 'ALL',
-      type: 'MaaPlanConfig',
+      type: PLAN_CONFIG_TYPES.MAA,
     },
     timeConfigs: {} as Record<TimeKey, any>,
     customStageDefinitions: getDefaultCustomStageDefinitions(),
@@ -178,7 +215,11 @@ export function usePlanDataCoordinator() {
   initializeTimeConfigs()
 
   // 从API数据转换为内部数据结构
-  const fromApiData = (apiData: MaaPlanConfig, forceUpdateCustomStages = false) => {
+  const fromApiData = (
+    apiData: MaaPlanConfig,
+    forceUpdateCustomStages = false,
+    inferCustomStages = true
+  ) => {
     // 更新基础信息
     if (apiData.Info) {
       planData.value.info.name = apiData.Info.Name || ''
@@ -205,6 +246,10 @@ export function usePlanDataCoordinator() {
         }
       }
     })
+
+    if (!inferCustomStages) {
+      return
+    }
 
     // 从所有时间配置中推断自定义关卡定义
     const inferredStages = new Set<string>()

@@ -48,6 +48,9 @@ TYPE_BOOK = {
 }
 """配置类型映射表"""
 
+PLAN_CONSUMER_VALUES = ("maa", "maaend")
+"""计划表消费方列表"""
+
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 

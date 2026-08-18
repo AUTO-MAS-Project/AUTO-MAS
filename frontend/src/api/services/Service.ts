@@ -35,6 +35,7 @@ import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
+import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
 import type { PlanDeleteIn } from '../models/PlanDeleteIn';
@@ -175,13 +176,21 @@ export class Service {
     }
     /**
      * 获取可选计划下拉框信息
+     * @param requestBody
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
-    public static getPlanComboxApiInfoComboxPlanPost(): CancelablePromise<ComboBoxOut> {
+    public static getPlanComboxApiInfoComboxPlanPost(
+        requestBody: PlanComboxIn,
+    ): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/plan',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
