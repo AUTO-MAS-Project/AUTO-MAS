@@ -76,7 +76,8 @@
           class="activity-image"
           @error="handleImageError(activity.name)"
         />
-        <div v-if="getActivityImage(activity)" class="activity-overlay" />
+        <img v-else :src="HSRDefaultImage" :alt="activity.name" class="activity-image" />
+        <div class="activity-overlay" />
         <div class="activity-content">
           <div class="activity-name">{{ activity.name }}</div>
           <div class="activity-meta">
@@ -102,6 +103,7 @@ import type { CSSProperties } from 'vue'
 import { ClockCircleOutlined } from '@ant-design/icons-vue'
 import type { StarRailActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import HSRDefaultImage from '@/assets/HSRDefault.png'
 
 defineOptions({ name: 'HomeStarRailOverview' })
 
@@ -436,43 +438,6 @@ const formatTime = (value: string) =>
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 无图卡片：文字排布与有图卡片一致（底部靠左） */
-.activity-item.is-fallback {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background:
-    radial-gradient(ellipse at 20% 0%, rgba(245, 215, 110, 0.16), transparent 55%),
-    linear-gradient(150deg, #14203a 0%, #0b1220 60%, #101a2e 100%);
-}
-
-.activity-item.is-fallback:hover {
-  border-color: rgba(245, 215, 110, 0.5);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-}
-
-.activity-item.is-fallback .activity-content {
-  width: 100%;
-  padding: 14px 16px;
-}
-
-.activity-item.is-fallback .activity-name {
-  color: white;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.activity-item.is-fallback .activity-meta {
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.activity-item.is-fallback .activity-end-time {
-  color: rgba(255, 255, 255, 0.8);
 }
 
 @media (max-width: 1240px) {
