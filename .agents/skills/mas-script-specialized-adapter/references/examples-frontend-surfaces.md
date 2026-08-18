@@ -14,19 +14,20 @@
 | MXU 线 | `MaaEnd` | 是否 [MaaEnd 项目](https://github.com/MaaEnd/MaaEnd) + [MXU](https://github.com/MistEO/MXU)（PI V2）？需 `mxu-*.json` / ScriptConfig 遮罩？详见 [examples-maaend.md](./examples-maaend.md)。 |
 | MFAA 线 | `M9A` | 是否 [M9A/MaaFramework](https://github.com/MAA1999/M9A) 类管线 + 任务队列 JSON？任务勾选/顺序语义是否对齐 [MFAA↔interface.json](https://github.com/trler/MFAA)？详见 [examples-m9a.md](./examples-m9a.md)。 |
 | General | `General` | 是否先走通用再专项化？ |
-| ok-script 线 | `Okww` | 是否 [OK-WW](https://github.com/ok-oldking/ok-wuthering-waves) / ok-script：`-t`/`-e` CLI + 本体 GUI 配置？见 [examples-okww.md](./examples-okww.md)。 |
+| ok-script 家族（Okww） | `Okww` | 是否 [OK-WW](https://github.com/ok-oldking/ok-wuthering-waves) / ok-script：`-t`/`-e` CLI + 本体 GUI 配置？见 [examples-okww.md](./examples-okww.md)。 |
+| ok-script 家族（OkNte） | `OkNte` | 是否 OK-NTE 子项目？请单独确认其 CLI、配置目录和原生 GUI，不得套用 Okww 契约。 |
 
 ## 表面对照总表
 
-| 表面 | MAA 线 | SRC 线 | MXU 线（MaaEnd） | MFAA 线（M9A） | ok-script（Okww） | General |
-|------|--------|--------|------------------|----------------|---------------------|---------|
-| Hub 片段 | `maa` | `src` | `maaend` | `m9a` | `okww` | `general` |
-| ScriptEdit | `MAAScriptEdit` | `SRCScriptEdit`（单文件大表单） | `MaaEndScriptEdit` | `M9AScriptEdit` | `OkwwScriptEdit` | `GeneralScriptEdit` |
-| UserEdit 编排 | `MAAUserEdit` | `SRCUserEdit` | `MaaEndUserEdit` | `M9AUserEdit` | `OkwwUserEdit` | `GeneralUserEdit` |
-| Section 目录 | `MAAUserEdit/` | `SRCUserEdit/` | `MaaEndUserEdit/` | `M9AUserEdit/` | 单文件编排 | （较少拆分） |
-| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 有：脚本级 + 用户级 | 无 |
+| 表面 | MAA 线 | SRC 线 | MXU 线（MaaEnd） | MFAA 线（M9A） | ok-script（Okww） | ok-script（OkNte） | General |
+|------|--------|--------|------------------|----------------|---------------------|----------------------|---------|
+| Hub 片段 | `maa` | `src` | `maaend` | `m9a` | `okww` | `oknte` | `general` |
+| ScriptEdit | `MAAScriptEdit` | `SRCScriptEdit`（单文件大表单） | `MaaEndScriptEdit` | `M9AScriptEdit` | `OkwwScriptEdit` | `OkNteScriptEdit` | `GeneralScriptEdit` |
+| UserEdit 编排 | `MAAUserEdit` | `SRCUserEdit` | `MaaEndUserEdit` | `M9AUserEdit` | `OkwwUserEdit` | `OkNteUserEdit` | `GeneralUserEdit` |
+| Section 目录 | `MAAUserEdit/` | `SRCUserEdit/` | `MaaEndUserEdit/` | `M9AUserEdit/` | 单文件编排 | 按子项目确认 | （较少拆分） |
+| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 有：脚本级 + 用户级 + 直控 | 按子项目确认 | 无 |
 | 计划表 | `MaaPlanTable` | — | `MaaEndPlanTable`（#152） | — | — | — |
-| 任务队列 UI | — | — | TaskConfigSection | `TaskQueueSection` + draggable | `TaskIndex` + DailyTask 字段 | — |
+| 任务队列 UI | — | — | TaskConfigSection | `TaskQueueSection` + draggable | `TaskIndex` + DailyTask 字段 | 按子项目确认 | — |
 
 ---
 
@@ -73,7 +74,7 @@ if (script.type === 'MaaEnd') {
 
 **MFAA 线（`M9A`）不适用**：专项配置在 Vue 里写 `M9AUserConfig` / 任务 JSON，**不**用 ScriptConfig 调 Avalonia 壳；自动跑依赖写盘 + 启动 `exe`，见 [examples-m9a.md](./examples-m9a.md)。
 
-Okww 同时有脚本级共享配置入口和用户级配置入口，目标 ID 决定配置 owner。新类型若需外置程序配置 UI，先对照现有会话 helper 与任务生命周期，不复制两套未收尾的遮罩逻辑。
+Okww 同时有脚本级共享、用户级和直控配置入口，目标 ID 与配置来源共同决定 owner。OkNte 不自动复用这套会话或配置语义；新类型若需外置程序配置 UI，先对照对应子项目的任务生命周期，不复制两套未收尾的遮罩逻辑。
 
 ### C. 单文件 ScriptEdit（SRC）
 
@@ -118,7 +119,8 @@ const emit = defineEmits<{ save: [group: string, key: string, value: unknown] }>
 | MXU 线 | [examples-maaend.md](./examples-maaend.md)（[MaaEnd](https://github.com/MaaEnd/MaaEnd) / [MXU](https://github.com/MistEO/MXU)）、遮罩 + 计划表（若需要） |
 | MAA 线 | `MAAUserEdit`、`MaaPlanTable` |
 | SRC 线 | [examples-src.md](./examples-src.md)、`SRCScriptEdit` |
-| ok-script 线 | [examples-okww.md](./examples-okww.md)、`OkwwScriptEdit`、`OkwwUserEdit` |
+| ok-script 家族（Okww） | [examples-okww.md](./examples-okww.md)、`OkwwScriptEdit`、`OkwwUserEdit` |
+| ok-script 家族（OkNte） | `OkNteScriptEdit`、`OkNteUserEdit`，按 OkNte 原生契约单独适配 |
 | General | `General*` 编辑页，再逐项专项化 |
 
 ---

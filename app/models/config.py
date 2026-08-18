@@ -2320,6 +2320,18 @@ class OkwwTaskIndexValidator(OptionsValidator):
         return 7 if value == 2 else super().correct(value)
 
 
+class OkwwConfigModeValidator(OptionsValidator):
+    """兼容旧版“简洁/详细”，统一为脚本/用户/直控配置来源。"""
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户", "直控"])
+
+    def correct(self, value: Any) -> Any:
+        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+
+
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
 
@@ -2343,7 +2355,11 @@ class OkwwUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", OkwwConfigModeValidator()
+        )
+        # 是否启用 MAS 快速配置覆盖高频任务字段
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()

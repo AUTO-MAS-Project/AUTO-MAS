@@ -13,9 +13,9 @@
 | **MAA 线** | MAA 系：关卡、理智、计划、MAA 配置会话 | `MAA` | `MAAUserEdit`：遮罩 + ScriptConfig；`StageConfigSection`；`MaaPlanTable` |
 | **SRC 线** | Alas / SRC 系（如 [StarRailCopilot](https://github.com/LmeSzinc/StarRailCopilot)：下一代 Alas、`tasks`/`webapp`/`config` 形态）；本仓对接 **SRC.exe 系**可执行体 | `SRC` | `SRCScriptEdit` 单文件大表单；`SRCUserEdit` + Section；详见 [examples-src.md](./examples-src.md) |
 | **General** | 非专项：通用路径/进程/日志 | `General` | `GeneralScriptEdit` / `GeneralUserEdit`；作兜底或渐进专项化的起点 |
-| **ok-script 线** | [ok-script](https://github.com/ok-oldking/ok-wuthering-waves) 系（如 **OK-WW**）：Python + 自带 GUI，发行版提供 **`-t` / `-e` CLI** | `Okww` | `AutoProxy` 用 CLI；`ScriptConfig` 无参启动本体 GUI；配置按 owner 隔离；见 [examples-okww.md](./examples-okww.md) |
+| **ok-script 线** | [ok-script](https://github.com/ok-oldking/ok-wuthering-waves) 家族：Python + 自带 GUI，按子项目分别适配 | `Okww`、`OkNte` | `AutoProxy` 按子项目 CLI/文件契约实现；`ScriptConfig` 是否启用取决于子项目原生配置入口；见 [examples-okww.md](./examples-okww.md) |
 
-> **命名说明**：「MXU 线」「MFAA 线」指**本仓已落地的对接形态**（MaaEnd / M9A）；「ok-script 线」指**非 MAA/SRC/MXU/MFAA**、但 CLI/GUI 形态清晰的 ok-script 项目（OK-WW 为首选案例）。
+> **命名说明**：「MXU 线」「MFAA 线」指**本仓已落地的对接形态**（MaaEnd / M9A）；「ok-script 线」是一个脚本家族分类，不等于单一项目。当前至少区分 **Okww**（鸣潮）与 **OkNte**（异环）；两者只能共享家族级原则，启动参数、配置文件和用户入口必须按子项目分别确认。
 
 ---
 
@@ -59,7 +59,7 @@
 | **MAA 线** | 依 MAA 文档与现有 `MAA` 任务；常见 **ScriptConfig** 路径。 | **ScriptConfig** 调 MAA 本体 + 关卡/plan 等 Section。 |
 | **SRC 线** | 依 `SRC.exe` 与 Alas/SRC 文档（`module`/`config` 等）。 | 多为 **大表单 + Section** 写映射配置；按需是否子进程。参见 [examples-src.md](./examples-src.md)。 |
 | **General** | 先最小 `open_process` + 日志；再按上游补 argv。 | 通用路径与简单字段；专项化后再分叉。 |
-| **ok-script 线（如 OK-WW）** | **`-t N -e`** 自动跑第 N 个任务并退出；`AutoProxy` 拼 CLI，并在启动前写入专项管理的配置字段。 | `ScriptConfig` 无参启动本体 GUI；简洁使用共享 `Default`，详细使用用户独立目录；详见 [examples-okww.md](./examples-okww.md)。 |
+| **ok-script 线（按子项目）** | 以子项目 README/发行版实际 CLI 为准；Okww 当前使用 **`-t N -e`** 自动跑任务并退出，OkNte 不得套用 Okww 参数。 | 配置入口按子项目原生 GUI/文件契约确定；Okww 使用无参本体 GUI 与脚本/用户/直控配置来源，详见 [examples-okww.md](./examples-okww.md)。 |
 
 > **建议实施顺序（避免污染通用脚本）**：先用 `General` 验证对接可行 → 再新增专项 `ScriptType` 承载默认值与 UI → 最后删除 `General` 页中的临时预设入口。
 
@@ -101,6 +101,7 @@
    - [ ] **SRC 线**（同框架扩展见 [examples-src.md](./examples-src.md)）  
    - [ ] **MXU 线**（[MaaEnd](https://github.com/MaaEnd/MaaEnd) + [MXU](https://github.com/MistEO/MXU)）  
    - [ ] **MFAA 线**（[M9A](https://github.com/MAA1999/M9A) + [MFAA](https://github.com/trler/MFAA)）  
+   - [ ] **ok-script 线**（请明确 Okww、OkNte 或其他子项目）
    - [ ] **仅 General 起步**  
    - [ ] **混合**（请说明）
 
@@ -119,6 +120,7 @@
 | MAA 线 | `MAAUserEdit`、`MaaPlanTable`、`MAAScriptEdit` |
 | SRC 线 | [examples-src.md](./examples-src.md)、`SRCScriptEdit.vue` |
 | General | `GeneralScriptEdit` / `GeneralUserEdit`，再逐项专项化 |
-| ok-script 线（OK-WW） | [examples-okww.md](./examples-okww.md)、`OkwwScriptEdit.vue`、`OkwwUserEdit.vue`、`app/task/Okww/` |
+| ok-script 线（Okww） | [examples-okww.md](./examples-okww.md)、`OkwwScriptEdit.vue`、`OkwwUserEdit.vue`、`app/task/Okww/` |
+| ok-script 线（OkNte） | `OkNteScriptEdit.vue`、`OkNteUserEdit.vue`、`app/task/OkNte/`；不得直接复用 Okww 的启动器、配置目录或任务语义 |
 
 更多表面对照见 [examples-frontend-surfaces.md](./examples-frontend-surfaces.md)。
