@@ -49,6 +49,7 @@ from app.models.config import (
     HSRConfig,
     HSRUserConfig,
     MaaPlanConfig,
+    MaaEndPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
@@ -60,12 +61,13 @@ from app.models.config import (
     OkNteUserConfig,
     GlobalConfig,
     CLASS_BOOK,
+    PLAN_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
     GameSignAccountGroup,
 )
-from app.models.schema import WebSocketMessage
+from app.models.schema import PlanComboxConsumer, WebSocketMessage
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -942,7 +944,7 @@ class AppConfig(GlobalConfig):
                 await self.ensure_okww_user_config(
                     script_id=script_id,
                     user_id=str(uid),
-                    mode=str(config.get("Info", "Mode") or "简洁"),
+                    mode=str(config.get("Info", "Mode") or "脚本"),
                 )
             except Exception:
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
@@ -970,12 +972,12 @@ class AppConfig(GlobalConfig):
         """从 OK-WW 脚本当前配置初始化 MAS 用户配置目录。
 
         已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
-        简洁模式使用脚本共享目录，详细模式使用当前用户独立目录。
+        脚本来源使用脚本共享目录，用户来源使用当前用户独立目录。
 
         Args:
             script_id: OK-WW 脚本 ID。
             user_id: OK-WW 用户 ID。
-            mode: 配置模式，支持“简洁”或“详细”。
+            mode: 配置来源，支持“脚本”或“用户”；“简洁”/“详细”仅兼容旧配置。
 
         Returns:
             MAS 用户配置目录路径。
@@ -990,10 +992,11 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         if not isinstance(script_config, OkwwConfig):
             raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
-        if mode not in ("简洁", "详细"):
+        mode = {"简洁": "脚本", "详细": "用户"}.get(mode, mode)
+        if mode not in ("脚本", "用户"):
             raise ValueError(f"不支持的 OK-WW 配置模式: {mode}")
 
-        owner = "Default" if mode == "简洁" else user_id
+        owner = "Default" if mode == "脚本" else user_id
         target_config_dir = Path.cwd() / "data" / script_id / owner / "ConfigFile"
         if target_config_dir.exists() and not target_config_dir.is_dir():
             raise ValueError(f"OK-WW 用户配置路径不是目录: {target_config_dir}")
@@ -1201,10 +1204,12 @@ class AppConfig(GlobalConfig):
         account_token = str(
             self._safe_config_get(account, "GameSignAccount", "SklandToken", "") or ""
         ).strip()
-        credential_changed = account_token != new_token
+        # 旧用户只保存 OAuth Token；匹配到工具账号时保留其已刷新的完整凭据。
+        target_token = account_token if new_account is account else new_token
+        credential_changed = account_token != target_token
         await account.set("GameSignAccount", "Name", account_name)
         await account.set("GameSignAccount", "Enabled", enabled_value)
-        await account.set("GameSignAccount", "SklandToken", new_token)
+        await account.set("GameSignAccount", "SklandToken", target_token)
         if credential_changed:
             await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
             if account_uid is not None:
@@ -1462,13 +1467,16 @@ class AppConfig(GlobalConfig):
         ]
 
     async def add_plan(
-        self, script: Literal["MaaPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan"]
+    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
 
-        return await self.PlanConfig.add(CLASS_BOOK[script])
+        plan_class = next(
+            item["config_class"] for item in PLAN_BOOK.values() if item["create_type"] == script
+        )
+        return await self.PlanConfig.add(plan_class)
 
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
@@ -1501,20 +1509,28 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
 
-        user_list = []
+        plan_config = self.PlanConfig[plan_uid]
+        plan_type = type(plan_config).__name__
+        if plan_type not in PLAN_BOOK:
+            raise TypeError(f"不支持的计划表配置类型: {plan_type}")
+
+        consumer_config = PLAN_BOOK[plan_type]
+        user_list: list[MaaUserConfig | MaaEndUserConfig] = []
 
         for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                for user in script.UserData.values():
-                    if user.get("Info", "StageMode") == str(plan_uid):
-                        if user.is_locked:
-                            raise RuntimeError(
-                                f"用户 {user.get('Info', 'Name')} 正在使用此计划表且被锁定, 无法完成删除"
-                            )
-                        user_list.append(user)
+            if not isinstance(script, consumer_config["script_class"]):
+                continue
+            for user in script.UserData.values():
+                if user.get("Info", consumer_config["field_name"]) != str(plan_uid):
+                    continue
+                if user.is_locked:
+                    raise RuntimeError(
+                        f"用户 {user.get('Info', 'Name')} 正在使用此计划表且被锁定, 无法完成删除"
+                    )
+                user_list.append(user)
 
         for user in user_list:
-            await user.set("Info", "StageMode", "Fixed")
+            await user.set("Info", consumer_config["field_name"], "Fixed")
 
         await self.PlanConfig.remove(plan_uid)
 
@@ -1910,12 +1926,9 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        credential_fields = {
-            "MiyousheToken",
-            "KuroToken",
-            "SklandToken",
-            "TaygedoToken",
-        }
+        from app.tools.game_sign import GAME_SIGN_TOKEN_FIELDS
+
+        credential_fields = set(GAME_SIGN_TOKEN_FIELDS)
         credential_changed = False
 
         for group, items in data.items():
@@ -2347,14 +2360,22 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    async def get_plan_combox(self):
-        """获取计划下拉框信息"""
+    async def get_plan_combox(self, consumer: PlanComboxConsumer):
+        """获取指定消费方的计划下拉框信息"""
 
-        logger.info("开始获取计划下拉框信息")
+        consumer_config = next(
+            (item for item in PLAN_BOOK.values() if item["consumer"] == consumer), None
+        )
+        if consumer_config is None:
+            raise TypeError(f"不支持的计划表消费方类型: {consumer}")
+
+        plan_class = consumer_config["config_class"]
+        logger.info(f"开始获取 {consumer} 计划下拉框信息")
         data = [{"label": "固定", "value": "Fixed"}]
         for uid, plan in self.PlanConfig.items():
-            data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
-        logger.success("计划下拉框信息获取成功")
+            if isinstance(plan, plan_class):
+                data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
+        logger.success(f"{consumer} 计划下拉框信息获取成功")
 
         return data
 

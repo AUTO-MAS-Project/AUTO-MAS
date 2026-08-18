@@ -40,6 +40,7 @@ from .AutoProxy import (
     _OKWW_REL_APP_JSON,
     _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
+    _okww_config_mode,
 )
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
@@ -63,6 +64,7 @@ class OkwwManager(TaskExecuteBase):
         self.temp_path: Path | None = None
         self.script_config_path: Path | None = None
         self.had_original_script_config = False
+        self.script_config_mode = "脚本"
         self.begin_time = ""
 
     async def check(self) -> str:
@@ -136,6 +138,10 @@ class OkwwManager(TaskExecuteBase):
                     status="等待",
                 )
             ]
+            if target_user_id != "Default":
+                self.script_config_mode = _okww_config_mode(
+                    self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+                )
         else:
             self.script_info.user_list = [
                 UserItem(
@@ -189,7 +195,10 @@ class OkwwManager(TaskExecuteBase):
             shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
             shutil.rmtree(self.script_config_path, ignore_errors=True)
             tmp_dst.rename(self.script_config_path)
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+
+    def _cleanup_script_config_temp(self) -> None:
+        if self.temp_path:
+            shutil.rmtree(self.temp_path, ignore_errors=True)
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -215,6 +224,13 @@ class OkwwManager(TaskExecuteBase):
             return
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            current_config = self.user_config[uuid.UUID(current_user.user_id)]
+            config_mode = _okww_config_mode(current_config.get("Info", "Mode"))
+            logger.info(f"用户 {current_user.user_id} 配置来源: {config_mode}")
+            if config_mode == "直控":
+                await self._restore_script_config_from_temp()
+
             method = AutoProxyTask(
                 script_info=self.script_info,
                 script_config=self.script_config,
@@ -234,14 +250,22 @@ class OkwwManager(TaskExecuteBase):
                 continue
 
             # OK-WW 的工作目录、脚本进程和日志文件属于安装级共享资源，用户必须串行执行。
-            await self.spawn(method)
+            try:
+                await self.spawn(method)
+            finally:
+                # 每个用户任务结束后立即恢复快照，快速配置不得残留到脚本原配置。
+                await self._restore_script_config_from_temp()
 
     async def final_task(self):
         script_uid = uuid.UUID(self.script_info.script_id)
         script_cfg = Config.ScriptConfig[script_uid]
 
         try:
-            await self._restore_script_config_from_temp()
+            if not self._keep_script_config_changes():
+                await self._restore_script_config_from_temp()
+            else:
+                logger.info("直控配置会话成功，保留脚本原生配置")
+            self._cleanup_script_config_temp()
 
             # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
             if script_cfg.is_locked:
@@ -330,6 +354,16 @@ class OkwwManager(TaskExecuteBase):
                 with suppress(Exception):
                     await script_cfg.unlock()
 
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功后保留脚本原生 GUI 写回的配置。"""
+
+        return (
+            self.task_info.mode == "ScriptConfig"
+            and self.script_config_mode == "直控"
+            and bool(self.script_info.user_list)
+            and self.script_info.user_list[0].status == "完成"
+        )
+
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"OK-WW任务出现异常: {e}")
@@ -337,6 +371,7 @@ class OkwwManager(TaskExecuteBase):
 
         with suppress(Exception):
             await self._restore_script_config_from_temp()
+        self._cleanup_script_config_temp()
 
         try:
             script_cfg = Config.ScriptConfig[script_uid]

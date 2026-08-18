@@ -42,7 +42,14 @@ def test_build_pool_records_resolves_time_name_and_up_character() -> None:
 
 
 def test_empty_overview_contains_pool_collection() -> None:
-    overview = EndfieldActivityService()._build_overview()
+    service = EndfieldActivityService()
+    # 清理可能已存在的磁盘缓存，避免测试依赖本地运行环境
+    service._version_id = ""
+    service._source_updated_at = ""
+    service._activities = []
+    service._pools = []
+
+    overview = service._build_overview()
 
     assert overview["Pools"] == []
     assert overview["Activities"] == []

@@ -151,7 +151,10 @@ class MultipleUIDValidator(ValidatorBase):
     """多配置管理类UID验证器"""
 
     def __init__(
-        self, default: Any, related_config: dict[str, MultipleConfig], config_name: str
+        self,
+        default: Any,
+        related_config: dict[str, MultipleConfig],
+        config_name: str,
     ):
         self.default = default
         self.related_config = related_config
@@ -166,14 +169,40 @@ class MultipleUIDValidator(ValidatorBase):
             uid = uuid.UUID(value)
         except (TypeError, ValueError):
             return False
-        if uid in self.related_config.get(self.config_name, {}):
-            return True
-        return False
+        config = self.related_config.get(self.config_name, {})
+        return uid in config
 
     def correct(self, value):
         if self.validate(value):
             return value
         return self.default
+
+
+class TypedMultipleUIDValidator(MultipleUIDValidator):
+    """多配置管理类UID验证器（额外校验引用配置的类型）
+
+    用于 MultipleConfig 中同一定位键下存在多种配置类型（如 PlanConfig
+    同时存放 MaaPlanConfig 与 MaaEndPlanConfig）的场景，保证配置层
+    invariant：UID 不仅存在，且指向的配置类型符合预期。
+    """
+
+    def __init__(
+        self,
+        default: Any,
+        related_config: dict[str, MultipleConfig],
+        config_name: str,
+        expected_type: type,
+    ):
+        super().__init__(default, related_config, config_name)
+        self.expected_type = expected_type
+
+    def validate(self, value):
+        if value == self.default:
+            return True
+        if not super().validate(value):
+            return False
+        config = self.related_config.get(self.config_name, {})
+        return isinstance(config[uuid.UUID(value)], self.expected_type)
 
 
 class DateTimeValidator(ValidatorBase):

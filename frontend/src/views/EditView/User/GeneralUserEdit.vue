@@ -117,8 +117,13 @@
                   @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)" />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <!-- 占位列 -->
+            <a-col :span="24">
+              <GeneralConfigModeSelector
+                :model-value="formData.Info.IfUseMasConfig"
+                :disabled="loading"
+                :saving="configModeSaving"
+                @change="handleConfigModeChange"
+              />
             </a-col>
           </a-row>
 
@@ -219,6 +224,7 @@ import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -243,6 +249,7 @@ const scriptName = ref('')
 
 // 通用配置相关
 const generalConfigLoading = ref(false)
+const configModeSaving = ref(false)
 const generalSubscriptionId = ref<string | null>(null)
 const generalWebsocketId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
@@ -256,6 +263,7 @@ const getDefaultGeneralUserData = () => ({
     Notes: '',
     Status: true,
     RemainedDay: -1,
+    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
     ScriptBeforeTask: '',
@@ -348,6 +356,38 @@ const handleFieldSave = async (key: string, value: any) => {
     logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
+  }
+}
+
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'boolean') return
+  if (
+    isInitializing.value ||
+    configModeSaving.value ||
+    !userId ||
+    formData.Info.IfUseMasConfig === value
+  ) {
+    return
+  }
+
+  const previousValue = formData.Info.IfUseMasConfig
+  formData.Info.IfUseMasConfig = value
+  configModeSaving.value = true
+
+  try {
+    const saved = await updateUser(scriptId, userId, {
+      Info: { IfUseMasConfig: value },
+    })
+
+    if (!saved) {
+      formData.Info.IfUseMasConfig = previousValue
+      return
+    }
+
+    await loadUserData()
+    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+  } finally {
+    configModeSaving.value = false
   }
 }
 

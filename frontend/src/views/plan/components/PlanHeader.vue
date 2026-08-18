@@ -5,30 +5,16 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <!-- 新建计划下拉菜单 -->
-        <a-dropdown>
+        <a-dropdown :trigger="['click']">
           <template #overlay>
-            <a-menu @click="handleMenuClick">
-              <a-menu-item key="MaaPlanConfig">
-                <PlusOutlined />
-                新建 MAA 计划
+            <a-menu @click="onAddPlanMenu">
+              <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
+                新建 {{ planType.displayName }}
               </a-menu-item>
-              <!-- 预留其他计划类型 -->
-              <!-- <a-menu-item key="GeneralPlan">
-                <PlusOutlined />
-                新建通用计划
-              </a-menu-item>
-              <a-menu-item key="CustomPlan">
-                <PlusOutlined />
-                新建自定义计划
-              </a-menu-item> -->
             </a-menu>
           </template>
-          <a-button type="primary" size="large" @click="handleAddPlan">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            {{ getPlanButtonText }}
+          <a-button type="primary" size="large">
+            新建计划
             <DownOutlined />
           </a-button>
         </a-dropdown>
@@ -53,13 +39,13 @@
 </template>
 
 <script setup lang="ts">
-import { DeleteOutlined, DownOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import { computed, ref } from 'vue'
+import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 interface Plan {
   id: string
   name: string
-  type: string
+  type: PlanConfigType
 }
 
 interface Props {
@@ -67,39 +53,14 @@ interface Props {
   activePlanId: string
 }
 
-interface Emits {
-  (e: 'add-plan', planType: string): void
-
-  (e: 'remove-plan', planId: string): void
-}
-
 defineProps<Props>()
-const emit = defineEmits<Emits>()
+const emit = defineEmits<{
+  'add-plan': [planType: PlanConfigType]
+  'remove-plan': [planId: string]
+}>()
 
-// 默认计划类型
-const selectedPlanType = ref('MaaPlanConfig')
-
-// 根据选择的计划类型获取按钮文本
-const getPlanButtonText = computed(() => {
-  switch (selectedPlanType.value) {
-    case 'MaaPlanConfig':
-      return '新建 MAA 计划'
-    case 'GeneralPlan':
-      return '新建通用计划'
-    case 'CustomPlan':
-      return '新建自定义计划'
-    default:
-      return '新建计划'
-  }
-})
-
-const handleMenuClick = ({ key }: { key: string }) => {
-  selectedPlanType.value = key
-}
-
-// 点击主按钮创建计划
-const handleAddPlan = () => {
-  emit('add-plan', selectedPlanType.value)
+const onAddPlanMenu = ({ key }: { key: string }) => {
+  emit('add-plan', key as PlanConfigType)
 }
 </script>
 

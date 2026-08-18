@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import {
-  QuestionCircleOutlined,
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
@@ -12,24 +11,28 @@ import {
 import { message, Modal } from 'ant-design-vue'
 import QRCode from 'qrcode'
 import draggable from 'vuedraggable'
-import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
-import { Service } from '@/api'
-import { OpenAPI } from '@/api/core/OpenAPI'
+import type {
+  CancelablePromise,
+  GameSignAccountGroupConfig,
+  OutBase,
+  QrCheckOut,
+  QrCreateOut,
+  ToolsConfig_GameSign,
+} from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import { handleExternalLink } from '@/utils/openExternal'
+import { useGameSignApi } from './useGameSignApi'
 
 const {
   config,
   disabled = false,
   onFieldChange = undefined,
-  onSelectVisibleChange = undefined,
   onRefreshConfig = undefined,
 } = defineProps<{
   config: ToolsConfig_GameSign
   disabled?: boolean
   /* eslint-disable no-unused-vars -- Callback parameter names document the prop contract. */
   onFieldChange?: (key: string, value: any) => void | Promise<void>
-  onSelectVisibleChange?: (visible: boolean) => void
   /* eslint-enable no-unused-vars */
   onRefreshConfig?: () => Promise<void>
 }>()
@@ -57,6 +60,14 @@ interface AccountInstance {
 
 const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
   useGameSignAccountApi()
+const {
+  listAccounts,
+  reorderAccounts,
+  manualSign,
+  createMiyousheQr,
+  checkMiyousheQr,
+  saveMiyousheQr,
+} = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
@@ -64,7 +75,7 @@ const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
-    const response = await Service.listGameSignAccountsApiToolsSignAccountListPost()
+    const response = await listAccounts()
     if (response.code !== 200) return
     const data = response.data as any
     const instances: AccountInstance[] = []
@@ -105,18 +116,18 @@ const handleAddAccount = async () => {
     const result = await addAccount()
     if (result) {
       const defaultName = `用户 ${accounts.value.length + 1}`
+      const data = result.data || {}
       const newAccount: AccountInstance = {
         uid: result.accountId,
         type: 'GameSignAccountGroup',
-        Name: defaultName,
-        Enabled: true,
-        MiyousheToken: '',
-        KuroToken: '',
-        SklandToken: '',
-        TaygedoToken: '',
+        Name: data.Name || defaultName,
+        Enabled: data.Enabled ?? true,
+        MiyousheToken: data.MiyousheToken || '',
+        KuroToken: data.KuroToken || '',
+        SklandToken: data.SklandToken || '',
+        TaygedoToken: data.TaygedoToken || '',
       }
       accounts.value.push(newAccount)
-      await updateAccount(result.accountId, getAccountAllData(newAccount))
       message.success('用户已添加')
       openEditModal(newAccount)
     }
@@ -139,10 +150,13 @@ const handleDeleteAccount = (account: AccountInstance) => {
   })
 }
 
-const handleAccountFieldSave = async (account: AccountInstance) => {
+const handleAccountEnabledChange = async (account: AccountInstance, enabled: boolean) => {
+  const previousEnabled = account.Enabled
+  account.Enabled = enabled
   try {
-    await updateAccount(account.uid, getAccountAllData(account))
+    await updateAccount(account.uid, { Enabled: enabled })
   } catch {
+    account.Enabled = previousEnabled
     message.error('保存失败，请重试')
   }
 }
@@ -154,7 +168,7 @@ const onDragEnd = async (evt: any) => {
   isDragging.value = true
   try {
     const order = accounts.value.map(a => a.uid)
-    const response = await Service.reorderGameSignAccountsApiToolsSignAccountReorderPost({ order })
+    const response = await reorderAccounts(order)
     if (response.code !== 200) {
       throw new Error(response.message || '排序保存失败')
     }
@@ -222,6 +236,7 @@ const openEditModal = (account: AccountInstance) => {
 }
 
 const handleEditModalCancel = () => {
+  closeQrModal()
   closeTaygedoLoginModal()
   closeSklandLoginModal()
   editModalVisible.value = false
@@ -239,6 +254,7 @@ const handleEditModalOk = async () => {
       accounts.value[idx] = { ...editingAccount.value }
     }
     message.success('Token 已保存')
+    closeQrModal()
     editModalVisible.value = false
     editingAccount.value = null
   } catch (error) {
@@ -319,15 +335,7 @@ let qrSessionId = 0
 let qrAbortController: AbortController | null = null
 let qrCloseTimer: ReturnType<typeof setTimeout> | null = null
 
-interface QrApiResponse {
-  code?: number
-  status?: string
-  message?: string
-  ticket?: string
-  qr_url?: string
-  device?: string
-  cookies_str?: string
-}
+type QrApiResponse = QrCreateOut & QrCheckOut & OutBase
 
 const QR_RESPONSE_INVALID_MESSAGE = '二维码状态响应无效，请刷新后重试'
 const isQrExpiredMessage = (messageText: string) =>
@@ -361,31 +369,64 @@ const invalidateQrSession = () => {
 
 const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
 
+const abortableQrRequest = async <T,>(
+  request: CancelablePromise<T>,
+  signal?: AbortSignal
+): Promise<T> => {
+  let aborted = signal?.aborted ?? false
+  const handleAbort = () => {
+    aborted = true
+    request.cancel()
+  }
+  signal?.addEventListener('abort', handleAbort, { once: true })
+  if (aborted) request.cancel()
+
+  try {
+    return await request
+  } catch (error) {
+    if (aborted) {
+      const abortError = new Error('Request aborted')
+      abortError.name = 'AbortError'
+      throw abortError
+    }
+    throw error
+  } finally {
+    signal?.removeEventListener('abort', handleAbort)
+  }
+}
+
 const qrFetch = async (
   path: string,
   body?: Record<string, string>,
   signal?: AbortSignal
 ): Promise<QrApiResponse> => {
-  const resp = await fetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    signal,
-  })
-  const text = await resp.text()
-  if (!text) throw new Error('服务器无响应')
-  let data: unknown
-  try {
-    data = JSON.parse(text)
-  } catch {
+  let response: QrApiResponse
+  if (path === '/create') {
+    response = await abortableQrRequest(createMiyousheQr(), signal)
+  } else if (path === '/check') {
+    response = await abortableQrRequest(
+      checkMiyousheQr(body?.ticket || '', body?.device || ''),
+      signal
+    )
+  } else if (path === '/save') {
+    response = await abortableQrRequest(
+      saveMiyousheQr(body?.account_uid || '', body?.cookie || ''),
+      signal
+    )
+  } else {
+    throw new Error('未知二维码请求')
+  }
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
     throw new Error(QR_RESPONSE_INVALID_MESSAGE)
   }
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+  // 二维码 URL、ticket、设备标识和 Cookie 都是登录凭据，禁止写入前端日志。
+  const logData = {
+    ...response,
+    ticket: undefined,
+    qr_url: undefined,
+    device: undefined,
+    cookies_str: undefined,
   }
-  const response = data as QrApiResponse
-  // Cookie 是登录凭据，禁止写入前端日志；其余字段仍保留便于排查状态流转。
-  const logData = { ...response, cookies_str: undefined }
   logger.debug(`[QR ${path}] ${JSON.stringify(logData)}`)
   // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
   return response
@@ -786,7 +827,7 @@ const handleNotifyEnabledChange = async (value: boolean) => {
 const handleManualSign = async () => {
   signLoading.value = true
   try {
-    const response = await Service.manualGameSignApiToolsSignPost()
+    const response = await manualSign()
     if (response.code === 409) {
       const warning = response.message || '自动签到正在执行，请稍后再试'
       logger.warn(`手动签到被拒绝: ${warning}`)
@@ -826,7 +867,7 @@ onMounted(() => {
     <!-- 全局设置区 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>游戏社区签到</h3>
+        <h3>签到设置</h3>
         <div class="section-header-actions">
           <a
             href="https://doc.auto-mas.top/docs/advanced-features/game-sign.html"
@@ -838,6 +879,8 @@ onMounted(() => {
           </a>
           <a-button
             type="primary"
+            size="small"
+            class="section-update-button primary-style"
             :loading="signLoading"
             :disabled="disabled || !config.Enabled"
             @click="handleManualSign"
@@ -854,72 +897,55 @@ onMounted(() => {
           <div>{{ credentialPrivacyNotice }}</div>
         </template>
       </a-alert>
-      <a-row :gutter="24">
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">启用签到</span>
-              <a-tooltip title="是否启用每日自动游戏社区签到">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="config.Enabled"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled"
-              @change="handleChange('Enabled', $event)"
-              @dropdown-visible-change="onSelectVisibleChange"
+      <div class="settings-list">
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">启用签到工具</span>
+            <span class="setting-desc"
+              >启用后按 MAS 任务调度执行签到，手动签到不受每日自动签到限制</span
             >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
           </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">签到后通知</span>
-              <a-tooltip title="签到完成后通过已配置的通知渠道推送结果">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="config.NotifyEnabled"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled || notifySaving"
-              :loading="notifySaving"
-              @change="handleNotifyEnabledChange"
-              @dropdown-visible-change="onSelectVisibleChange"
-            >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
+          <a-switch
+            :checked="config.Enabled"
+            :disabled="disabled"
+            @change="handleChange('Enabled', $event)"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">结果通知</span>
+            <span class="setting-desc">签到完成后通过已配置的通知渠道推送结果</span>
           </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">启动时签到</span>
-              <a-tooltip title="应用启动后立即执行一次签到">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="config.RunOnStartup"
-              size="large"
-              style="width: 100%"
-              :disabled="disabled"
-              @change="handleChange('RunOnStartup', $event)"
-              @dropdown-visible-change="onSelectVisibleChange"
-            >
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
-            </a-select>
+          <a-switch
+            :checked="config.NotifyEnabled"
+            :disabled="disabled"
+            :loading="notifySaving"
+            @change="handleNotifyEnabledChange"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">启动时签到</span>
+            <span class="setting-desc">应用启动后立即执行一次签到</span>
           </div>
-        </a-col>
-      </a-row>
+          <a-switch
+            :checked="config.RunOnStartup"
+            :disabled="disabled"
+            @change="handleChange('RunOnStartup', $event)"
+          />
+        </div>
+        <div class="setting-row setting-row-static">
+          <div class="setting-info">
+            <span class="setting-title">上次签到</span>
+            <span class="setting-desc">最近一次完成签到的日期</span>
+          </div>
+          <span class="setting-value">{{
+            config.LastSignDate && config.LastSignDate !== '2000-01-01'
+              ? config.LastSignDate
+              : '从未签到'
+          }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- 用户列表 -->
@@ -944,7 +970,7 @@ onMounted(() => {
         <div class="user-table-header">
           <div class="header-cell drag-cell"></div>
           <div class="header-cell name-cell">用户名</div>
-          <div class="header-cell status-cell">状态</div>
+          <div class="header-cell status-cell">启用</div>
           <div class="header-cell tags-cell">各社区签到情况</div>
           <div class="header-cell actions-cell">操作</div>
         </div>
@@ -974,19 +1000,13 @@ onMounted(() => {
               <div class="row-cell name-cell">
                 <span class="user-name-text">{{ account.Name }}</span>
               </div>
-              <!-- 状态 -->
+              <!-- 启用开关 -->
               <div class="row-cell status-cell">
-                <a-select
-                  v-model:value="account.Enabled"
-                  size="middle"
-                  style="width: 100px"
+                <a-switch
+                  :checked="account.Enabled"
                   :disabled="disabled"
-                  @change="handleAccountFieldSave(account)"
-                  @dropdown-visible-change="onSelectVisibleChange"
-                >
-                  <a-select-option :value="true">启用</a-select-option>
-                  <a-select-option :value="false">禁用</a-select-option>
-                </a-select>
+                  @change="handleAccountEnabledChange(account, $event)"
+                />
               </div>
               <!-- 社区签到情况（标签云） -->
               <div class="row-cell tags-cell">
@@ -1044,17 +1064,14 @@ onMounted(() => {
                     <template #icon><EditOutlined /></template>
                     编辑
                   </a-button>
-                  <a-popconfirm
-                    title="确定要删除此用户吗？"
-                    ok-text="确定"
-                    cancel-text="取消"
-                    @confirm="handleDeleteAccount(account)"
+                  <a-button
+                    size="middle"
+                    class="action-btn delete-btn"
+                    @click="handleDeleteAccount(account)"
                   >
-                    <a-button size="middle" class="action-btn delete-btn">
-                      <template #icon><DeleteOutlined /></template>
-                      删除
-                    </a-button>
-                  </a-popconfirm>
+                    <template #icon><DeleteOutlined /></template>
+                    删除
+                  </a-button>
                 </a-space>
               </div>
             </div>
@@ -1319,7 +1336,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 用户启用状态通过选项文字表达，保留 Ant Design 默认边框。 */
+/* 布尔设置统一使用 Ant Design 开关，避免同类值出现不同交互。 */
 
 .section-header-actions {
   display: flex;
@@ -1327,6 +1344,43 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 复用新版通知页的页眉操作按钮规格，保持文档入口和主操作高度一致。 */
+.section-header-actions .section-update-button {
+  height: 32px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-header-actions .section-update-button.primary-style {
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary),
+    var(--ant-color-primary-hover)
+  ) !important;
+  border: 1px solid var(--ant-color-primary) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.section-header-actions .section-update-button.primary-style:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(22, 119, 255, 0.22);
+}
+
+.section-header-actions .section-update-button.primary-style:disabled {
+  transform: none;
+  box-shadow: none;
 }
 
 .section-doc-link {
@@ -1348,6 +1402,52 @@ onMounted(() => {
   background-color: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-hover);
   text-decoration: none;
+}
+
+/* ==================== 签到设置（开关列表） ==================== */
+.settings-list {
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ant-color-bg-container);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setting-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.setting-desc {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.setting-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
 }
 
 /* ==================== 用户列表表格 ==================== */
@@ -1390,8 +1490,10 @@ onMounted(() => {
   text-align: center;
 }
 .status-cell {
-  width: 120px;
-  min-width: 120px;
+  width: 80px;
+  min-width: 80px;
+  text-align: center;
+  justify-content: center;
 }
 .tags-cell {
   flex: 1;
@@ -1500,71 +1602,6 @@ onMounted(() => {
   font-weight: 600;
   font-size: 14px;
   color: var(--ant-color-text);
-}
-
-/* ==================== 状态下拉框 - 对齐 TimeSetManager ==================== */
-.status-select :deep(.ant-select-selector) {
-  background: transparent !important;
-  border: none !important;
-  padding: 0 6px !important;
-  min-height: 28px !important;
-  line-height: 26px !important;
-  box-shadow: none !important;
-  text-align: center;
-}
-
-.status-select :deep(.ant-select-selection-item) {
-  line-height: 26px !important;
-  color: var(--ant-color-text) !important;
-  font-weight: 500;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-selection-placeholder) {
-  line-height: 26px !important;
-  color: var(--ant-color-text-placeholder) !important;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-clear) {
-  display: none !important;
-}
-
-.status-select :deep(.ant-select-selection-search) {
-  margin: 0 !important;
-  padding: 0;
-}
-
-.status-select :deep(.ant-select-selection-search-input) {
-  padding: 0 !important;
-  margin: 0 !important;
-  height: 26px !important;
-}
-
-.status-select:hover :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-.status-select:focus-within :deep(.ant-select-selector),
-.status-select.ant-select-focused :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  outline: none !important;
-}
-
-.status-select :deep(.ant-select-arrow) {
-  right: 4px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 10px;
-}
-
-.status-select :deep(.ant-select-arrow:hover) {
-  color: var(--ant-color-primary);
 }
 
 /* ==================== 社区标签云（小标签 + 红绿黄） ==================== */

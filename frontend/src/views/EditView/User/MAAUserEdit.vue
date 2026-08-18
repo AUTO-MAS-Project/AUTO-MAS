@@ -104,6 +104,7 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 import type { HomeOverviewResponse } from '@/types/home.ts'
@@ -828,7 +829,9 @@ const loadDepotItemOptions = async () => {
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MAA,
+    })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }

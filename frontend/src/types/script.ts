@@ -245,6 +245,7 @@ export interface User {
     Notes: string
     Password: string
     RemainedDay: number
+    IfUseMasConfig?: boolean
     SeriesNumb: string
     Server: string
     SklandToken: string

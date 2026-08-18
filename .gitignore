@@ -11,6 +11,9 @@ logs/
 .venv
 list/
 
+# 本地开发环境标记（模板见 .env.example）
+.env
+
 # IDE and editors
 .vscode/
 .idea/

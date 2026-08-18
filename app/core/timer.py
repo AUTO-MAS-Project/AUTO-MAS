@@ -34,12 +34,6 @@ from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
 
-_GAME_SIGN_TOKEN_FIELDS = (
-    "MiyousheToken",
-    "KuroToken",
-    "SklandToken",
-    "TaygedoToken",
-)
 GameSignSource = Literal[
     "scheduled",
     "startup",
@@ -59,13 +53,9 @@ def _has_pending_game_sign_account(account, today: str) -> bool:
 
     if not account.get("GameSignAccount", "Enabled"):
         return False
-    def has_token(field: str) -> bool:
-        try:
-            return bool(account.get("GameSignAccount", field))
-        except (AttributeError, KeyError):
-            return False
+    from app.tools.game_sign import has_game_sign_credentials
 
-    if not any(has_token(field) for field in _GAME_SIGN_TOKEN_FIELDS):
+    if not has_game_sign_credentials(account):
         return False
     return account.get("GameSignAccount", "LastSignDate") != today
 
@@ -247,6 +237,7 @@ class _MainTimer:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
+            # 流程锁覆盖签到和结果落盘，通知在锁外发送。
             async with game_sign_flow():
                 logger.info("开始执行游戏社区签到")
                 results = await run_all_sign_in(force=False)
@@ -257,7 +248,9 @@ class _MainTimer:
                     if _all_game_sign_accounts_signed(
                         Config.ToolsConfig.GameSign_Accounts, today
                     ):
-                        await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                        await Config.ToolsConfig.set(
+                            "GameSign", "LastSignDate", today
+                        )
                     return []
 
                 # 格式化并合并结果
@@ -270,21 +263,25 @@ class _MainTimer:
                 ):
                     await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
 
-                logger.success("游戏社区签到执行完成")
+            logger.success("游戏社区签到执行完成")
 
-                # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-                if (
-                    source not in _TASK_GAME_SIGN_SOURCES
-                    and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
-                ):
-                    from app.tools.game_sign_notify import push_game_sign_notification
+            # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
+            if (
+                source not in _TASK_GAME_SIGN_SOURCES
+                and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+            ):
+                from app.tools.game_sign_notify import push_game_sign_notification
 
+                try:
                     failed_channels = await push_game_sign_notification(results)
+                except Exception as exc:
+                    logger.warning(f"游戏签到完成，但通知服务异常: {exc}")
+                else:
                     if failed_channels:
                         logger.warning(
                             f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
                         )
-                return results
+            return results
 
         except GameSignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")

@@ -63,6 +63,9 @@
             :essence-location-options="essenceLocationOptions"
             :options-loading="maaEndOptionsLoading"
             :options-loaded="maaEndOptionsLoaded"
+            :is-plan-mode="isSanityPlanMode"
+            :sanity-mode-options="sanityModeOptions"
+            :plan-mode-config="planModeConfig"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
@@ -82,16 +85,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { usePlanApi } from '@/composables/usePlanApi'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
+import {
+  MAAEND_PLAN_WEEKDAY_KEYS,
+  maaEndPlanKeyToSanityConfig,
+  type MaaEndSanityConfig,
+} from '@/utils/maaEndProtocolSpace'
+import { getWeekdayInTimezone } from '@/utils/dateUtils'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
@@ -107,6 +119,7 @@ const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
+const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -131,6 +144,13 @@ const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
+const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: '固定', value: 'Fixed' },
+])
+const planModeConfig = ref<MaaEndSanityConfig | null>(null)
+// 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
+let sanityPlanLoadVersion = 0
+const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -285,6 +305,54 @@ const loadMaaEndOptions = async () => {
     }
   } finally {
     maaEndOptionsLoading.value = false
+  }
+}
+
+const loadSanityModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MAAEND,
+    })
+    if (response?.code === 200 && response.data) {
+      sanityModeOptions.value = response.data
+        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
+        .map(item => ({ label: item.label, value: item.value }))
+    }
+  } catch (error) {
+    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+const loadSanityPlan = async (planId: string) => {
+  const version = ++sanityPlanLoadVersion
+
+  if (!planId || planId === 'Fixed') {
+    planModeConfig.value = null
+    return
+  }
+
+  try {
+    const response = await getPlans(planId)
+    // 已切换到其他计划表：丢弃过期响应，避免旧数据覆盖当前 UI
+    if (version !== sanityPlanLoadVersion || formData.Info.SanityMode !== planId) {
+      return
+    }
+    const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
+    const planIndex = response.index?.find(item => item.uid === planId)
+    if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
+      planModeConfig.value = null
+      return
+    }
+    const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
+    const info = planData.Info as Record<string, unknown> | undefined
+    const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
+    planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
+  } catch (error) {
+    if (version !== sanityPlanLoadVersion) {
+      return
+    }
+    planModeConfig.value = null
+    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -449,6 +517,7 @@ const handleCancel = () => {
 onMounted(async () => {
   await loadScriptInfo()
   await loadMaaEndOptions()
+  await loadSanityModeOptions()
 
   if (isEdit.value) {
     await loadUserData()
@@ -467,8 +536,16 @@ onMounted(async () => {
   }
 
   await nextTick()
+  await loadSanityPlan(formData.Info.SanityMode)
   isInitializing.value = false
 })
+
+watch(
+  () => formData.Info.SanityMode,
+  value => {
+    void loadSanityPlan(value)
+  }
+)
 </script>
 
 <style scoped>

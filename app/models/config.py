@@ -23,6 +23,7 @@ import asyncio
 import uuid
 import json
 import calendar
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -42,13 +43,17 @@ from app.utils.constants import (
     MAAEND_STAGE_WITH_AB,
     MAAEND_TASKS,
     MAAEND_SANITY_TASK_TYPES,
+    PLAN_CONSUMER_VALUES,
     STARRAIL_STAGE_BOOK,
 )
+from . import schema as schema_model
 from .ConfigBase import (
     ConfigBase,
+    ValidatorBase,
     MultipleConfig,
     ConfigItem,
     MultipleUIDValidator,
+    TypedMultipleUIDValidator,
     BoolValidator,
     OptionsValidator,
     MultipleOptionsValidator,
@@ -152,6 +157,76 @@ def _normalize_maaend_sanity_task_type(task_data: object) -> None:
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
         if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
+
+
+def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
+    """将固定配置或旧计划表日期槽位转换为 MaaEnd key。"""
+
+    if isinstance(raw_key, dict) and "Key" in raw_key:
+        raw_key = raw_key["Key"]
+    data = raw_key if isinstance(raw_key, dict) else {}
+
+    sanity_task_type = data.get("SanityTaskType")
+    if sanity_task_type == "ProtocolSpace":
+        sanity_task_type = data.get("ProtocolSpaceTab")
+    elif sanity_task_type in ("Matrix", "AutoEssence"):
+        sanity_task_type = "Essence"
+
+    if sanity_task_type == "Essence":
+        location = data.get("AutoEssenceSpecifiedLocation", "")
+        candidate = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": location
+            if isinstance(location, str)
+            else "",
+        }
+    else:
+        if sanity_task_type not in MAAEND_SANITY_TASK_TYPES[:-1]:
+            sanity_task_type = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
+        candidate = {
+            "SanityTaskType": sanity_task_type,
+            "OperatorProgression": data.get(
+                "OperatorProgression",
+                MAAEND_SANITY_TASK_DEFAULTS["OperatorProgression"],
+            ),
+            "WeaponProgression": data.get(
+                "WeaponProgression",
+                MAAEND_SANITY_TASK_DEFAULTS["WeaponProgression"],
+            ),
+            "CrisisDrills": data.get(
+                "CrisisDrills", MAAEND_SANITY_TASK_DEFAULTS["CrisisDrills"]
+            ),
+            "RewardsSetOption": data.get(
+                "RewardsSetOption",
+                MAAEND_SANITY_TASK_DEFAULTS["RewardsSetOption"],
+            ),
+        }
+
+    try:
+        key = schema_model.MaaEndPlanConfig_Item(Key=candidate).Key
+    except ValueError:
+        key = schema_model.MaaEndProtocolSpacePlanKey()
+    return key.model_dump()
+
+
+def validate_maaend_plan_key(raw_key: object) -> dict[str, str]:
+    """严格校验并返回规范化的 MaaEnd key。"""
+
+    key = schema_model.MaaEndPlanConfig_Item(Key=raw_key).Key
+    return key.model_dump()
+
+
+class MaaEndPlanKeyValidator(ValidatorBase):
+    """MaaEnd 计划表 key 验证器。"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            return validate_maaend_plan_key(value) == value
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> dict[str, str]:
+        return normalize_maaend_plan_key(value)
 
 
 class EmulatorConfig(ConfigBase):
@@ -338,7 +413,9 @@ class MaaUserConfig(ConfigBase):
             "Info",
             "StageMode",
             "Fixed",
-            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaPlanConfig
+            ),
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -770,7 +847,6 @@ class MaaEndUserConfig(ConfigBase):
 
     def __init__(self) -> None:
         self._maaend_essence_location_labels: dict[str, str] = {}
-        self._maaend_essence_location_label = ""
 
         ## Info ------------------------------------------------------------
         ## 用户名称
@@ -790,7 +866,14 @@ class MaaEndUserConfig(ConfigBase):
             "Info", "IfQuickConfig", True, BoolValidator()
         )
         ## 理智任务配置模式
-        self.Info_SanityMode = ConfigItem("Info", "SanityMode", "Fixed")
+        self.Info_SanityMode = ConfigItem(
+            "Info",
+            "SanityMode",
+            "Fixed",
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaEndPlanConfig
+            ),
+        )
         ## 资源名称
         self.Info_Resource = ConfigItem(
             "Info", "Resource", "官服", OptionsValidator(["官服"])
@@ -903,28 +986,30 @@ class MaaEndUserConfig(ConfigBase):
             str(item["value"]): str(item["label"])
             for item in resource["essenceLocations"]
         }
-        self._maaend_essence_location_label = self._get_maaend_location_label(
-            self.get("Task", "AutoEssenceSpecifiedLocation")
-        )
 
     def _get_maaend_location_label(self, value: str) -> str:
-        return self._maaend_essence_location_labels[value] if value else ""
+        if not value:
+            return ""
+        return self._maaend_essence_location_labels.get(value, value)
 
-    async def set(self, group: str, name: str, value: Any) -> None:
-        location_label = None
-        if group == "Task" and name == "AutoEssenceSpecifiedLocation":
-            location_label = self._get_maaend_location_label(str(value))
-        await super().set(group, name, value)
-        if location_label is not None:
-            self._maaend_essence_location_label = location_label
+    def get_effective_sanity_task_key(self) -> tuple[dict[str, str], str]:
+        """获取当前生效的完整 MaaEnd key。"""
 
-    def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
-        """获取当前生效的理智任务配置"""
+        mode = self.get("Info", "SanityMode")
+        if mode == "Fixed":
+            return normalize_maaend_plan_key(
+                {
+                    field: self.get("Task", field)
+                    for field in MAAEND_SANITY_TASK_FIELDS
+                }
+            ), mode
 
-        return (
-            {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
-            self.get("Info", "SanityMode"),
-        )
+        try:
+            plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
+        except (KeyError, ValueError) as e:
+            raise ValueError("引用的理智任务计划表不存在") from e
+
+        return plan.get_current_key(), mode
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -996,8 +1081,8 @@ class MaaEndUserConfig(ConfigBase):
 
         # 理智任务标签
         if self.get("Task", "IfSanity"):
-            task_config, _ = self.get_effective_sanity_task_config()
-            sanity_task_type = task_config["SanityTaskType"]
+            task_key, _ = self.get_effective_sanity_task_key()
+            sanity_task_type = task_key["SanityTaskType"]
             tags.append(
                 {
                     "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
@@ -1006,12 +1091,12 @@ class MaaEndUserConfig(ConfigBase):
             )
 
             detail_key = (
-                task_config["AutoEssenceSpecifiedLocation"]
+                task_key["AutoEssenceSpecifiedLocation"]
                 if sanity_task_type == "Essence"
-                else task_config[sanity_task_type]
+                else task_key[sanity_task_type]
             )
             detail_label = (
-                self._maaend_essence_location_label
+                self._get_maaend_location_label(detail_key)
                 if sanity_task_type == "Essence"
                 else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
             )
@@ -1027,7 +1112,7 @@ class MaaEndUserConfig(ConfigBase):
                     {
                         "text": (
                             "奖励组：奖励组 A"
-                            if task_config["RewardsSetOption"] == "RewardsSetA"
+                            if task_key["RewardsSetOption"] == "RewardsSetA"
                             else "奖励组：奖励组 B"
                         ),
                         "color": "blue",
@@ -2178,6 +2263,61 @@ class MaaPlanConfig(ConfigBase):
             raise ValueError("非法的计划表模式")
 
 
+class WeeklyKeyPlanConfig(ConfigBase):
+    """只保存日期槽位并返回完整 key 的通用周计划表。"""
+
+    def __init__(
+        self,
+        default_name: str,
+        default_key: Any,
+        key_validator: ValidatorBase,
+    ) -> None:
+        self.Info_Name = ConfigItem("Info", "Name", default_name)
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
+        )
+
+        self.config_item_dict: dict[str, ConfigItem] = {}
+        for group in ["ALL", *calendar.day_name]:
+            item = ConfigItem(group, "Key", deepcopy(default_key), key_validator)
+            self.config_item_dict[group] = item
+            setattr(self, f"{group}_Key", item)
+
+        super().__init__()
+
+    def get_current_key(self) -> Any:
+        """按当前模式返回完整 key，不解释 key 内容。"""
+
+        if self.get("Info", "Mode") == "ALL":
+            return self.config_item_dict["ALL"].getValue()
+
+        today = datetime.now(tz=UTC4).strftime("%A")
+        return self.config_item_dict[today].getValue()
+
+
+class MaaEndPlanConfig(WeeklyKeyPlanConfig):
+    """MaaEnd 计划表配置。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            default_name="新 MaaEnd 计划表",
+            default_key=normalize_maaend_plan_key({}),
+            key_validator=MaaEndPlanKeyValidator(),
+        )
+
+    async def load(self, data: dict) -> bool:
+        """加载计划表并迁移没有 Key 包装的旧日期槽位。"""
+
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        for group in ["ALL", *calendar.day_name]:
+            group_data = normalized_data.get(group)
+            if isinstance(group_data, dict):
+                normalized_data[group] = {
+                    "Key": normalize_maaend_plan_key(group_data)
+                }
+        return await super().load(normalized_data)
+
+
 class GeneralUserConfig(ConfigBase):
     """通用脚本用户配置"""
 
@@ -2191,6 +2331,10 @@ class GeneralUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 是否使用用户独立脚本配置
+        self.Info_IfUseMasConfig = ConfigItem(
+            "Info", "IfUseMasConfig", True, BoolValidator()
         )
         ## 是否在任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
@@ -2316,6 +2460,18 @@ class OkwwTaskIndexValidator(OptionsValidator):
         return 7 if value == 2 else super().correct(value)
 
 
+class OkwwConfigModeValidator(OptionsValidator):
+    """兼容旧版“简洁/详细”，统一为脚本/用户/直控配置来源。"""
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户", "直控"])
+
+    def correct(self, value: Any) -> Any:
+        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+
+
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
 
@@ -2339,7 +2495,11 @@ class OkwwUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", OkwwConfigModeValidator()
+        )
+        # 是否启用 MAS 快速配置覆盖高频任务字段
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2501,15 +2661,23 @@ class OkNteUserConfig(ConfigBase):
     OKNTE_TASK_BOOK: dict[int, str] = {
         1: "启动游戏",
         2: "日常任务",
-        3: "一咖舍",
-        4: "钓鱼",
-        5: "异象界域",
+        3: "自动钓鱼",
+        4: "异象界域",
+        5: "异象追猎",
         6: "音游",
-        7: "业主选拔",
+        7: "店长特供",
         8: "粉爪大劫案",
-        9: "暗域任务",
-        10: "呗果智能体",
-        11: "诊断",
+        9: "呗果智能体",
+        10: "自动小旋风",
+        11: "九百九十九夜",
+        12: "自动战斗检测诊断",
+        13: "诊断",
+        14: "日常领取",
+        15: "羁遇赠礼",
+        16: "一咖舍",
+        17: "喷泉签到",
+        18: "异象家具",
+        19: "影院约会",
     }
 
     def __init__(self) -> None:
@@ -2546,8 +2714,8 @@ class OkNteUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # ok-nte.exe -t N -e；上游 DailyTask 是 -t 2
-        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 11))
+        # ok-nte.exe -t N -e；新版上游 DailyRoutineTask 是 -t 2
+        self.Task_TaskIndex = ConfigItem("Task", "TaskIndex", 2, RangeValidator(1, 19))
         self.Task_ExitOnFinish = ConfigItem(
             "Task", "ExitOnFinish", True, BoolValidator()
         )
@@ -3257,7 +3425,9 @@ class GlobalConfig(ConfigBase):
         ## 模拟器配置列表
         self.EmulatorConfig = MultipleConfig([EmulatorConfig])
         ## 计划表配置列表
-        self.PlanConfig = MultipleConfig([MaaPlanConfig])
+        self.PlanConfig = MultipleConfig(
+            [item["config_class"] for item in PLAN_BOOK.values()]
+        )
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
             [
@@ -3283,6 +3453,7 @@ class GlobalConfig(ConfigBase):
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
     def getStage(self) -> str:
@@ -3368,7 +3539,6 @@ class GlobalConfig(ConfigBase):
 
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "MaaPlan": MaaPlanConfig,
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
     "M9A": M9AConfig,
@@ -3378,3 +3548,23 @@ CLASS_BOOK = {
     "HSR": HSRConfig,
 }
 """配置类映射表"""
+
+PLAN_BOOK = {
+    "MaaPlanConfig": {
+        "create_type": "MaaPlan",
+        "config_class": MaaPlanConfig,
+        "schema_class": schema_model.MaaPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[0],
+        "script_class": MaaConfig,
+        "field_name": "StageMode",
+    },
+    "MaaEndPlanConfig": {
+        "create_type": "MaaEndPlan",
+        "config_class": MaaEndPlanConfig,
+        "schema_class": schema_model.MaaEndPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[1],
+        "script_class": MaaEndConfig,
+        "field_name": "SanityMode",
+    },
+}
+"""计划表注册表"""
