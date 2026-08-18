@@ -56,6 +56,15 @@ def _has_game_sign_credential(account: object, field: str) -> bool:
         return False
 
 
+def _get_game_sign_field(account: object, field: str, default=None):
+    """读取签到账号字段时兼容未包含新增字段的旧账号对象。"""
+
+    try:
+        return account.get("GameSignAccount", field)  # type: ignore[attr-defined]
+    except (AttributeError, KeyError):
+        return default
+
+
 @router.post(
     "/get",
     tags=["Get"],
@@ -140,8 +149,8 @@ async def manual_game_sign() -> OutBase:
                         "TaygedoToken",
                     )
                 )
-                if account.get("GameSignAccount", "Enabled") and has_credentials:
-                    if account.get("GameSignAccount", "LastSignDate") != today:
+                if _get_game_sign_field(account, "Enabled") and has_credentials:
+                    if _get_game_sign_field(account, "LastSignDate") != today:
                         all_signed = False
                         break
             if all_signed:
@@ -347,7 +356,7 @@ async def login_taygedo(
             not str(persisted.get(field) or "").strip()
             for field in ("accessToken", "refreshToken", "uid")
         ):
-            raise ValueError("濉斿悏澶氱櫥褰曟湭杩斿洖瀹屾暣 Token")
+            raise ValueError("塔吉多登录未返回完整 Token")
         await Config.update_game_sign_account(
             credential.accountId,
             {
