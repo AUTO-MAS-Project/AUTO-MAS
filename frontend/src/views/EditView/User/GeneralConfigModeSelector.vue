@@ -14,61 +14,88 @@
       :value="modelValue"
       :disabled="disabled || saving"
       class="config-mode-options"
+      :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
       aria-label="配置管理方式"
       @change="handleChange"
     >
       <label
-        :class="['config-mode-option', { selected: modelValue, disabled: disabled || saving }]"
+        v-for="option in options"
+        :key="String(option.value)"
+        :class="[
+          'config-mode-option',
+          { selected: modelValue === option.value, disabled: disabled || saving },
+        ]"
       >
-        <a-radio :value="true" class="config-mode-radio" />
-        <span class="config-mode-icon"><DatabaseOutlined /></span>
-        <span class="config-mode-copy">
-          <span class="config-mode-title">用户独立配置</span>
-          <span class="config-mode-description">
-            为该用户保存独立配置，运行前加载，结束时按任务策略保存。
-          </span>
+        <a-radio :value="option.value" class="config-mode-radio" />
+        <span class="config-mode-icon">
+          <DatabaseOutlined v-if="option.icon === 'database'" />
+          <SettingOutlined v-else-if="option.icon === 'setting'" />
+          <FileTextOutlined v-else />
         </span>
-      </label>
-
-      <label
-        :class="['config-mode-option', { selected: !modelValue, disabled: disabled || saving }]"
-      >
-        <a-radio :value="false" class="config-mode-radio" />
-        <span class="config-mode-icon"><FileTextOutlined /></span>
         <span class="config-mode-copy">
-          <span class="config-mode-title">脚本直控配置</span>
-          <span class="config-mode-description">
-            直接使用脚本当前配置，不加载或回写该用户的独立配置。
-          </span>
+          <span class="config-mode-title">{{ option.title }}</span>
+          <span class="config-mode-description">{{ option.description }}</span>
         </span>
       </label>
     </a-radio-group>
 
-    <a-alert
-      class="config-mode-alert"
-      type="info"
-      show-icon
-      message="同一通用脚本下可以为不同用户选择不同配置来源；脚本直控配置由脚本自身维护，并由直控用户共享。"
-    />
+    <a-alert class="config-mode-alert" type="info" show-icon :message="alertMessage" />
   </a-form-item>
 </template>
 
 <script setup lang="ts">
-import { DatabaseOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import {
+  DatabaseOutlined,
+  FileTextOutlined,
+  LoadingOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 
-defineProps<{
-  modelValue: boolean
-  disabled?: boolean
-  saving?: boolean
-}>()
+type ConfigModeOption = {
+  value: boolean | string
+  title: string
+  description: string
+  icon?: 'database' | 'file' | 'setting'
+}
+
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean | string
+    disabled?: boolean
+    saving?: boolean
+    options?: ConfigModeOption[]
+    alertMessage?: string
+  }>(),
+  {
+    options: () => [
+      {
+        value: true,
+        title: '用户独立配置',
+        description: '为该用户保存独立配置，运行前加载，结束时按任务策略保存。',
+        icon: 'database',
+      },
+      {
+        value: false,
+        title: '脚本直控配置',
+        description: '直接使用脚本当前配置，不加载或回写该用户的独立配置。',
+        icon: 'file',
+      },
+    ],
+    alertMessage:
+      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
+  }
+)
+
+const options = props.options
+const alertMessage = props.alertMessage
 
 const emit = defineEmits<{
-  change: [value: boolean]
+  change: [value: boolean | string]
 }>()
 
 const handleChange = (event: RadioChangeEvent) => {
-  emit('change', Boolean(event.target.value))
+  emit('change', event.target.value as boolean | string)
 }
 </script>
 

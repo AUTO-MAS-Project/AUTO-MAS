@@ -926,6 +926,7 @@ export function useScriptApi() {
                     userData
                   ) {
                     const okwwUserData = userData as any
+                    const isOkwwUser = userIndex.type === 'OkwwUserConfig'
                     return {
                       id: userIndex.uid,
                       name: okwwUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -942,7 +943,16 @@ export function useScriptApi() {
                             ? okwwUserData.Info.Password
                             : '',
                         Mode:
-                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '简洁',
+                          okwwUserData.Info?.Mode !== undefined
+                            ? okwwUserData.Info.Mode
+                            : isOkwwUser
+                              ? '脚本'
+                              : '简洁',
+                        IfQuickConfig: isOkwwUser
+                          ? okwwUserData.Info?.IfQuickConfig !== undefined
+                            ? okwwUserData.Info.IfQuickConfig
+                            : true
+                          : undefined,
                         Resource:
                           okwwUserData.Info?.Resource !== undefined
                             ? okwwUserData.Info.Resource

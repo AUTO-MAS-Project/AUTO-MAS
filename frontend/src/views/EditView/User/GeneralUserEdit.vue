@@ -359,7 +359,8 @@ const handleFieldSave = async (key: string, value: any) => {
   }
 }
 
-const handleConfigModeChange = async (value: boolean) => {
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'boolean') return
   if (
     isInitializing.value ||
     configModeSaving.value ||
