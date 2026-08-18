@@ -61,6 +61,8 @@ class GeneralManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.external_config_exists = False
+        self.external_config_snapshot_ready = False
 
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
@@ -132,6 +134,59 @@ class GeneralManager(TaskExecuteBase):
 
         return "Pass"
 
+    def _remove_script_config(self) -> None:
+        """清理脚本当前配置路径，避免不同来源的目录文件互相残留。"""
+        if self.script_config_path.is_dir():
+            shutil.rmtree(self.script_config_path)
+        elif self.script_config_path.exists():
+            self.script_config_path.unlink()
+
+    def _snapshot_external_config(self) -> None:
+        """保存脚本直控配置，作为用户切换和任务结束时的恢复基线。"""
+        shutil.rmtree(self.temp_path, ignore_errors=True)
+        self.external_config_exists = self.script_config_path.exists()
+        self.temp_path.mkdir(parents=True, exist_ok=True)
+
+        if self.external_config_exists:
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                shutil.copytree(
+                    self.script_config_path, self.temp_path, dirs_exist_ok=True
+                )
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+
+        self.external_config_snapshot_ready = True
+
+    def _restore_external_config(self) -> None:
+        """恢复脚本直控配置，隔离 MAS 用户配置的运行结果。"""
+        if not self.external_config_snapshot_ready:
+            return
+
+        self._remove_script_config()
+        if not self.external_config_exists:
+            logger.info("脚本直控配置不存在，保持配置路径为空")
+            return
+
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.copytree(self.temp_path, self.script_config_path, dirs_exist_ok=True)
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(self.temp_path / "config.temp", self.script_config_path)
+
+    def _cleanup_external_config_snapshot(self) -> None:
+        if not self.external_config_snapshot_ready:
+            return
+        shutil.rmtree(self.temp_path, ignore_errors=True)
+        self.external_config_snapshot_ready = False
+
+    def _user_uses_mas_config(self) -> bool:
+        user_id = self.script_info.user_list[self.script_info.current_index].user_id
+        if user_id == "Default":
+            return True
+        return bool(
+            self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig")
+        )
+
     async def prepare(self):
         """运行前准备"""
 
@@ -163,17 +218,6 @@ class GeneralManager(TaskExecuteBase):
             ) in ["Client", "URL"]:
                 self.game_process_manager = ProcessManager()
 
-        # 备份原始配置
-        logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
-        self.temp_path.mkdir(parents=True, exist_ok=True)
-        if self.script_config_path.exists():
-            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                shutil.copytree(
-                    self.script_config_path, self.temp_path, dirs_exist_ok=True
-                )
-            elif self.script_config.get("Script", "ConfigPathMode") == "File":
-                shutil.copy(self.script_config_path, self.temp_path / "config.temp")
-
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
@@ -194,6 +238,9 @@ class GeneralManager(TaskExecuteBase):
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
 
+        logger.info(f"记录脚本直控配置: {self.script_config_path}")
+        self._snapshot_external_config()
+
     async def main_task(self):
 
         self.check_result = await self.check()
@@ -213,6 +260,17 @@ class GeneralManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是通用脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            use_mas_config = self._user_uses_mas_config()
+            user_id = self.script_info.user_list[
+                self.script_info.current_index
+            ].user_id
+            logger.info(
+                f"用户 {user_id} 配置来源: "
+                f"{'MAS 独立配置' if use_mas_config else '脚本直控配置'}"
+            )
+            if not use_mas_config:
+                self._restore_external_config()
+
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info,
                 self.script_config,
@@ -228,7 +286,11 @@ class GeneralManager(TaskExecuteBase):
                 ),
             )
 
-            await self.spawn(task)
+            try:
+                await self.spawn(task)
+            finally:
+                if not use_mas_config:
+                    self._snapshot_external_config()
 
     async def final_task(self):
         """运行结束后的收尾工作"""
@@ -238,6 +300,10 @@ class GeneralManager(TaskExecuteBase):
             return self.check_result
 
         logger.info("通用脚本任务已结束, 开始执行后续操作")
+
+        self._restore_external_config()
+        self._cleanup_external_config_snapshot()
+
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
@@ -292,29 +358,19 @@ class GeneralManager(TaskExecuteBase):
                     data={"Error": f"推送代理结果时出现异常: {e}"},
                 )
 
-        # 复原通用脚本配置文件
-        if (
-            self.script_config.get("Script", "ConfigPathMode") == "Folder"
-            and self.temp_path.exists()
-        ):
-            logger.info(f"复原通用脚本配置文件: {self.temp_path}")
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
-            shutil.copytree(self.temp_path, self.script_config_path, dirs_exist_ok=True)
-            shutil.rmtree(self.temp_path)
-        elif (
-            self.script_config.get("Script", "ConfigPathMode") == "File"
-            and (self.temp_path / "config.temp").exists()
-        ):
-            logger.info(f"复原通用脚本配置文件: {self.temp_path / 'config.temp'}")
-            shutil.copy(self.temp_path / "config.temp", self.script_config_path)
-            shutil.rmtree(self.temp_path)
-
         self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
 
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"通用脚本任务出现异常: {e}")
+        try:
+            self._restore_external_config()
+            self._cleanup_external_config_snapshot()
+        except Exception as restore_error:
+            logger.opt(exception=True).warning(
+                f"恢复脚本直控配置失败: {restore_error}"
+            )
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

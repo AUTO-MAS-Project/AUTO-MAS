@@ -52,7 +52,7 @@ PRIVATE_DATA_MARKERS = {
 
 PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
 
-_sentry_context: tuple[str, bool] | None = None
+_sentry_release: str | None = None
 _sentry_started = False
 
 
@@ -174,7 +174,7 @@ def is_telemetry_enabled(config_path: Path) -> bool:
         return True
 
 
-def _start_sentry(release: str, development: bool) -> None:
+def _start_sentry(release: str) -> None:
     """使用固定的脱敏策略启动 Sentry。"""
 
     global _sentry_started
@@ -182,7 +182,7 @@ def _start_sentry(release: str, development: bool) -> None:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         release=f"auto-mas@{release}",
-        environment="development" if development else "production",
+        environment="production",
         send_default_pii=False,
         include_local_variables=False,
         include_source_context=False,
@@ -199,7 +199,7 @@ def _start_sentry(release: str, development: bool) -> None:
 
 
 def set_telemetry_enabled(enabled: bool) -> None:
-    """立即启用或停用后端遥测。"""
+    """立即启用或停用后端遥测；开发环境下恒为空操作。"""
 
     global _sentry_started
 
@@ -210,16 +210,26 @@ def set_telemetry_enabled(enabled: bool) -> None:
             _sentry_started = False
         return
 
-    if not _sentry_started and _sentry_context is not None:
-        _start_sentry(*_sentry_context)
+    if not _sentry_started and _sentry_release is not None:
+        _start_sentry(_sentry_release)
 
 
 def init_sentry(release: str, development: bool, enabled: bool = True) -> None:
-    """记录运行环境，并按用户配置初始化后端 Sentry。"""
+    """按运行环境和用户配置初始化后端 Sentry。
 
-    global _sentry_context
+    Args:
+        release: 当前主程序版本号。
+        development: 是否为开发环境，开发环境不上报任何数据。
+        enabled: 用户配置的匿名遥测开关。
+    """
 
-    _sentry_context = (release, development)
+    global _sentry_release
+
+    # 开发环境不记录版本号，后续遥测开关变更同样不会启动 Sentry
+    if development:
+        return
+
+    _sentry_release = release
     set_telemetry_enabled(enabled)
 
 

@@ -751,6 +751,11 @@ STARRAIL_STAGE_BOOK = {
     "Divergent_Universe_Gentle_Words": "饰品：商业公司 & 差分机（温柔话语）",
     "Divergent_Universe_Smelted_Heart": "饰品：盗贼 & 翁瓦克（浴火钢心）",
     "Divergent_Universe_Untoppled_Walls": "饰品：太空 & 仙舟（坚城不倒）",
+    "Simulated_Universe_World_3": "第三世界",
+    "Simulated_Universe_World_4": "第四世界",
+    "Simulated_Universe_World_5": "第五世界",
+    "Simulated_Universe_World_6": "第六世界",
+    "Simulated_Universe_World_8": "第八世界",
 }
 """星穹铁道关卡文本索引表"""
 

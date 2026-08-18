@@ -81,12 +81,14 @@ export const sanitizeSentryEvent = <T extends Event>(event: T): T => {
 
 const startSentry = () => {
   if (!sentryContext) return
+  // 开发环境不上报
+  if (import.meta.env.DEV) return
 
   Sentry.init({
     app: sentryContext.app,
     dsn: 'https://6ad15803ac77e44f24f46f2dfa599def@o4511881138733056.ingest.us.sentry.io/4511902510678016',
     release: `auto-mas@${import.meta.env.VITE_APP_VERSION}`,
-    environment: import.meta.env.DEV ? 'development' : 'production',
+    environment: 'production',
     sendDefaultPii: false,
     dataCollection: {
       userInfo: false,

@@ -234,6 +234,12 @@ const routes = [
     meta: { title: '历史记录' },
   },
   {
+    path: '/gamesign',
+    name: 'GameSign',
+    component: () => import('../views/gamesign/index.vue'),
+    meta: { title: '游戏签到' },
+  },
+  {
     path: '/tools',
     name: 'Tools',
     component: () => import('../views/tools/index.vue'),

@@ -16,7 +16,9 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
+import ast
 import asyncio
+import json
 import re
 import shlex
 import shutil
@@ -34,6 +36,11 @@ from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_runnin
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
+from .config_schema import (
+    DAILY_ROUTINE_TASK_FILE,
+    LEGACY_DAILY_TASK_FILE,
+    ensure_oknte_daily_routine_configs,
+)
 from .tools import push_notification
 
 logger = get_logger("OK-NTE 自动代理")
@@ -60,9 +67,15 @@ _DEFAULT_OKNTE_ERROR_LOG = (
 )
 
 _OKNTE_DAILY_TASK_INDEX = 2
-_OKNTE_DAILY_REQUIRED_SUCCESS = "完成每日活跃度"
-_OKNTE_DAILY_SUCCESS_RE = re.compile(
+_OKNTE_DAILY_LEGACY_ACTIVITY_KEY = "完成每日活跃度"
+_OKNTE_DAILY_LEGACY_REQUIRED_SUCCESS = "完成每日活跃度"
+_OKNTE_DAILY_ROUTINE_ACTIVITY_IDS = ("daily_anomaly", "daily_anomaly_hunter")
+_OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS = ("日常领取", "Daily Claim")
+_OKNTE_DAILY_LEGACY_SUCCESS_RE = re.compile(
     r"DailyTask:info_set success\s*(?P<success>\[[^\r\n]*\])"
+)
+_OKNTE_DAILY_ROUTINE_SUCCESS_RE = re.compile(
+    r"DailyRoutineTask:info_set success\s*(?P<success>\[[^\r\n]*\])"
 )
 
 
@@ -84,12 +97,75 @@ def _oknte_log_indicates_success(log: str, success_log: list[str]) -> bool:
     return any(k in log for k in success_log if k)
 
 
-def _oknte_daily_task_success_error(log: str) -> str | None:
-    daily_success_matches = _OKNTE_DAILY_SUCCESS_RE.findall(log)
-    if not daily_success_matches:
+def _parse_oknte_info_list(raw: str) -> list[str]:
+    try:
+        value = ast.literal_eval(raw)
+        if isinstance(value, list):
+            return [str(item) for item in value]
+    except Exception:
+        pass
+
+    return [
+        item.strip().strip("'\"")
+        for item in raw.strip("[]").split(",")
+        if item.strip()
+    ]
+
+
+def _oknte_daily_activity_enabled(config_dir: Path) -> bool:
+    routine_path = config_dir / DAILY_ROUTINE_TASK_FILE
+    if routine_path.is_file():
+        try:
+            data = json.loads(routine_path.read_text(encoding="utf-8"))
+        except Exception:
+            return True
+
+        items = data.get("Routine Items") if isinstance(data, dict) else None
+        if isinstance(items, list):
+            return any(
+                isinstance(item, dict)
+                and item.get("id") in _OKNTE_DAILY_ROUTINE_ACTIVITY_IDS
+                and bool(item.get("enabled"))
+                for item in items
+            )
+        return True
+
+    legacy_path = config_dir / LEGACY_DAILY_TASK_FILE
+    if legacy_path.is_file():
+        try:
+            data = json.loads(legacy_path.read_text(encoding="utf-8"))
+        except Exception:
+            return True
+        if isinstance(data, dict) and _OKNTE_DAILY_LEGACY_ACTIVITY_KEY in data:
+            return bool(data[_OKNTE_DAILY_LEGACY_ACTIVITY_KEY])
+
+    return True
+
+
+def _oknte_daily_task_success_error(
+    log: str,
+    *,
+    daily_activity_required: bool,
+) -> str | None:
+    routine_success_matches = _OKNTE_DAILY_ROUTINE_SUCCESS_RE.findall(log)
+    if routine_success_matches:
+        success_items = _parse_oknte_info_list(routine_success_matches[-1])
+        if any(
+            required in success_items
+            for required in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS
+        ):
+            return None
+        return "OK-NTE 日常任务未完成日常领取"
+
+    if not daily_activity_required:
+        return None
+
+    legacy_success_matches = _OKNTE_DAILY_LEGACY_SUCCESS_RE.findall(log)
+    if not legacy_success_matches:
         return "OK-NTE 日常任务未确认完成每日活跃度"
 
-    if _OKNTE_DAILY_REQUIRED_SUCCESS not in daily_success_matches[-1]:
+    legacy_success_items = _parse_oknte_info_list(legacy_success_matches[-1])
+    if _OKNTE_DAILY_LEGACY_REQUIRED_SUCCESS not in legacy_success_items:
         return "OK-NTE 日常任务未完成每日活跃度"
     return None
 
@@ -119,6 +195,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_config: OkNteUserConfig = self.user_config[self.cur_user_uid]
         self.curdate = ""
         self.user_run_result_persisted = False
+        self.daily_activity_required = True
 
     async def _reset_daily_proxy_count(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -275,6 +352,7 @@ class AutoProxyTask(TaskExecuteBase):
     def _ensure_oknte_mas_config_dir(self) -> Path:
         mas_config_dir = self._oknte_mas_config_dir()
         if mas_config_dir.exists() and any(mas_config_dir.iterdir()):
+            ensure_oknte_daily_routine_configs(mas_config_dir)
             return mas_config_dir
 
         mas_config_dir.mkdir(parents=True, exist_ok=True)
@@ -285,6 +363,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
                 mas_config_dir / self.script_config_path.name,
             )
+            ensure_oknte_daily_routine_configs(mas_config_dir)
             return mas_config_dir
 
         source_config_dir = self._oknte_source_config_dir(mas_config_dir)
@@ -292,6 +371,7 @@ class AutoProxyTask(TaskExecuteBase):
             raise FileNotFoundError("OK-NTE 配置目录未初始化，请先设置有效配置路径")
 
         shutil.copytree(source_config_dir, mas_config_dir, dirs_exist_ok=True)
+        ensure_oknte_daily_routine_configs(mas_config_dir)
         return mas_config_dir
 
     async def set_oknte(self) -> None:
@@ -301,6 +381,7 @@ class AutoProxyTask(TaskExecuteBase):
         await System.kill_process(self.script_exe_path)
 
         mas_config_dir = self._ensure_oknte_mas_config_dir()
+        self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             tmp_dst = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
@@ -602,7 +683,10 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 if _oknte_log_indicates_success(log, self.success_log):
                     daily_task_error = (
-                        _oknte_daily_task_success_error(log)
+                        _oknte_daily_task_success_error(
+                            log,
+                            daily_activity_required=self.daily_activity_required,
+                        )
                         if self.task_index == _OKNTE_DAILY_TASK_INDEX
                         else None
                     )
