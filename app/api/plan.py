@@ -76,9 +76,6 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
             uid = item["uid"]
             plan_type = item["type"]
 
-            if uid not in raw_data:
-                raise ValueError(f"计划表索引缺少对应数据: {uid}")
-
             data[uid] = PLAN_BOOK[plan_type]["schema_class"](**raw_data[uid])
     except Exception as e:
         return PlanGetOut(

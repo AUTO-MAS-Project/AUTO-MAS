@@ -847,7 +847,6 @@ class MaaEndUserConfig(ConfigBase):
 
     def __init__(self) -> None:
         self._maaend_essence_location_labels: dict[str, str] = {}
-        self._maaend_essence_location_label = ""
 
         ## Info ------------------------------------------------------------
         ## 用户名称
@@ -987,23 +986,14 @@ class MaaEndUserConfig(ConfigBase):
             str(item["value"]): str(item["label"])
             for item in resource["essenceLocations"]
         }
-        self._maaend_essence_location_label = self._get_maaend_location_label(
-            self.get("Task", "AutoEssenceSpecifiedLocation")
-        )
 
     def _get_maaend_location_label(self, value: str) -> str:
-        return self._maaend_essence_location_labels[value] if value else ""
-
-    async def set(self, group: str, name: str, value: Any) -> None:
-        location_label = None
-        if group == "Task" and name == "AutoEssenceSpecifiedLocation":
-            location_label = self._get_maaend_location_label(str(value))
-        await super().set(group, name, value)
-        if location_label is not None:
-            self._maaend_essence_location_label = location_label
+        if not value:
+            return ""
+        return self._maaend_essence_location_labels.get(value, value)
 
     def get_effective_sanity_task_key(self) -> tuple[dict[str, str], str]:
-        """获取并校验当前生效的完整 MaaEnd key。"""
+        """获取当前生效的完整 MaaEnd key。"""
 
         mode = self.get("Info", "SanityMode")
         if mode == "Fixed":
@@ -1019,15 +1009,7 @@ class MaaEndUserConfig(ConfigBase):
         except (KeyError, ValueError) as e:
             raise ValueError("引用的理智任务计划表不存在") from e
 
-        # 防御性检查：正常路径下 Info_SanityMode 已由
-        # TypedMultipleUIDValidator 保证指向 MaaEndPlanConfig
-        if not isinstance(plan, MaaEndPlanConfig):
-            raise TypeError(f"引用的计划表 {mode} 类型不是 MaaEnd 计划表")
-
-        try:
-            return validate_maaend_plan_key(plan.get_current_key()), mode
-        except ValueError as e:
-            raise ValueError(f"引用的 MaaEnd 计划表 {mode} key 非法") from e
+        return plan.get_current_key(), mode
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -1114,7 +1096,7 @@ class MaaEndUserConfig(ConfigBase):
                 else task_key[sanity_task_type]
             )
             detail_label = (
-                self._maaend_essence_location_label
+                self._get_maaend_location_label(detail_key)
                 if sanity_task_type == "Essence"
                 else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
             )
@@ -2308,12 +2290,9 @@ class WeeklyKeyPlanConfig(ConfigBase):
 
         if self.get("Info", "Mode") == "ALL":
             return self.config_item_dict["ALL"].getValue()
-        if self.get("Info", "Mode") == "Weekly":
-            today = datetime.now(tz=UTC4).strftime("%A")
-            return self.config_item_dict.get(
-                today, self.config_item_dict["ALL"]
-            ).getValue()
-        raise ValueError("非法的计划表模式")
+
+        today = datetime.now(tz=UTC4).strftime("%A")
+        return self.config_item_dict[today].getValue()
 
 
 class MaaEndPlanConfig(WeeklyKeyPlanConfig):

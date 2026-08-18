@@ -148,6 +148,8 @@ const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: '固定', value: 'Fixed' },
 ])
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
+// 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
+let sanityPlanLoadVersion = 0
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getDefaultMaaEndUserData = () => ({
@@ -322,6 +324,8 @@ const loadSanityModeOptions = async () => {
 }
 
 const loadSanityPlan = async (planId: string) => {
+  const version = ++sanityPlanLoadVersion
+
   if (!planId || planId === 'Fixed') {
     planModeConfig.value = null
     return
@@ -329,6 +333,10 @@ const loadSanityPlan = async (planId: string) => {
 
   try {
     const response = await getPlans(planId)
+    // 已切换到其他计划表：丢弃过期响应，避免旧数据覆盖当前 UI
+    if (version !== sanityPlanLoadVersion || formData.Info.SanityMode !== planId) {
+      return
+    }
     const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
     const planIndex = response.index?.find(item => item.uid === planId)
     if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
@@ -340,6 +348,9 @@ const loadSanityPlan = async (planId: string) => {
     const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
     planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
   } catch (error) {
+    if (version !== sanityPlanLoadVersion) {
+      return
+    }
     planModeConfig.value = null
     logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
