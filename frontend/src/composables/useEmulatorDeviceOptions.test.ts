@@ -84,6 +84,26 @@ describe('useEmulatorDeviceOptions', () => {
     expect(emulatorDeviceOptions.value).toEqual([])
   })
 
+  it('caches successful responses until options are cleared', async () => {
+    loadDevicesRequest
+      .mockResolvedValueOnce({ code: 200, data: [{ label: '实例 0', value: '0' }] })
+      .mockResolvedValueOnce({ code: 200, data: [{ label: '实例 1', value: '1' }] })
+    const { clearEmulatorDeviceOptions, emulatorDeviceOptions, loadEmulatorDeviceOptions } =
+      await import('./useEmulatorDeviceOptions').then(module => module.useEmulatorDeviceOptions())
+
+    await loadEmulatorDeviceOptions('emulator-a')
+    await loadEmulatorDeviceOptions('emulator-a')
+
+    expect(loadDevicesRequest).toHaveBeenCalledTimes(1)
+    expect(emulatorDeviceOptions.value).toEqual([{ label: '实例 0', value: '0' }])
+
+    clearEmulatorDeviceOptions()
+    await loadEmulatorDeviceOptions('emulator-a')
+
+    expect(loadDevicesRequest).toHaveBeenCalledTimes(2)
+    expect(emulatorDeviceOptions.value).toEqual([{ label: '实例 1', value: '1' }])
+  })
+
   it('settles empty and failed responses', async () => {
     loadDevicesRequest
       .mockResolvedValueOnce({ code: 200, data: [] })

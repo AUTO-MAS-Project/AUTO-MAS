@@ -5,10 +5,12 @@ import { Service, type ComboBoxItem } from '@/api'
 export const useEmulatorDeviceOptions = () => {
   const emulatorDeviceLoading = ref(false)
   const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
+  const deviceOptionsCache = new Map<string, ComboBoxItem[]>()
   let requestSequence = 0
 
   const clearEmulatorDeviceOptions = () => {
     requestSequence += 1
+    deviceOptionsCache.clear()
     emulatorDeviceOptions.value = []
     emulatorDeviceLoading.value = false
   }
@@ -22,6 +24,13 @@ export const useEmulatorDeviceOptions = () => {
       return
     }
 
+    const cachedOptions = deviceOptionsCache.get(emulatorId)
+    if (cachedOptions) {
+      emulatorDeviceOptions.value = cachedOptions
+      emulatorDeviceLoading.value = false
+      return
+    }
+
     emulatorDeviceLoading.value = true
     try {
       const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
@@ -31,7 +40,9 @@ export const useEmulatorDeviceOptions = () => {
       if (requestId !== requestSequence) return
 
       if (response.code === 200) {
-        emulatorDeviceOptions.value = response.data || []
+        const options = response.data || []
+        deviceOptionsCache.set(emulatorId, options)
+        emulatorDeviceOptions.value = options
       } else {
         message.error(response.message || '加载模拟器实例选项失败')
       }
