@@ -56,9 +56,6 @@ class SraActivityService:
     async def get_overview(self) -> dict[str, Any]:
         if time.monotonic() >= self._next_check and self._refresh_task is None:
             self._refresh_task = asyncio.create_task(self._refresh())
-        refresh_task = self._refresh_task
-        if not self._data and refresh_task is not None:
-            await asyncio.shield(refresh_task)
         return {
             "Available": bool(self._data),
             "Stale": bool(self._data and self._last_error),
@@ -66,9 +63,13 @@ class SraActivityService:
                 "正在使用上次成功获取的活动数据"
                 if self._data and self._last_error
                 else (
-                    f"{self._display_name}活动数据暂不可用"
-                    if self._last_error
-                    else ""
+                    f"{self._display_name}活动数据正在获取中"
+                    if not self._data and self._refresh_task is not None
+                    else (
+                        f"{self._display_name}活动数据暂不可用"
+                        if self._last_error
+                        else ""
+                    )
                 )
             ),
             **self._data,
