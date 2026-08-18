@@ -125,17 +125,35 @@
             </a-row>
 
             <a-row :gutter="24">
+              <a-col :span="24">
+                <GeneralConfigModeSelector
+                  :model-value="formData.Info.Mode"
+                  :options="okwwConfigModeOptions"
+                  :disabled="pageLoading"
+                  :saving="isSaving"
+                  alert-message="脚本使用脚本级共享配置，用户使用当前用户配置；直控优先读取 Okww 原有配置。快速配置开启后，仅覆盖本页暴露的高频任务字段。"
+                  @change="handleConfigModeChange"
+                />
+              </a-col>
               <a-col :span="12">
-                <a-form-item label="配置模式">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      是否启用快速配置
+                      <a-tooltip
+                        title="开启后，启动 OK-WW 时会用下方高频任务配置覆盖脚本；关闭后保留脚本配置中的完整任务设置"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
                   <a-select
-                    v-model:value="formData.Info.Mode"
+                    v-model:value="formData.Info.IfQuickConfig"
                     size="large"
                     class="modern-select"
-                    @change="saveField('Info.Mode', formData.Info.Mode)"
-                  >
-                    <a-select-option value="简洁">简洁</a-select-option>
-                    <a-select-option value="详细">详细</a-select-option>
-                  </a-select>
+                    :options="quickConfigOptions"
+                    @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -245,7 +263,7 @@
         </a-form>
       </a-card>
 
-      <a-card class="config-card" style="margin-top: 24px">
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
@@ -466,6 +484,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -492,6 +511,41 @@ let okwwConfigTimeout: number | null = null
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
   { label: '国际服（Global）', value: '国际服' },
+]
+
+const quickConfigOptions = [
+  { label: '启用', value: true },
+  { label: '关闭', value: false },
+]
+
+const okwwConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  {
+    label: '脚本',
+    value: '脚本',
+    title: '脚本',
+    description: '使用脚本级共享的 MAS 高频配置。',
+    icon: 'file',
+  },
+  {
+    label: '用户',
+    value: '用户',
+    title: '用户',
+    description: '为当前用户保存独立的 MAS 高频配置。',
+    icon: 'database',
+  },
+  {
+    label: '直控',
+    value: '直控',
+    title: '直控',
+    description: '优先读取 Okww 原有配置，复杂设置交给脚本 GUI。',
+    icon: 'setting',
+  },
 ]
 
 const okwwTaskOptions = [
@@ -534,7 +588,9 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    IfUseMasConfig: true,
+    Mode: '脚本',
+    IfQuickConfig: true,
     Resource: '官服',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -575,6 +631,12 @@ const formData = reactive<OkwwUserFormData>({
 })
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
+
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await saveField('Info.Mode', formData.Info.Mode)
+}
 
 const clearOkwwConfigSession = () => {
   if (okwwSubscriptionId.value) {
@@ -727,7 +789,13 @@ const handleOkwwConfig = async () => {
       }
     })
     okwwSubscriptionId.value = subscriptionId
-    message.success(`已打开${formData.Info.Mode === '简洁' ? '共享' : '当前用户'}的 ok-ww 设置`)
+    const configTarget =
+      formData.Info.Mode === '直控'
+        ? '脚本直控'
+        : formData.Info.Mode === '脚本'
+          ? '脚本共享'
+          : '当前用户'
+    message.success(`已打开${configTarget}的 ok-ww 设置`)
     okwwConfigTimeout = window.setTimeout(handleSaveOkwwConfig, 30 * 60 * 1000)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))

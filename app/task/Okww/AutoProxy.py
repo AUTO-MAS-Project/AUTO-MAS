@@ -74,8 +74,16 @@ def _split_args(raw: object) -> list[str]:
     return shlex.split(value, posix=False) if value else []
 
 
+def _okww_config_mode(raw: object) -> str:
+    mode = str(raw or "脚本")
+    return {"简洁": "脚本", "详细": "用户"}.get(mode, mode)
+
+
 def _okww_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
-    owner = "Default" if mode == "简洁" else user_id
+    mode = _okww_config_mode(mode)
+    if mode == "直控":
+        raise ValueError("直控配置不使用 MAS 全量配置目录")
+    owner = "Default" if mode == "脚本" else user_id
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
@@ -197,18 +205,26 @@ class AutoProxyTask(TaskExecuteBase):
             except (FileNotFoundError, ValueError) as e:
                 return str(e)
 
-        try:
-            await Config.ensure_okww_user_config(
-                script_id=self.script_info.script_id,
-                user_id=str(self.cur_user_uid),
-                mode=str(self.cur_user_config.get("Info", "Mode") or "简洁"),
-            )
-        except FileNotFoundError as e:
-            logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
-            return str(e)
-        except (OSError, TypeError, ValueError) as e:
-            logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
-            return "无法读取 OK-WW 默认配置，请检查 OK-WW 脚本路径"
+        config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
+        if config_mode == "直控":
+            config_dir = root / _OKWW_REL_CONFIG_DIR
+            if not config_dir.is_dir() or not any(
+                item.is_file() for item in config_dir.rglob("*")
+            ):
+                return "未找到 OK-WW 脚本原有配置，请先在 OK-WW 中保存设置"
+        else:
+            try:
+                await Config.ensure_okww_user_config(
+                    script_id=self.script_info.script_id,
+                    user_id=str(self.cur_user_uid),
+                    mode=config_mode,
+                )
+            except FileNotFoundError as e:
+                logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
+                return str(e)
+            except (OSError, TypeError, ValueError) as e:
+                logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
+                return "无法读取 OK-WW 默认配置，请检查 OK-WW 脚本路径"
         return "Pass"
 
     async def prepare(self):
@@ -249,10 +265,16 @@ class AutoProxyTask(TaskExecuteBase):
         return _okww_mas_config_dir(
             self.script_info.script_id,
             str(self.cur_user_uid),
-            str(self.cur_user_config.get("Info", "Mode") or "简洁"),
+            _okww_config_mode(self.cur_user_config.get("Info", "Mode")),
         )
 
     def _apply_mas_overrides(self) -> None:
+        _update_json(
+            self.script_config_path / "Basic Options.json",
+            {"Exit App when Game Exits": True},
+        )
+        if not self.cur_user_config.get("Info", "IfQuickConfig"):
+            return
         _update_json(
             self.script_config_path / "DailyTask.json",
             {
@@ -274,10 +296,6 @@ class AutoProxyTask(TaskExecuteBase):
                 ),
             },
         )
-        _update_json(
-            self.script_config_path / "Basic Options.json",
-            {"Exit App when Game Exits": True},
-        )
 
     async def set_okww(self) -> None:
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
@@ -289,14 +307,16 @@ class AutoProxyTask(TaskExecuteBase):
             str(self.cur_user_config.get("Info", "Resource")),
         )
 
-        mas_config_dir = self._okww_mas_config_dir()
-        tmp_dst = self.script_config_path.with_name(
-            self.script_config_path.name + ".tmp"
-        )
-        shutil.rmtree(tmp_dst, ignore_errors=True)
-        shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
-        shutil.rmtree(self.script_config_path, ignore_errors=True)
-        tmp_dst.rename(self.script_config_path)
+        config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
+        if config_mode != "直控":
+            mas_config_dir = self._okww_mas_config_dir()
+            tmp_dst = self.script_config_path.with_name(
+                self.script_config_path.name + ".tmp"
+            )
+            shutil.rmtree(tmp_dst, ignore_errors=True)
+            shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
         logger.info(f"OK-WW 运行参数配置完成: 自动代理")
 
