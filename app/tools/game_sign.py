@@ -83,29 +83,31 @@ def _all_enabled_platforms_signed(
     return True
 
 
-async def _check_system_time() -> bool:
-    """校准系统时间，避免因时间偏差导致签到失败
+async def _check_system_time() -> None:
+    """检查系统时间偏差并提示用户，不阻断签到流程。
 
-    Returns:
-        True: 时间正常; False: 偏差过大
+    时间源不可信或不可用时（服务退役、被劫持的网络等）仅记录日志；
+    真正对时间敏感的只有米游社 DS 签名，其容差远大于此处阈值，
+    因此偏差过大时也只告警，由具体平台的签到结果反映实际影响。
     """
     try:
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             resp = await client.get(
-                "http://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
+                "https://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
             )
         api_time = resp.json().get("unixtime", 0)
+        if not api_time:
+            return
         local_time = time.time()
         offset = abs(api_time - local_time)
         if offset > 300:
-            logger.warning(f"系统时间偏差 {offset:.0f} 秒，签到可能失败，请校准系统时间")
-            return False
-        if offset > 30:
+            logger.warning(
+                f"系统时间与网络时间偏差约 {offset:.0f} 秒，部分平台签到可能失败，建议校准系统时间"
+            )
+        elif offset > 30:
             logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
-        return True
     except Exception as e:
         logger.debug(f"时间校准跳过: {e}")
-        return True
 
 
 def _empty_platform_result(
@@ -151,10 +153,8 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
     results = []
     today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
-    # 时间校准：偏差过大时跳过本轮签到，避免因时间错误导致 API 失败
-    if not await _check_system_time():
-        logger.warning("系统时间偏差过大，跳过本轮游戏社区签到")
-        return results
+    # 时间检查仅告警，不阻断签到（时间源可能不可用或不可信）
+    await _check_system_time()
 
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
@@ -424,7 +424,10 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         should_mark_signed = bool(enabled_platforms) and (not force or all_platforms_signed)
         if should_mark_signed:
             try:
-                await account.set("GameSignAccount", "LastSignDate", today)
+                # 多账号串行签到可能跨越 0 点，写入时重新取当前日期，
+                # 避免把新一天的签到记成旧日期导致次日误判。
+                sign_date = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+                await account.set("GameSignAccount", "LastSignDate", sign_date)
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
 
