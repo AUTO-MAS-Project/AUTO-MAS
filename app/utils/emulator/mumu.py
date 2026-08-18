@@ -430,9 +430,13 @@ class MumuManager(DeviceBase):
             logger.error(f"JSON解析错误: {e}")
             return DeviceStatus.UNKNOWN
 
-        if data_json["is_android_started"]:
+        return self._get_status_from_data(data_json)
+
+    @staticmethod
+    def _get_status_from_data(data: dict[str, object]) -> DeviceStatus:
+        if data["is_android_started"]:
             return DeviceStatus.ONLINE
-        elif data_json["is_process_started"]:
+        elif data["is_process_started"]:
             return DeviceStatus.STARTING
         else:
             return DeviceStatus.OFFLINE
@@ -452,6 +456,20 @@ class MumuManager(DeviceBase):
             return f"127.0.0.1:{5555 + int(index) * 2}"
         except (TypeError, ValueError):
             return "Unknown"
+
+    @staticmethod
+    def _extract_device_entries(data: object) -> list[dict[str, object]]:
+        if not isinstance(data, dict):
+            return []
+
+        if "index" in data and "name" in data:
+            return [data]
+
+        return [
+            value
+            for value in data.values()
+            if isinstance(value, dict) and "index" in value and "name" in value
+        ]
 
     async def _get_adb_address(self, data: dict[str, object], index: str | int) -> str:
         adb_address = self._resolve_adb_address(data)
@@ -479,30 +497,24 @@ class MumuManager(DeviceBase):
 
         result: dict[str, DeviceInfo] = {}
 
-        if not data_json:
-            return result
-
-        if isinstance(data_json, dict) and "index" in data_json and "name" in data_json:
-            index = data_json["index"]
-            name = data_json["name"]
-            status = await self.getStatus(index, data)
-            adb_address = await self._get_adb_address(data_json, index)
+        for value in self._extract_device_entries(data_json):
+            index = str(value["index"])
+            name = value["name"]
+            status = self._get_status_from_data(value)
+            adb_address = await self._get_adb_address(value, index)
             result[index] = DeviceInfo(
                 title=name, status=status, adb_address=adb_address
             )
 
-        elif isinstance(data_json, dict):
-            for value in data_json.values():
-                if isinstance(value, dict) and "index" in value and "name" in value:
-                    index = value["index"]
-                    name = value["name"]
-                    status = await self.getStatus(index)
-                    adb_address = await self._get_adb_address(value, index)
-                    result[index] = DeviceInfo(
-                        title=name, status=status, adb_address=adb_address
-                    )
-
         return result
+
+    async def list_devices(self) -> dict[str, str]:
+        data_json = json.loads(await self.get_device_info("all"))
+
+        return {
+            str(value["index"]): str(value["name"])
+            for value in self._extract_device_entries(data_json)
+        }
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         status = await self.getStatus(idx)

@@ -680,6 +680,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '@/api'
 import type { ScriptUploadIn } from '@/api'
@@ -977,6 +978,12 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
 }
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 
 const formData = reactive({
   name: '',
@@ -1125,9 +1132,7 @@ const hasFractionalSecondToken = computed(() => {
 
 // 模拟器相关状态
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
 // 注意：此 watcher 用于业务逻辑处理（配置文件类型切换时重置路径），而非简单的配置自动保存
@@ -1298,7 +1303,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
       if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
-        await loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
+        void loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
       }
     } else {
       // 编辑现有脚本时，从API获取数据
@@ -1321,7 +1326,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
       if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
-        await loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
+        void loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
       }
     }
   } catch (error) {
@@ -1360,32 +1365,14 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId,
-    })
-    if (response && response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    } else {
-      message.error('加载模拟器实例选项失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
-    message.error('加载模拟器实例选项失败')
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const handleEmulatorChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   generalConfig.Game.EmulatorIndex = ''
-  emulatorDeviceOptions.value = []
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
 
   // 保存模拟器选择和清空的实例字段
   isSaving.value = true
@@ -1407,16 +1394,12 @@ const handleEmulatorChange = async (emulatorId: string) => {
   } finally {
     isSaving.value = false
   }
-
-  // 加载新的模拟器实例选项
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
-  }
 }
 
 const handleGameTypeChange = async (gameType: string) => {
   // 构建需要更新的字段对象
   let updateFields: Record<string, any> = { Type: gameType }
+  clearEmulatorDeviceOptions()
 
   // 当游戏平台类型改变时，清空相关字段
   if (gameType === 'Emulator') {
@@ -1441,7 +1424,6 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.URL = ''
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
-    emulatorDeviceOptions.value = []
     emulatorOptions.value = []
     updateFields = {
       ...updateFields,
@@ -1457,7 +1439,6 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.IfForceClose = false
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
-    emulatorDeviceOptions.value = []
     emulatorOptions.value = []
     updateFields = {
       ...updateFields,
