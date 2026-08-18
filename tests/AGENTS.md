@@ -26,4 +26,3 @@
 ```powershell
 python -m pytest tests/task/test_maa_depot_maintain.py -q
 ```
-

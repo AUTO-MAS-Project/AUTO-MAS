@@ -95,6 +95,52 @@
             :overview="starRailData"
             @refresh="fetchOverviewData"
           />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'genshin'"
+            title="原神活动信息"
+            accent="#8fe3b0"
+            empty-text="暂无进行中的原神活动"
+            :loading="loading"
+            :overview="genshinData"
+            @refresh="fetchOverviewData"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'zenless'"
+            title="绝区零活动信息"
+            accent="#ffd24a"
+            empty-text="暂无进行中的绝区零活动"
+            :loading="loading"
+            :overview="zenlessZoneZeroData"
+            @refresh="fetchOverviewData"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'wutheringwaves'"
+            title="鸣潮活动信息"
+            accent="#7aa2ff"
+            empty-text="暂无进行中的鸣潮活动"
+            :loading="loading"
+            :overview="wutheringWavesData"
+            @refresh="fetchOverviewData"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'nte'"
+            title="异环活动信息"
+            accent="#c9a7ff"
+            empty-text="暂无进行中的异环活动"
+            :loading="loading"
+            :overview="nevernessToEvernessData"
+            @refresh="fetchOverviewData"
+          />
+
+          <HomeReverse1999Overview
+            v-else-if="moduleKey === 'reverse1999'"
+            :loading="loading"
+            :overview="reverse1999Data"
+          />
         </section>
       </template>
     </div>
@@ -113,6 +159,8 @@ import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.v
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
+import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
+import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
 import HomeStarRailOverview from '@/views/home/components/HomeStarRailOverview.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
@@ -157,6 +205,11 @@ const {
   proxyData,
   endfieldData,
   starRailData,
+  genshinData,
+  zenlessZoneZeroData,
+  wutheringWavesData,
+  nevernessToEvernessData,
+  reverse1999Data,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()

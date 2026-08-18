@@ -199,9 +199,6 @@ class EndfieldActivityService:
             and self._refresh_task is None
         ):
             self._refresh_task = asyncio.create_task(self._refresh_if_needed())
-        refresh_task = self._refresh_task
-        if not self._version_id and refresh_task is not None:
-            await asyncio.shield(refresh_task)
         return self._build_overview()
 
     async def _refresh_if_needed(self) -> None:
