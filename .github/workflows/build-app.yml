@@ -42,10 +42,10 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: '20'
 
@@ -61,13 +61,13 @@ jobs:
 
       - name: 上传未签名主程序
         id: upload-unsigned-main-program
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with: 
             name: AUTO-MAS
             path: AUTO-MAS.exe
 
       - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@v2.0
+        uses: signpath/github-action-submit-signing-request@v2.3
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
@@ -197,7 +197,7 @@ jobs:
 
       - name: 缓存完整环境
         id: cache-environment
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: environment.zip
           key: environment-zip
@@ -219,7 +219,7 @@ jobs:
 
       - name: 上传未签名安装程序
         id: upload-unsigned-setup-program
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: AUTO-MAS-Unsigned-Setup
           path: |
@@ -227,7 +227,7 @@ jobs:
             AUTO-MAS-Full-Setup.exe
 
       - name: 签名安装程序
-        uses: signpath/github-action-submit-signing-request@v2.0
+        uses: signpath/github-action-submit-signing-request@v2.3
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
@@ -249,7 +249,7 @@ jobs:
         shell: pwsh
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: build-artifacts
           path: AUTO-MAS-*-x64.zip
@@ -261,10 +261,10 @@ jobs:
     needs: build
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           name: build-artifacts
           path: artifacts
@@ -289,7 +289,7 @@ jobs:
           git push origin "$TAG_NAME"
 
       - name: 发布发行版
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
@@ -332,10 +332,10 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.x'
 
@@ -365,7 +365,7 @@ jobs:
 
     steps:
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           name: build-artifacts
           path: .
