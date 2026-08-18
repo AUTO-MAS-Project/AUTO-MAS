@@ -76,6 +76,8 @@ export interface StageAvailability {
 // 标准关卡选项缓存（按时间维度）
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
 let stageOptionsPreloadPromise: Promise<void> | null = null
+// 缓存代次：clearStageOptionsCache 自增，清缓存前发出的请求完成后不得写入新缓存
+let stageOptionsGeneration = 0
 
 // 加载标准关卡选项
 export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
@@ -83,6 +85,8 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
   if (stageOptionsCache.value[timeKey]) {
     return stageOptionsCache.value[timeKey]
   }
+
+  const generation = stageOptionsGeneration
 
   try {
     // 映射时间维度到 API 参数
@@ -102,6 +106,10 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
     })
 
     if (response.code === 200 || response.code === undefined) {
+      // 缓存已被清除：丢弃过期响应，避免旧数据覆盖刷新后的新缓存
+      if (generation !== stageOptionsGeneration) {
+        return []
+      }
       // 缓存结果
       stageOptionsCache.value[timeKey] = response.data
       return response.data
@@ -126,9 +134,12 @@ export async function preloadAllStageOptions(): Promise<void> {
   }
 
   if (!stageOptionsPreloadPromise) {
+    const generation = stageOptionsGeneration
     stageOptionsPreloadPromise = Promise.all(TIME_KEYS.map(timeKey => loadStageOptions(timeKey)))
       .then(() => {
-        logger.info('关卡选项预加载完成')
+        if (generation === stageOptionsGeneration) {
+          logger.info('关卡选项预加载完成')
+        }
       })
       .finally(() => {
         stageOptionsPreloadPromise = null
@@ -140,6 +151,8 @@ export async function preloadAllStageOptions(): Promise<void> {
 
 // 清除缓存（用于刷新数据）
 export function clearStageOptionsCache(): void {
+  // 自增代次，使清缓存前发出的在途请求全部失效
+  stageOptionsGeneration += 1
   stageOptionsCache.value = {}
   stageOptionsPreloadPromise = null
   logger.info('关卡选项缓存已清除')
