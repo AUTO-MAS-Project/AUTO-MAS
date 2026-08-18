@@ -106,6 +106,15 @@ class DeviceBase(ABC):
         ...
 
     @abstractmethod
+    async def list_devices(self) -> dict[str, str]:
+        """获取可选设备实例。
+
+        Returns:
+            dict[str, str]: 设备索引与显示名称的映射。
+        """
+        ...
+
+    @abstractmethod
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         """
         获取设备信息
