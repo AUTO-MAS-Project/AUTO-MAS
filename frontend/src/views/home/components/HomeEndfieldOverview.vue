@@ -268,15 +268,6 @@ const handleImageError = (itemId: string) => {
   color: var(--ant-color-text-quaternary);
 }
 
-.pool-art::before {
-  width: 190px;
-  height: 190px;
-  position: absolute;
-  content: '';
-  border-radius: 50%;
-  background: var(--ant-color-primary-bg);
-}
-
 .pool-art img {
   width: 100%;
   height: 210px;

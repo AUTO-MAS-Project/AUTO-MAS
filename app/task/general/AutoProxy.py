@@ -101,6 +101,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        self.use_mas_config = bool(
+            self.cur_user_config.get("Info", "IfUseMasConfig")
+        )
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -115,7 +118,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if not (
+        if self.use_mas_config and not (
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
         ).exists():
@@ -486,7 +489,16 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def update_config(self):
 
+        if not self.use_mas_config:
+            logger.info("脚本直控配置：跳过回写用户独立配置")
+            return
+
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.rmtree(
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                ignore_errors=True,
+            )
             shutil.copytree(
                 self.script_config_path,
                 Path.cwd()
@@ -534,8 +546,16 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置前关闭可能未正常退出的脚本进程
         await System.kill_process(self.script_exe_path)
 
+        if not self.use_mas_config:
+            logger.info("脚本直控配置：跳过写入脚本配置")
+            return
+
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if self.script_config_path.is_dir():
+                shutil.rmtree(self.script_config_path)
+            elif self.script_config_path.exists():
+                self.script_config_path.unlink()
             shutil.copytree(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",

@@ -42,7 +42,7 @@
           <div v-if="selectedConfig" class="config-form">
             <div class="form-header">
               <h4>{{ selectedConfig.displayName }}</h4>
-              <span class="form-filename">{{ selectedConfig.filename }}</span>
+              <span class="form-filename">{{ selectedConfigFilename }}</span>
             </div>
 
             <a-form layout="vertical" class="form-fields">
@@ -55,21 +55,176 @@
                   {{ field.description }}
                 </template>
 
+                <!-- object 类型：子任务配置组 -->
+                <template v-if="field.type === 'object'">
+                  <div class="object-field">
+                    <a-empty
+                      v-if="!field.children || field.children.length === 0"
+                      description="该子任务暂无可编辑字段"
+                    />
+                    <a-form-item
+                      v-for="child in field.children || []"
+                      :key="`${field.name}.${child.name}`"
+                      :label="child.label || child.name"
+                      class="nested-form-item"
+                    >
+                      <template v-if="child.description" #extra>
+                        {{ child.description }}
+                      </template>
+
+                      <a-switch
+                        v-if="child.type === 'bool'"
+                        :checked="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        @change="
+                          (val: boolean) =>
+                            setNestedFieldValue(selectedConfigFilename, field.name, child, val)
+                        "
+                      />
+
+                      <a-select
+                        v-else-if="child.type === 'select'"
+                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        style="width: 100%"
+                        @change="
+                          (val: string) =>
+                            setNestedFieldValue(selectedConfigFilename, field.name, child, val)
+                        "
+                      >
+                        <a-select-option v-for="opt in child.options || []" :key="opt" :value="opt">
+                          {{ getOptionLabel(opt) }}
+                        </a-select-option>
+                      </a-select>
+
+                      <a-select
+                        v-else-if="child.type === 'list'"
+                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        mode="multiple"
+                        style="width: 100%"
+                        placeholder="请选择"
+                        @change="
+                          (val: string[]) =>
+                            setNestedFieldValue(selectedConfigFilename, field.name, child, val)
+                        "
+                      >
+                        <a-select-option v-for="opt in child.options || []" :key="opt" :value="opt">
+                          {{ getOptionLabel(opt) }}
+                        </a-select-option>
+                      </a-select>
+
+                      <a-input-number
+                        v-else-if="child.type === 'int'"
+                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        :min="child.min"
+                        :max="child.max"
+                        style="width: 100%"
+                        @change="
+                          (val: number | null) => {
+                            if (val !== null)
+                              setNestedFieldValue(selectedConfigFilename, field.name, child, val)
+                          }
+                        "
+                      />
+
+                      <a-input-number
+                        v-else-if="child.type === 'float'"
+                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        :min="child.min"
+                        :max="child.max"
+                        :step="child.step || 0.1"
+                        style="width: 100%"
+                        @change="
+                          (val: number | null) => {
+                            if (val !== null)
+                              setNestedFieldValue(selectedConfigFilename, field.name, child, val)
+                          }
+                        "
+                      />
+
+                      <a-input
+                        v-else
+                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        style="width: 100%"
+                        @change="
+                          (e: Event) =>
+                            setNestedFieldValue(
+                              selectedConfigFilename,
+                              field.name,
+                              child,
+                              (e.target as HTMLInputElement).value
+                            )
+                        "
+                      />
+                    </a-form-item>
+                  </div>
+                </template>
+
+                <!-- routine_items 类型：新版日常任务流程 -->
+                <template v-else-if="field.type === 'routine_items'">
+                  <div class="routine-items">
+                    <div
+                      v-for="(item, index) in getRoutineItemValues(selectedConfigFilename, field)"
+                      :key="item.id"
+                      class="routine-item"
+                    >
+                      <a-checkbox
+                        :checked="item.enabled"
+                        @change="
+                          (event: any) =>
+                            setRoutineItemEnabled(
+                              selectedConfigFilename,
+                              field,
+                              item.id,
+                              Boolean(event.target.checked)
+                            )
+                        "
+                      />
+                      <div class="routine-item-info">
+                        <span class="routine-item-name">{{
+                          getRoutineItemLabel(field, item.id)
+                        }}</span>
+                        <span class="routine-item-id">{{ item.id }}</span>
+                      </div>
+                      <a-space :size="4">
+                        <a-button
+                          size="small"
+                          :disabled="index === 0"
+                          aria-label="上移日常子任务"
+                          @click="moveRoutineItem(selectedConfigFilename, field, index, -1)"
+                        >
+                          <template #icon>
+                            <ArrowUpOutlined />
+                          </template>
+                        </a-button>
+                        <a-button
+                          size="small"
+                          :disabled="
+                            index === getRoutineItemValues(selectedConfigFilename, field).length - 1
+                          "
+                          aria-label="下移日常子任务"
+                          @click="moveRoutineItem(selectedConfigFilename, field, index, 1)"
+                        >
+                          <template #icon>
+                            <ArrowDownOutlined />
+                          </template>
+                        </a-button>
+                      </a-space>
+                    </div>
+                  </div>
+                </template>
+
                 <!-- bool 类型：开关 -->
                 <a-switch
-                  v-if="field.type === 'bool'"
-                  :checked="getFieldValue(selectedConfig.filename, field.name, field.value)"
-                  @change="
-                    (val: boolean) => setFieldValue(selectedConfig.filename, field.name, val)
-                  "
+                  v-else-if="field.type === 'bool'"
+                  :checked="getFieldValue(selectedConfigFilename, field.name, field.value)"
+                  @change="(val: boolean) => setFieldValue(selectedConfigFilename, field.name, val)"
                 />
 
                 <!-- select 类型：下拉选择 -->
                 <a-select
                   v-else-if="field.type === 'select'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   style="width: 100%"
-                  @change="(val: string) => setFieldValue(selectedConfig.filename, field.name, val)"
+                  @change="(val: string) => setFieldValue(selectedConfigFilename, field.name, val)"
                 >
                   <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
                     {{ getOptionLabel(opt) }}
@@ -79,12 +234,12 @@
                 <!-- list 类型：多选 -->
                 <a-select
                   v-else-if="field.type === 'list'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   mode="multiple"
                   style="width: 100%"
                   placeholder="请选择"
                   @change="
-                    (val: string[]) => setFieldValue(selectedConfig.filename, field.name, val)
+                    (val: string[]) => setFieldValue(selectedConfigFilename, field.name, val)
                   "
                 >
                   <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
@@ -95,13 +250,13 @@
                 <!-- int 类型：整数输入 -->
                 <a-input-number
                   v-else-if="field.type === 'int'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   :min="field.min"
                   :max="field.max"
                   style="width: 100%"
                   @change="
                     (val: number | null) => {
-                      if (val !== null) setFieldValue(selectedConfig.filename, field.name, val)
+                      if (val !== null) setFieldValue(selectedConfigFilename, field.name, val)
                     }
                   "
                 />
@@ -109,14 +264,14 @@
                 <!-- float 类型：浮点数输入 -->
                 <a-input-number
                   v-else-if="field.type === 'float'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   :min="field.min"
                   :max="field.max"
                   :step="field.step || 0.1"
                   style="width: 100%"
                   @change="
                     (val: number | null) => {
-                      if (val !== null) setFieldValue(selectedConfig.filename, field.name, val)
+                      if (val !== null) setFieldValue(selectedConfigFilename, field.name, val)
                     }
                   "
                 />
@@ -124,12 +279,12 @@
                 <!-- hotkey 类型：快捷键输入 -->
                 <a-input
                   v-else-if="field.type === 'hotkey'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   style="width: 100%"
                   @change="
                     (e: Event) =>
                       setFieldValue(
-                        selectedConfig.filename,
+                        selectedConfigFilename,
                         field.name,
                         (e.target as HTMLInputElement).value
                       )
@@ -139,12 +294,12 @@
                 <!-- string 类型：文本输入 -->
                 <a-input
                   v-else
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   style="width: 100%"
                   @change="
                     (e: Event) =>
                       setFieldValue(
-                        selectedConfig.filename,
+                        selectedConfigFilename,
                         field.name,
                         (e.target as HTMLInputElement).value
                       )
@@ -170,7 +325,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import { OknteService } from '@/api/services/OknteService'
+
+interface RoutineItemDefinition {
+  id: string
+  label: string
+  exclusiveGroup: string | null
+  defaultEnabled?: boolean
+}
+
+interface RoutineItemValue {
+  id: string
+  enabled: boolean
+}
 
 interface ConfigField {
   name: string
@@ -179,6 +347,8 @@ interface ConfigField {
   description: string
   value: any
   options: string[] | null
+  children?: ConfigField[] | null
+  itemDefinitions?: RoutineItemDefinition[] | null
   min: number | null
   max: number | null
   step: number | null
@@ -229,6 +399,8 @@ const selectedConfig = computed(() => {
   return configs.value.find(c => c.filename === selectedFilename.value) || null
 })
 
+const selectedConfigFilename = computed(() => selectedConfig.value?.filename || '')
+
 const hasChanges = computed(() => changedFiles.value.size > 0)
 
 const getOptionLabel = (value: string) => {
@@ -240,6 +412,13 @@ const getFieldValue = (filename: string, fieldName: string, fallback: any) => {
     return localChanges.value[filename][fieldName]
   }
   return fallback
+}
+
+const cleanupFileChanges = (filename: string) => {
+  if (localChanges.value[filename] && Object.keys(localChanges.value[filename]).length === 0) {
+    delete localChanges.value[filename]
+    changedFiles.value.delete(filename)
+  }
 }
 
 const setFieldValue = (filename: string, fieldName: string, value: any) => {
@@ -254,16 +433,137 @@ const setFieldValue = (filename: string, fieldName: string, value: any) => {
 
   if (JSON.stringify(value) === JSON.stringify(originalValue)) {
     delete localChanges.value[filename][fieldName]
-    if (Object.keys(localChanges.value[filename]).length === 0) {
-      delete localChanges.value[filename]
-      changedFiles.value.delete(filename)
-    }
+    cleanupFileChanges(filename)
   } else {
     localChanges.value[filename][fieldName] = value
     changedFiles.value.add(filename)
   }
   // 触发响应式更新
   changedFiles.value = new Set(changedFiles.value)
+}
+
+const getNestedFieldValue = (filename: string, groupName: string, child: ConfigField) => {
+  const groupChanges = localChanges.value[filename]?.[groupName]
+  if (groupChanges && typeof groupChanges === 'object' && groupChanges[child.name] !== undefined) {
+    return groupChanges[child.name]
+  }
+  return child.value
+}
+
+const setNestedFieldValue = (
+  filename: string,
+  groupName: string,
+  child: ConfigField,
+  value: any
+) => {
+  if (!localChanges.value[filename]) {
+    localChanges.value[filename] = {}
+  }
+  if (
+    !localChanges.value[filename][groupName] ||
+    typeof localChanges.value[filename][groupName] !== 'object'
+  ) {
+    localChanges.value[filename][groupName] = {}
+  }
+
+  const groupChanges = localChanges.value[filename][groupName]
+  if (JSON.stringify(value) === JSON.stringify(child.value)) {
+    delete groupChanges[child.name]
+    if (Object.keys(groupChanges).length === 0) {
+      delete localChanges.value[filename][groupName]
+    }
+    cleanupFileChanges(filename)
+  } else {
+    groupChanges[child.name] = value
+    changedFiles.value.add(filename)
+  }
+
+  changedFiles.value = new Set(changedFiles.value)
+}
+
+const normalizeRoutineItems = (field: ConfigField, rawValue: any): RoutineItemValue[] => {
+  const definitions = field.itemDefinitions || []
+  const rawItems = Array.isArray(rawValue) ? rawValue : []
+  const result: RoutineItemValue[] = []
+  const seen = new Set<string>()
+
+  for (const item of rawItems) {
+    if (item && typeof item === 'object' && typeof item.id === 'string' && !seen.has(item.id)) {
+      result.push({ id: item.id, enabled: Boolean(item.enabled) })
+      seen.add(item.id)
+    }
+  }
+
+  for (const definition of definitions) {
+    if (!seen.has(definition.id)) {
+      result.push({
+        id: definition.id,
+        enabled: Boolean(definition.defaultEnabled),
+      })
+    }
+  }
+
+  const enabledGroups = new Set<string>()
+  return result.map(item => {
+    const definition = definitions.find(candidate => candidate.id === item.id)
+    const exclusiveGroup = definition?.exclusiveGroup
+    if (!exclusiveGroup || !item.enabled) return item
+    if (enabledGroups.has(exclusiveGroup)) {
+      return { ...item, enabled: false }
+    }
+    enabledGroups.add(exclusiveGroup)
+    return item
+  })
+}
+
+const getRoutineItemValues = (filename: string, field: ConfigField) => {
+  return normalizeRoutineItems(field, getFieldValue(filename, field.name, field.value))
+}
+
+const getRoutineItemDefinition = (field: ConfigField, itemId: string) => {
+  return field.itemDefinitions?.find(item => item.id === itemId) || null
+}
+
+const getRoutineItemLabel = (field: ConfigField, itemId: string) => {
+  return getRoutineItemDefinition(field, itemId)?.label || itemId
+}
+
+const setRoutineItemsValue = (filename: string, field: ConfigField, items: RoutineItemValue[]) => {
+  setFieldValue(filename, field.name, normalizeRoutineItems(field, items))
+}
+
+const setRoutineItemEnabled = (
+  filename: string,
+  field: ConfigField,
+  itemId: string,
+  enabled: boolean
+) => {
+  const targetDefinition = getRoutineItemDefinition(field, itemId)
+  const nextItems = getRoutineItemValues(filename, field).map(item => {
+    const currentDefinition = getRoutineItemDefinition(field, item.id)
+    if (item.id === itemId) {
+      return { ...item, enabled }
+    }
+    if (
+      enabled &&
+      targetDefinition?.exclusiveGroup &&
+      currentDefinition?.exclusiveGroup === targetDefinition.exclusiveGroup
+    ) {
+      return { ...item, enabled: false }
+    }
+    return item
+  })
+  setRoutineItemsValue(filename, field, nextItems)
+}
+
+const moveRoutineItem = (filename: string, field: ConfigField, index: number, offset: number) => {
+  const items = getRoutineItemValues(filename, field)
+  const nextIndex = index + offset
+  if (nextIndex < 0 || nextIndex >= items.length) return
+  const nextItems = [...items]
+  const [item] = nextItems.splice(index, 1)
+  nextItems.splice(nextIndex, 0, item)
+  setRoutineItemsValue(filename, field, nextItems)
 }
 
 const selectConfig = (filename: string) => {
@@ -317,20 +617,9 @@ const saveAll = async (silent = true) => {
       configs: configsToUpdate,
     })
     if (resp?.code === 200) {
-      // 更新本地数据
-      for (const [filename, data] of Object.entries(configsToUpdate)) {
-        const config = configs.value.find(c => c.filename === filename)
-        if (config) {
-          Object.assign(config.currentData, data)
-          for (const field of config.fields) {
-            if (data[field.name] !== undefined) {
-              field.value = data[field.name]
-            }
-          }
-        }
-      }
       changedFiles.value = new Set()
       localChanges.value = {}
+      await loadConfigs()
       emit('saved')
       if (!silent) {
         message.success('配置已保存')
@@ -526,6 +815,56 @@ watch(
 
 .form-fields :deep(.ant-form-item-label) {
   font-weight: 600;
+}
+
+.object-field {
+  padding: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.nested-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.routine-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.routine-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.routine-item-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.routine-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.routine-item-id {
+  overflow: hidden;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-fields {

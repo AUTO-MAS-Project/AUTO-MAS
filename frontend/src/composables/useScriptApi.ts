@@ -560,6 +560,10 @@ export function useScriptApi() {
                           generalUserData.Info?.RemainedDay !== undefined
                             ? generalUserData.Info.RemainedDay
                             : -1,
+                        IfUseMasConfig:
+                          generalUserData.Info?.IfUseMasConfig !== undefined
+                            ? generalUserData.Info.IfUseMasConfig
+                            : true,
                         IfScriptBeforeTask:
                           generalUserData.Info?.IfScriptBeforeTask !== undefined
                             ? generalUserData.Info.IfScriptBeforeTask

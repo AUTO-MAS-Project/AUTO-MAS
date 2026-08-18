@@ -23,6 +23,7 @@
 import shlex
 import shutil
 import asyncio
+import uuid
 from pathlib import Path
 
 from app.core import Config
@@ -57,6 +58,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        self.use_mas_config = True
+        if self.cur_user_item.user_id != "Default":
+            self.use_mas_config = bool(
+                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                    "Info", "IfUseMasConfig"
+                )
+            )
 
     async def prepare(self):
 
@@ -118,6 +126,10 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await System.kill_process(self.script_set_exe_path)
 
+        if not self.use_mas_config:
+            logger.info("脚本直控配置：跳过写入脚本配置")
+            return
+
         if (
             self.script_config.get("Script", "ConfigPathMode") == "Folder"
             and (
@@ -125,6 +137,10 @@ class ScriptConfigTask(TaskExecuteBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
             ).exists()
         ):
+            if self.script_config_path.is_dir():
+                shutil.rmtree(self.script_config_path)
+            elif self.script_config_path.exists():
+                self.script_config_path.unlink()
             shutil.copytree(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
@@ -153,6 +169,10 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.general_process_manager.kill()
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
+
+        if not self.use_mas_config:
+            logger.info("脚本直控配置：跳过回写用户独立配置")
+            return
 
         shutil.rmtree(
             Path.cwd()

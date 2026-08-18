@@ -17,17 +17,22 @@ const logger = getLogger('环境服务')
 
 // ==================== 工具函数 ====================
 
+// 判断是否处于开发环境
+export function isDevelopmentEnvironment(): boolean {
+  if (process.env.NODE_ENV === 'development' || Boolean(process.env.VITE_DEV_SERVER_URL)) {
+    return true
+  }
+
+  return Boolean(app) && !app.isPackaged
+}
+
 // 获取应用根目录
 export function getAppRoot(): string {
   if (!app) {
     return process.cwd()
   }
 
-  const isDevelopment =
-    !app.isPackaged ||
-    process.env.NODE_ENV === 'development' ||
-    Boolean(process.env.VITE_DEV_SERVER_URL)
-  if (isDevelopment) {
+  if (isDevelopmentEnvironment()) {
     return path.dirname(app.getAppPath())
   }
 
