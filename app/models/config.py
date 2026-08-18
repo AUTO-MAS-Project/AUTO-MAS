@@ -2192,7 +2192,7 @@ class GeneralUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        ## 是否由 MAS 维护用户独立脚本配置
+        ## 是否使用用户独立脚本配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
         )
