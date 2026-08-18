@@ -53,6 +53,7 @@ from .ConfigBase import (
     MultipleConfig,
     ConfigItem,
     MultipleUIDValidator,
+    TypedMultipleUIDValidator,
     BoolValidator,
     OptionsValidator,
     MultipleOptionsValidator,
@@ -412,7 +413,9 @@ class MaaUserConfig(ConfigBase):
             "Info",
             "StageMode",
             "Fixed",
-            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaPlanConfig
+            ),
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -868,7 +871,9 @@ class MaaEndUserConfig(ConfigBase):
             "Info",
             "SanityMode",
             "Fixed",
-            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaEndPlanConfig
+            ),
         )
         ## 资源名称
         self.Info_Resource = ConfigItem(
@@ -1014,6 +1019,8 @@ class MaaEndUserConfig(ConfigBase):
         except (KeyError, ValueError) as e:
             raise ValueError("引用的理智任务计划表不存在") from e
 
+        # 防御性检查：正常路径下 Info_SanityMode 已由
+        # TypedMultipleUIDValidator 保证指向 MaaEndPlanConfig
         if not isinstance(plan, MaaEndPlanConfig):
             raise TypeError(f"引用的计划表 {mode} 类型不是 MaaEnd 计划表")
 
