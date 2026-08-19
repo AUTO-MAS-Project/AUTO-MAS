@@ -22,6 +22,7 @@
 
 import uuid
 import asyncio
+from pathlib import Path
 from typing import Dict, Literal
 
 from .config import (
@@ -60,6 +61,72 @@ from app.utils.constants import POWER_SIGN_MAP
 logger = get_logger("业务调度")
 
 
+class _ScriptTaskReservations:
+    """为脚本任务提供原子、带所有者的进程内占用。"""
+
+    def __init__(self) -> None:
+        self._owners: dict[tuple[str, str], str] = {}
+        self._owner_keys: dict[str, set[tuple[str, str]]] = {}
+
+    @staticmethod
+    def _resource_keys(
+        script_uid: uuid.UUID,
+        src_root_path: Path | None,
+    ) -> set[tuple[str, str]]:
+        keys = {("script", str(script_uid))}
+        if src_root_path is not None:
+            normalized_root = str(src_root_path.resolve()).casefold()
+            keys.add(("src-root", normalized_root))
+        return keys
+
+    def try_acquire(
+        self,
+        script_uid: uuid.UUID,
+        owner: str,
+        *,
+        src_root_path: Path | None = None,
+    ) -> bool:
+        keys = self._resource_keys(script_uid, src_root_path)
+        if any(self._owners.get(key) not in (None, owner) for key in keys):
+            return False
+
+        root_key = next((key for key in keys if key[0] == "src-root"), None)
+        if root_key is not None:
+            root_path = Path(root_key[1])
+            for key, existing_owner in self._owners.items():
+                if key[0] != "src-root" or existing_owner == owner:
+                    continue
+                existing_root_path = Path(key[1])
+                if (
+                    root_path == existing_root_path
+                    or root_path.is_relative_to(existing_root_path)
+                    or existing_root_path.is_relative_to(root_path)
+                ):
+                    return False
+
+        for key in keys:
+            self._owners[key] = owner
+        self._owner_keys.setdefault(owner, set()).update(keys)
+        return True
+
+    def release(self, script_uid: uuid.UUID, owner: str) -> bool:
+        script_key = ("script", str(script_uid))
+        if self._owners.get(script_key) != owner:
+            return False
+        for key in self._owner_keys.pop(owner, set()):
+            if self._owners.get(key) == owner:
+                self._owners.pop(key)
+        return True
+
+
+def _get_src_root_path(script_config: object) -> Path | None:
+    """返回需要跨配置互斥的 SRC 安装根目录。"""
+
+    if not isinstance(script_config, SrcConfig):
+        return None
+    return Path(script_config.get("Info", "Path"))
+
+
 class TaskInfo(TaskItem):
 
     async def on_change(self):
@@ -78,9 +145,14 @@ class TaskInfo(TaskItem):
 
 class Task(TaskExecuteBase):
 
-    def __init__(self, task_info: TaskInfo):
+    def __init__(
+        self,
+        task_info: TaskInfo,
+        script_reservations: _ScriptTaskReservations | None = None,
+    ):
         super().__init__()
         self.task_info = task_info
+        self.script_reservations = script_reservations or _ScriptTaskReservations()
         self.is_closing = False
 
     async def prepare(self):
@@ -172,8 +244,15 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            # 检查任务是否已被其他任务调度器锁定
-            if Config.ScriptConfig[current_script_uid].is_locked:
+            # 原子占用脚本，避免两个调度器同时通过布尔锁前置检查。
+            reservation_owner = self.task_info.task_id
+            script_config = Config.ScriptConfig[current_script_uid]
+            src_root_path = _get_src_root_path(script_config)
+            if not self.script_reservations.try_acquire(
+                current_script_uid,
+                reservation_owner,
+                src_root_path=src_root_path,
+            ):
                 script_item.status = "跳过"
                 logger.info(
                     f"跳过任务: {current_script_uid}, 该任务已被其他任务调度器锁定"
@@ -185,39 +264,64 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            # 标记为运行中
-            script_item.status = "运行"
-            logger.info(f"任务开始: {current_script_uid}")
+            try:
+                if script_config.is_locked:
+                    script_item.status = "跳过"
+                    logger.info(f"跳过任务: {current_script_uid}, 该任务配置已被锁定")
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Warning": f"任务 {script_item.name} 已被锁定"},
+                    )
+                    continue
 
-            if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
-                task_item = MaaManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):
-                task_item = SrcManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
-                task_item = GeneralManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
-                task_item = OkwwManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], OkNteConfig):
-                task_item = OkNteManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
-                task_item = MaaEndManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
-                task_item = M9AManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], HSRConfig):
-                task_item = HSRManager(script_item)
-            else:
-                logger.error(
-                    f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
-                )
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": "脚本类型不支持"},
-                )
-                continue
+                # 标记为运行中
+                script_item.status = "运行"
+                logger.info(f"任务开始: {current_script_uid}")
 
-            # 运行任务
-            await self.spawn(task_item)
+                if isinstance(script_config, MaaConfig):
+                    task_item = MaaManager(script_item)
+                elif isinstance(script_config, SrcConfig):
+                    if src_root_path is None:
+                        raise RuntimeError("SRC 路径占用未初始化")
+                    task_item = SrcManager(
+                        script_item,
+                        reserved_src_root_path=src_root_path,
+                        reserve_src_root=lambda root_path,
+                        script_uid=current_script_uid,
+                        owner=reservation_owner: self.script_reservations.try_acquire(
+                            script_uid,
+                            owner,
+                            src_root_path=root_path,
+                        ),
+                    )
+                elif isinstance(script_config, GeneralConfig):
+                    task_item = GeneralManager(script_item)
+                elif isinstance(script_config, OkwwConfig):
+                    task_item = OkwwManager(script_item)
+                elif isinstance(script_config, OkNteConfig):
+                    task_item = OkNteManager(script_item)
+                elif isinstance(script_config, MaaEndConfig):
+                    task_item = MaaEndManager(script_item)
+                elif isinstance(script_config, M9AConfig):
+                    task_item = M9AManager(script_item)
+                elif isinstance(script_config, HSRConfig):
+                    task_item = HSRManager(script_item)
+                else:
+                    logger.error(
+                        f"不支持的脚本类型: {type(script_config).__name__}"
+                    )
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": "脚本类型不支持"},
+                    )
+                    continue
+
+                # 运行任务
+                await self.spawn(task_item)
+            finally:
+                self.script_reservations.release(current_script_uid, reservation_owner)
 
     async def final_task(self) -> None:
 
@@ -260,6 +364,7 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        self._script_reservations = _ScriptTaskReservations()
         self._startup_queue_started = False
         self._startup_queue_running = False
 
@@ -315,36 +420,62 @@ class _TaskManager:
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
-        if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
-            raise RuntimeError(
-                f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
-            )
+        reservation_owner = str(task_uid)
+        reservation_acquired = False
+        if script_uid is not None:
+            script_config = Config.ScriptConfig[script_uid]
+            if script_config.is_locked or not self._script_reservations.try_acquire(
+                script_uid,
+                reservation_owner,
+                src_root_path=_get_src_root_path(script_config),
+            ):
+                raise RuntimeError(f"任务 {script_config.get('Info', 'Name')} 已在运行")
+            reservation_acquired = True
 
-        logger.info(f"创建任务: {task_uid}, 模式: {mode}, 触发来源: {trigger_source}")
-        if new_task_info:
-            new_task_info["newTask"] = str(task_uid)
-            await Config.send_websocket_message(
-                id="TaskManager", type="Signal", data=new_task_info
+        try:
+            logger.info(
+                f"创建任务: {task_uid}, 模式: {mode}, 触发来源: {trigger_source}"
             )
-        self.task_info[task_uid] = TaskInfo(
-            mode=mode,
-            task_id=str(task_uid),
-            queue_id=str(queue_id) if queue_id else None,
-            script_id=str(script_uid) if script_uid else None,
-            user_id=str(user_uid) if user_uid else None,
-            resume_from_script_id=resume_from_script_id,
-            trigger_source=trigger_source,
-        )
-        self.task_handler[task_uid] = Task(self.task_info[task_uid])
-        self.task_handler[task_uid].execute()
-        asyncio.create_task(self.clean_task(task_uid))
+            if new_task_info:
+                new_task_info["newTask"] = str(task_uid)
+                await Config.send_websocket_message(
+                    id="TaskManager", type="Signal", data=new_task_info
+                )
+            self.task_info[task_uid] = TaskInfo(
+                mode=mode,
+                task_id=str(task_uid),
+                queue_id=str(queue_id) if queue_id else None,
+                script_id=str(script_uid) if script_uid else None,
+                user_id=str(user_uid) if user_uid else None,
+                resume_from_script_id=resume_from_script_id,
+                trigger_source=trigger_source,
+            )
+            self.task_handler[task_uid] = Task(
+                self.task_info[task_uid], self._script_reservations
+            )
+            self.task_handler[task_uid].execute()
+            asyncio.create_task(self.clean_task(task_uid))
+        except BaseException:
+            if reservation_acquired and script_uid is not None:
+                self._script_reservations.release(script_uid, reservation_owner)
+            self.task_handler.pop(task_uid, None)
+            self.task_info.pop(task_uid, None)
+            raise
 
         return task_uid
 
     async def clean_task(self, task_uid: uuid.UUID) -> None:
 
-        await self.task_handler[task_uid].accomplish.wait()
-        power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
+        task_info = self.task_info[task_uid]
+        try:
+            await self.task_handler[task_uid].accomplish.wait()
+        finally:
+            if task_info.script_id is not None:
+                self._script_reservations.release(
+                    uuid.UUID(task_info.script_id), task_info.task_id
+                )
+
+        power_enabled = bool(task_info.mode != "ScriptConfig")
         self.task_info.pop(task_uid, None)
         self.task_handler.pop(task_uid, None)
 

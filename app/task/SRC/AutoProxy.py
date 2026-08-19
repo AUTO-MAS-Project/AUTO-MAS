@@ -21,8 +21,6 @@
 
 
 import uuid
-import json
-import shutil
 import asyncio
 from pathlib import Path
 from contextlib import suppress
@@ -33,18 +31,37 @@ from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
-from app.services import Notify, System
+from app.services import Notify
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from app.utils.io import read_file, write_file
-from .tools import login, push_notification, poor_yaml_read, poor_yaml_write
+from .tools import (
+    kill_src_processes,
+    login,
+    push_notification,
+    poor_yaml_read,
+    poor_yaml_write,
+    promote_src_config_update,
+    read_src_webui_port,
+    recover_src_user_config,
+    save_src_user_config,
+    stage_src_config_update,
+    write_src_process_state,
+    validate_src_installation,
+)
 from app.task.general.tools import execute_script_task
 
 logger = get_logger("SRC脚本自动代理")
 
+_FINAL_NOTIFICATION_TIMEOUT_SECONDS = 30
+_FINAL_REPORT_TIMEOUT_SECONDS = 5
+_FINAL_CLEANUP_TIMEOUT_SECONDS = 30
+
 
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
+
+    wait_for_finalizer_on_cancel = True
 
     def __init__(
         self,
@@ -52,6 +69,8 @@ class AutoProxyTask(TaskExecuteBase):
         script_config: SrcConfig,
         user_config: MultipleConfig[SrcUserConfig],
         emulator_manager: DeviceBase,
+        *,
+        src_installation_id: str,
     ):
         super().__init__()
 
@@ -63,10 +82,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.src_installation_id = src_installation_id
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
+        self.cur_user_log: LogRecord = LogRecord()
+        self._process_cleanup_failure_reported = False
+        self.src_webui_port: int | None = None
+        self.process_cleanup_success = True
+        self.prepared = False
 
     async def check(self) -> str:
 
@@ -80,15 +105,15 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if (
-            self.cur_user_config.get("Info", "Mode") == "详细"
-            and not (
+        if self.cur_user_config.get("Info", "Mode") == "详细":
+            config_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists()
-        ):
-            self.cur_user_item.status = "异常"
-            return "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
+            )
+            recover_src_user_config(config_path)
+            if not config_path.exists():
+                self.cur_user_item.status = "异常"
+                return "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
         return "Pass"
 
     async def prepare(self):
@@ -105,8 +130,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.src_exe_path = self.src_root_path / "src.exe"
         self.src_set_path = self.src_root_path / "config"
         self.src_log_path = self.src_root_path / "log/2000-01-01_src.txt"
+        self.src_process_state_path = (
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp.process.json"
+        )
 
         self.run_book = False
+        self.prepared = True
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -163,7 +192,8 @@ class AutoProxyTask(TaskExecuteBase):
                     STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 )
             except Exception as e:
-                await self.handle_pre_src_error("模拟器启动失败", e)
+                if not await self.handle_pre_src_error("模拟器启动失败", e):
+                    return
                 continue
 
             self.script_info.log = (
@@ -178,16 +208,33 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
             else:
-                await self.handle_pre_src_error("「崩坏·星穹铁道」登录失败")
+                if not await self.handle_pre_src_error("「崩坏·星穹铁道」登录失败"):
+                    return
                 continue
 
             self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功"
 
             await self.set_src(emulator_info)
+            self.src_webui_port = read_src_webui_port(self.src_set_path)
+            validate_src_installation(
+                self.src_root_path,
+                self.src_installation_id,
+            )
+            write_src_process_state(
+                self.src_process_state_path,
+                script_id=self.script_info.script_id,
+                src_root_path=self.src_root_path,
+                webui_port=self.src_webui_port,
+                installation_id=self.src_installation_id,
+            )
 
             logger.info(f"运行脚本任务: {self.src_exe_path}")
             self.wait_event.clear()
             t = datetime.now()
+            validate_src_installation(
+                self.src_root_path,
+                self.src_installation_id,
+            )
             await self.src_process_manager.open_process(
                 self.src_exe_path,
                 null_stream_to_pipe=True,
@@ -222,7 +269,8 @@ class AutoProxyTask(TaskExecuteBase):
                 if if_get_file:
                     break
             else:
-                await self.handle_pre_src_error("未找到日志文件")
+                if not await self.handle_pre_src_error("未找到日志文件"):
+                    return
                 continue
 
             await self.src_log_monitor.start_monitor_file(
@@ -239,8 +287,17 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
                 # 中止相关程序
-                await self.src_process_manager.kill()
-                await System.kill_process(self.src_exe_path)
+                cleanup_success = await kill_src_processes(
+                    self.src_process_manager,
+                    src_exe_path=self.src_exe_path,
+                    src_root_path=self.src_root_path,
+                    src_set_path=self.src_set_path,
+                    webui_port=self.src_webui_port,
+                    expected_installation_id=self.src_installation_id,
+                )
+                if not cleanup_success:
+                    await self._handle_process_cleanup_failure()
+                    return
 
             else:
                 logger.warning(
@@ -249,7 +306,9 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
                 # 中止相关程序
-                await self.kill_managed_process()
+                cleanup_success = await self.kill_managed_process()
+                if not cleanup_success:
+                    await self._handle_process_cleanup_failure()
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -257,15 +316,17 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_item.name}的自动代理出现异常",
                     3,
                 )
+                if not cleanup_success:
+                    return
 
             await asyncio.sleep(10)
             # 更新脚本配置文件
             if self.cur_user_config.get("Info", "Mode") == "详细":
-                shutil.copytree(
+                save_src_user_config(
                     self.src_set_path,
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
-                    dirs_exist_ok=True,
+                    expected_installation_id=self.src_installation_id,
                 )
                 logger.success("SRC 脚本配置文件已更新")
 
@@ -278,7 +339,16 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def handle_pre_src_error(
         self, error_message: str, e: Exception | None = None
-    ):
+    ) -> bool:
+        """记录启动前错误并清理关联进程。
+
+        Args:
+            error_message (str): 用户可见的错误信息。
+            e (Exception | None): 原始异常。
+
+        Returns:
+            bool: SRC 相关进程均清理成功时返回 True。
+        """
 
         if e is None:
             logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
@@ -288,7 +358,9 @@ class AutoProxyTask(TaskExecuteBase):
                 data={"Error": error_message},
             )
         else:
-            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -297,7 +369,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
 
-        await self.kill_managed_process()
+        cleanup_success = await self.kill_managed_process()
+        if not cleanup_success:
+            await self._handle_process_cleanup_failure()
 
         await Notify.push_plyer(
             "用户自动代理出现异常！",
@@ -305,16 +379,24 @@ class AutoProxyTask(TaskExecuteBase):
             f"{self.cur_user_item.name}的自动代理出现异常",
             3,
         )
+        return cleanup_success
 
-    async def kill_managed_process(self) -> None:
-        """中止关联进程"""
+    async def kill_managed_process(self) -> bool:
+        """中止 SRC 和模拟器关联进程。
 
-        try:
-            logger.info(f"中止 SRC 进程: {self.src_exe_path}")
-            await self.src_process_manager.kill()
-            await System.kill_process(self.src_exe_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止 SRC 进程失败: {e}")
+        Returns:
+            bool: SRC 相关进程均清理成功时返回 True。
+        """
+
+        cleanup_success = await kill_src_processes(
+            self.src_process_manager,
+            src_exe_path=self.src_exe_path,
+            src_root_path=self.src_root_path,
+            src_set_path=self.src_set_path,
+            webui_port=self.src_webui_port,
+            listener_wait_timeout=2.0,
+            expected_installation_id=self.src_installation_id,
+        )
         try:
             logger.info("中止模拟器进程")
             await self.emulator_manager.close(
@@ -322,34 +404,49 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+        return cleanup_success
 
     async def set_src(self, emulator_info: DeviceInfo) -> None:
         """配置 SRC 脚本运行参数"""
         logger.info("开始配置 SRC 运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
-        await self.src_process_manager.kill()
-        await System.kill_process(self.src_exe_path)
+        cleanup_success = await kill_src_processes(
+            self.src_process_manager,
+            src_exe_path=self.src_exe_path,
+            src_root_path=self.src_root_path,
+            src_set_path=self.src_set_path,
+            webui_port=self.src_webui_port,
+            expected_installation_id=self.src_installation_id,
+        )
+        if not cleanup_success:
+            raise RuntimeError("未能完全中止 SRC 进程")
+        validate_src_installation(
+            self.src_root_path,
+            self.src_installation_id,
+        )
 
-        # 基础配置内容
+        overlay_path = None
         if self.cur_user_config.get("Info", "Mode") == "简洁":
-            shutil.copytree(
-                (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
-                self.src_set_path,
-                dirs_exist_ok=True,
+            overlay_path = (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
         elif self.cur_user_config.get("Info", "Mode") == "详细":
-            shutil.copytree(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                ),
-                self.src_set_path,
-                dirs_exist_ok=True,
+            overlay_path = (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
+        if overlay_path is not None:
+            recover_src_user_config(overlay_path)
+        staging_path = stage_src_config_update(
+            self.src_set_path,
+            expected_installation_id=self.src_installation_id,
+            overlay_path=overlay_path,
+        )
 
-        src_set = read_file(self.src_set_path / "src.json")
-        deploy_set = poor_yaml_read(self.src_set_path / "deploy.yaml")
+        src_set = read_file(staging_path / "src.json")
+        deploy_set = poor_yaml_read(staging_path / "deploy.yaml")
 
         # 直接运行任务
         deploy_set["Run"] = ["src"]
@@ -435,17 +532,22 @@ class AutoProxyTask(TaskExecuteBase):
                 "Stage", "SimulatedUniverseWorld"
             )
 
-        write_file(self.src_set_path / "src.json", src_set)
+        write_file(staging_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
-            self.src_set_path / "deploy.yaml",
+            staging_path / "deploy.yaml",
             (
-                self.src_set_path / "deploy.template-cn.yaml"
-                if (self.src_set_path / "deploy.template-cn.yaml").exists()
+                staging_path / "deploy.template-cn.yaml"
+                if (staging_path / "deploy.template-cn.yaml").exists()
                 else None
             ),
         )
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        promote_src_config_update(
+            self.src_set_path,
+            staging_path,
+            expected_installation_id=self.src_installation_id,
+        )
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -478,18 +580,37 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def final_task(self):
 
-        if self.check_result != "Pass":
+        if self.check_result != "Pass" or not self.prepared:
             return
 
         # 结束各子任务
-        await self.src_log_monitor.stop()
-        await self.src_process_manager.kill()
-        await System.kill_process(self.src_exe_path)
+        try:
+            await asyncio.wait_for(
+                self.src_log_monitor.stop(),
+                timeout=_FINAL_CLEANUP_TIMEOUT_SECONDS,
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"停止 SRC 日志监控失败: {e}")
+        cleanup_success = await kill_src_processes(
+            self.src_process_manager,
+            src_exe_path=self.src_exe_path,
+            src_root_path=self.src_root_path,
+            src_set_path=self.src_set_path,
+            webui_port=self.src_webui_port,
+            listener_wait_timeout=2.0,
+            expected_installation_id=self.src_installation_id,
+        )
+        self.process_cleanup_success = cleanup_success
+        if not cleanup_success:
+            await self._handle_process_cleanup_failure()
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
             try:
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
+                await asyncio.wait_for(
+                    self.emulator_manager.close(
+                        self.script_config.get("Emulator", "Index")
+                    ),
+                    timeout=_FINAL_CLEANUP_TIMEOUT_SECONDS,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
@@ -529,19 +650,30 @@ class AutoProxyTask(TaskExecuteBase):
         success_symbol = "√" if self.run_book else "X"
 
         try:
-            await push_notification(
-                "统计信息",
-                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                statistics,
-                self.cur_user_config,
+            await asyncio.wait_for(
+                push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                ),
+                timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
-            )
+            try:
+                await asyncio.wait_for(
+                    Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": f"推送通知时出现异常: {e}"},
+                    ),
+                    timeout=_FINAL_REPORT_TIMEOUT_SECONDS,
+                )
+            except Exception as report_error:
+                logger.opt(exception=True).warning(
+                    f"上报 SRC 通知异常失败: {report_error}"
+                )
 
         if self.run_book:
             if (
@@ -560,21 +692,62 @@ class AutoProxyTask(TaskExecuteBase):
             )
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                3,
-            )
+            try:
+                await asyncio.wait_for(
+                    Notify.push_plyer(
+                        "成功完成一个自动代理任务！",
+                        f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                        f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                        3,
+                    ),
+                    timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送系统通知时出现异常: {e}")
         else:
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
+    async def _handle_process_cleanup_failure(self) -> None:
+        """记录 SRC 进程清理失败，并确保任务不会被标记为完成。"""
+
+        self.run_book = False
+        self.process_cleanup_success = False
+        self.cur_user_item.status = "异常"
+        self.cur_user_log.status = "SRC 进程清理失败"
+        if not self.cur_user_log.content:
+            self.cur_user_log.content = ["未能完全中止 SRC 进程"]
+
+        logger.warning(f"用户 {self.cur_user_uid} 的 SRC 进程未能完全中止")
+        if self._process_cleanup_failure_reported:
+            return
+
+        self._process_cleanup_failure_reported = True
+        try:
+            await asyncio.wait_for(
+                Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": "未能完全中止 SRC 进程，请关闭 SRC 后重试"},
+                ),
+                timeout=5,
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"上报 SRC 进程清理失败时出现异常: {e}")
+
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
-            id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
-        )
+        try:
+            await asyncio.wait_for(
+                Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"自动代理任务出现异常: {e}"},
+                ),
+                timeout=5,
+            )
+        except Exception as report_error:
+            logger.opt(exception=True).warning(
+                f"上报 SRC 自动代理异常失败: {report_error}"
+            )

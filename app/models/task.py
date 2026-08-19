@@ -185,6 +185,8 @@ class TaskItem(ABC):
 
 @dataclass
 class TaskExecuteBase(ABC):
+    wait_for_finalizer_on_cancel = False
+
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
@@ -205,11 +207,52 @@ class TaskExecuteBase(ABC):
         finally:
             self._task_group = None
             try:
-                await asyncio.shield(self.final_task())
-            except Exception as e:
-                await self.on_crash(e)
+                if self.wait_for_finalizer_on_cancel:
+                    await self._run_final_task()
+                else:
+                    try:
+                        await asyncio.shield(self.final_task())
+                    except Exception as e:
+                        await self.on_crash(e)
             finally:
                 self.accomplish.set()
+
+    async def _run_final_task(self) -> None:
+        """推迟外层取消，直到收尾协程真正结束。"""
+
+        finalizer = asyncio.create_task(self.final_task())
+        current_task = asyncio.current_task()
+        if current_task is None:
+            raise RuntimeError("无法获取当前任务")
+
+        # main_task 的取消正在当前 finally 中传播；先清除计数，避免它反复
+        # 打断对独立 finalizer 的等待。原 CancelledError 会在 finally 后继续传播。
+        while current_task.cancelling():
+            current_task.uncancel()
+
+        cancellation: asyncio.CancelledError | None = None
+
+        while not finalizer.done():
+            try:
+                await asyncio.shield(finalizer)
+            except asyncio.CancelledError as e:
+                if finalizer.cancelled():
+                    raise
+                cancellation = e
+                while current_task.cancelling():
+                    current_task.uncancel()
+            except Exception:
+                break
+
+        try:
+            finalizer.result()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            await self.on_crash(e)
+
+        if cancellation is not None:
+            raise cancellation
 
     def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
         if self._task_group is None:
@@ -227,7 +270,9 @@ class TaskExecuteBase(ABC):
             async with asyncio.TaskGroup() as tg:
                 self.task = tg.create_task(self._execute_task(tg))
 
-        self.task = asyncio.create_task(_root_coro())
+        root_task = asyncio.create_task(_root_coro())
+        root_task.add_done_callback(lambda _: self.accomplish.set())
+        self.task = root_task
 
     def cancel(self) -> bool:
         if self.task is None or self.task.done():

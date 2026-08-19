@@ -32,7 +32,7 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase
 from app.utils import get_logger
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
-from .tools import login
+from .tools import login, recover_src_user_config
 
 logger = get_logger("SRC 人工排查")
 
@@ -46,6 +46,8 @@ class ManualReviewTask(TaskExecuteBase):
         script_config: SrcConfig,
         user_config: MultipleConfig[SrcUserConfig],
         emulator_manager: DeviceBase,
+        *,
+        src_installation_id: str,
     ):
         super().__init__()
 
@@ -57,6 +59,7 @@ class ManualReviewTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.src_installation_id = src_installation_id
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -64,15 +67,15 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if (
-            self.cur_user_config.get("Info", "Mode") == "详细"
-            and not (
+        if self.cur_user_config.get("Info", "Mode") == "详细":
+            config_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists()
-        ):
-            self.cur_user_item.status = "异常"
-            return "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
+            )
+            recover_src_user_config(config_path)
+            if not config_path.exists():
+                self.cur_user_item.status = "异常"
+                return "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
         return "Pass"
 
     async def prepare(self):
