@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BugOutlined, FileTextOutlined } from '@ant-design/icons-vue'
-import { computed } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useLogPatternDebug } from '../composables/useLogPatternDebug'
 import type { PushLogPattern } from '../composables/usePushLogPatterns'
 
@@ -14,7 +14,22 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 
-const debug = useLogPatternDebug({ logPath: props.logPath })
+// 用 reactive 包裹，使模板中的 debug.input / debug.results 等嵌套 ref 自动解包
+const debug = reactive(useLogPatternDebug({ logPath: props.logPath }))
+
+// 将弹窗接收到的规则配置同步到本实例，供 runDebug / isMultiline 使用；
+// 切到不同规则时清空上一次的结果（避免残留上一规则的结果误导），但保留日志输入供跨规则复用
+watch(
+  () => props.pattern,
+  (pat, prev) => {
+    debug.currentPattern = pat
+    if (prev) {
+      debug.results = []
+      debug.compileError = null
+    }
+  },
+  { immediate: true },
+)
 
 const title = computed(() => {
   if (!props.pattern) return '规则调试'
