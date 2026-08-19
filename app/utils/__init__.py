@@ -32,7 +32,12 @@ from .ProcessManager import (
     ProcessResult,
     is_process_running,
 )
-from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
+from .security import (
+    dpapi_encrypt,
+    dpapi_decrypt,
+    format_exception_reason,
+    sanitize_log_message,
+)
 from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
 from .tools import decode_bytes, busy_wait
 from .websocket import WebSocketClient, create_ws_client
@@ -49,6 +54,7 @@ __all__ = [
     "is_process_running",
     "dpapi_encrypt",
     "dpapi_decrypt",
+    "format_exception_reason",
     "sanitize_log_message",
     "strptime",
     "MumuManager",

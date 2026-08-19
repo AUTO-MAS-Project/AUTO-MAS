@@ -49,6 +49,7 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 logger = get_logger("塔吉多签到")
 
@@ -101,6 +102,31 @@ CLOUD_CHANNEL_ID = "9"
 CLOUD_BID = "com.pwrd.cloud.yh.laohu"
 CLOUD_SDK_VERSION = "1.34.0"
 CLOUD_APP_VERSION = "1.1.0"
+
+
+def _is_expected_taygedo_exception(error: Exception) -> bool:
+    """判断可预期的凭据、上游或网络失败。"""
+
+    return isinstance(
+        error,
+        (ValueError, httpx.HTTPError, TimeoutError, ConnectionError),
+    )
+
+
+def _log_taygedo_exception(stage: str, error: Exception) -> str:
+    """按异常类型记录塔吉多失败，并返回安全的非空原因。"""
+
+    expected = _is_expected_taygedo_exception(error)
+    reason = format_exception_reason(
+        error,
+        stage=stage,
+        include_message=expected,
+    )
+    if expected:
+        logger.warning(reason)
+    else:
+        logger.exception(f"{stage}程序异常")
+    return reason
 
 
 def parse_taygedo_credential(raw: str) -> dict[str, Any]:
@@ -504,13 +530,16 @@ async def sign_taygedo(
     """执行塔吉多社区、应用内游戏签到和云异环时长查询。"""
 
     credential = parse_taygedo_credential(raw)
-    refresh_error: Exception | None = None
+    refresh_error_reason: str | None = None
     if credential.get("refreshToken"):
         try:
             credential = await refresh_taygedo_credential(raw, proxy=proxy)
         except Exception as exc:
             # 塔吉多 refreshToken 失效时仍继续查询同一凭据中的云异环时长。
-            refresh_error = exc
+            refresh_error_reason = _log_taygedo_exception(
+                "塔吉多刷新 Token 失败",
+                exc,
+            )
 
     results: list[dict[str, str]] = []
     access_token = str(credential.get("accessToken") or "").strip()
@@ -590,9 +619,9 @@ async def sign_taygedo(
             await cancel_pending_tasks()
             raise
         except Exception as exc:
-            failure_reason = str(exc)
-            if refresh_error is not None:
-                failure_reason = f"刷新 Token 失败: {refresh_error}; {failure_reason}"
+            failure_reason = _log_taygedo_exception("塔吉多社区签到异常", exc)
+            if refresh_error_reason is not None:
+                failure_reason = f"{refresh_error_reason}; {failure_reason}"
             community_results = [
                 (
                     TAYGEDO_COMMUNITY_NAMES[community_id],
@@ -620,7 +649,7 @@ async def sign_taygedo(
             await cancel_pending_tasks()
             raise
         except Exception as exc:
-            logger.warning(f"塔吉多应用内游戏签到异常: {exc}")
+            reason = _log_taygedo_exception("塔吉多应用内游戏签到异常", exc)
             results.append(
                 {
                     "account": account,
@@ -628,10 +657,10 @@ async def sign_taygedo(
                     "platform": "塔吉多",
                     "status": "失败",
                     "reward": "",
-                    "reason": str(exc),
+                    "reason": reason,
                 }
             )
-    elif refresh_error is not None:
+    elif refresh_error_reason is not None:
         results.extend(
             {
                 "account": account,
@@ -639,7 +668,7 @@ async def sign_taygedo(
                 "platform": "塔吉多",
                 "status": "失败",
                 "reward": "",
-                "reason": str(refresh_error),
+                "reason": refresh_error_reason,
             }
             for community_id in TAYGEDO_COMMUNITY_IDS
         )
@@ -694,6 +723,7 @@ async def sign_taygedo(
             await cancel_pending_tasks()
             raise
         except Exception as exc:
+            reason = _log_taygedo_exception("云异环时长查询异常", exc)
             results.append(
                 {
                     "account": cloud_account,
@@ -701,7 +731,7 @@ async def sign_taygedo(
                     "platform": "云异环",
                     "status": "失败",
                     "reward": "",
-                    "reason": str(exc),
+                    "reason": reason,
                 }
             )
 
@@ -783,13 +813,14 @@ async def _sign_taygedo_games(
                 "reason": "",
             }
         except Exception as exc:
+            reason = _log_taygedo_exception("塔吉多应用内游戏签到异常", exc)
             return {
                 "account": role_account,
                 "game": game_name,
                 "platform": "塔吉多",
                 "status": "失败",
                 "reward": "",
-                "reason": str(exc),
+                "reason": reason,
             }
 
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
@@ -1288,7 +1319,11 @@ async def _community_sign(
                     return community_name, "已签到", "", ""
                 return community_name, "失败", message or f"HTTP {response.status_code}", ""
             except Exception as exc:
-                return community_name, "失败", str(exc), ""
+                reason = _log_taygedo_exception(
+                    f"{community_name}签到异常",
+                    exc,
+                )
+                return community_name, "失败", reason, ""
 
         return list(await asyncio.gather(*(sign_community(community_id) for community_id in TAYGEDO_COMMUNITY_IDS)))
 

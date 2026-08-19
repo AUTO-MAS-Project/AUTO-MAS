@@ -60,6 +60,32 @@ def sanitize_log_message(message: str) -> str:
     return sanitized_message
 
 
+def format_exception_reason(
+    error: BaseException,
+    *,
+    stage: str,
+    include_message: bool = True,
+) -> str:
+    """生成不为空且不包含 URL 查询参数的异常原因。"""
+
+    exception_name = type(error).__name__
+    message = sanitize_log_message(str(error).strip()) if include_message else ""
+    message = re.sub(
+        r"(https?://[^\s?#]+)[?#][^\s]*",
+        r"\1",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if not message:
+        if "timeout" in exception_name.lower():
+            message = "请求超时"
+        elif include_message:
+            message = "未提供异常详情"
+        else:
+            message = "程序内部异常"
+    return f"{stage}（{exception_name}）：{message}"
+
+
 def dpapi_encrypt(
     note: str, description: None | str = None, entropy: None | bytes = None
 ) -> str:

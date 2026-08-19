@@ -35,7 +35,11 @@ if __name__ == "__main__":
 
 from app.utils import get_logger, sanitize_log_message
 from app.core import Config
-from app.services.telemetry import init_sentry, is_telemetry_enabled
+from app.services.telemetry import (
+    init_sentry,
+    is_telemetry_enabled,
+    resolve_sentry_dist,
+)
 
 logger = get_logger("主程序")
 
@@ -99,6 +103,7 @@ def main():
         release=Config.VERSION,
         development=development_environment,
         enabled=is_telemetry_enabled(current_dir / "config" / "Config.json"),
+        dist=resolve_sentry_dist(current_dir),
     )
 
     if is_admin() or is_hosted_launch() or development_environment:

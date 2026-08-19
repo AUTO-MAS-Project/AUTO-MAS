@@ -44,6 +44,7 @@ from typing import Dict
 
 from app.core import Config
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 logger = get_logger("米游社签到任务")
 
@@ -186,6 +187,31 @@ class _RiskControlError(Exception):
     pass
 
 
+def _log_miyoushe_exception(stage: str, error: Exception) -> str:
+    """按异常类型记录米游社失败，并返回安全的非空原因。"""
+
+    expected = isinstance(
+        error,
+        (
+            _RiskControlError,
+            ValueError,
+            httpx.HTTPError,
+            TimeoutError,
+            ConnectionError,
+        ),
+    )
+    reason = format_exception_reason(
+        error,
+        stage=stage,
+        include_message=expected,
+    )
+    if expected:
+        logger.warning(reason)
+    else:
+        logger.exception(f"{stage}程序异常")
+    return reason
+
+
 def _safe_json_parse(response: httpx.Response) -> dict:
     """安全解析 API 响应 JSON
 
@@ -204,9 +230,14 @@ def _safe_json_parse(response: httpx.Response) -> dict:
     if not text:
         raise _RiskControlError("API 返回空响应，疑似被风控")
     try:
-        return response.json()
-    except Exception:
-        raise _RiskControlError(f"API 返回非 JSON 内容，疑似被风控: {text[:100]}")
+        data = response.json()
+    except ValueError as exc:
+        raise _RiskControlError(
+            f"API 返回非 JSON 内容，疑似被风控: {text[:100]}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise _RiskControlError("API 返回异常 JSON 格式，疑似被风控")
+    return data
 
 
 def _parse_cookie(cookie_str: str) -> Dict[str, str]:
@@ -372,13 +403,13 @@ async def _derive_cookie_token(
         rsp = _safe_json_parse(response)
 
     if rsp.get("retcode") != 0:
-        raise Exception(f"派生 cookie_token 失败: {rsp.get('message')}")
+        raise ValueError(f"派生 cookie_token 失败: {rsp.get('message')}")
 
     data = rsp.get("data", {})
     cookie_token = data.get("cookie_token", "")
     uid = data.get("uid", "")
     if not cookie_token:
-        raise Exception("派生 cookie_token 失败: 返回数据无 cookie_token")
+        raise ValueError("派生 cookie_token 失败: 返回数据无 cookie_token")
 
     logger.debug(f"成功从 stoken 派生 cookie_token, uid={uid}")
     return cookie_token, uid
@@ -418,7 +449,7 @@ async def miyoushe_sign_in(
         try:
             await on_credential_update(updated_cookie)
         except Exception as e:
-            logger.warning(f"米游社凭据回写失败: {e}")
+            _log_miyoushe_exception("米游社凭据回写失败", e)
 
     cookies = _parse_cookie(cookie)
     _ensure_auth_aliases(cookies)
@@ -456,14 +487,17 @@ async def miyoushe_sign_in(
                 _ensure_uid_aliases(effective_cookies, derived_uid)
             updated_cookie = _build_cookie_str(effective_cookies)
         except Exception as e:
-            logger.warning(f"从 stoken 派生 cookie_token 失败: {e}")
+            reason = _log_miyoushe_exception(
+                "从 stoken 派生 cookie_token 失败",
+                e,
+            )
             return [{
                 "account": f"{stuid}/米游社",
                 "game": "米游社",
                 "platform": "米游社",
                 "status": "失败",
                 "reward": "",
-                "reason": f"派生 cookie_token 失败: {e}",
+                "reason": reason,
             }]
     elif cookies.get("stoken"):
         # 策略 4: stoken_v1 无 mid，无法派生
@@ -506,7 +540,7 @@ async def miyoushe_sign_in(
             "reason": "账号被风控，接口返回异常",
         }]
     except Exception as e:
-        logger.warning(f"获取米游社游戏角色失败: {e}")
+        reason = _log_miyoushe_exception("获取米游社游戏角色失败", e)
         await report_credential_update()
         return [{
             "account": f"{stuid}/米游社",
@@ -514,7 +548,7 @@ async def miyoushe_sign_in(
             "platform": "米游社",
             "status": "失败",
             "reward": "",
-            "reason": f"获取角色列表失败: {e}",
+            "reason": reason,
         }]
 
     if not roles:
@@ -568,7 +602,7 @@ async def miyoushe_sign_in(
             logger.warning(f"{account} {game_cfg['name']} 账号被风控")
             continue
         except Exception as e:
-            logger.warning(f"检查签到状态异常: {e}")
+            _log_miyoushe_exception("检查米游社签到状态失败", e)
 
         # 执行签到
         try:
@@ -597,15 +631,18 @@ async def miyoushe_sign_in(
             })
             logger.warning(f"{account} {game_cfg['name']} 签到时被风控")
         except Exception as e:
+            reason = _log_miyoushe_exception(
+                f"{game_cfg['name']}签到失败",
+                e,
+            )
             results.append({
                 "account": account,
                 "game": game_cfg["name"],
                 "platform": "米游社",
                 "status": "失败",
                 "reward": "",
-                "reason": str(e),
+                "reason": reason,
             })
-            logger.warning(f"{account} {game_cfg['name']} 签到异常: {e}")
 
         # 间隔防风控（对齐 MihoyoBBSTools：随机 2-8 秒）
         if index < len(roles) - 1:
@@ -642,7 +679,7 @@ async def _get_game_roles(
         rsp = _safe_json_parse(response)
 
     if rsp.get("retcode") != 0:
-        raise Exception(f"获取角色列表失败: {rsp.get('message')}")
+        raise ValueError(f"获取角色列表失败: {rsp.get('message')}")
 
     data_list = rsp.get("data", {}).get("list", [])
     roles = []
@@ -809,7 +846,7 @@ async def _do_sign(
                     cookie = _build_cookie_str(parsed)
                     refreshed = True
                 except Exception as e:
-                    logger.warning(f"stoken 刷新失败: {e}")
+                    _log_miyoushe_exception("stoken 刷新失败", e)
 
             # 方式 2: 用 cookie_token_v2 替换 cookie_token
             if not refreshed and has_v2 and attempt < CAPTCHA_MAX_RETRIES:
