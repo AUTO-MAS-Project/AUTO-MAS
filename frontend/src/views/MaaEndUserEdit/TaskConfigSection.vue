@@ -8,20 +8,6 @@
       </a-button>
     </div>
 
-    <a-row :gutter="24">
-      <a-col :span="12">
-        <a-form-item label="理智任务配置模式">
-          <a-select
-            v-model:value="formData.Info.SanityMode"
-            :options="sanityModeOptions"
-            :disabled="loading"
-            size="large"
-            @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
       <div class="task-group-sidebar">
         <button
@@ -71,6 +57,18 @@
     </div>
 
     <a-row v-if="showSanityDetail" :gutter="24">
+      <a-col :span="optionColumnSpan">
+        <a-form-item label="理智任务配置模式">
+          <a-select
+            v-model:value="formData.Info.SanityMode"
+            :options="sanityModeOptions"
+            :disabled="loading"
+            size="large"
+            @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
+          />
+        </a-form-item>
+      </a-col>
+
       <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
@@ -210,7 +208,7 @@ const emit = defineEmits<{
 }>()
 
 const formData = props.formData
-const optionColumnSpan = 12
+const optionColumnSpan = 8
 const activeGroupKey = ref('')
 const showManagedTaskConfig = computed(() => props.ifQuickConfig)
 const visibleTaskGroups = computed(() => MAAEND_TASK_GROUPS)
