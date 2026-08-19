@@ -435,6 +435,7 @@ class ScriptIndexItem(BaseModel):
         "MaaEndConfig",
         "M9AConfig",
         "HSRConfig",
+        "BetterGIConfig",
     ] = Field(
         ..., description="配置类型"
     )
@@ -451,6 +452,7 @@ class UserIndexItem(BaseModel):
         "MaaEndUserConfig",
         "M9AUserConfig",
         "HSRUserConfig",
+        "BetterGIUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -753,6 +755,56 @@ class OkNteUserConfig(BaseModel):
     Notify: Optional[OkNteUserConfig_Notify] = Field(default=None, description="单独通知")
 
 
+class BetterGIUserConfig_Task(BaseModel):
+    OneDragonConfigName: Optional[str] = Field(
+        default=None, description="BetterGI「一条龙」配置名"
+    )
+
+
+class BetterGIUserConfig_Info(BaseModel):
+    """BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）"""
+
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    Id: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class BetterGIUserConfig_Data(GeneralUserConfig_Data):
+    """BetterGI 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+    LastOneDragonConfig: Optional[str] = Field(
+        default=None, description="上次运行的一条龙配置名"
+    )
+
+
+class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
+    """BetterGI 用户通知（复用通用字段）"""
+
+
+class BetterGIUserConfig(BaseModel):
+    Info: Optional[BetterGIUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[BetterGIUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[BetterGIUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -908,6 +960,19 @@ class OkNteConfig(BaseModel):
     Script: Optional[OkNteConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[OkNteConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[OkNteConfig_Run] = Field(default=None, description="运行配置")
+
+
+class BetterGIConfig_Info(GeneralConfig_Info):
+    """BetterGI 脚本基础信息（复用通用字段）"""
+
+
+class BetterGIConfig_Run(GeneralConfig_Run):
+    """BetterGI 运行配置（复用通用字段）"""
+
+
+class BetterGIConfig(BaseModel):
+    Info: Optional[BetterGIConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -1828,8 +1893,10 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "HSR"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
+    type: Literal[
+        "MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "HSR", "BetterGI"
+    ] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本, BetterGI脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1847,6 +1914,7 @@ class ScriptCreateOut(OutBase):
         MaaEndConfig,
         M9AConfig,
         HSRConfig,
+        BetterGIConfig,
     ] = Field(
         ..., description="脚本配置数据"
     )
@@ -1871,6 +1939,7 @@ class ScriptGetOut(OutBase):
             MaaEndConfig,
             M9AConfig,
             HSRConfig,
+            BetterGIConfig,
         ],
     ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
@@ -1888,6 +1957,7 @@ class ScriptUpdateIn(BaseModel):
         MaaEndConfig,
         M9AConfig,
         HSRConfig,
+        BetterGIConfig,
     ] = Field(
         ..., description="脚本更新数据"
     )
@@ -1947,6 +2017,7 @@ class UserGetOut(OutBase):
             MaaEndUserConfig,
             M9AUserConfig,
             HSRUserConfig,
+            BetterGIUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -1962,6 +2033,7 @@ class UserCreateOut(OutBase):
         MaaEndUserConfig,
         M9AUserConfig,
         HSRUserConfig,
+        BetterGIUserConfig,
     ] = (
         Field(..., description="用户配置数据")
     )
@@ -1978,6 +2050,7 @@ class UserUpdateIn(UserInBase):
         MaaEndUserConfig,
         M9AUserConfig,
         HSRUserConfig,
+        BetterGIUserConfig,
     ] = (
         Field(..., description="用户更新数据")
     )

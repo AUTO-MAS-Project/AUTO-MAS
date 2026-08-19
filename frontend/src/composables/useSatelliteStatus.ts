@@ -60,6 +60,7 @@ const getScriptTypeFromConfigType = (type: string): ScriptType | null => {
     MaaEndConfig: 'MaaEnd',
     M9AConfig: 'M9A',
     GeneralConfig: 'General',
+    BetterGIConfig: 'BetterGI',
   }
 
   return getSupportedScriptType(typeMap[type] ?? '')

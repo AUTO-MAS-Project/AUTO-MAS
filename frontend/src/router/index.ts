@@ -112,6 +112,12 @@ const routes = [
     meta: { title: '编辑ok-nte脚本' },
   },
   {
+    path: '/scripts/:id/edit/bettergi',
+    name: 'BetterGIScriptEdit',
+    component: () => import('../views/EditView/Script/BetterGIScriptEdit.vue'),
+    meta: { title: '编辑BetterGI脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
@@ -206,6 +212,18 @@ const routes = [
     name: 'OkNteUserEdit',
     component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
     meta: { title: '编辑ok-nte用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/bettergi',
+    name: 'BetterGIUserAdd',
+    component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
+    meta: { title: '添加BetterGI用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/bettergi',
+    name: 'BetterGIUserEdit',
+    component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
+    meta: { title: '编辑BetterGI用户' },
   },
   {
     path: '/plans',

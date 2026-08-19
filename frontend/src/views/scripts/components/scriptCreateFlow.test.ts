@@ -24,6 +24,7 @@ describe('scriptCreateFlow', () => {
       'Okww',
       'OkNte',
       'HSR',
+      'BetterGI',
     ])
   })
 
@@ -48,6 +49,7 @@ describe('scriptCreateFlow', () => {
     expect(getScriptEditSegment('Okww')).toBe('okww')
     expect(getScriptEditSegment('OkNte')).toBe('oknte')
     expect(getScriptEditSegment('HSR')).toBe('hsr')
+    expect(getScriptEditSegment('BetterGI')).toBe('bettergi')
     expect(getScriptEditSegment('General')).toBe('general')
   })
 

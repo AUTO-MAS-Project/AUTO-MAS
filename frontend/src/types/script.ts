@@ -9,6 +9,7 @@ import type {
   SrcConfig,
   MaaEndConfig,
   M9AConfig,
+  BetterGIConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -18,10 +19,11 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
+export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR' | 'BetterGI'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
+export type BetterGIScriptConfig = BetterGIConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -215,6 +217,7 @@ export interface Script {
     | MaaEndConfig
     | M9AConfig
     | HSRConfig
+    | BetterGIConfig
   users: User[]
 }
 
@@ -316,6 +319,7 @@ export interface AddScriptResponse {
     | MaaEndScriptConfig
     | M9AScriptConfig
     | HSRScriptConfig
+    | BetterGIScriptConfig
 }
 
 // 脚本索引项
@@ -330,6 +334,7 @@ export interface ScriptIndexItem {
     | 'MaaEndConfig'
     | 'M9AConfig'
     | 'HSRConfig'
+    | 'BetterGIConfig'
 }
 
 // 获取脚本API响应
@@ -348,6 +353,7 @@ export interface GetScriptsResponse {
     | MaaEndScriptConfig
     | M9AScriptConfig
     | HSRScriptConfig
+    | BetterGIScriptConfig
   >
 }
 
@@ -365,6 +371,7 @@ export interface ScriptDetail {
     | MaaEndConfig
     | M9AConfig
     | HSRConfig
+    | BetterGIConfig
   users?: User[]
   createTime?: string
 }
