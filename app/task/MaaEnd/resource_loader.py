@@ -45,7 +45,7 @@ def _normalize_language(language: str) -> str:
 class MaaEndResourceLoader:
     """按 MaaEnd 根目录缓存解析后的动态资源。"""
 
-    _disk_cache_version = 1
+    _disk_cache_version = 2
     _loader_cache: dict[Path, "MaaEndResourceLoader"] = {}
     _cache_lock = RLock()
 
@@ -57,6 +57,7 @@ class MaaEndResourceLoader:
         self._tasks: list[dict[str, Any]] = []
         self._task_options: dict[str, dict[str, Any]] = {}
         self._options: dict[str, Any] = {}
+        self._tasks_loaded = False
         self._load_all_resources()
 
     @classmethod
@@ -156,12 +157,14 @@ class MaaEndResourceLoader:
             interface = payload.get("interface")
             locales = payload.get("locales")
             tasks = payload.get("tasks")
+            tasks_loaded = payload.get("tasks_loaded")
             task_options = payload.get("task_options")
             options = payload.get("options")
             if not (
                 isinstance(interface, dict)
                 and isinstance(locales, dict)
                 and isinstance(tasks, list)
+                and isinstance(tasks_loaded, bool)
                 and isinstance(task_options, dict)
                 and isinstance(options, dict)
             ):
@@ -175,6 +178,7 @@ class MaaEndResourceLoader:
             loader._tasks = deepcopy(tasks)
             loader._task_options = deepcopy(task_options)
             loader._options = deepcopy(options)
+            loader._tasks_loaded = tasks_loaded
             logger.info(f"读取 MaaEnd 本地资源缓存：{root_path}")
             return loader
         except Exception as error:
@@ -193,6 +197,7 @@ class MaaEndResourceLoader:
             "interface": self._interface,
             "locales": self._locales,
             "tasks": self._tasks,
+            "tasks_loaded": self._tasks_loaded,
             "task_options": self._task_options,
             "options": self._options,
         }
@@ -225,21 +230,49 @@ class MaaEndResourceLoader:
                 raise ValueError(f"MaaEnd 本地化资源不是 JSON 对象: {relative_path}")
             self._locales[_normalize_language(str(language))] = locale
 
-        for relative_path in interface["import"]:
-            task_data = self._read_json5(interface_path.parent / relative_path)
+        essence_resource = next(
+            (
+                relative_path
+                for relative_path in interface["import"]
+                if Path(relative_path).stem == "AutoEssence"
+            ),
+            None,
+        )
+        if essence_resource is not None:
+            task_data = self._read_json5(interface_path.parent / essence_resource)
             if not isinstance(task_data, dict):
-                raise ValueError(f"MaaEnd 任务资源不是 JSON 对象: {relative_path}")
-            tasks = task_data.get("task", [])
+                raise ValueError(f"MaaEnd 任务资源不是 JSON 对象: {essence_resource}")
             options = task_data.get("option", {})
-            if not isinstance(tasks, list):
-                raise ValueError(f"MaaEnd 任务列表格式错误: {relative_path}")
             if not isinstance(options, dict):
-                raise ValueError(f"MaaEnd 任务选项格式错误: {relative_path}")
-            self._tasks.extend(task for task in tasks if isinstance(task, dict))
-            self._task_options.setdefault(Path(relative_path).stem, options)
+                raise ValueError(f"MaaEnd 任务选项格式错误: {essence_resource}")
+            self._task_options[Path(essence_resource).stem] = options
 
         language = _normalize_language(str(config["settings"]["language"]))
         self._options = self._build_options(language)
+
+    def _load_task_resources(self) -> None:
+        with self._cache_lock:
+            if self._tasks_loaded:
+                return
+
+            interface_path = self.root_path / "interface.json"
+            for relative_path in self._interface["import"]:
+                try:
+                    task_data = self._read_json5(interface_path.parent / relative_path)
+                except (OSError, ValueError) as error:
+                    logger.warning(f"MaaEnd 任务资源读取失败，已跳过 {relative_path}: {error}")
+                    continue
+                if not isinstance(task_data, dict):
+                    logger.warning(f"MaaEnd 任务资源格式错误，已跳过: {relative_path}")
+                    continue
+                tasks = task_data.get("task", [])
+                if not isinstance(tasks, list):
+                    logger.warning(f"MaaEnd 任务列表格式错误，已跳过: {relative_path}")
+                    continue
+                self._tasks.extend(task for task in tasks if isinstance(task, dict))
+
+            self._tasks_loaded = True
+            self._save_disk_cache()
 
     def _get_locale(self, language: str) -> dict[str, str]:
         language = _normalize_language(language)
@@ -306,6 +339,7 @@ class MaaEndResourceLoader:
         )
 
     def get_task_i18n(self, language: str) -> dict[str, str]:
+        self._load_task_resources()
         locale = self._get_locale(language)
         result = {}
         for task in self._tasks:
@@ -338,6 +372,16 @@ def load_maaend_options(root_path: Path, force_reload: bool = False) -> dict[str
         root_path,
         force_reload=force_reload,
     ).get_options()
+
+
+def try_load_maaend_options(root_path: Path) -> dict[str, Any] | None:
+    """尝试预加载 MaaEnd 动态选项，失败时记录原因并跳过。"""
+
+    try:
+        return load_maaend_options(root_path)
+    except Exception as error:
+        logger.warning(f"MaaEnd 动态资源加载失败: {error}")
+        return None
 
 
 def get_loaded_maaend_options(root_path: Path) -> dict[str, Any]:

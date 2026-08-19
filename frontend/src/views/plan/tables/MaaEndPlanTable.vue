@@ -157,7 +157,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import type { ComboBoxItem } from '@/api'
+import type { ComboBoxItem, MaaEndConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
   MAAEND_PLAN_TIME_KEYS,
@@ -210,8 +210,13 @@ const loadEssenceLocationOptions = async () => {
   essenceOptionsLoading.value = true
   try {
     const scripts = await getScripts(false)
+    const configuredMaaEndScripts = scripts.filter(script => {
+      if (script.type !== 'MaaEnd') return false
+      const config = script.config as MaaEndConfig
+      return Boolean(config.Info?.Path?.trim())
+    })
     const responses = await Promise.all(
-      scripts.filter(script => script.type === 'MaaEnd').map(script => getMaaEndOptions(script.uid))
+      configuredMaaEndScripts.map(script => getMaaEndOptions(script.uid))
     )
     const optionsByValue = new Map<string, ComboBoxItem>()
     responses.forEach(response => {
