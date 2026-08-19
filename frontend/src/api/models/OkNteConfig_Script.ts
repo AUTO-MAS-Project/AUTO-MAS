@@ -70,5 +70,13 @@ export type OkNteConfig_Script = {
      * 错误时日志
      */
     ErrorLog?: (string | null);
+    /**
+     * 推送日志采集启用开关
+     */
+    PushLogEnabled?: (boolean | null);
+    /**
+     * 推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})
+     */
+    PushLogPatterns?: (string | null);
 };
 

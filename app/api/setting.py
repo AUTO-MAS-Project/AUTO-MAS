@@ -124,7 +124,9 @@ async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
     确保调试结果与实际推送日志采集逻辑完全一致。
     """
     try:
-        error, is_multiline, results = debug_pattern(req.pattern, req.logText)
+        error, is_multiline, results = debug_pattern(
+            req.pattern.model_dump(exclude_none=True), req.logText
+        )
     except Exception as e:
         return PatternDebugOut(
             code=500,
