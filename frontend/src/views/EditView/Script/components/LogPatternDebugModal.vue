@@ -14,8 +14,9 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 
-// 用 reactive 包裹，使模板中的 debug.input / debug.results 等嵌套 ref 自动解包
-const debug = reactive(useLogPatternDebug({ logPath: props.logPath }))
+// 用 reactive 包裹，使模板中的 debug.input / debug.results 等嵌套 ref 自动解包；
+// logPath 需传 getter，否则 setup 只捕获初始值（.），异步加载脚本后仍读旧值导致「加载日志」误判未配置路径
+const debug = reactive(useLogPatternDebug({ logPath: () => props.logPath }))
 
 // 将弹窗接收到的规则配置同步到本实例，供 runDebug / isMultiline 使用；
 // 切到不同规则时清空上一次的结果（避免残留上一规则的结果误导），但保留日志输入供跨规则复用

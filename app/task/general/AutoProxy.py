@@ -728,11 +728,11 @@ class AutoProxyTask(TaskExecuteBase):
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
 
-        # 日志处理结束：强制关闭多行聚合等有状态匹配器的残留窗口
+        # 日志处理结束：强制关闭多行聚合等有状态匹配器的残留窗口，逐条追加
         if self.push_log_enabled and self.push_log_patterns_compiled:
-            flushed = flush_patterns(matchers=self.push_log_patterns_compiled)
-            if flushed is not None:
-                log_type, text = flushed
+            for log_type, text in flush_patterns(
+                matchers=self.push_log_patterns_compiled
+            ):
                 self.push_log_buffer.append(
                     (
                         log_type,

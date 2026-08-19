@@ -1,6 +1,10 @@
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { ActionService } from '@/api'
+import {
+  ActionService,
+  type PatternDebugIn,
+  type PushLogPattern as ApiPushLogPattern,
+} from '@/api'
 import type { PushLogPattern } from './usePushLogPatterns'
 
 export interface DebugResult {
@@ -59,8 +63,10 @@ export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
     running.value = true
     compileError.value = null
     try {
-      const body = {
-        pattern,
+      const body: PatternDebugIn = {
+        // 本地类型含 _uid 且 type 为字符串联合，与生成的 PushLogPattern[type] 命名空间
+        // 枚举存在类型差异，仅在组装请求体时做一次边界转换，复用生成契约避免重复定义
+        pattern: pattern as ApiPushLogPattern,
         logText: input.value,
       }
       const data = await ActionService.debugPatternApiApiSettingDebugPatternPost(body)

@@ -70,9 +70,9 @@ const finishEditName = () => {
 
 const getLogTypeHint = (logType: string | undefined): string => {
   if (logType === '失败') {
-    return '该条规则会在推送开启的任意情况下推送'
+    return '仅在本次任务存在未完成用户时纳入推送报告'
   }
-  return '该条规则在推送规则设置为仅失败时不会推送'
+  return '始终纳入推送报告'
 }
 
 const getPatternTypeHint = (type: PushLogPatternType): string => {
