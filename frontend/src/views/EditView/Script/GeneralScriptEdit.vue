@@ -927,6 +927,8 @@ const formRef = ref<FormInstance>()
 const uploadFormRef = ref<FormInstance>()
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+// 保存进行中触发的新变更，串行合并保存（避免静默丢弃）
+const pendingChange = ref<{ category: string; key: string; value: any } | null>(null)
 
 // 路径处理工具函数
 const pathUtils = {
@@ -1420,21 +1422,37 @@ const setupConfigPathModeWatcher = () => {
   )
 }
 
-// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）；保存进行中的新变更串行合并，
+// 避免 isSaving 为 true 时静默丢弃，也防止 refreshScript 覆盖尚未落盘的编辑
 const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
+
+  // 保存进行中：暂存最新一次的变更，待当前循环轮询继续保存
+  if (isSaving.value) {
+    pendingChange.value = { category, key, value }
+    return
+  }
 
   isSaving.value = true
   try {
-    // 构建只包含单个修改字段的更新数据（遵循最小原则）
-    const updateData: any = { [category]: { [key]: value } }
-
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-      // 保存成功后刷新数据
-      await refreshScript()
+    let next: { category: string; key: string; value: any } | null = {
+      category,
+      key,
+      value,
     }
+    // 串行合并：依次保存当前与排队的最新变更，直到队列清空
+    while (next) {
+      const updateData: any = { [next.category]: { [next.key]: next.value } }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${next.category}.${next.key}`)
+      }
+      const queued = pendingChange.value
+      pendingChange.value = null
+      next = queued
+    }
+    // 全部落盘后刷新一次最新数据
+    await refreshScript()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)

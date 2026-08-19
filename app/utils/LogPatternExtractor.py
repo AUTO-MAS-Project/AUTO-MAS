@@ -509,24 +509,29 @@ def apply_patterns(
 
 def flush_patterns(
     matchers: Optional[list[CompiledMatcher]] = None
-) -> Optional[tuple[str, str]]:
-    """对所有匹配器调用 flush，返回首个非 None 的 (日志类型, 残留结果)
+) -> list[tuple[str, str]]:
+    """对所有匹配器调用 flush，收集所有非 None 的 (日志类型, 残留结果)
 
     用于日志处理结束时强制关闭多行聚合等有状态匹配器的残留窗口。
+
+    需要一次性收集并返回所有 matcher 的残留结果：若配置了多条未设置结束
+    正则的 multiline 规则，仅返回首个残留会导致后续 matcher 仍保持打开，
+    任务结束时的推送结果丢失。调用端应逐条追加到推送缓冲。
 
     Args:
         matchers: 编译后的匹配器列表
 
     Returns:
-        首个非 None 的 (log_type, flushed) 元组；全部无残留返回 None
+        (log_type, flushed) 的列表；全部无残留返回空列表
     """
     if not matchers:
-        return None
+        return []
+    flushed_all: list[tuple[str, str]] = []
     for matcher in matchers:
         result = matcher.flush()
         if result is not None:
-            return (matcher.log_type, result)
-    return None
+            flushed_all.append((matcher.log_type, result))
+    return flushed_all
 
 
 # ==================== 调试 ====================
@@ -605,9 +610,10 @@ def debug_pattern(
     if error:
         return (error, is_multiline, [])
 
-    # 编译匹配器（validate_pattern 通过后 compile_pattern 不会返回 None）
+    # 编译匹配器（validate_pattern 通过后 compile_pattern 不会返回 None；
+    # 调试不应受 enabled 开关影响，停用的有效规则也应可调试）
     try:
-        matcher = compile_pattern(config)
+        matcher = compile_pattern({**config, "enabled": True})
     except Exception as e:
         return (f"规则编译失败: {e}", is_multiline, [])
     if matcher is None:
