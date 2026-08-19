@@ -1,21 +1,7 @@
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { OpenAPI } from '@/api'
+import { ActionService } from '@/api'
 import type { PushLogPattern } from './usePushLogPatterns'
-
-// TODO: OpenAPI 重新生成后，替换为生成的 Service.debugPatternApiSettingDebugPatternPost
-async function debugPatternRequest(pattern: Record<string, unknown>, logText: string) {
-  const baseURL = OpenAPI.BASE || ''
-  const resp = await fetch(`${baseURL}/api/setting/debug_pattern`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pattern, logText }),
-  })
-  if (!resp.ok) {
-    throw new Error(`HTTP ${resp.status}`)
-  }
-  return resp.json()
-}
 
 export interface DebugResult {
   idx: number
@@ -45,9 +31,7 @@ export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
   const currentPattern = ref<PushLogPattern | null>(null)
 
   const hitCount = computed(() => results.value.filter(r => r.hit).length)
-  const filteredResults = computed(() =>
-    results.value.filter(r => !onlyHit.value || r.hit),
-  )
+  const filteredResults = computed(() => results.value.filter(r => !onlyHit.value || r.hit))
   const isMultiline = computed(() => currentPattern.value?.type === 'multiline')
 
   const open = (pattern: PushLogPattern) => {
@@ -71,28 +55,15 @@ export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
   const runDebug = async () => {
     if (!currentPattern.value) return
     const pattern = currentPattern.value
-    const config = {
-      type: pattern.type,
-      match: pattern.match,
-      head: pattern.head,
-      headInclude: pattern.headInclude,
-      tail: pattern.tail,
-      tailInclude: pattern.tailInclude,
-      extract: pattern.extract,
-      start: pattern.start,
-      end: pattern.end,
-      maxLines: pattern.maxLines,
-    }
 
     running.value = true
     compileError.value = null
     try {
-      const data = (await debugPatternRequest(config, input.value)) as {
-        code: number
-        message?: string
-        configError?: string
-        results?: DebugResult[]
+      const body = {
+        pattern,
+        logText: input.value,
       }
+      const data = await ActionService.debugPatternApiApiSettingDebugPatternPost(body)
       if (data.code !== 200) {
         compileError.value = data.message || '调试请求失败'
         results.value = []

@@ -68,8 +68,12 @@ export type GeneralConfig_Script = {
      */
     ErrorLog?: (string | null);
     /**
-     * 推送日志匹配
+     * 推送日志采集启用开关
      */
-    PushLog?: (string | null);
+    PushLogEnabled?: (boolean | null);
+    /**
+     * 推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})
+     */
+    PushLogPatterns?: (string | null);
 };
 

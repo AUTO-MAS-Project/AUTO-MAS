@@ -2447,10 +2447,40 @@ class WSCommandsOut(OutBase):
 # ============== 日志模式调试相关模型 ==============
 
 
+class PushLogPattern(BaseModel):
+    """推送日志采集模式配置（split/regex/multiline 三种模式按 type 区分，各模式使用对应字段）"""
+
+    type: Literal["split", "regex", "multiline"] = Field(..., description="匹配类型")
+    name: Optional[str] = Field(default=None, description="规则标题（供分享站展示/说明）")
+    enabled: Optional[bool] = Field(
+        default=None, description="单条规则启用/停用开关：停用时保留配置但不参与采集"
+    )
+    logType: Optional[str] = Field(default=None, description="日志类型：普通/失败")
+    match: Optional[str] = Field(default=None, description="split 模式的匹配关键字")
+    head: Optional[str] = Field(default=None, description="split 模式的首部关键字")
+    headInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含首部关键字"
+    )
+    tail: Optional[str] = Field(default=None, description="split 模式的尾部关键字")
+    tailInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含尾部关键字"
+    )
+    extract: Optional[str] = Field(
+        default=None, description="regex 模式的提取正则（split/regex 通用）"
+    )
+    start: Optional[str] = Field(
+        default=None, description="multiline 模式的起始行正则"
+    )
+    end: Optional[str] = Field(default=None, description="multiline 模式的结束行正则")
+    maxLines: Optional[int] = Field(
+        default=None, description="multiline 模式的最大跨行数"
+    )
+
+
 class PatternDebugIn(BaseModel):
     """日志模式调试请求"""
 
-    pattern: Dict[str, Any] = Field(..., description="模式配置字典")
+    pattern: PushLogPattern = Field(..., description="待调试的推送日志模式配置")
     logText: str = Field(default="", description="待调试的多行日志文本")
 
 
