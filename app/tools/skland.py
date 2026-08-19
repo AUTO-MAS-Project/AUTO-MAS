@@ -801,14 +801,14 @@ async def _run_skland_sign_in(
                         logger.info(f"{character_name} 重复签到")
                     else:
                         result["失败"].append(character_name)
-                        logger.error(f"{character_name} 签到失败: {rsp.get('message')}")
+                        logger.warning(f"{character_name} 签到失败: {rsp.get('message')}")
                 else:
                     result["成功"].append(character_name)
                     logger.info(f"{character_name} 签到成功")
 
             except Exception as e:
                 result["失败"].append(character_name)
-                logger.error(f"{character_name} 签到异常: {e}")
+                logger.warning(f"{character_name} 签到异常: {e}")
 
             if index < len(characters) - 1:
                 await asyncio.sleep(SKLAND_SIGN_INTERVAL)
@@ -866,7 +866,7 @@ async def _run_skland_sign_in(
                         logger.info(f"{character_name} 重复签到")
                     else:
                         result["失败"].append(character_name)
-                        logger.error(
+                        logger.warning(
                             f"{character_name} 签到失败: {rsp.get('message')}"
                         )
                 else:
@@ -899,7 +899,7 @@ async def _run_skland_sign_in(
                     logger.info(f"{character_name} 签到成功")
             except Exception as e:
                 result["失败"].append(character_name)
-                logger.error(f"{character_name} 签到异常: {e}")
+                logger.warning(f"{character_name} 签到异常: {e}")
 
             if index < len(role_items) - 1:
                 await asyncio.sleep(SKLAND_SIGN_INTERVAL)
@@ -918,14 +918,14 @@ async def _run_skland_sign_in(
             except SklandCredentialExpiredError:
                 raise
             except Exception as exc:
-                logger.error(f"明日方舟角色列表/签到失败: {exc}")
+                logger.warning(f"明日方舟角色列表/签到失败: {exc}")
                 ar = {"成功": [], "重复": [], "失败": [str(exc)], "总计": 0}
             try:
                 ef = await sign_for_endfield(cred, sign_token)
             except SklandCredentialExpiredError:
                 raise
             except Exception as exc:
-                logger.error(f"终末地角色列表/签到失败: {exc}")
+                logger.warning(f"终末地角色列表/签到失败: {exc}")
                 ef = {"成功": [], "重复": [], "失败": [str(exc)], "总计": 0}
             return {"arknights": ar, "endfield": ef}
         if app_code == "endfield":
@@ -960,5 +960,5 @@ async def _run_skland_sign_in(
                 logger.warning(f"森空岛凭据回写失败: {e}")
         return result
     except Exception as e:
-        logger.error(f"森空岛签到失败: {e}")
+        logger.warning(f"森空岛签到失败: {e}")
         return {"成功": [], "重复": [], "失败": [str(e)], "总计": 0}
