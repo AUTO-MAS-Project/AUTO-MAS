@@ -26,7 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:enabled': [value: boolean]
   'update:patterns': [value: string]
-  'change': [group: string, key: string, value: unknown]
+  change: [group: string, key: string, value: unknown]
 }>()
 
 const {
@@ -96,7 +96,6 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   docsActiveKey.value = key
   docsOpen.value = true
 }
-
 </script>
 
 <template>
@@ -129,9 +128,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
     </div>
 
     <div class="push-config-body">
-      <div v-if="!enabled" class="push-config-disabled-tip">
-        推送配置已停用，规则不会参与采集。
-      </div>
+      <div v-if="!enabled" class="push-config-disabled-tip">推送配置已停用，规则不会参与采集。</div>
 
       <draggable
         v-model="patterns"
@@ -168,11 +165,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
           </a-button>
           <template #overlay>
             <a-menu @click="onAddMenuClick">
-              <a-menu-item
-                v-for="item in addMenuItems"
-                :key="item.key"
-                :title="item.title"
-              >
+              <a-menu-item v-for="item in addMenuItems" :key="item.key" :title="item.title">
                 {{ item.label }}
               </a-menu-item>
             </a-menu>
@@ -238,6 +231,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding-bottom: 24px;
 }
 
 .push-config-disabled-tip {

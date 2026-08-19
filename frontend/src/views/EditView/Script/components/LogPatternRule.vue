@@ -18,8 +18,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: PushLogPattern]
   'type-change': [type: PushLogPatternType]
-  'remove': []
-  'debug': []
+  remove: []
+  debug: []
   'open-docs': [key: 'split' | 'regex' | 'expression' | 'multiline']
 }>()
 
@@ -30,7 +30,7 @@ watch(
   val => {
     local.value = { ...val }
   },
-  { deep: true },
+  { deep: true }
 )
 
 const commit = () => {
@@ -68,14 +68,27 @@ const finishEditName = () => {
   commit()
 }
 
-const getPatternHint = (type: PushLogPatternType): string => {
+const getLogTypeHint = (logType: string | undefined): string => {
+  if (logType === '失败') {
+    return '该条规则会在推送开启的任意情况下推送'
+  }
+  return '该条规则在推送规则设置为仅失败时不会推送'
+}
+
+const getPatternTypeHint = (type: PushLogPatternType): string => {
   if (type === 'split') {
-    return '按关键字过滤行，再掐头去尾提取中间内容。'
+    return '按关键字过滤行后，用头/尾关键字截取中间内容，多个关键字以「|」分隔任一命中'
   }
   if (type === 'regex') {
-    return '匹配正则过滤行，提取表达式用 $() 提取内容并支持函数链。'
+    return '先用匹配正则过滤日志行，再用表达式中 $() 提取字段并支持函数链'
   }
-  return '由起始/结束正则划定多行窗口，再用提取表达式（$() 语法）提取字段并拼接。'
+  return '用起始/结束正则划定多行窗口，达到最大行数强制关闭，再用表达式提取并拼接字段'
+}
+
+const getPatternTypeLabel = (type: PushLogPatternType): string => {
+  if (type === 'split') return '字符串切割'
+  if (type === 'regex') return '表达式'
+  return '多行聚合'
 }
 
 const typeOptions = [
@@ -98,17 +111,8 @@ const logTypeOptions = [
         <span class="drag-handle">
           <DragOutlined />
         </span>
-        <a-select
-          :value="local.type"
-          class="rule-type-select"
-          size="small"
-          @change="onTypeChange"
-        >
-          <a-select-option
-            v-for="opt in typeOptions"
-            :key="opt.value"
-            :value="opt.value"
-          >
+        <a-select :value="local.type" class="rule-type-select" size="small" @change="onTypeChange">
+          <a-select-option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">
             {{ opt.label }}
           </a-select-option>
         </a-select>
@@ -148,11 +152,7 @@ const logTypeOptions = [
           </a-radio-button>
         </a-radio-group>
 
-        <a-switch
-          :checked="local.enabled !== false"
-          size="small"
-          @change="onEnabledChange"
-        />
+        <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
 
         <a-tooltip title="调试">
           <a-button size="small" class="rule-op-btn" @click="emit('debug')">
@@ -176,7 +176,9 @@ const logTypeOptions = [
           <a-col :span="24">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="必填，留空则该规则不生效；多个关键字以「 | 」分隔，任一命中即通过">
+                <a-tooltip
+                  title="必填，留空则该规则不生效；多个关键字以「 | 」分隔，任一命中即通过"
+                >
                   <span class="form-label">
                     匹配关键字
                     <QuestionCircleOutlined class="help-icon" />
@@ -198,7 +200,9 @@ const logTypeOptions = [
           <a-col :span="12">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="从行首截取到关键字处；勾选「包含」则连同关键字一起去除，不勾选则保留关键字">
+                <a-tooltip
+                  title="从行首截取到关键字处；勾选「包含」则连同关键字一起去除，不勾选则保留关键字"
+                >
                   <span class="form-label">
                     掐头关键字
                     <QuestionCircleOutlined class="help-icon" />
@@ -212,16 +216,16 @@ const logTypeOptions = [
                   size="middle"
                   @blur="commit"
                 />
-                <a-checkbox v-model:checked="local.headInclude" @change="commit">
-                  包含
-                </a-checkbox>
+                <a-checkbox v-model:checked="local.headInclude" @change="commit"> 包含 </a-checkbox>
               </div>
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="从关键字处截取到行尾；勾选「包含」则连同关键字一起去除，不勾选则保留关键字">
+                <a-tooltip
+                  title="从关键字处截取到行尾；勾选「包含」则连同关键字一起去除，不勾选则保留关键字"
+                >
                   <span class="form-label">
                     去尾关键字
                     <QuestionCircleOutlined class="help-icon" />
@@ -235,9 +239,7 @@ const logTypeOptions = [
                   size="middle"
                   @blur="commit"
                 />
-                <a-checkbox v-model:checked="local.tailInclude" @change="commit">
-                  包含
-                </a-checkbox>
+                <a-checkbox v-model:checked="local.tailInclude" @change="commit"> 包含 </a-checkbox>
               </div>
             </a-form-item>
           </a-col>
@@ -272,7 +274,9 @@ const logTypeOptions = [
           <a-col :span="24">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链；留空则返回整行'>
+                <a-tooltip
+                  title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链；留空则返回整行'
+                >
                   <span class="form-label">
                     提取表达式
                     <QuestionCircleOutlined class="help-icon" />
@@ -336,7 +340,9 @@ const logTypeOptions = [
           <a-col :span="20">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title='使用 $() 语法从窗口内容中提取字段；留空返回窗口原文。详见"表达式"说明文档'>
+                <a-tooltip
+                  title='使用 $() 语法从窗口内容中提取字段；留空返回窗口原文。详见"表达式"说明文档'
+                >
                   <span class="form-label">
                     提取表达式
                     <QuestionCircleOutlined class="help-icon" />
@@ -377,12 +383,18 @@ const logTypeOptions = [
       </template>
     </div>
 
-    <!-- 规则底部提示 -->
+    <!-- 规则底部提示：一行：模式类型在左，日志类型（普通/失败）在右 -->
     <div class="rule-footer">
-      <a-tag size="small" :color="local.logType === '失败' ? 'error' : 'processing'">
-        {{ local.logType || '普通' }}
-      </a-tag>
-      <span class="rule-hint">{{ getPatternHint(local.type) }}</span>
+      <div class="footer-left">
+        <span class="footer-type-tag">{{ getPatternTypeLabel(local.type) }}</span>
+        <span class="footer-hint">{{ getPatternTypeHint(local.type) }}</span>
+      </div>
+      <div class="footer-right">
+        <a-tag size="small" :color="local.logType === '失败' ? 'error' : 'processing'">
+          {{ local.logType || '普通' }}
+        </a-tag>
+        <span class="footer-hint">{{ getLogTypeHint(local.logType) }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -539,13 +551,42 @@ const logTypeOptions = [
 .rule-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 16px;
   margin-top: 8px;
   padding-top: 12px;
   border-top: 1px dashed var(--ant-color-border-secondary);
 }
 
-.rule-hint {
+.footer-left,
+.footer-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  line-height: 1.6;
+}
+
+.footer-right {
+  justify-content: flex-end;
+}
+
+.footer-type-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 20px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 4px;
+  color: var(--ant-color-text-secondary);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.footer-hint {
   font-size: 12px;
   color: var(--ant-color-text-secondary);
 }
