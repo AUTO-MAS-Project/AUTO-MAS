@@ -476,7 +476,7 @@ async def _run_provider(
     try:
         run = await provider.runner(token, account_name, account_uid)
     except Exception as e:
-        logger.error(f"[{account_name}] {provider.log_name}签到异常: {e}")
+        logger.warning(f"[{account_name}] {provider.log_name}签到异常: {e}")
         return _ProviderRun(
             results=_provider_error_results(
                 provider,

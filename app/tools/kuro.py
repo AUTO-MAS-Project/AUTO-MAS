@@ -105,7 +105,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
     results = []
 
     if not token or not token.strip():
-        logger.error("库街区 Token 为空")
+        logger.warning("库街区 Token 为空")
         return [{
             "account": "未知/库街区",
             "game": "库街区",
@@ -125,7 +125,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
         try:
             user_info = await _get_user_info(token, dev_code, distinct_id, client)
         except Exception as e:
-            logger.error(f"获取库街区用户信息失败: {e}")
+            logger.warning(f"获取库街区用户信息失败: {e}")
             return [{
                 "account": "未知/库街区",
                 "game": "库街区",
@@ -142,7 +142,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
         try:
             roles = await _get_role_list(token, dev_code, distinct_id, user_id, client)
         except Exception as e:
-            logger.error(f"获取库街区游戏角色失败: {e}")
+            logger.warning(f"获取库街区游戏角色失败: {e}")
             return [{
                 "account": f"{nick_name}/库街区",
                 "game": "库街区",
@@ -193,7 +193,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
                     "reward": "",
                     "reason": str(e),
                 })
-                logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
+                logger.warning(f"{account} {game_cfg['name']} 签到异常: {e}")
 
             if index < len(signable_roles) - 1:
                 await asyncio.sleep(3)
@@ -323,7 +323,7 @@ async def _do_sign(
         }
     else:
         message = rsp.get("msg", rsp.get("message", f"错误码 {code}"))
-        logger.error(f"{account} {game_cfg['name']} 签到失败: {message}")
+        logger.warning(f"{account} {game_cfg['name']} 签到失败: {message}")
         return {
             "account": account,
             "game": game_cfg["name"],
