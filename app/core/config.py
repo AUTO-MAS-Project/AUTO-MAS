@@ -2956,6 +2956,7 @@ class AppConfig(GlobalConfig):
             "HSR 用户任务完成",
             "HSR 失败任务补跑完成",
             "HSR 本轮无需执行，已跳过",
+            "HSR 脚本直控完成",
         }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
