@@ -179,13 +179,21 @@ async def manual_game_sign() -> OutBase:
                         break
             if all_signed:
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+        warning_messages = []
+        if any(
+            result.get("status") not in ("成功", "已签到")
+            and not result.get("_completed")
+            for result in results
+        ):
+            warning_messages.append("签到未全部完成，请查看签到结果")
         if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
             failed_channels = await _dispatch_game_sign_notification(results)
             if failed_channels:
-                return OutBase(
-                    status="warning",
-                    message=f"签到完成，但部分通知发送失败：{'、'.join(failed_channels)}",
+                warning_messages.append(
+                    f"部分通知发送失败：{'、'.join(failed_channels)}"
                 )
+        if warning_messages:
+            return OutBase(status="warning", message="；".join(warning_messages))
 
     except GameSignInProgressError as e:
         return OutBase(code=409, status="error", message=str(e))
@@ -292,6 +300,18 @@ async def update_game_sign_account(
     try:
         # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
         flat_data = account.data.model_dump(exclude_unset=True)
+        skland_token = flat_data.get("SklandToken")
+        if isinstance(skland_token, str) and skland_token.strip():
+            from app.tools.skland import validate_skland_credential
+
+            try:
+                validate_skland_credential(skland_token)
+            except ValueError as exc:
+                return OutBase(
+                    code=400,
+                    status="error",
+                    message=f"森空岛凭据无效：{exc}",
+                )
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:
@@ -415,7 +435,7 @@ async def login_skland(
     try:
         from app.tools.skland import (
             login_skland_with_password,
-            parse_skland_credential,
+            validate_skland_credential,
         )
 
         account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
@@ -424,7 +444,7 @@ async def login_skland(
             credential.password.get_secret_value(),
             proxy=Config.proxy,
         )
-        parsed = parse_skland_credential(serialized)
+        parsed = validate_skland_credential(serialized)
         if any(
             not str(parsed.get(field) or "").strip()
             for field in ("oauthToken", "token", "cred")

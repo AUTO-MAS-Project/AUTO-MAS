@@ -39,6 +39,28 @@ from typing import Dict, Any
 from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
+
+logger = get_logger("库街区签到任务")
+
+
+def _log_kuro_exception(stage: str, error: Exception) -> str:
+    """按异常类型记录库街区失败，并返回安全的非空原因。"""
+
+    expected = isinstance(
+        error,
+        (ValueError, httpx.HTTPError, TimeoutError, ConnectionError),
+    )
+    reason = format_exception_reason(
+        error,
+        stage=stage,
+        include_message=expected,
+    )
+    if expected:
+        logger.warning(reason)
+    else:
+        logger.exception(f"{stage}程序异常")
+    return reason
 
 
 def _safe_json(response: httpx.Response) -> dict:
@@ -46,15 +68,13 @@ def _safe_json(response: httpx.Response) -> dict:
 
     try:
         data = response.json()
-    except Exception:
-        raise Exception(
+    except ValueError as exc:
+        raise ValueError(
             f"库街区返回了非 JSON 响应（HTTP {response.status_code}），疑似风控或服务维护"
-        )
+        ) from exc
     if not isinstance(data, dict):
-        raise Exception("库街区返回了异常响应格式，疑似风控或服务维护")
+        raise ValueError("库街区返回了异常响应格式，疑似风控或服务维护")
     return data
-
-logger = get_logger("库街区签到任务")
 
 
 # ==================== 常量 ====================
@@ -125,14 +145,14 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
         try:
             user_info = await _get_user_info(token, dev_code, distinct_id, client)
         except Exception as e:
-            logger.warning(f"获取库街区用户信息失败: {e}")
+            reason = _log_kuro_exception("获取库街区用户信息失败", e)
             return [{
                 "account": "未知/库街区",
                 "game": "库街区",
                 "platform": "库街区",
                 "status": "失败",
                 "reward": "",
-                "reason": f"获取用户信息失败: {e}",
+                "reason": reason,
             }]
 
         user_id = user_info.get("userId", "")
@@ -142,14 +162,14 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
         try:
             roles = await _get_role_list(token, dev_code, distinct_id, user_id, client)
         except Exception as e:
-            logger.warning(f"获取库街区游戏角色失败: {e}")
+            reason = _log_kuro_exception("获取库街区游戏角色失败", e)
             return [{
                 "account": f"{nick_name}/库街区",
                 "game": "库街区",
                 "platform": "库街区",
                 "status": "失败",
                 "reward": "",
-                "reason": f"获取角色列表失败: {e}",
+                "reason": reason,
             }]
 
         signable_roles = [
@@ -185,15 +205,18 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
                 )
                 results.append(sign_result)
             except Exception as e:
+                reason = _log_kuro_exception(
+                    f"{game_cfg['name']}签到失败",
+                    e,
+                )
                 results.append({
                     "account": account,
                     "game": game_cfg["name"],
                     "platform": "库街区",
                     "status": "失败",
                     "reward": "",
-                    "reason": str(e),
+                    "reason": reason,
                 })
-                logger.warning(f"{account} {game_cfg['name']} 签到异常: {e}")
 
             if index < len(signable_roles) - 1:
                 await asyncio.sleep(3)
@@ -222,9 +245,12 @@ async def _get_user_info(
     rsp = _safe_json(response)
 
     if rsp.get("code") != 200:
-        raise Exception(f"获取用户信息失败: {rsp.get('msg', rsp.get('message', ''))}")
+        raise ValueError(f"获取用户信息失败: {rsp.get('msg', rsp.get('message', ''))}")
 
-    return rsp.get("data", {})
+    data = rsp.get("data", {})
+    if not isinstance(data, dict):
+        raise ValueError("库街区用户信息响应格式无效")
+    return data
 
 
 async def _get_role_list(
@@ -255,7 +281,12 @@ async def _get_role_list(
             logger.warning(f"获取 gameId={game_id} 角色失败: {rsp.get('msg', '')}")
             continue
 
-        for role in rsp.get("data", []):
+        raw_roles = rsp.get("data", [])
+        if not isinstance(raw_roles, list):
+            raise ValueError(f"gameId={game_id} 角色列表响应格式无效")
+        for role in raw_roles:
+            if not isinstance(role, dict):
+                continue
             role["gameId"] = game_id
             all_roles.append(role)
 

@@ -21,6 +21,7 @@
 
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,7 @@ PRIVATE_DATA_MARKERS = {
 PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
 
 _sentry_release: str | None = None
+_sentry_dist: str | None = None
 _sentry_started = False
 
 
@@ -174,7 +176,42 @@ def is_telemetry_enabled(config_path: Path) -> bool:
         return True
 
 
-def _start_sentry(release: str) -> None:
+def resolve_sentry_dist(source_root: Path) -> str | None:
+    """读取当前源码提交短哈希，缺少 Git 元数据时返回空。"""
+
+    try:
+        git_dir = source_root / ".git"
+        if git_dir.is_file():
+            git_dir_value = git_dir.read_text(encoding="utf-8").strip()
+            if not git_dir_value.startswith("gitdir:"):
+                return None
+            git_dir = (source_root / git_dir_value.removeprefix("gitdir:").strip()).resolve()
+
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref:"):
+            ref_name = head.removeprefix("ref:").strip()
+            ref_path = git_dir / ref_name
+            if ref_path.is_file():
+                revision = ref_path.read_text(encoding="utf-8").strip()
+            else:
+                revision = ""
+                for line in (git_dir / "packed-refs").read_text(
+                    encoding="utf-8"
+                ).splitlines():
+                    if line.endswith(f" {ref_name}"):
+                        revision = line.split(" ", 1)[0]
+                        break
+        else:
+            revision = head
+    except (OSError, UnicodeError):
+        return None
+
+    if not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+        return None
+    return revision[:12].lower()
+
+
+def _start_sentry(release: str, dist: str | None = None) -> None:
     """使用固定的脱敏策略启动 Sentry。"""
 
     global _sentry_started
@@ -182,6 +219,7 @@ def _start_sentry(release: str) -> None:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         release=f"auto-mas@{release}",
+        dist=dist,
         environment="production",
         send_default_pii=False,
         include_local_variables=False,
@@ -211,31 +249,39 @@ def set_telemetry_enabled(enabled: bool) -> None:
         return
 
     if not _sentry_started and _sentry_release is not None:
-        _start_sentry(_sentry_release)
+        _start_sentry(_sentry_release, _sentry_dist)
 
 
-def init_sentry(release: str, development: bool, enabled: bool = True) -> None:
+def init_sentry(
+    release: str,
+    development: bool,
+    enabled: bool = True,
+    dist: str | None = None,
+) -> None:
     """按运行环境和用户配置初始化后端 Sentry。
 
     Args:
         release: 当前主程序版本号。
         development: 是否为开发环境，开发环境不上报任何数据。
         enabled: 用户配置的匿名遥测开关。
+        dist: 当前源码提交或构建标识。
     """
 
-    global _sentry_release
+    global _sentry_dist, _sentry_release
 
     # 开发环境不记录版本号，后续遥测开关变更同样不会启动 Sentry
     if development:
         return
 
     _sentry_release = release
+    _sentry_dist = dist
     set_telemetry_enabled(enabled)
 
 
 __all__ = [
     "init_sentry",
     "is_telemetry_enabled",
+    "resolve_sentry_dist",
     "sanitize_event",
     "set_telemetry_enabled",
 ]

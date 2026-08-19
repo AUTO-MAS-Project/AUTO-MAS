@@ -42,6 +42,7 @@ import httpx
 
 from app.core import Config
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 logger = get_logger("米游社扫码登录")
 
@@ -164,6 +165,7 @@ async def create_qr_login(proxy: str | None = None) -> dict:
             )
             data = resp.json()
         if not isinstance(data, dict):
+            logger.error("创建二维码响应格式无效")
             return {"error": "服务器返回空响应，无法创建二维码"}
 
         qr_data = data.get("data")
@@ -177,18 +179,28 @@ async def create_qr_login(proxy: str | None = None) -> dict:
             return {"error": message if isinstance(message, str) and message else "创建二维码失败"}
 
         if not isinstance(qr_data, dict):
+            logger.error("创建二维码数据格式无效")
             return {"error": "服务器返回空响应，无法创建二维码"}
         qr_url = qr_data.get("url", "")
         ticket = qr_data.get("ticket", "")
 
         if not qr_url or not ticket:
+            logger.error("创建二维码响应缺少必要字段")
             return {"error": "返回数据缺少二维码 url 或 ticket"}
 
         logger.info("QR 创建成功")
         return {"ticket": ticket, "qr_url": qr_url, "device": device}
-    except Exception as e:
-        logger.error(f"创建扫码登录失败: {e}")
-        return {"error": str(e)}
+    except (httpx.HTTPError, OSError) as e:
+        logger.warning(
+            format_exception_reason(e, stage="创建扫码登录网络请求失败")
+        )
+        return {"error": "创建二维码网络请求失败，请检查网络或代理设置"}
+    except ValueError:
+        logger.exception("创建扫码登录响应解析异常")
+        return {"error": "二维码响应解析失败"}
+    except Exception:
+        logger.exception("创建扫码登录程序异常")
+        return {"error": "创建二维码失败，请稍后重试"}
 
 
 async def check_qr_status(
@@ -238,6 +250,7 @@ async def check_qr_status(
         if qr_data is None:
             return {"status": "Expired", "message": QR_EXPIRED_MESSAGE}
         if not isinstance(qr_data, dict):
+            logger.error("二维码状态响应格式无效")
             return {"status": "Error", "error": "二维码状态响应格式无效"}
 
         status = qr_data.get("status")
@@ -271,16 +284,25 @@ async def check_qr_status(
             if status == "Expired":
                 return {"status": status, "message": QR_EXPIRED_MESSAGE}
             return {"status": status, "message": "登录已取消"}
+        logger.error("收到未知扫码状态")
         return {
             "status": "Error",
             "error": f"未知扫码状态: {status}",
         }
-    except ValueError as e:
-        logger.error(f"解析扫码状态 JSON 失败: {e}")
+    except (httpx.HTTPError, OSError) as e:
+        logger.warning(
+            format_exception_reason(e, stage="查询扫码状态网络请求失败")
+        )
+        return {
+            "status": "Error",
+            "error": "查询二维码状态网络请求失败，请检查网络或代理设置",
+        }
+    except ValueError:
+        logger.exception("解析扫码状态 JSON 失败")
         return {"status": "Error", "error": "响应解析失败"}
-    except Exception as e:
-        logger.error(f"查询扫码状态失败: {e}")
-        return {"status": "Error", "error": str(e)}
+    except Exception:
+        logger.exception("查询扫码状态程序异常")
+        return {"status": "Error", "error": "查询二维码状态失败，请稍后重试"}
 
 
 def _extract_cookie_payload(payload: object) -> dict[str, str]:

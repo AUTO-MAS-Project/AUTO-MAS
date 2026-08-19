@@ -33,6 +33,7 @@ import httpx
 from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
@@ -464,6 +465,36 @@ def _decorate_provider_run(
     )
 
 
+def _is_expected_provider_exception(error: Exception) -> bool:
+    """判断可预期的凭据、上游或网络失败。"""
+
+    if isinstance(
+        error,
+        (ValueError, httpx.HTTPError, TimeoutError, ConnectionError),
+    ):
+        return True
+    if not isinstance(error, RuntimeError):
+        return False
+
+    message = str(error).lower()
+    return any(
+        hint in message
+        for hint in (
+            "token",
+            "cookie",
+            "凭据",
+            "登录",
+            "风控",
+            "请求",
+            "接口",
+            "网络",
+            "offline",
+            "timeout",
+            "timed out",
+        )
+    )
+
+
 async def _run_provider(
     provider: _GameSignProvider,
     token: str,
@@ -476,14 +507,23 @@ async def _run_provider(
     try:
         run = await provider.runner(token, account_name, account_uid)
     except Exception as e:
-        logger.warning(f"[{account_name}] {provider.log_name}签到异常: {e}")
+        expected = _is_expected_provider_exception(e)
+        reason = format_exception_reason(
+            e,
+            stage=f"{provider.log_name}签到失败",
+            include_message=expected,
+        )
+        if expected:
+            logger.warning(f"[{account_name}] {reason}")
+        else:
+            logger.exception(f"{provider.log_name}签到程序异常")
         return _ProviderRun(
             results=_provider_error_results(
                 provider,
                 platforms=fallback_platforms,
                 account_name=account_name,
                 account_uid=account_uid,
-                reason=str(e),
+                reason=reason,
             ),
             platforms=fallback_platforms,
         )
