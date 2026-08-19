@@ -62,12 +62,14 @@ description: >-
 
 `ok-script` 是脚本大类，不是单一专项。当前至少区分 `Okww` 与 `OkNte`；家族级原则可以复用，但 CLI、配置目录、原生 GUI 和任务语义必须逐子项目确认。以下内容只约束 Okww，不自动约束 OkNte。
 
+配置来源模式按专项需要选择，并不是统一强制三态：Okww 采用 **脚本 / 用户 / 直控** 三态，General 采用 **用户 / 直控** 两态，MaaEnd 采用脚本 / 用户两态，M9A 不使用这套来源模式。新专项应先确认真实配置 owner，不要为了界面或术语对齐机械增加“直控”或第三种状态。
+
 Okww 已落地为 `ok-script` 专项，当前不是表单化 JSON 编辑器方案：
 
-- 自动代理使用 `ok-ww.exe -t N -e`，MAS 只开放任务 `1` 和 `7`，并覆盖 DailyTask 的少量高频字段。
+- 自动代理使用 `ok-ww.exe -t N -e`，MAS 只开放任务 `1` 和 `7`；少量高频字段由独立的快速配置面板控制。
 - 配置使用 `ScriptConfig.py` 无参数启动本体 GUI，通过 WebSocket 遮罩会话保存。
-- 用户配置来源为脚本/用户/直控：脚本归 `Default/ConfigFile`，用户归 `{userId}/ConfigFile`，直控优先读取脚本原有 `working/configs`。
-- `Info.IfQuickConfig` 控制是否由 MAS 覆盖 DailyTask 高频字段；关闭时不维护脚本全量配置。
+- 用户配置来源为脚本/用户/直控：脚本归 `Default/ConfigFile`，用户归 `{userId}/ConfigFile`，直控直接读取脚本原有 `working/configs`。
+- `Info.IfQuickConfig` 是独立覆盖层开关，控制快速配置面板是否覆盖 DailyTask 高频字段；关闭时使用来源配置中的完整任务设置。
 - `Game.Enabled` 是当前 UI/运行时的游戏启停总开关；不要从兼容字段推断独立启动或关闭行为。
 - ok-ww 根目录必须同时存在 `ok-ww.exe` 与 `data/apps/ok-ww/app.json`。
 - Electron 一键导入与手动选择必须使用相同哨兵；鸣潮保存启动器路径，后端再解析实际客户端路径。

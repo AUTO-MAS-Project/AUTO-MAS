@@ -11,8 +11,8 @@
 | MAS 任务 | `1 = DailyTask`、`7 = MultiAccountDailyTask`；旧值 `2` 自动纠正为 `7` |
 | 配置 UI | `ScriptConfig.py` 无参数启动本体 GUI，前端用 WebSocket 遮罩会话控制保存 |
 | 配置来源 | `脚本`、`用户`、`直控` 三级；旧值 `简洁`/`详细` 读取时迁移为 `脚本`/`用户` |
-| MAS 配置归属 | `脚本`：`data/{scriptId}/Default/ConfigFile`；`用户`：`data/{scriptId}/{userId}/ConfigFile`；`直控`优先读取 Okww 脚本原有 working 配置 |
-| 快速配置 | `Info.IfQuickConfig` 开启时，MAS 仅用本页高频字段覆盖脚本；关闭时保留配置文件中的完整任务设置 |
+| 脚本配置归属 | `脚本`：`data/{scriptId}/Default/ConfigFile`；`用户`：`data/{scriptId}/{userId}/ConfigFile`；`直控`直接读取 Okww 脚本原有 working 配置 |
+| 快速配置 | 独立于三态来源；`Info.IfQuickConfig` 开启时，仅用快速配置面板的高频字段覆盖当前脚本配置；关闭时保留来源配置中的完整任务设置 |
 | 运行时配置 | 自动代理前备份脚本原有 `working/configs`；按用户来源加载或覆盖；任务成功、失败、取消、异常后恢复原目录 |
 | 路径发现 | Electron 只发现 Okww 官方资源与官方启动器；不读取、不保存、不接管 WeGame 侧资源 |
 | 游戏控制 | `Game.Enabled` 为总开关：任务前启动或接管，结束、失败和异常时关闭 |
@@ -28,14 +28,14 @@
 4. `AutoProxyTask.set_okww()`：
    - 设置 `app.json` 的 `auto_start`、`current_profile`、`update_method`。
    - `脚本`/`用户`来源将对应 MAS 配置原子同步到 working 配置目录；`直控`先恢复脚本原配置。
-   - 启用快速配置时，再覆盖 `DailyTask.json` 的 MAS 管理字段；始终补齐 `Basic Options.json` 的退出设置。
+   - 启用快速配置时，再用快速配置面板的字段覆盖 `DailyTask.json` 的 MAS 管理字段；始终补齐 `Basic Options.json` 的退出设置。
 5. 使用 `-t {TaskIndex} -e` 启动，并监控 `ok-script.log`。
 6. `final_task()` 保存历史日志和用户运行结果；Manager 解锁、写回用户数据并恢复 working 配置。
 
 ### 配置会话
 
-- 脚本列表的“配置 ok-ww”以脚本 ID 启动 `ScriptConfig`，目标为 `脚本`级共享配置。
-- 用户编辑页以用户 ID 启动 `ScriptConfig`，`脚本`使用共享配置，`用户`使用用户独立配置，`直控`直接打开脚本原生配置。
+- 脚本列表的“配置 ok-ww”以脚本 ID 启动 `ScriptConfig`，目标为脚本级共享配置。
+- 用户编辑页以用户 ID 启动 `ScriptConfig`，`脚本`使用共享脚本配置，`用户`使用用户独立脚本配置，`直控`直接打开脚本原生配置。
 - `ScriptConfigTask` 只有在 `脚本`/`用户`来源时才把 MAS 配置复制到 working 目录并保存回 MAS 目录；`直控`不另建一份全量 MAS 配置，保存由 Okww 原生 GUI 写回脚本配置。
 - Manager 始终负责备份和恢复 OK-WW 原 working 配置，避免配置会话污染本体原状态。
 - 前端遮罩必须处理启动失败、WebSocket 错误、任务完成、主动保存、超时和组件卸载；清理 UI 订阅不能替代停止后端任务。
@@ -65,7 +65,7 @@ data/apps/ok-ww/app.json
 ### 用户配置
 
 - `Info.Mode`：`脚本` / `用户` / `直控`（旧 `简洁` / `详细` 仅用于兼容迁移）
-- `Info.IfQuickConfig`：是否启用快速配置；启用时 MAS 高频字段覆盖脚本，关闭时使用来源配置中的完整任务设置
+- `Info.IfQuickConfig`：是否启用快速配置覆盖层；启用时快速配置面板的高频字段覆盖当前脚本配置，关闭时使用来源配置中的完整任务设置
 - `Info.Resource`：`官服` / `国际服`，映射到 OK-WW `China` / `Global` profile
 - `Task.TaskIndex`：仅 `1` / `7`
 - DailyTask 高频字段：体力用途、无音区/凝素序号、材料、梦魇巢穴、附加任务
@@ -116,7 +116,7 @@ data/apps/ok-ww/app.json
 - [ ] 脚本/用户/直控模式映射到正确配置 owner
 - [ ] 旧简洁/详细配置读取后迁移且不改变用户实际来源
 - [ ] 快速配置开关真实控制是否覆盖 DailyTask 高频字段
-- [ ] 直控优先读取脚本原配置，并在任务前后保留原配置快照
+- [ ] 直控直接读取脚本原配置，并在任务前后保留原配置快照
 - [ ] 自动发现与手动选择校验同一组 ok-ww 哨兵
 - [ ] 启动器路径与实际游戏进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile

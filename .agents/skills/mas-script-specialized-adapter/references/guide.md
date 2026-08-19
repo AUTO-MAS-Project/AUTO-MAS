@@ -8,15 +8,17 @@
 
 参考 PR：[#133 MaaEnd](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/133)、[#152](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/152)、[#154 M9A](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/154)、[#727aafb SRC 风格](https://github.com/AUTO-MAS-Project/AUTO-MAS/commit/727aafbaf5e21fc81e85e795a5cd5b77ac508e60)。**实现必遵守**：[adapter-code-norms.md](./adapter-code-norms.md)。**SRC**：[examples-src.md](./examples-src.md)。**MFAA**：[examples-m9a.md](./examples-m9a.md)。**MXU**：[examples-maaend.md](./examples-maaend.md)。**ok-script**：[examples-okww.md](./examples-okww.md)（含 [实现规范](./examples-okww.md#实现规范okww-必遵守)）。
 
-### 配置来源的三级语义
+### 配置来源模式与快速配置边界
 
-专项适配不再把“简洁/详细”当作通用产品概念。涉及脚本原生配置时，优先使用 **脚本 / 用户 / 直控** 三级选择器：
+专项适配不再把“简洁/详细”当作通用产品概念。配置来源模式按专项需要选择，并不是统一强制三态：Okww 采用 **脚本 / 用户 / 直控** 三态，General 采用 **用户 / 直控** 两态，MaaEnd 采用脚本 / 用户两态，M9A 不使用这套来源模式。新专项应先确认真实配置 owner，不要为了对齐其他专项机械增加第三态。
 
-- **脚本**：使用脚本级共享的 MAS 适配配置，适合所有用户共用的一套高频设置。
-- **用户**：使用当前用户的 MAS 适配配置，适合高频设置存在差异的用户。
-- **直控**：优先读取脚本原有配置，复杂配置由脚本原生 GUI 维护；不因为“直控”就复制一份 MAS 全量配置。
+当专项采用三态时，三种来源的语义如下：
 
-专项可以按上游能力特调这三种来源，但不能把本规则未经确认地套到 MaaEnd、MAA、OkNte 或其他模块。若专项提供“快速配置”，开关开启时快速配置只覆盖该专项明确拥有的高频字段；关闭时应保留脚本原生完整配置。运行前必须备份原配置，成功、失败、取消、超时和异常路径都要恢复或按已确认策略回写。
+- **脚本**：使用脚本级共享配置，所有用户共用同一份脚本配置。
+- **用户**：使用当前用户的独立配置，与脚本级配置隔离。
+- **直控**：直接使用脚本原有配置，由脚本原生 GUI 维护；不创建或回写 MAS 独立配置。
+
+三态只决定脚本配置的 owner。若专项提供“快速配置”，它是独立的覆盖层：开启时只用快速配置面板中的高频字段覆盖当前脚本配置；关闭时保留当前脚本配置的完整任务设置。专项可以按上游能力特调来源模式，但不能把三态规则未经确认地套到 MaaEnd、MAA、OkNte 或其他模块。运行前必须备份原配置，成功、失败、取消、超时和异常路径都要恢复或按已确认策略回写。
 
 ---
 

@@ -131,7 +131,7 @@
                   :options="okwwConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="isSaving"
-                  alert-message="脚本使用脚本级共享配置，用户使用当前用户配置；直控优先读取 Okww 原有配置。快速配置开启后，仅覆盖本页暴露的高频任务字段。"
+                  alert-message="脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用 Okww 原有配置。快速配置为独立覆盖层，仅覆盖本页暴露的高频任务字段。"
                   @change="handleConfigModeChange"
                 />
               </a-col>
@@ -141,7 +141,7 @@
                     <span class="form-label">
                       是否启用快速配置
                       <a-tooltip
-                        title="开启后，启动 OK-WW 时会用下方高频任务配置覆盖脚本；关闭后保留脚本配置中的完整任务设置"
+                        title="开启后，使用下方快速配置面板中的高频任务字段覆盖当前脚本配置；关闭后保留当前脚本配置中的完整任务设置"
                       >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
@@ -529,21 +529,21 @@ const okwwConfigModeOptions: Array<{
     label: '脚本',
     value: '脚本',
     title: '脚本',
-    description: '使用脚本级共享的 MAS 高频配置。',
+    description: '使用脚本级共享配置，所有用户共用。',
     icon: 'file',
   },
   {
     label: '用户',
     value: '用户',
     title: '用户',
-    description: '为当前用户保存独立的 MAS 高频配置。',
+    description: '使用当前用户独立配置，与脚本配置隔离。',
     icon: 'database',
   },
   {
     label: '直控',
     value: '直控',
     title: '直控',
-    description: '优先读取 Okww 原有配置，复杂设置交给脚本 GUI。',
+    description: '直接使用 Okww 原有配置，复杂设置交给脚本 GUI。',
     icon: 'setting',
   },
 ]
