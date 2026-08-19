@@ -89,8 +89,11 @@
             @clear-error="clearOverviewError"
           />
 
-          <HomeStarRailOverview
+          <HomeSraActivityOverview
             v-else-if="moduleKey === 'starrail'"
+            title="崩坏：星穹铁道活动信息"
+            accent="#62c4e7"
+            empty-text="暂无进行中的星穹铁道活动"
             :loading="loading"
             :overview="starRailData"
             @refresh="fetchOverviewData"
@@ -161,7 +164,6 @@ import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
 import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
-import HomeStarRailOverview from '@/views/home/components/HomeStarRailOverview.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
