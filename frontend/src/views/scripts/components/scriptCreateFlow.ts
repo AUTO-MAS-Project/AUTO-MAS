@@ -1,6 +1,7 @@
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
+import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
@@ -103,6 +104,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: hsrIcon,
   },
+  {
+    value: 'BetterGI',
+    title: 'BetterGI 脚本',
+    description: '更好的原神 · 自动拾取/剧情/钓鱼等全自动化',
+    keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
+    group: 'specialized',
+    icon: bettergiIcon,
+  },
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
@@ -136,6 +145,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   Okww: 'okww',
   OkNte: 'oknte',
   HSR: 'hsr',
+  BetterGI: 'bettergi',
   General: 'general',
 }
 

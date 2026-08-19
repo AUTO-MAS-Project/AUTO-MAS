@@ -34,6 +34,7 @@ from .config import (
     OkwwConfig,
     OkNteConfig,
     HSRConfig,
+    BetterGIConfig,
 )
 from app.services import System
 from app.models.task import (
@@ -53,6 +54,7 @@ from app.task import (
     OkwwManager,
     OkNteManager,
     HSRManager,
+    BetterGIManager,
 )
 from app.utils.constants import POWER_SIGN_MAP
 
@@ -205,6 +207,8 @@ class Task(TaskExecuteBase):
                 task_item = M9AManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], HSRConfig):
                 task_item = HSRManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], BetterGIConfig):
+                task_item = BetterGIManager(script_item)
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"

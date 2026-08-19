@@ -320,6 +320,12 @@
                 alt="HSR"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'BetterGI'"
+                src="@/assets/bettergi.ico"
+                alt="BetterGI"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -347,7 +353,9 @@
                                 ? 'ok-nte脚本'
                                 : script.type === 'HSR'
                                   ? 'HSR脚本'
-                                  : '通用脚本'
+                                  : script.type === 'BetterGI'
+                                    ? 'BetterGI脚本'
+                                    : '通用脚本'
                   }}
                 </span>
                 <span class="script-users">
@@ -454,6 +462,17 @@
             <div class="type-info">
               <div class="type-title">HSR 脚本</div>
               <div class="type-description">崩坏：星穹铁道 三月七 / SRA 双脚本适配</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="BetterGI" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/bettergi.ico" alt="BetterGI" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">BetterGI 脚本</div>
+              <div class="type-description">更好的原神 · 自动拾取/剧情/钓鱼等全自动化</div>
             </div>
           </div>
         </a-radio-button>
@@ -698,6 +717,7 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   MaaEnd: 'maaend',
   M9A: 'm9a',
   HSR: 'hsr',
+  BetterGI: 'bettergi',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
@@ -1097,6 +1117,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/oknte`)
   } else if (script.type === 'HSR') {
     router.push(`/scripts/${script.id}/users/add/hsr`)
+  } else if (script.type === 'BetterGI') {
+    router.push(`/scripts/${script.id}/users/add/bettergi`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -1121,6 +1143,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
     } else if (script.type === 'HSR') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
+    } else if (script.type === 'BetterGI') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/bettergi`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }

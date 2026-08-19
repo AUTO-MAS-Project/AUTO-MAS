@@ -90,6 +90,7 @@ SCRIPT_BOOK = {
     "OkwwConfig": OkwwConfig,
     "OkNteConfig": OkNteConfig,
     "HSRConfig": HSRConfig,
+    "BetterGIConfig": BetterGIConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -100,6 +101,7 @@ USER_BOOK = {
     "OkwwConfig": OkwwUserConfig,
     "OkNteConfig": OkNteUserConfig,
     "HSRConfig": HSRUserConfig,
+    "BetterGIConfig": BetterGIUserConfig,
 }
 
 
