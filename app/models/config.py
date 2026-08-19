@@ -1206,11 +1206,22 @@ class MaaEndConfig(ConfigBase):
         root_path_value = str(self.get("Info", "Path")).strip()
         resource_config_path = Path(root_path_value) / "config/mxu-MaaEnd.json"
         if root_path_value and resource_config_path.is_file():
-            try:
-                await self.load_resource()
-            except Exception as error:
-                logger.warning(f"MaaEnd 动态资源加载失败: {error}")
+            await self.preload_resource()
         return is_dirty
+
+    async def preload_resource(self) -> None:
+        """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
+
+        from app.task.MaaEnd.resource_loader import try_load_maaend_options
+
+        resource = await asyncio.to_thread(
+            try_load_maaend_options,
+            Path(self.get("Info", "Path")),
+        )
+        if resource is None:
+            return
+        for user_config in self.UserData.values():
+            user_config.cache_maaend_resource(resource)
 
     async def load_resource(self, force_reload: bool = False) -> dict[str, Any]:
         """加载并缓存 MaaEnd 动态资源。"""
