@@ -10,12 +10,7 @@ import draggable from 'vuedraggable'
 import LogPatternRule from './LogPatternRule.vue'
 import LogPatternDebugModal from './LogPatternDebugModal.vue'
 import LogPatternDocsModal from '../LogPatternDocsModal.vue'
-import {
-  usePushLogPatterns,
-  type PushLogPattern,
-  type PushLogPatternType,
-} from '../composables/usePushLogPatterns'
-import { useLogPatternDebug } from '../composables/useLogPatternDebug'
+import { usePushLogPatterns, type PushLogPattern, type PushLogPatternType } from '../composables/usePushLogPatterns'
 
 const props = defineProps<{
   enabled: boolean
@@ -76,7 +71,6 @@ const onDragEnd = () => {
 }
 
 // 调试弹窗
-const debug = useLogPatternDebug({ logPath: () => props.logPath })
 const activePatternForDebug = ref<PushLogPattern | null>(null)
 const debugModalOpen = ref(false)
 
@@ -85,7 +79,6 @@ const openDebug = (idx: number) => {
   if (!pattern) return
   activePatternForDebug.value = pattern
   debugModalOpen.value = true
-  debug.open(pattern)
 }
 
 // 文档弹窗
@@ -104,7 +97,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
       <h3>
         推送配置
         <a-tooltip
-          title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，可添加多条规则，每条规则独立执行，统一推送。"
+          title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，日志单行按规则顺序取首个命中的规则匹配提取，统一推送。"
         >
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
