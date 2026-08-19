@@ -425,7 +425,7 @@ async def miyoushe_sign_in(
     stuid = _get_stuid(cookies)
 
     if not stuid:
-        logger.error("Cookie 缺少 UID 字段 (stuid/ltuid/account_id)")
+        logger.warning("Cookie 缺少 UID 字段 (stuid/ltuid/account_id)")
         return [{
             "account": "未知/米游社",
             "game": "米游社",
@@ -456,7 +456,7 @@ async def miyoushe_sign_in(
                 _ensure_uid_aliases(effective_cookies, derived_uid)
             updated_cookie = _build_cookie_str(effective_cookies)
         except Exception as e:
-            logger.error(f"从 stoken 派生 cookie_token 失败: {e}")
+            logger.warning(f"从 stoken 派生 cookie_token 失败: {e}")
             return [{
                 "account": f"{stuid}/米游社",
                 "game": "米游社",
@@ -467,7 +467,7 @@ async def miyoushe_sign_in(
             }]
     elif cookies.get("stoken"):
         # 策略 4: stoken_v1 无 mid，无法派生
-        logger.error("仅有 v1 stoken 但缺少 mid，无法派生 cookie_token，请补充完整 cookie")
+        logger.warning("仅有 v1 stoken 但缺少 mid，无法派生 cookie_token，请补充完整 cookie")
         return [{
             "account": f"{stuid}/米游社",
             "game": "米游社",
@@ -477,7 +477,7 @@ async def miyoushe_sign_in(
             "reason": "缺少 cookie_token 和 mid，无法完成认证",
         }]
     else:
-        logger.error("Cookie 缺少认证字段 (cookie_token 或 stoken)")
+        logger.warning("Cookie 缺少认证字段 (cookie_token 或 stoken)")
         return [{
             "account": f"{stuid}/米游社",
             "game": "米游社",
@@ -506,7 +506,7 @@ async def miyoushe_sign_in(
             "reason": "账号被风控，接口返回异常",
         }]
     except Exception as e:
-        logger.error(f"获取米游社游戏角色失败: {e}")
+        logger.warning(f"获取米游社游戏角色失败: {e}")
         await report_credential_update()
         return [{
             "account": f"{stuid}/米游社",
@@ -605,7 +605,7 @@ async def miyoushe_sign_in(
                 "reward": "",
                 "reason": str(e),
             })
-            logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
+            logger.warning(f"{account} {game_cfg['name']} 签到异常: {e}")
 
         # 间隔防风控（对齐 MihoyoBBSTools：随机 2-8 秒）
         if index < len(roles) - 1:
@@ -809,7 +809,7 @@ async def _do_sign(
                     cookie = _build_cookie_str(parsed)
                     refreshed = True
                 except Exception as e:
-                    logger.error(f"stoken 刷新失败: {e}")
+                    logger.warning(f"stoken 刷新失败: {e}")
 
             # 方式 2: 用 cookie_token_v2 替换 cookie_token
             if not refreshed and has_v2 and attempt < CAPTCHA_MAX_RETRIES:
@@ -855,7 +855,7 @@ async def _do_sign(
                 await asyncio.sleep(delay)
                 continue
             else:
-                logger.error(
+                logger.warning(
                     f"{account} {game_cfg['name']} 验证码重试耗尽，签到失败"
                 )
                 return _SignOutcome({
@@ -890,7 +890,7 @@ async def _do_sign(
 
         # ---- 其他失败 ----
         message = rsp.get("message", "未知错误")
-        logger.error(f"{account} {game_cfg['name']} 签到失败: {message}")
+        logger.warning(f"{account} {game_cfg['name']} 签到失败: {message}")
         return _SignOutcome({
             "account": account,
             "game": game_cfg["name"],
