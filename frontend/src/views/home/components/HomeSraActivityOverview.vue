@@ -72,7 +72,9 @@
         <div class="version-info-time">
           <ClockCircleOutlined class="version-info-time-icon" />
           <span class="version-info-time-label">版本时间：</span>
-          <span class="version-info-time-value">{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span>
+          <span class="version-info-time-value"
+            >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
+          >
         </div>
       </div>
 
@@ -107,6 +109,7 @@
         <div class="activity-overlay" />
         <div class="activity-content">
           <div class="activity-name">{{ activity.name }}</div>
+          <div v-if="activity.description" class="activity-desc">{{ activity.description }}</div>
           <div class="activity-meta">
             <a-statistic-countdown
               :value="getCountdownValue(activity.endTime)"
@@ -114,7 +117,7 @@
               :value-style="activityCountdownStyle"
               @finish="emit('refresh')"
             />
-            <div class="activity-end-time">{{ formatTime(activity.endTime) }}</div>
+            <div class="activity-end-time">结束于 {{ formatTime(activity.endTime) }}</div>
           </div>
         </div>
       </div>
@@ -157,7 +160,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{ refresh: [] }>()
 
-const MAX_VISIBLE_ACTIVITIES = 4
 const failedImageNames = ref(new Set<string>())
 const failedVersionCover = ref(false)
 
@@ -177,19 +179,20 @@ const activeActivities = computed(() => {
       )
     })
     .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
-    .slice(0, MAX_VISIBLE_ACTIVITIES)
 })
 
 const versionCover = computed(() => {
   if (failedVersionCover.value) return ''
-  return props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
+  return (
+    props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
+  )
 })
 
 const activityPlain = computed(() => props.plainActivities || !versionCover.value)
 
 const getActivityImage = (activity: SraActivityOverview['activities'][number]) => {
   if (failedImageNames.value.has(activity.name)) return ''
-  return activity.cover || ''
+  return activity.cover || versionCover.value || ''
 }
 
 const handleImageError = (activityName: string) => {
@@ -464,21 +467,31 @@ const formatTime = (value: string) =>
 
 /* ---------- 活动列表（有封面：深色封面卡片） ---------- */
 .activity-list {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
   gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
 .activity-item {
   min-width: 0;
+  width: 266px;
+  flex-shrink: 0;
   height: 150px;
   position: relative;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
   border-radius: 10px;
+  scroll-snap-align: start;
   background:
-    radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--sra-accent) 16%, transparent), transparent 55%),
+    radial-gradient(
+      ellipse at 20% 0%,
+      color-mix(in srgb, var(--sra-accent) 16%, transparent),
+      transparent 55%
+    ),
     linear-gradient(150deg, #14203a 0%, #0b1220 60%, #101a2e 100%);
   transition:
     transform 0.25s ease,
@@ -554,8 +567,44 @@ const formatTime = (value: string) =>
   white-space: nowrap;
 }
 
+.activity-desc {
+  max-height: 0;
+  overflow: auto;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  text-shadow:
+    0 0 3px #000,
+    0 0 6px #000;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.3s ease,
+    margin 0.3s ease;
+  margin-bottom: 0;
+  scrollbar-width: none;
+}
+
+.activity-item:hover .activity-desc {
+  max-height: 60px;
+  opacity: 1;
+  margin-bottom: 8px;
+}
+
 /* ---------- 活动列表（无封面：MAA 风格浅色边框卡片） ---------- */
+.activity-list.is-plain {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
 .activity-list.is-plain .activity-item {
+  min-width: 0;
+  width: 240px;
+  flex-shrink: 0;
   height: auto;
   min-height: 82px;
   align-items: center;
@@ -563,6 +612,7 @@ const formatTime = (value: string) =>
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   background: transparent;
+  scroll-snap-align: start;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease;
@@ -605,10 +655,21 @@ const formatTime = (value: string) =>
   color: var(--ant-color-text-secondary);
 }
 
-@media (max-width: 1240px) {
-  .activity-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+.activity-list.is-plain .activity-desc {
+  max-height: 0;
+  overflow: hidden;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.3s ease;
+}
+
+.activity-list.is-plain .activity-item:hover .activity-desc {
+  max-height: 60px;
+  opacity: 1;
 }
 
 @media (max-width: 800px) {
@@ -635,15 +696,15 @@ const formatTime = (value: string) =>
   .version-info-right {
     text-align: left;
   }
-
-  .activity-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 560px) {
-  .activity-list {
-    grid-template-columns: 1fr;
+  .activity-item {
+    width: 180px;
+  }
+
+  .activity-list.is-plain .activity-item {
+    width: 200px;
   }
 }
 </style>
