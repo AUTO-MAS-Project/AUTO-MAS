@@ -79,6 +79,7 @@
     "@ant-design/icons-vue": "^7.0.1",
     "@eslint/js": "^9.37.0",
     "@guolao/vue-monaco-editor": "^1.6.0",
+    "@sentry/vite-plugin": "^5.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/adm-zip": "^0.5.8",
     "@types/markdown-it": "^14.1.2",
