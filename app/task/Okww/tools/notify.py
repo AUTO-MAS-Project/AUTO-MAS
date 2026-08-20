@@ -98,6 +98,9 @@ async def push_notification(
         f"未完成数: {message['uncompleted_count']}\n\n"
         f"{message['result']}"
     )
+    # 通知详情追加采集的推送日志（任务进程信息，与 HTML 模板的 push_log 区块一致）
+    if message.get("push_log"):
+        message_text += f"\n\n{message['push_log']}"
     message_html = Config.notify_env.get_template("general_result.html").render(
         message
     )

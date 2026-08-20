@@ -35,8 +35,16 @@ from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_runnin
 from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
+from app.utils.i18n import PoTranslator
+from app.log_box import log_box
 from app.task.general.tools import execute_script_task
 
+from .push_log import (
+    OKWW_PUSH_RULES,
+    OKWW_REL_I18N_PO,
+    OKWW_SUPPLEMENT_PO,
+    okww_resolve,
+)
 from .tools import push_notification
 
 logger = get_logger("OK-WW 自动代理")
@@ -254,6 +262,23 @@ class AutoProxyTask(TaskExecuteBase):
             self.check_log,
         )
 
+        # ── log_box：日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
+        # 采集 ok-script.log 会话内新增内容；open 挂前置翻译，close 挂后置去重
+        self.log_collect = log_box.get_collect(
+            paths=[self.script_log_path],
+            sink=self._append_push_log,
+            start_from_end=True,
+        )
+        # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
+        self.log_translator = (
+            PoTranslator()
+            .load([OKWW_REL_I18N_PO], base=self.script_root_path)
+            .load_supplement([OKWW_SUPPLEMENT_PO])
+        )
+        self.log_collect.open(self.log_translator.translate)
+        for match_re, expr, log_type in OKWW_PUSH_RULES:
+            self.log_collect.collect(match_re, expr, log_type)
+
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
@@ -319,6 +344,10 @@ class AutoProxyTask(TaskExecuteBase):
             tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
         logger.info(f"OK-WW 运行参数配置完成: 自动代理")
+
+    def _append_push_log(self, log_type: str, text: str) -> None:
+        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+        self.cur_user_item.push_log.append((log_type, text))
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -538,6 +567,11 @@ class AutoProxyTask(TaskExecuteBase):
             with suppress(Exception):
                 await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
+
+        # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
+        with suppress(Exception):
+            self.log_collect.close(okww_resolve)
+            self.log_translator.clear()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         statistic_paths: list[Path] = []
