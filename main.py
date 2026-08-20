@@ -69,15 +69,15 @@ def is_admin() -> bool:
 def restart_as_admin():
     """以管理员权限重启当前进程"""
     if sys.platform == 'win32':
-        import subprocess
-        cmdline = subprocess.list2cmdline(sys.argv)
         executable = sys.executable.removesuffix('.exe')
         executable += '.exe'
-        result = ctypes.windll.shell32.ShellExecuteW(None, 'runas', 'wt.exe', f'"{executable}" {cmdline}', None, 1)
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None, 'runas', 'wt.exe', f'"{executable}" {os.path.realpath(sys.argv[0])}', None, 1)
         if result > 32:
             sys.exit(0)
         else:
-            result = ctypes.windll.shell32.ShellExecuteW(None, 'runas', executable, cmdline, None, 1)
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", executable, os.path.realpath(sys.argv[0]), None, 1)
             sys.exit(result)
 
 
@@ -109,7 +109,6 @@ def main():
         os.environ["AUTO_MAS_ENV"] = "development"
     
     if not (is_admin() or is_hosted_launch() or development_environment):
-    # if not (is_admin() or is_hosted_launch()):
         restart_as_admin()
 
     from app.core import Config
