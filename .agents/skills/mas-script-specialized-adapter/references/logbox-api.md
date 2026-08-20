@@ -75,7 +75,6 @@ col = log_box.get_collect(
   - `任何时刻`：任务结束即推送整份报告
   - `仅失败时`：**仅当任务存在未完成用户时**推送整份报告
 
-**okww 专项约定**：节点级失败（如 `❌ 失败: 先约电台`）**始终展示**——`LogType` 用 `NORMAL`、状态由文本「❌ 失败:」体现，不被「未完成用户」过滤；推送时机由 `SendTaskResultTime` 全局控制，**不做专项 LogType/推送逻辑**（与上游语义保持一致）。
 
 ## Rule 编程式构建
 
@@ -166,6 +165,28 @@ def resolve(lines):
 
 > 节点级失败用 `LogType.NORMAL` + 文本「❌ 失败:」始终展示；推送时机由全局
 > `SendTaskResultTime` 控制（见上文「日志类型与推送时机语义」）。
+
+## 推送落地：聚合与追加（通用工具）
+
+push_log 落进 `cur_user_item.push_log`（`list[(log_type, text)]`）后，后续聚合与
+追加统一走 `app/tools/push_log.py`，专项**不要**自行拼接实现：
+
+- `build_push_log_text(users, has_uncompleted)`：聚合各用户 push_log 为报告文本，
+  每条条目独占一行；「失败」类型条目仅在任务存在未完成用户时纳入（与 MAS 原生
+  推送策略一致）。专项在 `manager.final_task` 汇总时调用。
+- `append_push_log(message_text, push_log, separator="\n")`：把推送日志追加到通知
+  正文，**默认以单个换行分隔**；专项（如 `tools/notify.py`）按默认调用即可，无需
+  传 `separator`，push_log 为空时原样返回正文。
+
+```python
+# manager.final_task：聚合后放入通知消息
+has_uncompleted = len(error_user) + len(wait_user) > 0
+push_log_text = build_push_log_text(self.script_info.user_list, has_uncompleted)
+message = {"push_log": push_log_text, ...}
+
+# tools/notify.py：追加（默认 separator="\n"）
+message_text = append_push_log(message_text, message.get("push_log"))
+```
 
 ## 脚本宿主示例（用户脚本子进程）
 
