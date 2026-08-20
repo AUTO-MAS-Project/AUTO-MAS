@@ -64,6 +64,19 @@ col = log_box.get_collect(
 处理管线：**前置处理（翻译/过滤）→ 匹配与提取均在处理后行 → 后置处理**。
 前置处理器逐行翻译后，规则匹配与提取都作用于翻译后的行，翻译对下游整体生效。
 
+## 与通用脚本 web 配置推送日志的分工（重要）
+
+MAS 有两套日志推送配置面，**保持两套并存、分工明确**，不要互相迁移：
+
+| 方案 | 适配对象 | 规则来源 | 面向 |
+|---|---|---|---|
+| 通用脚本 web 配置推送日志（`PushLogConfig`） | 通用脚本（用户直接编辑） | 前端 UI 可视化配置 | 最终用户 |
+| 通用 log_box | 专项 / 由 MAS 驱动的可编辑 `.py` 脚本 | 代码内建（专项 `push_log.py` / `collect`） | 适配器开发者 / 脚本作者 |
+
+判据：**通用脚本走 web UI 配置，专项才用 log_box 内建**。两者命中后都汇入
+`cur_user_item.push_log`，由 `app/tools/push_log.py` 统一聚合推送。通用侧不要迁去
+log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（会破坏内建纯度）。
+
 ## 日志类型与推送时机语义
 
 **LogType（`collect`/`rule` 的 type 参数，逐条）** 与 **推送任务结果时机（通知设置 `SendTaskResultTime`，全局）** 是两层独立语义（与 MAS 原生推送一致）：
@@ -143,13 +156,15 @@ for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态�
 # 结束时机（如进程关闭判定 / final_task）：col.close(resolve)
 ```
 
-后处理示例：按节点解析最终状态（失败 > 跳过 > 成功），裸节点名 = 开始标记默认成功：
+后处理示例：按节点解析最终状态（失败 > 跳过 > 成功），裸节点名 = 开始标记默认成功
+（需消费并返回 `(log_type, text)` 元组，以保留日志类型）：
 
 ```python
 import re
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
-def resolve(lines):
+def resolve(results):
+    lines = [text for _, text in results]
     order, states = [], {}
     for line in lines:
         m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", line)
@@ -160,7 +175,8 @@ def resolve(lines):
         order.append(node)
         if rank > states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
-    return [f"{states[n][1]}: {n}" for n in order]
+    last_type = {node: log_type for log_type, node in results}
+    return [(last_type.get(node, "普通"), f"{states[n][1]}: {n}") for n in order]
 ```
 
 > 节点级失败用 `LogType.NORMAL` + 文本「❌ 失败:」始终展示；推送时机由全局
