@@ -76,6 +76,7 @@ list/
 # Local dev scripts & logs (本地测试用例，与代码逻辑无关)
 /dev.bat
 /.dev-logs/
+/.dev/
 
 res/docs/ok-series-common-script-report.md
 

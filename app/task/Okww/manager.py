@@ -34,6 +34,7 @@ from app.tools.game_sign_notify import (
 )
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
+from app.tools.push_log import build_push_log_text
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -319,14 +320,8 @@ class OkwwManager(TaskExecuteBase):
                 # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）
                 has_uncompleted = len(error_user) + len(wait_user) > 0
-                push_log_text = "\n".join(
-                    "\n".join(
-                        text
-                        for log_type, text in user.push_log
-                        if log_type != "失败" or has_uncompleted
-                    )
-                    for user in self.script_info.user_list
-                    if user.push_log
+                push_log_text = build_push_log_text(
+                    self.script_info.user_list, has_uncompleted
                 )
                 result = {
                     "title": f"{task_mode}任务报告",
