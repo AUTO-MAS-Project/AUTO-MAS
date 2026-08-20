@@ -27,20 +27,25 @@ from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo
+from app.utils import get_logger, ProcessManager, ProcessInfo, ProcessRunner
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
 
 from .tools import push_notification
+from .tools import account_switch
+from .tools import one_dragon
 
 logger = get_logger("BetterGI 自动代理")
 
 # BetterGI 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 BetterGIScriptEdit.vue 的 BGI_EXE_NAME 保持同步，改这里时需同步改前端
-_BGI_REL_EXE = "BetterGenshinImpact.exe"
-_BGI_REL_LOG_FILE = "log/better-genshin-impact.log"
-_BGI_TRACK_PROCESS_NAME = "BetterGenshinImpact.exe"
+_BGI_REL_EXE = "BetterGI.exe"
+_BGI_TRACK_PROCESS_NAME = "BetterGI.exe"
+# BetterGI 的 Serilog 日志按天滚动，实际文件名为 better-genshin-impact{yyyyMMdd}.log
+# （不存在无日期后缀的 better-genshin-impact.log）
+_BGI_REL_LOG_DIR = "log"
+_BGI_LOG_FILE_PREFIX = "better-genshin-impact"
 
 # ── BetterGI 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # BetterGI 使用 Serilog 文件日志，行格式：
@@ -56,6 +61,20 @@ _BGI_SUCCESS_LOG = "任务结束"
 _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
 _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
+
+# 切换账号单独执行的超时（秒），超时视为失败并继续一条龙
+_BGI_SWITCH_TIMEOUT_SECONDS = 600
+
+# BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
+# TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
+_BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
+    "YuanShen",                     # 官服 / B服（国服）
+    "GenshinImpact",                # 国际服
+    "Genshin Impact Cloud Game",    # 云原神（国际）
+    "Genshin Impact Cloud",         # 云原神（备用进程名）
+)
+# 优雅关闭游戏后等待退出时间（秒），超时未退出则强制结束
+_BGI_GAME_CLOSE_WAIT_SECONDS = 5
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -81,6 +100,7 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: BetterGIUserConfig = self.user_config[self.cur_user_uid]
+        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
         self.cur_user_log: LogRecord | None = None
         self.bettergi_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
@@ -96,13 +116,6 @@ class AutoProxyTask(TaskExecuteBase):
             return "请设置 BetterGI 脚本路径"
         if not (root / _BGI_REL_EXE).is_file():
             return "请设置 BetterGI 脚本路径"
-
-        one_dragon_config = str(
-            self.cur_user_config.get("Task", "OneDragonConfigName") or ""
-        ).strip()
-        if not one_dragon_config:
-            self.cur_user_item.status = "异常"
-            return "请先设置该用户的一条龙配置名"
 
         if (
             self.script_config.get("Run", "ProxyTimesLimit") != 0
@@ -134,7 +147,7 @@ class AutoProxyTask(TaskExecuteBase):
             cmdline=None,
         )
 
-        self.script_log_path = self.script_root_path / _BGI_REL_LOG_FILE
+        self.script_log_path = self._build_log_path()
 
         self.log_time_range = (_BGI_LOG_TIME_START, _BGI_LOG_TIME_END)
         self.log_time_format = _BGI_LOG_TIME_FORMAT
@@ -144,12 +157,23 @@ class AutoProxyTask(TaskExecuteBase):
             self.check_log,
         )
 
-        self.one_dragon_config = str(
-            self.cur_user_config.get("Task", "OneDragonConfigName") or ""
-        ).strip()
+        self.one_dragon_config = one_dragon.resolve_config_name(
+            str(self.cur_user_config.get("Task", "OneDragonConfigName") or "")
+        )
+        self.one_dragon_groups = list(
+            self.cur_user_config.get("OneDragon", "Groups") or []
+        )
         self.bettergi_args = ["startOneDragon", self.one_dragon_config]
 
         self.run_book = False
+
+    def _build_log_path(self) -> Path:
+        """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
+        return (
+            self.script_root_path
+            / _BGI_REL_LOG_DIR
+            / f"{_BGI_LOG_FILE_PREFIX}{datetime.now():%Y%m%d}.log"
+        )
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -157,6 +181,32 @@ class AutoProxyTask(TaskExecuteBase):
         prev = self.script_info.log
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
+
+    def _write_one_dragon_config(self) -> None:
+        """用户独立配置模式下，把组开关应用到一条龙配置并写回 BetterGI。"""
+        if not self.use_mas_config:
+            return
+        one_dragon.write_user_one_dragon(
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+            self.one_dragon_config,
+            self.one_dragon_groups,
+        )
+        logger.info(
+            f"已写入用户 {self.cur_user_item.name} 的一条龙配置: {self.one_dragon_config}"
+        )
+
+    def _snapshot_one_dragon_config(self) -> None:
+        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。"""
+        if not self.use_mas_config:
+            return
+        one_dragon.snapshot_user_one_dragon(
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+            self.one_dragon_config,
+        )
 
     async def main_task(self):
         await self.prepare()
@@ -166,6 +216,16 @@ class AutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.cur_user_item.status = "运行"
+
+        # 切换账号（单独执行 --startGroups，先于一条龙）
+        if not await self._switch_account():
+            self.cur_user_item.status = "异常"
+            self.script_info.log = "切换账号失败，已中止任务"
+            logger.error(f"用户 {self.cur_user_item.name} 切换账号失败，中止任务")
+            return
+
+        # 用户独立配置：应用组开关并写入一条龙配置
+        self._write_one_dragon_config()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
@@ -198,6 +258,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_exe_path,
                 *self.bettergi_args,
                 target_process=self.script_target_process_info,
+                elevated=True,
             )
 
             # 启动日志监控（文件日志）
@@ -251,6 +312,129 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 await asyncio.sleep(10)
 
+    async def _switch_account(self) -> bool:
+        """单独执行一次切号（--startGroups），返回是否切换成功。
+
+        未配置账号时直接返回 True（无需切换）；失败/超时返回 False，
+        由调用方决定是否继续执行一条龙。
+        """
+        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        if not account:
+            return True
+
+        resource = str(self.cur_user_config.get("Switch", "Resource") or "官服").strip()
+        uid = str(self.cur_user_config.get("Switch", "Uid") or "").strip()
+        password = str(self.cur_user_config.get("Info", "Password") or "")
+
+        # 切换模式不再单独配置，按密码是否填写推断：
+        # 填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」。
+        # B服 无下拉/OCR 方式，由 resolve_switch_settings 强制走「B服切换另一个账号匹配+键鼠」。
+        mode = "账号+密码+OCR" if password else "下拉列表"
+        global_account, servers, mode = account_switch.resolve_switch_settings(
+            resource, mode
+        )
+
+        # 1. 部署脚本 + 生成配置组
+        try:
+            account_switch.deploy_switch_script(self.script_root_path)
+            account_switch.write_switch_group(
+                self.script_root_path,
+                account,
+                password,
+                mode,
+                global_account,
+                servers,
+                uid,
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"切换账号准备失败: {e}")
+            await self._push_dispatch_log(f"切换账号准备失败: {e}")
+            return False
+
+        await self._push_dispatch_log(
+            f"开始切换账号: --startGroups {account_switch._GROUP_NAME}"
+        )
+        logger.info(
+            f"用户 {self.cur_user_item.name} 启动 BetterGI 切换账号: "
+            f"{self.script_exe_path} --startGroups {account_switch._GROUP_NAME}"
+        )
+
+        # 2. 杀旧进程，保证单实例下 --startGroups 由新进程执行
+        await self.kill_managed_process()
+
+        switch_success = asyncio.Event()
+        switch_result = {"success": False, "started": False}
+
+        # 单组 --startGroups 的成功/失败判定取自 BetterGI 配置组日志：
+        #   成功: 配置组 "MAS切换账号" 执行结束
+        #   失败: 执行配置组任务时失败 / 任务启动失败 / 任务执行异常 / [FTL] / [ERR]
+        switch_group_done = f'配置组 "{account_switch._GROUP_NAME}" 执行结束'
+        switch_group_fail = (
+            "执行配置组任务时失败",
+            "任务启动失败",
+            "任务执行异常",
+            "[FTL]",
+            "[ERR]",
+        )
+
+        async def on_switch_log(
+            log_content: list[str], latest_time: datetime
+        ) -> None:
+            log = "".join(log_content)
+            if switch_group_done in log:
+                switch_result["success"] = True
+                switch_success.set()
+            elif any(n in log for n in switch_group_fail):
+                switch_result["success"] = False
+                switch_success.set()
+            elif (
+                switch_result["started"]
+                and not await self.bettergi_process_manager.is_running()
+            ):
+                # 进程已启动（search_process 确认过）后又在任务完成前退出
+                switch_success.set()
+
+        switch_monitor = LogMonitor(
+            self.log_time_range, self.log_time_format, on_switch_log
+        )
+
+        try:
+            await self.bettergi_process_manager.open_process(
+                self.script_exe_path,
+                "--startGroups",
+                account_switch._GROUP_NAME,
+                target_process=self.script_target_process_info,
+                elevated=True,
+            )
+            # open_process 内部 search_process 已确认目标进程存在，之后退出才算失败
+            switch_result["started"] = True
+            await asyncio.sleep(1)
+            await switch_monitor.start_monitor_file(
+                self.script_log_path, datetime.now()
+            )
+
+            try:
+                await asyncio.wait_for(
+                    switch_success.wait(), timeout=_BGI_SWITCH_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                switch_result["success"] = False
+                logger.warning(f"用户 {self.cur_user_item.name} 切换账号超时")
+        except Exception as e:
+            logger.opt(exception=True).warning(f"切换账号执行异常: {e}")
+            switch_result["success"] = False
+        finally:
+            await switch_monitor.stop()
+            await self.kill_managed_process()
+
+        if switch_result["success"]:
+            await self._push_dispatch_log("切换账号完成")
+            logger.success(f"用户 {self.cur_user_item.name} 切换账号完成")
+        else:
+            await self._push_dispatch_log("切换账号失败或超时，继续执行一条龙")
+            logger.warning(f"用户 {self.cur_user_item.name} 切换账号失败或超时")
+        return switch_result["success"]
+
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
@@ -293,6 +477,9 @@ class AutoProxyTask(TaskExecuteBase):
             with suppress(Exception):
                 await self.log_monitor.stop()
         await self.kill_managed_process()
+
+        # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
+        await self._close_game()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
         statistic_paths: list[Path] = []
@@ -338,6 +525,9 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         await self._persist_user_run_result()
+
+        # 用户独立配置：回读 BetterGI 现有配置，捕获运行中/GUI 里改的设置
+        self._snapshot_one_dragon_config()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:
@@ -402,6 +592,31 @@ class AutoProxyTask(TaskExecuteBase):
                 )
         except Exception:
             pass
+
+    async def _close_game(self) -> None:
+        """任务结束后关闭原神游戏进程。
+
+        按进程名逐一尝试：先优雅关闭（发送 WM_CLOSE），等待短暂时间后
+        再强制结束残留进程，覆盖官服/B服/国际服/云原神等客户端。
+        """
+        if not self.script_config.get("Game", "CloseOnFinish"):
+            return
+
+        await self._push_dispatch_log("任务结束，正在关闭游戏进程")
+        for name in _BGI_GAME_PROCESS_NAMES:
+            image = f"{name}.exe"
+            try:
+                # 先优雅关闭（taskkill 不带 /F 会向 GUI 窗口发送 WM_CLOSE）
+                graceful = await ProcessRunner.run_process(
+                    "taskkill", "/IM", image, "/T"
+                )
+                if graceful.returncode == 0:
+                    await asyncio.sleep(_BGI_GAME_CLOSE_WAIT_SECONDS)
+                # 再强制结束仍残留的进程（含子进程）
+                await ProcessRunner.run_process("taskkill", "/IM", image, "/F", "/T")
+            except Exception as e:
+                logger.warning(f"关闭游戏进程 {image} 失败: {e}")
+        await self._push_dispatch_log("游戏进程已关闭")
 
     async def kill_managed_process(self) -> None:
         """中止 BetterGI 进程（游戏进程由 BetterGI 自身管理）。"""

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BetterGIConfig } from './BetterGIConfig';
 import type { GeneralConfig } from './GeneralConfig';
 import type { HSRConfig } from './HSRConfig';
 import type { M9AConfig } from './M9AConfig';
@@ -30,6 +31,6 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | HSRConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | HSRConfig | BetterGIConfig);
 };
 

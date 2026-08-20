@@ -25,6 +25,7 @@ export namespace ScriptIndexItem {
         MAA_END_CONFIG = 'MaaEndConfig',
         M9ACONFIG = 'M9AConfig',
         HSRCONFIG = 'HSRConfig',
+        BETTER_GICONFIG = 'BetterGIConfig',
     }
 }
 

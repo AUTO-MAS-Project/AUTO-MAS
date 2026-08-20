@@ -1,0 +1,55 @@
+[
+  {
+    "name": "Modes",
+    "type": "select",
+    "label": "切换模式",
+    "options": [
+      "下拉列表",
+      "账号+密码+OCR",
+      "B服切换另一个账号匹配+键鼠"
+    ],
+    "default": "下拉列表"
+  },
+  {
+    "name": "username",
+    "type": "input-text",
+    "label": "账号（只保存在本地，请妥善保管）\n下拉列表手机号格式：114******98\n下拉列表邮箱格式：11****1@919.com\n下拉列表第三方登陆格式：apple\n账号+密码模式请输入完整的手机号或邮箱"
+  },
+  {
+    "name": "password",
+    "type": "input-text",
+    "label": "密码（只保存在本地，请妥善保管）\n切换模式为下拉列表时无需填写"
+  },
+  {
+    "name": "GlobalAccount",
+    "type": "checkbox",
+    "label": "国际服账号请勾选"
+  },
+  {
+    "name": "Servers",
+    "type": "select",
+    "label": "国际服服务器",
+    "options": [
+      "Asia",
+      "Europe",
+      "America",
+      "TW,HK,MO",
+      "不切换服务器"
+    ]
+  },
+  {
+    "name": "uid",
+    "type": "input-text",
+    "label": "账号UID(可不填)\n切换账号前识别一致将不执行切换动作",
+    "default": ""
+  },
+  {
+    "name": "temporaryAccount",
+    "type": "select",
+    "label": "（此选项已停用）是否临时账号（默认：\"否\"勾选：\"退出并保留登录记录\"。\n选择\"是\"将会勾选\"退出并清除登录记录\"\n用于设配临时账号登录需求，避免占用长期账号的下拉列表快捷登录。",
+    "options": [
+      "是",
+      "否"
+    ]
+  }
+]

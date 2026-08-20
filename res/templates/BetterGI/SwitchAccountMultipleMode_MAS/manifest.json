@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "name": "切换账号多模式",
+  "version": "2.1.1",
+  "bgi_version": "0.61.0",
+  "description": "多种模式的切换账号，有下拉列表、填写账号密码OCR操作或键鼠操作，目前支持B服/国际服但不完整\n免责申明：所有的账号密码均保存在本地，请使用者妥善保管账号密码，请勿外泄账号密码。若因使用此脚本导致的账号泄露、封禁问题与脚本作者无关。",
+  "tags": [
+    "切换账号",
+    "鼠标点击",
+    "OCR"
+  ],
+  "authors": [
+    {
+      "name": "起个名字好难的喵",
+      "links": "https://github.com/MisakaAldrich"
+    },
+    {
+      "name": "密密麻麻"
+    },
+    {
+      "name": "羊汪汪",
+      "links": "https://github.com/ColinXHL"
+    },
+    {
+      "name": "彩虹QQ人",
+      "email": "846224811@qq.com",
+      "links": "https://github.com/KRdingsan"
+    },
+    {
+      "name": "云端客",
+      "links": "https://github.com/Kirito520Asuna"
+    },
+    {
+      "name": "空",
+      "links": "https://pd.qq.com/g/620449244035027412/post/B_022e6a69a93f0a001441152193488791090X60?showGuild=1&errCode=0&asideType=Full"
+    },
+    {
+      "name": "檬"
+    }
+  ],
+  "settings_ui": "settings.json",
+  "main": "main.js"
+}

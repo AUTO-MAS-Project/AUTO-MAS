@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from app.services import System
 from app.utils import ProcessManager, get_logger
 
 from .AutoProxy import _BGI_REL_EXE
+from .tools import one_dragon
 
 logger = get_logger("BetterGI 脚本设置")
 
@@ -49,23 +51,70 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        # 脚本级配置（"Default"）强制独立配置；真实用户读 IfUseMasConfig
+        self.use_mas_config = True
+        if self.cur_user_item.user_id != "Default":
+            self.use_mas_config = bool(
+                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                    "Info", "IfUseMasConfig"
+                )
+            )
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
         self.root_path = Path(self.script_config.get("Info", "RootPath"))
         self.exe_path = self.root_path / _BGI_REL_EXE
 
+    def _target_user_config(self) -> BetterGIUserConfig | None:
+        """返回当前会话对应的用户配置；脚本级（"Default"）返回 None。"""
+        if self.cur_user_item.user_id == "Default":
+            return None
+        return self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+
+    def _write_one_dragon_config(self) -> None:
+        """用户独立配置模式下，把该用户组开关写入一条龙配置并载入 BetterGI。"""
+        if not self.use_mas_config:
+            return
+        target = self._target_user_config()
+        if target is None:
+            return
+        one_dragon.write_user_one_dragon(
+            self.root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+            str(target.get("Task", "OneDragonConfigName") or ""),
+            list(target.get("OneDragon", "Groups") or []),
+        )
+
+    def _snapshot_one_dragon_config(self) -> None:
+        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。"""
+        if not self.use_mas_config:
+            return
+        target = self._target_user_config()
+        if target is None:
+            return
+        one_dragon.snapshot_user_one_dragon(
+            self.root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+            str(target.get("Task", "OneDragonConfigName") or ""),
+        )
+
     async def main_task(self) -> None:
         await self._kill_processes()
         logger.info(f"启动 BetterGI 设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
-        await self.process_manager.open_process(self.exe_path)
+        # 用户独立配置：先把该用户的一条龙配置载入 BetterGI，再打开 GUI 供其修改
+        self._write_one_dragon_config()
+        await self.process_manager.open_process(self.exe_path, elevated=True)
         await self.wait_event.wait()
 
     async def final_task(self) -> None:
         self.wait_event.set()
         await self._kill_processes()
         if not self.crashed:
+            # 用户独立配置：回读 BetterGI 现有配置，保存 GUI 中修改的设置
+            self._snapshot_one_dragon_config()
             logger.success("BetterGI 直控配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
 

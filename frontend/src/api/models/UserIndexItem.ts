@@ -25,6 +25,7 @@ export namespace UserIndexItem {
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
         M9AUSER_CONFIG = 'M9AUserConfig',
         HSRUSER_CONFIG = 'HSRUserConfig',
+        BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
     }
 }
 
