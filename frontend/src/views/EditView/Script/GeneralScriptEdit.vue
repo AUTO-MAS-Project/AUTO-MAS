@@ -1475,6 +1475,44 @@ const refreshScript = async () => {
   }
 }
 
+// 一次性批量保存入口（模拟器/游戏切换、根路径选择等）：与 handleChange 共用同一套
+// isSaving 互斥与保存队列。保存期间 handleChange 排入的 pendingChange 在此一并落盘，
+// 避免其被随后的 refreshScript 覆盖，也防止队列内容残留到下一次用户变更。
+// 全部落盘后再刷新，保证界面与后端状态一致。
+const persistAndRefresh = async (
+  updateData: Record<string, any>,
+  label: string,
+) => {
+  isSaving.value = true
+  let success = false
+  try {
+    success = await updateScript(scriptId, updateData)
+    if (success) {
+      // 排空保存期间排队的最新变更
+      let queued = pendingChange.value
+      pendingChange.value = null
+      while (queued) {
+        const q: Record<string, any> = {
+          [queued.category]: { [queued.key]: queued.value },
+        }
+        success = await updateScript(scriptId, q)
+        queued = pendingChange.value
+        pendingChange.value = null
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存${label}失败: ${errorMsg}`)
+  } finally {
+    isSaving.value = false
+  }
+  // 待处理变更全部落盘后再刷新，避免覆盖界面上的编辑
+  if (success) {
+    logger.info(`${label}已保存`)
+    await refreshScript()
+  }
+}
+
 // 监听根目录变化，自动调整其他路径以保持相对关系
 // 注意：此 watcher 用于维护路径间的相对关系（业务逻辑），而非配置自动保存
 // 实际的保存操作由用户选择路径后的 @blur/@change 事件触发
@@ -1620,26 +1658,16 @@ const handleEmulatorChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  // 保存模拟器选择和清空的实例字段
-  isSaving.value = true
-  try {
-    const updateData = {
+  // 保存模拟器选择和清空的实例字段（与其他保存入口共用串行保存，落盘并刷新界面）
+  await persistAndRefresh(
+    {
       Game: {
         EmulatorId: emulatorId,
         EmulatorIndex: '',
       },
-    }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('模拟器配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存模拟器配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+    },
+    '模拟器配置',
+  )
 }
 
 const handleGameTypeChange = async (gameType: string) => {
@@ -1697,21 +1725,8 @@ const handleGameTypeChange = async (gameType: string) => {
     }
   }
 
-  // 保存所有更改的字段
-  isSaving.value = true
-  try {
-    const updateData = { Game: updateFields }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('游戏配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存游戏配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  // 保存所有更改的字段（共用串行保存，落盘并刷新界面）
+  await persistAndRefresh({ Game: updateFields }, '游戏配置')
 }
 
 const selectRootPath = async () => {
@@ -1759,24 +1774,12 @@ const selectRootPath = async () => {
           scriptPathUpdates.TrackProcessExe = generalConfig.Script.TrackProcessExe
         }
 
-        // 保存所有更改
-        isSaving.value = true
-        try {
-          const updateData: any = { Info: updateFields }
-          if (Object.keys(scriptPathUpdates).length > 0) {
-            updateData.Script = scriptPathUpdates
-          }
-          const success = await updateScript(scriptId, updateData)
-          if (success) {
-            logger.info('根路径及关联路径已保存')
-            await refreshScript()
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.error(`保存路径失败: ${errorMsg}`)
-        } finally {
-          isSaving.value = false
+        // 保存所有更改（共用串行保存，落盘并刷新界面）
+        const updateData: any = { Info: updateFields }
+        if (Object.keys(scriptPathUpdates).length > 0) {
+          updateData.Script = scriptPathUpdates
         }
+        await persistAndRefresh(updateData, '根路径及关联路径')
         message.success('根路径选择成功，其他路径已自动调整以保持相对关系')
       } else {
         // 保存根目录更改

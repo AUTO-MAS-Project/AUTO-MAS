@@ -238,6 +238,16 @@ class MultiLineAggregator:
             return self._close_and_extract()
         return None
 
+    def reset(self) -> None:
+        """重置运行时窗口状态。
+
+        匹配器在会话初始化时编译一次并跨多次任务尝试复用；每次尝试开始时
+        调用本方法清空残留窗口，避免上一次未闭合的窗口吞并新一次尝试的日志
+        产生跨重试的错误聚合结果。
+        """
+        self._buffer = []
+        self._window_open = False
+
     def _close_and_extract(self) -> Optional[str]:
         """关闭当前窗口，对缓冲内容应用提取表达式，返回提取结果
 
