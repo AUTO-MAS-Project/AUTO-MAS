@@ -21,10 +21,4 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .api import *
-from .core import *
-from .models import *
-from .services import *
-from .utils import *
 
-__all__ = ["api", "core", "models", "services", "utils"]
