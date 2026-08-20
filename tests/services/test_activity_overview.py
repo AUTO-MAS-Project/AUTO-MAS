@@ -29,10 +29,20 @@ class SraActivityOverviewTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(overview["Available"])
         self.assertIn("正在获取", overview["Message"])
+        self.assertEqual(overview["activities"], [])
 
         task = self.service._refresh_task
         self.assertIsNotNone(task)
         await asyncio.gather(task, return_exceptions=True)
+
+    async def test_invalid_activity_list_is_normalized(self) -> None:
+        self.service._data = {"version": "1.0", "activities": None}
+        self.service._next_check = float("inf")
+
+        overview = await self.service.get_overview()
+
+        self.assertEqual(overview["version"], "1.0")
+        self.assertEqual(overview["activities"], [])
 
     async def test_data_arrives_after_background_refresh_completes(self) -> None:
         async def quick_refresh() -> None:
