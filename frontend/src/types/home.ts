@@ -15,6 +15,7 @@ export type HomeModuleKey =
 export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
   hiddenModules: HomeModuleKey[]
+  hideScrollHint?: boolean
 }
 
 export interface HomeModuleDescriptor {
