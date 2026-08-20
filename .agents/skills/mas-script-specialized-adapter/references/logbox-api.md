@@ -23,10 +23,18 @@ from mas_script import log_box, Rule, LogType
 log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 - **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text)`
-  直接写 `cur_user_item.push_log`，对适配器完全透明。
+  直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
 - **宿主 = 用户脚本子进程**（`from mas_script import log_box`）：不注入 sink，
   box 把处理结果渲染为 `@@LOGBOX@@` 受控 stdout 标记回传，MAS 侧
   `check_log` 嗅探后写入 `cur_user_item.push_log`。
+
+> ⚠️ **脚本宿主目前是能力预留，尚未端到端接通**：box 的 `@@LOGBOX@@` 标记渲染/
+> 解析、MAS 侧 `check_log` 单行嗅探逻辑均已就位，但 MAS 尚未把「用户脚本进程
+> stdout」接入 `check_log`（脚本 stdout 现为 DEVNULL 丢弃，`check_log` 只读
+> `LogPath` 日志文件），也未设置 `MAS_SCRIPT_LOG_PATH` 与 `import mas_script`
+> 所需的 PYTHONPATH。接通需增强 general 自动代理的进程启动（stdout PIPE 逐行
+> 喂 `check_log` + 启动前注入 env），不改核心框架。**在接通之前，脚本宿主请勿
+> 作为可交付使用**；有真实脚本宿主需求时再落地该改造。
 
 两者共用同一套采集/前置/匹配/后置逻辑，仅「结果如何落进 push_log」这一跳因宿主而异。
 
@@ -138,6 +146,9 @@ def dedup(lines):
 
 ## 脚本宿主示例（用户脚本子进程）
 
+> ⚠️ **预留示例，尚未端到端接通**：见上方「进程与推送边界」说明，脚本 stdout 尚未
+> 接入 MAS 的 `check_log`。以下仅为将来接通后的用法示意，当前不可交付。
+
 ```python
 from mas_script import log_box, LogType
 
@@ -147,6 +158,6 @@ col.collect(r"DailyTask:open_daily", '"完成"')
 col.close()   # 脚本正常退出时 atexit 也会自动收尾
 ```
 
-运行后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。注意：`start_from_end=True`
+接通后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。注意：`start_from_end=True`
 （默认）只采集会话内新增内容，需在日志产出**之前**调用 `col.open()` 记录起始位置；
 未显式调用时 close 会自动启动日志源，但此时起点即收尾时刻，可能采不到会话内日志。
