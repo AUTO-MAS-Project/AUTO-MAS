@@ -7,6 +7,32 @@
 一句话链路：调用方喂参数（日志位置 + 规则 + 处理器）→ log_box 自采集 →
 前置处理（open）→ 规则匹配/提取 → 后置处理（close）→ 结果推送。
 
+## 目录
+
+- [进程与推送边界](#进程与推送边界关键)
+- [get_collect 工厂](#get_collect-工厂)
+- [LogCollect 采集会话](#logcollect-采集会话)
+- [与通用脚本 web 配置推送日志的分工](#与通用脚本-web-配置推送日志的分工重要)
+- [日志类型与推送时机语义](#日志类型与推送时机语义)
+- [Rule 编程式构建](#rule-编程式构建)
+- [表达式引擎自定义算子](#表达式引擎自定义算子)
+- [专项喂参示例](#专项喂参示例mas-进程宿主)
+- [推送落地](#推送落地聚合与追加通用工具)
+- [脚本宿主示例](#脚本宿主示例用户脚本子进程)
+- [常见坑](#常见坑)
+
+## 命名约定（大小写）
+
+| 类别 | 大小写 | 示例 |
+|---|---|---|
+| 类（类型名） | PascalCase | `LogCollect`、`LogSource`、`LogType`、`Rule` |
+| 模块 / 包 | snake_case | `app/log_box/`、`collect.py` |
+| 实例 / 工厂对象 | snake_case | `log_collect`（`LogCollect` 实例）、`log_box`（工厂对象） |
+| 常量 | UPPER_SNAKE | `MSG_PREFIX`、`OKWW_PUSH_RULES` |
+
+> `log_box` 同时是「包名」与「工厂对象名」：`from app.log_box import log_box`，
+> 包=代码组织、对象=入口，语义不同，属 Python 常见写法。
+
 ---
 
 ## 顶层入口
@@ -164,6 +190,7 @@ import re
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 def resolve(results):
+    """输入/输出均为 (log_type, text) 元组，日志类型随元组一并保留"""
     lines = [text for _, text in results]
     order, states = [], {}
     for line in lines:
@@ -175,8 +202,13 @@ def resolve(results):
         order.append(node)
         if rank > states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
-    last_type = {node: log_type for log_type, node in results}
-    return [(last_type.get(node, "普通"), f"{states[n][1]}: {n}") for n in order]
+    # 按节点名（去状态前缀后）重建类型映射，避免与完整文本键错配导致类型丢失
+    last_type = {}
+    for log_type, text in results:
+        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
+        node = m.group(2) if m else text
+        last_type[node] = log_type
+    return [(last_type.get(node, "普通"), f"{states[node][1]}: {node}") for node in order]
 ```
 
 > 节点级失败用 `LogType.NORMAL` + 文本「❌ 失败:」始终展示；推送时机由全局
@@ -221,3 +253,32 @@ col.close()   # 脚本正常退出时 atexit 也会自动收尾
 接通后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。注意：`start_from_end=True`
 （默认）只采集会话内新增内容，需在日志产出**之前**调用 `col.open()` 记录起始位置；
 未显式调用时 close 会自动启动日志源，但此时起点即收尾时刻，可能采不到会话内日志。
+
+## 常见坑
+
+1. **`start_from_end=True` 采集时机**：只采会话内新增，须在日志产出**前** `open()`。
+   若在日志已写入后才 `open()`，起点即当前文件末尾，历史节点采不到。未显式 `open()`
+   时 `close()` 会自动启动源，但此时起点即收尾时刻，可能什么都采不到。
+
+2. **`get(n)`/`cut(n)` 是字符语义，不是正则分组**：`get(1)` 保留前 1 个**字符**，
+   不是「第 1 个捕获组」。要取正则分组，用 `rule(regex).regex(r"捕获组正则")` 作用域
+   或 `collect(match_re, expr)` 里 `$((捕获组))`。
+
+3. **正则提取作用域必须有捕获组**：`$()` 取的是捕获组中的**非空组**；正则无捕获组
+   时返回空串（继续走函数链与拼接），可能拿不到整段匹配。需要整段匹配就用捕获组包裹，
+   如 `$((.*))`。
+
+4. **前置翻译会改变匹配依据**：前置处理器（open）翻译的是整行，此后匹配与提取都作用
+   于**翻译后**的行。若规则匹配关键字是英文、而前置翻译译成了中文，规则要按译文匹配
+   （见 OK-WW `OKWW_PUSH_RULES` 与 i18n 的耦合）。
+
+5. **后处理器必须消费并返回 `(log_type, text)` 元组**：不要用「后处理前文本」回查
+   `log_type`——文本一旦被改写（如状态解析），按文本键会查不到而丢失类型。正确做法是
+   在元组层级处理，日志类型随结果一并保留。
+
+6. **`open()` 有参调用返回自身**，可链式：`col.open(pre).collect(...).collect(...)`；
+   无参调用作为装饰器 `@col.open()` 返回注册器。两者形态不同，勿混用返回值。
+
+7. **`MAS_SCRIPT_LOG_PATH` 与脚本宿主**：脚本宿主尚属能力预留（见「进程与推送边界」），
+   MAS 未把脚本 stdout 接入 `check_log` 且未注入该环境变量。专项（MAS 宿主）请始终
+   显式传 `paths`，不要依赖该 env（它只在脚本宿主接通后生效）。
