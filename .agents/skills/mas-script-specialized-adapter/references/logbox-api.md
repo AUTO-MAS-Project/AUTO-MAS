@@ -59,13 +59,19 @@ col = log_box.get_collect(
 ## Rule 编程式构建
 
 ```python
-col.rule(r"current_stamina (\d+)").get(1).trim().end()
-col.rule(r"xxx").regex(r"\d+").cut(2).sub(0, 3).replace("a", "b").trim().end()
+# 提取「current_stamina 240」中的数字 240（regex 作用域必须用捕获组，$() 取捕获组内容）
+col.rule(r"current_stamina (\d+)").regex(r"(\d+)").trim().end()
+# 函数链：cut/sub/replace/trim 与自定义算子 func
+col.rule(r"xxx").regex(r"(\d+)").cut(2).sub(0, 3).replace("a", "b").trim().end()
 ```
 
-`regex(pattern)` 设置提取作用域（缺省取整行）；函数链支持 `func(name, *args)`
+`regex(pattern)` 设置提取作用域（缺省 `$()` 取整行）；提取内容取捕获组中的
+非空组（无捕获组时为空串，继续走函数链）。函数链支持 `func(name, *args)`
 （含注入 REGISTRY 的自定义 Process 算子）、`get`、`cut`、`sub`、`cutby`、
 `subby`、`replace`、`trim`、`upper`、`lower`；`end()` 完成构建并注册。
+
+> 注意：`get(n)`/`cut(n)` 是按**字符数**保留/切除（n>0 取开头、n<0 取结尾），
+> 不是正则分组提取；要取正则分组请用 `regex(r"捕获组正则")` 作用域。
 
 ## 表达式引擎自定义算子
 
@@ -80,7 +86,23 @@ class Translate(Process):
 ```
 
 `@register_process` 把自定义 `Process` 子类登记进引擎 REGISTRY，表达式可调用
-`.translate(...)`；对 web 前端面板不暴露。
+`.translate(...)`；对 web 前端面板不暴露。用 `Rule.func()` 在函数链中调用：
+
+```python
+@register_process
+class Suffix(Process):
+    name = "suffix"
+    def run(self, text, args):
+        return text + (str(args[0]) if args else "")
+
+col.rule(r"current_stamina (\d+)").regex(r"(\d+)").func("suffix", " 剩余电量").end()
+# 等价表达式：$((\d+)).suffix(" 剩余电量")，作用于整行文本
+```
+
+> **为什么不能用 `.process(fn)` 直接传 Python 函数**：规则是「参数」形态
+> （正则 + 表达式字符串），脚本子进程宿主跨进程只传规则参数、不传函数体
+> （契约不含闭包/状态）；自定义处理一律用 `@register_process` 具名注入，
+> 规则字符串可序列化、跨宿主一致、编译期函数名校验。
 
 ## 专项喂参示例（MAS 进程宿主）
 
@@ -120,8 +142,11 @@ def dedup(lines):
 from mas_script import log_box, LogType
 
 col = log_box.get_collect(paths=["workdir/logs/xxx.log"])
+col.open()                        # 记录起始位置（可选，close 收尾会自动兜底）
 col.collect(r"DailyTask:open_daily", '"完成"')
 col.close()   # 脚本正常退出时 atexit 也会自动收尾
 ```
 
-运行后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。
+运行后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。注意：`start_from_end=True`
+（默认）只采集会话内新增内容，需在日志产出**之前**调用 `col.open()` 记录起始位置；
+未显式调用时 close 会自动启动日志源，但此时起点即收尾时刻，可能采不到会话内日志。
