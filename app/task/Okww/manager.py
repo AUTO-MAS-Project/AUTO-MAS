@@ -315,6 +315,19 @@ class OkwwManager(TaskExecuteBase):
                     self.task_info, self.script_info.result
                 )
                 has_game_sign_summary = task_result != self.script_info.result
+                # 聚合各用户采集的推送日志：每条节点独占一行，不附加用户名。
+                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）
+                has_uncompleted = len(error_user) + len(wait_user) > 0
+                push_log_text = "\n".join(
+                    "\n".join(
+                        text
+                        for log_type, text in user.push_log
+                        if log_type != "失败" or has_uncompleted
+                    )
+                    for user in self.script_info.user_list
+                    if user.push_log
+                )
                 result = {
                     "title": f"{task_mode}任务报告",
                     "script_name": self.script_info.name or "空白",
@@ -324,6 +337,7 @@ class OkwwManager(TaskExecuteBase):
                     "uncompleted_count": len(error_user) + len(wait_user),
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
+                    "push_log": push_log_text,
                 }
 
                 await Notify.push_plyer(

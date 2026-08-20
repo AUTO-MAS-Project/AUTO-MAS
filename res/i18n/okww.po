@@ -1,0 +1,42 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: AUTO-MAS okww supplement\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Daily"
+msgstr "每日"
+
+msgid "Daily Task Completed"
+msgstr "每日任务已完成"
+
+msgid "Window closed exit_event.is_set"
+msgstr "退出"
+
+msgid "battle pass"
+msgstr "先约电台"
+
+msgid "can not battle pass, maybe ended"
+msgstr "先约电台已结束"
+
+msgid "check weekly garden"
+msgstr "检查每周乐园"
+
+msgid "claim daily"
+msgstr "领取每日奖励"
+
+msgid "claim mail"
+msgstr "领取邮件"
+
+msgid "check discarded echo"
+msgstr "检查已弃置声骸"
+
+msgid "weekly garden already completed"
+msgstr "每周乐园已完成"
+
+msgid "All full batches of discarded Echoes have been merged."
+msgstr "已弃置声骸已全部合并"
+
+msgid "not enough to continue"
+msgstr "体力不足以继续"
