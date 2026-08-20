@@ -230,8 +230,6 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.push_log_buffer: list[tuple[str, str]] = []
         self._push_log_processed = 0
-        # 脚本宿主回传：是否已收到 @@LOGBOX@@ flush 标记（回传通道结束）
-        self._marker_flushed = False
         # 进程防抖：是否曾观测到跟踪进程在运行；启动宽限期内进程未出现不判定结束，
         # 避免残留进程收尾日志触发回调时误判成功
         self._process_seen = False
@@ -669,8 +667,8 @@ class AutoProxyTask(TaskExecuteBase):
                             str(marker.get("text") or ""),
                         )
                     )
-                elif op == "flush":
-                    self._marker_flushed = True
+                # flush 标记仅表示回传通道结束，无需记录状态；
+                # 结果统一在 final_task 写回 push_log
                 continue
             # 按推送日志高级模式采集任务进程信息（受总开关控制）
             # 命中规则时以 (日志类型, 提取文本) 形式采集，类型供推送策略过滤

@@ -58,18 +58,20 @@ class LogSource:
         self.time_format = time_format
         self.time_range = time_range
         self._offset = 0
-        self._ino: Optional[int] = None
+        # 文件身份：轮转/替换检测用。Windows 下 st_ino 不可靠，追加 st_ctime_ns
+        # （Windows 为创建时间，文件被替换时变化），两者任一变化即视为轮转。
+        self._file_id: Optional[tuple[int, int]] = None
         self._opened = False
 
     def open(self) -> None:
         """记录起始位置（幂等）。文件不存在时从文件头开始（等待新文件生成）。"""
         self._offset = 0
-        self._ino = None
+        self._file_id = None
         if self.path.is_file():
             stat = self.path.stat()
             if self.start_from_end:
                 self._offset = stat.st_size
-            self._ino = stat.st_ino
+            self._file_id = (stat.st_ino, stat.st_ctime_ns)
         self._opened = True
 
     def read_new(self) -> list[str]:
@@ -84,12 +86,13 @@ class LogSource:
             stat = self.path.stat()
         except OSError:
             return []
-        # 轮转（inode 变化）或截断（文件变小）→ 重置到文件头重读
-        if self._ino is not None and (
-            stat.st_ino != self._ino or stat.st_size < self._offset
+        # 轮转（文件身份变化）或截断（文件变小）→ 重置到文件头重读
+        current_id = (stat.st_ino, stat.st_ctime_ns)
+        if self._file_id is not None and (
+            current_id != self._file_id or stat.st_size < self._offset
         ):
             self._offset = 0
-        self._ino = stat.st_ino
+        self._file_id = current_id
         if stat.st_size <= self._offset:
             return []
         try:

@@ -172,10 +172,16 @@ class LogCollect:
     def add_rule(
         self, match_regex: str, expr: str, log_type: str = LOG_TYPE_NORMAL
     ) -> None:
-        """把 (匹配正则, 提取表达式, 日志类型) 编译为行内规则"""
+        """把 (匹配正则, 提取表达式, 日志类型) 编译为行内规则
+
+        匹配正则为空 → 该规则不生效（跳过）；非空但正则非法、或表达式非法
+        时 fail-fast（与表达式编译语义一致，开发期尽早暴露配置错误）。
+        """
+        if not match_regex.strip():
+            return
         match_re = compile_regex(match_regex)
         if match_re is None:
-            return
+            raise ValueError(f"匹配正则无效: {match_regex}")
         extract = compile_expression(expr) if expr else None
         self._line_rules.append(
             RegexMatcher(match=match_re, extract=extract, log_type=log_type)
@@ -192,12 +198,16 @@ class LogCollect:
         """多行聚合规则：起始/结束正则划定窗口，提取表达式从窗口提取字段。
 
         起始正则为空时不生效；结束正则留空时窗口在遇到新起始行、达到最大
-        跨行数或日志处理结束时关闭。
+        跨行数或日志处理结束时关闭。正则非空但非法时 fail-fast。
         """
+        if not start_re.strip():
+            return self
         start = compile_regex(start_re)
         if start is None:
-            return self
+            raise ValueError(f"起始正则无效: {start_re}")
         end = compile_regex(end_re) if end_re else None
+        if end_re and end is None:
+            raise ValueError(f"结束正则无效: {end_re}")
         extract = compile_expression(expr) if expr else None
         self._scope_rules.append(
             MultiLineAggregator(
