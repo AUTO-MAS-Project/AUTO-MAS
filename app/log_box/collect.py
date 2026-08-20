@@ -33,8 +33,9 @@ PathLike = Union[str, Path]
 
 # 前置处理器：逐行 map（返回新文本）/ filter（返回 None 丢弃该行）
 _PreProcessor = Callable[[str], Optional[str]]
-# 后置处理器：作用于捕捉完的最终多行结果集（去重/规整），返回处理后的结果集
-_PostProcessor = Callable[[list[str]], list[str]]
+# 后置处理器：作用于捕捉完的最终 (日志类型, 文本) 结果集（去重/规整），
+# 直接返回处理后的结果集，日志类型随元组一并保留，避免文本改写后丢失类型。
+_PostProcessor = Callable[[list[tuple[str, str]]], list[tuple[str, str]]]
 # sink：MAS 进程宿主注入的 push_log 写入回调（接收日志类型与文本）
 _Sink = Callable[[str, str], None]
 
@@ -72,8 +73,8 @@ class LogCollect:
 
     # ---------- 生命周期 ----------
 
-    def open(self, processor: Optional[_PreProcessor] = None):
-        """启动采集（幂等）；processor 非 None 时直接登记前置处理器。
+    def open(self, processor: Optional[_PreProcessor] = None) -> "LogCollect":
+        """启动采集（幂等）；processor 非 None 时直接登记前置处理器并返回 self。
 
         也可作为装饰器使用：``@col.open()`` 会把被装饰函数登记为前置处理器，
         作用于逐行日志（返回新文本；返回 None 丢弃该行），按序执行。
@@ -83,9 +84,9 @@ class LogCollect:
             def _register(fn: _PreProcessor) -> _PreProcessor:
                 self._preprocessors.append(fn)
                 return fn
-            return _register
+            return _register  # type: ignore[return-value]
         self._preprocessors.append(processor)
-        return processor
+        return self
 
     def _open_sources(self) -> None:
         """为各日志源记录起始位置（幂等）；未显式调用 open() 时由收尾读取兜底"""
@@ -139,23 +140,16 @@ class LogCollect:
     def _apply_postprocessors(
         self, results: list[tuple[str, str]]
     ) -> list[tuple[str, str]]:
-        """对最终结果集应用后置处理器，并按文本把日志类型映射回原结果。
+        """对最终结果集应用后置处理器，日志类型随 (类型, 文本) 元组一并保留
 
-        后置处理器仅接触文本列表（list[str] -> list[str]）；处理后的文本按
-        「最后一次出现」回映射日志类型，保证去重/规整后仍携带正确类型。
+        后置处理器直接接收并返回 ``list[(log_type, text)]``，文本改写（如
+        okww_resolve 状态解析）不会丢失日志类型，也无需按文本回映射。
         """
         if not self._postprocessors:
             return results
-        lines = [text for _, text in results]
         for post in self._postprocessors:
-            lines = post(lines)
-        last_index = {text: index for index, (_, text) in enumerate(results)}
-        mapped: list[tuple[str, str]] = []
-        for text in lines:
-            index = last_index.get(text)
-            log_type = results[index][0] if index is not None else LOG_TYPE_NORMAL
-            mapped.append((log_type, text))
-        return mapped
+            results = post(results)
+        return results
 
     # ---------- 规则注册 ----------
 

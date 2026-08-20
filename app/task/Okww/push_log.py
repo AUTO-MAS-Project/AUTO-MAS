@@ -76,13 +76,17 @@ OKWW_PUSH_RULES: list[tuple[str, str, str]] = [
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 
-def okww_resolve(lines: list[str]) -> list[str]:
+def okww_resolve(
+    results: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
-    规则产出两类标记：裸节点名（开始/动作标记，默认成功）与
-    "状态: 节点" 标记。同一节点多次出现保留最高优先级状态，且节点顺序
-    按最后一次出现排列（多会话日志时取最后会话的流程顺序）。
+    输入/输出均为 ``(log_type, text)`` 元组（与 log_box `_PostProcessor` 契约
+    一致），日志类型随元组一并保留。规则产出两类标记：裸节点名（开始/动作标记，
+    默认成功）与 "状态: 节点" 标记。同一节点多次出现保留最高优先级状态，且节点
+    顺序按最后一次出现排列（多会话日志时取最后会话的流程顺序）。
     """
+    lines = [text for _, text in results]
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
     for line in lines:
@@ -97,4 +101,14 @@ def okww_resolve(lines: list[str]) -> list[str]:
         order.append(node)
         if rank > states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
-    return [f"{states[node][1]}: {node}" for node in order]
+    # 取最后出现节点的日志类型；按节点名（去状态前缀后）映射，避免与完整
+    # 文本键不匹配而丢失类型（规则可能产出 "状态: 节点" 或裸节点名两种形态）
+    last_type: dict[str, str] = {}
+    for log_type, text in results:
+        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
+        node = m.group(2) if m else text
+        last_type[node] = log_type
+    return [
+        (last_type.get(node, "普通"), f"{states[node][1]}: {node}")
+        for node in order
+    ]
