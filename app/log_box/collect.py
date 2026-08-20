@@ -78,10 +78,7 @@ class LogCollect:
         也可作为装饰器使用：``@col.open()`` 会把被装饰函数登记为前置处理器，
         作用于逐行日志（返回新文本；返回 None 丢弃该行），按序执行。
         """
-        if not self._opened:
-            for source in self.sources:
-                source.open()
-            self._opened = True
+        self._open_sources()
         if processor is None:
             def _register(fn: _PreProcessor) -> _PreProcessor:
                 self._preprocessors.append(fn)
@@ -89,6 +86,13 @@ class LogCollect:
             return _register
         self._preprocessors.append(processor)
         return processor
+
+    def _open_sources(self) -> None:
+        """为各日志源记录起始位置（幂等）；未显式调用 open() 时由收尾读取兜底"""
+        if not self._opened:
+            for source in self.sources:
+                source.open()
+            self._opened = True
 
     def postprocess(self, processor: Optional[_PostProcessor] = None):
         """登记后置处理器（最终处理），作用于捕捉完的最终多行结果集。
@@ -223,7 +227,12 @@ class LogCollect:
     # ---------- 内部 ----------
 
     def _capture(self) -> None:
-        """从各日志源采集剩余新行，执行前置处理与规则匹配，累积结果"""
+        """从各日志源采集剩余新行，执行前置处理与规则匹配，累积结果
+
+        未显式调用 open() 时自动启动日志源（记录起始位置），保证 close() 收尾
+        读取自洽。
+        """
+        self._open_sources()
         for source in self.sources:
             for line in source.read_new():
                 self._process_line(line)
