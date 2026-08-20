@@ -1,9 +1,12 @@
-"""内置函数实现
+"""内置函数与自定义算子实现
 
-每个函数接收 (text, args) 并返回处理后的字符串。
-函数注册在 FUNCTIONS 字典中，供 evaluator 调用。
+内置函数每个接收 (text, args) 并返回处理后的字符串，注册在 FUNCTIONS 字典中。
 
-函数清单：cut / get / sub / cutby / subby / replace / trim / upper / lower
+自定义算子通过 @register_process 注入（如 log_box 的 i18n 翻译），继承
+Process 基类、实现 name 与 run(text, args)，注册在 REGISTRY 字典中。求值时
+先查内置函数、再查注入算子，保证引擎对外仍是统一函数链语义。
+
+内置函数清单：cut / get / sub / cutby / subby / replace / trim / upper / lower
 """
 
 from __future__ import annotations
@@ -12,6 +15,78 @@ from typing import Callable, Union
 
 # 函数参数类型
 Arg = Union[str, int]
+
+
+# ==================== 自定义算子 ====================
+
+class Process:
+    """自定义文本处理算子基类
+
+    子类通过 @register_process 注入表达式引擎，作为函数链可用的自定义函数。
+    实现 name 类属性与 run(text, args)；构造时接收表达式调用处的静态参数
+    *args，便于子类按调用参数完成实例化配置。
+
+    用法::
+
+        @register_process
+        class Translate(Process):
+            name = "translate"
+
+            def run(self, text, args):
+                return translator.translate(text)
+    """
+
+    name: str = ""
+
+    def __init__(self, *args: Arg) -> None:
+        self.args: list[Arg] = list(args)
+
+    def run(self, text: str, args: list[Arg]) -> str:
+        """处理文本：text 为输入，args 为表达式调用处的参数"""
+        raise NotImplementedError
+
+    def __call__(self, text: str, args: list[Arg]) -> str:
+        """对齐内置函数签名 func(text, args)"""
+        return self.run(text, args)
+
+
+# ==================== 注册表 ====================
+
+# 注入的自定义算子注册表：函数名 → Process 子类
+REGISTRY: dict[str, type[Process]] = {}
+
+
+def register_process(cls: type[Process]) -> type[Process]:
+    """按 cls.name 将自定义算子登记进 REGISTRY
+
+    Args:
+        cls: Process 子类，需定义 name 类属性
+
+    Returns:
+        原类（供装饰器使用）
+
+    Raises:
+        ValueError: 类未定义 name 类属性
+    """
+    name = getattr(cls, "name", "") or ""
+    if not name:
+        raise ValueError(f"自定义算子 {cls.__name__} 必须定义 name 类属性")
+    REGISTRY[name] = cls
+    return cls
+
+
+def make_process(name: str, cls: type[Process], args: list[Arg]) -> Process:
+    """按表达式调用参数实例化自定义算子
+
+    Args:
+        name: 算子名（仅用于构造提示）
+        cls: Process 子类
+        args: 表达式调用处的静态参数
+
+    Returns:
+        Process 实例
+    """
+    return cls(*args)
 
 
 def _find_nth(text: str, marker: str, nth: int, start: int = 0) -> int:
@@ -211,7 +286,7 @@ FUNCTIONS: dict[str, Callable[[str, list[Arg]], str]] = {
 
 
 def apply_function(name: str, args: list[Arg], text: str) -> str:
-    """调用内置函数
+    """调用函数（先查内置函数，再查注入的自定义算子）
 
     Args:
         name: 函数名
@@ -225,6 +300,9 @@ def apply_function(name: str, args: list[Arg], text: str) -> str:
         ValueError: 函数不存在或参数不合法
     """
     func = FUNCTIONS.get(name)
-    if func is None:
+    if func is not None:
+        return func(text, args)
+    cls = REGISTRY.get(name)
+    if cls is None:
         raise ValueError(f"未知函数: {name}")
-    return func(text, args)
+    return make_process(name, cls, args)(text, args)
