@@ -125,22 +125,41 @@
             </a-row>
 
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      账号
-                      <a-tooltip title="用于切换账号，无需切换则留空">
+                      账户
+                      <a-tooltip title="用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    placeholder="请输入账号"
+                    placeholder="请输入账户"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Id', formData.Info.Id)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      账号 UID
+                      <a-tooltip title="可不填；填写后切换前识别一致将不执行切换动作">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-input
+                    v-model:value="formData.Switch.Uid"
+                    placeholder="请输入账号 UID（可不填）"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Switch.Uid', formData.Switch.Uid)"
                   />
                 </a-form-item>
               </a-col>
@@ -149,14 +168,14 @@
                   <template #label>
                     <span class="form-label">
                       密码
-                      <a-tooltip title="需要切换账号时必须填写">
+                      <a-tooltip title="没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    placeholder="请输入密码"
+                    placeholder="请输入密码（没有填写密码时，默认为下拉列表切换账号）"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Password', formData.Info.Password)"
@@ -166,6 +185,31 @@
             </a-row>
 
             <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      游戏服务器
+                      <a-tooltip title="账号所在服务器：官服 / B服 / 亚服 / 欧服 / 美服 / 港澳台服">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Switch.Resource"
+                    size="large"
+                    class="modern-select"
+                    @change="saveField('Switch.Resource', formData.Switch.Resource)"
+                  >
+                    <a-select-option value="官服">官服</a-select-option>
+                    <a-select-option value="B服">B服</a-select-option>
+                    <a-select-option value="亚服">亚服</a-select-option>
+                    <a-select-option value="欧服">欧服</a-select-option>
+                    <a-select-option value="美服">美服</a-select-option>
+                    <a-select-option value="港澳台服">港澳台服</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
@@ -185,6 +229,17 @@
                     @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
                   />
                 </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <GeneralConfigModeSelector
+                  :model-value="formData.Info.IfUseMasConfig"
+                  :disabled="pageLoading"
+                  :saving="configModeSaving"
+                  @change="handleConfigModeChange"
+                />
               </a-col>
             </a-row>
 
@@ -213,8 +268,11 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>任务配置</h3>
+              <h3>默认配置组</h3>
             </div>
+            <p class="section-desc">
+              勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑
+            </p>
 
             <a-row :gutter="24">
               <a-col :span="24">
@@ -222,19 +280,51 @@
                   <template #label>
                     <span class="form-label">
                       一条龙配置名
-                      <a-tooltip title="对应 BetterGI 一条龙页面中已保存的配置名称，留空则启动默认一条龙">
+                      <a-tooltip title="对应 BetterGI 一条龙页面中已保存的配置名称，留空则使用「默认配置」">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Task.OneDragonConfigName"
-                    placeholder="请输入一条龙配置名（留空使用默认）"
+                    placeholder="请输入一条龙配置名（留空使用「默认配置」）"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)"
                   />
                 </a-form-item>
+              </a-col>
+            </a-row>
+
+            <div class="config-group-grid">
+              <div
+                v-for="option in oneDragonGroupOptions"
+                :key="option.value"
+                class="config-group-item"
+                :class="{ disabled: !formData.Info.IfUseMasConfig }"
+                @click="toggleGroup(option.value)"
+              >
+                <span class="config-group-item-label">{{ option.label }}</span>
+                <div
+                  class="config-group-item-capsule"
+                  :class="{ active: formData.OneDragon.Groups.includes(option.value) }"
+                >
+                  <span class="config-group-item-dot"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="section-header">
+              <h3>自定义配置组</h3>
+            </div>
+            <a-row :gutter="24" align="middle">
+              <a-col :span="24">
+                <a-space>
+                  <a-button type="primary" size="large" disabled>启动</a-button>
+                  <span class="custom-group-hint">自定义配置组功能暂未实现，敬请期待</span>
+                </a-space>
               </a-col>
             </a-row>
           </div>
@@ -344,6 +434,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
 const route = useRoute()
@@ -360,6 +451,7 @@ const scriptName = ref('BetterGI脚本')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const configModeSaving = ref(false)
 const bettergiConfigLoading = ref(false)
 const bettergiSubscriptionId = ref<string | null>(null)
 const bettergiWebsocketId = ref<string | null>(null)
@@ -373,8 +465,22 @@ type BetterGIUserFormData = {
   userName: string
   Info: FormSection<NonNullable<BetterGIUserConfig['Info']>>
   Task: FormSection<NonNullable<BetterGIUserConfig['Task']>>
+  Switch: FormSection<NonNullable<BetterGIUserConfig['Switch']>>
+  OneDragon: FormSection<NonNullable<BetterGIUserConfig['OneDragon']>>
   Notify: FormSection<NonNullable<BetterGIUserConfig['Notify']>>
 }
+
+// 一条龙内置配置组（与后端 BetterGIUserConfig.OneDragon.Groups 的默认项保持一致）
+const oneDragonGroupOptions = [
+  { label: '领取邮件', value: '领取邮件' },
+  { label: '合成树脂', value: '合成树脂' },
+  { label: '自动地脉花', value: '自动地脉花' },
+  { label: '自动秘境', value: '自动秘境' },
+  { label: '自动首领讨伐', value: '自动首领讨伐' },
+  { label: '自动幽境危战', value: '自动幽境危战' },
+  { label: '领取每日奖励', value: '领取每日奖励' },
+  { label: '领取尘歌壶奖励', value: '领取尘歌壶奖励' },
+]
 
 const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Info: {
@@ -389,9 +495,17 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     ScriptAfterTask: '',
     Notes: '',
     Tag: '',
+    IfUseMasConfig: true,
   },
   Task: {
     OneDragonConfigName: '',
+  },
+  Switch: {
+    Resource: '官服',
+    Uid: '',
+  },
+  OneDragon: {
+    Groups: oneDragonGroupOptions.map((option) => option.value),
   },
   Notify: {
     Enabled: false,
@@ -494,6 +608,51 @@ const saveField = async (key: string, value: unknown) => {
   }
 }
 
+const toggleGroup = (value: string) => {
+  if (!formData.Info.IfUseMasConfig) return
+  const set = new Set(formData.OneDragon.Groups)
+  if (set.has(value)) {
+    set.delete(value)
+  } else {
+    set.add(value)
+  }
+  // 按内置顺序排序，保持后端一条龙 TaskOrder 稳定
+  const groups = oneDragonGroupOptions.map((o) => o.value).filter((v) => set.has(v))
+  formData.OneDragon.Groups = groups
+  void saveField('OneDragon.Groups', groups)
+}
+
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'boolean') return
+  if (
+    isInitializing.value ||
+    configModeSaving.value ||
+    !userId.value ||
+    formData.Info.IfUseMasConfig === value
+  ) {
+    return
+  }
+
+  const previousValue = formData.Info.IfUseMasConfig
+  formData.Info.IfUseMasConfig = value
+  configModeSaving.value = true
+
+  try {
+    const saved = await updateUser(scriptId, userId.value, {
+      Info: { IfUseMasConfig: value },
+    })
+
+    if (!saved) {
+      formData.Info.IfUseMasConfig = previousValue
+      return
+    }
+
+    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+  } finally {
+    configModeSaving.value = false
+  }
+}
+
 const handleBettergiConfig = async () => {
   if (!userId.value) return
   try {
@@ -574,6 +733,8 @@ const loadUser = async () => {
     Object.assign(formData, {
       Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
       Task: { ...getDefaultUserData().Task, ...(userData.Task || {}) },
+      Switch: { ...getDefaultUserData().Switch, ...(userData.Switch || {}) },
+      OneDragon: { ...getDefaultUserData().OneDragon, ...(userData.OneDragon || {}) },
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
     })
     await nextTick()
@@ -676,6 +837,86 @@ onUnmounted(() => {
   width: 100%;
 }
 
+.section-desc {
+  margin: -8px 0 20px;
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+}
+
+.config-group-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.config-group-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.config-group-item:hover {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.config-group-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.config-group-item.disabled:hover {
+  background: transparent;
+}
+
+.config-group-item-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.config-group-item-capsule {
+  position: relative;
+  width: 56px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.config-group-item-capsule.active {
+  background: var(--ant-color-primary);
+  border-color: var(--ant-color-primary);
+}
+
+.config-group-item-dot {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: left 0.2s;
+}
+
+.config-group-item-capsule.active .config-group-item-dot {
+  left: 30px;
+}
+
+.custom-group-hint {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+}
+
 .bettergi-config-mask {
   position: fixed;
   inset: 32px 0 0;
@@ -730,6 +971,10 @@ onUnmounted(() => {
 
   .config-card :deep(.ant-card-body) {
     padding: 20px;
+  }
+
+  .config-group-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>

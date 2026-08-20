@@ -2788,6 +2788,28 @@ class OkNteUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+# BetterGI 一条龙内置配置组（按 BetterGI 默认顺序，与 tools/one_dragon.py 保持同步）
+_BGI_BUILTIN_ONE_DRAGON_GROUPS = [
+    "领取邮件",
+    "合成树脂",
+    "自动地脉花",
+    "自动秘境",
+    "自动首领讨伐",
+    "自动幽境危战",
+    "领取每日奖励",
+    "领取尘歌壶奖励",
+]
+
+# 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。
+# 用于加载旧配置时迁移（GlobalAccount=True 且 Servers 未知/「不切换服务器」时兜底为亚服）。
+_BGI_LEGACY_SERVERS_TO_RESOURCE = {
+    "Asia": "亚服",
+    "Europe": "欧服",
+    "America": "美服",
+    "TW,HK,MO": "港澳台服",
+}
+
+
 class BetterGIUserConfig(ConfigBase):
     """BetterGI 用户配置（更好的原神）"""
 
@@ -2817,12 +2839,40 @@ class BetterGIUserConfig(ConfigBase):
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
+        ## 是否使用用户独立一条龙配置（借鉴通用脚本 IfUseMasConfig）
+        self.Info_IfUseMasConfig = ConfigItem(
+            "Info", "IfUseMasConfig", True, BoolValidator()
+        )
 
         ## Task ------------------------------------------------------------
         ## BetterGI「一条龙」配置名，对应脚本一条龙页面中已保存的配置名称
         self.Task_OneDragonConfigName = ConfigItem(
             "Task", "OneDragonConfigName", ""
         )
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙要执行的内置配置组（按组名，默认全部 8 组开启）
+        self.OneDragon_Groups = ConfigItem(
+            "OneDragon",
+            "Groups",
+            list(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+            MultipleOptionsValidator(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+        )
+
+        ## Switch ----------------------------------------------------------
+        ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）
+        ## 账号/密码复用 Info.Id / Info.Password（密码经 EncryptValidator 加密）
+        ## 切换模式不再由用户配置，运行时按密码是否填写推断：
+        ##   填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」；B服 强制「B服切换另一个账号匹配+键鼠」。
+        ## 游戏服务器（账号所在服务器：官服/B服/国际服各服务器）
+        self.Switch_Resource = ConfigItem(
+            "Switch",
+            "Resource",
+            "官服",
+            OptionsValidator(["官服", "B服", "亚服", "欧服", "美服", "港澳台服"]),
+        )
+        ## 账号 UID（可不填，切换前识别一致将不执行切换动作）
+        self.Switch_Uid = ConfigItem("Switch", "Uid", "")
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2864,6 +2914,22 @@ class BetterGIUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载配置前，把旧版「国际服账号 + 国际服服务器 / B服切换模式」迁移为「游戏服务器」。"""
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        switch = normalized_data.get("Switch")
+        if isinstance(switch, dict) and "Resource" not in switch:
+            if switch.get("Modes") == "B服切换另一个账号匹配+键鼠":
+                # 旧版 B服 是切换模式，现作为游戏服务器
+                switch["Resource"] = "B服"
+            elif switch.get("GlobalAccount"):
+                switch["Resource"] = _BGI_LEGACY_SERVERS_TO_RESOURCE.get(
+                    switch.get("Servers"), "亚服"
+                )
+            else:
+                switch["Resource"] = "官服"
+        return await super().load(normalized_data)
 
     def getTags(self) -> str:
         tags = []
@@ -3187,10 +3253,23 @@ class BetterGIConfig(ConfigBase):
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）
+        self.Game_Controller = ConfigItem(
+            "Game",
+            "Controller",
+            "电脑端-前台",
+            OptionsValidator(["电脑端-前台", "电脑端-云原神", "电脑端-桌面分身"]),
+        )
+        ## 任务结束后关闭游戏
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
         )
 
         self.UserData = MultipleConfig([BetterGIUserConfig])

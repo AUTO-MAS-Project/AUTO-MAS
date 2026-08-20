@@ -761,6 +761,17 @@ class BetterGIUserConfig_Task(BaseModel):
     )
 
 
+class BetterGIUserConfig_Switch(BaseModel):
+    """BetterGI 切换账号配置（切换账号多模式脚本专项适配）"""
+
+    Resource: Optional[str] = Field(
+        default=None, description="游戏服务器：官服/B服/亚服/欧服/美服/港澳台服"
+    )
+    Uid: Optional[str] = Field(
+        default=None, description="账号 UID（可不填，切换前识别一致将不执行切换动作）"
+    )
+
+
 class BetterGIUserConfig_Info(BaseModel):
     """BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）"""
 
@@ -780,6 +791,17 @@ class BetterGIUserConfig_Info(BaseModel):
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
         default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+    IfUseMasConfig: Optional[bool] = Field(
+        default=None, description="是否使用用户独立一条龙配置"
+    )
+
+
+class BetterGIUserConfig_OneDragon(BaseModel):
+    """BetterGI 一条龙配置"""
+
+    Groups: Optional[List[str]] = Field(
+        default=None, description="一条龙要执行的内置配置组名列表"
     )
 
 
@@ -801,6 +823,8 @@ class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
 class BetterGIUserConfig(BaseModel):
     Info: Optional[BetterGIUserConfig_Info] = Field(default=None, description="用户信息")
     Task: Optional[BetterGIUserConfig_Task] = Field(default=None, description="任务配置")
+    Switch: Optional[BetterGIUserConfig_Switch] = Field(default=None, description="切换账号配置")
+    OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(default=None, description="一条龙配置")
     Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
     Notify: Optional[BetterGIUserConfig_Notify] = Field(default=None, description="单独通知")
 
@@ -970,9 +994,21 @@ class BetterGIConfig_Run(GeneralConfig_Run):
     """BetterGI 运行配置（复用通用字段）"""
 
 
+class BetterGIConfig_Game(BaseModel):
+    """BetterGI 游戏配置"""
+
+    Controller: Optional[str] = Field(
+        default=None, description="控制器：电脑端-前台/电脑端-云原神/电脑端-桌面分身"
+    )
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭游戏"
+    )
+
+
 class BetterGIConfig(BaseModel):
     Info: Optional[BetterGIConfig_Info] = Field(default=None, description="脚本基础信息")
     Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
+    Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):

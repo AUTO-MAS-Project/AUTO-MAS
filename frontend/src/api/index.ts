@@ -9,6 +9,15 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { ADBScreenshotIn } from './models/ADBScreenshotIn';
 export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
+export type { BetterGIConfig } from './models/BetterGIConfig';
+export type { BetterGIConfig_Info } from './models/BetterGIConfig_Info';
+export type { BetterGIConfig_Run } from './models/BetterGIConfig_Run';
+export type { BetterGIUserConfig } from './models/BetterGIUserConfig';
+export type { BetterGIUserConfig_Data } from './models/BetterGIUserConfig_Data';
+export type { BetterGIUserConfig_Info } from './models/BetterGIUserConfig_Info';
+export type { BetterGIUserConfig_Notify } from './models/BetterGIUserConfig_Notify';
+export type { BetterGIUserConfig_OneDragon } from './models/BetterGIUserConfig_OneDragon';
+export type { BetterGIUserConfig_Task } from './models/BetterGIUserConfig_Task';
 export type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from './models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 export type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from './models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 export type { CheckImageAllIn } from './models/CheckImageAllIn';
