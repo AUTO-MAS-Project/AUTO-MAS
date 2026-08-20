@@ -279,6 +279,11 @@ class AutoProxyTask(TaskExecuteBase):
             self.push_log_buffer.clear()
             self._push_log_processed = 0
             self._process_seen = False
+            # 多行匹配器跨尝试复用，清空残留窗口状态，避免上一次未闭合窗口吞并本次日志
+            for _matcher in self.push_log_patterns_compiled:
+                _reset = getattr(_matcher, "reset", None)
+                if _reset is not None:
+                    _reset()
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -645,6 +650,11 @@ class AutoProxyTask(TaskExecuteBase):
         # 按推送日志高级模式采集任务进程信息（受总开关控制）
         # 命中规则时以 (日志类型, 提取文本) 形式采集，类型供推送策略过滤
         if self.push_log_enabled and self.push_log_patterns_compiled:
+            # 日志轮转/截断时监控器会把 log_contents 重置为更短/全新的列表，
+            # 此前累计的 _push_log_processed 落后于新列表长度，切片会跳过恢复后的
+            # 前段日志；检测到长度变小即归零游标，从新列表头部重新采集
+            if len(log_content) < self._push_log_processed:
+                self._push_log_processed = 0
             for line in log_content[self._push_log_processed :]:
                 extracted = apply_patterns(
                     line, matchers=self.push_log_patterns_compiled

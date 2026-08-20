@@ -189,8 +189,9 @@ def compile_expression(expr_str: str) -> CompiledExpression:
                     try:
                         pattern = re.compile(seg.pattern_str, re.DOTALL)
                     except re.error as e:
-                        # 单条正则编译失败时 pattern 置 None，求值时视为未命中
-                        pattern = None
+                        # 正则语法错误直接抛出，由校验/调试接口向用户返回具体信息，
+                        # 避免非法表达式被编译为「无匹配」后运行时静默失效
+                        raise ExpressionError(f"正则语法错误 '{seg.pattern_str}': {e}") from e
                     compiled_line.append(
                         _CompiledRegex(
                             pattern=pattern, functions=seg.functions, full_text=False

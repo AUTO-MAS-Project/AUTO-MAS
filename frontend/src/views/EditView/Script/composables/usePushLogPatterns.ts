@@ -1,4 +1,5 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import { message } from 'ant-design-vue'
 
 export type PushLogPatternType = 'split' | 'regex' | 'multiline'
 
@@ -143,6 +144,20 @@ export const parsePushLogPatterns = (json: string): PushLogPattern[] => {
   }
 }
 
+/** 规则是否具备后端编译所需的必填字段（与后端 _compile_* 的条件一致）：
+ * - split 需匹配关键字；regex 需匹配正则；multiline 需起始正则。
+ * 停用（enabled=false）时保留配置不参与采集，视为可保存，不做字段要求。 */
+const ruleHasRequiredField = (p: PushLogPattern): boolean => {
+  if (p.enabled === false) return true
+  if (p.type === 'split') return !!((p.match || '').trim())
+  if (p.type === 'regex') return !!((p.match || '').trim())
+  if (p.type === 'multiline') return !!((p.start || '').trim())
+  return false
+}
+
+const ruleDisplayName = (p: PushLogPattern, idx: number): string =>
+  (p.name || '').trim() || `规则${idx + 1}`
+
 export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => {
   const cleaned: PushLogPattern[] = []
   for (const p of patterns) {
@@ -154,7 +169,8 @@ export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => 
       const match = (p.match || '').trim()
       const head = (p.head || '').trim()
       const tail = (p.tail || '').trim()
-      if (!match && !head && !tail) continue
+      // 匹配关键字留空则该规则不生效（与后端 _compile_split 对齐）
+      if (enabled && !match) continue
       cleaned.push({
         type: 'split',
         name,
@@ -169,13 +185,15 @@ export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => 
     } else if (p.type === 'regex') {
       const match = (p.match || '').trim()
       const extract = (p.extract || '').trim()
-      if (!match && !extract) continue
+      // 匹配正则留空则该规则不生效（与后端 _compile_regex_matcher 对齐）
+      if (enabled && !match) continue
       cleaned.push({ type: 'regex', name, enabled, logType, match, extract })
     } else {
       const start = (p.start || '').trim()
       const end = (p.end || '').trim()
       const extract = (p.extract || '').trim()
-      if (!start && !end) continue
+      // 起始正则留空则该规则不生效（与后端 _compile_multiline_matcher 对齐）
+      if (enabled && !start) continue
       cleaned.push({
         type: 'multiline',
         name,
@@ -252,6 +270,17 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
 
   const save = () => {
     const json = serializePushLogPatterns(patterns.value)
+    // 启用中的规则缺少必填字段（后端编译时会跳过），保存配置与运行采集不一致，
+    // 这里给出可见提示而非静默失效
+    const dropped = patterns.value
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
+      .map(({ p, i }) => ruleDisplayName(p, i))
+    if (dropped.length > 0) {
+      message.warning(
+        `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`,
+      )
+    }
     onChange?.(json)
   }
 
