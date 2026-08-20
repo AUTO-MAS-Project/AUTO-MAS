@@ -64,6 +64,19 @@ col = log_box.get_collect(
 处理管线：**前置处理（翻译/过滤）→ 匹配与提取均在处理后行 → 后置处理**。
 前置处理器逐行翻译后，规则匹配与提取都作用于翻译后的行，翻译对下游整体生效。
 
+## 日志类型与推送时机语义
+
+**LogType（`collect`/`rule` 的 type 参数，逐条）** 与 **推送任务结果时机（通知设置 `SendTaskResultTime`，全局）** 是两层独立语义（与 MAS 原生推送一致）：
+
+- **`LogType.NORMAL`（普通）**：该条目**任何推送报告均包含**。
+- **`LogType.FAIL`（失败）**：该条目**仅在任务存在未完成用户时纳入报告**。
+- **`SendTaskResultTime`（不推送 / 任何时刻 / 仅失败时）**：决定**是否推送整份报告**：
+  - `不推送`：永不推送
+  - `任何时刻`：任务结束即推送整份报告
+  - `仅失败时`：**仅当任务存在未完成用户时**推送整份报告
+
+**okww 专项约定**：节点级失败（如 `❌ 失败: 先约电台`）**始终展示**——`LogType` 用 `NORMAL`、状态由文本「❌ 失败:」体现，不被「未完成用户」过滤；推送时机由 `SendTaskResultTime` 全局控制，**不做专项 LogType/推送逻辑**（与上游语义保持一致）。
+
 ## Rule 编程式构建
 
 ```python
@@ -115,7 +128,7 @@ col.rule(r"current_stamina (\d+)").regex(r"(\d+)").func("suffix", " 剩余电量
 ## 专项喂参示例（MAS 进程宿主）
 
 专项只做：实例化一个 log_box、塞入日志路径与规则、注入 sink、挂前置翻译与
-后置去重；其余全由 box 完成（参见 okww 的 `app/task/Okww/`）：
+后置状态解析；其余全由 box 完成（参见 okww 的 `app/task/Okww/`）：
 
 ```python
 from mas_script import log_box, LogType
@@ -126,23 +139,33 @@ self.log_collect = log_box.get_collect(
     start_from_end=True,
 )
 self.log_collect.open(translator.translate)          # 前置翻译
-for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数
+for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态标记规则）
     self.log_collect.collect(match_re, expr, log_type)
-# 结束时机（如进程关闭判定 / final_task）：col.close(dedup)
+# 结束时机（如进程关闭判定 / final_task）：col.close(resolve)
 ```
 
-后置去重示例：按节点只留最终状态（保留顺序）：
+后处理示例：按节点解析最终状态（失败 > 跳过 > 成功），裸节点名 = 开始标记默认成功：
 
 ```python
-def dedup(lines):
-    seen, result = set(), []
-    for line in reversed(lines):
-        node = line.split(": ", 1)[1] if ": " in line else line
-        if node not in seen:
-            result.append(line)
-            seen.add(node)
-    return list(reversed(result))
+import re
+_STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
+
+def resolve(lines):
+    order, states = [], {}
+    for line in lines:
+        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", line)
+        status, node = (m.group(1), m.group(2)) if m else ("✅ 成功", line)
+        rank = _STATUS_RANK[status]
+        if node in states:
+            order.remove(node)  # 保留最后一次出现顺序
+        order.append(node)
+        if rank > states.get(node, (0, ""))[0]:
+            states[node] = (rank, status)
+    return [f"{states[n][1]}: {n}" for n in order]
 ```
+
+> 节点级失败用 `LogType.NORMAL` + 文本「❌ 失败:」始终展示；推送时机由全局
+> `SendTaskResultTime` 控制（见上文「日志类型与推送时机语义」）。
 
 ## 脚本宿主示例（用户脚本子进程）
 
