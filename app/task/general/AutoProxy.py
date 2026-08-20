@@ -47,6 +47,8 @@ from app.utils import (
     apply_patterns,
     flush_patterns,
 )
+from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+from app.log_box.markers import parse_marker
 from app.utils.constants import UTC4
 from .tools import execute_script_task, push_notification
 
@@ -228,6 +230,8 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.push_log_buffer: list[tuple[str, str]] = []
         self._push_log_processed = 0
+        # 脚本宿主回传：是否已收到 @@LOGBOX@@ flush 标记（回传通道结束）
+        self._marker_flushed = False
         # 进程防抖：是否曾观测到跟踪进程在运行；启动宽限期内进程未出现不判定结束，
         # 避免残留进程收尾日志触发回调时误判成功
         self._process_seen = False
@@ -647,15 +651,30 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        # 按推送日志高级模式采集任务进程信息（受总开关控制）
-        # 命中规则时以 (日志类型, 提取文本) 形式采集，类型供推送策略过滤
-        if self.push_log_enabled and self.push_log_patterns_compiled:
-            # 日志轮转/截断时监控器会把 log_contents 重置为更短/全新的列表，
-            # 此前累计的 _push_log_processed 落后于新列表长度，切片会跳过恢复后的
-            # 前段日志；检测到长度变小即归零游标，从新列表头部重新采集
-            if len(log_content) < self._push_log_processed:
-                self._push_log_processed = 0
-            for line in log_content[self._push_log_processed :]:
+        # 采集推送日志：先嗅探脚本宿主 @@LOGBOX@@ 回传标记，再按高级模式规则采集
+        # 日志轮转/截断时监控器会把 log_contents 重置为更短/全新的列表，
+        # 此前累计的 _push_log_processed 落后于新列表长度，切片会跳过恢复后的
+        # 前段日志；检测到长度变小即归零游标，从新列表头部重新采集
+        if len(log_content) < self._push_log_processed:
+            self._push_log_processed = 0
+        for line in log_content[self._push_log_processed :]:
+            # 脚本宿主回传通道：push 收结果入缓冲、flush 结束回传，均跳过该行
+            marker = parse_marker(line)
+            if marker is not None:
+                op = marker.get("op")
+                if op == "push":
+                    self.push_log_buffer.append(
+                        (
+                            marker.get("type") or LOG_TYPE_NORMAL,
+                            str(marker.get("text") or ""),
+                        )
+                    )
+                elif op == "flush":
+                    self._marker_flushed = True
+                continue
+            # 按推送日志高级模式采集任务进程信息（受总开关控制）
+            # 命中规则时以 (日志类型, 提取文本) 形式采集，类型供推送策略过滤
+            if self.push_log_enabled and self.push_log_patterns_compiled:
                 extracted = apply_patterns(
                     line, matchers=self.push_log_patterns_compiled
                 )
@@ -669,7 +688,7 @@ class AutoProxyTask(TaskExecuteBase):
                             ),
                         )
                     )
-            self._push_log_processed = len(log_content)
+        self._push_log_processed = len(log_content)
 
         for success_sign in self.success_log:
             if success_sign in log:
