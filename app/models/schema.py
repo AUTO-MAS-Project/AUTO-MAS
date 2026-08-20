@@ -770,6 +770,13 @@ class GeneralConfig_Script(BaseModel):
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+    PushLogEnabled: Optional[bool] = Field(
+        default=None, description="推送日志采集启用开关"
+    )
+    PushLogPatterns: Optional[str] = Field(
+        default=None,
+        description='推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})',
+    )
 
 
 class GeneralConfig_Game(BaseModel):
@@ -2435,3 +2442,67 @@ class WSCommandsOut(OutBase):
     """可用命令列表响应"""
 
     data: Optional[Dict[str, Any]] = Field(default=None, description="命令列表")
+
+
+# ============== 日志模式调试相关模型 ==============
+
+
+class PushLogPattern(BaseModel):
+    """推送日志采集模式配置（split/regex/multiline 三种模式按 type 区分，各模式使用对应字段）"""
+
+    type: Literal["split", "regex", "multiline"] = Field(..., description="匹配类型")
+    name: Optional[str] = Field(default=None, description="规则标题（供分享站展示/说明）")
+    enabled: Optional[bool] = Field(
+        default=None, description="单条规则启用/停用开关：停用时保留配置但不参与采集"
+    )
+    logType: Optional[str] = Field(default=None, description="日志类型：普通/失败")
+    match: Optional[str] = Field(default=None, description="split 模式的匹配关键字")
+    head: Optional[str] = Field(default=None, description="split 模式的首部关键字")
+    headInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含首部关键字"
+    )
+    tail: Optional[str] = Field(default=None, description="split 模式的尾部关键字")
+    tailInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含尾部关键字"
+    )
+    extract: Optional[str] = Field(
+        default=None, description="regex 模式的提取正则（split/regex 通用）"
+    )
+    start: Optional[str] = Field(
+        default=None, description="multiline 模式的起始行正则"
+    )
+    end: Optional[str] = Field(default=None, description="multiline 模式的结束行正则")
+    maxLines: Optional[int] = Field(
+        default=None, description="multiline 模式的最大跨行数"
+    )
+
+
+class PatternDebugIn(BaseModel):
+    """日志模式调试请求"""
+
+    pattern: PushLogPattern = Field(..., description="待调试的推送日志模式配置")
+    logText: str = Field(default="", description="待调试的多行日志文本")
+
+
+class PatternDebugResultItem(BaseModel):
+    """单行/单窗口调试结果"""
+
+    idx: int = Field(..., description="行号或窗口序号")
+    hit: bool = Field(..., description="是否命中")
+    extracted: str = Field(default="", description="提取后的文本")
+    line: str = Field(default="", description="原始日志行（多行模式为空）")
+    error: Optional[str] = Field(default=None, description="该行/窗口的错误信息")
+
+
+class PatternDebugOut(OutBase):
+    """日志模式调试响应"""
+
+    configError: Optional[str] = Field(
+        default=None, description="配置级错误（正则/表达式语法错误等）"
+    )
+    isMultiline: bool = Field(
+        default=False, description="是否为多行聚合模式"
+    )
+    results: List[PatternDebugResultItem] = Field(
+        default_factory=list, description="逐行/逐窗口调试结果"
+    )
