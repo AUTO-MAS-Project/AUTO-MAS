@@ -268,14 +268,16 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>任务配置</h3>
-              <a-tooltip title="勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
+              <h3>
+                任务配置
+                <a-tooltip title="勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </h3>
             </div>
 
             <a-row :gutter="24">
-              <a-col :span="24">
+              <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -291,6 +293,74 @@
                     size="large"
                     class="modern-input"
                     @blur="saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      领取奖励队伍
+                      <a-tooltip title="留空则不覆盖 BetterGI 现有设置">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-input
+                    v-model:value="formData.OneDragon.DailyRewardPartyName"
+                    :disabled="!formData.Info.IfUseMasConfig"
+                    placeholder="请输入领取奖励队伍"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('OneDragon.DailyRewardPartyName', formData.OneDragon.DailyRewardPartyName)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      通用战斗队伍
+                      <a-tooltip title="留空则不覆盖 BetterGI 现有设置">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-input
+                    v-model:value="formData.OneDragon.PartyName"
+                    :disabled="!formData.Info.IfUseMasConfig"
+                    placeholder="请输入通用战斗队伍"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('OneDragon.PartyName', formData.OneDragon.PartyName)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      通用战斗策略
+                      <a-tooltip title="留空则默认为【根据队伍自动选择】">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.OneDragon.AutoBossStrategyName"
+                    :disabled="!formData.Info.IfUseMasConfig"
+                    placeholder="请输入通用战斗策略"
+                    size="large"
+                    :options="strategyOptions"
+                    allow-clear
+                    show-search
+                    option-filter-prop="label"
+                    class="modern-input"
+                    @dropdown-visible-change="(open: boolean) => { if (open) void loadStrategyOptions() }"
+                    @change="saveField('OneDragon.AutoBossStrategyName', formData.OneDragon.AutoBossStrategyName)"
                   />
                 </a-form-item>
               </a-col>
@@ -315,20 +385,7 @@
             </div>
           </div>
 
-          <div class="form-section">
-            <div class="section-header">
-              <h3>自定义配置组</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="24">
-                <a-space>
-                  <a-button type="primary" size="large" disabled>启动</a-button>
-                  <span class="custom-group-hint">自定义配置组功能暂未实现，敬请期待</span>
-                </a-space>
-              </a-col>
-            </a-row>
-          </div>
-        </a-form>
+          </a-form>
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -427,7 +484,7 @@ import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { Service, type BetterGIUserConfig } from '@/api'
+import { BettergiService, Service, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -506,6 +563,9 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   },
   OneDragon: {
     Groups: oneDragonGroupOptions.map((option) => option.value),
+    DailyRewardPartyName: '',
+    PartyName: '',
+    AutoBossStrategyName: '根据队伍自动选择',
   },
   Notify: {
     Enabled: false,
@@ -620,6 +680,19 @@ const toggleGroup = (value: string) => {
   const groups = oneDragonGroupOptions.map((o) => o.value).filter((v) => set.has(v))
   formData.OneDragon.Groups = groups
   void saveField('OneDragon.Groups', groups)
+}
+
+// 自动战斗策略下拉选项（「根据队伍自动选择」+ {RootPath}/User/AutoFight/*.txt），由后端实时读取
+const strategyOptions = ref<{ label: string; value: string }[]>([])
+const loadStrategyOptions = async () => {
+  try {
+    const resp = await BettergiService.getBettergiStrategiesApiApiScriptsBettergiStrategiesGet(scriptId)
+    strategyOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
+      .map((item) => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -753,6 +826,7 @@ onMounted(async () => {
   if (await loadScriptInfo()) {
     await loadUser()
   }
+  await loadStrategyOptions()
 })
 
 onUnmounted(() => {
@@ -819,6 +893,7 @@ onUnmounted(() => {
   font-weight: 700;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .form-label {
@@ -846,15 +921,15 @@ onUnmounted(() => {
 .config-group-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 12px;
 }
 
 .config-group-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 16px 8px;
+  gap: 8px;
+  padding: 8px 4px;
   border: 1px solid transparent;
   border-radius: 12px;
   cursor: pointer;
@@ -876,16 +951,16 @@ onUnmounted(() => {
 }
 
 .config-group-item-label {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--ant-color-text);
 }
 
 .config-group-item-capsule {
   position: relative;
-  width: 56px;
-  height: 28px;
-  border-radius: 14px;
+  width: 44px;
+  height: 22px;
+  border-radius: 11px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border);
   transition: background 0.2s, border-color 0.2s;
@@ -898,10 +973,10 @@ onUnmounted(() => {
 
 .config-group-item-dot {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 22px;
-  height: 22px;
+  top: 1px;
+  left: 1px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -909,12 +984,7 @@ onUnmounted(() => {
 }
 
 .config-group-item-capsule.active .config-group-item-dot {
-  left: 30px;
-}
-
-.custom-group-hint {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
+  left: 25px;
 }
 
 .bettergi-config-mask {

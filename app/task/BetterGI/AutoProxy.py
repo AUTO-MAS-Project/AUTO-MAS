@@ -192,6 +192,13 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.user_id,
             self.one_dragon_config,
             self.one_dragon_groups,
+            daily_reward_party_name=str(
+                self.cur_user_config.get("OneDragon", "DailyRewardPartyName") or ""
+            ),
+            party_name=str(self.cur_user_config.get("OneDragon", "PartyName") or ""),
+            auto_boss_strategy_name=str(
+                self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""
+            ),
         )
         logger.info(
             f"已写入用户 {self.cur_user_item.name} 的一条龙配置: {self.one_dragon_config}"

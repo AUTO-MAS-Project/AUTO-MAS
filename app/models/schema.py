@@ -803,6 +803,15 @@ class BetterGIUserConfig_OneDragon(BaseModel):
     Groups: Optional[List[str]] = Field(
         default=None, description="一条龙要执行的内置配置组名列表"
     )
+    DailyRewardPartyName: Optional[str] = Field(
+        default=None, description="领取奖励队伍（对应一条龙 DailyRewardPartyName，留空不覆盖）"
+    )
+    PartyName: Optional[str] = Field(
+        default=None, description="战斗队伍（对应一条龙通用 PartyName，留空不覆盖）"
+    )
+    AutoBossStrategyName: Optional[str] = Field(
+        default=None, description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）"
+    )
 
 
 class BetterGIUserConfig_Data(GeneralUserConfig_Data):

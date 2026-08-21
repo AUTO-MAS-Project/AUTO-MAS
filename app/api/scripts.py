@@ -30,6 +30,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
@@ -43,6 +44,15 @@ def _hsr_script_config(script_id: str):
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeHSRConfig):
         raise TypeError("脚本配置类型错误, 不是 HSR 类型")
+    return script_config
+
+
+def _bettergi_script_config(script_id: str):
+    """Resolve a BetterGI script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeBetterGIConfig):
+        raise TypeError("脚本配置类型错误, 不是 BetterGI 类型")
     return script_config
 
 
@@ -719,6 +729,39 @@ async def get_hsr_stage_options_api(
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/strategies",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 自动战斗策略选项",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt`` 文件名。"""
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_auto_boss_strategies(root)
+        data = [ComboBoxItem(label=n, value=n) for n in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个自动战斗策略选项",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
         )
 
 
