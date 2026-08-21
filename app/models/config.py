@@ -851,10 +851,6 @@ class MaaConfig(ConfigBase):
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
         )
-        ## 剿灭避免无代理卡浪费理智
-        self.Run_AnnihilationAvoidWaste = ConfigItem(
-            "Run", "AnnihilationAvoidWaste", False, BoolValidator()
-        )
 
         self.UserData = MultipleConfig([MaaUserConfig])
 

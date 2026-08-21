@@ -597,9 +597,6 @@ class MaaConfig_Run(BaseModel):
         default=None, description="剿灭超时限制"
     )
     RoutineTimeLimit: Optional[int] = Field(default=None, description="日常超时限制")
-    AnnihilationAvoidWaste: Optional[bool] = Field(
-        default=None, description="剿灭避免无代理卡浪费理智"
-    )
 
 
 class MaaConfig(BaseModel):

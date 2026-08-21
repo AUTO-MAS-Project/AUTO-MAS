@@ -23,9 +23,5 @@ export type MaaConfig_Run = {
      * 日常超时限制
      */
     RoutineTimeLimit?: (number | null);
-    /**
-     * 剿灭避免无代理卡浪费理智
-     */
-    AnnihilationAvoidWaste?: (boolean | null);
 };
 

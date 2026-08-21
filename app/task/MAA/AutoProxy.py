@@ -687,9 +687,6 @@ class AutoProxyTask(TaskExecuteBase):
                 plan_data.get("MedicineNumb", 0) != 0
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
-            if self.script_config.get("Run", "AnnihilationAvoidWaste"):
-                task_set["Fight"]["EnableTimesLimit"] = True
-                task_set["Fight"]["TimesLimit"] = 1
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
                 "Info", "Annihilation"
             )
