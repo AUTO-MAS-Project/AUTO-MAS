@@ -15,7 +15,7 @@ const latestVersion = ref('')
 
 // 定时器相关 - 参考顶栏TitleBar.vue的实现
 const POLL_MS = 4 * 60 * 60 * 1000 // 4小时
-let updateCheckTimer: NodeJS.Timeout | null = null
+let updateCheckTimer: ReturnType<typeof setInterval> | null = null
 const isPolling = ref(false)
 
 // 防止重复弹出的状态

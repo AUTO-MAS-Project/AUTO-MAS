@@ -18,7 +18,7 @@ const logMode = ref<LogMode>('follow')
 const selectedLogFile = ref<'app' | 'frontend'>('app')
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
-let refreshInterval: NodeJS.Timeout | null = null
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 // Monaco Editor 主题
 const editorTheme = computed(() => {
