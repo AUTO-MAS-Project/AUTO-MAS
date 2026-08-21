@@ -56,16 +56,19 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select :value="formData.Info.AnnihilationStartWeekday || 'Monday'" :disabled="loading" size="large"
-            :options="annihilationWeekdayOptions" @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
-          <div class="field-help">从所选星期开始执行剿灭，本周达到上限后自动停止。</div>
-          <div class="annihilation-status">
-            <span>本周状态：{{ annihilationCompletedThisWeek ? '已完成' : '未完成' }}</span>
-            <a-space>
-              <a-button size="small" @click="emitSave('Data.AnnihilationCompletedWeek', null)">重置状态</a-button>
-              <a-button size="small" @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)">手动完成</a-button>
+          <div class="annihilation-schedule-controls">
+            <a-select :value="formData.Info.AnnihilationStartWeekday || 'Monday'" :disabled="loading" size="large"
+              class="annihilation-weekday-select" :options="annihilationWeekdayOptions"
+              @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
+            <a-tag :color="annihilationCompletedThisWeek ? 'success' : 'warning'" class="annihilation-status-tag">
+              本周状态：{{ annihilationCompletedThisWeek ? '已完成' : '未完成' }}
+            </a-tag>
+            <a-space :size="4" class="annihilation-actions">
+              <a-button size="small" :disabled="loading" @click="emitSave('Data.AnnihilationCompletedWeek', null)">重置状态</a-button>
+              <a-button size="small" :disabled="loading" @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)">手动完成</a-button>
             </a-space>
           </div>
+          <div class="field-help">从所选星期开始执行剿灭，本周达到上限后自动停止。</div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -344,8 +347,11 @@ const annihilationWeekdayOptions = [
   { label: '周日', value: 'Sunday' },
 ]
 
+// 与后端 AutoProxy._current_week_marker（UTC+4 ISO 周）保持一致。
+// 先取 UTC+4 的日期（丢弃时分秒），再按 ISO 规则落到本周四，避免时移残留导致周数 +1。
 const currentWeekMarker = (() => {
-  const date = new Date(Date.now() + 4 * 60 * 60 * 1000)
+  const shifted = new Date(Date.now() + 4 * 60 * 60 * 1000)
+  const date = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()))
   const day = date.getUTCDay() || 7
   date.setUTCDate(date.getUTCDate() + 4 - day)
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
@@ -354,7 +360,7 @@ const currentWeekMarker = (() => {
 })()
 
 const annihilationCompletedThisWeek = computed(
-  () => formData.Data?.AnnihilationCompletedWeek === currentWeekMarker,
+  () => props.formData.Data?.AnnihilationCompletedWeek === currentWeekMarker,
 )
 
 // 事件处理函数
@@ -497,13 +503,26 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   line-height: 1.5;
 }
 
-.annihilation-status {
+.annihilation-schedule-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
-  color: var(--ant-color-text-secondary);
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.annihilation-weekday-select {
+  flex: 1;
+  min-width: 140px;
+}
+
+.annihilation-status-tag {
+  margin: 0;
+  flex-shrink: 0;
   font-size: 12px;
+  line-height: 22px;
+}
+
+.annihilation-actions {
+  flex-shrink: 0;
 }
 </style>
