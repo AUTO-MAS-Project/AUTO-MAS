@@ -2898,6 +2898,17 @@ class BetterGIUserConfig(ConfigBase):
             list(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
             MultipleOptionsValidator(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
         )
+        ## 领取奖励队伍（对应 BetterGI 一条龙的 DailyRewardPartyName，留空不覆盖）
+        self.OneDragon_DailyRewardPartyName = ConfigItem(
+            "OneDragon", "DailyRewardPartyName", ""
+        )
+        ## 战斗队伍（对应 BetterGI 一条龙的通用 PartyName，留空不覆盖）
+        self.OneDragon_PartyName = ConfigItem("OneDragon", "PartyName", "")
+        ## 战斗策略（对应 BetterGI 一条龙的 AutoBossStrategyName，留空不覆盖）
+        ## 默认「根据队伍自动选择」为 BetterGI 内置策略名
+        self.OneDragon_AutoBossStrategyName = ConfigItem(
+            "OneDragon", "AutoBossStrategyName", ""
+        )
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）

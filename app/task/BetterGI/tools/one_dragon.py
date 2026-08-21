@@ -55,6 +55,26 @@ _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 # 空配置名的显式兜底配置名
 _DEFAULT_CONFIG_NAME = "默认配置"
 
+# BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
+_AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
+# 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
+_AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
+
+
+def list_auto_boss_strategies(root: Path) -> list[str]:
+    """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight/*.txt 文件名。
+
+    玩家可自行往该目录放置 .txt 战斗脚本，故每次调用实时扫描以反映最新选项。
+    """
+    options = [_AUTO_BOSS_BUILTIN_STRATEGY]
+    autofight_dir = root / _AUTO_FIGHT_REL_DIR
+    if autofight_dir.is_dir():
+        for p in sorted(autofight_dir.glob("*.txt"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name not in options:
+                options.append(name)
+    return options
+
 
 def resolve_config_name(name: str) -> str:
     """解析一条龙配置名，空值显式兜底为「默认配置」。"""
@@ -125,10 +145,14 @@ def write_user_one_dragon(
     user_id: str,
     config_name: str,
     groups: list[str],
+    daily_reward_party_name: str = "",
+    party_name: str = "",
+    auto_boss_strategy_name: str = "",
 ) -> None:
-    """把组开关应用到一条龙配置，写入 BetterGI 并缓存 per-user 副本。
+    """把组开关与队伍/策略设置应用到一条龙配置，写入 BetterGI 并缓存 per-user 副本。
 
     种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
+    三个非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）。
     """
     config_name = resolve_config_name(config_name)
     user_path = per_user_one_dragon_path(script_id, user_id, config_name)
@@ -140,6 +164,12 @@ def write_user_one_dragon(
         config = load_seed_template()
 
     config = apply_groups(config, groups)
+    if daily_reward_party_name:
+        config["DailyRewardPartyName"] = daily_reward_party_name
+    if party_name:
+        config["PartyName"] = party_name
+    if auto_boss_strategy_name:
+        config["AutoBossStrategyName"] = auto_boss_strategy_name
     write_one_dragon(root, config_name, config)
     write_file(user_path, config)
 

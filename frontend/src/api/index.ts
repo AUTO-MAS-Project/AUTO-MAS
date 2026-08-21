@@ -289,6 +289,7 @@ export type { WSMessageHistoryOut } from './models/WSMessageHistoryOut';
 export { Service } from './services/Service';
 export { ActionService } from './services/ActionService';
 export { AddService } from './services/AddService';
+export { BettergiService } from './services/BettergiService';
 export { DeleteService } from './services/DeleteService';
 export { GameSignService } from './services/GameSignService';
 export { GetService } from './services/GetService';
