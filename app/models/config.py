@@ -2909,6 +2909,14 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_AutoBossStrategyName = ConfigItem(
             "OneDragon", "AutoBossStrategyName", ""
         )
+        ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
+        self.OneDragon_IfUseCustomGroups = ConfigItem(
+            "OneDragon", "IfUseCustomGroups", False, BoolValidator()
+        )
+        ## 自定义配置组列表：JSON 数组字符串，元素为 {"name": str, "enabled": bool}
+        self.OneDragon_CustomGroups = ConfigItem(
+            "OneDragon", "CustomGroups", "[]", JSONValidator(list)
+        )
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）

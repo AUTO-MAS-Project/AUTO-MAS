@@ -766,6 +766,43 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
 
 
 @router.get(
+    "/bettergi/one-dragon/custom-groups",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 一条龙自定义配置组",
+    response_model=BetterGICustomGroupsOut,
+    status_code=200,
+)
+async def get_bettergi_custom_groups_api(
+    scriptId: str, configName: str = ""
+) -> BetterGICustomGroupsOut:
+    """返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。"""
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        items = one_dragon.list_custom_groups(
+            root, one_dragon.resolve_config_name(configName)
+        )
+        data = [BetterGICustomGroupOut(**item) for item in items]
+        return BetterGICustomGroupsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个自定义配置组",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGICustomGroupsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
     "/hsr/capabilities",
     tags=["HSR"],
     summary="获取内置 HSR 能力快照",

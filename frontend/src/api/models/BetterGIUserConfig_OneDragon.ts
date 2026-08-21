@@ -19,4 +19,12 @@ export type BetterGIUserConfig_OneDragon = {
      * 战斗策略
      */
     AutoBossStrategyName?: (string | null);
+    /**
+     * 是否管理自定义配置组（总开关）
+     */
+    IfUseCustomGroups?: (boolean | null);
+    /**
+     * 自定义配置组 JSON 列表字符串，元素含 name/enabled
+     */
+    CustomGroups?: (string | Array<any> | null);
 };

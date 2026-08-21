@@ -163,6 +163,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_groups = list(
             self.cur_user_config.get("OneDragon", "Groups") or []
         )
+        self.use_custom_groups = bool(
+            self.cur_user_config.get("OneDragon", "IfUseCustomGroups")
+        )
+        self.one_dragon_custom_groups = one_dragon.parse_custom_groups(
+            self.cur_user_config.get("OneDragon", "CustomGroups") or ""
+        )
         self.bettergi_args = ["startOneDragon", self.one_dragon_config]
 
         self.run_book = False
@@ -199,6 +205,8 @@ class AutoProxyTask(TaskExecuteBase):
             auto_boss_strategy_name=str(
                 self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""
             ),
+            custom_groups=self.one_dragon_custom_groups,
+            manage_custom_groups=self.use_custom_groups,
         )
         logger.info(
             f"已写入用户 {self.cur_user_item.name} 的一条龙配置: {self.one_dragon_config}"

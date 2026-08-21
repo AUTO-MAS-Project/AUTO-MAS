@@ -84,6 +84,12 @@ class ScriptConfigTask(TaskExecuteBase):
             self.cur_user_item.user_id,
             str(target.get("Task", "OneDragonConfigName") or ""),
             list(target.get("OneDragon", "Groups") or []),
+            custom_groups=one_dragon.parse_custom_groups(
+                target.get("OneDragon", "CustomGroups") or ""
+            ),
+            manage_custom_groups=bool(
+                target.get("OneDragon", "IfUseCustomGroups")
+            ),
         )
 
     def _snapshot_one_dragon_config(self) -> None:

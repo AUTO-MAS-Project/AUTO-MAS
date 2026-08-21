@@ -79,6 +79,19 @@ class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
 
 
+class BetterGICustomGroupOut(BaseModel):
+    """BetterGI 一条龙自定义配置组（非内置 8 组）"""
+
+    name: str = Field(..., description="配置组名称")
+    enabled: bool = Field(..., description="启用状态")
+
+
+class BetterGICustomGroupsOut(OutBase):
+    data: List[BetterGICustomGroupOut] = Field(
+        default_factory=list, description="一条龙自定义配置组列表"
+    )
+
+
 class MaaEndOptionsOut(OutBase):
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
@@ -806,6 +819,13 @@ class BetterGIUserConfig_OneDragon(BaseModel):
     )
     AutoBossStrategyName: Optional[str] = Field(
         default=None, description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）"
+    )
+    IfUseCustomGroups: Optional[bool] = Field(
+        default=None, description="是否管理自定义配置组（总开关）"
+    )
+    CustomGroups: Optional[Union[str, List]] = Field(
+        default=None,
+        description="自定义配置组 JSON 列表字符串，元素含 name/enabled",
     )
 
 

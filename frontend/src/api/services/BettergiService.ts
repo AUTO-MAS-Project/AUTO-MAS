@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -22,6 +23,30 @@ export class BettergiService {
             url: '/api/scripts/bettergi/strategies',
             query: {
                 'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 一条龙自定义配置组
+     * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
+     * @param scriptId
+     * @param configName
+     * @returns BetterGICustomGroupsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
+        scriptId: string,
+        configName?: (string | null),
+    ): CancelablePromise<BetterGICustomGroupsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/one-dragon/custom-groups',
+            query: {
+                'scriptId': scriptId,
+                'configName': configName,
             },
             errors: {
                 422: `Validation Error`,
