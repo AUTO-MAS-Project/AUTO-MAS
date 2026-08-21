@@ -23,6 +23,7 @@
 import sys
 import ctypes
 import asyncio
+import os
 import psutil
 import subprocess
 import tempfile
@@ -75,6 +76,10 @@ class _SystemHandler:
         if_self_start: bool
             程序是否开机自启
         """
+
+        # 开发环境不管理需要提权的开机自启任务计划
+        if os.getenv("AUTO_MAS_ENV") == "development":
+            return
 
         if if_self_start:
 
