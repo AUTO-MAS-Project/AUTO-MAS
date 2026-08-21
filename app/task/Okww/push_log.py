@@ -57,14 +57,13 @@ OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     (r"账号选择失败", r'"❌ 失败: 切换账号"'),
     (r"切换账号失败", r'"❌ 失败: 切换账号"'),
     # 多账号每日任务整体异常：MultiAccountDailyTask 任一账号轮次抛异常，日志统一
-    # 收尾为 `👥 Multi Account Daily Task exception stopped`（后可跟 Traceback 与
-    # `info_set 错误 请在大世界并在队伍中开始!`）。该信号表示「多账号每日任务」
-    # 整体失败（如游戏未进入主世界，连首个账号的 DailyTask 都跑不了），
-    # 不是单一"切换账号"环节失败，故用「多账号每日任务」表述。不能用 `info_set
-    # 错误` 那类通用游戏状态错误绑定成败，它会在大世界外任何任务误触发。
-    # 前缀 `Multi Account Daily Task` 可被 PoTranslator 译为中文，故用 `exception
-    # stopped` 稳定子串；置于切换开始标记之前
-    (r"exception stopped", r'"❌ 失败: 多账号每日任务"'),
+    # 收尾为 `TaskExecutor:👥 多账号每日任务 exception stopped`（翻译后 `多账号
+    # 每日任务` + `exception stopped`）。该信号表示「多账号每日任务」整体失败
+    # （如游戏未进入主世界），不是单一"切换账号"环节失败。注意不能光凭裸露的
+    # `exception stopped` 匹配——普通每日任务异常终止是 `TaskExecutor:📅 每日任务
+    # exception stopped`，会误判；必须用 `多账号每日任务` 作前缀锚点
+    (r"多账号每日任务 exception stopped", r'"❌ 失败: 多账号每日任务"'),
+    (r"Multi Account Daily Task exception stopped", r'"❌ 失败: 多账号每日任务"'),
     # ── 跳过标记 ──
     (r"每周乐园已完成", r'"⏭ 跳过: 每周乐园"'),
     # ── 明确成功标记 ──
