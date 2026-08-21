@@ -27,6 +27,7 @@ MAS 只管理 8 个内置配置组（按组名对其 enabled 置 true/false，�
 配置决定；除三个组列表外的所有设置字段（队伍/秘境/地脉花/首领讨伐等）一律原样保留。
 """
 
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,60 @@ def list_auto_boss_strategies(root: Path) -> list[str]:
 def resolve_config_name(name: str) -> str:
     """解析一条龙配置名，空值显式兜底为「默认配置」。"""
     return (name or "").strip() or _DEFAULT_CONFIG_NAME
+
+
+def parse_custom_groups(raw: Any) -> list[dict[str, Any]]:
+    """解析前端保存的自定义配置组 JSON 列表（字符串或已是列表），非法时返回空列表。
+
+    元素过滤为 ``{"name", "enabled"}`` 结构。
+    """
+    if isinstance(raw, list):
+        data = raw
+    elif isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, list):
+            return []
+    else:
+        return []
+    return [
+        {"name": str(item.get("name", "")).strip(), "enabled": bool(item.get("enabled", True))}
+        for item in data
+        if isinstance(item, dict) and str(item.get("name", "")).strip()
+    ]
+
+
+def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
+    """列出某一条龙配置里的自定义配置组（非内置 8 组），按 ``TaskOrder`` 相对顺序。
+
+    供前端「自定义配置组」表格自动加载：读取 BetterGI 现有配置，返回
+    ``[{"name": ..., "enabled": ...}, ...]``。
+    """
+    config = load_one_dragon(root, config_name)
+    defs: dict[str, str] = config.get("TaskDefinitions") or {}
+    enabled_map: dict[str, bool] = config.get("TaskEnabledList") or {}
+    order: list[str] = list(config.get("TaskOrder") or [])
+    name_by_uid = {uid: n for uid, n in defs.items() if n}
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for uid in order:
+        name = name_by_uid.get(uid)
+        if not name or name in _BUILTIN_ONE_DRAGON_GROUPS or name in seen:
+            continue
+        seen.add(name)
+        items.append({"name": name, "enabled": bool(enabled_map.get(uid, True))})
+    # 兜底：不在 TaskOrder 里但存在定义的自定义组
+    for uid, name in defs.items():
+        if (
+            name
+            and name not in _BUILTIN_ONE_DRAGON_GROUPS
+            and name not in seen
+        ):
+            seen.add(name)
+            items.append({"name": name, "enabled": bool(enabled_map.get(uid, True))})
+    return items
 
 
 def one_dragon_path(root: Path, name: str) -> Path:
@@ -148,11 +203,15 @@ def write_user_one_dragon(
     daily_reward_party_name: str = "",
     party_name: str = "",
     auto_boss_strategy_name: str = "",
+    custom_groups: list[dict[str, Any]] | None = None,
+    manage_custom_groups: bool = False,
 ) -> None:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BetterGI 并缓存 per-user 副本。
 
     种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
     三个非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）。
+    ``manage_custom_groups`` 开启时按 ``custom_groups``（name→enabled）管理自定义组，
+    否则自定义组原样保留（由 BetterGI 内部决定）。
     """
     config_name = resolve_config_name(config_name)
     user_path = per_user_one_dragon_path(script_id, user_id, config_name)
@@ -163,7 +222,9 @@ def write_user_one_dragon(
     if not config:
         config = load_seed_template()
 
-    config = apply_groups(config, groups)
+    config = apply_groups(
+        config, groups, custom_groups=custom_groups, manage_customs=manage_custom_groups
+    )
     if daily_reward_party_name:
         config["DailyRewardPartyName"] = daily_reward_party_name
     if party_name:
@@ -187,19 +248,31 @@ def snapshot_user_one_dragon(
         write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
 
 
-def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
-    """按组名切换一条龙配置的组开关，保留其余设置与自定义组。
+def apply_groups(
+    config: dict[str, Any],
+    enabled: list[str],
+    custom_groups: list[dict[str, Any]] | None = None,
+    manage_customs: bool = False,
+) -> dict[str, Any]:
+    """按组名切换一条龙配置的组开关，保留其余设置。
 
     按钮是「开关」而非删减：对每个内置组在 ``TaskEnabledList`` 里置 ``true/false``，
     组定义保留（便于日后重新打开）；仅在按钮 ON 而配置里缺失时才补建新组。
-    非内置组（自定义 ScriptGroup）无按钮，一律原样保留其 UUID、启用状态与相对顺序；
-    其启用与否由 BetterGI 内部配置决定（内部开着就跑）。
+
+    自定义组处理分两种情况：
+    - ``manage_customs=False``（总开关关）：自定义组一律原样保留其 UUID、启用状态与
+      相对顺序，启用与否由 BetterGI 内部配置决定。
+    - ``manage_customs=True``（总开关开）：按 ``custom_groups``（[{"name","enabled"}]）
+      覆盖自定义组启用状态：入表组按表状态、未入表（但 BetterGI 文件里存在）组默认开、
+      入表且启用但配置缺失时补建。
 
     应用到当前运行的配置（``Name`` 指向哪个就写哪个），不局限于某一份命名。
 
     Args:
         config: 一条龙配置 dict（可为空 ``{}``）。
         enabled: 按钮打开的 8 个内置组名列表。
+        custom_groups: 自定义配置组管理列表（name→enabled），仅 ``manage_customs`` 时使用。
+        manage_customs: 是否管理自定义组开关。
 
     Returns:
         修改后的配置 dict（浅拷贝，原 ``config`` 不变）。
@@ -207,6 +280,14 @@ def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
     config = dict(config or {})
     selected = [n for n in enabled if n in _BUILTIN_ONE_DRAGON_GROUPS]
     selected_set = set(selected)
+
+    # 自定义组管理表：name -> enabled
+    custom_enabled: dict[str, bool] = {}
+    for cg in custom_groups or []:
+        name = (cg.get("name") if isinstance(cg, dict) else None) or ""
+        name = str(name).strip()
+        if name and name not in _BUILTIN_ONE_DRAGON_GROUPS:
+            custom_enabled[name] = bool(cg.get("enabled", True))
 
     old_defs: dict[str, str] = config.get("TaskDefinitions") or {}
     old_enabled: dict[str, bool] = config.get("TaskEnabledList") or {}
@@ -218,7 +299,7 @@ def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
     new_enabled: dict[str, bool] = {}
     present_builtin: set[str] = set()
 
-    # 单遍扫描旧顺序：自定义组原样保留，内置组按按钮开关置 enabled，保持相对顺序
+    # 单遍扫描旧顺序：内置组按按钮开关置 enabled，自定义组按管理表/原样保留，保持相对顺序
     for uid in old_order:
         name = name_by_uid.get(uid)
         if not name or uid in new_defs:
@@ -228,10 +309,14 @@ def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
             new_defs[uid] = name
             new_order.append(uid)
             new_enabled[uid] = name in selected_set
-        else:  # 自定义组：启用状态不干预（保留 BetterGI 内部设定）
+        else:  # 自定义组
             new_defs[uid] = name
             new_order.append(uid)
-            new_enabled[uid] = bool(old_enabled.get(uid, True))
+            if manage_customs:
+                # 入表按表状态；未入表默认开
+                new_enabled[uid] = bool(custom_enabled.get(name, True))
+            else:
+                new_enabled[uid] = bool(old_enabled.get(uid, True))
 
     # 兜底：未出现在 TaskOrder 的自定义组不丢失
     for uid, name in old_defs.items():
@@ -242,7 +327,10 @@ def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
         ):
             new_defs[uid] = name
             new_order.append(uid)
-            new_enabled[uid] = bool(old_enabled.get(uid, True))
+            if manage_customs:
+                new_enabled[uid] = bool(custom_enabled.get(name, True))
+            else:
+                new_enabled[uid] = bool(old_enabled.get(uid, True))
 
     # 按钮 ON 但配置缺失的内置组：补建并启用
     for name in selected:
@@ -251,6 +339,15 @@ def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
             new_defs[uid] = name
             new_order.append(uid)
             new_enabled[uid] = True
+
+    # 管理开启时：入表且启用但配置里缺失的自定义组：补建并启用
+    if manage_customs:
+        for name, on in custom_enabled.items():
+            if on and name not in new_defs.values():
+                uid = str(uuid.uuid4())
+                new_defs[uid] = name
+                new_order.append(uid)
+                new_enabled[uid] = True
 
     config["TaskDefinitions"] = new_defs
     config["TaskOrder"] = new_order

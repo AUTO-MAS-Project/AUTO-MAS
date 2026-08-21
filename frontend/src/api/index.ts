@@ -12,6 +12,8 @@ export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
 export type { BetterGIConfig } from './models/BetterGIConfig';
 export type { BetterGIConfig_Info } from './models/BetterGIConfig_Info';
 export type { BetterGIConfig_Run } from './models/BetterGIConfig_Run';
+export type { BetterGICustomGroupOut } from './models/BetterGICustomGroupOut';
+export type { BetterGICustomGroupsOut } from './models/BetterGICustomGroupsOut';
 export type { BetterGIUserConfig } from './models/BetterGIUserConfig';
 export type { BetterGIUserConfig_Data } from './models/BetterGIUserConfig_Data';
 export type { BetterGIUserConfig_Info } from './models/BetterGIUserConfig_Info';

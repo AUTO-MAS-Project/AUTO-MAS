@@ -281,8 +281,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      配置名称
-                      <a-tooltip title="对应 BetterGI 一条龙页面中已保存的配置名称，留空则使用「默认配置」">
+                      一条龙名称
+                      <a-tooltip title="对应 BetterGI 一条龙页面中已保存的一条龙配置名称，留空则使用「默认配置」">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -383,7 +383,80 @@
                 </div>
               </div>
             </div>
+
+            <div class="custom-groups-section">
+              <div class="custom-groups-header">
+                <span class="custom-groups-title">自定义配置组</span>
+                <div
+                  class="config-group-item-capsule custom-groups-capsule"
+                  :class="{
+                    active: formData.OneDragon.IfUseCustomGroups,
+                    disabled: !formData.Info.IfUseMasConfig,
+                  }"
+                  @click="toggleCustomGroupsMaster"
+                >
+                  <span class="config-group-item-dot"></span>
+                </div>
+              </div>
+
+              <div
+                v-if="formData.OneDragon.IfUseCustomGroups && formData.Info.IfUseMasConfig"
+                class="custom-groups-body"
+              >
+                <div class="custom-groups-toolbar">
+                  <a-button size="small" type="primary" ghost @click="openCustomGroupModal">
+                    添加配置组
+                  </a-button>
+                  <a-popconfirm
+                    title="确定删除选中的配置组吗？"
+                    :disabled="selectedCustomGroupKeys.length === 0"
+                    @confirm="deleteSelectedCustomGroups"
+                  >
+                    <a-button size="small" danger :disabled="selectedCustomGroupKeys.length === 0">
+                      删除选中
+                    </a-button>
+                  </a-popconfirm>
+                </div>
+                <a-table
+                  :columns="customGroupColumns"
+                  :data-source="customGroupsTable"
+                  :row-selection="customGroupRowSelection"
+                  :pagination="false"
+                  size="small"
+                  :scroll="{ x: 320 }"
+                  row-key="name"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'enabled'">
+                      <div
+                        class="config-group-item-capsule custom-groups-capsule"
+                        :class="{ active: record.enabled }"
+                        @click="toggleCustomGroupEnabled(record)"
+                      >
+                        <span class="config-group-item-dot"></span>
+                      </div>
+                    </template>
+                  </template>
+                </a-table>
+              </div>
+            </div>
           </div>
+
+          <!-- 添加配置组弹窗 -->
+          <a-modal
+            v-model:open="customGroupModal.open"
+            title="添加配置组"
+            :ok-text="customGroupModal.saving ? '添加中...' : '添加'"
+            :ok-button-props="{ disabled: customGroupModal.saving }"
+            @ok="confirmAddCustomGroup"
+            @cancel="customGroupModal.open = false"
+          >
+            <a-input
+              v-model:value="customGroupModal.name"
+              placeholder="请输入配置组名称（添加后默认启用）"
+              @press-enter="confirmAddCustomGroup"
+            />
+          </a-modal>
 
           </a-form>
       </a-card>
@@ -480,7 +553,8 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import type { TableColumnsType } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -566,6 +640,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     DailyRewardPartyName: '',
     PartyName: '',
     AutoBossStrategyName: '根据队伍自动选择',
+    IfUseCustomGroups: false,
+    CustomGroups: '[]',
   },
   Notify: {
     Enabled: false,
@@ -695,6 +771,125 @@ const loadStrategyOptions = async () => {
   }
 }
 
+// ----- 自定义配置组管理 -----
+interface CustomGroupRow {
+  name: string
+  enabled: boolean
+}
+
+const customGroupsTable = ref<CustomGroupRow[]>([])
+const selectedCustomGroupKeys = ref<string[]>([])
+const customGroupModal = reactive({ open: false, name: '', saving: false })
+
+const customGroupColumns: TableColumnsType = [
+  { title: '配置组名称', dataIndex: 'name', key: 'name' },
+  { title: '是否启用', dataIndex: 'enabled', key: 'enabled', width: 120 },
+]
+
+const customGroupRowSelection = computed(() => ({
+  selectedRowKeys: selectedCustomGroupKeys.value,
+  onChange: (keys: (string | number)[]) => {
+    selectedCustomGroupKeys.value = keys.map(String)
+  },
+}))
+
+const parseCustomGroupsList = (raw: unknown): CustomGroupRow[] => {
+  let arr: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw)
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(arr)) return []
+  return arr
+    .filter((x): x is Record<string, unknown> => !!x && typeof x.name === 'string')
+    .map((x) => ({ name: x.name as string, enabled: Boolean(x.enabled) }))
+}
+
+const syncCustomGroupsFromForm = () => {
+  customGroupsTable.value = parseCustomGroupsList(formData.OneDragon.CustomGroups)
+}
+
+const mergeCustomGroupsRows = (rows: CustomGroupRow[]) => {
+  const existing = new Map(customGroupsTable.value.map((r) => [r.name, r]))
+  for (const r of rows) {
+    if (!existing.has(r.name)) existing.set(r.name, r)
+  }
+  customGroupsTable.value = Array.from(existing.values())
+}
+
+const persistCustomGroups = () => {
+  const str = JSON.stringify(customGroupsTable.value)
+  formData.OneDragon.CustomGroups = str
+  void saveField('OneDragon.CustomGroups', str)
+}
+
+// 从 BetterGI 现有配置自动加载自定义组（合并进表格，保留已在表格里的启用状态）
+const loadCustomGroupsFromBettergi = async () => {
+  try {
+    const resp =
+      await BettergiService.getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
+        scriptId,
+        formData.Task.OneDragonConfigName,
+      )
+    if (resp.code === 200 && Array.isArray(resp.data)) {
+      mergeCustomGroupsRows(resp.data)
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+const toggleCustomGroupsMaster = () => {
+  if (!formData.Info.IfUseMasConfig) return
+  const next = !formData.OneDragon.IfUseCustomGroups
+  formData.OneDragon.IfUseCustomGroups = next
+  void saveField('OneDragon.IfUseCustomGroups', next)
+  // 首次开启且表格为空时，从 BetterGI 自动加载现有自定义组
+  if (next && customGroupsTable.value.length === 0) {
+    void loadCustomGroupsFromBettergi()
+  }
+}
+
+const openCustomGroupModal = () => {
+  customGroupModal.name = ''
+  customGroupModal.open = true
+}
+
+const confirmAddCustomGroup = async () => {
+  const name = customGroupModal.name.trim()
+  if (!name) {
+    message.warning('请输入配置组名称')
+    return
+  }
+  if (customGroupsTable.value.some((r) => r.name === name)) {
+    message.warning('该配置组已存在')
+    return
+  }
+  customGroupModal.saving = true
+  try {
+    customGroupsTable.value.push({ name, enabled: true })
+    persistCustomGroups()
+    customGroupModal.open = false
+  } finally {
+    customGroupModal.saving = false
+  }
+}
+
+const deleteSelectedCustomGroups = () => {
+  const removed = new Set(selectedCustomGroupKeys.value)
+  customGroupsTable.value = customGroupsTable.value.filter((r) => !removed.has(r.name))
+  selectedCustomGroupKeys.value = []
+  persistCustomGroups()
+}
+
+const toggleCustomGroupEnabled = (record: CustomGroupRow) => {
+  record.enabled = !record.enabled
+  persistCustomGroups()
+}
+
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'boolean') return
   if (
@@ -812,6 +1007,12 @@ const loadUser = async () => {
     })
     await nextTick()
     formData.userName = formData.Info.Name || ''
+
+    // 同步自定义配置组表格；总开关已开且表格为空时，从 BetterGI 自动加载现有自定义组
+    syncCustomGroupsFromForm()
+    if (formData.OneDragon.IfUseCustomGroups && customGroupsTable.value.length === 0) {
+      await loadCustomGroupsFromBettergi()
+    }
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error('加载用户失败')
@@ -985,6 +1186,42 @@ onUnmounted(() => {
 
 .config-group-item-capsule.active .config-group-item-dot {
   left: 25px;
+}
+
+.custom-groups-section {
+  margin-top: 20px;
+}
+
+.custom-groups-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.custom-groups-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+}
+
+.custom-groups-body {
+  margin-top: 12px;
+}
+
+.custom-groups-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.custom-groups-capsule {
+  cursor: pointer;
+}
+
+.custom-groups-capsule.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .bettergi-config-mask {
