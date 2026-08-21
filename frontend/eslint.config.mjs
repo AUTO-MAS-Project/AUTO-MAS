@@ -71,6 +71,7 @@ export default [
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: globals.node,
+      parser: tseslint.parser,
       parserOptions: {
         project: [path.join(__dirname, 'tsconfig.electron.json')],
         tsconfigRootDir: __dirname,
