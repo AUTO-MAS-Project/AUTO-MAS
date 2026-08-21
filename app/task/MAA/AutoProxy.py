@@ -844,7 +844,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         if self.mode == "Annihilation":
             progress = _parse_annihilation_weekly_progress(log)
-            if progress and progress[0] >= progress[1]:
+            completed = progress and progress[0] >= progress[1]
+            completed = completed or "完成任务: 剿灭作战" in log
+            if completed:
                 self.task_dict["Fight"] = False
                 self.run_book["Annihilation"] = True
                 if not self._annihilation_weekly_completion_recorded:

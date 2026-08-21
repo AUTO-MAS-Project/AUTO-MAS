@@ -59,6 +59,13 @@
           <a-select :value="formData.Info.AnnihilationStartWeekday || 'Monday'" :disabled="loading" size="large"
             :options="annihilationWeekdayOptions" @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
           <div class="field-help">从所选星期开始执行剿灭，本周达到上限后自动停止。</div>
+          <div class="annihilation-status">
+            <span>本周状态：{{ annihilationCompletedThisWeek ? '已完成' : '未完成' }}</span>
+            <a-space>
+              <a-button size="small" @click="emitSave('Data.AnnihilationCompletedWeek', null)">重置状态</a-button>
+              <a-button size="small" @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)">手动完成</a-button>
+            </a-space>
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -279,6 +286,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
@@ -335,6 +343,19 @@ const annihilationWeekdayOptions = [
   { label: '周六', value: 'Saturday' },
   { label: '周日', value: 'Sunday' },
 ]
+
+const currentWeekMarker = (() => {
+  const date = new Date(Date.now() + 4 * 60 * 60 * 1000)
+  const day = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const week = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+})()
+
+const annihilationCompletedThisWeek = computed(
+  () => formData.Data?.AnnihilationCompletedWeek === currentWeekMarker,
+)
 
 // 事件处理函数
 const handleAddCustomStage = (stageName: string) => emit('handle-add-custom-stage', stageName)
@@ -474,5 +495,15 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.annihilation-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 </style>
