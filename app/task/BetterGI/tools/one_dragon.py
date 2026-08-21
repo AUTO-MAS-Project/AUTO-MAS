@@ -22,8 +22,9 @@ BetterGI 一条龙配置以独立 JSON 文件保存于 ``{RootPath}/User/OneDrag
 （``Name`` 字段 == 文件名）。每个配置组以「组名」标识（``TaskDefinitions`` 的 value），
 UUID 是每实例随机生成的临时标识，因此本模块按组名识别与切换，新组用 ``uuid.uuid4()`` 生成。
 
-MAS 只管理 8 个内置配置组，其余自定义组（用户自建 ScriptGroup）本轮不管理、原样保留；
-除三个组列表外的所有设置字段（队伍/秘境/地脉花/首领讨伐等）一律原样保留。
+MAS 只管理 8 个内置配置组（按组名对其 enabled 置 true/false，组定义保留、可逆），
+其余自定义组（用户自建 ScriptGroup）本轮不管理、原样保留，其启用与否由 BetterGI 内部
+配置决定；除三个组列表外的所有设置字段（队伍/秘境/地脉花/首领讨伐等）一律原样保留。
 """
 
 import uuid
@@ -157,59 +158,69 @@ def snapshot_user_one_dragon(
 
 
 def apply_groups(config: dict[str, Any], enabled: list[str]) -> dict[str, Any]:
-    """按组名切换一条龙的配置组，保留其余设置与自定义组。
+    """按组名切换一条龙配置的组开关，保留其余设置与自定义组。
 
-    只增删 8 个内置组：``enabled`` 里的内置组按顺序保留（已存在则复用原 UUID，否则生成新
-    UUID），不在 ``enabled`` 的内置组移除；非内置组（自定义 ScriptGroup）原样保留其
-    UUID、启用状态与相对顺序。除三个组列表外的字段均不动。
+    按钮是「开关」而非删减：对每个内置组在 ``TaskEnabledList`` 里置 ``true/false``，
+    组定义保留（便于日后重新打开）；仅在按钮 ON 而配置里缺失时才补建新组。
+    非内置组（自定义 ScriptGroup）无按钮，一律原样保留其 UUID、启用状态与相对顺序；
+    其启用与否由 BetterGI 内部配置决定（内部开着就跑）。
+
+    应用到当前运行的配置（``Name`` 指向哪个就写哪个），不局限于某一份命名。
 
     Args:
         config: 一条龙配置 dict（可为空 ``{}``）。
-        enabled: 要执行的内置组名列表（乱序会被过滤到内置组并按给定顺序排列）。
+        enabled: 按钮打开的 8 个内置组名列表。
 
     Returns:
         修改后的配置 dict（浅拷贝，原 ``config`` 不变）。
     """
     config = dict(config or {})
-    enabled = [n for n in enabled if n in _BUILTIN_ONE_DRAGON_GROUPS]
+    selected = [n for n in enabled if n in _BUILTIN_ONE_DRAGON_GROUPS]
+    selected_set = set(selected)
 
     old_defs: dict[str, str] = config.get("TaskDefinitions") or {}
     old_enabled: dict[str, bool] = config.get("TaskEnabledList") or {}
     old_order: list[str] = list(config.get("TaskOrder") or [])
-
-    # 自定义组（非内置组）——按原顺序保留，其余情况兜底补上未排序的
-    custom_entries: list[tuple[str, str]] = []
-    seen_custom: set[str] = set()
-    for uid in old_order:
-        name = old_defs.get(uid)
-        if name and name not in _BUILTIN_ONE_DRAGON_GROUPS:
-            custom_entries.append((uid, name))
-            seen_custom.add(name)
-    for uid, name in old_defs.items():
-        if name and name not in _BUILTIN_ONE_DRAGON_GROUPS and name not in seen_custom:
-            custom_entries.append((uid, name))
-            seen_custom.add(name)
-
-    # 内置组：按组名复用已有 UUID
-    builtin_uuid_by_name: dict[str, str] = {}
-    for uid, name in old_defs.items():
-        if name in _BUILTIN_ONE_DRAGON_GROUPS:
-            builtin_uuid_by_name.setdefault(name, uid)
+    name_by_uid = {uid: n for uid, n in old_defs.items() if n}
 
     new_defs: dict[str, str] = {}
     new_order: list[str] = []
     new_enabled: dict[str, bool] = {}
+    present_builtin: set[str] = set()
 
-    for uid, name in custom_entries:
-        new_defs[uid] = name
-        new_order.append(uid)
-        new_enabled[uid] = bool(old_enabled.get(uid, True))
+    # 单遍扫描旧顺序：自定义组原样保留，内置组按按钮开关置 enabled，保持相对顺序
+    for uid in old_order:
+        name = name_by_uid.get(uid)
+        if not name or uid in new_defs:
+            continue
+        if name in _BUILTIN_ONE_DRAGON_GROUPS:
+            present_builtin.add(name)
+            new_defs[uid] = name
+            new_order.append(uid)
+            new_enabled[uid] = name in selected_set
+        else:  # 自定义组：启用状态不干预（保留 BetterGI 内部设定）
+            new_defs[uid] = name
+            new_order.append(uid)
+            new_enabled[uid] = bool(old_enabled.get(uid, True))
 
-    for name in enabled:
-        uid = builtin_uuid_by_name.get(name) or str(uuid.uuid4())
-        new_defs[uid] = name
-        new_order.append(uid)
-        new_enabled[uid] = True
+    # 兜底：未出现在 TaskOrder 的自定义组不丢失
+    for uid, name in old_defs.items():
+        if (
+            name
+            and name not in _BUILTIN_ONE_DRAGON_GROUPS
+            and uid not in new_defs
+        ):
+            new_defs[uid] = name
+            new_order.append(uid)
+            new_enabled[uid] = bool(old_enabled.get(uid, True))
+
+    # 按钮 ON 但配置缺失的内置组：补建并启用
+    for name in selected:
+        if name not in present_builtin:
+            uid = str(uuid.uuid4())
+            new_defs[uid] = name
+            new_order.append(uid)
+            new_enabled[uid] = True
 
     config["TaskDefinitions"] = new_defs
     config["TaskOrder"] = new_order
