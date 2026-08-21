@@ -21,55 +21,64 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
 import re
 from pathlib import Path
 
-from app.log_box import LogType
-
 # ok-ww 自带翻译文件相对路径（从 RootPath 派生，不硬编码绝对路径）
 OKWW_REL_I18N_PO = "data/apps/ok-ww/repo/i18n/zh_CN/LC_MESSAGES/ok.po"
 # AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，运行时以工作目录解析，
 # 随打包资源分发，不依赖源码树路径；.po 为可读源码，可直接维护）
 OKWW_SUPPLEMENT_PO = Path.cwd() / "res" / "i18n" / "okww.po"
 
-# 推送规则：(匹配正则, 提取表达式, 日志类型)；匹配与提取均在翻译后行。
+# 推送规则：(匹配正则, 提取表达式 [, 日志类型])；匹配与提取均在翻译后行。
 # 提取表达式输出状态标记（裸节点名 / "状态: 节点"），由 okww_resolve 解析。
 # 顺序敏感：先约电台失败须在成功前（"先约电台已结束" 含 "先约电台"）。
-OKWW_PUSH_RULES: list[tuple[str, str, str]] = [
+# 第三项日志类型可选：省略时走 LogCollect.collect 的默认 LogType.NORMAL；
+# 需要非普通（如 LogType.FAIL）时才补第三项。
+OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     # ── 开始/动作标记（后处理默认解析为成功）──
-    (r"ok:OK start", r'"启动"', LogType.NORMAL),
-    (r"opened gray_book_boss", r'"梦魇巢穴"', LogType.NORMAL),
+    (r"ok:OK start", r'"启动"'),
+    (r"opened gray_book_boss", r'"梦魇巢穴"'),
     # 活跃奖励：领取动作（info_set 开始行不含 "reward"，仅此领取行命中）
-    (r"领取每日奖励 reward", r'"活跃奖励"', LogType.NORMAL),
+    (r"领取每日奖励 reward", r'"活跃奖励"'),
     # 邮件：源码无成功日志，仅 info_set 开始标记（无失败即成功）
-    (r"领取邮件", r'"邮件"', LogType.NORMAL),
+    (r"领取邮件", r'"邮件"'),
     # 每周乐园 / 合并声骸：开始标记，最终状态由跳过/成功/失败标记决定
-    (r"检查每周乐园", r'"每周乐园"', LogType.NORMAL),
-    (r"检查已弃置声骸", r'"合并声骸"', LogType.NORMAL),
+    (r"检查每周乐园", r'"每周乐园"'),
+    (r"检查已弃置声骸", r'"合并声骸"'),
     # 多账号：切换账号开始
-    (r"正在返回登录界面", r'"切换账号"', LogType.NORMAL),
+    (r"正在返回登录界面", r'"切换账号"'),
     # ── 失败标记（源码 log_error 专属失败日志）──
     # 节点级失败始终展示（类型保持普通，状态由文本「❌ 失败:」体现，不被
     # 未完成用户过滤；推送时机由 SendTaskResultTime 全局控制，与逐条类型无关）
-    (r"先约电台已结束", r'"❌ 失败: 先约电台"', LogType.NORMAL),  # 须在成功前
-    (r"NightmareNestTask Failed", r'"❌ 失败: 梦魇巢穴"', LogType.NORMAL),
-    (r"GardenTask Failed", r'"❌ 失败: 每周乐园"', LogType.NORMAL),
-    (r"MergeEchoTask Failed", r'"❌ 失败: 合并声骸"', LogType.NORMAL),
-    # 多账号：切换账号失败（源码 log_error / 抛异常，见 MultiAccountDailyTask）
-    (r"click drop down no effect", r'"❌ 失败: 切换账号"', LogType.NORMAL),
-    (r"账号选择失败", r'"❌ 失败: 切换账号"', LogType.NORMAL),
-    (r"切换账号失败", r'"❌ 失败: 切换账号"', LogType.NORMAL),
+    (r"先约电台已结束", r'"❌ 失败: 先约电台已结束"'),  # 须在成功前
+    (r"NightmareNestTask Failed", r'"❌ 失败: 梦魇巢穴"'),
+    (r"GardenTask Failed", r'"❌ 失败: 每周乐园"'),
+    (r"MergeEchoTask Failed", r'"❌ 失败: 合并声骸"'),
+    # 多账号：切换账号环节失败（源码 _select_and_login_account 内 log_error/抛异常）
+    (r"click drop down no effect", r'"❌ 失败: 切换账号"'),
+    (r"账号选择失败", r'"❌ 失败: 切换账号"'),
+    (r"切换账号失败", r'"❌ 失败: 切换账号"'),
+    # 多账号每日任务整体异常：MultiAccountDailyTask 任一账号轮次抛异常，日志统一
+    # 收尾为 `👥 Multi Account Daily Task exception stopped`（后可跟 Traceback 与
+    # `info_set 错误 请在大世界并在队伍中开始!`）。该信号表示「多账号每日任务」
+    # 整体失败（如游戏未进入主世界，连首个账号的 DailyTask 都跑不了），
+    # 不是单一"切换账号"环节失败，故用「多账号每日任务」表述。不能用 `info_set
+    # 错误` 那类通用游戏状态错误绑定成败，它会在大世界外任何任务误触发。
+    # 前缀 `Multi Account Daily Task` 可被 PoTranslator 译为中文，故用 `exception
+    # stopped` 稳定子串；置于切换开始标记之前
+    (r"exception stopped", r'"❌ 失败: 多账号每日任务"'),
     # ── 跳过标记 ──
-    (r"每周乐园已完成", r'"⏭ 跳过: 每周乐园"', LogType.NORMAL),
+    (r"每周乐园已完成", r'"⏭ 跳过: 每周乐园"'),
     # ── 明确成功标记 ──
     # 战令成功无日志（battle pass 为开始），靠无失败判定；此规则置于失败规则后
-    (r"先约电台", r'"先约电台"', LogType.NORMAL),
-    (r"乐园任务完成", r'"✅ 成功: 每周乐园"', LogType.NORMAL),
+    (r"先约电台", r'"先约电台"'),
+    (r"乐园任务完成", r'"✅ 成功: 每周乐园"'),
     # 体力刷本：结束日志（must_use completed 带剩余体力）
-    (r"must_use completed", r'"✅ 成功: 体力刷本 剩余" + $((?:current stamina: )(\d+))', LogType.NORMAL),
-    (r"体力已用尽", r'"✅ 成功: 体力刷本（体力已用尽）"', LogType.NORMAL),
-    (r"体力不足以继续", r'"✅ 成功: 体力刷本（体力已用尽）"', LogType.NORMAL),
-    (r"每日任务已完成", r'"✅ 成功: 每日完成"', LogType.NORMAL),
-    (r"MainWindow:退出", r'"✅ 成功: 退出"', LogType.NORMAL),
+    (r"must_use completed", r'"✅ 成功: 体力刷本 剩余" + $((?:current stamina: )(\d+))'),
+    (r"体力已用尽", r'"✅ 成功: 体力刷本（体力已用尽）"'),
+    (r"体力不足以继续", r'"✅ 成功: 体力刷本（体力已用尽）"'),
+    (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
+    (r"MainWindow:退出", r'"✅ 成功: 退出"'),
     # 多账号：登录成功
-    (r"登录成功", r'"✅ 成功: 登录"', LogType.NORMAL),
+    (r"登录成功", r'"✅ 成功: 登录"'),
 ]
 
 # 状态优先级：失败 > 跳过 > 成功

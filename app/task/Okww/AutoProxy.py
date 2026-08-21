@@ -276,8 +276,8 @@ class AutoProxyTask(TaskExecuteBase):
             .load_supplement([OKWW_SUPPLEMENT_PO])
         )
         self.log_collect.open(self.log_translator.translate)
-        for match_re, expr, log_type in OKWW_PUSH_RULES:
-            self.log_collect.collect(match_re, expr, log_type)
+        for rule in OKWW_PUSH_RULES:
+            self.log_collect.collect(*rule)
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.okww_args = ["-t", str(self.task_index), "-e"]
