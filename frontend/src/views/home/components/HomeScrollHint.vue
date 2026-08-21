@@ -1,11 +1,9 @@
 <template>
   <Transition name="scroll-hint">
-    <div v-if="visible" class="scroll-hint" @click="scrollDown">
-      <div class="scroll-hint-content">
-        <span class="scroll-hint-text">下方还有更多内容</span>
-        <DownOutlined class="scroll-hint-arrow" />
-      </div>
-    </div>
+    <button v-if="visible" class="scroll-hint" aria-label="向下滚动查看更多内容" @click="scrollDown">
+      <span class="scroll-hint-text">下方还有更多内容</span>
+      <DownOutlined class="scroll-hint-arrow" />
+    </button>
   </Transition>
 </template>
 
@@ -54,7 +52,12 @@ onBeforeUnmount(() => {
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   padding: 16px 24px 20px;
+  border: none;
   cursor: pointer;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.2) 100%);
   border-radius: 12px 12px 0 0;
@@ -65,11 +68,9 @@ onBeforeUnmount(() => {
   opacity: 0.8;
 }
 
-.scroll-hint-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+.scroll-hint:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
 }
 
 .scroll-hint-text {
