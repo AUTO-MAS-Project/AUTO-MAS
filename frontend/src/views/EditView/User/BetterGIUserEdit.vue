@@ -268,18 +268,18 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>默认配置组</h3>
+              <h3>任务配置</h3>
+              <a-tooltip title="勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
             </div>
-            <p class="section-desc">
-              勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑
-            </p>
 
             <a-row :gutter="24">
               <a-col :span="24">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      一条龙配置名
+                      配置名称
                       <a-tooltip title="对应 BetterGI 一条龙页面中已保存的配置名称，留空则使用「默认配置」">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
@@ -287,7 +287,7 @@
                   </template>
                   <a-input
                     v-model:value="formData.Task.OneDragonConfigName"
-                    placeholder="请输入一条龙配置名（留空使用「默认配置」）"
+                    placeholder="请输入一条龙的配置名称（留空使用「默认配置」）"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)"

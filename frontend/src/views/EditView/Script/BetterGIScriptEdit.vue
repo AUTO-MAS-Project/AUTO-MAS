@@ -92,6 +92,57 @@
 
         <div class="form-section">
           <div class="section-header">
+            <h3>游戏配置</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    控制器
+                    <a-tooltip title="控制游戏的方式；云原神、桌面分身暂未开发，当前仅支持电脑端-前台">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Game.Controller"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
+                >
+                  <a-select-option value="电脑端-前台">电脑端-前台</a-select-option>
+                  <a-select-option value="电脑端-云原神" disabled>电脑端-云原神（暂未开发）</a-select-option>
+                  <a-select-option value="电脑端-桌面分身" disabled>电脑端-桌面分身（暂未开发）</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    任务结束后关闭游戏
+                    <a-tooltip title="任务执行完毕后是否关闭游戏">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Game.CloseOnFinish"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
+        <div class="form-section">
+          <div class="section-header">
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
@@ -158,56 +209,6 @@
           </a-row>
         </div>
 
-        <div class="form-section">
-          <div class="section-header">
-            <h3>游戏配置</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    控制器
-                    <a-tooltip title="控制游戏的方式；云原神、桌面分身暂未开发，当前仅支持电脑端-前台">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="bettergiConfig.Game.Controller"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
-                >
-                  <a-select-option value="电脑端-前台">电脑端-前台</a-select-option>
-                  <a-select-option value="电脑端-云原神" disabled>电脑端-云原神（暂未开发）</a-select-option>
-                  <a-select-option value="电脑端-桌面分身" disabled>电脑端-桌面分身（暂未开发）</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    任务结束后关闭游戏
-                    <a-tooltip title="任务执行完毕后是否关闭游戏">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="bettergiConfig.Game.CloseOnFinish"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
       </a-form>
     </a-card>
   </div>
