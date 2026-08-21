@@ -1,8 +1,8 @@
 <template>
   <Transition name="back-to-top">
-    <div v-if="visible" class="back-to-top" @click="scrollToTop">
+    <button v-if="visible" class="back-to-top" aria-label="返回顶部" @click="scrollToTop">
       <UpOutlined class="back-to-top-icon" />
-    </div>
+    </button>
   </Transition>
 </template>
 
@@ -48,6 +48,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: var(--ant-color-primary);
   color: #fff;
@@ -59,6 +61,11 @@ onBeforeUnmount(() => {
 .back-to-top:hover {
   background: var(--ant-color-primary-hover);
   transform: translateY(-2px);
+}
+
+.back-to-top:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
 }
 
 .back-to-top-icon {
