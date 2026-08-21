@@ -72,7 +72,7 @@ def restart_as_admin():
         executable = sys.executable.removesuffix('.exe')
         executable += '.exe'
         result = ctypes.windll.shell32.ShellExecuteW(
-            None, 'runas', 'wt.exe', f'"{executable}" {os.path.realpath(sys.argv[0])}', None, 1)
+            None, 'runas', 'wt.exe', f'"{executable}" "{os.path.realpath(sys.argv[0])}"', None, 1)
         if result > 32:
             sys.exit(0)
         else:
