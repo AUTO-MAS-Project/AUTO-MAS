@@ -2631,6 +2631,22 @@ class AppConfig(GlobalConfig):
                 if end_index != -1:
                     fight_tasks.append((i, end_index))
 
+        # 兜底: 部分 MAA 版本只打印"完成任务", 不打印"开始任务"。
+        # 这种日志里掉落统计明明存在, 却因为找不到区间起点而被整段跳过,
+        # 导致 drop_statistics 恒为空。此时以上一个任务边界(或日志开头)
+        # 作为起点, 仍能正确取到该次作战的掉落。
+        if not fight_tasks:
+            prev_boundary = 0
+            for j, line in enumerate(logs):
+                if "完成任务: Fight" in line or "完成任务: 理智作战" in line:
+                    fight_tasks.append((prev_boundary, j))
+                if (
+                    "完成任务:" in line
+                    or "开始任务: Fight" in line
+                    or "开始任务: 理智作战" in line
+                ):
+                    prev_boundary = j
+
         # 处理每个Fight任务
         for start_idx, end_idx in fight_tasks:
             # 提取当前任务的日志
