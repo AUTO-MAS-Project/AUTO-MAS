@@ -12,6 +12,7 @@ from app.task.MAA.AutoProxy import (
     AutoProxyTask,
     _build_depot_maintain_task,
     _resolve_activity_stage,
+    _should_skip_maa_annihilation,
 )
 from app.utils.constants import MAA_TASKS
 
@@ -92,6 +93,21 @@ def test_resolve_activity_stage_keeps_the_selected_position() -> None:
     assert _resolve_activity_stage(next_stages, 2) == "AS-9"
     assert _resolve_activity_stage(next_stages, 99) == "AS-10"
     assert _resolve_activity_stage([], 2) is None
+
+
+def test_annihilation_only_stops_without_full_delegation() -> None:
+    recognized = (
+        '"task":"UsePrts-AnnihilationSuccessCheck"\n'
+        "asst::FightTimesTaskPlugin::_run | enter"
+    )
+    unavailable = (
+        '"to_be_recognized":["UsePrts-AnnihilationSuccessCheck"]\n'
+        "asst::FightTimesTaskPlugin::_run | enter"
+    )
+
+    assert _should_skip_maa_annihilation(recognized) is False
+    assert _should_skip_maa_annihilation(unavailable) is True
+    assert _should_skip_maa_annihilation('"what":"AnnihilationDelegationUnavailable"')
 
 
 def test_stage_info_uses_the_selected_maa_server_and_activity_timezone() -> None:
@@ -194,3 +210,29 @@ def test_fight_failure_keeps_fight_pending_after_another_fight_completes() -> No
 
         assert task.task_dict["Fight"] is True
         assert task.cur_user_log.status == "MAA 部分任务执行失败"
+
+
+def test_annihilation_stage_error_is_not_delegation_skip() -> None:
+    task = object.__new__(AutoProxyTask)
+    task.cur_user_log = SimpleNamespace(content=[], status="")
+    task.script_info = SimpleNamespace(log="")
+    task.script_config = SimpleNamespace(get=lambda _group, _key: True)
+    task.task_dict = dict.fromkeys(MAA_TASKS, False)
+    task.task_dict["Fight"] = True
+    task.mode = "Annihilation"
+    task.annihilation_skip_requested = False
+    task.wait_event = SimpleNamespace(set=lambda: None)
+
+    asyncio.run(
+        task.check_log(
+            [
+                "开始任务: 剿灭作战\n",
+                "任务出错: 理智作战\n",
+                "任务已全部完成！\n",
+            ],
+            datetime.now(),
+        )
+    )
+
+    assert task.task_dict["Fight"] is True
+    assert task.cur_user_log.status == "MAA 部分任务执行失败"

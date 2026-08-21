@@ -124,6 +124,15 @@ def _resolve_activity_stage(
     return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
 
 
+def _should_skip_maa_annihilation(log: str) -> bool:
+    """判断 MAA 是否即将把剿灭回退为普通代理。"""
+
+    return '"what":"AnnihilationDelegationUnavailable"' in log or (
+        "FightTimesTaskPlugin::_run | enter" in log
+        and '"task":"UsePrts-AnnihilationSuccessCheck"' not in log
+    )
+
+
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
 
@@ -181,6 +190,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.check_log,
             except_logs=["如果长时间无进一步日志更新，可能需要手动干预。"],
         )
+        self.maa_asst_log_monitor = LogMonitor(
+            (1, 20), "%Y-%m-%d %H:%M:%S", self.check_asst_log
+        )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
@@ -188,6 +200,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
+        self.maa_asst_log_path = self.maa_root_path / "debug/asst.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
 
@@ -315,6 +328,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
                 self.log_start_time = datetime.now()
+                self.annihilation_skip_requested = False
                 self.cur_user_item.log_record[self.log_start_time] = (
                     self.cur_user_log
                 ) = LogRecord()
@@ -368,11 +382,20 @@ class AutoProxyTask(TaskExecuteBase):
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
                 await asyncio.sleep(1)  # 等待 MAA 处理日志文件
+                if (
+                    self.mode == "Annihilation"
+                    and self.script_config.get("Run", "AnnihilationAvoidWaste")
+                ):
+                    self.maa_asst_log_monitor.log_contents = []
+                    await self.maa_asst_log_monitor.start_monitor_file(
+                        self.maa_asst_log_path, self.log_start_time
+                    )
                 await self.maa_log_monitor.start_monitor_file(
                     self.maa_log_path, self.log_start_time
                 )
                 await self.wait_event.wait()
                 await self.maa_log_monitor.stop()
+                await self.maa_asst_log_monitor.stop()
 
                 if self.cur_user_log.status == "Success!":
                     self.run_book[self.mode] = True
@@ -773,12 +796,43 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
+    async def check_asst_log(
+        self, log_content: list[str], latest_time: datetime
+    ) -> None:
+        """在 MAA 点击开始按钮前阻止剿灭回退普通代理。"""
+
+        if not _should_skip_maa_annihilation("".join(log_content)):
+            return
+
+        logger.warning("剿灭全权委托不可用，跳过本次剿灭以避免进入普通代理")
+        self.task_dict["Fight"] = False
+        self.annihilation_skip_requested = True
+        self.cur_user_log.status = "Success!"
+        await self.maa_process_manager.kill()
+        self.wait_event.set()
+
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
+
+        if getattr(self, "annihilation_skip_requested", False):
+            self.cur_user_log.status = "Success!"
+            self.wait_event.set()
+            return
+
+        if (
+            self.mode == "Annihilation"
+            and self.script_config.get("Run", "AnnihilationAvoidWaste")
+            and '"what":"AnnihilationDelegationUnavailable"' in log
+        ):
+            self.task_dict["Fight"] = False
+            self.annihilation_skip_requested = True
+            self.cur_user_log.status = "Success!"
+            self.wait_event.set()
+            return
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
@@ -793,8 +847,9 @@ class AutoProxyTask(TaskExecuteBase):
                 ):
                     self.task_dict[en_task] = False
 
-            if self.mode == "Annihilation" and "完成任务: 剿灭作战" in log:
-                self.task_dict["Fight"] = False
+            if self.mode == "Annihilation":
+                if "完成任务: 剿灭作战" in log:
+                    self.task_dict["Fight"] = False
             elif self.mode == "Routine" and (
                 "任务出错: 理智作战" in log
                 or any(
@@ -838,6 +893,7 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         await self.maa_log_monitor.stop()
+        await self.maa_asst_log_monitor.stop()
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         await agree_bilibili(self.maa_tasks_path, False)
