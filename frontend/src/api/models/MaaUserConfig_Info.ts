@@ -38,7 +38,7 @@ export type MaaUserConfig_Info = {
     /**
      * 剿灭开始星期
      */
-    AnnihilationStartWeekday?: ('Always' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
+    AnnihilationStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
     /**
      * 基建模式
      */

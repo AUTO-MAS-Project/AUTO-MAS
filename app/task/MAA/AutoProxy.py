@@ -244,7 +244,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         if not self.run_book["Annihilation"]:
             now = datetime.now(tz=UTC4)
-            start_weekday = "Always"
             start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(

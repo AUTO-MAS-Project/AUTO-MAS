@@ -451,10 +451,9 @@ class MaaUserConfig(ConfigBase):
         self.Info_AnnihilationStartWeekday = ConfigItem(
             "Info",
             "AnnihilationStartWeekday",
-            "Always",
+            "Monday",
             OptionsValidator(
                 [
-                    "Always",
                     "Monday",
                     "Tuesday",
                     "Wednesday",

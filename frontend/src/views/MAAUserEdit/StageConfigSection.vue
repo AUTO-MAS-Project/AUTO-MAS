@@ -28,8 +28,6 @@
             { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
             { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
           ]" :disabled="loading" size="large" @change="emitSave('Info.Annihilation', formData.Info.Annihilation)" />
-          <a-select :value="formData.Info.AnnihilationStartWeekday || 'Always'" :disabled="loading" size="large"
-            :options="annihilationWeekdayOptions" @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="12">
@@ -44,6 +42,23 @@
           </template>
           <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading" size="large"
             @change="emitSave('Info.StageMode', formData.Info.StageMode)" />
+        </a-form-item>
+      </a-col>
+    </a-row>
+    <a-row :gutter="24" class="annihilation-schedule-row">
+      <a-col :xs="24" :md="12">
+        <a-form-item name="annihilationStartWeekday">
+          <template #label>
+            <a-tooltip title="达到设置的星期后才会启动剿灭任务；本周达到上限后会自动跳过后续剿灭">
+              <span class="form-label">
+                剿灭开始星期
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select :value="formData.Info.AnnihilationStartWeekday || 'Monday'" :disabled="loading" size="large"
+            :options="annihilationWeekdayOptions" @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
+          <div class="field-help">从所选星期开始执行剿灭，本周达到上限后自动停止。</div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -312,7 +327,6 @@ const emitSave = (key: string, value: any) => {
 }
 
 const annihilationWeekdayOptions = [
-  { label: '每天允许', value: 'Always' },
   { label: '周一', value: 'Monday' },
   { label: '周二', value: 'Tuesday' },
   { label: '周三', value: 'Wednesday' },
@@ -445,5 +459,20 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   line-height: 1.5;
   max-width: 320px;
   font-size: 12px;
+}
+
+.annihilation-schedule-row {
+  margin-top: -4px;
+}
+
+.annihilation-schedule-row :deep(.ant-form-item) {
+  margin-bottom: 16px;
+}
+
+.field-help {
+  margin-top: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

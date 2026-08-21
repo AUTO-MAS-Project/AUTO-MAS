@@ -477,7 +477,6 @@ class MaaUserConfig_Info(BaseModel):
     ] = Field(default=None, description="剿灭模式")
     AnnihilationStartWeekday: Optional[
         Literal[
-            "Always",
             "Monday",
             "Tuesday",
             "Wednesday",
