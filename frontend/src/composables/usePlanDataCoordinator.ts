@@ -15,10 +15,6 @@ import { GetStageIn } from '@/api'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 const logger = window.electronAPI.getLogger('计划数据协调器')
 
-export type AnnihilationStartWeekday = NonNullable<
-  NonNullable<MaaPlanConfig['Info']>['AnnihilationStartWeekday']
->
-
 // 时间维度常量
 export const TIME_KEYS = [
   'ALL',
@@ -43,7 +39,6 @@ export interface PlanDataState {
     name: string
     mode: 'ALL' | 'Weekly'
     type: string
-    annihilationStartWeekday: AnnihilationStartWeekday
   }
 
   // 时间维度的配置数据
@@ -194,7 +189,6 @@ export function usePlanDataCoordinator() {
       name: '',
       mode: 'ALL',
       type: PLAN_CONFIG_TYPES.MAA,
-      annihilationStartWeekday: 'Always',
     },
     timeConfigs: {} as Record<TimeKey, any>,
     customStageDefinitions: getDefaultCustomStageDefinitions(),
@@ -230,8 +224,6 @@ export function usePlanDataCoordinator() {
     if (apiData.Info) {
       planData.value.info.name = apiData.Info.Name || ''
       planData.value.info.mode = apiData.Info.Mode || 'ALL'
-      planData.value.info.annihilationStartWeekday =
-        apiData.Info.AnnihilationStartWeekday || 'Always'
 
       // 如果API数据中包含计划表ID信息，更新当前planId
       // 注意：这里假设planId通过其他方式传入，API数据本身可能不包含ID
@@ -334,7 +326,6 @@ export function usePlanDataCoordinator() {
       Info: {
         Name: planData.value.info.name,
         Mode: planData.value.info.mode,
-        AnnihilationStartWeekday: planData.value.info.annihilationStartWeekday,
       },
     }
 

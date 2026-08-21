@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaPlanConfig, MaaUserConfig
+from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.tools import skland_sign_in
@@ -245,11 +245,7 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.run_book["Annihilation"]:
             now = datetime.now(tz=UTC4)
             start_weekday = "Always"
-            stage_mode = self.cur_user_config.get("Info", "StageMode")
-            if stage_mode != "Fixed":
-                plan = Config.PlanConfig[uuid.UUID(stage_mode)]
-                if isinstance(plan, MaaPlanConfig):
-                    start_weekday = plan.get("Info", "AnnihilationStartWeekday")
+            start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(
                 start_weekday,

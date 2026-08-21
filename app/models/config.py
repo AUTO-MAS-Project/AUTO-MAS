@@ -447,6 +447,24 @@ class MaaUserConfig(ConfigBase):
                 ]
             ),
         )
+        ## 剿灭开始星期
+        self.Info_AnnihilationStartWeekday = ConfigItem(
+            "Info",
+            "AnnihilationStartWeekday",
+            "Always",
+            OptionsValidator(
+                [
+                    "Always",
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+            ),
+        )
         ## 基建模式
         self.Info_InfrastMode = ConfigItem(
             "Info",
@@ -2231,25 +2249,6 @@ class MaaPlanConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
         )
-        ## 剿灭开始星期
-        self.Info_AnnihilationStartWeekday = ConfigItem(
-            "Info",
-            "AnnihilationStartWeekday",
-            "Always",
-            OptionsValidator(
-                [
-                    "Always",
-                    "Monday",
-                    "Tuesday",
-                    "Wednesday",
-                    "Thursday",
-                    "Friday",
-                    "Saturday",
-                    "Sunday",
-                ]
-            ),
-        )
-
         self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
 
         for group in ["ALL", *calendar.day_name]:

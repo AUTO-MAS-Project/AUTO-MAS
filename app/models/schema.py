@@ -475,6 +475,18 @@ class MaaUserConfig_Info(BaseModel):
             "LungmenDowntown@Annihilation",
         ]
     ] = Field(default=None, description="剿灭模式")
+    AnnihilationStartWeekday: Optional[
+        Literal[
+            "Always",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+    ] = Field(default=None, description="剿灭开始星期")
     InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
         default=None, description="基建模式"
     )
@@ -1669,18 +1681,6 @@ class MaaPlanConfig_Info(BaseModel):
     Mode: Optional[Literal["ALL", "Weekly"]] = Field(
         default=None, description="计划表模式"
     )
-    AnnihilationStartWeekday: Optional[
-        Literal[
-            "Always",
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
-    ] = Field(default=None, description="剿灭开始星期")
 
 
 class MaaPlanConfig_Item(BaseModel):

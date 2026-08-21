@@ -28,6 +28,8 @@
             { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
             { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
           ]" :disabled="loading" size="large" @change="emitSave('Info.Annihilation', formData.Info.Annihilation)" />
+          <a-select :value="formData.Info.AnnihilationStartWeekday || 'Always'" :disabled="loading" size="large"
+            :options="annihilationWeekdayOptions" @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="12">
@@ -308,6 +310,17 @@ const emit = defineEmits<{
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const annihilationWeekdayOptions = [
+  { label: '每天允许', value: 'Always' },
+  { label: '周一', value: 'Monday' },
+  { label: '周二', value: 'Tuesday' },
+  { label: '周三', value: 'Wednesday' },
+  { label: '周四', value: 'Thursday' },
+  { label: '周五', value: 'Friday' },
+  { label: '周六', value: 'Saturday' },
+  { label: '周日', value: 'Sunday' },
+]
 
 // 事件处理函数
 const handleAddCustomStage = (stageName: string) => emit('handle-add-custom-stage', stageName)
