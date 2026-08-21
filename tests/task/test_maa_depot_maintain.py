@@ -11,8 +11,9 @@ from app.models.config import MaaConfig
 from app.task.MAA.AutoProxy import (
     AutoProxyTask,
     _build_depot_maintain_task,
+    _remove_maa_annihilation_success_check,
     _resolve_activity_stage,
-    _should_skip_maa_annihilation,
+    _should_skip_maa_annihilation_from_gui_log,
 )
 from app.utils.constants import MAA_TASKS
 
@@ -95,19 +96,43 @@ def test_resolve_activity_stage_keeps_the_selected_position() -> None:
     assert _resolve_activity_stage([], 2) is None
 
 
-def test_annihilation_only_stops_without_full_delegation() -> None:
-    recognized = (
-        '"task":"UsePrts-AnnihilationSuccessCheck"\n'
-        "asst::FightTimesTaskPlugin::_run | enter"
-    )
-    unavailable = (
-        '"to_be_recognized":["UsePrts-AnnihilationSuccessCheck"]\n'
-        "asst::FightTimesTaskPlugin::_run | enter"
-    )
+def test_annihilation_gui_log_only_skips_without_starting_a_fight() -> None:
+    skipped = "任务出错: 理智作战\n任务已全部完成！"
+    fought = "开始行动 1 次, -25理智\n任务出错: 理智作战\n任务已全部完成！"
+    completed = "任务出错: 理智作战\n完成任务: 剿灭作战\n任务已全部完成！"
 
-    assert _should_skip_maa_annihilation(recognized) is False
-    assert _should_skip_maa_annihilation(unavailable) is True
-    assert _should_skip_maa_annihilation('"what":"AnnihilationDelegationUnavailable"')
+    assert _should_skip_maa_annihilation_from_gui_log(skipped) is True
+    assert _should_skip_maa_annihilation_from_gui_log(fought) is False
+    assert _should_skip_maa_annihilation_from_gui_log(completed) is False
+
+
+def test_remove_maa_annihilation_success_check_keeps_original_nodes() -> None:
+    task_data = {
+        "Annihilation": {
+            "next": [
+                "#self",
+                "UsePrts-AnnihilationSuccessCheck",
+                "UsePrts-AnnihilationCheck",
+                "UsePrtsSuccessCheck",
+                "Annihilation@UnableToAgent2",
+            ]
+        }
+    }
+
+    assert _remove_maa_annihilation_success_check(task_data) == [
+        "#self",
+        "UsePrts-AnnihilationSuccessCheck",
+        "UsePrts-AnnihilationCheck",
+        "UsePrtsSuccessCheck",
+        "Annihilation@UnableToAgent2",
+    ]
+    assert task_data["Annihilation"]["next"] == [
+        "#self",
+        "UsePrts-AnnihilationSuccessCheck",
+        "UsePrts-AnnihilationCheck",
+        "Annihilation@UnableToAgent2",
+    ]
+    assert _remove_maa_annihilation_success_check(task_data) is None
 
 
 def test_stage_info_uses_the_selected_maa_server_and_activity_timezone() -> None:
@@ -220,7 +245,32 @@ def test_annihilation_stage_error_is_not_delegation_skip() -> None:
     task.task_dict = dict.fromkeys(MAA_TASKS, False)
     task.task_dict["Fight"] = True
     task.mode = "Annihilation"
-    task.annihilation_skip_requested = False
+    task.wait_event = SimpleNamespace(set=lambda: None)
+
+    asyncio.run(
+        task.check_log(
+            [
+                "开始任务: 剿灭作战\n",
+                "开始行动 1 次, -25理智\n",
+                "任务出错: 理智作战\n",
+                "任务已全部完成！\n",
+            ],
+            datetime.now(),
+        )
+    )
+
+    assert task.task_dict["Fight"] is True
+    assert task.cur_user_log.status == "MAA 部分任务执行失败"
+
+
+def test_annihilation_without_entering_stage_is_success_when_avoid_waste_enabled() -> None:
+    task = object.__new__(AutoProxyTask)
+    task.cur_user_log = SimpleNamespace(content=[], status="")
+    task.script_info = SimpleNamespace(log="")
+    task.script_config = SimpleNamespace(get=lambda _group, _key: True)
+    task.task_dict = dict.fromkeys(MAA_TASKS, False)
+    task.task_dict["Fight"] = True
+    task.mode = "Annihilation"
     task.wait_event = SimpleNamespace(set=lambda: None)
 
     asyncio.run(
@@ -234,5 +284,5 @@ def test_annihilation_stage_error_is_not_delegation_skip() -> None:
         )
     )
 
-    assert task.task_dict["Fight"] is True
-    assert task.cur_user_log.status == "MAA 部分任务执行失败"
+    assert task.task_dict["Fight"] is False
+    assert task.cur_user_log.status == "Success!"

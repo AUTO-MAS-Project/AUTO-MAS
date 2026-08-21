@@ -180,7 +180,8 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    title="当剿灭已打满但无法全权代理时，MAA 仍会继续执行代理任务导致理智浪费。开启本项后，将把单次剿灭关卡代理次数限制为 1 次，规避理智浪费，但可能需要数日才能打满剿灭。建议使用代理卡代理保全派驻的用户开启本项。">
+                    title="当剿灭已打满且无法全权代理时，MAA 可能继续执行普通代理导致理智浪费。开启本项后，MAS 会临时移除剿灭任务中的通用代理成功检测，并在任务结束后恢复。"
+                  >
                     <span class="form-label">
                       剿灭避免无代理卡时浪费理智
                       <QuestionCircleOutlined class="help-icon" />
