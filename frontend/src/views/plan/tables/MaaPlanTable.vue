@@ -1,5 +1,24 @@
 <template>
   <div>
+    <div class="annihilation-schedule">
+      <a-form-item label="剿灭开始星期" :colon="false" class="compact-form-item">
+        <a-select
+          :value="coordinator.planData.info.annihilationStartWeekday"
+          class="annihilation-weekday-select"
+          @update:value="updateAnnihilationStartWeekday"
+        >
+          <a-select-option value="Always">每天允许</a-select-option>
+          <a-select-option value="Monday">周一</a-select-option>
+          <a-select-option value="Tuesday">周二</a-select-option>
+          <a-select-option value="Wednesday">周三</a-select-option>
+          <a-select-option value="Thursday">周四</a-select-option>
+          <a-select-option value="Friday">周五</a-select-option>
+          <a-select-option value="Saturday">周六</a-select-option>
+          <a-select-option value="Sunday">周日</a-select-option>
+        </a-select>
+      </a-form-item>
+    </div>
+
     <!-- 配置视图 -->
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
       <a-table
@@ -152,6 +171,7 @@ import { ref, watch, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
+  type AnnihilationStartWeekday,
   type TimeKey,
   preloadAllStageOptions,
   getCachedStageOptions,
@@ -169,6 +189,11 @@ const props = defineProps<Props>()
 
 // 使用数据协调器 - 单一数据源
 const coordinator = usePlanDataCoordinator()
+
+const updateAnnihilationStartWeekday = async (value: AnnihilationStartWeekday) => {
+  coordinator.planData.info.annihilationStartWeekday = value
+  await props.handlePlanChange('Info.AnnihilationStartWeekday', value)
+}
 
 // 临时自定义关卡输入
 const tempCustomStages = ref({
@@ -570,6 +595,16 @@ watch(
 </script>
 
 <style scoped>
+.annihilation-schedule {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.annihilation-weekday-select {
+  width: 180px;
+}
+
 /* 复用原有样式 */
 .config-select {
   width: 100%;

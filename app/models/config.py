@@ -523,6 +523,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
+        ## 剿灭达到周上限时的 ISO 周（形如 "2026-W34"）
+        self.Data_AnnihilationCompletedWeek = ConfigItem(
+            "Data", "AnnihilationCompletedWeek", "2000-W01"
+        )
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## 自定义基建配置
@@ -2226,6 +2230,24 @@ class MaaPlanConfig(ConfigBase):
         ## 计划表模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
+        )
+        ## 剿灭开始星期
+        self.Info_AnnihilationStartWeekday = ConfigItem(
+            "Info",
+            "AnnihilationStartWeekday",
+            "Always",
+            OptionsValidator(
+                [
+                    "Always",
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+            ),
         )
 
         self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}

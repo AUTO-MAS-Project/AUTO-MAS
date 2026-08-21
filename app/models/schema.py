@@ -506,6 +506,9 @@ class MaaUserConfig_Info(BaseModel):
 
 class MaaUserConfig_Data(BaseModel):
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过人工排查")
+    AnnihilationCompletedWeek: Optional[str] = Field(
+        default=None, description="剿灭达到周上限时的 ISO 周"
+    )
 
 
 class MaaUserConfig_Task(BaseModel):
@@ -1666,6 +1669,18 @@ class MaaPlanConfig_Info(BaseModel):
     Mode: Optional[Literal["ALL", "Weekly"]] = Field(
         default=None, description="计划表模式"
     )
+    AnnihilationStartWeekday: Optional[
+        Literal[
+            "Always",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+    ] = Field(default=None, description="剿灭开始星期")
 
 
 class MaaPlanConfig_Item(BaseModel):

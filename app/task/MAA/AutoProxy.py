@@ -21,6 +21,7 @@
 
 
 import json
+import re
 import uuid
 import asyncio
 import shutil
@@ -30,7 +31,7 @@ from datetime import datetime, timedelta
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models.config import MaaConfig, MaaPlanConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.tools import skland_sign_in
@@ -64,6 +65,50 @@ _MAA_CLIENT_TYPE_TO_INT = {
 
 
 logger = get_logger("MAA 自动代理")
+_ANNIHILATION_WEEKDAYS = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
+_ANNIHILATION_PROGRESS_RE = re.compile(
+    r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
+    re.IGNORECASE,
+)
+
+
+def _current_week_marker(now: datetime) -> str:
+    """返回 ISO 周标记。"""
+
+    iso_year, iso_week, _ = now.isocalendar()
+    return f"{iso_year:04d}-W{iso_week:02d}"
+
+
+def _should_run_annihilation(
+    start_weekday: str,
+    completed_week: str,
+    now: datetime,
+) -> bool:
+    """判断当前用户本次是否应执行剿灭。"""
+
+    if completed_week == _current_week_marker(now):
+        return False
+    if start_weekday == "Always":
+        return True
+    return now.weekday() >= _ANNIHILATION_WEEKDAYS.index(start_weekday)
+
+
+def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
+    """解析 MAA 输出的剿灭周进度。"""
+
+    matches = _ANNIHILATION_PROGRESS_RE.findall(log)
+    if not matches:
+        return None
+    current, total = (int(value) for value in matches[-1])
+    return (current, total) if total > 0 else None
 
 
 def _build_depot_maintain_task(plans_json: str) -> dict:
@@ -148,6 +193,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
+        self._annihilation_weekly_completion_recorded = False
 
     async def check(self) -> str:
 
@@ -195,6 +241,27 @@ class AutoProxyTask(TaskExecuteBase):
             "Annihilation": self.cur_user_config.get("Info", "Annihilation") == "Close",
             "Routine": False,
         }
+
+        if not self.run_book["Annihilation"]:
+            now = datetime.now(tz=UTC4)
+            start_weekday = "Always"
+            stage_mode = self.cur_user_config.get("Info", "StageMode")
+            if stage_mode != "Fixed":
+                plan = Config.PlanConfig[uuid.UUID(stage_mode)]
+                if isinstance(plan, MaaPlanConfig):
+                    start_weekday = plan.get("Info", "AnnihilationStartWeekday")
+
+            if not _should_run_annihilation(
+                start_weekday,
+                self.cur_user_config.get("Data", "AnnihilationCompletedWeek"),
+                now,
+            ):
+                self.run_book["Annihilation"] = True
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 本次跳过剿灭："
+                    f"开始日={start_weekday}，本周记录="
+                    f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
+                )
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -779,6 +846,23 @@ class AutoProxyTask(TaskExecuteBase):
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
+
+        if self.mode == "Annihilation":
+            progress = _parse_annihilation_weekly_progress(log)
+            if progress and progress[0] >= progress[1]:
+                self.task_dict["Fight"] = False
+                self.run_book["Annihilation"] = True
+                if not self._annihilation_weekly_completion_recorded:
+                    await self.cur_user_config.set(
+                        "Data",
+                        "AnnihilationCompletedWeek",
+                        _current_week_marker(datetime.now(tz=UTC4)),
+                    )
+                    self._annihilation_weekly_completion_recorded = True
+                    logger.info(
+                        f"用户 {self.cur_user_item.name} 剿灭已达到本周上限："
+                        f"{progress[0]}/{progress[1]}"
+                    )
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
