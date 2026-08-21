@@ -52,6 +52,7 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   return {
     moduleOrder: [...configuredOrder, ...missingModules],
     hiddenModules: normalizeModuleKeys(config.hiddenModules),
+    hideScrollHint: config.hideScrollHint === true,
   }
 }
 
@@ -62,16 +63,19 @@ export const useHomeLayout = () => {
   const layoutDrawerOpen = ref(false)
   const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
   const hiddenHomeModules = ref<HomeModuleKey[]>([])
+  const scrollHintHidden = ref(false)
   let saveQueue = Promise.resolve()
 
   const currentLayout = (): HomeLayoutConfig => ({
     moduleOrder: [...homeModuleOrder.value],
     hiddenModules: [...hiddenHomeModules.value],
+    hideScrollHint: scrollHintHidden.value,
   })
 
   const applyLayout = (layout: HomeLayoutConfig) => {
     homeModuleOrder.value = [...layout.moduleOrder]
     hiddenHomeModules.value = [...layout.hiddenModules]
+    scrollHintHidden.value = layout.hideScrollHint === true
   }
 
   const logWarning = (message: string, error: unknown) => {
@@ -146,6 +150,11 @@ export const useHomeLayout = () => {
     return queueLayoutSave(currentLayout())
   }
 
+  const setScrollHintHidden = (hidden: boolean) => {
+    scrollHintHidden.value = hidden
+    return queueLayoutSave(currentLayout())
+  }
+
   const homeModules = computed<HomeModuleDescriptor[]>(() =>
     homeModuleOrder.value.map(key => ({
       key,
@@ -159,10 +168,12 @@ export const useHomeLayout = () => {
     layoutDrawerOpen,
     homeModuleOrder,
     hiddenHomeModules,
+    scrollHintHidden,
     homeModules,
     loadHomeLayout,
     reorderHomeModules,
     setHomeModuleShown,
+    setScrollHintHidden,
     isHomeModuleShown,
     isHomeModuleVisible,
   }
