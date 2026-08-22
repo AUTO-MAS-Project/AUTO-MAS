@@ -79,6 +79,8 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      // TypeScript 已负责全局符号与类型命名空间检查
+      'no-undef': 'off',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-vars': [
