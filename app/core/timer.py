@@ -101,6 +101,9 @@ class _MainTimer:
     async def stop(self):
         """停止定时器"""
 
+        if not self.started:
+            return
+
         tasks = [
             task
             for task in (
@@ -112,9 +115,12 @@ class _MainTimer:
         ]
         for task in tasks:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-            logger.info("主业务定时器已关闭")
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info("主业务定时器已关闭")
+        finally:
+            self.started = False
 
     async def second_task(self):
         """每秒定期任务"""

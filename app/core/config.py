@@ -121,17 +121,6 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
-if (Path.cwd() / "environment/git/bin/git.exe").exists():
-    os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
-        Path.cwd() / "environment/git/bin/git.exe"
-    )
-
-try:
-    from git import Repo
-except ImportError:
-    Repo = None
-
-
 class AppConfig(GlobalConfig):
     VERSION = "v5.4.0-beta.8"
 
@@ -155,15 +144,9 @@ class AppConfig(GlobalConfig):
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
-        # 初始化Git仓库（如果可用）
-        try:
-            if Repo is not None:
-                self.repo = Repo(Path.cwd())
-            else:
-                self.repo = None
-        except Exception as e:
-            logger.warning(f"Git仓库初始化失败: {e}")
-            self.repo = None
+        # Git 仓库延迟初始化，避免启动时导入 GitPython
+        self._repo: Any = None
+        self._repo_initialized = False
 
         self.notify_env = Environment(
             loader=FileSystemLoader(str(Path.cwd() / "res/html"))
@@ -185,7 +168,50 @@ class AppConfig(GlobalConfig):
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
-        truststore.inject_into_ssl()
+        self._inject_truststore()
+
+    @staticmethod
+    def _inject_truststore() -> None:
+        """等效 truststore.inject_into_ssl()，但避免其内部导入 requests (约 460ms)。
+
+        requests 未加载时无需 patch：注入后再导入的 requests 会基于
+        已替换的 ssl.SSLContext 创建预加载上下文，效果一致。
+        """
+        import ssl
+
+        ssl.SSLContext = truststore.SSLContext  # type: ignore[misc]
+        try:
+            import urllib3.util.ssl_ as urllib3_ssl
+
+            urllib3_ssl.SSLContext = truststore.SSLContext  # type: ignore[assignment]
+        except ImportError:
+            pass
+        requests_adapters = sys.modules.get("requests.adapters")
+        if requests_adapters is not None and (
+            getattr(requests_adapters, "_preloaded_ssl_context", None) is not None
+        ):
+            setattr(
+                requests_adapters,
+                "_preloaded_ssl_context",
+                truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+            )
+
+    def _get_repo(self) -> Any:
+        """惰性初始化 Git 仓库，避免启动时导入 GitPython。"""
+        if not self._repo_initialized:
+            self._repo_initialized = True
+            if (Path.cwd() / "environment/git/bin/git.exe").exists():
+                os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
+                    Path.cwd() / "environment/git/bin/git.exe"
+                )
+            try:
+                from git import Repo
+
+                self._repo = Repo(Path.cwd())
+            except Exception as e:
+                logger.warning(f"Git仓库初始化失败: {e}")
+                self._repo = None
+        return self._repo
 
     async def init_config(self) -> None:
         """初始化配置管理"""
@@ -222,7 +248,7 @@ class AppConfig(GlobalConfig):
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
-        await System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
         set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
@@ -574,12 +600,13 @@ class AppConfig(GlobalConfig):
 
         def _get_git_info():
 
-            if self.repo is None:
+            repo = self._get_repo()
+            if repo is None:
                 logger.warning("Git仓库不可用，返回默认版本信息")
                 return False, "unknown", "unknown"
 
             # 获取当前 commit
-            current_commit = self.repo.head.commit
+            current_commit = repo.head.commit
             # 获取 commit 哈希
             commit_hash = current_commit.hexsha
             # 获取 commit 时间
@@ -588,10 +615,10 @@ class AppConfig(GlobalConfig):
             # 检查是否为最新 commit
             try:
                 # 获取远程分支的最新 commit
-                origin = self.repo.remotes.origin
+                origin = repo.remotes.origin
                 origin.fetch()  # 拉取最新信息
-                remote_commit = self.repo.commit(
-                    f"origin/{self.repo.active_branch.name}"
+                remote_commit = repo.commit(
+                    f"origin/{repo.active_branch.name}"
                 )
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
