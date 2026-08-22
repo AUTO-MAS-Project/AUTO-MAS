@@ -121,6 +121,100 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
+def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
+    """按理智任务边界解析 MAA 日志中的关卡掉落统计。
+
+    Args:
+        logs: MAA 日志行列表。
+
+    Returns:
+        按关卡汇总的掉落统计。
+    """
+
+    target_task_names = {"Fight", "理智作战", "活动关优先", "剩余理智"}
+    fight_start_markers = (
+        "开始任务: Fight",
+        "开始任务: 理智作战",
+        "Start Task Chain: Fight",
+    )
+
+    def is_task_boundary(line: str) -> bool:
+        return "完成任务:" in line or "Completed Task Chain:" in line
+
+    def get_completed_task_name(line: str) -> str | None:
+        match = re.search(r"完成任务:\s*([^\r\n]+)", line)
+        if match is None:
+            return None
+        return match.group(1).strip() or None
+
+    task_ranges: list[tuple[int, int]] = []
+    for end_index, line in enumerate(logs):
+        if get_completed_task_name(line) not in target_task_names:
+            continue
+
+        previous_boundary = max(
+            (
+                index
+                for index, item in enumerate(logs[:end_index])
+                if is_task_boundary(item)
+            ),
+            default=-1,
+        )
+        start_candidates = [
+            index
+            for index, item in enumerate(logs[:end_index])
+            if index > previous_boundary
+            and any(marker in item for marker in fight_start_markers)
+        ]
+        start_index = max(start_candidates, default=previous_boundary + 1)
+        task_ranges.append((start_index, end_index))
+
+    all_stage_drops: dict[str, dict[str, int]] = {}
+    for start_index, end_index in task_ranges:
+        current_stage = None
+        last_drop_stats: dict[str, int] = {}
+
+        for line in logs[start_index : end_index + 1]:
+            drop_match = re.search(
+                r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line
+            )
+            if drop_match:
+                current_stage = drop_match.group(1)
+                last_drop_stats = {}
+                continue
+
+            if not current_stage:
+                continue
+
+            item_match: list[tuple[str, str]] = re.findall(
+                r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
+                line,
+                re.M,
+            )
+            for item, total in item_match:
+                total = total.replace(",", "")
+                if total.lower().endswith("k"):
+                    total = int(total[:-1]) * 1000
+                else:
+                    total = int(total)
+
+                if item not in [
+                    "当前次数",
+                    "理智",
+                    "最快截图耗时",
+                    "专精等级",
+                    "剩余时间",
+                ]:
+                    last_drop_stats[item] = total
+
+        if current_stage and last_drop_stats:
+            stage_drops = all_stage_drops.setdefault(current_stage, {})
+            for item, count in last_drop_stats.items():
+                stage_drops[item] = stage_drops.get(item, 0) + count
+
+    return all_stage_drops
+
+
 if (Path.cwd() / "environment/git/bin/git.exe").exists():
     os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
         Path.cwd() / "environment/git/bin/git.exe"
@@ -2607,100 +2701,9 @@ class AppConfig(GlobalConfig):
 
             i += 1
 
-        # 掉落统计
-        # 存储所有关卡的掉落统计
-        all_stage_drops = {}
-
-        # 查找所有Fight任务的开始和结束位置
-        fight_tasks = []
-        for i, line in enumerate(logs):
-            if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
-                # 查找对应的任务结束位置
-                end_index = -1
-                for j in range(i + 1, len(logs)):
-                    if "完成任务: Fight" in logs[j] or "完成任务: 理智作战" in logs[j]:
-                        end_index = j
-                        break
-                    # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
-                    if j < len(logs) and (
-                        "开始任务: Fight" in logs[j] or "开始任务: 理智作战" in logs[j]
-                    ):
-                        break
-
-                # 如果找到了结束位置, 记录这个任务的范围
-                if end_index != -1:
-                    fight_tasks.append((i, end_index))
-
-        # 兜底: 部分 MAA 版本只打印"完成任务", 不打印"开始任务"。
-        # 这种日志里掉落统计明明存在, 却因为找不到区间起点而被整段跳过,
-        # 导致 drop_statistics 恒为空。此时以上一个任务边界(或日志开头)
-        # 作为起点, 仍能正确取到该次作战的掉落。
-        if not fight_tasks:
-            prev_boundary = 0
-            for j, line in enumerate(logs):
-                if "完成任务: Fight" in line or "完成任务: 理智作战" in line:
-                    fight_tasks.append((prev_boundary, j))
-                if (
-                    "完成任务:" in line
-                    or "开始任务: Fight" in line
-                    or "开始任务: 理智作战" in line
-                ):
-                    prev_boundary = j
-
-        # 处理每个Fight任务
-        for start_idx, end_idx in fight_tasks:
-            # 提取当前任务的日志
-            task_logs = logs[start_idx : end_idx + 1]
-
-            # 查找任务中的最后一次掉落统计
-            last_drop_stats = {}
-            current_stage = None
-
-            for line in task_logs:
-                # 匹配掉落统计行, 如"1-7 掉落统计:"
-                drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
-                if drop_match:
-                    # 发现新的掉落统计, 重置当前关卡的掉落数据
-                    current_stage = drop_match.group(1)
-                    last_drop_stats = {}
-                    continue
-
-                # 如果已经找到了关卡, 处理掉落物
-                if current_stage:
-                    item_match: List[str] = re.findall(
-                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
-                        line,
-                        re.M,
-                    )
-                    for item, total in item_match:
-                        total = total.replace(",", "")
-                        if total.lower().endswith("k"):
-                            total = int(total[:-1]) * 1000
-                        else:
-                            total = int(total)
-
-                        # 黑名单
-                        if item not in [
-                            "当前次数",
-                            "理智",
-                            "最快截图耗时",
-                            "专精等级",
-                            "剩余时间",
-                        ]:
-                            last_drop_stats[item] = total
-
-            # 如果任务中有掉落统计, 更新总统计
-            if current_stage and last_drop_stats:
-                if current_stage not in all_stage_drops:
-                    all_stage_drops[current_stage] = {}
-
-                # 累加掉落数据
-                for item, count in last_drop_stats.items():
-                    all_stage_drops[current_stage].setdefault(item, 0)
-                    all_stage_drops[current_stage][item] += count
-
-        # 将累加后的掉落数据保存到结果中
-        data["drop_statistics"] = all_stage_drops
+        # 掉落统计只收集理智作战、活动关优先和剩余理智任务，避免把库存保持
+        # 触发的 Fight 任务链计入通知。
+        data["drop_statistics"] = _parse_maa_drop_statistics(logs)
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)

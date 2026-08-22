@@ -83,7 +83,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="18">
+      <a-col :span="12">
         <a-form-item>
           <template #label>
             <a-tooltip
@@ -105,6 +105,28 @@
             option-filter-prop="label"
             size="large"
             @change="handleActivityStageChange"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="6">
+        <a-form-item>
+          <template #label>
+            <a-tooltip
+              title="活动关优先任务使用的理智药数量，不影响普通理智作战"
+            >
+              <span>活动关理智药 </span>
+              <QuestionCircleOutlined class="help-icon" />
+            </a-tooltip>
+          </template>
+          <a-input-number
+            :value="formData.Task.ActivityMedicineNumb"
+            :min="0"
+            :max="9999"
+            :disabled="loading || !activityFirst"
+            placeholder="0"
+            size="large"
+            style="width: 100%"
+            @change="handleActivityMedicineChange"
           />
         </a-form-item>
       </a-col>
@@ -138,6 +160,10 @@ const emitSave = (key: string, value: any) => {
 const handleActivityStageChange = (value: number) => {
   activityStageIndex.value = value
   emitSave('Task.ActivityStageIndex', value)
+}
+
+const handleActivityMedicineChange = (value: number | null) => {
+  emitSave('Task.ActivityMedicineNumb', value ?? 0)
 }
 </script>
 

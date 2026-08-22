@@ -588,6 +588,15 @@ class MaaUserConfig(ConfigBase):
         self.Task_ActivityStageIndex = ConfigItem(
             "Task", "ActivityStageIndex", 1, RangeValidator(1, 9999)
         )
+        ## 活动关优先任务吃理智药数量
+        self.Task_ActivityMedicineNumb = ConfigItem(
+            "Task",
+            "ActivityMedicineNumb",
+            0,
+            RangeValidator(0, 9999),
+            legacy_group="Info",
+            legacy_name="MedicineNumb",
+        )
         ## 库存保持计划
         self.Task_DepotMaintainPlans = ConfigItem(
             "Task", "DepotMaintainPlans", "[]", JSONValidator(list)

@@ -757,6 +757,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         activity_fight = None
         if self.mode == "Routine" and activity_stage:
+            activity_medicine_numb = self.cur_user_config.get(
+                "Task", "ActivityMedicineNumb"
+            )
             activity_fight = task_set["Fight"].copy()
             activity_fight.update(
                 {
@@ -771,6 +774,8 @@ class AutoProxyTask(TaskExecuteBase):
                     "DropCount": 0,
                     "IsInventoryTarget": False,
                     "EnableTimesLimit": False,
+                    "UseMedicine": activity_medicine_numb > 0,
+                    "MedicineCount": activity_medicine_numb,
                 }
             )
             # 理智药额度只交给优先活动关，避免后续普通作战重复消耗。
