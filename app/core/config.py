@@ -122,7 +122,7 @@ def _save_game_sign_result_snapshot(
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.4.0-beta.8"
+    VERSION = "v5.5.0-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
