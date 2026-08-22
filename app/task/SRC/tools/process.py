@@ -254,16 +254,21 @@ def read_src_webui_port(src_set_path: Path) -> int | None:
     return webui_port
 
 
-async def _kill_src_root_processes(src_root_path: Path) -> bool:
-    """中止可执行文件位于 SRC 根目录内的残留辅助进程。"""
+async def _kill_src_toolkit_processes(src_root_path: Path) -> bool:
+    """中止可执行文件位于 SRC toolkit 目录内的后端进程。"""
 
     src_root_path = src_root_path.resolve()
+    toolkit_path = src_root_path / "toolkit"
     success = True
     try:
-        executable_names = {
-            executable_path.name.casefold()
-            for executable_path in src_root_path.rglob("*.exe")
-        }
+        executable_names = (
+            {
+                executable_path.name.casefold()
+                for executable_path in toolkit_path.rglob("*.exe")
+            }
+            if toolkit_path.exists()
+            else set()
+        )
         processes = psutil.process_iter(["pid", "name", "exe"])
         for process in processes:
             try:
@@ -284,7 +289,7 @@ async def _kill_src_root_processes(src_root_path: Path) -> bool:
                 if process_name and str(process_name).casefold() in executable_names:
                     success = False
                     logger.warning(
-                        "无法确认同名 SRC 辅助进程路径，拒绝判定清理成功 "
+                        "无法确认同名 SRC toolkit 后端进程路径，拒绝判定清理成功 "
                         f"PID: {process_pid}, 进程名: {process_name}"
                     )
                 continue
@@ -293,7 +298,7 @@ async def _kill_src_root_processes(src_root_path: Path) -> bool:
 
             try:
                 resolved_process_path = Path(process_path).resolve()
-                resolved_process_path.relative_to(src_root_path)
+                resolved_process_path.relative_to(toolkit_path)
             except ValueError:
                 continue
             except OSError as e:
@@ -305,7 +310,7 @@ async def _kill_src_root_processes(src_root_path: Path) -> bool:
 
             try:
                 logger.info(
-                    f"中止 SRC 根目录辅助进程: {resolved_process_path}, "
+                    f"中止 SRC toolkit 后端进程: {resolved_process_path}, "
                     f"PID: {process_pid}"
                 )
                 if not await System.kill_process_by_pid(process_pid):
@@ -313,11 +318,11 @@ async def _kill_src_root_processes(src_root_path: Path) -> bool:
             except Exception as e:
                 success = False
                 logger.opt(exception=True).warning(
-                    f"中止 SRC 根目录辅助进程失败 PID: {process_pid}, 原因: {e}"
+                    f"中止 SRC toolkit 后端进程失败 PID: {process_pid}, 原因: {e}"
                 )
     except (psutil.AccessDenied, OSError) as e:
         success = False
-        logger.warning(f"扫描 SRC 根目录辅助进程失败: {e}")
+        logger.warning(f"扫描 SRC toolkit 后端进程失败: {e}")
 
     return success
 
@@ -395,11 +400,11 @@ async def kill_src_processes(
         logger.opt(exception=True).warning(f"按路径中止 SRC 进程失败: {e}")
 
     try:
-        if not await _kill_src_root_processes(src_root_path):
+        if not await _kill_src_toolkit_processes(src_root_path):
             success = False
     except Exception as e:
         success = False
-        logger.opt(exception=True).warning(f"中止 SRC 根目录辅助进程失败: {e}")
+        logger.opt(exception=True).warning(f"中止 SRC toolkit 后端进程失败: {e}")
 
     try:
         await process_manager.kill()
@@ -423,14 +428,14 @@ async def kill_src_processes(
         success = False
         logger.opt(exception=True).warning(f"中止 SRC WebUI 进程失败: {e}")
 
-    # 端口等待期间仍可能有已脱离主进程、但尚未开始监听的辅助进程启动。
-    # 恢复配置前再扫描一次 SRC 根目录，避免将这类进程误判为已清理。
+    # 端口等待期间仍可能有已脱离主进程、但尚未开始监听的后端进程启动。
+    # 恢复配置前再扫描一次 toolkit，避免将这类进程误判为已清理。
     try:
-        if not await _kill_src_root_processes(src_root_path):
+        if not await _kill_src_toolkit_processes(src_root_path):
             success = False
     except Exception as e:
         success = False
-        logger.opt(exception=True).warning(f"复查 SRC 根目录辅助进程失败: {e}")
+        logger.opt(exception=True).warning(f"复查 SRC toolkit 后端进程失败: {e}")
 
     return success
 
@@ -442,7 +447,7 @@ async def kill_src_webui_process(
     webui_port: int | None = None,
     listener_wait_timeout: float = 0.0,
 ) -> bool:
-    """中止占用 SRC WebUI 端口且可执行文件位于 SRC 目录内的进程。
+    """中止占用 SRC WebUI 端口且可执行文件位于 SRC toolkit 目录内的进程。
 
     Args:
         src_root_path (Path): SRC 根目录。
@@ -465,6 +470,7 @@ async def kill_src_webui_process(
         return True
 
     src_root_path = src_root_path.resolve()
+    toolkit_path = src_root_path / "toolkit"
     deadline = asyncio.get_running_loop().time() + max(listener_wait_timeout, 0.0)
     while True:
         try:
@@ -498,7 +504,7 @@ async def kill_src_webui_process(
                 continue
 
             try:
-                process_path.relative_to(src_root_path)
+                process_path.relative_to(toolkit_path)
             except ValueError:
                 continue
 

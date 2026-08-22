@@ -22,6 +22,7 @@
 
 import uuid
 import asyncio
+import re
 from pathlib import Path
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -56,6 +57,13 @@ logger = get_logger("SRC脚本自动代理")
 _FINAL_NOTIFICATION_TIMEOUT_SECONDS = 30
 _FINAL_REPORT_TIMEOUT_SECONDS = 5
 _FINAL_CLEANUP_TIMEOUT_SECONDS = 30
+_SRC_LOG_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{1,6} ")
+
+
+def _has_structured_src_log(log_content: list[str], message: str) -> bool:
+    return any(
+        _SRC_LOG_TIMESTAMP_RE.match(line) and message in line for line in log_content
+    )
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -99,9 +107,7 @@ class AutoProxyTask(TaskExecuteBase):
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -113,7 +119,9 @@ class AutoProxyTask(TaskExecuteBase):
             recover_src_user_config(config_path)
             if not config_path.exists():
                 self.cur_user_item.status = "异常"
-                return "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
+                return (
+                    "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
+                )
         return "Pass"
 
     async def prepare(self):
@@ -252,7 +260,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功\n正在等待 SRC 日志文件生成"
             if_get_file = False
             while datetime.now() - t < timedelta(minutes=1):
-
                 for log_file in self.src_log_path.parent.iterdir():
                     if log_file.is_file():
                         with suppress(ValueError):
@@ -429,8 +436,7 @@ class AutoProxyTask(TaskExecuteBase):
         overlay_path = None
         if self.cur_user_config.get("Info", "Mode") == "简洁":
             overlay_path = (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/Default/ConfigFile"
+                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
         elif self.cur_user_config.get("Info", "Mode") == "详细":
             overlay_path = (
@@ -556,15 +562,20 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        if "Request human takeover" in log:
+        if _has_structured_src_log(log_content, "Request human takeover"):
             self.cur_user_log.status = "SRC 无法继续执行任务, 需要用户接管"
-        elif "Close game during wait" in log:
+        elif _has_structured_src_log(log_content, "Close game during wait"):
             self.cur_user_log.status = "Success!"
-        elif "[src] exited" in log or not await self.src_process_manager.is_running():
+        elif (
+            _has_structured_src_log(log_content, "[src] exited")
+            or not await self.src_process_manager.is_running()
+        ):
             self.cur_user_log.status = "SRC 在完成任务前中止"
-        elif "Please switch to a supported page before starting SRC" in log:
+        elif _has_structured_src_log(
+            log_content, "Please switch to a supported page before starting SRC"
+        ):
             self.cur_user_log.status = "SRC 启动时游戏停留在不支持的页面"
-        elif "CRITICAL" in log:
+        elif _has_structured_src_log(log_content, "CRITICAL"):
             self.cur_user_log.status = "SRC 发生严重错误"
         elif datetime.now() - latest_time > timedelta(
             minutes=self.script_config.get("Run", "RunTimeLimit")
@@ -620,7 +631,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
