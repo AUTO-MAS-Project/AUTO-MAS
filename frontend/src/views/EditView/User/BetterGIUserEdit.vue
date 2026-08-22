@@ -149,14 +149,14 @@
                   <template #label>
                     <span class="form-label">
                       账号 UID
-                      <a-tooltip title="可不填；填写后切换前识别一致将不执行切换动作">
+                      <a-tooltip title="可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Switch.Uid"
-                    placeholder="请输入账号 UID（可不填）"
+                    placeholder="请输 UID（切换账号建议填写）"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Switch.Uid', formData.Switch.Uid)"
@@ -386,16 +386,19 @@
 
             <div class="custom-groups-section">
               <div class="custom-groups-header">
-                <span class="custom-groups-title">自定义配置组</span>
-                <div
-                  class="config-group-item-capsule custom-groups-capsule"
-                  :class="{
-                    active: formData.OneDragon.IfUseCustomGroups,
-                    disabled: !formData.Info.IfUseMasConfig,
-                  }"
-                  @click="toggleCustomGroupsMaster"
-                >
-                  <span class="config-group-item-dot"></span>
+                <h3>自定义配置组</h3>
+                <div class="custom-groups-toggle">
+                  <span class="custom-groups-toggle-label">启用</span>
+                  <div
+                    class="config-group-item-capsule custom-groups-capsule"
+                    :class="{
+                      active: formData.OneDragon.IfUseCustomGroups,
+                      disabled: !formData.Info.IfUseMasConfig,
+                    }"
+                    @click="toggleCustomGroupsMaster"
+                  >
+                    <span class="config-group-item-dot"></span>
+                  </div>
                 </div>
               </div>
 
@@ -1128,7 +1131,7 @@ onUnmounted(() => {
 .config-group-item {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 8px 4px;
   border: 1px solid transparent;
@@ -1196,13 +1199,26 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.custom-groups-title {
+.custom-groups-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.custom-groups-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-groups-toggle-label {
   font-size: 14px;
-  font-weight: 500;
-  color: var(--ant-color-text);
+  color: var(--ant-color-text-secondary);
 }
 
 .custom-groups-body {
