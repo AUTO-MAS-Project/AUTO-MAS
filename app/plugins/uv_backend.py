@@ -16,7 +16,7 @@ logger = get_logger("uv后端")
 
 _uv_path: str | None = None
 
-DEFAULT_INDEX_URLS: list[str] = [
+DEFAULT_MIRROR_URLS: list[str] = [
     "https://mirrors.aliyun.com/pypi/simple/",
     "https://pypi.tuna.tsinghua.edu.cn/simple/",
     "https://pypi.mirrors.ustc.edu.cn/simple/",
@@ -154,10 +154,10 @@ def _error_detail(completed: subprocess.CompletedProcess[str]) -> str:
     return stderr or stdout or "未知错误"
 
 
-def _append_index_args(command: list[str], index_url: Optional[str]) -> None:
+def _append_index_args(command: list[str], mirror_url: Optional[str]) -> None:
     """将 PyPI 镜像源参数追加到命令列表。"""
-    if index_url:
-        command.extend(["--index-url", index_url])
+    if mirror_url:
+        command.extend(["--index-url", mirror_url])
 
 
 async def uv_pip_install(
@@ -166,7 +166,7 @@ async def uv_pip_install(
     target: Path,
     editable: bool = False,
     upgrade: bool = True,
-    index_url: Optional[str] = None,
+    mirror_url: Optional[str] = None,
 ) -> subprocess.CompletedProcess[str]:
     """使用 uv pip install 安装包到指定目录。"""
     uv = get_uv_executable()
@@ -181,7 +181,7 @@ async def uv_pip_install(
     command.extend(["--target", str(target)])
     if upgrade:
         command.append("--upgrade")
-    _append_index_args(command, index_url)
+    _append_index_args(command, mirror_url)
 
     completed = await _run(command)
     if completed.returncode != 0:
@@ -197,10 +197,10 @@ async def uv_pip_install_with_mirror_fallback(
     target: Path,
     editable: bool = False,
     upgrade: bool = True,
-    index_urls: list[str] | None = None,
+    mirror_urls: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """使用 uv pip install 安装包，自动轮替镜像源。"""
-    urls = index_urls if index_urls is not None else DEFAULT_INDEX_URLS
+    urls = mirror_urls if mirror_urls is not None else DEFAULT_MIRROR_URLS
     last_error = ""
 
     for url in urls:
@@ -210,7 +210,7 @@ async def uv_pip_install_with_mirror_fallback(
                 target=target,
                 editable=editable,
                 upgrade=upgrade,
-                index_url=url,
+                mirror_url=url,
             )
         except RuntimeError as e:
             last_error = str(e)
@@ -222,7 +222,7 @@ async def uv_pip_install_with_mirror_fallback(
             target=target,
             editable=editable,
             upgrade=upgrade,
-            index_url=None,
+            mirror_url=None,
         )
     except RuntimeError as e:
         raise RuntimeError(f"所有镜像源均失败 (packages={packages}): {last_error}") from e
