@@ -110,49 +110,112 @@ def main():
         import asyncio
         import uvicorn
         from fastapi import FastAPI
-        from fastapi_mcp import FastApiMCP
         from fastapi.staticfiles import StaticFiles
-        from contextlib import asynccontextmanager
+        from contextlib import asynccontextmanager, suppress
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
-            from app.MaaFW import ArknightWin32Toolkit
 
             await Config.init_config()
-            await Config.get_stage()
-            await Config.clean_old_history()
-            await ArknightWin32Toolkit.init()
-            await MainTimer.start()
 
-            # 初始化 Koishi 系统客户端（如果已启用）
-            if Config.get("Notify", "IfKoishiSupport"):
-                from app.utils.websocket import ws_client_manager
+            background_task: asyncio.Task | None = None
 
-                await ws_client_manager.init_system_client_koishi()
+            async def initialize_background_services() -> None:
+                """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、ArknightWin32、主定时器。
 
-            if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
+                lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
+                让前端等待就绪的耗时只包含核心配置初始化。
+                """
+
+                app.state.background_status = "running"
                 try:
-                    (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
-                except Exception as e:
-                    logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
-            if (Path.cwd() / "AUTO_MAA.exe").exists():
-                try:
-                    (Path.cwd() / "AUTO_MAA.exe").unlink()
-                except Exception as e:
-                    logger.error(f"删除AUTO_MAA.exe失败: {e}")
+                    import importlib
 
-            yield
+                    # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
+                    # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
+                    # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
+                    if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
+                        fastapi_mcp = await asyncio.to_thread(
+                            importlib.import_module, "fastapi_mcp"
+                        )
 
-            await TaskManager.stop_task("ALL")
+                        mcp = await asyncio.to_thread(
+                            fastapi_mcp.FastApiMCP,
+                            app,
+                            name="AUTO-MAS MCP",
+                            description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
+                            describe_full_response_schema=True,
+                            describe_all_responses=True,
+                            exclude_tags=["Delete"],
+                        )
+                        mcp.mount_http()
+                        logger.info("MCP 服务已挂载")
+                    else:
+                        logger.info("MCP 服务未启用，跳过路由挂载")
 
-            await MainTimer.stop()
+                    await Config.get_stage()
+                    await Config.clean_old_history()
 
-            from app.services import Matomo
+                    # ArknightWin32 导入链含 pyautogui/cv2/numpy (约 700ms 重 CPU)，
+                    # 放入线程导入，避免阻塞事件循环影响 API 响应
+                    await asyncio.to_thread(
+                        importlib.import_module, "app.MaaFW.ArknightWin32"
+                    )
+                    from app.MaaFW import ArknightWin32Toolkit
 
-            await Matomo.close()
+                    await ArknightWin32Toolkit.init()
+                    await MainTimer.start()
 
-            logger.info("AUTO-MAS 后端程序关闭")
+                    # 初始化 Koishi 系统客户端（如果已启用）
+                    if Config.get("Notify", "IfKoishiSupport"):
+                        from app.utils.websocket import ws_client_manager
+
+                        await ws_client_manager.init_system_client_koishi()
+
+                    if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
+                        try:
+                            (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
+                        except Exception as e:
+                            logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
+                    if (Path.cwd() / "AUTO_MAA.exe").exists():
+                        try:
+                            (Path.cwd() / "AUTO_MAA.exe").unlink()
+                        except Exception as e:
+                            logger.error(f"删除AUTO_MAA.exe失败: {e}")
+
+                    app.state.background_status = "ready"
+                    logger.info("后端后台初始化完成")
+                except asyncio.CancelledError:
+                    app.state.background_status = "cancelled"
+                    raise
+                except Exception as error:
+                    app.state.background_status = "failed"
+                    app.state.background_error = f"{type(error).__name__}: {error}"
+                    logger.exception(f"后台初始化失败: {app.state.background_error}")
+
+            app.state.background_status = "starting"
+            app.state.background_error = None
+            background_task = asyncio.create_task(initialize_background_services())
+
+            try:
+                yield
+            finally:
+                # 停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
+                if background_task is not None and not background_task.done():
+                    background_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await background_task
+
+                await TaskManager.stop_task("ALL")
+
+                await MainTimer.stop()
+
+                from app.services import Matomo
+
+                await Matomo.close()
+
+                logger.info("AUTO-MAS 后端程序关闭")
 
         from fastapi.middleware.cors import CORSMiddleware
         from app.api import (
@@ -215,17 +278,6 @@ def main():
             StaticFiles(directory=str(Path.cwd() / "res/sounds")),
             name="sounds",
         )
-
-        mcp = FastApiMCP(
-            app,
-            name="AUTO-MAS MCP",
-            description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
-            describe_full_response_schema=True,
-            describe_all_responses=True,
-            exclude_tags=["Delete"],
-        )
-
-        mcp.mount_http()
 
         async def run_server():
             config = uvicorn.Config(
