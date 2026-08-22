@@ -577,12 +577,15 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
         const parts = pendingKey.split('.')
         let userData: Record<string, any> = {}
         let current = userData
+        let localTarget: any = formData
 
         for (let i = 0; i < parts.length - 1; i++) {
           current[parts[i]] = {}
           current = current[parts[i]]
+          localTarget = localTarget[parts[i]]
         }
         current[parts[parts.length - 1]] = pendingValue
+        localTarget[parts[parts.length - 1]] = pendingValue
 
         // 特殊处理：userName 和 userId 需要同步到 Info
         if (pendingKey === 'userName') {

@@ -45,6 +45,33 @@
         </a-form-item>
       </a-col>
     </a-row>
+    <a-row :gutter="24" class="annihilation-schedule-row">
+      <a-col :xs="24" :md="12">
+        <a-form-item name="annihilationStartWeekday">
+          <template #label>
+            <a-tooltip title="达到设置的星期后才会启动剿灭任务；本周达到上限后会自动跳过后续剿灭">
+              <span class="form-label">
+                剿灭开始星期
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <div class="annihilation-schedule-controls">
+            <a-select :value="formData.Info.AnnihilationStartWeekday || 'Monday'" :disabled="loading" size="large"
+              class="annihilation-weekday-select" :options="annihilationWeekdayOptions"
+              @change="emitSave('Info.AnnihilationStartWeekday', $event)" />
+            <a-tag :color="annihilationCompletedThisWeek ? 'success' : 'warning'" class="annihilation-status-tag">
+              本周状态：{{ annihilationCompletedThisWeek ? '已完成' : '未完成' }}
+            </a-tag>
+            <a-space :size="4" class="annihilation-actions">
+              <a-button size="small" :disabled="loading" @click="emitSave('Data.AnnihilationCompletedWeek', null)">重置状态</a-button>
+              <a-button size="small" :disabled="loading" @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)">手动完成</a-button>
+            </a-space>
+          </div>
+          <div class="field-help">从所选星期开始执行剿灭，本周达到上限后自动停止。</div>
+        </a-form-item>
+      </a-col>
+    </a-row>
     <a-row :gutter="24">
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
@@ -262,6 +289,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
@@ -308,6 +336,32 @@ const emit = defineEmits<{
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const annihilationWeekdayOptions = [
+  { label: '周一', value: 'Monday' },
+  { label: '周二', value: 'Tuesday' },
+  { label: '周三', value: 'Wednesday' },
+  { label: '周四', value: 'Thursday' },
+  { label: '周五', value: 'Friday' },
+  { label: '周六', value: 'Saturday' },
+  { label: '周日', value: 'Sunday' },
+]
+
+// 与后端 AutoProxy._current_week_marker（UTC+4 ISO 周）保持一致。
+// 先取 UTC+4 的日期（丢弃时分秒），再按 ISO 规则落到本周四，避免时移残留导致周数 +1。
+const currentWeekMarker = (() => {
+  const shifted = new Date(Date.now() + 4 * 60 * 60 * 1000)
+  const date = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()))
+  const day = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const week = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+})()
+
+const annihilationCompletedThisWeek = computed(
+  () => props.formData.Data?.AnnihilationCompletedWeek === currentWeekMarker,
+)
 
 // 事件处理函数
 const handleAddCustomStage = (stageName: string) => emit('handle-add-custom-stage', stageName)
@@ -432,5 +486,43 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   line-height: 1.5;
   max-width: 320px;
   font-size: 12px;
+}
+
+.annihilation-schedule-row {
+  margin-top: -4px;
+}
+
+.annihilation-schedule-row :deep(.ant-form-item) {
+  margin-bottom: 16px;
+}
+
+.field-help {
+  margin-top: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.annihilation-schedule-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.annihilation-weekday-select {
+  flex: 1;
+  min-width: 140px;
+}
+
+.annihilation-status-tag {
+  margin: 0;
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.annihilation-actions {
+  flex-shrink: 0;
 }
 </style>

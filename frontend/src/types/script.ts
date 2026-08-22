@@ -35,7 +35,6 @@ export interface MAAScriptConfig {
     RunTimesLimit: number
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
-    AnnihilationAvoidWaste: boolean
   }
   Emulator: {
     Id: string
