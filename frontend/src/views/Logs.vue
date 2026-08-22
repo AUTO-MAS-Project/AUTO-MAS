@@ -9,6 +9,8 @@ const logger = window.electronAPI.getLogger('日志查看')
 const { themeMode } = useTheme()
 const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
+defineOptions({ name: 'LogViewer' })
+
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
 
