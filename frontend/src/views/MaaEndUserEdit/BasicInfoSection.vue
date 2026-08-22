@@ -253,8 +253,9 @@ const emit = defineEmits<{
   scriptConfig: []
 }>()
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
   resourceOptions: Array<{ label: string; value: string }>
   presetSupported?: boolean

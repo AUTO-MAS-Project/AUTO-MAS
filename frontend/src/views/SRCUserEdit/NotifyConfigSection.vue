@@ -65,8 +65,8 @@ import WebhookManager from '@/components/WebhookManager.vue'
 
 const logger = window.electronAPI.getLogger('SRC通知配置组件')
 
+const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
-  formData: any
   loading: boolean
   scriptId?: string
   userId?: string

@@ -44,8 +44,9 @@
 <script setup lang="ts">
 import { handleExternalLink } from '@/utils/openExternal'
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
 }>()
 
