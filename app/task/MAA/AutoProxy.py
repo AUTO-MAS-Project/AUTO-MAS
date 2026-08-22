@@ -21,6 +21,7 @@
 
 
 import json
+import calendar
 import re
 import uuid
 import asyncio
@@ -65,15 +66,6 @@ _MAA_CLIENT_TYPE_TO_INT = {
 
 
 logger = get_logger("MAA 自动代理")
-_ANNIHILATION_WEEKDAYS = (
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-)
 _ANNIHILATION_PROGRESS_RE = re.compile(
     r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
     re.IGNORECASE,
@@ -96,9 +88,7 @@ def _should_run_annihilation(
 
     if completed_week == _current_week_marker(now):
         return False
-    if start_weekday == "Always":
-        return True
-    return now.weekday() >= _ANNIHILATION_WEEKDAYS.index(start_weekday)
+    return now.weekday() >= getattr(calendar, start_weekday.upper())
 
 
 def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
@@ -853,9 +843,12 @@ class AutoProxyTask(TaskExecuteBase):
                         _current_week_marker(datetime.now(tz=UTC4)),
                     )
                     self._annihilation_weekly_completion_recorded = True
+                    progress_text = (
+                        f"{progress[0]}/{progress[1]}" if progress else "完成任务日志"
+                    )
                     logger.info(
                         f"用户 {self.cur_user_item.name} 剿灭已达到本周上限："
-                        f"{progress[0]}/{progress[1]}"
+                        f"{progress_text}"
                     )
 
         if "未选择任务" in log:
@@ -871,9 +864,7 @@ class AutoProxyTask(TaskExecuteBase):
                 ):
                     self.task_dict[en_task] = False
 
-            if self.mode == "Annihilation" and "完成任务: 剿灭作战" in log:
-                self.task_dict["Fight"] = False
-            elif self.mode == "Routine" and (
+            if self.mode == "Routine" and (
                 "任务出错: 理智作战" in log
                 or any(
                     f"理智作战: {task_name} 添加任务失败" in log
