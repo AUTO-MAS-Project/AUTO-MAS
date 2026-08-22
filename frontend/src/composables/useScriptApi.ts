@@ -1298,7 +1298,8 @@ export function useScriptApi() {
 
     try {
       // 创建数据副本并移除 SubConfigsInfo 字段
-      const { SubConfigsInfo, ...dataToSend } = data
+      const dataToSend = { ...data }
+      delete dataToSend.SubConfigsInfo
 
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,

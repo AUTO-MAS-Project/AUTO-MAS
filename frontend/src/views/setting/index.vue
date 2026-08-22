@@ -14,6 +14,9 @@ import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
 import { Service, type VersionOut } from '@/api'
+
+defineOptions({ name: 'SettingsPage' })
+
 const logger = window.electronAPI.getLogger('设置')
 
 // 引入拆分后的 Tab 组件

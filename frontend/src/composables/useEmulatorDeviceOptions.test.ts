@@ -16,7 +16,6 @@ vi.mock('ant-design-vue', () => ({
 }))
 
 const deferred = <T>() => {
-  // eslint-disable-next-line no-unused-vars
   let resolve!: (_value: T) => void
   const promise = new Promise<T>(resolvePromise => {
     resolve = resolvePromise

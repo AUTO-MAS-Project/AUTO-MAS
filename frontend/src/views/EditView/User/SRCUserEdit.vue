@@ -30,17 +30,17 @@
       <a-card class="config-card">
         <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
           <!-- 基本信息组件 -->
-          <BasicInfoSection :form-data="formData" :loading="loading" :server-options="serverOptions"
+          <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
             @save="handleFieldSave" />
 
           <!-- 关卡配置组件 -->
-          <StageConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <StageConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 额外脚本组件 -->
-          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
+          <NotifyConfigSection v-model:form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
         </a-form>
       </a-card>

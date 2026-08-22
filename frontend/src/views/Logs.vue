@@ -9,6 +9,8 @@ const logger = window.electronAPI.getLogger('日志查看')
 const { themeMode } = useTheme()
 const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
+defineOptions({ name: 'LogViewer' })
+
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
 
@@ -18,7 +20,7 @@ const logMode = ref<LogMode>('follow')
 const selectedLogFile = ref<'app' | 'frontend'>('app')
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
-let refreshInterval: NodeJS.Timeout | null = null
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 // Monaco Editor 主题
 const editorTheme = computed(() => {

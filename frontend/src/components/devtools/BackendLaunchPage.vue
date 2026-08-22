@@ -608,7 +608,7 @@ const getProcessInfo = async () => {
 }
 
 // 定时刷新状态
-let statusInterval: NodeJS.Timeout | null = null
+let statusInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   addLog('📱 后端控制面板已加载', 'info')
