@@ -1230,8 +1230,8 @@ class MaaEndConfig(ConfigBase):
     async def load(self, data: dict) -> bool:
         is_dirty = await super().load(data)
         root_path_value = str(self.get("Info", "Path")).strip()
-        resource_config_path = Path(root_path_value) / "config/mxu-MaaEnd.json"
-        if root_path_value and resource_config_path.is_file():
+        resource_interface_path = Path(root_path_value) / "interface.json"
+        if root_path_value and resource_interface_path.is_file():
             await self.preload_resource()
         return is_dirty
 
