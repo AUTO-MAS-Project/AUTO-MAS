@@ -380,6 +380,26 @@ export function useScriptApi() {
                           maaUserData.Task?.IfReclamation !== undefined
                             ? maaUserData.Task.IfReclamation
                             : false,
+                        IfDepotMaintain:
+                          maaUserData.Task?.IfDepotMaintain !== undefined
+                            ? maaUserData.Task.IfDepotMaintain
+                            : false,
+                        IfActivityFirst:
+                          maaUserData.Task?.IfActivityFirst !== undefined
+                            ? maaUserData.Task.IfActivityFirst
+                            : false,
+                        ActivityStageIndex:
+                          maaUserData.Task?.ActivityStageIndex !== undefined
+                            ? maaUserData.Task.ActivityStageIndex
+                            : 1,
+                        ActivityMedicineNumb:
+                          maaUserData.Task?.ActivityMedicineNumb !== undefined
+                            ? maaUserData.Task.ActivityMedicineNumb
+                            : (maaUserData.Info?.MedicineNumb ?? 0),
+                        DepotMaintainPlans:
+                          maaUserData.Task?.DepotMaintainPlans !== undefined
+                            ? maaUserData.Task.DepotMaintainPlans
+                            : '[]',
                       },
                       Notify: {
                         Enabled:
@@ -1298,7 +1318,8 @@ export function useScriptApi() {
 
     try {
       // 创建数据副本并移除 SubConfigsInfo 字段
-      const { SubConfigsInfo, ...dataToSend } = data
+      const dataToSend = { ...data }
+      delete dataToSend.SubConfigsInfo
 
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,

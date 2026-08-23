@@ -18,6 +18,8 @@ import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 const logger = window.electronAPI.getLogger('模拟器管理')
 
+defineOptions({ name: 'EmulatorManager' })
+
 // 编辑数据接口
 interface EmulatorInfo {
   name: string

@@ -6,14 +6,14 @@
     <div class="user-edit-content">
       <a-card class="config-card">
         <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-          <BasicInfoSection :form-data="formData" :loading="loading"
+          <BasicInfoSection v-model:form-data="formData" :loading="loading"
             @save="handleFieldSave" />
 
           <TaskQueueSection :script-id="scriptId" v-model:task-queue="taskQueue" :loading="loading" />
 
-          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
+          <NotifyConfigSection v-model:form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
         </a-form>
       </a-card>

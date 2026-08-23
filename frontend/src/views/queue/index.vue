@@ -172,6 +172,8 @@ import {
 import { message } from 'ant-design-vue'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
+defineOptions({ name: 'QueueManager' })
+
 const logger = window.electronAPI.getLogger('调度队列')
 
 // 卸载守卫：防止组件卸载后的 async 回调写入响应式状态，导致 Vue 运行时错误

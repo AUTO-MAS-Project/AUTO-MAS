@@ -1,5 +1,4 @@
 import { computed, h, ref, watch } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
@@ -9,7 +8,7 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import type { QueueItem, Script } from './schedulerConstants'
+import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
@@ -940,8 +939,6 @@ export function useSchedulerLogic() {
   // 电源操作
   const onPowerActionChange = async (value: PowerIn.signal) => {
     powerAction.value = value
-    // useLocalStorage 会自动同步到 localStorage，无需手动保存
-
     // 调用API设置电源操作
     try {
       await Service.setPowerApiDispatchSetPowerPost({ signal: value })
@@ -988,7 +985,7 @@ export function useSchedulerLogic() {
         return
     }
 
-    // 更新显示状态，useLocalStorage 会自动同步到 localStorage
+    // 更新显示状态
     powerAction.value = newPowerAction
     logger.info(`电源操作显示已更新为: ${JSON.stringify(newPowerAction)}`)
   }
@@ -1295,7 +1292,6 @@ export function useSchedulerLogic() {
     })
 
     saveTabsToStorage(schedulerTabs.value)
-    // useLocalStorage 会自动同步 powerAction，无需手动保存
   }
 
   return {

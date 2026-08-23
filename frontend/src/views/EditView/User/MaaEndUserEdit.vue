@@ -43,7 +43,7 @@
           class="config-form"
         >
           <BasicInfoSection
-            :form-data="formData"
+            v-model:form-data="formData"
             :loading="loading"
             :resource-options="resourceOptions"
             :preset-supported="presetSupported"
@@ -69,10 +69,10 @@
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
-          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
-          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
-            :form-data="formData"
+            v-model:form-data="formData"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"

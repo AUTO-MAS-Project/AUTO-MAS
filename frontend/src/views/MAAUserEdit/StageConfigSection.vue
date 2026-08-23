@@ -294,8 +294,8 @@ import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
 
+const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
-  formData: any
   loading: boolean
   stageModeOptions: any[]
   stageOptions: any[]
@@ -374,8 +374,8 @@ const handleAddCustomStageRemain = (stageName: string) =>
 // 跳转到计划表
 const handleGoToPlans = () => {
   const planId =
-    props.isPlanMode && props.formData?.Info?.StageMode && props.formData.Info.StageMode !== 'Fixed'
-      ? props.formData.Info.StageMode
+    props.isPlanMode && formData.value?.Info?.StageMode && formData.value.Info.StageMode !== 'Fixed'
+      ? formData.value.Info.StageMode
       : undefined
   navigateTo('/plans', { query: { from: 'stage-config', ...(planId ? { planId } : {}) } })
 }

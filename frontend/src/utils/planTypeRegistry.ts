@@ -19,13 +19,11 @@ export interface PlanChangeOptions {
   forceCustomStages?: boolean
 }
 
-/* eslint-disable no-unused-vars */
 export type PlanChangeHandler = (
   _path: string,
   _value: any,
   _reloadOrOptions?: boolean | PlanChangeOptions
 ) => Promise<boolean>
-/* eslint-enable no-unused-vars */
 
 export interface PlanTypeDescriptor {
   configType: PlanConfigType

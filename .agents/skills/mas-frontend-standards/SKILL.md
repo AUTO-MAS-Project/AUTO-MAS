@@ -8,6 +8,12 @@ description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electr
 ## Objective
 Keep AUTO-MAS frontend changes aligned with the current Vue 3, TypeScript, Vite, Electron, Ant Design Vue, Vue Router, OpenAPI, ESLint, Prettier, and Yarn 4 project conventions.
 
+## Dependency Installation
+
+1. Run frontend dependency commands from the `frontend/` directory.
+2. Use `yarn install` by default.
+3. If the Electron binary download is slow or fails, use the one-shot mirror command: `yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install`.
+
 ## Authority
 This skill is self-contained for frontend engineering rules. If local code differs from this summary, inspect neighboring implementations and prefer the current module pattern unless it violates a red line here.
 

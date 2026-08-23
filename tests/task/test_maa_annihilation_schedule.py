@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
+
 from app.task.MAA.AutoProxy import (
     _current_week_marker,
     _parse_annihilation_weekly_progress,
@@ -14,11 +16,10 @@ def test_maa_annihilation_schedule_and_weekly_limit() -> None:
     monday = datetime(2026, 8, 17)
     wednesday = datetime(2026, 8, 19)
 
-    assert _should_run_annihilation("Always", "2000-W01", monday)
     assert not _should_run_annihilation("Wednesday", "2000-W01", monday)
     assert _should_run_annihilation("Wednesday", "2000-W01", wednesday)
-    assert not _should_run_annihilation("Always", "2026-W34", wednesday)
-    assert _should_run_annihilation("Always", "2026-W33", wednesday)
+    assert not _should_run_annihilation("Monday", "2026-W34", wednesday)
+    assert _should_run_annihilation("Monday", "2026-W33", wednesday)
 
     assert _parse_annihilation_weekly_progress("剿灭模式 : 1800 / 1800") == (
         1800,
@@ -27,11 +28,24 @@ def test_maa_annihilation_schedule_and_weekly_limit() -> None:
     assert _parse_annihilation_weekly_progress(
         "Annihilation weekly limit: 1200/1800"
     ) == (1200, 1800)
+    assert _parse_annihilation_weekly_progress("剿滅模式 : 1800 / 1800") == (
+        1800,
+        1800,
+    )
     assert _parse_annihilation_weekly_progress("剿灭模式 : 0 / 0") is None
     assert _parse_annihilation_weekly_progress("完成任务: 剿灭作战") is None
 
 
-def test_maa_annihilation_limit_records_the_current_week() -> None:
+@pytest.mark.parametrize(
+    "log_content",
+    [
+        ["剿滅模式 : 1800 / 1800\n", "任务已全部完成！\n"],
+        ["完成任务: 剿灭作战\n", "任务已全部完成！\n"],
+    ],
+)
+def test_maa_annihilation_limit_records_the_current_week(
+    log_content: list[str],
+) -> None:
     writes: list[tuple[str, str, str]] = []
 
     class UserConfigStub:
@@ -55,7 +69,7 @@ def test_maa_annihilation_limit_records_the_current_week() -> None:
     asyncio.run(
         AutoProxyTask.check_log(
             task,
-            ["剿滅模式 : 1800 / 1800\n", "任务已全部完成！\n"],
+            log_content,
             datetime.now(),
         )
     )

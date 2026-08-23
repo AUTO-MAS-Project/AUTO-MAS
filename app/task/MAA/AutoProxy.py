@@ -21,6 +21,7 @@
 
 
 import json
+import calendar
 import re
 import uuid
 import asyncio
@@ -65,19 +66,17 @@ _MAA_CLIENT_TYPE_TO_INT = {
 
 
 logger = get_logger("MAA 自动代理")
-_ANNIHILATION_WEEKDAYS = (
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-)
 _ANNIHILATION_PROGRESS_RE = re.compile(
     r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
     re.IGNORECASE,
 )
+_MAA_SANITY_COMPLETION_MARKERS = (
+    "完成任务: 理智作战",
+    "完成任务: 活动关优先",
+    "完成任务: 库存保持",
+    "完成任务: 剩余理智",
+)
+_MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -96,9 +95,7 @@ def _should_run_annihilation(
 
     if completed_week == _current_week_marker(now):
         return False
-    if start_weekday == "Always":
-        return True
-    return now.weekday() >= _ANNIHILATION_WEEKDAYS.index(start_weekday)
+    return now.weekday() >= getattr(calendar, start_weekday.upper())
 
 
 def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
@@ -109,6 +106,36 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
         return None
     current, total = (int(value) for value in matches[-1])
     return (current, total) if total > 0 else None
+
+
+def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
+    """判断日志记录中是否已经完成过体力任务。"""
+
+    for log_record in log_records:
+        lines = log_record.content
+        if any(
+            marker in line
+            for line in lines
+            for marker in _MAA_SANITY_COMPLETION_MARKERS
+        ):
+            return True
+
+        for index, line in enumerate(lines):
+            if _MAA_FIGHT_COMPLETION_MARKER not in line:
+                continue
+            previous_task = next(
+                (item for item in reversed(lines[:index]) if "完成任务:" in item),
+                "",
+            )
+            if "剿灭" in previous_task:
+                continue
+            if not previous_task and _ANNIHILATION_PROGRESS_RE.search(
+                "".join(lines[max(0, index - 8) : index + 1])
+            ):
+                continue
+            return True
+
+    return False
 
 
 def _build_depot_maintain_task(plans_json: str) -> dict:
@@ -767,6 +794,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         activity_fight = None
         if self.mode == "Routine" and activity_stage:
+            activity_medicine_numb = self.cur_user_config.get(
+                "Task", "ActivityMedicineNumb"
+            )
             activity_fight = task_set["Fight"].copy()
             activity_fight.update(
                 {
@@ -781,6 +811,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "DropCount": 0,
                     "IsInventoryTarget": False,
                     "EnableTimesLimit": False,
+                    "UseMedicine": activity_medicine_numb > 0,
+                    "MedicineCount": activity_medicine_numb,
+                    "UseExpiringMedicine": False,
+                    "UseExpireMedicineForActivity": False,
                 }
             )
             # 理智药额度只交给优先活动关，避免后续普通作战重复消耗。
@@ -853,9 +887,12 @@ class AutoProxyTask(TaskExecuteBase):
                         _current_week_marker(datetime.now(tz=UTC4)),
                     )
                     self._annihilation_weekly_completion_recorded = True
+                    progress_text = (
+                        f"{progress[0]}/{progress[1]}" if progress else "完成任务日志"
+                    )
                     logger.info(
                         f"用户 {self.cur_user_item.name} 剿灭已达到本周上限："
-                        f"{progress[0]}/{progress[1]}"
+                        f"{progress_text}"
                     )
 
         if "未选择任务" in log:
@@ -871,9 +908,7 @@ class AutoProxyTask(TaskExecuteBase):
                 ):
                     self.task_dict[en_task] = False
 
-            if self.mode == "Annihilation" and "完成任务: 剿灭作战" in log:
-                self.task_dict["Fight"] = False
-            elif self.mode == "Routine" and (
+            if self.mode == "Routine" and (
                 "任务出错: 理智作战" in log
                 or any(
                     f"理智作战: {task_name} 添加任务失败" in log
@@ -960,27 +995,42 @@ class AutoProxyTask(TaskExecuteBase):
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
         success_symbol = "√" if if_success else "X"
 
-        try:
-            if if_six_star:
+        # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计。
+        should_send_statistics = if_success or _has_completed_sanity_task(
+            list(self.cur_user_item.log_record.values())
+        )
+        if should_send_statistics:
+            try:
+                await push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送统计通知时出现异常: {e}"},
+                )
+
+        # 六星通知独立处理，避免单个通知异常阻断掉落统计。
+        if if_six_star:
+            try:
                 await push_notification(
                     "公招六星",
                     f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
                     {"user_name": self.cur_user_item.name},
                     self.cur_user_config,
                 )
-            await push_notification(
-                "统计信息",
-                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                statistics,
-                self.cur_user_config,
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
-            )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送六星通知时出现异常: {e}"},
+                )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
             if (
