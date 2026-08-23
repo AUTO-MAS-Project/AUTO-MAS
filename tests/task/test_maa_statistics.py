@@ -51,6 +51,29 @@ def test_parse_maa_drop_statistics_uses_last_drop_snapshot_without_start_marker(
     assert _parse_maa_drop_statistics(logs) == {"TO-8": {"龙门币": 1512}}
 
 
+def test_parse_maa_drop_statistics_supports_english_completion_marker() -> None:
+    logs = [
+        "Start Task Chain: Fight, Task ID: 2\n",
+        "TO-8 掉落统计: \n",
+        "龙门币 : 756 (+756)\n",
+        "Completed Task Chain: Fight, Task ID: 2\n",
+    ]
+
+    assert _parse_maa_drop_statistics(logs) == {"TO-8": {"龙门币": 756}}
+
+
+def test_parse_maa_drop_statistics_excludes_english_annihilation_fight() -> None:
+    logs = [
+        "Start Task Chain: Fight, Task ID: 2\n",
+        "Annihilation Mode: 1700 / 1700\n",
+        "乌萨斯 掉落统计: \n",
+        "龙门币 : 140 (+140)\n",
+        "Completed Task Chain: Fight, Task ID: 2\n",
+    ]
+
+    assert _parse_maa_drop_statistics(logs) == {}
+
+
 def test_manual_stop_with_completed_sanity_task_is_eligible_for_statistics() -> None:
     records = [
         LogRecord(
@@ -60,6 +83,20 @@ def test_manual_stop_with_completed_sanity_task_is_eligible_for_statistics() -> 
     ]
 
     assert _has_completed_sanity_task(records)
+
+
+def test_annihilation_completion_does_not_trigger_sanity_statistics() -> None:
+    records = [
+        LogRecord(
+            content=[
+                "剿灭模式 : 1700 / 1700\n",
+                "Completed Task Chain: Fight, Task ID: 2\n",
+            ],
+            status="任务被用户手动中止",
+        )
+    ]
+
+    assert not _has_completed_sanity_task(records)
 
 
 def test_failed_maa_task_sends_statistics_even_if_six_star_notification_fails(

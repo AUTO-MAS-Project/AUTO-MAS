@@ -75,8 +75,8 @@ _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 活动关优先",
     "完成任务: 库存保持",
     "完成任务: 剩余理智",
-    "Completed Task Chain: Fight",
 )
+_MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -111,12 +111,31 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     """判断日志记录中是否已经完成过体力任务。"""
 
-    return any(
-        marker in line
-        for log_record in log_records
-        for line in log_record.content
-        for marker in _MAA_SANITY_COMPLETION_MARKERS
-    )
+    for log_record in log_records:
+        lines = log_record.content
+        if any(
+            marker in line
+            for line in lines
+            for marker in _MAA_SANITY_COMPLETION_MARKERS
+        ):
+            return True
+
+        for index, line in enumerate(lines):
+            if _MAA_FIGHT_COMPLETION_MARKER not in line:
+                continue
+            previous_task = next(
+                (item for item in reversed(lines[:index]) if "完成任务:" in item),
+                "",
+            )
+            if "剿灭" in previous_task:
+                continue
+            if not previous_task and _ANNIHILATION_PROGRESS_RE.search(
+                "".join(lines[max(0, index - 8) : index + 1])
+            ):
+                continue
+            return True
+
+    return False
 
 
 def _build_depot_maintain_task(plans_json: str) -> dict:
@@ -794,6 +813,8 @@ class AutoProxyTask(TaskExecuteBase):
                     "EnableTimesLimit": False,
                     "UseMedicine": activity_medicine_numb > 0,
                     "MedicineCount": activity_medicine_numb,
+                    "UseExpiringMedicine": False,
+                    "UseExpireMedicineForActivity": False,
                 }
             )
             # 理智药额度只交给优先活动关，避免后续普通作战重复消耗。

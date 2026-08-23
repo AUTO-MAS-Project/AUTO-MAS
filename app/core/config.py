@@ -138,6 +138,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "库存保持",
         "剩余理智",
     }
+    annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
     fight_start_markers = (
         "开始任务: Fight",
         "开始任务: 理智作战",
@@ -149,13 +150,18 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
     def get_completed_task_name(line: str) -> str | None:
         match = re.search(r"完成任务:\s*([^\r\n]+)", line)
+        if match is not None:
+            return match.group(1).strip() or None
+
+        match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
             return None
         return match.group(1).strip() or None
 
     task_ranges: list[tuple[int, int]] = []
     for end_index, line in enumerate(logs):
-        if get_completed_task_name(line) not in target_task_names:
+        task_name = get_completed_task_name(line)
+        if task_name not in target_task_names:
             continue
 
         previous_boundary = max(
@@ -173,6 +179,14 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
             and any(marker in item for marker in fight_start_markers)
         ]
         start_index = max(start_candidates, default=previous_boundary + 1)
+
+        if task_name == "Fight" and any(
+            marker in item
+            for item in logs[start_index : end_index + 1]
+            for marker in annihilation_markers
+        ):
+            continue
+
         task_ranges.append((start_index, end_index))
 
     all_stage_drops: dict[str, dict[str, int]] = {}
