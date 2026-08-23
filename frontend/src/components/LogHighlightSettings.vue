@@ -13,8 +13,6 @@ const {
     editorConfig,
     defaultLightColors,
     defaultDarkColors,
-    defaultStyles,
-    defaultEditorConfig,
     setLightColors,
     setDarkColors,
     setStyles,
@@ -136,58 +134,71 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
 <template>
     <div class="log-highlight-settings">
-        <!-- 文本配置 -->
-        <div class="config-section no-border">
-            <div class="section-title">文本配置</div>
-            <div class="text-config-grid">
-                <div class="text-config-item">
-                    <div class="text-config-label">字体大小</div>
-                    <div class="text-config-control">
-                        <a-select :value="editorConfig.fontSize" size="small" style="width: 100%"
-                            @change="(v: number) => setEditorConfig({ fontSize: v })">
-                            <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
-                                {{ size }}px
-                            </a-select-option>
-                        </a-select>
+        <a-row :gutter="24">
+            <a-col :span="12">
+                <div class="form-item-vertical">
+                    <div class="form-label-wrapper">
+                        <span class="form-label">字体大小</span>
+                    </div>
+                    <a-select :value="editorConfig.fontSize" size="large" style="width: 100%"
+                        @change="(v: number) => setEditorConfig({ fontSize: v })">
+                        <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
+                            {{ size }}px
+                        </a-select-option>
+                    </a-select>
+                </div>
+            </a-col>
+            <a-col :span="12">
+                <div class="form-item-vertical">
+                    <div class="form-label-wrapper">
+                        <span class="form-label">行高</span>
+                    </div>
+                    <a-select :value="editorConfig.lineHeight" size="large" style="width: 100%"
+                        @change="(v: number) => setEditorConfig({ lineHeight: v })">
+                        <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
+                            {{ h }}
+                        </a-select-option>
+                    </a-select>
+                </div>
+            </a-col>
+            <a-col :span="24">
+                <div class="form-item-vertical text-style-item">
+                    <div class="form-label-wrapper">
+                        <span class="form-label">文字强调</span>
+                    </div>
+                    <div class="checkbox-row">
+                        <a-checkbox :checked="styles.timestampBold"
+                            @change="(e: any) => setStyles({ timestampBold: e.target.checked })">
+                            时间戳加粗
+                        </a-checkbox>
+                        <a-checkbox :checked="styles.levelBold"
+                            @change="(e: any) => setStyles({ levelBold: e.target.checked })">
+                            日志级别加粗
+                        </a-checkbox>
+                        <a-checkbox :checked="styles.keywordBold"
+                            @change="(e: any) => setStyles({ keywordBold: e.target.checked })">
+                            关键词加粗
+                        </a-checkbox>
+                        <a-checkbox :checked="styles.urlUnderline"
+                            @change="(e: any) => setStyles({ urlUnderline: e.target.checked })">
+                            URL 下划线
+                        </a-checkbox>
                     </div>
                 </div>
-                <div class="text-config-item">
-                    <div class="text-config-label">行高</div>
-                    <div class="text-config-control">
-                        <a-select :value="editorConfig.lineHeight" size="small" style="width: 100%"
-                            @change="(v: number) => setEditorConfig({ lineHeight: v })">
-                            <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
-                                {{ h }}
-                            </a-select-option>
-                        </a-select>
+            </a-col>
+        </a-row>
+
+        <a-collapse class="advanced-settings" :bordered="false">
+            <a-collapse-panel key="highlight">
+                <template #header>
+                    <div class="advanced-settings-header">
+                        <span class="advanced-settings-title">高亮颜色与预览设置区域</span>
                     </div>
-                </div>
-            </div>
-            <div class="text-style-checkboxes">
-                <div class="checkbox-row">
-                    <a-checkbox :checked="styles.timestampBold"
-                        @change="(e: any) => setStyles({ timestampBold: e.target.checked })">
-                        时间戳加粗
-                    </a-checkbox>
-                    <a-checkbox :checked="styles.levelBold"
-                        @change="(e: any) => setStyles({ levelBold: e.target.checked })">
-                        日志级别加粗
-                    </a-checkbox>
-                    <a-checkbox :checked="styles.keywordBold"
-                        @change="(e: any) => setStyles({ keywordBold: e.target.checked })">
-                        关键词加粗
-                    </a-checkbox>
-                    <a-checkbox :checked="styles.urlUnderline"
-                        @change="(e: any) => setStyles({ urlUnderline: e.target.checked })">
-                        URL 下划线
-                    </a-checkbox>
-                </div>
-            </div>
-        </div>
+                </template>
 
         <!-- 颜色配置 -->
         <div class="config-section">
-            <div class="section-header">
+            <div class="log-section-header">
                 <div class="section-title">颜色配置</div>
                 <div class="section-actions">
                     <a-radio-group v-model:value="editingTheme" button-style="solid" size="small">
@@ -312,12 +323,14 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 </div>
             </div>
         </div>
+            </a-collapse-panel>
+        </a-collapse>
     </div>
 </template>
 
 <style scoped>
 .log-highlight-settings {
-    padding: 8px 0;
+    padding: 0;
 }
 
 .config-section {
@@ -326,16 +339,12 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
     border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.config-section.no-border {
-    border-bottom: none;
-}
-
 .config-section:last-child {
     border-bottom: none;
     margin-bottom: 0;
 }
 
-.section-header {
+.log-section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -349,7 +358,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
     margin-bottom: 12px;
 }
 
-.section-header .section-title {
+.log-section-header .section-title {
     margin-bottom: 0;
 }
 
@@ -359,52 +368,65 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
     gap: 12px;
 }
 
-/* 文本配置样式 */
-.text-config-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 8px;
-    margin-bottom: 12px;
-}
-
-.text-config-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 10px;
+.advanced-settings {
+    overflow: hidden;
+    margin-top: 4px;
     background: var(--ant-color-bg-container);
     border: 1px solid var(--ant-color-border);
-    border-radius: 4px;
+    border-radius: 8px;
 }
 
-.text-config-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ant-color-text);
-    flex-shrink: 0;
+.advanced-settings :deep(.ant-collapse-header) {
+    align-items: center;
+    padding: 12px 16px;
+    transition: background-color 0.2s ease;
 }
 
-.text-config-control {
-    flex: 1;
-    max-width: 120px;
-    margin-left: 12px;
+.advanced-settings :deep(.ant-collapse-header:hover) {
+    background: var(--ant-color-primary-bg);
 }
 
-.text-style-checkboxes {
+.advanced-settings :deep(.ant-collapse-item) {
+    border-bottom: none;
+}
+
+.advanced-settings :deep(.ant-collapse-content) {
+    background: transparent;
+    border-top-color: var(--ant-color-border-secondary);
+}
+
+.advanced-settings :deep(.ant-collapse-content-box) {
+    padding: 16px;
+}
+
+.advanced-settings-header {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-left: 4px;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+}
+
+.advanced-settings-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ant-color-text);
+}
+
+.advanced-settings-description {
+    font-size: 13px;
+    color: var(--ant-color-text-secondary);
 }
 
 .checkbox-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: 40px;
+    gap: 8px 24px;
 }
 
 .checkbox-row :deep(.ant-checkbox-wrapper) {
     font-size: 14px;
+    margin-inline-start: 0;
 }
 
 /* 原有颜色配置样式 */

@@ -40,7 +40,7 @@
     <a-layout style="flex: 1; min-width: 0">
       <a-layout-content class="content-area">
         <router-view v-slot="{ Component, route: currentRoute }">
-          <keep-alive :include="['Scheduler']">
+          <keep-alive :include="['SchedulerPage']">
             <component :is="Component" :key="currentRoute.path" />
           </keep-alive>
         </router-view>

@@ -2,7 +2,6 @@
 import type {
   HSRConfig,
   HSRConfig_TaskMapping,
-  HSRUserConfig,
   MaaConfig,
   GeneralConfig,
   OkwwConfig,

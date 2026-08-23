@@ -142,7 +142,7 @@
         </div>
 
         <!-- 额外脚本 -->
-        <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+        <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
         <!-- 通知配置 -->
         <div class="form-section">

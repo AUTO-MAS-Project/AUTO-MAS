@@ -33,7 +33,6 @@ const SENSITIVE_ASSIGNMENT_PATTERN =
 interface MaaEndInstallation {
   label: string
   rootPath: string
-  version?: string
 }
 
 interface ReportEntry {
@@ -53,6 +52,12 @@ interface CollectorState {
 interface MaaEndConfigRecord {
   instances?: Array<{ uid?: string; type?: string }>
   [key: string]: unknown
+}
+
+interface HistoryLogCandidate {
+  sourcePath: string
+  archivePath: string
+  mtimeMs: number
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,25 +102,6 @@ function sanitizeJsonValue(value: unknown): unknown {
 function readJson(filePath: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, ''))
-  } catch {
-    return undefined
-  }
-}
-
-function readVersionFromInterface(rootPath: string): string | undefined {
-  const interfacePath = path.join(rootPath, 'interface.json')
-  if (!fs.existsSync(interfacePath)) {
-    return undefined
-  }
-
-  const data = readJson(interfacePath)
-  if (isRecord(data) && typeof data.version === 'string') {
-    return data.version
-  }
-
-  try {
-    const text = fs.readFileSync(interfacePath, 'utf-8')
-    return text.match(/"version"\s*:\s*"([^"]+)"/)?.[1]
   } catch {
     return undefined
   }
@@ -167,7 +153,6 @@ function discoverMaaEndInstallations(dataRoots: string[]): MaaEndInstallation[] 
       installations.push({
         label: `maaend-${installations.length + 1}`,
         rootPath: normalizedPath,
-        version: readVersionFromInterface(normalizedPath),
       })
     }
   }
@@ -348,54 +333,71 @@ function addSanitizedJsonFile(
   }
 }
 
-function readAutoMasVersion(dataRoots: string[]): string | undefined {
-  for (const dataRoot of dataRoots) {
-    const versionData = readJson(path.join(dataRoot, 'res', 'version.json'))
-    if (isRecord(versionData) && typeof versionData.version === 'string') {
-      return versionData.version
+function addLatestMasHistoryLog(state: CollectorState, dataRoots: string[]): string | undefined {
+  let latest: HistoryLogCandidate | undefined
+
+  const visitDirectory = (historyRoot: string, currentDir: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    } catch (error) {
+      logger.debug(`读取 MAS 历史日志目录失败: ${currentDir}, ${String(error)}`)
+      return
+    }
+
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) {
+        continue
+      }
+
+      const sourcePath = path.join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        visitDirectory(historyRoot, sourcePath)
+        continue
+      }
+
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.log') {
+        continue
+      }
+
+      try {
+        const mtimeMs = fs.statSync(sourcePath).mtimeMs
+        const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
+        const candidate = {
+          sourcePath,
+          archivePath: path.posix.join('logs/mas-history', relativePath),
+          mtimeMs,
+        }
+        if (
+          !latest ||
+          candidate.mtimeMs > latest.mtimeMs ||
+          (candidate.mtimeMs === latest.mtimeMs && candidate.archivePath > latest.archivePath)
+        ) {
+          latest = candidate
+        }
+      } catch (error) {
+        logger.debug(`读取 MAS 历史日志信息失败: ${sourcePath}, ${String(error)}`)
+      }
     }
   }
-  return undefined
-}
 
-function buildIssueTemplate(archiveName: string, autoMasVersion?: string): string {
-  return `# MaaEnd Issue 信息
+  for (const dataRoot of dataRoots) {
+    const historyRoot = path.join(dataRoot, 'history')
+    if (fs.existsSync(historyRoot)) {
+      visitDirectory(historyRoot, historyRoot)
+    }
+  }
 
-## 问题描述及复现步骤
+  if (!latest) {
+    return undefined
+  }
 
-预期行为：
-
-实际行为：
-
-复现步骤：
-1.
-2.
-3.
-
-## 日志文件
-
-已生成：\`${archiveName}\`。
-压缩包中的 \`logs/\`、\`maaend/\` 和 \`metadata/\` 目录由 AUTO-MAS 自动收集。
-请将这个 ZIP 原文件发送到 AUTO-MAS 官方 QQ 群（群号：957750551），不要解压或修改。
-
-## 软件画面截图
-
-请将出现问题时完整的 MaaEnd 软件画面截图一并发送到 MAS 群。
-
-## 游戏画面截图
-
-请将出现问题时的游戏画面截图一并发送到 MAS 群。
-
-## 版本信息截图
-
-请将 MaaEnd「设置 - 调试 - 版本信息」截图一并发送到 MAS 群。
-压缩包中的 \`metadata/collection-manifest.json\` 同时记录了可复制粘贴的版本信息。
-
-## 其他信息
-
-- AUTO-MAS 版本：${autoMasVersion || '未知'}
-- 请确认提交前已经更新到最新版本的 MaaEnd。
-`
+  const entryCount = state.entries.length
+  addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+  if (state.entries.length === entryCount) {
+    return undefined
+  }
+  return state.entries[state.entries.length - 1]?.path
 }
 
 export interface MaaEndIssueReportResult {
@@ -408,11 +410,9 @@ export interface MaaEndIssueReportResult {
 export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEndIssueReportResult {
   const zip = new AdmZip()
   const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
-  const generatedAt = new Date().toISOString()
   const dataRoots = resolveDataRoots(appRoot)
   const installations = discoverMaaEndInstallations(dataRoots)
-  const autoMasVersion = readAutoMasVersion(dataRoots)
-  const installationManifest: Array<Record<string, unknown>> = []
+  addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
     addDirectory(
@@ -429,62 +429,22 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
   }
 
   for (const installation of installations) {
-    const debugIncluded = addDirectory(
+    addDirectory(
       state,
       path.join(installation.rootPath, 'debug'),
       `maaend/${installation.label}/debug`
     )
-    const onErrorIncluded = addDirectory(
+    addDirectory(
       state,
       path.join(installation.rootPath, 'on_error'),
       `maaend/${installation.label}/on_error`
     )
-    const configIncluded = addSanitizedJsonFile(
+    addSanitizedJsonFile(
       state,
       path.join(installation.rootPath, 'config', 'mxu-MaaEnd.json'),
       `maaend/${installation.label}/config/mxu-MaaEnd.json`
     )
-
-    installationManifest.push({
-      id: installation.label,
-      version: installation.version || '未知',
-      debugIncluded,
-      onErrorIncluded,
-      configIncluded,
-    })
   }
-
-  const metadata = {
-    formatVersion: 1,
-    generatedAt,
-    autoMasVersion: autoMasVersion || '未知',
-    system: {
-      platform: process.platform,
-      platformRelease: os.release(),
-      architecture: process.arch,
-      nodeVersion: process.version,
-    },
-    maaend: installationManifest,
-    notes: [
-      '配置中的路径、账号密码、Token、Cookie、Secret 等字段会脱敏；日志文本会按常见键值格式脱敏并隐藏当前用户目录。',
-      '单个文件最大保留 25 MiB，问题包总大小最大保留 95 MiB。超限文本文件仅保留末尾内容。',
-      '当前流程请先将问题包原文件发送到 AUTO-MAS 官方 QQ 群；软件截图、游戏截图和版本信息截图可在群内补充。',
-    ],
-    entries: state.entries,
-  }
-
-  state.zip.addFile(
-    'metadata/system-info.json',
-    Buffer.from(`${JSON.stringify(metadata.system, null, 2)}\n`, 'utf-8')
-  )
-  state.zip.addFile(
-    'issue-template.md',
-    Buffer.from(buildIssueTemplate(path.basename(zipPath), autoMasVersion), 'utf-8')
-  )
-  state.zip.addFile(
-    'metadata/collection-manifest.json',
-    Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`, 'utf-8')
-  )
 
   try {
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })

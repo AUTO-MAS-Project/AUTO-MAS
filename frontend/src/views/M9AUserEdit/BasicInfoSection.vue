@@ -134,8 +134,9 @@ const resourceOptions = [
   { label: '国际服（KR）', value: '国际服（KR）' },
 ]
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
 }>()
 

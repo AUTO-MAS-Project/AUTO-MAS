@@ -327,7 +327,7 @@
 
           <a-row :gutter="24">
             <a-col :span="12">
-              <LogTimestampSelector :form-data="formData" :log-file-path="formData.logPath"
+              <LogTimestampSelector v-model:form-data="formData" :log-file-path="formData.logPath"
                 :handle-change="handleChange" :rules="rules" />
             </a-col>
             <a-col :span="12">

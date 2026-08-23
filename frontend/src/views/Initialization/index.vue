@@ -36,6 +36,8 @@ import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
 
+defineOptions({ name: 'InitializationPage' })
+
 const logger = window.electronAPI.getLogger('初始化流程')
 
 // ==================== 步骤定义 ====================
@@ -102,7 +104,7 @@ const stepStates = ref<Record<string, StepState>>({
 })
 
 // 倒计时定时器
-let countdownTimer: NodeJS.Timeout | null = null
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // ==================== 计算属性 ====================
 const currentStep = computed(() => steps[currentStepIndex.value])

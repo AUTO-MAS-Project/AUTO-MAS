@@ -38,6 +38,8 @@ import QuickNavPage from './QuickNavPage.vue'
 import MessageTestPage from './MessageTestPage.vue'
 import BackendLaunchPage from './BackendLaunchPage.vue'
 
+defineOptions({ name: 'DevtoolsPanel' })
+
 // 调试页面配置
 const tabs = [
   { key: 'route', title: '路由', icon: '🛣️', component: RouteInfoPage },

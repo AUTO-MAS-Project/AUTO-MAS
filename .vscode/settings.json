@@ -1,6 +1,0 @@
-{
-  "debug.onTaskErrors": "showErrors",
-  "debug.openDebug": "neverOpen",
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-  "terminal.integrated.defaultProfile.windows": "Command Prompt"
-}

@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue'
+import { ref } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
 const logger = window.electronAPI.getLogger('任务总览面板')
 

@@ -31,9 +31,7 @@ const {
 } = defineProps<{
   config: ToolsConfig_GameSign
   disabled?: boolean
-  /* eslint-disable no-unused-vars -- Callback parameter names document the prop contract. */
   onFieldChange?: (key: string, value: any) => void | Promise<void>
-  /* eslint-enable no-unused-vars */
   onRefreshConfig?: () => Promise<void>
 }>()
 
