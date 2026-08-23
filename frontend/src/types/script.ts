@@ -285,6 +285,11 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    IfActivityFirst?: boolean
+    ActivityStageIndex?: number
+    ActivityMedicineNumb?: number
+    IfDepotMaintain?: boolean
+    DepotMaintainPlans?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

@@ -48,6 +48,10 @@ export type MaaUserConfig_Task = {
      */
     ActivityStageIndex?: (number | null);
     /**
+     * 活动关优先任务吃理智药数量
+     */
+    ActivityMedicineNumb?: (number | null);
+    /**
      * 库存保持计划 JSON
      */
     DepotMaintainPlans?: (string | null);
