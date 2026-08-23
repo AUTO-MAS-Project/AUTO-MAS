@@ -14,7 +14,7 @@ import {
   type SatelliteModuleStatus,
 } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
-import { Service } from '@/api'
+import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
 import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
 import {
@@ -1321,12 +1321,8 @@ onMounted(async () => {
   startStatusPolling()
 
   // 检查更新状态
-  const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
   try {
-    const updateRes = await Service.checkUpdateApiUpdateCheckPost({
-      current_version: version,
-      if_force: false,
-    })
+    const updateRes = await requestUpdateCheck(false)
     if (updateRes.code === 200 && updateRes.if_need_update) {
       if (isUnmounted) return
       centerGlowMode.value = 'rainbow'

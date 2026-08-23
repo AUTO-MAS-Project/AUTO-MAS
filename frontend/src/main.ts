@@ -41,7 +41,7 @@ if (typeof window.requestIdleCallback === 'function') {
 if (
   (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
 ) {
-  OpenAPI.BASE = 'http://localhost:36163'
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
 }
 
 // 导入WebSocket消息监听组件
@@ -63,12 +63,12 @@ if (window.electronAPI?.getApiEndpoint) {
     .catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
-      OpenAPI.BASE = 'http://localhost:36163'
+      OpenAPI.BASE = 'http://127.0.0.1:36163'
       logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
     })
 } else {
   // 非 Electron 环境，使用默认值
-  OpenAPI.BASE = 'http://localhost:36163'
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
   logger.info('前端应用开始初始化')
   logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
 }
