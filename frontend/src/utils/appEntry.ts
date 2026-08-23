@@ -105,13 +105,23 @@ export async function enterApp(
  */
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
   logger.info(`${reason}：跳过初始化流程开始`)
-  logger.info(`${reason}：在后台尝试强制建立WebSocket连接...`)
+  logger.info(`${reason}：尝试强制建立WebSocket连接...`)
 
-  // 跳过初始化时不等待 WebSocket 打开，连接结果由后台更新全局状态
-  void forceConnectWebSocket().catch(error => {
+  try {
+    // 使用强制连接模式
+    const wsConnected = await forceConnectWebSocket()
+    if (wsConnected) {
+      logger.info(`${reason}：强制WebSocket连接成功！`)
+    } else {
+      logger.warn(`${reason}：强制WebSocket连接失败，但继续进入应用`)
+    }
+
+    // 等待一下确保连接状态稳定
+    await new Promise(resolve => setTimeout(resolve, 500))
+  } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`${reason}：强制WebSocket连接异常: ${errorMsg}`)
-  })
+  }
 
   // 无论WebSocket是否成功，都进入应用
   logger.info(`${reason}：跳转到主页...`)

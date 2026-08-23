@@ -12,7 +12,6 @@ let BASE_WS_URL = 'ws://127.0.0.1:36163/api/core/ws'
 const DEFAULT_WS_PATH = '/api/core/ws'
 const WS_META_URL = '/api/core/ws_meta'
 const WS_META_TIMEOUT = 3000
-const WS_CONNECT_TIMEOUT = 10000
 const DEV_MODE_RETRY_DELAY = 3000
 const FRONTEND_DEV_MODE =
   (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
@@ -919,32 +918,6 @@ const setConnectionPermission = (allow: boolean, reason: string) => {
   global.connectionReason = reason
 }
 
-const waitForWebSocketOpen = (ws: WebSocket): Promise<boolean> => {
-  if (ws.readyState === WebSocket.OPEN) return Promise.resolve(true)
-  if (ws.readyState !== WebSocket.CONNECTING) return Promise.resolve(false)
-
-  return new Promise(resolve => {
-    const finish = (connected: boolean) => {
-      window.clearTimeout(timer)
-      ws.removeEventListener('open', handleOpen)
-      ws.removeEventListener('error', handleFailure)
-      ws.removeEventListener('close', handleFailure)
-      resolve(connected)
-    }
-    const handleOpen = () => finish(true)
-    const handleFailure = () => finish(false)
-    const timer = window.setTimeout(() => {
-      logger.warn(`WebSocket连接超时（${WS_CONNECT_TIMEOUT}ms）`)
-      finish(false)
-      if (ws.readyState === WebSocket.CONNECTING) ws.close(1000, '连接超时')
-    }, WS_CONNECT_TIMEOUT)
-
-    ws.addEventListener('open', handleOpen, { once: true })
-    ws.addEventListener('error', handleFailure, { once: true })
-    ws.addEventListener('close', handleFailure, { once: true })
-  })
-}
-
 const createGlobalWebSocket = (): WebSocket => {
   const global = getGlobalStorage()
 
@@ -1116,12 +1089,6 @@ const connectGlobalWebSocket = async (reason: string = '手动重连'): Promise<
     return false
   }
 
-  if (global.wsRef?.readyState === WebSocket.CONNECTING) {
-    logger.info('现有连接正在建立中，等待连接结果')
-    setGlobalStatus('连接中')
-    return await waitForWebSocketOpen(global.wsRef)
-  }
-
   if (!acquireConnectionLock()) {
     logger.warn('获取连接锁失败')
     return false
@@ -1136,6 +1103,11 @@ const connectGlobalWebSocket = async (reason: string = '手动重连'): Promise<
       if (state === WebSocket.OPEN) {
         logger.info('现有连接已打开，直接返回成功')
         setGlobalStatus('已连接')
+        return true
+      }
+      if (state === WebSocket.CONNECTING) {
+        logger.info('现有连接正在建立中，直接返回成功')
+        setGlobalStatus('连接中')
         return true
       }
       if (state === WebSocket.CLOSING) {
@@ -1167,16 +1139,8 @@ const connectGlobalWebSocket = async (reason: string = '手动重连'): Promise<
 
     global.wsRef = createGlobalWebSocket()
     setGlobalStatus('连接中')
-    logger.info('WebSocket连接对象已创建，等待连接打开')
-
-    const connected = await waitForWebSocketOpen(global.wsRef)
-    if (connected) {
-      logger.info('WebSocket连接已确认打开，返回成功')
-    } else {
-      global.isConnecting = false
-      logger.warn('WebSocket连接未能打开，返回失败')
-    }
-    return connected
+    logger.info('WebSocket连接创建完成，返回成功')
+    return true
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.warn(`connectGlobalWebSocket异常: ${errorMsg}`)
