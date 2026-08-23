@@ -23,7 +23,8 @@
 
 import time
 import asyncio
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
@@ -33,6 +34,30 @@ from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
+
+
+class BackendHealthOut(BaseModel):
+    """后端核心服务与后台初始化状态。"""
+
+    ready: bool = Field(description="核心 API 是否可用")
+    backgroundStatus: str = Field(description="后台初始化状态")
+    backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
+
+
+@router.get(
+    "/health",
+    summary="获取后端就绪状态",
+    response_model=BackendHealthOut,
+    status_code=200,
+)
+async def get_health(request: Request) -> BackendHealthOut:
+    """返回核心 API 与后台初始化状态。"""
+
+    return BackendHealthOut(
+        ready=True,
+        backgroundStatus=getattr(request.app.state, "background_status", "starting"),
+        backgroundError=getattr(request.app.state, "background_error", None),
+    )
 
 
 @router.websocket("/ws")

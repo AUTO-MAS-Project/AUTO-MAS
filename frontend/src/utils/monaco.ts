@@ -1,10 +1,24 @@
 import { loader } from '@guolao/vue-monaco-editor'
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.main.js'
+// EditorWorker 本身只是一个 Worker 构造器包装（很轻），保持静态导入
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 
-export const configureLocalMonaco = () => {
-  globalThis.MonacoEnvironment = {
-    getWorker: () => new EditorWorker(),
-  }
-  loader.config({ monaco })
+let configurePromise: Promise<void> | null = null
+
+export function configureLocalMonaco(): Promise<void> {
+  if (configurePromise) return configurePromise
+
+  // 动态 import：Monaco 主包约 3MB，不在首屏同步加载
+  configurePromise = import('monaco-editor/esm/vs/editor/editor.main.js')
+    .then(monaco => {
+      globalThis.MonacoEnvironment = {
+        getWorker: () => new EditorWorker(),
+      }
+      loader.config({ monaco })
+    })
+    .catch(error => {
+      configurePromise = null
+      throw error
+    })
+
+  return configurePromise
 }
