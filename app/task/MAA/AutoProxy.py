@@ -70,6 +70,13 @@ _ANNIHILATION_PROGRESS_RE = re.compile(
     r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
     re.IGNORECASE,
 )
+_MAA_SANITY_COMPLETION_MARKERS = (
+    "完成任务: 理智作战",
+    "完成任务: 活动关优先",
+    "完成任务: 库存保持",
+    "完成任务: 剩余理智",
+    "Completed Task Chain: Fight",
+)
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -99,6 +106,17 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
         return None
     current, total = (int(value) for value in matches[-1])
     return (current, total) if total > 0 else None
+
+
+def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
+    """判断日志记录中是否已经完成过体力任务。"""
+
+    return any(
+        marker in line
+        for log_record in log_records
+        for line in log_record.content
+        for marker in _MAA_SANITY_COMPLETION_MARKERS
+    )
 
 
 def _build_depot_maintain_task(plans_json: str) -> dict:
@@ -956,27 +974,42 @@ class AutoProxyTask(TaskExecuteBase):
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
         success_symbol = "√" if if_success else "X"
 
-        try:
-            if if_six_star:
+        # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计。
+        should_send_statistics = if_success or _has_completed_sanity_task(
+            list(self.cur_user_item.log_record.values())
+        )
+        if should_send_statistics:
+            try:
+                await push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送统计通知时出现异常: {e}"},
+                )
+
+        # 六星通知独立处理，避免单个通知异常阻断掉落统计。
+        if if_six_star:
+            try:
                 await push_notification(
                     "公招六星",
                     f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
                     {"user_name": self.cur_user_item.name},
                     self.cur_user_config,
                 )
-            await push_notification(
-                "统计信息",
-                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                statistics,
-                self.cur_user_config,
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
-            )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送六星通知时出现异常: {e}"},
+                )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
             if (
