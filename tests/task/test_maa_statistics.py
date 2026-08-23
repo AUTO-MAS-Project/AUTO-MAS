@@ -4,7 +4,7 @@ from app.core.config import _parse_maa_drop_statistics
 from app.models.config import MaaUserConfig
 
 
-def test_parse_maa_drop_statistics_includes_activity_and_excludes_depot_fights() -> None:
+def test_parse_maa_drop_statistics_includes_activity_and_depot_fights() -> None:
     logs = [
         "完成任务: 开始唤醒\n",
         "Start Task Chain: Fight, Task ID: 2\n",
@@ -27,7 +27,8 @@ def test_parse_maa_drop_statistics_includes_activity_and_excludes_depot_fights()
     ]
 
     assert _parse_maa_drop_statistics(logs) == {
-        "TO-8": {"龙门币": 2268, "沿途的点滴": 189}
+        "TO-8": {"龙门币": 2268, "沿途的点滴": 189},
+        "PR-A-1": {"固源岩": 2},
     }
 
 

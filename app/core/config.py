@@ -131,7 +131,13 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         按关卡汇总的掉落统计。
     """
 
-    target_task_names = {"Fight", "理智作战", "活动关优先", "剩余理智"}
+    target_task_names = {
+        "Fight",
+        "理智作战",
+        "活动关优先",
+        "库存保持",
+        "剩余理智",
+    }
     fight_start_markers = (
         "开始任务: Fight",
         "开始任务: 理智作战",
@@ -2701,8 +2707,8 @@ class AppConfig(GlobalConfig):
 
             i += 1
 
-        # 掉落统计只收集理智作战、活动关优先和剩余理智任务，避免把库存保持
-        # 触发的 Fight 任务链计入通知。
+        # 掉落统计收集所有由理智任务产生的有效 Fight 任务链，包括活动关优先、
+        # 库存保持和剩余理智任务。
         data["drop_statistics"] = _parse_maa_drop_statistics(logs)
 
         # 保存日志
