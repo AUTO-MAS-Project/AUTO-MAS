@@ -12,6 +12,7 @@ let BASE_WS_URL = 'ws://127.0.0.1:36163/api/core/ws'
 const DEFAULT_WS_PATH = '/api/core/ws'
 const WS_META_URL = '/api/core/ws_meta'
 const WS_META_TIMEOUT = 3000
+const WS_CONNECT_TIMEOUT = 10000
 const DEV_MODE_RETRY_DELAY = 3000
 const FRONTEND_DEV_MODE =
   (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
@@ -923,9 +924,24 @@ const waitForWebSocketOpen = (ws: WebSocket): Promise<boolean> => {
   if (ws.readyState !== WebSocket.CONNECTING) return Promise.resolve(false)
 
   return new Promise(resolve => {
-    ws.addEventListener('open', () => resolve(true), { once: true })
-    ws.addEventListener('error', () => resolve(false), { once: true })
-    ws.addEventListener('close', () => resolve(false), { once: true })
+    const finish = (connected: boolean) => {
+      window.clearTimeout(timer)
+      ws.removeEventListener('open', handleOpen)
+      ws.removeEventListener('error', handleFailure)
+      ws.removeEventListener('close', handleFailure)
+      resolve(connected)
+    }
+    const handleOpen = () => finish(true)
+    const handleFailure = () => finish(false)
+    const timer = window.setTimeout(() => {
+      logger.warn(`WebSocket连接超时（${WS_CONNECT_TIMEOUT}ms）`)
+      finish(false)
+      if (ws.readyState === WebSocket.CONNECTING) ws.close(1000, '连接超时')
+    }, WS_CONNECT_TIMEOUT)
+
+    ws.addEventListener('open', handleOpen, { once: true })
+    ws.addEventListener('error', handleFailure, { once: true })
+    ws.addEventListener('close', handleFailure, { once: true })
   })
 }
 

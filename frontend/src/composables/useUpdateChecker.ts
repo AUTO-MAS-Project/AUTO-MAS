@@ -16,6 +16,7 @@ const latestVersion = ref('')
 // 定时器相关 - 参考顶栏TitleBar.vue的实现
 const POLL_MS = 4 * 60 * 60 * 1000 // 4小时
 let updateCheckTimer: ReturnType<typeof setInterval> | null = null
+let initialUpdateCheckTimer: ReturnType<typeof setTimeout> | null = null
 const isPolling = ref(false)
 
 type UpdateCheckPromise = ReturnType<typeof Service.checkUpdateApiUpdateCheckPost>
@@ -164,7 +165,8 @@ export function useUpdateChecker() {
     logger.info('启动定时版本检查任务')
 
     // 延迟3秒后再执行首次检查，确保后端已经完全启动
-    setTimeout(async () => {
+    initialUpdateCheckTimer = setTimeout(async () => {
+      initialUpdateCheckTimer = null
       await pollOnce()
     }, 3000)
 
@@ -174,6 +176,10 @@ export function useUpdateChecker() {
 
   // 停止定时检查器
   const stopPolling = () => {
+    if (initialUpdateCheckTimer) {
+      clearTimeout(initialUpdateCheckTimer)
+      initialUpdateCheckTimer = null
+    }
     if (updateCheckTimer) {
       clearInterval(updateCheckTimer)
       updateCheckTimer = null
