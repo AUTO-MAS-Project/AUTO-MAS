@@ -174,18 +174,6 @@ defineExpose({
   height: 100%;
 }
 
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .overview-panel {
-    background: var(--ant-color-bg-container, #1f1f1f);
-    border: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .section-header {
-    border-bottom: 1px solid var(--ant-color-border, #424242);
-  }
-}
-
 @media (max-width: 768px) {
   .overview-panel {
     border-radius: 8px;
