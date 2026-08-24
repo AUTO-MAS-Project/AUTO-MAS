@@ -115,9 +115,17 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch :checked="settings.Function?.IfEnableTelemetry !== false" checked-children="已开启"
-              un-checked-children="已关闭" style="width: auto; align-self: flex-start"
-              @change="(checked: boolean) => handleSettingChange('Function', 'IfEnableTelemetry', checked)" />
+            <a-select
+              :value="settings.Function?.IfEnableTelemetry !== false"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Function', 'IfEnableTelemetry', checked)
+              "
+            >
+              <a-select-option :value="true">是</a-select-option>
+              <a-select-option :value="false">否</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="8">

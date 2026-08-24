@@ -447,6 +447,23 @@ class MaaUserConfig(ConfigBase):
                 ]
             ),
         )
+        ## 剿灭开始星期
+        self.Info_AnnihilationStartWeekday = ConfigItem(
+            "Info",
+            "AnnihilationStartWeekday",
+            "Monday",
+            OptionsValidator(
+                [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+            ),
+        )
         ## 基建模式
         self.Info_InfrastMode = ConfigItem(
             "Info",
@@ -523,6 +540,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
+        ## 剿灭达到周上限时的 ISO 周（形如 "2026-W34"）
+        self.Data_AnnihilationCompletedWeek = ConfigItem(
+            "Data", "AnnihilationCompletedWeek", "2000-W01"
+        )
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## 自定义基建配置
@@ -566,6 +587,15 @@ class MaaUserConfig(ConfigBase):
         ## 优先刷取的活动关卡序号
         self.Task_ActivityStageIndex = ConfigItem(
             "Task", "ActivityStageIndex", 1, RangeValidator(1, 9999)
+        )
+        ## 活动关优先任务吃理智药数量
+        self.Task_ActivityMedicineNumb = ConfigItem(
+            "Task",
+            "ActivityMedicineNumb",
+            0,
+            RangeValidator(0, 9999),
+            legacy_group="Info",
+            legacy_name="MedicineNumb",
         )
         ## 库存保持计划
         self.Task_DepotMaintainPlans = ConfigItem(
@@ -829,10 +859,6 @@ class MaaConfig(ConfigBase):
         ## 日常时间限制（分钟）
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
-        )
-        ## 剿灭避免无代理卡浪费理智
-        self.Run_AnnihilationAvoidWaste = ConfigItem(
-            "Run", "AnnihilationAvoidWaste", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([MaaUserConfig])
@@ -1204,8 +1230,8 @@ class MaaEndConfig(ConfigBase):
     async def load(self, data: dict) -> bool:
         is_dirty = await super().load(data)
         root_path_value = str(self.get("Info", "Path")).strip()
-        resource_config_path = Path(root_path_value) / "config/mxu-MaaEnd.json"
-        if root_path_value and resource_config_path.is_file():
+        resource_interface_path = Path(root_path_value) / "interface.json"
+        if root_path_value and resource_interface_path.is_file():
             await self.preload_resource()
         return is_dirty
 
@@ -2227,7 +2253,6 @@ class MaaPlanConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
         )
-
         self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
 
         for group in ["ALL", *calendar.day_name]:

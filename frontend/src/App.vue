@@ -14,7 +14,6 @@ import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
-import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
@@ -27,7 +26,7 @@ const { antdTheme, initTheme } = useTheme()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
-const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
+const { isInitialized, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 
@@ -105,7 +104,6 @@ onMounted(async () => {
 
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
-    <BackendStartupOverlay :visible="isBootstrapping" />
     <CursorEffectLayer v-if="isAppReady && performanceStore.initialized" />
   </ConfigProvider>
 </template>

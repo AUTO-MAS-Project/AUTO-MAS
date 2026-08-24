@@ -49,8 +49,8 @@ export interface LocalConfigCache {
 // ==================== 默认配置 ====================
 
 const DEFAULT_API_ENDPOINTS: ApiEndpoints = {
-    local: 'http://localhost:36163',
-    websocket: 'ws://localhost:36163',
+    local: 'http://127.0.0.1:36163',
+    websocket: 'ws://127.0.0.1:36163',
 }
 
 const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
@@ -436,14 +436,17 @@ export class MirrorService {
      * 获取 API 端点
      */
     getApiEndpoint(key: keyof ApiEndpoints): string {
-        return this.apiEndpoints[key] || DEFAULT_API_ENDPOINTS[key]
+        return (this.apiEndpoints[key] || DEFAULT_API_ENDPOINTS[key]).replace('://localhost', '://127.0.0.1')
     }
 
     /**
      * 获取所有 API 端点
      */
     getApiEndpoints(): ApiEndpoints {
-        return { ...this.apiEndpoints }
+        return {
+            local: this.getApiEndpoint('local'),
+            websocket: this.getApiEndpoint('websocket')
+        }
     }
 
     /**

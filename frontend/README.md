@@ -39,6 +39,12 @@ src/
 yarn install
 ```
 
+如果 Electron 二进制下载缓慢或失败，可以使用 npmmirror 镜像执行一次性安装：
+
+```bash
+yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install
+```
+
 ### 开发模式
 
 直接打开electron窗口

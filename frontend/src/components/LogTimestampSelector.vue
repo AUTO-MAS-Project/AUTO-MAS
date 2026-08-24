@@ -116,16 +116,16 @@ import { message } from 'ant-design-vue'
 const logger = window.electronAPI.getLogger('日志时间戳选择器')
 
 interface Props {
-  formData: {
-    logTimeStart?: number
-    logTimeEnd?: number
-    logFilePath?: string
-  }
   logFilePath?: string
   handleChange: (_section: string, _key: string, _value: any) => void
   rules: Record<string, any>
 }
 
+const formData = defineModel<{
+  logTimeStart?: number
+  logTimeEnd?: number
+  logFilePath?: string
+}>('formData', { required: true })
 const props = defineProps<Props>()
 
 // 视图模式 ('input' 或 'visual')
@@ -148,7 +148,7 @@ const selection = reactive({
 
 // 监听formData的变化，确保选择状态与表单数据同步
 watch(
-  () => props.formData.logTimeStart,
+  () => formData.value.logTimeStart,
   newVal => {
     if (newVal !== undefined && newVal !== null) {
       selection.startPos = newVal - 1 // 转换为0索引
@@ -158,7 +158,7 @@ watch(
 )
 
 watch(
-  () => props.formData.logTimeEnd,
+  () => formData.value.logTimeEnd,
   newVal => {
     if (newVal !== undefined && newVal !== null) {
       selection.endPos = newVal - 1 // 转换为0索引
@@ -173,9 +173,9 @@ const onViewModeChange = (e: any) => {
 
   if (mode === 'visual') {
     // 切换到可视化模式时，将表单数据同步到选择状态
-    selection.startPos = props.formData.logTimeStart ? props.formData.logTimeStart - 1 : 0
-    selection.endPos = props.formData.logTimeEnd ? props.formData.logTimeEnd - 1 : 0
-    selection.valid = !!props.formData.logTimeStart && !!props.formData.logTimeEnd
+    selection.startPos = formData.value.logTimeStart ? formData.value.logTimeStart - 1 : 0
+    selection.endPos = formData.value.logTimeEnd ? formData.value.logTimeEnd - 1 : 0
+    selection.valid = !!formData.value.logTimeStart && !!formData.value.logTimeEnd
   }
   // 切换到输入模式时不需要特别处理，因为 formData 是通过 props 绑定的，
   // watch 会自动同步 selection 到 formData 的变化

@@ -7,5 +7,9 @@ export type MaaUserConfig_Data = {
      * 是否通过人工排查
      */
     IfPassCheck?: (boolean | null);
+    /**
+     * 剿灭达到周上限时的 ISO 周
+     */
+    AnnihilationCompletedWeek?: (string | null);
 };
 

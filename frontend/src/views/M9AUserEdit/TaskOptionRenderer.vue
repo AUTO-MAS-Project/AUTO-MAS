@@ -206,7 +206,7 @@ const getDefaultCaseNames = (optionDef: any) => {
 }
 
 const initializeOptions = () => {
-  currentOptions.value = props.taskOptions.map((opt, idx) => {
+  currentOptions.value = props.taskOptions.map(opt => {
     const newOpt: M9ATaskOption = { 
       name: opt.name, 
       index: opt.index ?? 0,
@@ -277,7 +277,7 @@ const handleOptionChange = (index: number) => {
   emit('update', currentOptions.value)
 }
 
-const handleInputChange = (index: number) => {
+const handleInputChange = () => {
   emit('update', currentOptions.value)
 }
 

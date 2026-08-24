@@ -145,7 +145,7 @@ export function parseStatusTagList(
         }
 
         return defaultTags
-    } catch (error) {
+    } catch {
         return defaultTags
     }
 }

@@ -30,14 +30,14 @@
       <a-card class="config-card">
         <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
           <!-- 基本信息组件 -->
-          <BasicInfoSection :form-data="formData" :loading="loading" :server-options="serverOptions"
+          <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
             :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
             :infrastructure-options="infrastructureOptions"
             :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
 
           <!-- 关卡配置组件 -->
-          <StageConfigSection :form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
+          <StageConfigSection v-model:form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
             :stage-options="stageOptions" :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
             :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
             :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
@@ -56,7 +56,7 @@
           <TaskConfigSection
             v-model:activity-first="formData.Task.IfActivityFirst"
             v-model:activity-stage-index="formData.Task.ActivityStageIndex"
-            :form-data="formData"
+            v-model:form-data="formData"
             :loading="loading"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
@@ -79,13 +79,13 @@
           />
 
           <!-- 森空岛配置组件 -->
-          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 额外脚本组件 -->
-          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
+          <NotifyConfigSection v-model:form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
         </a-form>
       </a-card>
@@ -466,6 +466,7 @@ const getDefaultMAAUserData = () => ({
     IfDepotMaintain: false,
     IfActivityFirst: false,
     ActivityStageIndex: 1,
+    ActivityMedicineNumb: 0,
     DepotMaintainPlans: '[]',
   },
   Notify: {
@@ -577,12 +578,15 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
         const parts = pendingKey.split('.')
         let userData: Record<string, any> = {}
         let current = userData
+        let localTarget: any = formData
 
         for (let i = 0; i < parts.length - 1; i++) {
           current[parts[i]] = {}
           current = current[parts[i]]
+          localTarget = localTarget[parts[i]]
         }
         current[parts[parts.length - 1]] = pendingValue
+        localTarget[parts[parts.length - 1]] = pendingValue
 
         // 特殊处理：userName 和 userId 需要同步到 Info
         if (pendingKey === 'userName') {

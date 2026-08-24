@@ -2,7 +2,6 @@
 import type {
   HSRConfig,
   HSRConfig_TaskMapping,
-  HSRUserConfig,
   MaaConfig,
   GeneralConfig,
   OkwwConfig,
@@ -36,7 +35,6 @@ export interface MAAScriptConfig {
     RunTimesLimit: number
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
-    AnnihilationAvoidWaste: boolean
   }
   Emulator: {
     Id: string
@@ -289,6 +287,11 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    IfActivityFirst?: boolean
+    ActivityStageIndex?: number
+    ActivityMedicineNumb?: number
+    IfDepotMaintain?: boolean
+    DepotMaintainPlans?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
