@@ -226,16 +226,19 @@ def _patched(mod, fake_cfg, notify):
     引用; 只打脚本模块的话假对象会被绕过, 测试会静默失效(甚至真去连 SMTP)。
     公共模块尚不存在时(重构前)自动跳过, 保证基线在重构前后都能录。
     """
+    try:
+        channels = importlib.import_module("app.tools.notify_channels")
+    except ModuleNotFoundError:
+        channels = None
+
     with contextlib.ExitStack() as stack:
-        stack.enter_context(patch.object(mod, "Config", fake_cfg))
-        stack.enter_context(patch.object(mod, "Notify", notify))
-        try:
-            channels = importlib.import_module("app.tools.notify_channels")
-        except ModuleNotFoundError:
-            channels = None
-        if channels is not None:
-            stack.enter_context(patch.object(channels, "Config", fake_cfg))
-            stack.enter_context(patch.object(channels, "Notify", notify))
+        # 迁移后脚本模块不再直接引用 Notify(fan-out 移到公共模块), 故按实际存在的属性打桩
+        for target in (mod, channels):
+            if target is None:
+                continue
+            for attr, value in (("Config", fake_cfg), ("Notify", notify)):
+                if hasattr(target, attr):
+                    stack.enter_context(patch.object(target, attr, value))
         yield
 
 
