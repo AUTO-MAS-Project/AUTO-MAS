@@ -883,8 +883,9 @@ class HSRManager(TaskExecuteBase):
             )
 
         try:
-            await push_notification("代理结果", title, result, None)
-            if has_game_sign_summary:
+            failed_channels = await push_notification("代理结果", title, result, None)
+            # 有渠道失败时不消费签到汇总, 留给下一份报告重发, 避免静默丢失
+            if has_game_sign_summary and not failed_channels:
                 mark_task_game_sign_summary_consumed(self.task_info)
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")

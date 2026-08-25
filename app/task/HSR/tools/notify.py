@@ -9,9 +9,9 @@
 #   the License, or (at your option) any later version.
 #
 #   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#   GNU Affero General Public License for more details.
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
@@ -21,7 +21,13 @@
 
 from app.core import Config
 from app.models.config import HSRUserConfig
-from app.services import Notify
+from app.services.notify_dispatch import (
+    NotifyPayload,
+    dispatch,
+    global_target,
+    should_send_result,
+    statistic_targets,
+)
 from app.utils import get_logger
 
 logger = get_logger("HSR 通知工具")
@@ -29,19 +35,15 @@ logger = get_logger("HSR 通知工具")
 
 async def push_notification(
     mode: str, title: str, message: dict, user_config: HSRUserConfig | None
-) -> None:
-    """通过所有渠道推送 HSR 通知。"""
+) -> list[str]:
+    """通过所有渠道推送 HSR 通知; 返回发送失败的渠道名列表。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    if mode == "代理结果" and (
-        message.get("game_sign_summary", False)
-        or Config.get("Notify", "SendTaskResultTime") == "任何时刻"
-        or (
-            Config.get("Notify", "SendTaskResultTime") == "仅失败时"
-            and message["uncompleted_count"] != 0
-        )
-    ):
+    if mode == "代理结果":
+        if not should_send_result(message):
+            return []
+
         message_text = (
             f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
@@ -50,27 +52,14 @@ async def push_notification(
         message_html = Config.notify_env.get_template("general_result.html").render(
             message
         )
-        serverchan_message = message_text.replace("\n", "\n\n")
 
-        if Config.get("Notify", "IfSendMail") and Config.get("Notify", "ToAddress"):
-            await Notify.send_mail(
-                "网页", title, message_html, Config.get("Notify", "ToAddress")
-            )
+        # HSR 的全局渠道额外校验收件人非空, 配置不全时静默跳过
+        return await dispatch(
+            NotifyPayload(title, message_text, message_html),
+            [global_target(skip_empty_recipient=True)],
+        )
 
-        if Config.get("Notify", "IfServerChan") and Config.get("Notify", "ServerChanKey"):
-            await Notify.ServerChanPush(
-                title,
-                f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                Config.get("Notify", "ServerChanKey"),
-            )
-
-        for webhook in Config.Notify_CustomWebhooks.values():
-            await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
-
-        if Config.get("Notify", "IfKoishiSupport"):
-            await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
-
-    elif mode == "统计信息":
+    if mode == "统计信息":
         message_text = (
             f"开始时间: {message['start_time']}\n"
             f"结束时间: {message['end_time']}\n"
@@ -79,56 +68,10 @@ async def push_notification(
         message_html = Config.notify_env.get_template("general_statistics.html").render(
             message
         )
-        serverchan_message = message_text.replace("\n", "\n\n")
 
-        if Config.get("Notify", "IfSendStatistic"):
-            if Config.get("Notify", "IfSendMail") and Config.get("Notify", "ToAddress"):
-                await Notify.send_mail(
-                    "网页", title, message_html, Config.get("Notify", "ToAddress")
-                )
+        return await dispatch(
+            NotifyPayload(title, message_text, message_html),
+            statistic_targets(user_config, skip_empty_recipient=True),
+        )
 
-            if Config.get("Notify", "IfServerChan") and Config.get("Notify", "ServerChanKey"):
-                await Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                    Config.get("Notify", "ServerChanKey"),
-                )
-
-            for webhook in Config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(
-                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                )
-
-            if Config.get("Notify", "IfKoishiSupport"):
-                await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
-
-        if (
-            user_config is not None
-            and user_config.get("Notify", "Enabled")
-            and user_config.get("Notify", "IfSendStatistic")
-        ):
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
-                    await Notify.send_mail(
-                        "网页",
-                        title,
-                        message_html,
-                        user_config.get("Notify", "ToAddress"),
-                    )
-                else:
-                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
-
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
-                    await Notify.ServerChanPush(
-                        title,
-                        f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
-                    )
-                else:
-                    logger.warning("用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知")
-
-            for webhook in user_config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(
-                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                )
+    return []
