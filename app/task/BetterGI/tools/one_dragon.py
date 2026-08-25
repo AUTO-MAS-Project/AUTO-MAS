@@ -61,6 +61,23 @@ _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
 
+# BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗队伍的只有
+# 秘境（PartyName）与首领讨伐（AutoBossTeamName）；地脉花/幽境危战则由 BetterGI 在
+# OneDragonTaskItem 里直接从全局 AutoLeyLineOutcropConfig / AutoStygianOnslaughtConfig
+# 段读取战斗队伍（无一条龙专用字段），故通用战斗队伍需另补写这两处 camelCase 字段：
+#   地脉花:   autoLeyLineOutcropConfig.Team
+#   幽境危战: autoStygianOnslaughtConfig.fightTeamName
+_BGI_CONFIG_REL_PATH = Path("User") / "config.json"
+_GLOBAL_LEY_LINE_KEY = "autoLeyLineOutcropConfig"
+_GLOBAL_LEY_LINE_TEAM_KEY = "Team"
+_GLOBAL_STYGIAN_KEY = "autoStygianOnslaughtConfig"
+_GLOBAL_STYGIAN_TEAM_KEY = "fightTeamName"
+# 通用战斗队伍需落到全局配置的 (段键, 队伍键) 清单
+_APPLIED_TEAM_LEAVES = (
+    (_GLOBAL_LEY_LINE_KEY, _GLOBAL_LEY_LINE_TEAM_KEY),
+    (_GLOBAL_STYGIAN_KEY, _GLOBAL_STYGIAN_TEAM_KEY),
+)
+
 
 def list_auto_boss_strategies(root: Path) -> list[str]:
     """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight/*.txt 文件名。
@@ -209,7 +226,9 @@ def write_user_one_dragon(
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BetterGI 并缓存 per-user 副本。
 
     种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
-    三个非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）。
+    非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）；
+    其中「战斗队伍」会同时落到秘境 ``PartyName`` 与首领讨伐 ``AutoBossTeamName``，
+    使通用战斗队伍对两者都生效（地脉花/幽境危战另见 ``apply_global_battle_team``）。
     ``manage_custom_groups`` 开启时按 ``custom_groups``（name→enabled）管理自定义组，
     否则自定义组原样保留（由 BetterGI 内部决定）。
     """
@@ -229,10 +248,92 @@ def write_user_one_dragon(
         config["DailyRewardPartyName"] = daily_reward_party_name
     if party_name:
         config["PartyName"] = party_name
+        # 一条龙自动首领讨伐从 AutoBossTeamName 取队伍（OneDragonTaskItem.cs）
+        config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         config["AutoBossStrategyName"] = auto_boss_strategy_name
     write_one_dragon(root, config_name, config)
     write_file(user_path, config)
+
+
+def _global_config_path(root: Path) -> Path:
+    """BetterGI 全局主配置 config.json 的绝对路径。"""
+    return root / _BGI_CONFIG_REL_PATH
+
+
+def apply_global_battle_team(root: Path, party_name: str) -> None:
+    """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
+
+    一条龙配置自带战斗队伍的只有秘境（``PartyName``）与首领讨伐（``AutoBossTeamName``）；
+    地脉花/幽境危战由 BetterGI 直接从全局 ``AutoLeyLineOutcropConfig`` /
+    ``AutoStygianOnslaughtConfig`` 段读取队伍（camelCase）。此处把这些段置为通用战斗队伍，
+    保留同段其余字段；仅在 ``party_name`` 非空时写入（空值不覆盖，避免破坏用户手动配置）。
+    """
+    party_name = (party_name or "").strip()
+    if not party_name:
+        return
+    config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        config = {}
+    for sec_key, team_key in _APPLIED_TEAM_LEAVES:
+        section = config.get(sec_key)
+        if not isinstance(section, dict):
+            section = {}
+        if section.get(team_key) != party_name:
+            section[team_key] = party_name
+        config[sec_key] = section
+    write_file(_global_config_path(root), config)
+
+
+def snapshot_global_battle_team(root: Path) -> dict[Any, Any]:
+    """快照 config.json 本次可能改写的两个队伍字段（记其所在段是否存在与原值）。
+
+    供 Ending 还原用；键为 ``(段键, 队伍键)``，值为 ``(该字段原本是否存在, 原值)``。
+    """
+    config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        config = {}
+    snap: dict[Any, Any] = {}
+    for sec_key, team_key in _APPLIED_TEAM_LEAVES:
+        section = config.get(sec_key)
+        if isinstance(section, dict) and team_key in section:
+            snap[(sec_key, team_key)] = (True, section[team_key])
+        else:
+            snap[(sec_key, team_key)] = (False, None)
+    return snap
+
+
+def restore_global_battle_team(root: Path, snapshot: dict[Any, Any]) -> None:
+    """把 config.json 的两个队伍字段还原为快照状态，消除单次运行留下的队伍残留。
+
+    原本缺失则删除该字段（所在段空了也一并删除），原本存在则回写原值；只改写本次动过的键。
+    """
+    if not snapshot:
+        return
+    config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        return
+    changed = False
+    for sec_key, team_key in _APPLIED_TEAM_LEAVES:
+        existed, value = snapshot.get((sec_key, team_key), (False, None))
+        section = config.get(sec_key)
+        if existed:
+            cur = section.get(team_key) if isinstance(section, dict) else None
+            if cur != value:
+                if not isinstance(section, dict):
+                    section = {}
+                    config[sec_key] = section
+                section[team_key] = value
+                changed = True
+        elif isinstance(section, dict):
+            if team_key in section:
+                del section[team_key]
+                changed = True
+            if not section:
+                del config[sec_key]
+                changed = True
+    if changed:
+        write_file(_global_config_path(root), config)
 
 
 def snapshot_user_one_dragon(
