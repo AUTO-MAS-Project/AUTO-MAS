@@ -144,9 +144,9 @@ def test_restore_removes_injected_team(tmp_path) -> None:
     (root / "User").mkdir(parents=True)
     write_file(root / "User" / "config.json", {})
 
-    snap = one_dragon.snapshot_global_battle_team(root)
+    snap = one_dragon.snapshot_global_battle_config(root)
     one_dragon.apply_global_battle_team(root, "锄地队")
-    one_dragon.restore_global_battle_team(root, snap)
+    one_dragon.restore_global_battle_config(root, snap)
 
     cfg = read_file(root / "User" / "config.json")
     assert "autoLeyLineOutcropConfig" not in cfg
@@ -163,10 +163,10 @@ def test_restore_preserves_original_team(tmp_path) -> None:
             "autoLeyLineOutcropConfig": {"Team": "手动队伍", "count": 2},
         },
     )
-    snap = one_dragon.snapshot_global_battle_team(root)
+    snap = one_dragon.snapshot_global_battle_config(root)
 
     one_dragon.apply_global_battle_team(root, "锄地队")
-    one_dragon.restore_global_battle_team(root, snap)
+    one_dragon.restore_global_battle_config(root, snap)
 
     cfg = read_file(root / "User" / "config.json")
     assert cfg["autoLeyLineOutcropConfig"]["Team"] == "手动队伍"
@@ -178,7 +178,80 @@ def test_restore_idempotent(tmp_path) -> None:
     root = tmp_path
     (root / "User").mkdir(parents=True)
     write_file(root / "User" / "config.json", {})
-    snap = one_dragon.snapshot_global_battle_team(root)
+    snap = one_dragon.snapshot_global_battle_config(root)
 
-    one_dragon.restore_global_battle_team(root, snap)
+    one_dragon.restore_global_battle_config(root, snap)
     assert read_file(root / "User" / "config.json") == {}
+
+
+def test_global_strategy_writes_all_tasks(tmp_path) -> None:
+    """通用战斗策略写进 config.json：秘境/地脉花(嵌套)/幽境危战，保留同段其余字段。"""
+    root = tmp_path
+    (root / "User").mkdir(parents=True)
+    write_file(
+        root / "User" / "config.json",
+        {
+            "autoFightConfig": {"teamNames": "刻晴"},
+            "autoLeyLineOutcropConfig": {"count": 3},
+            "notRelated": {"x": 1},
+        },
+    )
+    one_dragon.apply_global_battle_strategy(root, "夜兰蒸发")
+
+    cfg = read_file(root / "User" / "config.json")
+    assert cfg["autoFightConfig"]["strategyName"] == "夜兰蒸发"
+    assert cfg["autoFightConfig"]["teamNames"] == "刻晴"  # 保留同段其余字段
+    assert cfg["autoLeyLineOutcropConfig"]["fightConfig"]["strategyName"] == "夜兰蒸发"
+    assert cfg["autoLeyLineOutcropConfig"]["count"] == 3
+    assert cfg["autoStygianOnslaughtConfig"]["strategyName"] == "夜兰蒸发"
+    assert cfg["notRelated"] == {"x": 1}
+
+
+def test_global_strategy_empty_is_noop(tmp_path) -> None:
+    """通用战斗策略留空时不写 config.json（不覆盖用户手工配置）。"""
+    root = tmp_path
+    (root / "User").mkdir(parents=True)
+    write_file(
+        root / "User" / "config.json",
+        {"autoFightConfig": {"strategyName": "手动策略"}},
+    )
+    one_dragon.apply_global_battle_strategy(root, "  ")
+    cfg = read_file(root / "User" / "config.json")
+    assert cfg["autoFightConfig"]["strategyName"] == "手动策略"
+
+
+def test_restore_removes_injected_team_and_strategy(tmp_path) -> None:
+    """运行结束后把队伍与策略叶子一并还原，含嵌套 fightConfig 空段清理。"""
+    root = tmp_path
+    (root / "User").mkdir(parents=True)
+    write_file(root / "User" / "config.json", {})
+
+    snap = one_dragon.snapshot_global_battle_config(root)
+    one_dragon.apply_global_battle_team(root, "锄地队")
+    one_dragon.apply_global_battle_strategy(root, "夜兰蒸发")
+    one_dragon.restore_global_battle_config(root, snap)
+
+    cfg = read_file(root / "User" / "config.json")
+    assert cfg == {}
+
+
+def test_restore_preserves_original_strategy(tmp_path) -> None:
+    """原本存在的手动策略值还原后回写原值（含地脉花嵌套段）。"""
+    root = tmp_path
+    (root / "User").mkdir(parents=True)
+    write_file(
+        root / "User" / "config.json",
+        {
+            "autoFightConfig": {"strategyName": "手动通用"},
+            "autoLeyLineOutcropConfig": {"fightConfig": {"strategyName": "手动地脉"}},
+            "autoLeyLineOutcropConfig2": {},
+        },
+    )
+    snap = one_dragon.snapshot_global_battle_config(root)
+
+    one_dragon.apply_global_battle_strategy(root, "夜兰蒸发")
+    one_dragon.restore_global_battle_config(root, snap)
+
+    cfg = read_file(root / "User" / "config.json")
+    assert cfg["autoFightConfig"]["strategyName"] == "手动通用"
+    assert cfg["autoLeyLineOutcropConfig"]["fightConfig"]["strategyName"] == "手动地脉"

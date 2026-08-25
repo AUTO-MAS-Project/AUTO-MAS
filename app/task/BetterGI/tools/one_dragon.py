@@ -61,22 +61,33 @@ _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
 
-# BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗队伍的只有
-# 秘境（PartyName）与首领讨伐（AutoBossTeamName）；地脉花/幽境危战则由 BetterGI 在
-# OneDragonTaskItem 里直接从全局 AutoLeyLineOutcropConfig / AutoStygianOnslaughtConfig
-# 段读取战斗队伍（无一条龙专用字段），故通用战斗队伍需另补写这两处 camelCase 字段：
-#   地脉花:   autoLeyLineOutcropConfig.Team
-#   幽境危战: autoStygianOnslaughtConfig.fightTeamName
+# BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗字段的只有
+# 秘境（PartyName）与首领讨伐（AutoBossTeamName/AutoBossStrategyName）；地脉花/幽境危战
+# 则由 BetterGI 在 OneDragonTaskItem 里直接从全局 AutoLeyLineOutcropConfig /
+# AutoStygianOnslaughtConfig 段读取队伍与策略（无一条龙专用字段），秘境策略走全局
+# AutoFightConfig。故通用战斗队伍/策略需另补写以下 camelCase 叶子路径（tuple 表示嵌套）：
+#   队伍:   autoLeyLineOutcropConfig.Team（地脉花）,
+#           autoStygianOnslaughtConfig.fightTeamName（幽境危战）
+#   策略:   autoFightConfig.strategyName（秘境）,
+#           autoLeyLineOutcropConfig.fightConfig.strategyName（地脉花）,
+#           autoStygianOnslaughtConfig.strategyName（幽境危战）
 _BGI_CONFIG_REL_PATH = Path("User") / "config.json"
-_GLOBAL_LEY_LINE_KEY = "autoLeyLineOutcropConfig"
-_GLOBAL_LEY_LINE_TEAM_KEY = "Team"
-_GLOBAL_STYGIAN_KEY = "autoStygianOnslaughtConfig"
-_GLOBAL_STYGIAN_TEAM_KEY = "fightTeamName"
-# 通用战斗队伍需落到全局配置的 (段键, 队伍键) 清单
-_APPLIED_TEAM_LEAVES = (
-    (_GLOBAL_LEY_LINE_KEY, _GLOBAL_LEY_LINE_TEAM_KEY),
-    (_GLOBAL_STYGIAN_KEY, _GLOBAL_STYGIAN_TEAM_KEY),
+
+# 通用战斗队伍落到的叶子路径
+_GLOBAL_TEAM_LEAVES = (
+    ("autoLeyLineOutcropConfig", "Team"),
+    ("autoStygianOnslaughtConfig", "fightTeamName"),
 )
+
+# 通用战斗策略落到的叶子路径
+_GLOBAL_STRATEGY_LEAVES = (
+    ("autoFightConfig", "strategyName"),
+    ("autoLeyLineOutcropConfig", "fightConfig", "strategyName"),
+    ("autoStygianOnslaughtConfig", "strategyName"),
+)
+
+# 全部待补写叶子路径：apply 用分组，快照/还原用全集
+_ALL_GLOBAL_LEAVES = _GLOBAL_TEAM_LEAVES + _GLOBAL_STRATEGY_LEAVES
 
 
 def list_auto_boss_strategies(root: Path) -> list[str]:
@@ -227,8 +238,10 @@ def write_user_one_dragon(
 
     种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
     非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）；
-    其中「战斗队伍」会同时落到秘境 ``PartyName`` 与首领讨伐 ``AutoBossTeamName``，
-    使通用战斗队伍对两者都生效（地脉花/幽境危战另见 ``apply_global_battle_team``）。
+    其中「战斗队伍/战斗策略」会落到秘境 ``PartyName`` 与首领讨伐的
+    ``AutoBossTeamName`` / ``AutoBossStrategyName``（秘境策略仍走全局
+    ``autoFightConfig``）；地脉花/幽境危战/以及秘境策略另外经
+    ``apply_global_battle_team`` / ``apply_global_battle_strategy`` 补写全局 config.json。
     ``manage_custom_groups`` 开启时按 ``custom_groups``（name→enabled）管理自定义组，
     否则自定义组原样保留（由 BetterGI 内部决定）。
     """
@@ -261,52 +274,125 @@ def _global_config_path(root: Path) -> Path:
     return root / _BGI_CONFIG_REL_PATH
 
 
-def apply_global_battle_team(root: Path, party_name: str) -> None:
-    """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
+def _set_leaf(config: dict, leaf: tuple[str, ...], value: str) -> bool:
+    """沿叶子路径向下补建字典并赋 ``value``；值未变返回 False（避免无谓触写）。"""
+    cur = config
+    for key in leaf[:-1]:
+        nxt = cur.get(key)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[key] = nxt
+        cur = nxt
+    key = leaf[-1]
+    if cur.get(key) == value:
+        return False
+    cur[key] = value
+    return True
 
-    一条龙配置自带战斗队伍的只有秘境（``PartyName``）与首领讨伐（``AutoBossTeamName``）；
-    地脉花/幽境危战由 BetterGI 直接从全局 ``AutoLeyLineOutcropConfig`` /
-    ``AutoStygianOnslaughtConfig`` 段读取队伍（camelCase）。此处把这些段置为通用战斗队伍，
-    保留同段其余字段；仅在 ``party_name`` 非空时写入（空值不覆盖，避免破坏用户手动配置）。
-    """
-    party_name = (party_name or "").strip()
-    if not party_name:
+
+def _apply_leaves(root: Path, leaves, value: str) -> None:
+    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段；空值不写。"""
+    value = (value or "").strip()
+    if not value:
         return
     config = read_file(_global_config_path(root))
     if not isinstance(config, dict):
         config = {}
-    for sec_key, team_key in _APPLIED_TEAM_LEAVES:
-        section = config.get(sec_key)
-        if not isinstance(section, dict):
-            section = {}
-        if section.get(team_key) != party_name:
-            section[team_key] = party_name
-        config[sec_key] = section
-    write_file(_global_config_path(root), config)
+    changed = False
+    for leaf in leaves:
+        changed |= _set_leaf(config, leaf, value)
+    if changed:
+        write_file(_global_config_path(root), config)
 
 
-def snapshot_global_battle_team(root: Path) -> dict[Any, Any]:
-    """快照 config.json 本次可能改写的两个队伍字段（记其所在段是否存在与原值）。
+def apply_global_battle_team(root: Path, party_name: str) -> None:
+    """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
 
-    供 Ending 还原用；键为 ``(段键, 队伍键)``，值为 ``(该字段原本是否存在, 原值)``。
+    首领讨伐走一条龙 ``AutoBossTeamName``（见 ``write_user_one_dragon``）；地脉花/幽境危战
+    由 BGI 直读全局段，故在此补写。保留同段其余字段；空值不覆盖。
+    """
+    _apply_leaves(root, _GLOBAL_TEAM_LEAVES, party_name)
+
+
+def apply_global_battle_strategy(root: Path, strategy_name: str) -> None:
+    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战读取。
+
+    首领讨伐走一条龙 ``AutoBossStrategyName``（见 ``write_user_one_dragon``）；其余三项
+    由 BGI 直读全局段。保留同段其余字段；空值不覆盖。
+    """
+    _apply_leaves(root, _GLOBAL_STRATEGY_LEAVES, strategy_name)
+
+
+def _restore_leaf(config: dict, leaf: tuple[str, ...], existed: bool, value) -> bool:
+    """还原单个叶子：原存在则回写原值，原缺失则删除；返回是否实际改写。"""
+    parent = config
+    for key in leaf[:-1]:
+        nxt = parent.get(key) if isinstance(parent, dict) else None
+        if not isinstance(nxt, dict):
+            return False  # 父链已不存在（本次并未补写该叶子），无需还原
+        parent = nxt
+    if not isinstance(parent, dict):
+        return False
+    key = leaf[-1]
+    if existed:
+        if parent.get(key) != value:
+            parent[key] = value
+            return True
+        return False
+    if key in parent:
+        del parent[key]
+        return True
+    return False
+
+
+def _prune_empty_ancestors(config: dict, leaf: tuple[str, ...]) -> None:
+    """沿 leaf 前缀（不含叶子本身）从深到浅删除沿途变空的字典。"""
+    prefix = list(leaf[:-1])
+    while prefix:
+        cur = config
+        broken = False
+        for key in prefix[:-1]:
+            nxt = cur.get(key) if isinstance(cur, dict) else None
+            if not isinstance(nxt, dict):
+                broken = True
+                break
+            cur = nxt
+        if broken:
+            return
+        last = prefix[-1]
+        grand = cur.get(last) if isinstance(cur, dict) else None
+        if isinstance(grand, dict) and not grand:
+            del cur[last]
+            prefix.pop()
+        else:
+            return
+
+
+def snapshot_global_battle_config(root: Path) -> dict[tuple[str, ...], tuple[bool, Any]]:
+    """快照 config.json 本次可能改写的队伍/策略叶子路径，供结束还原。
+
+    键为叶子路径元组，值为 ``(该叶子原本是否存在, 原值)``。
     """
     config = read_file(_global_config_path(root))
     if not isinstance(config, dict):
         config = {}
-    snap: dict[Any, Any] = {}
-    for sec_key, team_key in _APPLIED_TEAM_LEAVES:
-        section = config.get(sec_key)
-        if isinstance(section, dict) and team_key in section:
-            snap[(sec_key, team_key)] = (True, section[team_key])
-        else:
-            snap[(sec_key, team_key)] = (False, None)
+    snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
+    for leaf in _ALL_GLOBAL_LEAVES:
+        cur: Any = config
+        present = True
+        for key in leaf:
+            if not isinstance(cur, dict) or key not in cur:
+                present = False
+                break
+            cur = cur[key]
+        snap[leaf] = (present, cur if present else None)
     return snap
 
 
-def restore_global_battle_team(root: Path, snapshot: dict[Any, Any]) -> None:
-    """把 config.json 的两个队伍字段还原为快照状态，消除单次运行留下的队伍残留。
+def restore_global_battle_config(root: Path, snapshot: dict[tuple[str, ...], tuple[bool, Any]]) -> None:
+    """把 config.json 的队伍/策略叶子路径还原为快照状态，消除单次运行残留。
 
-    原本缺失则删除该字段（所在段空了也一并删除），原本存在则回写原值；只改写本次动过的键。
+    原本缺失则删除（沿路径清理变空字典），原本存在则回写原值；只改写本次动过的键。
     """
     if not snapshot:
         return
@@ -314,25 +400,13 @@ def restore_global_battle_team(root: Path, snapshot: dict[Any, Any]) -> None:
     if not isinstance(config, dict):
         return
     changed = False
-    for sec_key, team_key in _APPLIED_TEAM_LEAVES:
-        existed, value = snapshot.get((sec_key, team_key), (False, None))
-        section = config.get(sec_key)
-        if existed:
-            cur = section.get(team_key) if isinstance(section, dict) else None
-            if cur != value:
-                if not isinstance(section, dict):
-                    section = {}
-                    config[sec_key] = section
-                section[team_key] = value
-                changed = True
-        elif isinstance(section, dict):
-            if team_key in section:
-                del section[team_key]
-                changed = True
-            if not section:
-                del config[sec_key]
-                changed = True
+    for leaf in _ALL_GLOBAL_LEAVES:
+        existed, value = snapshot.get(leaf, (False, None))
+        if _restore_leaf(config, leaf, existed, value):
+            changed = True
     if changed:
+        for leaf in _ALL_GLOBAL_LEAVES:
+            _prune_empty_ancestors(config, leaf)
         write_file(_global_config_path(root), config)
 
 

@@ -274,7 +274,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 独立配置覆盖前备份：None 表示尚未接管（use_mas_config=False 或未开始写入）
         self._reseed_live_config: dict | None = None
         self._reseed_live_existed = False
-        # 通用战斗队伍落到全局 config.json 前的快照（地脉花/幽境危战段），None 表示未接管
+        # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示未接管
         self._reseed_global_config: dict | None = None
 
     def _build_log_path(self) -> Path:
@@ -315,8 +315,12 @@ class AutoProxyTask(TaskExecuteBase):
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
         )
-        # 通用战斗队伍补写进全局 config.json（地脉花/幽境危战读取段）
+        # 通用战斗队伍/策略补写进全局 config.json（秘境/地脉花/幽境危战读取段）
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
+        one_dragon.apply_global_battle_strategy(
+            self.script_root_path,
+            str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
+        )
         logger.info(
             f"已写入用户 {self.cur_user_item.name} 的一条龙配置: {self.one_dragon_config}"
         )
@@ -346,13 +350,13 @@ class AutoProxyTask(TaskExecuteBase):
         self._reseed_live_config = one_dragon.load_one_dragon(
             self.script_root_path, self.one_dragon_config
         )
-        # 同时快照全局 config.json 待改写的两段队伍字段，供结束后还原
-        self._reseed_global_config = one_dragon.snapshot_global_battle_team(
+        # 同时快照全局 config.json 待改写的队伍/策略叶子，供结束后还原
+        self._reseed_global_config = one_dragon.snapshot_global_battle_config(
             self.script_root_path
         )
 
     def _restore_one_dragon_config(self) -> None:
-        """运行/异常结束后把 BetterGI 一条龙配置与全局 config.json 队伍字段还原。
+        """运行/异常结束后把 BetterGI 一条龙配置与全局 config.json 队伍/策略字段还原。
 
         仅在本次确接管过（``_reseed_live_config`` / ``_reseed_global_config`` 任一
         非 None）时生效；还原一次后置 None 保证幂等，避免 final_task 与 on_crash
@@ -361,9 +365,9 @@ class AutoProxyTask(TaskExecuteBase):
         if self._reseed_live_config is None and self._reseed_global_config is None:
             return
         try:
-            # 还原全局 config.json 两段队伍字段（地脉花/幽境危战）
+            # 还原全局 config.json 队伍/策略叶子字段（秘境/地脉花/幽境危战读取段）
             if self._reseed_global_config is not None:
-                one_dragon.restore_global_battle_team(
+                one_dragon.restore_global_battle_config(
                     self.script_root_path, self._reseed_global_config
                 )
             path = one_dragon.one_dragon_path(
