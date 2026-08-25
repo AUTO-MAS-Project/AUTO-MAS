@@ -544,6 +544,8 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
+        ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
+        self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## 自定义基建配置
@@ -859,6 +861,18 @@ class MaaConfig(ConfigBase):
         ## 日常时间限制（分钟）
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
+        )
+        ## 是否在启动 MAA 前检查游戏更新
+        self.Run_IfCheckGameUpdate = ConfigItem(
+            "Run", "IfCheckGameUpdate", False, BoolValidator()
+        )
+        ## 是否允许自动下载并安装游戏安装包（仅官服）
+        self.Run_IfAutoInstallGameApk = ConfigItem(
+            "Run", "IfAutoInstallGameApk", False, BoolValidator()
+        )
+        ## 游戏更新时间限制（分钟）
+        self.Run_GameUpdateTimeLimit = ConfigItem(
+            "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
         )
 
         self.UserData = MultipleConfig([MaaUserConfig])

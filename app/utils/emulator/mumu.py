@@ -64,6 +64,10 @@ class MumuManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    def get_adb_path(self) -> Path | None:
+        adb_path = self.emulator_path.parent / "adb.exe"
+        return adb_path if adb_path.exists() else None
+
     async def _get_app_state(self, idx: str, package_name: str) -> str | None:
         try:
             result = await ProcessRunner.run_process(

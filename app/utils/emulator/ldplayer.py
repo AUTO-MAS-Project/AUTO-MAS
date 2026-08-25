@@ -391,6 +391,10 @@ class LDManager(DeviceBase):
 
     # ?wk雷电你都返回了什么啊
 
+    def get_adb_path(self) -> Path | None:
+        adb_path = self.emulator_path.parent / "adb.exe"
+        return adb_path if adb_path.exists() else None
+
     async def _block_ads_via_adb(self, idx: str) -> None:
         adb_path = self.emulator_path.parent / "adb.exe"
         adb_serial = f"emulator-{5554 + int(idx) * 2}"  # 雷电模拟器 ADB 设备名固定格式
