@@ -73,6 +73,9 @@ _TEMPLATES = {
 
 Box = tuple[int, int, int, int]
 OCRItem = tuple[str, Box]
+_FRAME_WIDTH = 1920
+_FRAME_HEIGHT = 1080
+_LOGIN_FORM_ROI: Box = (480, 270, 1440, 810)
 # 多显示器适配
 _user32 = ctypes.windll.user32
 _user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
@@ -150,7 +153,9 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
             )
         )
 
-    screenshot = screenshot.resize((1920, 1080), Image.Resampling.LANCZOS)
+    screenshot = screenshot.resize(
+        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
+    )
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
@@ -198,8 +203,8 @@ def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
         x, y, box_width, box_height = box
-        client_x = round((x + box_width / 2) * width / 1920)
-        client_y = round((y + box_height / 2) * height / 1080)
+        client_x = round((x + box_width / 2) * width / _FRAME_WIDTH)
+        client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
     original_position = pyautogui.position()
@@ -218,7 +223,7 @@ def _press_escape(hwnd: int) -> None:
 
 
 def _login_form_visible(frame: np.ndarray) -> bool:
-    texts = [text for text, _ in _read_text(frame, (480, 270, 1440, 810))]
+    texts = [text for text, _ in _read_text(frame, _LOGIN_FORM_ROI)]
     return "登录" in texts and any(
         "最近" in text or "其他账号登录" in text for text in texts
     )
@@ -288,14 +293,23 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
     selector_expanded = False
 
     async for frame in _poll_frames(hwnd, 30, activate=False):
-        ocr_items = await asyncio.to_thread(
-            _read_text, frame, (480, 270, 1440, 810)
-        )
-        recent = next(
-            (box for text, box in ocr_items if "最近" in text), None
-        )
-        if recent is not None:
-            account_list_top = recent[1] + recent[3]
+        # 下拉框展开后，从“最近”底部扫描到屏幕底部，避免固定 ROI 截断后面的账号。
+        recent: Box | None = None
+        if selector_expanded and account_list_top is not None:
+            ocr_items = await asyncio.to_thread(
+                _read_text,
+                frame,
+                (0, account_list_top, _FRAME_WIDTH, _FRAME_HEIGHT),
+            )
+        else:
+            ocr_items = await asyncio.to_thread(
+                _read_text, frame, _LOGIN_FORM_ROI
+            )
+            recent = next(
+                (box for text, box in ocr_items if "最近" in text), None
+            )
+            if recent is not None:
+                account_list_top = recent[1] + recent[3]
 
         target = next(
             (
