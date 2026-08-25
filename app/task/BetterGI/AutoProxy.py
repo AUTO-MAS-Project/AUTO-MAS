@@ -485,13 +485,16 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log(f"切换账号准备失败: {e}")
             return False
 
-        # 更新情况：BGI 启动时先更新仓库脚本、再执行配置组；本地已有脚本则本次是增量检查
+        # 更新情况：BGI 启动时先更新仓库脚本、再执行配置组；本地已有脚本则本次是增量检查。
+        # 缺失（用户误删/初次使用）时 ensure_switch_subscription 已强制重建仓库，BGI 启动即补位。
         if script_present:
             logger.info("切换账号脚本已存在于本地，BGI 启动时检查仓库更新")
             await self._push_dispatch_log("切换账号脚本已就绪，随 BGI 启动检查仓库更新")
         else:
-            logger.info("切换账号脚本本地缺失，将由 BGI 启动时从脚本仓库检出")
-            await self._push_dispatch_log("切换账号脚本本地缺失，BGI 启动时将自动从脚本仓库检出")
+            logger.info("切换账号脚本本地缺失，已强制 BGI 启动时从脚本仓库重新检出")
+            await self._push_dispatch_log(
+                "切换账号脚本缺失，已重新订阅并由 BGI 启动时重新下载（若网络较慢请耐心等待）"
+            )
 
         await self._push_dispatch_log(
             f"开始切换账号: --startGroups {account_switch._GROUP_NAME}"
