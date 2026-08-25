@@ -1,5 +1,5 @@
 <template>
-  <a-select :value="value" :disabled="loading" size="large" :placeholder="placeholder"
+  <a-select :value="value" :disabled="loading" :placeholder="placeholder"
     @update:value="$emit('update:value', $event)">
     <template #dropdownRender="{ menuNode: menu }">
       <v-nodes :vnodes="menu" />
