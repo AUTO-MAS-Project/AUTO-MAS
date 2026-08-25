@@ -130,7 +130,9 @@
                   <template #label>
                     <span class="form-label">
                       账户
-                      <a-tooltip title="用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式">
+                      <a-tooltip
+                        title="用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -149,7 +151,9 @@
                   <template #label>
                     <span class="form-label">
                       账号 UID
-                      <a-tooltip title="可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作">
+                      <a-tooltip
+                        title="可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -168,7 +172,9 @@
                   <template #label>
                     <span class="form-label">
                       密码
-                      <a-tooltip title="没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码">
+                      <a-tooltip
+                        title="没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -270,7 +276,9 @@
             <div class="section-header">
               <h3>
                 任务配置
-                <a-tooltip title="勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑">
+                <a-tooltip
+                  title="勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑"
+                >
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
               </h3>
@@ -282,7 +290,9 @@
                   <template #label>
                     <span class="form-label">
                       一条龙名称
-                      <a-tooltip title="对应 BetterGI 一条龙页面中已保存的一条龙配置名称，留空则使用「默认配置」">
+                      <a-tooltip
+                        title="对应 BetterGI 一条龙页面中已保存的一条龙配置名称，留空则使用「默认配置」"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -312,7 +322,12 @@
                     placeholder="请输入领取奖励队伍"
                     size="large"
                     class="modern-input"
-                    @blur="saveField('OneDragon.DailyRewardPartyName', formData.OneDragon.DailyRewardPartyName)"
+                    @blur="
+                      saveField(
+                        'OneDragon.DailyRewardPartyName',
+                        formData.OneDragon.DailyRewardPartyName
+                      )
+                    "
                   />
                 </a-form-item>
               </a-col>
@@ -359,8 +374,17 @@
                     show-search
                     option-filter-prop="label"
                     class="modern-input"
-                    @dropdown-visible-change="(open: boolean) => { if (open) void loadStrategyOptions() }"
-                    @change="saveField('OneDragon.AutoBossStrategyName', formData.OneDragon.AutoBossStrategyName)"
+                    @dropdown-visible-change="
+                      (open: boolean) => {
+                        if (open) void loadStrategyOptions()
+                      }
+                    "
+                    @change="
+                      saveField(
+                        'OneDragon.AutoBossStrategyName',
+                        formData.OneDragon.AutoBossStrategyName
+                      )
+                    "
                   />
                 </a-form-item>
               </a-col>
@@ -460,8 +484,7 @@
               @press-enter="confirmAddCustomGroup"
             />
           </a-modal>
-
-          </a-form>
+        </a-form>
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -556,16 +579,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import type { TableColumnsType } from 'ant-design-vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { BettergiService, Service, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { BettergiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useBettergiGuiSession } from '@/composables/useBettergiGuiSession'
+import { useBettergiCustomGroups } from '@/composables/useBettergiCustomGroups'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
@@ -575,7 +597,6 @@ const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
 const { getScript } = useScriptApi()
-const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
@@ -586,12 +607,6 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 const configModeSaving = ref(false)
-const bettergiConfigLoading = ref(false)
-const bettergiSubscriptionId = ref<string | null>(null)
-const bettergiWebsocketId = ref<string | null>(null)
-const showBettergiConfigMask = ref(false)
-const stoppingBettergiConfig = ref(false)
-let bettergiConfigTimeout: number | null = null
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -639,7 +654,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Uid: '',
   },
   OneDragon: {
-    Groups: oneDragonGroupOptions.map((option) => option.value),
+    Groups: oneDragonGroupOptions.map(option => option.value),
     DailyRewardPartyName: '',
     PartyName: '',
     AutoBossStrategyName: '根据队伍自动选择',
@@ -661,50 +676,7 @@ const formData = reactive<BetterGIUserFormData>({
   ...getDefaultUserData(),
 })
 
-const clearBettergiConfigSession = () => {
-  if (bettergiSubscriptionId.value) {
-    unsubscribe(bettergiSubscriptionId.value)
-    bettergiSubscriptionId.value = null
-  }
-  bettergiWebsocketId.value = null
-  showBettergiConfigMask.value = false
-  if (bettergiConfigTimeout) {
-    window.clearTimeout(bettergiConfigTimeout)
-    bettergiConfigTimeout = null
-  }
-}
-
-const stopBettergiConfigSession = async (keepOnFailure = false): Promise<boolean> => {
-  const taskId = bettergiWebsocketId.value
-  if (!taskId) {
-    clearBettergiConfigSession()
-    return true
-  }
-  if (stoppingBettergiConfig.value) return false
-
-  stoppingBettergiConfig.value = true
-  try {
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
-    if (response.code !== 200) {
-      throw new Error(response.message || '停止 BetterGI 设置失败')
-    }
-    clearBettergiConfigSession()
-    return true
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    if (keepOnFailure) return false
-    clearBettergiConfigSession()
-    return false
-  } finally {
-    stoppingBettergiConfig.value = false
-  }
-}
-
-const handleCancel = async () => {
-  await stopBettergiConfigSession()
-  await router.push('/scripts')
-}
-
+// saveField 需在自定义配置组 composable 之前定义（后者在 persist/toggle 中调用它）
 const createUserImmediately = async (): Promise<boolean> => {
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
@@ -756,7 +728,7 @@ const toggleGroup = (value: string) => {
     set.add(value)
   }
   // 按内置顺序排序，保持后端一条龙 TaskOrder 稳定
-  const groups = oneDragonGroupOptions.map((o) => o.value).filter((v) => set.has(v))
+  const groups = oneDragonGroupOptions.map(o => o.value).filter(v => set.has(v))
   formData.OneDragon.Groups = groups
   void saveField('OneDragon.Groups', groups)
 }
@@ -765,133 +737,37 @@ const toggleGroup = (value: string) => {
 const strategyOptions = ref<{ label: string; value: string }[]>([])
 const loadStrategyOptions = async () => {
   try {
-    const resp = await BettergiService.getBettergiStrategiesApiApiScriptsBettergiStrategiesGet(scriptId)
+    const resp =
+      await BettergiService.getBettergiStrategiesApiApiScriptsBettergiStrategiesGet(scriptId)
     strategyOptions.value = (resp.data || [])
       .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
-      .map((item) => ({ label: item.label, value: item.value }))
+      .map(item => ({ label: item.label, value: item.value }))
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
   }
 }
 
-// ----- 自定义配置组管理 -----
-interface CustomGroupRow {
-  name: string
-  enabled: boolean
-}
-
-const customGroupsTable = ref<CustomGroupRow[]>([])
-const selectedCustomGroupKeys = ref<string[]>([])
-const customGroupModal = reactive({ open: false, name: '', saving: false })
-
-const customGroupColumns: TableColumnsType = [
-  { title: '配置组名称', dataIndex: 'name', key: 'name' },
-  { title: '是否启用', dataIndex: 'enabled', key: 'enabled', width: 120 },
-]
-
-const customGroupRowSelection = computed(() => ({
-  selectedRowKeys: selectedCustomGroupKeys.value,
-  onChange: (keys: (string | number)[]) => {
-    selectedCustomGroupKeys.value = keys.map(String)
-  },
-}))
-
-const parseCustomGroupsList = (raw: unknown): CustomGroupRow[] => {
-  let arr: unknown = raw
-  if (typeof raw === 'string') {
-    try {
-      arr = JSON.parse(raw)
-    } catch {
-      return []
-    }
-  }
-  if (!Array.isArray(arr)) return []
-  return arr
-    .filter((x): x is Record<string, unknown> => !!x && typeof x.name === 'string')
-    .map((x) => ({ name: x.name as string, enabled: Boolean(x.enabled) }))
-}
-
-const syncCustomGroupsFromForm = () => {
-  customGroupsTable.value = parseCustomGroupsList(formData.OneDragon.CustomGroups)
-}
-
-const mergeCustomGroupsRows = (rows: CustomGroupRow[]) => {
-  const existing = new Map(customGroupsTable.value.map((r) => [r.name, r]))
-  for (const r of rows) {
-    if (!existing.has(r.name)) existing.set(r.name, r)
-  }
-  customGroupsTable.value = Array.from(existing.values())
-}
-
-const persistCustomGroups = () => {
-  const str = JSON.stringify(customGroupsTable.value)
-  formData.OneDragon.CustomGroups = str
-  void saveField('OneDragon.CustomGroups', str)
-}
-
-// 从 BetterGI 现有配置自动加载自定义组（合并进表格，保留已在表格里的启用状态）
-const loadCustomGroupsFromBettergi = async () => {
-  try {
-    const resp =
-      await BettergiService.getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
-        scriptId,
-        formData.Task.OneDragonConfigName,
-      )
-    if (resp.code === 200 && Array.isArray(resp.data)) {
-      mergeCustomGroupsRows(resp.data)
-    }
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
-}
-
-const toggleCustomGroupsMaster = () => {
-  if (!formData.Info.IfUseMasConfig) return
-  const next = !formData.OneDragon.IfUseCustomGroups
-  formData.OneDragon.IfUseCustomGroups = next
-  void saveField('OneDragon.IfUseCustomGroups', next)
-  // 首次开启且表格为空时，从 BetterGI 自动加载现有自定义组
-  if (next && customGroupsTable.value.length === 0) {
-    void loadCustomGroupsFromBettergi()
-  }
-}
-
-const openCustomGroupModal = () => {
-  customGroupModal.name = ''
-  customGroupModal.open = true
-}
-
-const confirmAddCustomGroup = async () => {
-  const name = customGroupModal.name.trim()
-  if (!name) {
-    message.warning('请输入配置组名称')
-    return
-  }
-  if (customGroupsTable.value.some((r) => r.name === name)) {
-    message.warning('该配置组已存在')
-    return
-  }
-  customGroupModal.saving = true
-  try {
-    customGroupsTable.value.push({ name, enabled: true })
-    persistCustomGroups()
-    customGroupModal.open = false
-  } finally {
-    customGroupModal.saving = false
-  }
-}
-
-const deleteSelectedCustomGroups = () => {
-  const removed = new Set(selectedCustomGroupKeys.value)
-  customGroupsTable.value = customGroupsTable.value.filter((r) => !removed.has(r.name))
-  selectedCustomGroupKeys.value = []
-  persistCustomGroups()
-}
-
-const toggleCustomGroupEnabled = (record: CustomGroupRow) => {
-  record.enabled = !record.enabled
-  persistCustomGroups()
-}
+// ----- 自定义配置组管理（composable）-----
+const {
+  table: customGroupsTable,
+  selectedKeys: selectedCustomGroupKeys,
+  modal: customGroupModal,
+  columns: customGroupColumns,
+  rowSelection: customGroupRowSelection,
+  syncFromForm: syncCustomGroupsFromForm,
+  loadFromBettergi: loadCustomGroupsFromBettergi,
+  toggleMaster: toggleCustomGroupsMaster,
+  openAdd: openCustomGroupModal,
+  confirmAdd: confirmAddCustomGroup,
+  deleteSelected: deleteSelectedCustomGroups,
+  toggleEnabled: toggleCustomGroupEnabled,
+} = useBettergiCustomGroups({
+  scriptId,
+  oneDragon: formData.OneDragon,
+  configName: () => formData.Task.OneDragonConfigName,
+  editable: () => formData.Info.IfUseMasConfig,
+  saveField,
+})
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'boolean') return
@@ -924,54 +800,29 @@ const handleConfigModeChange = async (value: boolean | string) => {
   }
 }
 
-const handleBettergiConfig = async () => {
-  if (!userId.value) return
-  try {
-    bettergiConfigLoading.value = true
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId.value,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-    if (response.code !== 200 || !response.taskId) {
-      throw new Error(response.message || '启动 BetterGI 设置失败')
-    }
+// ----- 原生 GUI 设置会话（composable）-----
+const {
+  bettergiConfigLoading,
+  bettergiWebsocketId,
+  showBettergiConfigMask,
+  startSession,
+  saveSession,
+  stopSession,
+  dispose: disposeGuiSession,
+} = useBettergiGuiSession()
 
-    showBettergiConfigMask.value = true
-    bettergiWebsocketId.value = response.taskId
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`BetterGI 设置连接失败: ${String(wsMessage.data)}`)
-        void stopBettergiConfigSession()
-        return
-      }
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`BetterGI 设置失败: ${String(wsMessage.data.Error)}`)
-        void stopBettergiConfigSession()
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        clearBettergiConfigSession()
-      }
-    })
-    bettergiSubscriptionId.value = subscriptionId
-    message.success('已打开 BetterGI 设置')
-    bettergiConfigTimeout = window.setTimeout(handleSaveBettergiConfig, 30 * 60 * 1000)
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.error(e instanceof Error ? e.message : '启动 BetterGI 设置失败')
-    clearBettergiConfigSession()
-  } finally {
-    bettergiConfigLoading.value = false
-  }
+const handleBettergiConfig = () => {
+  if (!userId.value) return
+  void startSession(userId.value)
 }
 
-const handleSaveBettergiConfig = async () => {
-  if (!bettergiWebsocketId.value) return
-  if (await stopBettergiConfigSession(true)) {
-    message.success('BetterGI 设置已保存')
-  } else {
-    message.error('保存 BetterGI 设置失败')
-  }
+const handleSaveBettergiConfig = () => {
+  void saveSession()
+}
+
+const handleCancel = async () => {
+  await stopSession()
+  await router.push('/scripts')
 }
 
 const loadScriptInfo = async (): Promise<boolean> => {
@@ -1034,7 +885,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  void stopBettergiConfigSession()
+  disposeGuiSession()
 })
 </script>
 
@@ -1138,7 +989,9 @@ onUnmounted(() => {
   border-radius: 12px;
   cursor: pointer;
   user-select: none;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
 }
 
 .config-group-item:hover {
@@ -1167,7 +1020,9 @@ onUnmounted(() => {
   border-radius: 11px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border);
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
 }
 
 .config-group-item-capsule.active {
