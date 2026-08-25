@@ -20,7 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 from app.core import Config
-from app.services import Notify
+from app.tools.notify_channels import send_to_global_channels, send_to_user_channels
 from app.utils import get_logger
 from app.models.config import MaaUserConfig
 
@@ -49,23 +49,8 @@ async def push_notification(
         )
         template = Config.notify_env.get_template("MAA_result.html")
         message_html = template.render(message)
-        serverchan_message = message_text.replace("\n", "\n\n")
-        if Config.get("Notify", "IfSendMail"):
-            await Notify.send_mail(
-                "网页", title, message_html, Config.get("Notify", "ToAddress")
-            )
-        if Config.get("Notify", "IfServerChan"):
-            await Notify.ServerChanPush(
-                title,
-                f"{serverchan_message}\nAUTO-MAS 敬上",
-                Config.get("Notify", "ServerChanKey"),
-            )
-        for webhook in Config.Notify_CustomWebhooks.values():
-            await Notify.WebhookPush(title, f"{message_text}\nAUTO-MAS 敬上", webhook)
 
-        # 发送Koishi通知
-        if Config.get("Notify", "IfKoishiSupport"):
-            await Notify.send_koishi(f"{title}\n\n{message_text}\nAUTO-MAS 敬上")
+        await send_to_global_channels(title, message_text, message_html, sig_sep="\n")
     elif mode == "统计信息":
         formatted = []
         if "drop_statistics" in message:
@@ -90,101 +75,34 @@ async def push_notification(
         )
         template = Config.notify_env.get_template("MAA_statistics.html")
         message_html = template.render(message)
-        serverchan_message = message_text.replace("\n", "\n\n")
-        if Config.get("Notify", "IfSendStatistic"):
-            if Config.get("Notify", "IfSendMail"):
-                await Notify.send_mail(
-                    "网页", title, message_html, Config.get("Notify", "ToAddress")
-                )
-            if Config.get("Notify", "IfServerChan"):
-                await Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_message}\nAUTO-MAS 敬上",
-                    Config.get("Notify", "ServerChanKey"),
-                )
-            for webhook in Config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(
-                    title, f"{message_text}\nAUTO-MAS 敬上", webhook
-                )
 
-            # 发送Koishi通知
-            if Config.get("Notify", "IfKoishiSupport"):
-                await Notify.send_koishi(f"{title}\n\n{message_text}\nAUTO-MAS 敬上")
+        if Config.get("Notify", "IfSendStatistic"):
+            await send_to_global_channels(
+                title, message_text, message_html, sig_sep="\n"
+            )
         if (
             user_config is not None
             and user_config.get("Notify", "Enabled")
             and user_config.get("Notify", "IfSendStatistic")
         ):
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
-                    await Notify.send_mail(
-                        "网页",
-                        title,
-                        message_html,
-                        user_config.get("Notify", "ToAddress"),
-                    )
-                else:
-                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
-                    await Notify.ServerChanPush(
-                        title,
-                        f"{serverchan_message}\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
-                    )
-                else:
-                    logger.warning(
-                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
-                    )
-            for webhook in user_config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(
-                    title, f"{message_text}\nAUTO-MAS 敬上", webhook
-                )
+            await send_to_user_channels(
+                title, message_text, message_html, user_config, sig_sep="\n"
+            )
     elif mode == "公招六星":
         template = Config.notify_env.get_template("MAA_six_star.html")
         message_html = template.render(message)
-        if Config.get("Notify", "IfSendSixStar"):
-            if Config.get("Notify", "IfSendMail"):
-                await Notify.send_mail(
-                    "网页", title, message_html, Config.get("Notify", "ToAddress")
-                )
-            if Config.get("Notify", "IfServerChan"):
-                await Notify.ServerChanPush(
-                    title,
-                    "好羡慕~\nAUTO-MAS 敬上",
-                    Config.get("Notify", "ServerChanKey"),
-                )
-            for webhook in Config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
+        # 六星通知的正文是固定文案, 不由 message 拼出
+        message_text = "好羡慕~"
 
-            # 发送Koishi通知
-            if Config.get("Notify", "IfKoishiSupport"):
-                await Notify.send_koishi(f"{title}\n\n好羡慕~\nAUTO-MAS 敬上")
+        if Config.get("Notify", "IfSendSixStar"):
+            await send_to_global_channels(
+                title, message_text, message_html, sig_sep="\n"
+            )
         if (
             user_config is not None
             and user_config.get("Notify", "Enabled")
             and user_config.get("Notify", "IfSendSixStar")
         ):
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
-                    await Notify.send_mail(
-                        "网页",
-                        title,
-                        message_html,
-                        user_config.get("Notify", "ToAddress"),
-                    )
-                else:
-                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
-                    await Notify.ServerChanPush(
-                        title,
-                        "好羡慕~\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
-                    )
-                else:
-                    logger.warning(
-                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
-                    )
-            for webhook in user_config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
+            await send_to_user_channels(
+                title, message_text, message_html, user_config, sig_sep="\n"
+            )
