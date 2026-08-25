@@ -26,7 +26,8 @@ MAS 内置冻结副本：MAS 只写订阅清单并开启「命令行运行前自
 配置组 ``MAS切换账号``，供 ``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
 
 - 订阅清单: ``{RootPath}/User/Subscriptions/bettergi-scripts-list.json`` = 路径数组
-- 自动更新: ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 两个开关
+- 自动更新: ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 三个开关（两个自动更新开关 +
+  ``selectedChannelName = "CNB"`` 固定仓库渠道为 BetterGI 官方 cnb.cool 镜像，无需境外源）
 - 检出目标: ``{RootPath}/User/JsScript/SwitchAccountMultipleMode``
 
 账号密码来源：MAS 用户配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
@@ -164,11 +165,15 @@ def _ensure_script_subscription(root_path: Path) -> Path:
 
 
 def _ensure_auto_update_on_cli(root_path: Path) -> Path:
-    """开启 BetterGI 命令行运行前自动更新，返回主配置文件路径。
+    """开启 BetterGI 命令行运行前自动更新并把脚本仓库渠道固定为 CNB，返回主配置文件路径。
 
     ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 置：
     - ``autoUpdateBeforeCommandLineRun = true``：命令行启动（切号/一条龙）先更新仓库脚本再执行
     - ``autoUpdateSubscribedScripts = true``：普通启动时也后台更新已订阅脚本（兜底）
+    - ``selectedChannelName = "CNB"``：脚本仓库固定从 BetterGI 官方 cnb.cool 镜像
+      ``https://cnb.cool/bettergi/bettergi-scripts-list`` 拉取/更新。CNB 本就是
+      ScriptRepoUpdater 的默认渠道，但用户若在 BGI GUI 里选了 GitHub 会盖过默认回境外源，
+      这里显式钉死，避免切号脚本又从 GitHub 下载。
     """
     config_path = root_path / _BGI_CONFIG_REL_PATH
     config = read_file(config_path)
@@ -181,10 +186,13 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
         script_cfg = legacy if isinstance(legacy, dict) else {}
     script_cfg["autoUpdateBeforeCommandLineRun"] = True
     script_cfg["autoUpdateSubscribedScripts"] = True
+    script_cfg["selectedChannelName"] = "CNB"
     config.pop("ScriptConfig", None)
     config["scriptConfig"] = script_cfg
     write_file(config_path, config)
-    logger.info(f"已开启 BetterGI 脚本仓库自动更新开关: {config_path}")
+    logger.info(
+        f"已开启 BetterGI 脚本仓库自动更新并把渠道固定为 CNB(cnb.cool): {config_path}"
+    )
     return config_path
 
 
