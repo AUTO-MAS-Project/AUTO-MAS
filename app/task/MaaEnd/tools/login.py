@@ -165,6 +165,7 @@ def _find_template(frame: np.ndarray, name: str) -> Box | None:
     search = frame[top:bottom, left:right]
     template = _load_template(path)
     if template is None:
+        logger.warning(f"模板图片加载失败: {path}")
         return None
     if search.shape[0] < template.shape[0] or search.shape[1] < template.shape[1]:
         return None
@@ -172,7 +173,9 @@ def _find_template(frame: np.ndarray, name: str) -> Box | None:
     result = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
     _, score, _, location = cv2.minMaxLoc(result)
     if score < threshold:
+        logger.debug(f"模板 {name} 未命中: 得分 {score:.3f} < 阈值 {threshold}")
         return None
+    logger.debug(f"模板 {name} 命中: 得分 {score:.3f}")
 
     x = left + location[0]
     y = top + location[1]
@@ -195,6 +198,14 @@ def _read_text(frame: np.ndarray, roi: Box) -> list[OCRItem]:
         )
         items.append(("".join(str(text).split()), box))
     return items
+
+
+def _format_ocr_items(items: list[OCRItem]) -> str:
+    """将 OCR 结果压缩成单行日志，便于实机排查识别问题。"""
+
+    if not items:
+        return "无识别结果"
+    return " | ".join(f"{text}@{box[0]},{box[1]}" for text, box in items)
 
 
 def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
@@ -223,7 +234,9 @@ def _press_escape(hwnd: int) -> None:
 
 
 def _login_form_visible(frame: np.ndarray) -> bool:
-    texts = [text for text, _ in _read_text(frame, _LOGIN_FORM_ROI)]
+    items = _read_text(frame, _LOGIN_FORM_ROI)
+    logger.debug(f"登录表单检测: {_format_ocr_items(items)}")
+    texts = [text for text, _ in items]
     return "登录" in texts and any(
         "最近" in text or "其他账号登录" in text for text in texts
     )
@@ -285,58 +298,80 @@ async def _open_login_form(hwnd: int) -> None:
     raise RuntimeError("打开终末地登录表单超时")
 
 
+def _match_account(
+    items: list[OCRItem], account_id: str, *, allow_prefix: bool = False
+) -> Box | None:
+    """按后四位匹配账号。
+
+    Args:
+        items: 单帧 OCR 结果。
+        account_id: 完整账号。
+        allow_prefix: 后四位未识别时是否回退前三位匹配。仅在多行并存的下拉列表中
+            开启，此时唯一命中才可信；折叠表单只显示一个账号，回退会把号段相同的
+            错误账号误判为目标。
+
+    Returns:
+        命中的文本框，未命中时为 None。
+    """
+
+    suffix = account_id[-4:]
+    target = next((box for text, box in items if suffix in text), None)
+    if target is not None:
+        return target
+    # 账号过短时前三位与后四位重叠，回退没有意义
+    if not allow_prefix or len(account_id) < 7:
+        return None
+
+    # 前三位是号段，容易命中同号段的其他账号，多处命中时宁可放弃本帧
+    prefix = account_id[:3]
+    candidates = [box for text, box in items if prefix in text]
+    if len(candidates) == 1:
+        logger.warning(f"后四位未识别，回退前三位匹配账号: {prefix}***")
+        return candidates[0]
+    if len(candidates) > 1:
+        logger.warning(
+            f"后四位未识别且前三位 {prefix} 命中 {len(candidates)} 处，跳过本帧"
+        )
+    return None
+
+
 async def _submit_login_form(hwnd: int, account_id: str) -> None:
     """Select a saved account when needed, then submit the login form."""
 
     masked_id = f"***{account_id[-4:]}"
+    # 非空表示下拉框已展开，账号列表从该纵坐标开始
     account_list_top: int | None = None
-    selector_expanded = False
+    # 已点击目标账号，等待下拉框收起后再提交
+    account_clicked = False
 
-    async for frame in _poll_frames(hwnd, 30, activate=False):
-        # 下拉框展开后，从“最近”底部扫描到屏幕底部，避免固定 ROI 截断后面的账号。
-        recent: Box | None = None
-        if selector_expanded and account_list_top is not None:
+    async for frame in _poll_frames(hwnd, 90, activate=False):
+        if account_list_top is not None:
+            # 展开态从“最近”底部扫描到画面底部，避免固定 ROI 截断靠后的账号
             ocr_items = await asyncio.to_thread(
                 _read_text,
                 frame,
                 (0, account_list_top, _FRAME_WIDTH, _FRAME_HEIGHT),
             )
-        else:
-            ocr_items = await asyncio.to_thread(
-                _read_text, frame, _LOGIN_FORM_ROI
-            )
-            recent = next(
-                (box for text, box in ocr_items if "最近" in text), None
-            )
-            if recent is not None:
-                account_list_top = recent[1] + recent[3]
+            logger.debug(f"下拉框识别结果: {_format_ocr_items(ocr_items)}")
+            target = _match_account(ocr_items, account_id, allow_prefix=True)
+            if target is None:
+                # 点击后目标从列表消失即下拉框已收起，回到表单确认选中结果
+                if account_clicked:
+                    account_list_top = None
+                continue
 
-        target = next(
-            (
-                box
-                for text, box in ocr_items
-                if account_id[-4:] in text
-                and (
-                    not selector_expanded
-                    or (
-                        account_list_top is not None
-                        and box[1] >= account_list_top
-                    )
-                )
-            ),
-            None,
-        )
+            logger.info(f"在登录下拉框中选择账号: {masked_id}")
+            await asyncio.to_thread(_click_box, hwnd, target, activate=False)
+            account_clicked = True
+            continue
+
+        ocr_items = await asyncio.to_thread(_read_text, frame, _LOGIN_FORM_ROI)
+        logger.debug(f"登录表单识别结果: {_format_ocr_items(ocr_items)}")
+        target = _match_account(ocr_items, account_id)
         login_button = next(
             (box for text, box in ocr_items if text == "登录"), None
         )
-
-        if selector_expanded and target is not None:
-            logger.info(f"在登录下拉框中选择账号: {masked_id}")
-            await asyncio.to_thread(_click_box, hwnd, target, activate=False)
-            selector_expanded = False
-            continue
-
-        if not selector_expanded and target is not None and login_button is not None:
+        if target is not None and login_button is not None:
             logger.info(f"登录表单已选中目标账号: {masked_id}")
             await asyncio.to_thread(
                 _click_box, hwnd, login_button, activate=False
@@ -344,12 +379,13 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
             logger.info("已点击终末地登录按钮")
             return
 
-        if not selector_expanded:
-            if recent is None:
-                continue
-            logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
-            await asyncio.to_thread(_click_box, hwnd, recent, activate=False)
-            selector_expanded = True
+        recent = next((box for text, box in ocr_items if "最近" in text), None)
+        if recent is None:
+            continue
+        logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
+        await asyncio.to_thread(_click_box, hwnd, recent, activate=False)
+        account_list_top = recent[1] + recent[3]
+        account_clicked = False
 
     raise RuntimeError(f"登录表单中未找到目标账号: {masked_id}")
 
