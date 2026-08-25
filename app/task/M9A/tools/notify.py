@@ -19,11 +19,10 @@
 #   Contact: DLmaster_361@163.com
 
 import re
-from collections.abc import Awaitable
 from pathlib import Path
 
 from app.core import Config
-from app.services import Notify
+from app.tools.notify_channels import send_to_global_channels, send_to_user_channels
 from app.utils import get_logger
 from app.models.config import M9AUserConfig
 
@@ -289,109 +288,6 @@ class M9ALogAnalyzer:
         return "\n".join(lines)
 
 
-# ==================== 通知推送辅助函数 ====================
-
-
-async def _safe_send_channel(channel_name: str, send_coro: Awaitable[None]) -> None:
-    """单个通知渠道失败时不影响其他渠道。"""
-    try:
-        await send_coro
-    except Exception as e:
-        logger.warning(f"{channel_name} 通知发送失败: {e}")
-
-
-async def _send_to_all_global_channels(
-    title: str, message_text: str, message_html: str
-) -> None:
-    """向所有启用的全局通知渠道推送消息
-
-    Args:
-        title: 通知标题
-        message_text: 纯文本格式内容
-        message_html: HTML 格式内容
-    """
-    serverchan_message = message_text.replace("\n", "\n\n")
-
-    if Config.get("Notify", "IfSendMail"):
-        await _safe_send_channel(
-            "全局邮件",
-            Notify.send_mail(
-                "网页", title, message_html, Config.get("Notify", "ToAddress")
-            ),
-        )
-
-    if Config.get("Notify", "IfServerChan"):
-        await _safe_send_channel(
-            "全局 ServerChan",
-            Notify.ServerChanPush(
-                title,
-                f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                Config.get("Notify", "ServerChanKey"),
-            ),
-        )
-
-    custom_webhooks = Config.Notify_CustomWebhooks
-    for webhook in custom_webhooks.values():
-        await _safe_send_channel(
-            "全局自定义 Webhook",
-            Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook),
-        )
-
-    if Config.get("Notify", "IfKoishiSupport"):
-        await _safe_send_channel(
-            "全局 Koishi",
-            Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"),
-        )
-
-
-async def _send_to_user_channels(
-    title: str, message_text: str, message_html: str,
-    user_config: M9AUserConfig
-) -> None:
-    """向用户配置的独立通知渠道推送消息
-
-    与全局渠道不同，这里额外检查用户的 Enabled 和 IfSendStatistic 配置。
-
-    Args:
-        title: 通知标题
-        message_text: 纯文本格式内容
-        message_html: HTML 格式内容
-        user_config: 用户配置对象
-    """
-    serverchan_message = message_text.replace("\n", "\n\n")
-
-    if user_config.get("Notify", "IfSendMail"):
-        if not user_config.get("Notify", "ToAddress"):
-            logger.warning("用户邮箱地址为空，无法发送邮件通知")
-        else:
-            await _safe_send_channel(
-                "用户邮件",
-                Notify.send_mail(
-                    "网页", title, message_html, user_config.get("Notify", "ToAddress")
-                ),
-            )
-
-    if user_config.get("Notify", "IfServerChan"):
-        if not user_config.get("Notify", "ServerChanKey"):
-            logger.warning("用户 ServerChan 密钥为空，无法发送通知")
-        else:
-            await _safe_send_channel(
-                "用户 ServerChan",
-                Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                    user_config.get("Notify", "ServerChanKey"),
-                ),
-            )
-
-    custom_webhooks = user_config.Notify_CustomWebhooks
-    for webhook in custom_webhooks.values():
-        await _safe_send_channel(
-            "用户自定义 Webhook",
-            Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook),
-        )
-
-
 # ==================== 对外接口 ====================
 
 
@@ -429,7 +325,9 @@ async def push_version_update(title: str, message: dict) -> None:
     # 提取纯文本消息（result 字段作为正文，不附加任务统计前缀）
     message_text = message["result"]
     message_html = Config.notify_env.get_template("general_result.html").render(message)
-    await _send_to_all_global_channels(title, message_text, message_html)
+    await send_to_global_channels(
+        title, message_text, message_html, isolate_failures=True
+    )
 
 
 async def _push_proxy_result(title: str, message: dict) -> None:
@@ -450,7 +348,9 @@ async def _push_proxy_result(title: str, message: dict) -> None:
     template = Config.notify_env.get_template("general_result.html")
     message_html = template.render(message)
 
-    await _send_to_all_global_channels(title, message_text, message_html)
+    await send_to_global_channels(
+        title, message_text, message_html, isolate_failures=True
+    )
 
 
 async def _push_statistics(
@@ -470,11 +370,15 @@ async def _push_statistics(
     message_html = template.render(message)
 
     if Config.get("Notify", "IfSendStatistic"):
-        await _send_to_all_global_channels(title, message_text, message_html)
+        await send_to_global_channels(
+            title, message_text, message_html, isolate_failures=True
+        )
 
     if (
         user_config is not None
         and user_config.get("Notify", "Enabled")
         and user_config.get("Notify", "IfSendStatistic")
     ):
-        await _send_to_user_channels(title, message_text, message_html, user_config)
+        await send_to_user_channels(
+            title, message_text, message_html, user_config, isolate_failures=True
+        )
