@@ -189,9 +189,7 @@ def write_wuthering_waves_local_version(install_dir: Path, version: str) -> None
     payload["version"] = version
     payload["state"] = ""
     payload["isPreDownload"] = False
-    state_path.write_text(
-        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-    )
+    state_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -204,8 +202,13 @@ def _version_key(version: str) -> tuple[int, ...]:
 
 
 def _is_newer_version(candidate: str, current: str) -> bool:
-    if not candidate or not current:
-        return False
+    """candidate 是否比 current 新。
+
+    不对空值做特判：`_version_key("")` 为空元组，于是本地版本未知时
+    任何有效版本都判为更新，方向是安全的。若在此静默返回 False，
+    未来新增调用点就会把"查不到版本"误当成"已是最新"。
+    """
+
     return _version_key(candidate) > _version_key(current)
 
 

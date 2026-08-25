@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 
 from app.services.wuthering_waves import (
     WutheringWavesLocalState,
+    _is_newer_version,
     _parse_update_payload,
     read_wuthering_waves_local_state,
 )
@@ -66,6 +67,23 @@ class LocalStateTest(unittest.TestCase):
                 version="3.7.0", state="", is_predownload=True
             ).is_idle
         )
+
+
+class VersionCompareTest(unittest.TestCase):
+    def test_treats_unknown_local_version_as_needing_update(self) -> None:
+        # 方向必须是安全的：查不到本地版本不能被当成"已是最新"
+        self.assertTrue(_is_newer_version("3.7.0", ""))
+
+    def test_unknown_candidate_is_not_newer(self) -> None:
+        self.assertFalse(_is_newer_version("", "3.6.0"))
+
+    def test_trailing_zeros_are_equivalent(self) -> None:
+        self.assertFalse(_is_newer_version("3.6", "3.6.0"))
+        self.assertFalse(_is_newer_version("3.6.0", "3.6"))
+
+    def test_compares_numerically_not_lexically(self) -> None:
+        self.assertTrue(_is_newer_version("3.10.0", "3.9.0"))
+        self.assertFalse(_is_newer_version("3.9.0", "3.10.0"))
 
 
 class ParseUpdatePayloadTest(unittest.TestCase):
