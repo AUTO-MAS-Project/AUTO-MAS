@@ -110,6 +110,45 @@ def _one_dragon_sequence_done(log: str) -> bool:
     return _BGI_SUCCESS_LOG in log
 
 
+# 脚本仓库更新/下载进展消息（去重展示用）。BGI 把它打在不带方括号前缀的消息行。
+# 这些行若能转述给用户，切号/一条龙启动时「正在下载脚本」就不会被误认为卡死。
+_REPO_PROGRESS_CATEGORY = (
+    "浅克隆仓库",
+    "拉取对象",
+    "开始静默更新脚本仓库",
+    "自动更新订阅脚本完成",
+    "本地仓库已是最新",
+)
+
+
+def _latest_repo_progress(log: str) -> str | None:
+    """从累计日志中提取最近一条值得转述的脚本仓库下载/更新进展行。
+
+    Serilog 每行消息在带 ``[HH:mm:ss]`` 前缀的头行之后另起一行，这里只匹配消息行。
+    按时间从后往前找，命中即返回相干文案；无进展（或不在下载/更新阶段）返回 None。
+    """
+    for ln in reversed(log.splitlines()):
+        ln = ln.strip()
+        if not ln or ln.startswith("["):
+            continue
+        if "浅克隆仓库" in ln:
+            return "正在从脚本仓库下载脚本（首次克隆/仓库冷启动，可能耗时较长，请耐心等待）..."
+        if "拉取对象" in ln:
+            return "正在向脚本仓库拉取 git 对象..."
+        if "开始静默更新脚本仓库" in ln:
+            return "正在静默更新脚本仓库..."
+        if "自动更新订阅脚本完成" in ln:
+            return f"脚本仓库更新完成: {ln}"
+        if "本地仓库已是最新" in ln:
+            return "脚本仓库已是最新，无需下载"
+    return None
+
+
+def _is_switch_script_updated(log: str) -> bool:
+    """切号脚本是否已在本次日志中被检出。"""
+    return '更新脚本成功: "js/SwitchAccountMultipleMode"' in log
+
+
 class AutoProxyTask(TaskExecuteBase):
     """BetterGI 自动代理：拼 `startOneDragon <configName>` 启动并监控日志"""
 
@@ -467,6 +506,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         switch_success = asyncio.Event()
         switch_result = {"success": False, "started": False}
+        # 已转述过到调度台的仓库进展（每个文案只推一次，避免刷屏）
+        repo_progress_reported: set[str] = set()
 
         # 单组 --startGroups 的成功/失败判定取自 BetterGI 配置组日志：
         #   成功: 配置组 "MAS切换账号" 执行结束
@@ -484,6 +525,19 @@ class AutoProxyTask(TaskExecuteBase):
             log_content: list[str], latest_time: datetime
         ) -> None:
             log = "".join(log_content)
+
+            # 转述 BGI 脚本仓库的下载/更新进展，避免下载阶段长时间无动静被误认为卡死
+            if prog := _latest_repo_progress(log):
+                if prog not in repo_progress_reported:
+                    repo_progress_reported.add(prog)
+                    await self._push_dispatch_log(prog)
+            if _is_switch_script_updated(log):
+                if "切换脚本已检出" not in repo_progress_reported:
+                    repo_progress_reported.add("切换脚本已检出")
+                    await self._push_dispatch_log(
+                        "切号脚本已从仓库检出: SwitchAccountMultipleMode"
+                    )
+
             if switch_group_done in log:
                 switch_result["success"] = True
                 switch_success.set()

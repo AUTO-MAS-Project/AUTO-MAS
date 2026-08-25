@@ -6,7 +6,11 @@
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
 
-from app.task.BetterGI.AutoProxy import _one_dragon_sequence_done
+from app.task.BetterGI.AutoProxy import (
+    _is_switch_script_updated,
+    _latest_repo_progress,
+    _one_dragon_sequence_done,
+)
 
 
 def _progress(x: int, n: int) -> str:
@@ -59,3 +63,47 @@ def test_legacy_no_progress_line_fallback(tmp_path) -> None:
     """旧版 BGI 无进度行时，退化为「任务结束」单判（兼容单任务一条龙）。"""
     log = "任意日志\n→ 任务结束"
     assert _one_dragon_sequence_done(log) is True
+
+
+def _progress_msg(*lines: str) -> str:
+    """拼一段含 Serilog 头行 + 消息行的仓库进展日志。"""
+    return "".join(f"[08:00:0{i}] 00:00:00.000\n{l.strip()}\n" for i, l in enumerate(lines))
+
+
+def test_repo_progress_reports_download(tmp_path) -> None:
+    """首次克隆/冷启动阶段应转述「正在下载」。"""
+    log = _progress_msg("浅克隆仓库: https://cnb.cool/bettergi/bettergi-scripts-list")
+    assert "正在从脚本仓库下载脚本" in _latest_repo_progress(log)
+
+
+def test_repo_progress_reports_up_to_date(tmp_path) -> None:
+    """仓库已是最新时给出明确文案。"""
+    log = _progress_msg("本地仓库已是最新")
+    assert _latest_repo_progress(log) == "脚本仓库已是最新，无需下载"
+
+
+def test_repo_progress_takes_latest_line(tmp_path) -> None:
+    """多段进展累计时取最近一条（逆序匹配）。"""
+    log = _progress_msg(
+        "浅克隆仓库: x",
+        "自动更新订阅脚本完成: 成功 31 个, 失败 0 个",
+    )
+    assert _latest_repo_progress(log).startswith("脚本仓库更新完成")
+    assert "成功 31 个" in _latest_repo_progress(log)
+
+
+def test_repo_progress_ignores_head_lines(tmp_path) -> None:
+    """无进展（仅时间戳头行）返回 None。"""
+    assert _latest_repo_progress("[08:00:00] INFO") is None
+
+
+def test_repo_progress_skips_bracketed_lines(tmp_path) -> None:
+    """带方括号前缀的行不算进展消息。"""
+    log = _progress_msg("[08:00:00][Info] 浅克隆仓库: x")
+    assert _latest_repo_progress(log) is None
+
+
+def test_is_switch_script_updated(tmp_path) -> None:
+    """检出切号脚本后判为已更新。"""
+    assert _is_switch_script_updated('更新脚本成功: "js/SwitchAccountMultipleMode"') is True
+    assert _is_switch_script_updated("浅克隆仓库: x") is False
