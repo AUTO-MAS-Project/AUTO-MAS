@@ -1,6 +1,6 @@
 ---
 name: mas-skills
-description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters, plan schedules, or game community sign-in.
+description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, M9A, General, ok-script family such as Okww and OkNte, multi-engine HSR), plan schedules, or game community sign-in.
 ---
 
 # MAS Skills
@@ -73,7 +73,7 @@ Use `mas-function-design`.
 Use `mas-api-contract`.
 8. Task mentions model structure, typing/defaults/constraints, migration of model fields:
 Use `mas-data-model`.
-9. Task mentions adding a new script, script-specific adaptation, or task lifecycle:
+9. Task mentions adding a new script, script-specific adaptation, task lifecycle, or a specific adapter such as MAA / SRC / MaaEnd / M9A / General / Okww / OkNte（异环）/ HSR:
 Use `mas-script-specialized-adapter` first, then combine `mas-module-boundary`, `mas-data-model`, `mas-function-design`, and `mas-api-contract` as needed.
 10. Task mentions commit messages, docstrings, config comments, or project contribution style:
 Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.
