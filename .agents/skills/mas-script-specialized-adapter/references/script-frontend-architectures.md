@@ -4,7 +4,7 @@
 
 ---
 
-## 四类前端架构（与现有类型对应）
+## 前端架构线（与现有类型对应）
 
 | 架构代号 | 典型外部生态 / 心智模型 | 本仓 `ScriptType` 参照 | 前端承接特点 |
 |----------|-------------------------|------------------------|----------------|
@@ -14,14 +14,17 @@
 | **SRC 线** | Alas / SRC 系（如 [StarRailCopilot](https://github.com/LmeSzinc/StarRailCopilot)：下一代 Alas、`tasks`/`webapp`/`config` 形态）；本仓对接 **SRC.exe 系**可执行体 | `SRC` | `SRCScriptEdit` 单文件大表单；`SRCUserEdit` + Section；详见 [examples-src.md](./examples-src.md) |
 | **General** | 非专项：通用路径/进程/日志 | `General` | `GeneralScriptEdit` / `GeneralUserEdit`；作兜底或渐进专项化的起点 |
 | **ok-script 线** | [ok-script](https://github.com/ok-oldking/ok-wuthering-waves) 家族：Python + 自带 GUI，按子项目分别适配 | `Okww`、`OkNte` | `AutoProxy` 按子项目 CLI/文件契约实现；`ScriptConfig` 是否启用取决于子项目原生配置入口；见 [examples-okww.md](./examples-okww.md) |
+| **多引擎编排线** | **一个 `ScriptType` 编排两个独立上游**：March7th Assistant（M7A，本仓展示名「三月七助手」）+ StarRailAssistant（SRA），按任务模块逐个分配引擎 | `HSR` | `HSRUserEdit` 按能力快照**动态渲染**托管字段；**无** ScriptConfig 遮罩；直控走加密快照导入；见 [examples-hsr.md](./examples-hsr.md) |
 
 > **命名说明**：「MXU 线」「MFAA 线」指**本仓已落地的对接形态**（MaaEnd / M9A）；「ok-script 线」是一个脚本家族分类，不等于单一项目。当前至少区分 **Okww**（鸣潮）与 **OkNte**（异环）；两者只能共享家族级原则，启动参数、配置文件和用户入口必须按子项目分别确认。
+>
+> **多引擎编排线是唯一的「一对多」线**：其余各线都是一个 `ScriptType` 对一个外部程序，HSR 是一个 `ScriptType` 同时接管 M7A 与 SRA 两份原生配置。判断新专项时，只有当上游确实需要多个可互换引擎协同完成同一批任务模块时才归入此线；单一上游即使功能复杂也不属于这条线。
 
 ---
 
 ## 专项适配之间的**相同点**（不论哪条线）
 
-1. **入口一致**：`ScriptType` → `Scripts.vue` / `ScriptTable.vue` → `router` 片段（`maa` / `src` / `maaend` / `m9a` / `general`）。
+1. **入口一致**：`ScriptType` → `Scripts.vue` / `ScriptTable.vue` → `router` 片段（`maa` / `src` / `maaend` / `m9a` / `okww` / `oknte` / `hsr` / `general`）。片段字面量集中在 `views/scripts/components/scriptCreateFlow.ts` 的 `EDIT_SEGMENT_BY_TYPE`。
 2. **表面骨架一致**：`EditView/Script/XxxScriptEdit.vue` + `EditView/User/XxxUserEdit.vue` +（按需）`views/XxxUserEdit/*Section.vue`。
 3. **类型与 API 扩展一致**：`types/script.ts`、`useScriptApi.ts`、`SCRIPT_BOOK` / `USER_BOOK`、`task_manager` 分支；**禁止手改** OpenAPI 生成模型目录。
 4. **一次打通**：Hub + 路由 + 编辑页与后端注册、任务模块同 PR，避免「只有 task 没有 EditView」。
@@ -30,14 +33,15 @@
 
 ## 专项适配之间的**不同点**（按架构线对比）
 
-| 维度 | MAA 线 | SRC 线 | MXU 线（MaaEnd） | MFAA 线（M9A） |
-|------|--------|--------|-----------------|----------------|
-| 脚本编辑页 | 中等复杂度 | **单文件大表单**为主 | 中等 | 相对较薄 |
-| 用户页 ScriptConfig 遮罩 | **有**（MAA 配置会话） | 通常无 | **有**（MaaEnd 配置会话） | **通常无** |
-| 计划表 | `MaaPlanTable` | 无 | `MaaEndPlanTable` + `MaaEndPlanConfig` | 无 |
-| 任务/队列 UI | 关卡、理智等 Section | Stage 等 | `TaskConfigSection`、Skyland 等 | **任务队列 JSON**、`TaskQueueSection`、draggable |
-| 后端侧重 | MAA 进程与实例 | SRC.exe / Alas 任务栈、notify、模拟器与 Stage | `runtime_bridge`、MXU 配置路径、切号 | 管线、实例目录、队列消费 |
-| 参照 PR 心智 | MAA 历史 PR | #727aafb SRC | #133、#152 MaaEnd | #154 M9A |
+| 维度 | MAA 线 | SRC 线 | MXU 线（MaaEnd） | MFAA 线（M9A） | 多引擎线（HSR） |
+|------|--------|--------|-----------------|----------------|-----------------|
+| 外部程序数 | 1 | 1 | 1 | 1 | **2（M7A + SRA）** |
+| 脚本编辑页 | 中等复杂度 | **单文件大表单**为主 | 中等 | 相对较薄 | 双引擎路径 + `TaskMapping` 分配 |
+| 用户页 ScriptConfig 遮罩 | **有**（MAA 配置会话） | 通常无 | **有**（MaaEnd 配置会话） | **通常无** | **无**（无 `ScriptConfig.py`） |
+| 计划表 | `MaaPlanTable` | 无 | `MaaEndPlanTable` + `MaaEndPlanConfig` | 无 | 无 |
+| 任务/队列 UI | 关卡、理智等 Section | Stage 等 | `TaskConfigSection`、Skyland 等 | **任务队列 JSON**、`TaskQueueSection`、draggable | `ManagedTaskSection` + **能力驱动的 `DynamicManagedFields`** |
+| 后端侧重 | MAA 进程与实例 | SRC.exe / Alas 任务栈、notify、模拟器与 Stage | `runtime_bridge`、MXU 配置路径、切号 | 管线、实例目录、队列消费 | 模块→引擎分配、双份原生配置备份恢复、路径锁 |
+| 参照 PR 心智 | MAA 历史 PR | #727aafb SRC | #133、#152 MaaEnd | #154 M9A | `app/task/HSR/` 现状 + `tests/task/test_hsr_direct_control_result.py` |
 
 ---
 
@@ -60,6 +64,7 @@
 | **SRC 线** | 依 `SRC.exe` 与 Alas/SRC 文档（`module`/`config` 等）。 | 多为 **大表单 + Section** 写映射配置；按需是否子进程。参见 [examples-src.md](./examples-src.md)。 |
 | **General** | 先最小 `open_process` + 日志；再按上游补 argv。 | 通用路径与简单字段；专项化后再分叉。 |
 | **ok-script 线（按子项目）** | 以子项目 README/发行版实际 CLI 为准；Okww 当前使用 **`-t N -e`** 自动跑任务并退出，OkNte 不得套用 Okww 参数。 | 配置入口按子项目原生 GUI/文件契约确定；Okww 使用无参本体 GUI 与脚本/用户/直控配置来源，详见 [examples-okww.md](./examples-okww.md)。 |
+| **多引擎线（`HSR`）** | **按模块分别驱动两个引擎**：先由 `get_assigned_script()` 决定该模块走 M7A 还是 SRA，再分别调用对应引擎；切号统一走 SRA StartGame。 | **不**使用 ScriptConfig 会话。托管模式由后端下发 `HSRManagedField` 字段定义、前端动态渲染并写回 `Managed.Options`；直控模式导入**加密的原生配置快照**。任务前后备份并原子恢复 M7A/SRA 真实配置。详见 [examples-hsr.md](./examples-hsr.md)。 |
 
 > **建议实施顺序（避免污染通用脚本）**：先用 `General` 验证对接可行 → 再新增专项 `ScriptType` 承载默认值与 UI → 最后删除 `General` 页中的临时预设入口。
 
@@ -82,6 +87,7 @@
 | 对外说明为 **MAA** 助手、关卡/理智/方舟生态 | **MAA 线** | 仍以用户最终说明为准 |
 | 仅脚本/自动化、`config` 简单、无上述专项 GUI | **General** 或后续再专项化 | |
 | **`from ok import OK`**、`ok-script`、`ok-ww.exe`、README 含 **`-t` / `-e`**（如 [OK-WW](https://github.com/ok-oldking/ok-wuthering-waves)） | **ok-script 线** | 非 Maa/SRC/MXU/MFAA；见 [examples-okww.md](./examples-okww.md) |
+| 同一游戏存在**多个成熟且功能重叠**的上游脚本，用户实际会按任务挑用不同脚本 | **多引擎编排线** | 先确认「按模块换引擎」是真实用户需求而非臆想；单一上游不要归入此线。见 [examples-hsr.md](./examples-hsr.md) |
 
 可配合：`package.json` 脚本名、是否有 `src-tauri`、`go`/`python` 为主的游戏管线目录、Release 资产中的 exe 名称。读不到或私有不开放时，走口述问诊。
 
@@ -102,6 +108,7 @@
    - [ ] **MXU 线**（[MaaEnd](https://github.com/MaaEnd/MaaEnd) + [MXU](https://github.com/MistEO/MXU)）  
    - [ ] **MFAA 线**（[M9A](https://github.com/MAA1999/M9A) + [MFAA](https://github.com/trler/MFAA)）  
    - [ ] **ok-script 线**（请明确 Okww、OkNte 或其他子项目）
+   - [ ] **多引擎编排线**（同一游戏需要按任务模块在多个上游脚本间分配，如 `HSR`）
    - [ ] **仅 General 起步**  
    - [ ] **混合**（请说明）
 
@@ -122,5 +129,6 @@
 | General | `GeneralScriptEdit` / `GeneralUserEdit`，再逐项专项化 |
 | ok-script 线（Okww） | [examples-okww.md](./examples-okww.md)、`OkwwScriptEdit.vue`、`OkwwUserEdit.vue`、`app/task/Okww/` |
 | ok-script 线（OkNte） | `OkNteScriptEdit.vue`、`OkNteUserEdit.vue`、`app/task/OkNte/`；不得直接复用 Okww 的启动器、配置目录或任务语义 |
+| 多引擎编排线（HSR） | [examples-hsr.md](./examples-hsr.md)、`app/task/HSR/task_mapping.py`、`HSRUserEdit.vue` + `DynamicManagedFields.vue`、`useHSRPluginApi.ts` |
 
 更多表面对照见 [examples-frontend-surfaces.md](./examples-frontend-surfaces.md)。
