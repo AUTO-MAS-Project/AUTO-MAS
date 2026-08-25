@@ -2,11 +2,12 @@
 name: mas-script-specialized-adapter
 description: >-
   Review, add, or refactor AUTO-MAS specialized script adapters by upstream
-  architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, and
-  ok-script adapters such as Okww. Use when lowering user setup friction,
-  deciding whether MAS should fill a script capability gap, or changing
-  ScriptType registration, task lifecycle, config ownership, ScriptConfig
-  sessions, Electron integration, frontend edit surfaces, and verification.
+  architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, ok-script
+  adapters such as Okww, and multi-engine adapters such as HSR. Use when
+  lowering user setup friction, deciding whether MAS should fill a script
+  capability gap, or changing ScriptType registration, task lifecycle, config
+  ownership, ScriptConfig sessions, Electron integration, frontend edit
+  surfaces, and verification.
 ---
 
 # 专项适配
@@ -30,6 +31,7 @@ description: >-
    - MaaEnd / MXU：[examples-maaend.md](references/examples-maaend.md)
    - M9A / MFAA：[examples-m9a.md](references/examples-m9a.md)
    - Okww / ok-script：[examples-okww.md](references/examples-okww.md)
+   - HSR / 多引擎编排：[examples-hsr.md](references/examples-hsr.md)
 4. 检查相邻实现与所有注册调用者，再决定最小改动。不要从旧 Skill 文案推断当前行为。
 5. 用用户场景验收：是否少了一段手工配置，MAS 补位是否有明确输入、失败提示和回退路径。
 
@@ -41,8 +43,8 @@ description: >-
 
 - 配置与 schema：`app/models/config.py`、`app/models/schema.py`
 - 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
-- 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
-- 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
+- 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`、`ManualReview`、`tools/` 与模块注册表（HSR 用 `task_mapping.py`）
+- 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`views/scripts/components/scriptCreateFlow.ts`、`types/script.ts`、相关 composable、脚本/用户编辑页
 - Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
 - 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
 
@@ -77,6 +79,24 @@ Okww 已落地为 `ok-script` 专项，当前不是表单化 JSON 编辑器方�
 - Okww 后续只使用官方资源与官方启动器，不使用 WeGame 侧资源。
 
 完整实现与审查点见 [examples-okww.md](references/examples-okww.md)。
+
+## HSR 多引擎编排线当前基线
+
+`HSR` 是唯一的「一个 `ScriptType` 编排两个上游程序」专项，不要按其他线的「一对一」心智去读。以下内容只约束 HSR。
+
+- 编排对象是 M7A（`March7th Assistant.exe`）与 SRA（`SRA-cli.exe`）两个独立发行物，各有原生配置；`Info.M7APath` 与 `Info.SRAPath` 可只配其一。
+- 任务模式只有 `AutoProxy` 与 `ManualReview`。HSR **没有** `ScriptConfig.py`，也没有原生编辑器遮罩会话；不要按 MAA/MaaEnd/Okww 的配置会话模式改造它。
+- 任务模块在 `app/task/HSR/task_mapping.py` 的 `HSR_TASK_MODULES` 单点声明。`HSRConfig` 延迟导入该常量并循环生成 `TaskMapping_<key>` 配置项，`check()` 的支持性校验和能力快照的 `tasks` 也从这里派生；新增模块只改这一处。
+- 引擎分配按 `get_assigned_script()` 四级回落：用户 `Managed.TaskMapping` → 脚本 `TaskMapping.<key>` → `module.default_script` → 按 `effective_engines` 收敛。每级取值都要过 `supported_scripts` 校验。
+- 用户配置来源是 `managed` / `direct` 两态（`Control.Mode`），外加 `Control.SRA`、`Control.M7A` 引擎开关。直控仅支持 `AutoProxy`，且必须至少启用一个引擎。
+- 托管字段由后端下发 `HSRManagedField` 定义、前端 `DynamicManagedFields.vue` 动态渲染。新增字段扩展后端定义，不在 Vue 里加硬编码分支。
+- HSR 直接读写两个上游的真实配置文件：任务前 `_backup_external_configs()` 备份 M7A `config.yaml` 与 SRA `settings.json` / `cache.json` / `configs/`，`final_task` 与 `on_crash` 都要原子恢复。备份清单中 `existed=False` 的目标在恢复阶段需删除任务期新增路径，而不是跳过。
+- `tools/external_locks.py` 提供进程内路径锁，防止多个 HSR 脚本或直控导入同时操作同一份安装；冲突抛 `HSRExternalPathBusyError`，需转成可读错误而非静默等待。
+- 关卡字段 `Stage.ScriptStage` / `Stage.ScriptEchoOfWar` 存脚本原生字段 JSON（SRA `id`+`level`，M7A `instance_type`+`name`），不建 MAA 式统一关卡词表。
+- 切号统一走 SRA StartGame；M7A 模块也依赖该登录路径。
+- 完成态经 `CompletionWriteback` 在真实成功后写回；周期判定使用 ISO 周字段加完成日期双字段。
+
+完整实现与审查点见 [examples-hsr.md](references/examples-hsr.md)。
 
 ## 验证
 
