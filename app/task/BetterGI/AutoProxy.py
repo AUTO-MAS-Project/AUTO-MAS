@@ -57,6 +57,10 @@ _BGI_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("任务执行异常", "BetterGI 任务执行异常"),
     ("[ERR]", "BetterGI 任务执行异常"),
 )
+# 成功判定：命中也仍受 fatal-优先 / 进程提前退出 / 超时 三重兜底约束（见 check_log）。
+# 「任务结束」为 BetterGI TaskRunner 对整条一条龙序列收尾时输出的统一日志片段（不是逐子任务、
+# 也不是我们的模板/脚本产生的文本），故可作为整条序列完成的信号；子串范围看似偏宽，但这是
+# BetterGI 原生日志的实际措辞，未发现更精确的结束语，改换需以真实日志为准，现阶段保持不动。
 _BGI_SUCCESS_LOG = "任务结束"
 _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
@@ -173,6 +177,10 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = False
 
+        # 独立配置覆盖前备份：None 表示尚未接管（use_mas_config=False 或未开始写入）
+        self._reseed_live_config: dict | None = None
+        self._reseed_live_existed = False
+
     def _build_log_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
         return (
@@ -223,6 +231,46 @@ class AutoProxyTask(TaskExecuteBase):
             self.one_dragon_config,
         )
 
+    def _backup_one_dragon_config(self) -> None:
+        """覆盖前备份 BetterGI 现有一条龙配置，供结束后还原。
+
+        独立配置模式会覆盖现场文件；若不备份还原，`IfUseMasConfig=false` 的用户
+        会继承前一个独立用户留下的配置，切号失败或异常退出也会污染原配置。
+        """
+        if not self.use_mas_config:
+            return
+        self._reseed_live_existed = one_dragon.one_dragon_path(
+            self.script_root_path, self.one_dragon_config
+        ).exists()
+        self._reseed_live_config = one_dragon.load_one_dragon(
+            self.script_root_path, self.one_dragon_config
+        )
+
+    def _restore_one_dragon_config(self) -> None:
+        """运行/异常结束后把 BetterGI 一条龙配置还原为覆盖前的状态。
+
+        仅在本次确接管过（``_reseed_live_config`` 非 None）时生效；还原一次后
+        置 None 保证幂等，避免 final_task 与 on_crash 相继触发时重复覆盖。
+        原本不存在的配置更名为删除，回到最初状态。
+        """
+        if self._reseed_live_config is None:
+            return
+        try:
+            path = one_dragon.one_dragon_path(
+                self.script_root_path, self.one_dragon_config
+            )
+            if self._reseed_live_existed and self._reseed_live_config:
+                one_dragon.write_one_dragon(
+                    self.script_root_path,
+                    self.one_dragon_config,
+                    self._reseed_live_config,
+                )
+            elif not self._reseed_live_existed:
+                with suppress(Exception):
+                    path.unlink(missing_ok=True)
+        finally:
+            self._reseed_live_config = None
+
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -239,7 +287,8 @@ class AutoProxyTask(TaskExecuteBase):
             logger.error(f"用户 {self.cur_user_item.name} 切换账号失败，中止任务")
             return
 
-        # 用户独立配置：应用组开关并写入一条龙配置
+        # 用户独立配置：先备份现场再写入，结束后 (final_task/on_crash) 还原
+        self._backup_one_dragon_config()
         self._write_one_dragon_config()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
@@ -441,6 +490,9 @@ class AutoProxyTask(TaskExecuteBase):
         finally:
             await switch_monitor.stop()
             await self.kill_managed_process()
+            # 切号结束即脱敏配置组，避免明文账号/密码残留磁盘
+            with suppress(Exception):
+                account_switch.scrub_switch_group(self.script_root_path)
 
         if switch_result["success"]:
             await self._push_dispatch_log("切换账号完成")
@@ -541,8 +593,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self._persist_user_run_result()
 
-        # 用户独立配置：回读 BetterGI 现有配置，捕获运行中/GUI 里改的设置
+        # 用户独立配置：回读 BetterGI 现有配置，捕获运行中/GUI 里改的设置，固化到 per-user 副本
         self._snapshot_one_dragon_config()
+
+        # 快照已完成，再把现场还原为覆盖前的副本，避免污染其它用户
+        self._restore_one_dragon_config()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:
@@ -591,6 +646,14 @@ class AutoProxyTask(TaskExecuteBase):
             await self.kill_managed_process()
         with suppress(Exception):
             await self._persist_user_run_result()
+
+        # 异常退出也要还原 BetterGI 现场（切号失败/中途崩溃不得污染原配置）
+        try:
+            self._restore_one_dragon_config()
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"异常退出后恢复 BetterGI 一条龙配置失败: {e}"
+            )
 
         # 推送通知（复用 Notify）
         try:

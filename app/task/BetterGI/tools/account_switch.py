@@ -175,3 +175,26 @@ def write_switch_group(
     write_file(out_path, template)
     logger.info(f"已生成切换账号配置组: {out_path} (账号 {mask_account(account)})")
     return out_path
+
+
+def scrub_switch_group(root_path: Path) -> None:
+    """运行结束后脱敏切换账号配置组，清空密码并把账号置为打码形式。
+
+    切号脚本执行时必须写入明文账号/密码供 OCR/键鼠登录，但完成后不应让明文
+    凭据残留磁盘。本函数把 ``jsScriptSettingsObject`` 的 ``password`` 清空、
+    ``username`` 还原为打码（下拉列表模式本已是打码，OCR 模式的完整账号被抹掉）。
+    """
+    out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{_GROUP_NAME}.json"
+    data = read_file(out_path)
+    if not isinstance(data, dict):
+        return
+    for proj in data.get("projects") or []:
+        if not isinstance(proj, dict):
+            continue
+        settings = proj.get("jsScriptSettingsObject")
+        if not isinstance(settings, dict):
+            continue
+        settings["password"] = ""
+        settings["username"] = mask_account(str(settings.get("username") or ""))
+    write_file(out_path, data)
+    logger.info(f"已脱敏切换账号配置组: {out_path}")
