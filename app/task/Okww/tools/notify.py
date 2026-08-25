@@ -18,7 +18,7 @@
 
 from app.core import Config
 from app.models.config import OkwwUserConfig
-from app.services import Notify
+from app.tools.notify_channels import send_to_global_channels, send_to_user_channels
 from app.utils import get_logger
 
 logger = get_logger("OK-WW 通知工具")
@@ -50,33 +50,9 @@ async def push_notification(
         message_html = Config.notify_env.get_template(
             "general_statistics.html"
         ).render(message)
-        serverchan_message = message_text.replace("\n", "\n\n")
 
-        if user_config.get("Notify", "IfSendMail"):
-            if user_config.get("Notify", "ToAddress"):
-                await Notify.send_mail(
-                    "网页",
-                    title,
-                    message_html,
-                    user_config.get("Notify", "ToAddress"),
-                )
-            else:
-                logger.warning("用户邮箱地址为空, 无法发送 OK-WW 用户通知")
-
-        if user_config.get("Notify", "IfServerChan"):
-            if user_config.get("Notify", "ServerChanKey"):
-                await Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                    user_config.get("Notify", "ServerChanKey"),
-                )
-            else:
-                logger.warning("用户ServerChan密钥为空, 无法发送 OK-WW 用户通知")
-
-        for webhook in user_config.Notify_CustomWebhooks.values():
-            await Notify.WebhookPush(
-                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-            )
+        # OK-WW 独有: 统计信息只推用户级渠道, 不推全局(其余脚本两者都推)
+        await send_to_user_channels(title, message_text, message_html, user_config)
         return
 
     if mode != "代理结果":
@@ -101,26 +77,5 @@ async def push_notification(
     message_html = Config.notify_env.get_template("general_result.html").render(
         message
     )
-    serverchan_message = message_text.replace("\n", "\n\n")
 
-    if Config.get("Notify", "IfSendMail"):
-        await Notify.send_mail(
-            "网页", title, message_html, Config.get("Notify", "ToAddress")
-        )
-
-    if Config.get("Notify", "IfServerChan"):
-        await Notify.ServerChanPush(
-            title,
-            f"{serverchan_message}\n\nAUTO-MAS 敬上",
-            Config.get("Notify", "ServerChanKey"),
-        )
-
-    for webhook in Config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(
-            title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-        )
-
-    if Config.get("Notify", "IfKoishiSupport"):
-        await Notify.send_koishi(
-            f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
-        )
+    await send_to_global_channels(title, message_text, message_html)
