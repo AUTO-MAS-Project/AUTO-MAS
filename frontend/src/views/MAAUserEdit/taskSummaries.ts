@@ -70,6 +70,22 @@ export const summarizeDepot = (isPlanMode: boolean, enabled: boolean, plansJson:
   return count ? `${count} 项计划` : '尚未添加计划'
 }
 
+export const INFRAST_MODE_OPTIONS = [
+  { label: '常规模式', value: 'Normal' },
+  { label: '一键轮休', value: 'Rotation' },
+  { label: '自定义基建', value: 'Custom' },
+]
+
+export const infrastModeLabel = (value: string) =>
+  INFRAST_MODE_OPTIONS.find(option => option.value === value)?.label ?? value
+
+/** customLabel 由调用方拼好（配置名 + 排班名），自定义模式下未选完则只显示模式名 */
+export const summarizeInfrast = (enabled: boolean, mode: string, customLabel: string) => {
+  if (!enabled) return '已关闭'
+  const modeText = infrastModeLabel(mode)
+  return mode === 'Custom' && customLabel ? `${modeText} · ${customLabel}` : modeText
+}
+
 export const summarizeFight = (options: {
   enabled: boolean
   planLabel?: string

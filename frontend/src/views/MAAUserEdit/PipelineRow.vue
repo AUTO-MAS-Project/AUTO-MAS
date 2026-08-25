@@ -2,6 +2,16 @@
   <div class="pipeline-row" :class="{ 'is-off': !checked, 'is-expanded': expanded }">
     <div class="row-head">
       <span class="row-dot" aria-hidden="true" />
+      <!-- 开关紧贴任务名：靠邻近性表达「开关管的是这个任务」。无开关的行留占位，保持任务名列对齐 -->
+      <span class="switch-slot">
+        <a-switch
+          v-if="switchable"
+          :checked="checked"
+          :disabled="disabled"
+          :aria-label="name"
+          @change="emit('change', $event as boolean)"
+        />
+      </span>
       <component
         :is="hasDetail ? 'button' : 'div'"
         :type="hasDetail ? 'button' : undefined"
@@ -10,26 +20,16 @@
         :aria-expanded="hasDetail ? expanded : undefined"
         @click="hasDetail && (expanded = !expanded)"
       >
-        <span class="row-name">
-          {{ name }}
-          <a-tooltip v-if="hint" :title="hint">
-            <QuestionCircleOutlined class="help-icon" @click.stop />
-          </a-tooltip>
-        </span>
+        <span class="row-name">{{ name }}</span>
         <span class="row-summary" :class="{ 'row-summary-rich': $slots.summary }">
           <slot name="summary">{{ summary }}</slot>
         </span>
         <DownOutlined v-if="hasDetail" class="row-chevron" />
       </component>
-      <a-switch
-        v-if="switchable"
-        :checked="checked"
-        :disabled="disabled"
-        :aria-label="name"
-        @change="emit('change', $event as boolean)"
-      />
     </div>
     <div v-if="hasDetail && expanded" class="row-detail">
+      <!-- 常驻正文而非悬停 tooltip：键盘与触屏用户同样可读（WCAG 1.4.13） -->
+      <p v-if="hint" class="row-hint">{{ hint }}</p>
       <slot />
     </div>
   </div>
@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DownOutlined } from '@ant-design/icons-vue'
 
 withDefaults(
   defineProps<{
@@ -137,19 +137,21 @@ const expanded = ref(false)
   outline-offset: 1px;
 }
 
-.row-name {
+.switch-slot {
+  flex: 0 0 44px;
   display: flex;
   align-items: center;
-  gap: 6px;
+}
+
+.row-name {
   flex: 0 0 auto;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--ant-color-text);
 }
 
 .is-off .row-name {
   color: var(--ant-color-text-tertiary);
-  font-weight: 500;
 }
 
 .row-summary {
@@ -184,17 +186,26 @@ const expanded = ref(false)
 }
 
 .row-detail {
+  position: relative;
   padding: 4px 8px 16px 34px;
 }
 
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
-  cursor: help;
+/* 详情区左侧续接流水线轨道，视觉上表明「这些配置属于上面那个任务」 */
+.row-detail::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ant-color-border);
 }
 
-.help-icon:hover {
-  color: var(--ant-color-primary);
+.row-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary);
 }
 
 @media (max-width: 768px) {
@@ -209,6 +220,10 @@ const expanded = ref(false)
 
   .row-detail {
     padding-left: 8px;
+  }
+
+  .row-detail::before {
+    display: none;
   }
 }
 </style>

@@ -4,6 +4,7 @@ import {
   summarizeAnnihilation,
   summarizeDepot,
   summarizeFight,
+  summarizeInfrast,
 } from './taskSummaries'
 
 describe('annihilation summary', () => {
@@ -54,6 +55,26 @@ describe('depot summary', () => {
   it('treats malformed or empty plan JSON as no plans', () => {
     expect(summarizeDepot(false, true, 'not json')).toBe('尚未添加计划')
     expect(summarizeDepot(false, true, '')).toBe('尚未添加计划')
+  })
+})
+
+describe('infrast summary', () => {
+  it('reports the mode label for built-in modes', () => {
+    expect(summarizeInfrast(true, 'Normal', '')).toBe('常规模式')
+    expect(summarizeInfrast(true, 'Rotation', '')).toBe('一键轮休')
+  })
+
+  it('appends the custom config label only in custom mode', () => {
+    expect(summarizeInfrast(true, 'Custom', '早班表 · 三班')).toBe('自定义基建 · 早班表 · 三班')
+    expect(summarizeInfrast(true, 'Normal', '早班表')).toBe('常规模式')
+  })
+
+  it('falls back to the mode label when the custom config is not chosen yet', () => {
+    expect(summarizeInfrast(true, 'Custom', '')).toBe('自定义基建')
+  })
+
+  it('collapses to 已关闭 when the task is off', () => {
+    expect(summarizeInfrast(false, 'Custom', '早班表')).toBe('已关闭')
   })
 })
 

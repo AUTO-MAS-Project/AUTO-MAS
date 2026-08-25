@@ -31,10 +31,7 @@
         <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
           <!-- 基本信息组件 -->
           <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
-            :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
-            :infrastructure-options="infrastructureOptions"
-            :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
-            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
+            @save="handleFieldSave" />
 
           <!-- 任务流程：按后端 MAA_TASKS 执行顺序排列 -->
           <TaskPipelineSection
@@ -50,6 +47,11 @@
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
             :fight-summary="fightSummary"
+            :is-edit="isEdit"
+            :infrastructure-importing="infrastructureImporting"
+            :infrastructure-options="infrastructureOptions"
+            :infrastructure-options-loading="infrastructureOptionsLoading"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @save="handleFieldSave"
           >
             <template #fight-detail>
@@ -158,7 +160,6 @@ const showMAAConfigMask = ref(false)
 let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
-const infrastructureConfigPath = ref('')
 const infrastructureImporting = ref(false)
 const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
 const infrastructureOptionsLoading = ref(false)

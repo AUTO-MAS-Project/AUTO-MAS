@@ -4,12 +4,10 @@
       <a-col :xs="24" :md="12">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="「固定」直接在此配置关卡；「计划表」按计划自动切换">
-              <span class="form-label">
-                关卡配置模式
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="关卡配置模式"
+              hint="「固定」直接在此配置关卡；「计划表」按计划自动切换"
+            />
           </template>
           <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading"
             @change="emitSave('Info.StageMode', formData.Info.StageMode)" />
@@ -28,12 +26,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
-            <a-tooltip title="吃理智药数量">
-              <span class="form-label">
-                吃理智药数量
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint text="吃理智药数量" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -54,12 +47,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定">
-              <span class="form-label">
-                连战次数
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="连战次数"
+              hint="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -96,12 +87,7 @@
       <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="关卡选择">
-              <span class="form-label">
-                关卡选择
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint text="关卡选择" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -126,12 +112,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
-              <span class="form-label">
-                备选关卡-1
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="备选关卡-1"
+              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -154,12 +138,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
-              <span class="form-label">
-                备选关卡-2
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="备选关卡-2"
+              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -182,12 +164,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
-              <span class="form-label">
-                备选关卡-3
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="备选关卡-3"
+              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -210,12 +190,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="剩余理智关卡，选择「不选择」时视为不使用剩余理智关卡">
-              <span class="form-label">
-                剩余理智关卡
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint text="剩余理智关卡" hint="选择「不选择」时视为不使用剩余理智关卡" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -241,7 +216,8 @@
 </template>
 
 <script setup lang="ts">
-import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined } from '@ant-design/icons-vue'
+import LabelWithHint from './LabelWithHint.vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
 
@@ -331,26 +307,6 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 13px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 
 .plan-mode-display {

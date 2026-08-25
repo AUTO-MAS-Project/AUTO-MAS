@@ -20,7 +20,7 @@
         :summary="annihilationSummary"
         :checked="annihilationEnabled"
         :disabled="loading"
-        hint="剿灭是独立的一轮完整流程（唤醒 + 作战），会在下方日常任务之前执行"
+        hint="剿灭是独立的一轮完整流程（唤醒 + 作战），会在下方所有日常流程之前执行"
         @change="handleAnnihilationToggle"
       >
         <a-row :gutter="16">
@@ -133,7 +133,6 @@
         :checked="!isPlanMode && formData.Task.IfDepotMaintain"
         :disabled="loading || isPlanMode"
         :has-detail="!isPlanMode"
-        :hint="isPlanMode ? '关卡配置为计划模式时，库存保持不会执行' : ''"
         @change="emitSave('Task.IfDepotMaintain', $event)"
       >
         <DepotMaintainPlanEditor
@@ -158,9 +157,77 @@
         <slot name="fight-detail" />
       </PipelineRow>
 
-      <!-- 日常任务：低频改动，压成一行 -->
+      <!-- 基建换班：模式与自定义排班是它的附属配置，跟着它走 -->
       <PipelineRow
-        name="日常任务"
+        name="基建换班"
+        :summary="infrastSummary"
+        :checked="formData.Task.IfInfrast"
+        :disabled="loading"
+        @change="emitSave('Task.IfInfrast', $event)"
+      >
+        <a-row :gutter="16">
+          <a-col :xs="24" :md="12">
+            <a-form-item class="detail-item">
+              <template #label>
+                <LabelWithHint
+                  text="基建模式"
+                  hint="自定义基建需要先导入配置文件，再选择其中的排班"
+                />
+              </template>
+              <a-select
+                :value="formData.Info.InfrastMode"
+                :options="INFRAST_MODE_OPTIONS"
+                :disabled="loading"
+                @change="emitSave('Info.InfrastMode', $event)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="16">
+          <a-col :xs="24" :md="12">
+            <a-form-item class="detail-item">
+              <template #label>
+                <LabelWithHint text="自定义基建配置" hint="从 MAA 导出的自定义基建 JSON 文件" />
+              </template>
+              <div class="detail-inline">
+                <a-input
+                  :value="formData.Info.InfrastName"
+                  placeholder="尚未导入配置"
+                  readonly
+                  class="infrast-name"
+                />
+                <a-button
+                  type="primary"
+                  :disabled="loading || !isEdit"
+                  :loading="infrastructureImporting"
+                  @click="emit('selectAndImportInfrastructureConfig')"
+                >
+                  选择并导入
+                </a-button>
+              </div>
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item class="detail-item">
+              <template #label>
+                <LabelWithHint text="自定义基建排班" hint="从已导入的配置中选择当前使用的排班" />
+              </template>
+              <a-select
+                :value="formData.Info.InfrastIndex"
+                :options="infrastructureOptions"
+                :loading="infrastructureOptionsLoading"
+                :disabled="loading"
+                placeholder="请选择自定义基建排班"
+                @change="emitSave('Info.InfrastIndex', $event)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </PipelineRow>
+
+      <!-- 无配置的一键任务：低频改动，压成一行 -->
+      <PipelineRow
+        name="日常杂项"
         :checked="dailyTasks.some(task => formData.Task[task.key])"
         :switchable="false"
         :has-detail="false"
@@ -180,28 +247,15 @@
         </template>
       </PipelineRow>
 
-      <!-- 不常用任务，默认收起 -->
+      <!-- 只有一个开关，不必套一层详情面板 -->
       <PipelineRow
-        name="更多任务"
-        :summary="formData.Task.IfRoguelike ? '自动肉鸽 已启用' : '自动肉鸽 已关闭'"
+        name="自动肉鸽"
+        :summary="formData.Task.IfRoguelike ? '已启用 · 长时间运行可能被误判超时' : '已关闭'"
         :checked="formData.Task.IfRoguelike"
-        :switchable="false"
-      >
-        <a-form-item class="detail-item">
-          <template #label>
-            <LabelWithHint
-              text="自动肉鸽"
-              hint="长时间的自动肉鸽可能导致自动调度任务被误判超时，不建议常开"
-            />
-          </template>
-          <a-switch
-            :checked="formData.Task.IfRoguelike"
-            :disabled="loading"
-            aria-label="自动肉鸽"
-            @change="emitSave('Task.IfRoguelike', $event)"
-          />
-        </a-form-item>
-      </PipelineRow>
+        :disabled="loading"
+        :has-detail="false"
+        @change="emitSave('Task.IfRoguelike', $event)"
+      />
     </div>
   </div>
 </template>
@@ -215,9 +269,11 @@ import { currentWeekMarker } from './weekMarker'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
+  INFRAST_MODE_OPTIONS,
   summarizeActivity,
   summarizeAnnihilation,
   summarizeDepot,
+  summarizeInfrast,
 } from './taskSummaries'
 
 type SelectOption = { label: string; value: string }
@@ -236,13 +292,19 @@ const props = defineProps<{
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
   fightSummary: string
+  isEdit: boolean
+  infrastructureImporting: boolean
+  infrastructureOptions: SelectOption[]
+  infrastructureOptionsLoading: boolean
 }>()
 
-const emit = defineEmits<{ save: [key: string, value: any] }>()
+const emit = defineEmits<{
+  save: [key: string, value: any]
+  selectAndImportInfrastructureConfig: []
+}>()
 const emitSave = (key: string, value: any) => emit('save', key, value)
 
 const dailyTasks = [
-  { key: 'IfInfrast', label: '基建换班' },
   { key: 'IfRecruit', label: '自动公招' },
   { key: 'IfMall', label: '信用收支' },
   { key: 'IfAward', label: '领取奖励' },
@@ -290,6 +352,18 @@ const activitySummary = computed(() =>
     medicine: formData.value.Task.ActivityMedicineNumb ?? 0,
   })
 )
+
+const infrastSummary = computed(() => {
+  const scheduleLabel = props.infrastructureOptions.find(
+    option => option.value === formData.value.Info.InfrastIndex
+  )?.label
+  const customLabel = [formData.value.Info.InfrastName, scheduleLabel].filter(Boolean).join(' · ')
+  return summarizeInfrast(
+    formData.value.Task.IfInfrast,
+    formData.value.Info.InfrastMode,
+    customLabel
+  )
+})
 
 const depotSummary = computed(() =>
   summarizeDepot(
@@ -360,6 +434,11 @@ const depotSummary = computed(() =>
 
 .full-width {
   width: 100%;
+}
+
+.infrast-name {
+  flex: 1;
+  min-width: 0;
 }
 
 :deep(.ant-select),
