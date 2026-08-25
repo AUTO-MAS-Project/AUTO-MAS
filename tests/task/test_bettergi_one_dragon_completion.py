@@ -10,6 +10,7 @@ from app.task.BetterGI.AutoProxy import (
     _is_switch_script_updated,
     _latest_repo_progress,
     _one_dragon_sequence_done,
+    _party_config_error,
 )
 
 
@@ -107,3 +108,28 @@ def test_is_switch_script_updated(tmp_path) -> None:
     """检出切号脚本后判为已更新。"""
     assert _is_switch_script_updated('更新脚本成功: "js/SwitchAccountMultipleMode"') is True
     assert _is_switch_script_updated("浅克隆仓库: x") is False
+
+
+def test_party_config_error_scan_not_found(tmp_path) -> None:
+    """OCR 扫描找不到队伍（未找到队伍）→ 报出队伍名。"""
+    log = '\n尝试切换至队伍: "锄地队"\n未找到队伍: "锄地队"，返回主界面\n'
+    assert _party_config_error(log) == "锄地队"
+
+
+def test_party_config_error_exception(tmp_path) -> None:
+    """SwitchPartyTask 取不到匹配项抛异常（自动地脉花等 [ERR]）→ 报出队伍名。"""
+    log = (
+        '\n尝试切换至队伍: "锄地队"\n'
+        "自动地脉花执行失败\nInvalidOperationException: Sequence contains no elements\n"
+    )
+    assert _party_config_error(log) == "锄地队"
+
+
+def test_party_config_error_no_switch(tmp_path) -> None:
+    """无切队尝试时不算配置错误。"""
+    assert _party_config_error("自动地脉花执行失败: Sequence contains no elements") is None
+
+
+def test_party_config_error_false_positive_hint(tmp_path) -> None:
+    """仅有提示短语但没有切队尝试行时不算配置错误。"""
+    assert _party_config_error("Sequence contains no elements 但无切队") is None

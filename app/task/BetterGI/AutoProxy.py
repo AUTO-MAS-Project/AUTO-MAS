@@ -149,6 +149,30 @@ def _is_switch_script_updated(log: str) -> bool:
     return '更新脚本成功: "js/SwitchAccountMultipleMode"' in log
 
 
+# ── 切队配置错误识别 ─────────────────────────────────
+# 一条龙里的战斗队伍（PartyName）若在游戏内置找不到，BGI 切队会把整条一龙任务打崩：
+#   - OCR 扫描不到名单：SwitchPartyTask 打「未找到队伍: <名>，返回主界面」；
+#   - 直接抛异常：SwitchPartyTask.Start 第202行 Enumerable.Last() 取不到匹配项 →
+#     InvalidOperationException "Sequence contains no elements" → 自动地脉花等任务打 [ERR]。
+# 两者都说明配置的战斗队伍名不合法。命中时给明确报错（指明队伍名），而非笼统的
+# 「任务执行异常」/「完成任务前退出」。
+_BGI_PARTY_SWITCH_RE = re.compile(
+    r'尝试切换至队伍:\s*["“]?([^"”\n]+)["”]?\s*$', re.M
+)
+_BGI_PARTY_ERROR_HINTS = ("未找到队伍", "Sequence contains no elements")
+
+
+def _party_config_error(log: str) -> str | None:
+    """检测切队配置错误（战斗队伍名在游戏内置找不到），返回出错队伍名；无则 None。"""
+    if not ("尝试切换至队伍" in log and any(h in log for h in _BGI_PARTY_ERROR_HINTS)):
+        return None
+    m = _BGI_PARTY_SWITCH_RE.search(log)
+    if not m:
+        return None
+    name = m.group(1).strip()
+    return name or None
+
+
 class AutoProxyTask(TaskExecuteBase):
     """BetterGI 自动代理：拼 `startOneDragon <configName>` 启动并监控日志"""
 
@@ -181,6 +205,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_target_process_info: ProcessInfo | None = None
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
+        # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
+        self._party_err_pushed = False
 
     async def check(self) -> str:
         root = Path(self.script_config.get("Info", "RootPath"))
@@ -607,23 +633,38 @@ class AutoProxyTask(TaskExecuteBase):
         log_status = "BetterGI 正常运行中"
         user_item_status: str | None = None
 
-        for needle, msg in _BGI_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
-                user_item_status = "异常"
-                break
+        # 切队配置错误（战斗队伍名在游戏内置找不到）优先于笼统的 [ERR] 判定，
+        # 并给一次指明队伍名的明确报错
+        if party_err := _party_config_error(log):
+            log_status = (
+                f"切队失败/配置错误: 战斗队伍「{party_err}」在游戏内队伍列表中未找到"
+            )
+            user_item_status = "异常"
+            if not self._party_err_pushed:
+                self._party_err_pushed = True
+                await self._push_dispatch_log(
+                    f"BetterGI 运行异常：战斗队伍「{party_err}」在游戏内未找到，"
+                    "请核对 MAS 里该用户的「战斗队伍」配置"
+                )
         else:
-            if _one_dragon_sequence_done(log):
-                log_status = "Success!"
-                user_item_status = "完成"
-            elif not await self.bettergi_process_manager.is_running():
-                log_status = "BetterGI 在完成任务前退出"
-                user_item_status = "异常"
-            elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", "RunTimeLimit")
-            ):
-                log_status = "BetterGI 运行超时"
-                user_item_status = "异常"
+            for needle, msg in _BGI_BUILTIN_FATAL:
+                if needle in log:
+                    log_status = msg
+                    user_item_status = "异常"
+                    break
+            # 仅在未命中致命日志时判定成功/提前退出/超时（for…else）
+            else:
+                if _one_dragon_sequence_done(log):
+                    log_status = "Success!"
+                    user_item_status = "完成"
+                elif not await self.bettergi_process_manager.is_running():
+                    log_status = "BetterGI 在完成任务前退出"
+                    user_item_status = "异常"
+                elif datetime.now() - latest_time > timedelta(
+                    minutes=self.script_config.get("Run", "RunTimeLimit")
+                ):
+                    log_status = "BetterGI 运行超时"
+                    user_item_status = "异常"
 
         self.cur_user_log.status = log_status
         if user_item_status is not None:
