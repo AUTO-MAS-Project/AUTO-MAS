@@ -839,10 +839,7 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        script_config = self.ScriptConfig[uid]
-        for group, items in data.items():
-            for name, value in items.items():
-                await script_config.set(group, name, value)
+        await self.ScriptConfig[uid].update(data)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -1425,9 +1422,7 @@ class AppConfig(GlobalConfig):
                     user_config.get("Info", "SklandToken") != info_data["SklandToken"]
                 )
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await user_config.set(group, name, value)
+        await user_config.update(data)
 
         if skland_token_changed:
             await user_config.set("Data", "LastSklandDate", "2000-01-01")
@@ -1639,9 +1634,7 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.PlanConfig[plan_uid].set(group, name, value)
+        await self.PlanConfig[plan_uid].update(data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
@@ -1710,9 +1703,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新模拟器配置: {emulator_id}")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.EmulatorConfig[emulator_uid].set(group, name, value)
+        await self.EmulatorConfig[emulator_uid].update(data)
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
@@ -1785,9 +1776,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.QueueConfig[queue_uid].set(group, name, value)
+        await self.QueueConfig[queue_uid].update(data)
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
@@ -1840,13 +1829,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .TimeSet[time_set_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].TimeSet[time_set_uid].update(data)
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
@@ -1909,13 +1892,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .QueueItem[queue_item_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
@@ -1991,9 +1968,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新工具设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.ToolsConfig.set(group, name, value)
+        await self.ToolsConfig.update(data)
 
         logger.success("工具设置更新成功")
 
@@ -2114,9 +2089,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新全局设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.set(group, name, value)
+        await self.update(data)
 
         logger.success("全局设置更新成功")
 

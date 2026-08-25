@@ -17,6 +17,18 @@ from app.models.schema import (
 )
 
 
+def wire_batch_update(config: MagicMock) -> MagicMock:
+    """让 mock 配置的 update() 像 ConfigBase.update 那样逐项转发到 set()。"""
+
+    async def update(data):
+        for group, items in data.items():
+            for name, value in items.items():
+                await config.set(group, name, value)
+
+    config.update = AsyncMock(side_effect=update)
+    return config
+
+
 class GameSignAccountApiTest(unittest.IsolatedAsyncioTestCase):
     async def test_list_returns_decrypted_credentials(self) -> None:
         account_id = str(uuid.uuid4())
@@ -214,7 +226,7 @@ class LegacyUserSklandCredentialTest(unittest.IsolatedAsyncioTestCase):
         }
         user_config.get.side_effect = lambda group, key: values.get((group, key), "")
         user_config.set = AsyncMock()
-        return user_config
+        return wire_batch_update(user_config)
 
     async def _assert_token_change_resets_date(self, script_config_type) -> None:
         script_id = uuid.uuid4()
@@ -230,6 +242,7 @@ class LegacyUserSklandCredentialTest(unittest.IsolatedAsyncioTestCase):
             values[(group, name)] = value
 
         user_config.set = AsyncMock(side_effect=set_value)
+        wire_batch_update(user_config)
         script_config = script_config_type()
         script_config.UserData = {user_id: user_config}
 

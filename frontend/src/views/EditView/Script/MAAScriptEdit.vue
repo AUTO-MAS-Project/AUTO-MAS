@@ -322,8 +322,6 @@ const handleChange = async (category: string, key: string, value: any) => {
     const success = await updateScript(scriptId, updateData)
     if (success) {
       logger.info(`配置已保存: ${category}.${key}`)
-      // 保存成功后刷新数据
-      await refreshScript()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -333,23 +331,9 @@ const handleChange = async (category: string, key: string, value: any) => {
   }
 }
 
-// 刷新脚本配置
-const refreshScript = async () => {
-  try {
-    const scriptDetail = await getScript(scriptId)
-    if (scriptDetail) {
-      Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
-      formData.name = scriptDetail.name
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新配置失败: ${errorMsg}`)
-  }
-}
-
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -452,7 +436,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     const success = await updateScript(scriptId, updateData)
     if (success) {
       logger.info('模拟器配置已保存')
-      await refreshScript()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
