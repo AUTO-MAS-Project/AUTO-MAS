@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import re
 import uuid
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -58,10 +59,14 @@ _BGI_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("[ERR]", "BetterGI 任务执行异常"),
 )
 # 成功判定：命中也仍受 fatal-优先 / 进程提前退出 / 超时 三重兜底约束（见 check_log）。
-# 「任务结束」为 BetterGI TaskRunner 对整条一条龙序列收尾时输出的统一日志片段（不是逐子任务、
-# 也不是我们的模板/脚本产生的文本），故可作为整条序列完成的信号；子串范围看似偏宽，但这是
-# BetterGI 原生日志的实际措辞，未发现更精确的结束语，改换需以真实日志为准，现阶段保持不动。
+# ⚠️「任务结束」是 BetterGI TaskRunner 在【每个子任务边界】输出的统一日志片段，并非整条
+# 一条龙序列收尾信号。单凭它会把 4 任务的一条龙在任务 1 就误判成功而提前强杀（曾把一龙狗
+# 砍在任务 2 的「前往合成台 → 地图模板加载」处，BGI 无任何崩溃记录、仅走专项才复现）。
+# 故 check_log 必须结合「一条龙任务执行: X/Y」进度行：仅 X==Y 的最后一个任务对应的
+# 「任务结束」才是整条序列完成，命中条件见 _one_dragon_sequence_done。
 _BGI_SUCCESS_LOG = "任务结束"
+# 一条龙进度行，BetterGI 每个子任务开始前都会打印（半角/全角冒号均可）：示例 一条龙任务执行: 4/4
+_BGI_TASK_PROGRESS_RE = re.compile(r"一条龙任务执行\s*[:：]\s*(\d+)\s*/\s*(\d+)")
 _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
 _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
@@ -79,6 +84,30 @@ _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
 )
 # 优雅关闭游戏后等待退出时间（秒），超时未退出则强制结束
 _BGI_GAME_CLOSE_WAIT_SECONDS = 5
+
+
+def _one_dragon_sequence_done(log: str) -> bool:
+    """判定整条一条龙序列是否完成。
+
+    BetterGI 在每个子任务边界都会输出「→ 任务结束」，但此前必有「一条龙任务执行: X/Y」
+    进度行。只有最后一个任务（X==Y）对应的「任务结束」才是整条序列收尾；中间任务的
+    「任务结束」若误判为成功，会把 4 任务的一条龙在第 1 个任务就强杀（曾砍在任务 2 的
+    地图模板加载处）。兼容：日志里若从头到尾无进度行（旧版本 BGI），退化为「任务结束」
+    单判，避免漏判单任务一条龙。
+
+    Args:
+        log: 本次运行的累计日志文本。
+
+    Returns:
+        True 表示整条一条龙已完成。
+    """
+    matches = list(_BGI_TASK_PROGRESS_RE.finditer(log))
+    if matches:
+        # 取最后一个（时间上最新）进度行；子任务边界必有「任务结束」，故只要它到 X==Y 即可
+        x, y = (int(g) for g in matches[-1].groups())
+        return y > 0 and x >= y and _BGI_SUCCESS_LOG in log
+    # 旧版兼容：无进度行时沿用「任务结束」判定
+    return _BGI_SUCCESS_LOG in log
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -527,7 +556,7 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item_status = "异常"
                 break
         else:
-            if _BGI_SUCCESS_LOG in log:
+            if _one_dragon_sequence_done(log):
                 log_status = "Success!"
                 user_item_status = "完成"
             elif not await self.bettergi_process_manager.is_running():
