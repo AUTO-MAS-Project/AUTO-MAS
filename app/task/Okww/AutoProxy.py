@@ -31,16 +31,14 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
 from app.services.wuthering_waves import (
-    WutheringWavesUpdateInfo,
     check_wuthering_waves_update,
     resolve_wuthering_waves_process_path,
-    wait_wuthering_waves_update,
 )
+from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
-from app.utils.OCR.OCRtool import OCRTool
 from app.task.general.tools import execute_script_task
 
 from .tools import push_notification
@@ -49,11 +47,6 @@ logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
-_WUWA_LAUNCHER_PROCESS = "launcher.exe"
-_WUWA_LAUNCHER_TITLE_BY_RESOURCE = {
-    "官服": "鸣潮",
-    "国际服": "Wuthering Waves",
-}
 
 
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
@@ -179,7 +172,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.launcher_path: Path | None = None
         self.game_process_path: Path | None = None
         self.okww_process_manager: ProcessManager | None = None
-        self.launcher_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
         self.script_root_path: Path | None = None
         self.script_exe_path: Path | None = None
@@ -341,91 +333,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
-    async def _click_wuthering_waves_launcher_text(
-        self,
-        text: str,
-        *,
-        alternatives: tuple[str, ...] = (),
-        retry_times: int = 30,
-        interval: float = 2,
-    ) -> bool:
-        """通过 OCR 点击官方启动器上的指定文字。"""
+    async def _ensure_wuthering_waves_updated(self) -> None:
+        """确保游戏已是官方最新版，需要时由 MAS 自行下载覆写。
 
-        title = _WUWA_LAUNCHER_TITLE_BY_RESOURCE.get(
-            str(self.cur_user_config.get("Info", "Resource")), "鸣潮"
-        )
-        for candidate in (text, *alternatives):
-            if await asyncio.to_thread(
-                OCRTool.click_txt,
-                text=candidate,
-                title=title,
-                interval=interval,
-                retry_times=retry_times,
-            ):
-                return True
-        return False
+        全程不启动官方启动器、不做界面识别：版本元数据取自官方接口，
+        包体下载、md5 校验、增量应用与覆写全部由 MAS 完成。
 
-    async def _start_wuthering_waves_launcher(self) -> None:
-        """启动官方启动器，下载过程和结果由启动器自身负责。"""
-
-        if self.launcher_path is None:
-            raise RuntimeError("未设置鸣潮官方启动器路径")
-        if is_process_running(_WUWA_LAUNCHER_PROCESS):
-            logger.info("检测到鸣潮官方启动器已运行，复用现有进程")
-            return
-
-        self.launcher_process_manager = ProcessManager()
-        await self.launcher_process_manager.open_process(self.launcher_path)
-        await asyncio.sleep(3)
-
-    async def _trigger_wuthering_waves_launcher_update(
-        self, update_info: WutheringWavesUpdateInfo
-    ) -> None:
-        """只触发官方启动器按钮，不接管包体下载、覆盖和校验。"""
-
-        await self._start_wuthering_waves_launcher()
-        if update_info.update_available:
-            if self.launcher_path is None or update_info.release_version is None:
-                raise RuntimeError("鸣潮官方更新缺少启动器路径或目标版本")
-            clicked = await self._click_wuthering_waves_launcher_text(
-                "更新",
-                alternatives=("更新游戏", "Update", "Update Game"),
-                retry_times=45,
-            )
-            if not clicked:
-                raise RuntimeError("未能通过 OCR 找到鸣潮官方启动器的更新按钮")
-            logger.info(
-                "已通过官方启动器触发鸣潮更新: {} -> {}",
-                update_info.current_version or "未知",
-                update_info.release_version or "未知",
-            )
-            await self._push_dispatch_log("等待鸣潮官方启动器完成下载与解压...")
-            await wait_wuthering_waves_update(
-                self.launcher_path,
-                update_info.release_version,
-            )
-            return
-
-        clicked = await self._click_wuthering_waves_launcher_text(
-            "预下载", alternatives=("Pre-download",), retry_times=45
-        )
-        if not clicked:
-            logger.info("未通过 OCR 找到预下载按钮，可能已在下载或已完成")
-            return
-        confirmed = await self._click_wuthering_waves_launcher_text(
-            "确定下载", alternatives=("Confirm Download",), retry_times=15
-        )
-        if not confirmed:
-            logger.info("未通过 OCR 找到预下载确认按钮，交由启动器继续当前流程")
-            return
-        logger.info(
-            "已通过官方启动器触发鸣潮预下载: {} -> {}；下载过程由启动器负责",
-            update_info.current_version or "未知",
-            update_info.predownload_version or "未知",
-        )
-
-    async def _check_and_trigger_wuthering_waves_update(self) -> None:
-        """检查官方版本信息，必要时触发启动器 OCR 更新流程。"""
+        接口不可用属于「无法判断」，放行启动流程（旧客户端通常仍能登录，
+        不该因为查不到版本就拦住用户）；而更新已确认需要却失败，
+        则必须抛错阻断，否则会拿旧客户端撞登录失败。
+        """
 
         if self.launcher_path is None:
             return
@@ -436,18 +353,33 @@ class AutoProxyTask(TaskExecuteBase):
                 resource,
             )
         except Exception as e:
-            # 官方接口不可用时不阻断原有游戏启动流程。
             logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
             return
-        if not update_info.should_start_launcher:
+
+        if update_info.predownload_available:
+            logger.info(
+                "官方已开放预下载 {}，MAS 暂不接管预下载",
+                update_info.predownload_version or "未知",
+            )
+        if not update_info.update_available:
             return
-        await self._trigger_wuthering_waves_launcher_update(update_info)
+
+        await self._push_dispatch_log(
+            f"鸣潮需更新: {update_info.current_version}"
+            f" -> {update_info.release_version}"
+        )
+        await update_wuthering_waves(
+            update_info.install_dir,
+            resource,
+            update_info.current_version,
+            on_progress=self._push_dispatch_log,
+        )
 
     async def _mas_launch_game_before_task(self) -> None:
         """检查并触发官方启动器更新，然后启动鸣潮客户端。"""
 
         if isinstance(self.game_manager, ProcessManager):
-            await self._check_and_trigger_wuthering_waves_update()
+            await self._ensure_wuthering_waves_updated()
             if is_process_running(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
