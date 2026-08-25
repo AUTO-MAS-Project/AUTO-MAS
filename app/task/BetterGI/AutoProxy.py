@@ -398,9 +398,11 @@ class AutoProxyTask(TaskExecuteBase):
             resource, mode
         )
 
-        # 1. 部署脚本 + 生成配置组
+        # 1. 订阅脚本仓库（BetterGI 自行拉取/更新切换账号脚本）+ 生成配置组
         try:
-            account_switch.deploy_switch_script(self.script_root_path)
+            script_present = account_switch.ensure_switch_subscription(
+                self.script_root_path
+            )
             account_switch.write_switch_group(
                 self.script_root_path,
                 account,
@@ -414,6 +416,14 @@ class AutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"切换账号准备失败: {e}")
             await self._push_dispatch_log(f"切换账号准备失败: {e}")
             return False
+
+        # 更新情况：BGI 启动时先更新仓库脚本、再执行配置组；本地已有脚本则本次是增量检查
+        if script_present:
+            logger.info("切换账号脚本已存在于本地，BGI 启动时检查仓库更新")
+            await self._push_dispatch_log("切换账号脚本已就绪，随 BGI 启动检查仓库更新")
+        else:
+            logger.info("切换账号脚本本地缺失，将由 BGI 启动时从脚本仓库检出")
+            await self._push_dispatch_log("切换账号脚本本地缺失，BGI 启动时将自动从脚本仓库检出")
 
         await self._push_dispatch_log(
             f"开始切换账号: --startGroups {account_switch._GROUP_NAME}"

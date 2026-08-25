@@ -118,7 +118,7 @@
   "projects": [
     {
       "name": "切换账号多模式",
-      "folderName": "SwitchAccountMultipleMode_MAS",
+      "folderName": "SwitchAccountMultipleMode",
       "jsScriptSettingsObject": {
         "Modes": "下拉列表",
         "username": "",
