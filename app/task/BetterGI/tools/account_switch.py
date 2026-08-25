@@ -18,15 +18,21 @@
 
 """BetterGI 切换账号专项适配。
 
-将上游脚本「切换账号多模式」(SwitchAccountMultipleMode) 内置为 MAS 资源，
-运行时把脚本部署到 BetterGI 的 JsScript 目录，并按当前用户配置生成一个独立的
+通过 BetterGI 的脚本仓库（ScriptRepoUpdater）管理「切换账号多模式」脚本，不再随
+MAS 内置冻结副本：MAS 只写订阅清单并开启「命令行运行前自动更新」，由 BetterGI
+在每次启动（``--startGroups`` 切号 / 一条龙）时自行从仓库拉取/更新脚本到
+``User/JsScript/SwitchAccountMultipleMode``，更新完成后再执行任务（BetterGI
+``StartGameTask`` 会等待仓库更新 Task 结束）。MAS 据此按当前用户配置生成一个独立的
 配置组 ``MAS切换账号``，供 ``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
+
+- 订阅清单: ``{RootPath}/User/Subscriptions/bettergi-scripts-list.json`` = 路径数组
+- 自动更新: ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 两个开关
+- 检出目标: ``{RootPath}/User/JsScript/SwitchAccountMultipleMode``
 
 账号密码来源：MAS 用户配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
 下拉列表模式下由 MAS 负责把完整手机号/邮箱转换为游戏下拉列表显示的打码形式。
 """
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -35,20 +41,28 @@ from app.utils.io import read_file, write_file
 
 logger = get_logger("BetterGI 切换账号")
 
+# 生成并执行的配置组名称（同时作为文件名与 --startGroups 的组名）
+_GROUP_NAME = "MAS切换账号"
+
 # 与 BetterGI 项目结构固定的相对路径（从 RootPath 派生）
 _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
 _SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
 
-# 内置资源目录（随 MAS 版本同步）
+# 内置资源目录（随 MAS 版本同步；含配置组模板，脚本本体不再内置）
 _RES_TEMPLATE_DIR = Path.cwd() / "res" / "templates" / "BetterGI"
 
-# 脚本文件夹名（BetterGI JsScript 下），须与配置组 template 的 folderName 一致。
-# 追加 _MAS 后缀与上游订阅脚本 SwitchAccountMultipleMode 隔离，避免 BetterGI
-# ScriptRepoUpdater 自动同步时删除 MAS 部署的副本。
-_SCRIPT_FOLDER_NAME = "SwitchAccountMultipleMode_MAS"
+# 切换账号脚本在 BetterGI 脚本仓库中的相对路径（repo 下），"js" 前缀映射到 User/JsScript
+_SCRIPT_REPO_PATH = "js/SwitchAccountMultipleMode"
+# 仓库检出到 User/JsScript 下的文件夹名，须与配置组 template 的 folderName 一致
+_SCRIPT_FOLDER_NAME = "SwitchAccountMultipleMode"
 
-# 生成的配置组名称（同时作为文件名与 --startGroups 的组名）
-_GROUP_NAME = "MAS切换账号"
+# BetterGI 脚本仓库（ScriptRepoUpdater）控制相对路径
+#   仓库目录: {RootPath}/Repos/bettergi-scripts-list（真实 git 克隆）
+#   订阅清单: {RootPath}/User/Subscriptions/bettergi-scripts-list.json = ["js/..."]
+_REPO_FOLDER_NAME = "bettergi-scripts-list"
+_SUBSCRIPTION_REL_DIR = Path("User") / "Subscriptions"
+# BetterGI 主配置: {RootPath}/User/config.json，ScriptConfig 段开启自动更新
+_BGI_CONFIG_REL_PATH = Path("User") / "config.json"
 
 # 下拉列表模式下手机号/邮箱的打码规则（与游戏登录界面显示一致）
 _PHONE_MASK_PREFIX = 3
@@ -128,22 +142,69 @@ def _build_js_settings(
     }
 
 
-def deploy_switch_script(root_path: Path) -> Path:
-    """把内置的切换账号脚本部署到 BetterGI 的 JsScript 目录（覆盖式，保证版本一致）。
+def switch_script_dir(root_path: Path) -> Path:
+    """切换账号脚本经 BetterGI 仓库检出后的本地部署目录。"""
+    return root_path / _JS_SCRIPT_REL_DIR / _SCRIPT_FOLDER_NAME
+
+
+def _ensure_script_subscription(root_path: Path) -> Path:
+    """合并订阅清单，返回订阅文件路径。
+
+    把 ``_SCRIPT_REPO_PATH`` 追加进 ``User/Subscriptions/{仓库名}.json``（路径数组），
+    保留用户已订阅的其他脚本；由 BetterGI ScriptRepoUpdater 据此拉取/更新。
+    """
+    sub_path = root_path / _SUBSCRIPTION_REL_DIR / f"{_REPO_FOLDER_NAME}.json"
+    data = read_file(sub_path)
+    subscribed = [str(x) for x in data] if isinstance(data, list) else []
+    if _SCRIPT_REPO_PATH not in subscribed:
+        subscribed.append(_SCRIPT_REPO_PATH)
+    write_file(sub_path, subscribed)
+    logger.info(f"已订阅切换账号脚本: {_SCRIPT_REPO_PATH} -> {sub_path}")
+    return sub_path
+
+
+def _ensure_auto_update_on_cli(root_path: Path) -> Path:
+    """开启 BetterGI 命令行运行前自动更新，返回主配置文件路径。
+
+    ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 置：
+    - ``autoUpdateBeforeCommandLineRun = true``：命令行启动（切号/一条龙）先更新仓库脚本再执行
+    - ``autoUpdateSubscribedScripts = true``：普通启动时也后台更新已订阅脚本（兜底）
+    """
+    config_path = root_path / _BGI_CONFIG_REL_PATH
+    config = read_file(config_path)
+    if not isinstance(config, dict):
+        config = {}
+    # 统一写到 camelCase 键（BetterGI JsonOptions 以 CamelCase 读写，PascalCase 键读取时会被忽略）
+    script_cfg = config.get("scriptConfig")
+    if not isinstance(script_cfg, dict):
+        legacy = config.get("ScriptConfig")  # 兼容历史 PascalCase 键，合并后弃用
+        script_cfg = legacy if isinstance(legacy, dict) else {}
+    script_cfg["autoUpdateBeforeCommandLineRun"] = True
+    script_cfg["autoUpdateSubscribedScripts"] = True
+    config.pop("ScriptConfig", None)
+    config["scriptConfig"] = script_cfg
+    write_file(config_path, config)
+    logger.info(f"已开启 BetterGI 脚本仓库自动更新开关: {config_path}")
+    return config_path
+
+
+def ensure_switch_subscription(root_path: Path) -> bool:
+    """确保脚本仓库订阅了切换账号脚本并开启自动更新，交由 BetterGI 拉取/更新。
+
+    替代旧的「内置冻结副本 + deploy_switch_script」。覆盖式写入订阅清单与开关，
+    保留用户已有订阅项与其余配置；BGI 会在下次命令行启动时先更新仓库脚本、再执行
+    ``--startGroups`` 配置组（顺序由 BetterGI ``StartGameTask`` 保证）。
 
     Returns:
-        部署后的脚本目录路径。
+        切换账号脚本当前是否已存在于本地（帮助日志判断是已就绪还是将现拉取）。
     """
-    src = _RES_TEMPLATE_DIR / _SCRIPT_FOLDER_NAME
-    if not src.is_dir():
-        raise FileNotFoundError(f"BetterGI 切换账号脚本资源缺失: {src}")
-
-    dst = root_path / _JS_SCRIPT_REL_DIR / _SCRIPT_FOLDER_NAME
-    # 目标已存在时直接合并覆盖，避免 BetterGI 运行中占用目录导致 rmtree 静默失败、
-    # 进而 copytree 抛 FileExistsError（WinError 183）。
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-    logger.info(f"已部署切换账号脚本: {dst}")
-    return dst
+    try:
+        _ensure_script_subscription(root_path)
+        _ensure_auto_update_on_cli(root_path)
+    except Exception as e:
+        logger.opt(exception=True).warning(f"切换账号脚本仓库订阅设置失败: {e}")
+        raise
+    return switch_script_dir(root_path).is_dir()
 
 
 def write_switch_group(
@@ -157,6 +218,8 @@ def write_switch_group(
 ) -> Path:
     """生成（覆盖）BetterGI 切换账号配置组 ``MAS切换账号``。
 
+    ``folderName`` 固定指向脚本仓库检出目录 ``SwitchAccountMultipleMode``，与
+    ``ensure_switch_subscription`` 对齐；``jsScriptSettingsObject`` 按用户注入。
     Returns:
         写入的配置组 JSON 文件路径。
     """
@@ -165,9 +228,11 @@ def write_switch_group(
     if not isinstance(template, dict) or not isinstance(template.get("projects"), list):
         raise RuntimeError(f"切换账号配置组模板无效: {template_path}")
 
-    template["name"] = _GROUP_NAME
-    template["index"] = 999
-    template["projects"][0]["jsScriptSettingsObject"] = _build_js_settings(
+    project = template["projects"][0]
+    if not isinstance(project, dict):
+        raise RuntimeError(f"切换账号配置组模板缺 projects[0]: {template_path}")
+    project["folderName"] = _SCRIPT_FOLDER_NAME
+    project["jsScriptSettingsObject"] = _build_js_settings(
         account, password, mode, global_account, servers, uid
     )
 
