@@ -549,12 +549,11 @@ class AutoProxyTask(TaskExecuteBase):
                 log_time=dt,
             )
 
-            if log_item.status == "OK-WW 正常运行中":
+            if log_item.status in {"未开始监看日志", "OK-WW 正常运行中"}:
                 log_item.status = "任务被用户手动中止"
 
-            if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+            if not log_item.content:
+                log_item.content = [log_item.status]
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
             statistic_paths.append(log_path.with_suffix(".json"))

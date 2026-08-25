@@ -466,6 +466,7 @@ const getDefaultMAAUserData = () => ({
     IfDepotMaintain: false,
     IfActivityFirst: false,
     ActivityStageIndex: 1,
+    ActivityMedicineNumb: 0,
     DepotMaintainPlans: '[]',
   },
   Notify: {

@@ -384,6 +384,26 @@ export function useScriptApi() {
                           maaUserData.Task?.IfReclamation !== undefined
                             ? maaUserData.Task.IfReclamation
                             : false,
+                        IfDepotMaintain:
+                          maaUserData.Task?.IfDepotMaintain !== undefined
+                            ? maaUserData.Task.IfDepotMaintain
+                            : false,
+                        IfActivityFirst:
+                          maaUserData.Task?.IfActivityFirst !== undefined
+                            ? maaUserData.Task.IfActivityFirst
+                            : false,
+                        ActivityStageIndex:
+                          maaUserData.Task?.ActivityStageIndex !== undefined
+                            ? maaUserData.Task.ActivityStageIndex
+                            : 1,
+                        ActivityMedicineNumb:
+                          maaUserData.Task?.ActivityMedicineNumb !== undefined
+                            ? maaUserData.Task.ActivityMedicineNumb
+                            : (maaUserData.Info?.MedicineNumb ?? 0),
+                        DepotMaintainPlans:
+                          maaUserData.Task?.DepotMaintainPlans !== undefined
+                            ? maaUserData.Task.DepotMaintainPlans
+                            : '[]',
                       },
                       Notify: {
                         Enabled:

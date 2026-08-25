@@ -196,7 +196,6 @@ class MaaEndManager(TaskExecuteBase):
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
-            await self.script_config.load_resource(force_reload=True)
             await Config.ScriptConfig.save()
 
             error_user = [

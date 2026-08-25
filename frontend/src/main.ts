@@ -9,8 +9,6 @@ import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
 import { configureSentry } from '@/utils/sentry'
 
-configureLocalMonaco()
-
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
@@ -25,10 +23,25 @@ message.config({ top: `${TITLE_BAR_HEIGHT + MESSAGE_TOP_GAP}px` })
 
 // 导入日志系统
 const logger = window.electronAPI.getLogger('前端主入口')
+
+// Monaco 预加载推迟到浏览器空闲时段，避免与首屏渲染争抢主线程
+const preloadMonaco = () => {
+  void configureLocalMonaco().catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`Monaco 预加载失败，将在下次使用时重试: ${errorMsg}`)
+  })
+}
+
+if (typeof window.requestIdleCallback === 'function') {
+  window.requestIdleCallback(preloadMonaco, { timeout: 5000 })
+} else {
+  window.setTimeout(preloadMonaco, 2000)
+}
+
 if (
   (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
 ) {
-  OpenAPI.BASE = 'http://localhost:36163'
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
 }
 
 // 导入WebSocket消息监听组件
@@ -50,12 +63,12 @@ if (window.electronAPI?.getApiEndpoint) {
     .catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
-      OpenAPI.BASE = 'http://localhost:36163'
+      OpenAPI.BASE = 'http://127.0.0.1:36163'
       logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
     })
 } else {
   // 非 Electron 环境，使用默认值
-  OpenAPI.BASE = 'http://localhost:36163'
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
   logger.info('前端应用开始初始化')
   logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
 }

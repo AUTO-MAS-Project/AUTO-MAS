@@ -16,7 +16,7 @@ let versionServicesStarted = false
  * 1. 标题栏版本信息检查（10分钟一次）
  * 2. 版本更新检查（4小时一次，带弹窗提醒）
  */
-async function startVersionServices() {
+function startVersionServices() {
   if (versionServicesStarted) {
     logger.info('版本检查服务已启动，跳过重复启动')
     return
@@ -26,16 +26,18 @@ async function startVersionServices() {
     logger.info('开始启动版本检查服务...')
 
     // 1. 启动标题栏版本信息定时检查（10分钟一次）
-    await startTitlebarVersionCheck()
+    startTitlebarVersionCheck()
     logger.info('标题栏版本检查服务已启动（每10分钟检查一次）')
 
     // 2. 启动版本更新检查（4小时一次）
     const { startPolling } = useUpdateChecker()
-    await startPolling()
-    logger.info('版本更新检查服务已启动（每4小时检查一次）')
+    void startPolling().catch(error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`启动版本更新检查服务失败: ${errorMsg}`)
+    })
 
     versionServicesStarted = true
-    logger.info('所有版本检查服务启动完成')
+    logger.info('所有版本检查服务已在后台启动')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动版本检查服务失败: ${errorMsg}`)
@@ -88,7 +90,7 @@ export async function enterApp(
     logger.info(`${reason}：已进入应用`)
 
     // 启动版本检查服务
-    await startVersionServices()
+    startVersionServices()
 
     return true
   } else {
@@ -133,7 +135,7 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   logger.info(`${reason}：已跳过初始化`)
 
   // 启动版本检查服务
-  await startVersionServices()
+  startVersionServices()
 
   // 预加载调度中心
   preloadSchedulerView(reason)

@@ -553,6 +553,9 @@ class MaaUserConfig_Task(BaseModel):
     ActivityStageIndex: Optional[int] = Field(
         default=None, description="优先刷取的活动关卡序号"
     )
+    ActivityMedicineNumb: Optional[int] = Field(
+        default=None, description="活动关优先任务吃理智药数量"
+    )
     DepotMaintainPlans: Optional[str] = Field(
         default=None, description="库存保持计划 JSON"
     )

@@ -1034,15 +1034,4 @@ onUnmounted(() => {
 .queue-title-input :deep(.ant-input:focus) {
   box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
 }
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .queue-selector-card {
-    background: var(--ant-color-bg-container);
-  }
-
-  .queue-config-card {
-    background: var(--ant-color-bg-container);
-  }
-}
 </style>
