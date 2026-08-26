@@ -2242,7 +2242,7 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "Update"] = Field(
         ..., description="任务模式"
     )
     resumeFromScriptId: str | None = Field(

@@ -2957,7 +2957,7 @@ class OkwwConfig(ConfigBase):
         self.Game_IfAutoUpdate = ConfigItem("Game", "IfAutoUpdate", True, BoolValidator())
         ## 整文件同步体积上限（GB），超过则中止并提示手动处理
         self.Game_UpdateFullSyncLimit = ConfigItem(
-            "Game", "UpdateFullSyncLimit", 10, RangeValidator(1, 9999)
+            "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
         )
         ## Run -------------------------------------------------------------
         ## 每日代理次数上限

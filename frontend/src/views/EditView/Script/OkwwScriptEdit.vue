@@ -183,6 +183,28 @@
             </a-col>
           </a-row>
 
+          <a-row :gutter="24" class="game-control-row">
+            <a-col :span="12">
+              <a-button
+                size="large"
+                :disabled="
+                  !okwwConfig.Game.Enabled || gamePathValidation.status !== 'valid' || isSaving
+                "
+                @click="handleCheckUpdate"
+              >
+                <template #icon>
+                  <ThunderboltOutlined />
+                </template>
+                检查更新
+              </a-button>
+            </a-col>
+            <a-col :span="12">
+              <span class="label-hint">
+                由 MAS 检查官方版本并完成更新；更新前请确保游戏未在运行
+              </span>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -351,6 +373,38 @@
   </div>
 
   <a-modal
+    v-model:open="updateModal.open"
+    :title="updateModal.running ? '鸣潮更新进度' : '检查鸣潮更新'"
+    :confirm-loading="updateModal.starting"
+    :mask-closable="!updateModal.running"
+    :footer="updateModal.running ? null : undefined"
+    @ok="startUpdate"
+    @cancel="handleUpdateModalCancel"
+  >
+    <template v-if="!updateModal.running">
+      <a-form layout="vertical">
+        <a-form-item label="选择用户（按该用户的服务器检查更新）">
+          <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
+            <a-select-option v-for="user in updateModal.users" :key="user.uid" :value="user.uid">
+              {{ user.name }}（{{ user.resource }}）
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-alert
+          type="info"
+          show-icon
+          message="将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行"
+        />
+      </a-form>
+    </template>
+    <template v-else>
+      <div class="update-log-area">
+        <pre class="update-log-content">{{ updateModal.log || '正在连接更新任务...' }}</pre>
+      </div>
+    </template>
+  </a-modal>
+
+  <a-modal
     v-model:open="candidateModal.open"
     title="选择导入路径"
     :confirm-loading="candidateModal.loading"
@@ -374,7 +428,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -382,14 +436,20 @@ import {
   FolderOpenOutlined,
   ImportOutlined,
   QuestionCircleOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
+import { Service, TaskCreateIn } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useUserApi } from '@/composables/useUserApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 import type { PathDiscoveryCandidate } from '@/types/electron'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const { getUsers } = useUserApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -448,7 +508,7 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     Arguments: '',
     WaitTime: 60,
     IfAutoUpdate: true,
-    UpdateFullSyncLimit: 10,
+    UpdateFullSyncLimit: 30,
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })
@@ -475,6 +535,139 @@ const gamePathValidation = reactive({
   status: 'unknown' as PathValidationStatus,
   message: '',
 })
+
+interface UpdateUserOption {
+  uid: string
+  name: string
+  resource: string
+}
+
+const updateModal = reactive({
+  open: false,
+  running: false,
+  starting: false,
+  users: [] as UpdateUserOption[],
+  selectedUserId: '',
+  log: '',
+})
+
+const updateSession = reactive({
+  subscriptionId: null as string | null,
+  websocketId: '',
+  timeout: null as number | null,
+})
+
+const clearUpdateSession = () => {
+  if (updateSession.subscriptionId) {
+    unsubscribe(updateSession.subscriptionId)
+    updateSession.subscriptionId = null
+  }
+  updateSession.websocketId = ''
+  if (updateSession.timeout) {
+    window.clearTimeout(updateSession.timeout)
+    updateSession.timeout = null
+  }
+}
+
+const stopUpdateSession = async (): Promise<boolean> => {
+  const taskId = updateSession.websocketId
+  if (!taskId) {
+    clearUpdateSession()
+    return true
+  }
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    if (response.code !== 200) {
+      throw new Error(response.message || '停止鸣潮更新失败')
+    }
+    return true
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    return false
+  } finally {
+    clearUpdateSession()
+  }
+}
+
+const handleCheckUpdate = async () => {
+  if (updateModal.running) return
+  try {
+    const resp = await getUsers(scriptId)
+    const data = (resp?.data || {}) as Record<string, any>
+    const users: UpdateUserOption[] = Object.entries(data)
+      .filter(([, user]) => user?.Info?.Status !== false)
+      .map(([uid, user]) => ({
+        uid,
+        name: user?.Info?.Name || uid,
+        resource: user?.Info?.Resource || '官服',
+      }))
+    if (!users.length) {
+      message.warning('请先添加并启用用户，再进行更新检查')
+      return
+    }
+    updateModal.users = users
+    updateModal.selectedUserId = users[0].uid
+    updateModal.log = ''
+    updateModal.open = true
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error('加载用户失败')
+  }
+}
+
+const startUpdate = async () => {
+  if (!updateModal.selectedUserId) return
+  updateModal.starting = true
+  try {
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: updateModal.selectedUserId,
+      mode: TaskCreateIn.mode.UPDATE,
+    })
+    if (response.code !== 200 || !response.taskId) {
+      throw new Error(response.message || '启动鸣潮更新失败')
+    }
+    updateModal.running = true
+    updateSession.websocketId = response.taskId
+    updateSession.subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+      if (wsMessage.type === 'Update' && typeof wsMessage.data?.log === 'string') {
+        updateModal.log = wsMessage.data.log
+      }
+      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+        message.error(`鸣潮更新失败: ${String(wsMessage.data.Error)}`)
+        updateModal.running = false
+        updateModal.open = false
+        void stopUpdateSession()
+        return
+      }
+      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        message.success('鸣潮更新任务已结束')
+        updateModal.running = false
+        updateModal.open = false
+        void stopUpdateSession()
+      }
+    })
+    updateSession.timeout = window.setTimeout(
+      () => {
+        message.error('鸣潮更新超时，已自动停止')
+        void stopUpdateSession()
+      },
+      30 * 60 * 1000
+    )
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : '启动鸣潮更新失败')
+  } finally {
+    updateModal.starting = false
+  }
+}
+
+const handleUpdateModalCancel = () => {
+  if (updateModal.running) {
+    void stopUpdateSession()
+  }
+  updateModal.running = false
+  updateModal.open = false
+}
 
 const showPathRejectModal = (title: string, content: string) => {
   Modal.error({ title, content, okText: '我知道了' })
@@ -751,6 +944,10 @@ const selectGameRootPath = async () => {
 }
 
 onMounted(loadScript)
+
+onUnmounted(() => {
+  void stopUpdateSession()
+})
 </script>
 
 <style scoped>
@@ -888,6 +1085,24 @@ onMounted(loadScript)
 
 .path-validation-alert {
   margin-top: 8px;
+}
+
+.update-log-area {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.update-log-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text);
 }
 
 .config-form :deep(.ant-form-item) {
