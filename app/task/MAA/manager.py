@@ -38,15 +38,13 @@ from app.tools.game_sign_notify import (
 )
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
-from .ManualReview import ManualReviewTask
 from .ScriptConfig import ScriptConfigTask
 
 
 logger = get_logger("MAA 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
-    "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
 
@@ -199,7 +197,7 @@ class MaaManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["AutoProxy", "ManualReview"]:
+        if self.task_info.mode in ["AutoProxy"]:
 
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")

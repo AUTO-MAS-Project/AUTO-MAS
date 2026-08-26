@@ -510,13 +510,10 @@ class MaaUserConfig_Info(BaseModel):
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
     Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
-    IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
-    SklandToken: Optional[str] = Field(default=None, description="SklandToken")
     Tag: Optional[str] = Field(default=None, description="状态标签列表")
 
 
 class MaaUserConfig_Data(BaseModel):
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过人工排查")
     AnnihilationCompletedWeek: Optional[str] = Field(
         default=None, description="剿灭达到周上限时的 ISO 周"
     )
@@ -916,8 +913,6 @@ class MaaEndUserConfig_Info(BaseModel):
     )
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
-    IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
-    SklandToken: Optional[str] = Field(default=None, description="SklandToken")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
 
@@ -989,8 +984,6 @@ class MaaEndUserConfig_Data(BaseModel):
     LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
         default=None, description="上次代理状态"
     )
-    LastSklandDate: Optional[str] = Field(default=None, description="上次森空岛签到日期")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
 
 class MaaEndUserConfig(BaseModel):
@@ -1189,7 +1182,6 @@ class SrcUserConfig_Stage(BaseModel):
 class SrcUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
 
 class SrcUserConfig_Notify(BaseModel):
@@ -1305,7 +1297,6 @@ class HSRUserConfig_Info(BaseModel):
 class HSRUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
     # 历战余响
     EchoOfWarCompletedThisWeek: Optional[bool] = Field(
         default=None, description="本周是否已完成历战余响"
@@ -1620,7 +1611,6 @@ class M9AUserConfig_Data(BaseModel):
     LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
     LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
 
 class M9AUserConfig_Notify(BaseModel):
@@ -2250,7 +2240,7 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+    mode: Literal["AutoProxy", "ScriptConfig"] = Field(
         ..., description="任务模式"
     )
     resumeFromScriptId: str | None = Field(

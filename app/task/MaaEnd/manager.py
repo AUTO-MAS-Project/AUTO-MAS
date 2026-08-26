@@ -37,15 +37,13 @@ from app.tools.game_sign_notify import (
 )
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
-from .ManualReview import ManualReviewTask
 from .ScriptConfig import ScriptConfigTask
 from .resource_loader import load_maaend_controller_protocol
 
 logger = get_logger("MaaEnd 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
-    "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
 
@@ -187,7 +185,7 @@ class MaaEndManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["AutoProxy", "ManualReview"]:
+        if self.task_info.mode in ["AutoProxy"]:
 
             if self.emulator_manager is not None:
                 await self.emulator_manager.close(
