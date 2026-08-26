@@ -12,11 +12,7 @@
         <a-alert
           :type="repoExists ? 'info' : 'warning'"
           :message="repoExists ? '本地仓库已存在' : '本地仓库不存在'"
-          :description="
-            repoExists
-              ? '将更新现有仓库到最新版本'
-              : '将从远程克隆仓库到本地'
-          "
+          :description="repoExists ? '将更新现有仓库到最新版本' : '将从远程克隆仓库到本地'"
           show-icon
         />
       </div>

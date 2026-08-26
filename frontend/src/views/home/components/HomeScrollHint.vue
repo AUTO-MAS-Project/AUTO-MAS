@@ -1,6 +1,11 @@
 <template>
   <Transition name="scroll-hint">
-    <button v-if="visible" class="scroll-hint" aria-label="向下滚动查看更多内容" @click="scrollDown">
+    <button
+      v-if="visible"
+      class="scroll-hint"
+      aria-label="向下滚动查看更多内容"
+      @click="scrollDown"
+    >
       <span class="scroll-hint-text">下方还有更多内容</span>
       <DownOutlined class="scroll-hint-arrow" />
     </button>
