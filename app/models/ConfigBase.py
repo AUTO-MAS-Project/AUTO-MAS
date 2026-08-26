@@ -1107,10 +1107,7 @@ class ConfigBase(ABC):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        # write_file 内部 fsync 是同步阻塞调用, 放线程池避免卡住事件循环
-        await asyncio.to_thread(
-            write_file, self.file, await self.toDict(if_decrypt=False)
-        )
+        write_file(self.file, await self.toDict(if_decrypt=False))
 
     async def lock(self):
         """
@@ -1386,10 +1383,7 @@ class MultipleConfig(Generic[T]):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        # write_file 内部 fsync 是同步阻塞调用, 放线程池避免卡住事件循环
-        await asyncio.to_thread(
-            write_file, self.file, await self.toDict(if_decrypt=False)
-        )
+        write_file(self.file, await self.toDict(if_decrypt=False))
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """
