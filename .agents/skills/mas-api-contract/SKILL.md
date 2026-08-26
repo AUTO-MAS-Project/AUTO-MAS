@@ -27,6 +27,15 @@ Current `dev` baseline:
 1. Keep FastAPI responses aligned with `OutBase`-style envelopes used in `app/models/schema.py`.
 2. Keep WebSocket contracts aligned with current envelope conventions already used by `app/api/core.py` and WS command routes.
 
+## MCP Surface
+The backend exposes an MCP server derived from the live OpenAPI schema. Know these facts before changing API surface:
+
+1. `main.py` mounts it with `fastapi_mcp.FastApiMCP(...).mount_http()`, so the transport is streamable HTTP at `/mcp`. It is not an SSE endpoint; do not describe or document it as one.
+2. Mounting is gated by `AUTO_MAS_ENABLE_MCP` (default `"1"`) and happens in background initialization after `lifespan` yields. The route is absent until that finishes, so an early request can legitimately 404.
+3. MCP tools are generated from the full OpenAPI schema with `describe_full_response_schema=True` and `describe_all_responses=True`. Every route you add, rename, or retype becomes an MCP tool signature automatically, and schema churn is user-visible through this surface as well as through the generated frontend client.
+4. `exclude_tags=["Delete"]` keeps destructive routes out of MCP. A destructive endpoint must carry `tags=["Delete"]` to stay excluded; path or method naming alone does not exclude it.
+5. Treat `/mcp` and its tool names as an external contract. Route path, `operation_id`, and tag changes are breaking for MCP clients even when the HTTP API stays compatible.
+
 ## Contract Principles
 1. Keep one clear contract per endpoint action.
 2. Keep request and response types explicit and version-safe.
@@ -80,7 +89,7 @@ Current `dev` baseline:
 3. Keep backward read compatibility when renaming request fields.
 4. Document any breaking contract change before merge.
 5. For OpenAPI-exposed schema fields already consumed by generated frontend clients, avoid rewriting a stable flat `Literal[...]` field into `Union[...]` plus shared type aliases unless you have verified that the generated TypeScript runtime exports remain unchanged.
-6. Treat documented local integration entrypoints as compatibility surfaces too; do not rename or repurpose stable paths such as the documented MCP SSE endpoint without an explicit migration plan.
+6. Treat documented local integration entrypoints as compatibility surfaces too; do not rename or repurpose stable paths such as the MCP endpoint without an explicit migration plan.
 7. After backend API changes, regenerate frontend API clients from `http://127.0.0.1:36163/openapi.json` with `openapi --output ./src/api --client axios` instead of hand-editing generated TypeScript.
 8. When testing new API calls from the frontend, remember that plain `yarn dev` can use the remote `dev` backend; start the local backend first when verifying local API changes.
 
