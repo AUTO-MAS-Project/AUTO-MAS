@@ -20,10 +20,11 @@ def _progress(x: int, n: int) -> str:
 
 
 def test_mid_run_task_end_is_not_complete(tmp_path) -> None:
-    """任务边界(非最后一个)的「任务结束」不得判为整条完成。
+    """任务边界(非最后)的「任务结束」不得判为整条完成。
 
-    这是崩溃根因：4 任务的一条龙在任务 1 完成后即输出「任务结束」，旧逻辑会把整条
-    一条龙误判成功而提前强杀 BetterGI（曾把一龙狗砍在任务 2 的地图模板加载处）。
+    这是崩溃根因之一：4 任务的一条龙在任务 1 完成后即输出「任务结束」，旧逻辑会把整条
+    误判成功而提前强杀 BetterGI（曾把一龙狗砍在任务 2 的地图模板加载处）。现以权威收尾
+    行「一条龙和配置组任务结束」为准，无该行即不算完成。
     """
     log = "".join(
         [_progress(1, 4), "\n→ 任务结束", _progress(2, 4), "\n提瓦特大陆地图模板加载中"]
@@ -32,13 +33,40 @@ def test_mid_run_task_end_is_not_complete(tmp_path) -> None:
 
 
 def test_last_progress_line_still_mid_run(tmp_path) -> None:
-    """进度停在 1/4、末尾恰好是任务 1 的「任务结束」——仍不判完成。"""
+    """进度停在 1/4、末尾是任务 1 的「任务结束」——无权威收尾行，不判完成。"""
     log = "".join([_progress(1, 4), "\n→ 任务结束"])
     assert _one_dragon_sequence_done(log) is False
 
 
+def test_config_group_subtask_end_is_not_complete(tmp_path) -> None:
+    """一条龙里配置组子任务（切换账号）的「任务结束」不得判为整条完成。
+
+    这是本次回归根因：真正的一条龙任务还没开始，切换账号配置组结束即输出
+    「配置组任务执行: 1/2」+「→ 任务结束」，旧逻辑按无进度行兜底判成功，
+    在约 48 秒就把 BetterGI 强杀在真正的一条龙运行前。
+    """
+    log = "".join(
+        [
+            "启用配置组任务的数量: 2",
+            "\n配置组任务执行: 1/2",
+            "\n配置组 切换账号DHXYHO 加载完成，共1个脚本，开始执行",
+            '\n→ "任务启动！"',
+            "\n→ 开始执行JS脚本: 切换账号多模式",
+            "\n→ 脚本执行结束",
+            '\n→ "任务结束"',
+            "\n配置组 切换账号DHXYHO 执行结束",
+        ]
+    )
+    assert _one_dragon_sequence_done(log) is False
+
+
+def test_generic_task_end_without_marker_is_not_complete(tmp_path) -> None:
+    """仅泛化的「任务结束」而无权威收尾行，不判完成（兼容配置组/旧进度场景）。"""
+    assert _one_dragon_sequence_done("任意日志\n→ 任务结束") is False
+
+
 def test_full_sequence_complete(tmp_path) -> None:
-    """最后一个任务的「任务结束」（进度 X/N 已到 X==N）才判整条完成。"""
+    """全部任务跑完后打印权威收尾行「一条龙和配置组任务结束」才判整条完成。"""
     log = "".join(
         [
             _progress(1, 4),
@@ -49,20 +77,21 @@ def test_full_sequence_complete(tmp_path) -> None:
             "\n→ 任务结束",
             _progress(4, 4),
             "\n→ 任务结束",
+            "\n一条龙和配置组任务结束",
         ]
     )
     assert _one_dragon_sequence_done(log) is True
 
 
 def test_single_task_one_dragon(tmp_path) -> None:
-    """单任务一条龙（1/1 + 任务结束）应判完成。"""
-    log = "".join([_progress(1, 1), "\n→ 任务结束"])
+    """单任务一条龙跑完 + 权威收尾行，判完成。"""
+    log = "".join([_progress(1, 1), "\n→ 任务结束", "\n一条龙和配置组任务结束"])
     assert _one_dragon_sequence_done(log) is True
 
 
-def test_legacy_no_progress_line_fallback(tmp_path) -> None:
-    """旧版 BGI 无进度行时，退化为「任务结束」单判（兼容单任务一条龙）。"""
-    log = "任意日志\n→ 任务结束"
+def test_sequence_done_marker_present(tmp_path) -> None:
+    """日志命中唯一权威收尾行即判完成（即使其后还有杂散任务结束）。"""
+    log = "\n一条龙和配置组任务结束\n→ 任务结束"
     assert _one_dragon_sequence_done(log) is True
 
 
