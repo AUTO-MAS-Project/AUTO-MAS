@@ -196,6 +196,38 @@ def _resolve_activity_stage(
     return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
 
 
+def _build_activity_priority_fight(
+    fight_task: dict, activity_stage: str, medicine_numb: int
+) -> dict:
+    """生成 MAA 活动关优先任务，使用独立理智药额度。
+
+    活动关优先与理智作战刻意保持为两个独立任务，分别使用各自的理智药
+    额度（Task.ActivityMedicineNumb 与计划表 MedicineNumb），互不转移。
+    """
+
+    activity_fight = fight_task.copy()
+    activity_fight.update(
+        {
+            "Name": "活动关优先",
+            "IsEnable": True,
+            "StagePlan": [activity_stage],
+            "IsStageManually": True,
+            "UseOptionalStage": False,
+            "UseWeeklySchedule": False,
+            "EnableTargetDrop": False,
+            "DropId": "",
+            "DropCount": 0,
+            "IsInventoryTarget": False,
+            "EnableTimesLimit": False,
+            "UseMedicine": medicine_numb > 0,
+            "MedicineCount": medicine_numb,
+            "UseExpiringMedicine": False,
+            "UseExpireMedicineForActivity": False,
+        }
+    )
+    return activity_fight
+
+
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
 
@@ -797,34 +829,8 @@ class AutoProxyTask(TaskExecuteBase):
             activity_medicine_numb = self.cur_user_config.get(
                 "Task", "ActivityMedicineNumb"
             )
-            activity_fight = task_set["Fight"].copy()
-            activity_fight.update(
-                {
-                    "Name": "活动关优先",
-                    "IsEnable": True,
-                    "StagePlan": [activity_stage],
-                    "IsStageManually": True,
-                    "UseOptionalStage": False,
-                    "UseWeeklySchedule": False,
-                    "EnableTargetDrop": False,
-                    "DropId": "",
-                    "DropCount": 0,
-                    "IsInventoryTarget": False,
-                    "EnableTimesLimit": False,
-                    "UseMedicine": activity_medicine_numb > 0,
-                    "MedicineCount": activity_medicine_numb,
-                    "UseExpiringMedicine": False,
-                    "UseExpireMedicineForActivity": False,
-                }
-            )
-            # 理智药额度只交给优先活动关，避免后续普通作战重复消耗。
-            task_set["Fight"].update(
-                {
-                    "UseMedicine": False,
-                    "MedicineCount": 0,
-                    "UseExpiringMedicine": False,
-                    "UseExpireMedicineForActivity": False,
-                }
+            activity_fight = _build_activity_priority_fight(
+                task_set["Fight"], activity_stage, activity_medicine_numb
             )
 
         # 导出任务配置
