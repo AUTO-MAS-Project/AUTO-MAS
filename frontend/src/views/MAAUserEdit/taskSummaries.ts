@@ -1,4 +1,4 @@
-// 流水线折叠态摘要：不展开也能确认当前生效的配置
+// 任务行折叠态摘要：不展开也能确认当前生效的配置
 export const ANNIHILATION_STAGE_OPTIONS = [
   { label: '关闭', value: 'Close' },
   { label: '当期剿灭', value: 'Annihilation' },
@@ -30,12 +30,13 @@ export const stageLabel = (value: string) => (value === '-' ? '当前/上次' : 
 export const seriesLabel = (value: string) =>
   value === '0' ? 'AUTO' : value === '-1' ? '不切换' : value
 
+// 关闭态一律返回空串：关着的开关已经表达了关闭，摘要再写一遍就是重复
 export const summarizeAnnihilation = (
   stage: string,
   weekday: string,
   completedThisWeek: boolean
 ) => {
-  if (stage === 'Close') return '已关闭'
+  if (stage === 'Close') return ''
   const parts = [
     annihilationStageLabel(stage),
     `${weekdayLabel(weekday)}起`,
@@ -51,7 +52,7 @@ export const summarizeActivity = (options: {
   stageLabel?: string
   medicine: number
 }) => {
-  if (!options.enabled) return '已关闭'
+  if (!options.enabled) return ''
   if (options.loading) return '加载中…'
   if (!options.optionCount) return '当前无可刷活动关'
   return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
@@ -59,7 +60,7 @@ export const summarizeActivity = (options: {
 
 export const summarizeDepot = (isPlanMode: boolean, enabled: boolean, plansJson: string) => {
   if (isPlanMode) return '计划模式下不可用'
-  if (!enabled) return '已关闭'
+  if (!enabled) return ''
   let count = 0
   try {
     const parsed = JSON.parse(plansJson || '[]')
@@ -81,7 +82,7 @@ export const infrastModeLabel = (value: string) =>
 
 /** customLabel 由调用方拼好（配置名 + 排班名），自定义模式下未选完则只显示模式名 */
 export const summarizeInfrast = (enabled: boolean, mode: string, customLabel: string) => {
-  if (!enabled) return '已关闭'
+  if (!enabled) return ''
   const modeText = infrastModeLabel(mode)
   return mode === 'Custom' && customLabel ? `${modeText} · ${customLabel}` : modeText
 }
@@ -94,7 +95,7 @@ export const summarizeFight = (options: {
   medicine: number
   remain: string
 }) => {
-  if (!options.enabled) return '已关闭'
+  if (!options.enabled) return ''
   const parts = [
     stageLabel(options.stage),
     `连战 ${seriesLabel(options.series)}`,

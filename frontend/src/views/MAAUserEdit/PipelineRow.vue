@@ -1,11 +1,12 @@
 <template>
-  <div class="pipeline-row" :class="{ 'is-off': !checked, 'is-expanded': expanded }">
+  <div class="task-row" :class="{ 'is-off': !checked, 'is-expanded': expanded }">
     <div class="row-head">
-      <span class="row-dot" aria-hidden="true" />
-      <!-- 开关紧贴任务名：靠邻近性表达「开关管的是这个任务」。无开关的行留占位，保持任务名列对齐 -->
-      <span class="switch-slot">
+      <!-- 一级任务用 switch（44x22），二级子项用 16px 勾选框：2.75 倍尺寸差建立层级，
+           同时符合 HIG「立即生效的设置用 switch、组内选项用 checkbox」。
+           任务名在同级的展开按钮内，无法用 <label> 包裹，故用 aria-label 给读屏同一串文字 -->
+      <span class="toggle-slot">
         <a-switch
-          v-if="switchable"
+          v-if="toggleable"
           :checked="checked"
           :disabled="disabled"
           :aria-label="name"
@@ -47,9 +48,9 @@ withDefaults(
     disabled?: boolean
     hasDetail?: boolean
     hint?: string
-    switchable?: boolean
+    toggleable?: boolean
   }>(),
-  { summary: '', disabled: false, hasDetail: true, hint: '', switchable: true }
+  { summary: '', disabled: false, hasDetail: true, hint: '', toggleable: true }
 )
 
 const emit = defineEmits<{ change: [checked: boolean] }>()
@@ -58,12 +59,11 @@ const expanded = ref(false)
 </script>
 
 <style scoped>
-.pipeline-row {
-  position: relative;
+.task-row {
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.pipeline-row:last-child {
+.task-row:last-child {
   border-bottom: none;
 }
 
@@ -73,37 +73,6 @@ const expanded = ref(false)
   gap: 12px;
   min-height: 52px;
   padding: 6px 4px;
-}
-
-/* 流水线轨道：圆点 + 向下连接线 */
-.row-dot {
-  position: relative;
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  margin-left: 6px;
-  border-radius: 50%;
-  background: var(--ant-color-primary);
-  transition: background 0.2s ease;
-}
-
-.row-dot::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 8px;
-  width: 1px;
-  height: calc(100% + 46px);
-  transform: translateX(-50%);
-  background: var(--ant-color-border);
-}
-
-.pipeline-row:last-child .row-dot::after {
-  display: none;
-}
-
-.is-off .row-dot {
-  background: var(--ant-color-text-quaternary);
 }
 
 .row-main {
@@ -137,7 +106,8 @@ const expanded = ref(false)
   outline-offset: 1px;
 }
 
-.switch-slot {
+/* 固定槽位宽度，无开关的行（日常任务）也留位，保持任务名列对齐 */
+.toggle-slot {
   flex: 0 0 44px;
   display: flex;
   align-items: center;
@@ -150,8 +120,10 @@ const expanded = ref(false)
   color: var(--ant-color-text);
 }
 
+/* 关闭态用 text-secondary 而非 text-tertiary：15px/600 不算 WCAG 大字，
+   tertiary 在浅色模式下仅 3.36:1 不达 AA，secondary 为 7.00:1 且照样压暗 */
 .is-off .row-name {
-  color: var(--ant-color-text-tertiary);
+  color: var(--ant-color-text-secondary);
 }
 
 .row-summary {
@@ -162,10 +134,6 @@ const expanded = ref(false)
   white-space: nowrap;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
-}
-
-.is-off .row-summary {
-  color: var(--ant-color-text-quaternary);
 }
 
 /* 摘要位放控件（如日常任务勾选框）时不能截断 */
@@ -185,20 +153,10 @@ const expanded = ref(false)
   transform: rotate(180deg);
 }
 
+/* 左内边距对齐任务名列（4 行内边距 + 44 开关槽 + 12 间隙 + 8 row-main 内边距），
+   表明「这些配置属于上面那个任务」 */
 .row-detail {
-  position: relative;
-  padding: 4px 8px 16px 34px;
-}
-
-/* 详情区左侧续接流水线轨道，视觉上表明「这些配置属于上面那个任务」 */
-.row-detail::before {
-  content: '';
-  position: absolute;
-  left: 14px;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--ant-color-border);
+  padding: 4px 8px 16px 68px;
 }
 
 .row-hint {
@@ -220,10 +178,6 @@ const expanded = ref(false)
 
   .row-detail {
     padding-left: 8px;
-  }
-
-  .row-detail::before {
-    display: none;
   }
 }
 </style>

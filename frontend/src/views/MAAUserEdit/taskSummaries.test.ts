@@ -8,8 +8,8 @@ import {
 } from './taskSummaries'
 
 describe('annihilation summary', () => {
-  it('collapses to 已关闭 when stage is Close', () => {
-    expect(summarizeAnnihilation('Close', 'Monday', false)).toBe('已关闭')
+  it('stays empty when stage is Close, since the off switch already shows it is off', () => {
+    expect(summarizeAnnihilation('Close', 'Monday', false)).toBe('')
   })
 
   it('shows stage, start weekday and weekly progress', () => {
@@ -41,6 +41,11 @@ describe('activity summary', () => {
       '2. 墟 · AT-7 · 理智药 4'
     )
   })
+
+  it('stays empty when disabled, even while options are still loading', () => {
+    expect(summarizeActivity({ ...base, enabled: false })).toBe('')
+    expect(summarizeActivity({ ...base, enabled: false, loading: true })).toBe('')
+  })
 })
 
 describe('depot summary', () => {
@@ -55,6 +60,11 @@ describe('depot summary', () => {
   it('treats malformed or empty plan JSON as no plans', () => {
     expect(summarizeDepot(false, true, 'not json')).toBe('尚未添加计划')
     expect(summarizeDepot(false, true, '')).toBe('尚未添加计划')
+  })
+
+  it('stays empty when switched off, but keeps explaining plan mode', () => {
+    expect(summarizeDepot(false, false, '[{"a":1}]')).toBe('')
+    expect(summarizeDepot(true, false, '[]')).toBe('计划模式下不可用')
   })
 })
 
@@ -73,8 +83,8 @@ describe('infrast summary', () => {
     expect(summarizeInfrast(true, 'Custom', '')).toBe('自定义基建')
   })
 
-  it('collapses to 已关闭 when the task is off', () => {
-    expect(summarizeInfrast(false, 'Custom', '早班表')).toBe('已关闭')
+  it('stays empty when the task is off', () => {
+    expect(summarizeInfrast(false, 'Custom', '早班表')).toBe('')
   })
 })
 
@@ -99,5 +109,10 @@ describe('fight summary', () => {
 
   it('renders 当前/上次 for the sentinel stage value', () => {
     expect(summarizeFight({ ...base, stage: '-' })).toContain('当前/上次')
+  })
+
+  it('stays empty when disabled, even with a plan applied', () => {
+    expect(summarizeFight({ ...base, enabled: false })).toBe('')
+    expect(summarizeFight({ ...base, enabled: false, planLabel: '周计划' })).toBe('')
   })
 })

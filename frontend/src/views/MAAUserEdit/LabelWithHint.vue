@@ -16,7 +16,7 @@ defineProps<{ text: string; hint?: string }>()
 </script>
 
 <style scoped>
-/* 二级配置标签：与流水线任务名（15px/600/primary）拉开三级差，体现从属关系 */
+/* 二级配置标签：与任务名（15px/600/primary）拉开三级差，体现从属关系 */
 .form-label {
   display: flex;
   align-items: center;

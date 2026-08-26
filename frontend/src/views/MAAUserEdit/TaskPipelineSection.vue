@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>任务流程</h3>
+      <h3>任务配置</h3>
       <span class="section-note">按执行顺序，从上到下</span>
     </div>
 
@@ -10,10 +10,10 @@
       :message="activityStageError"
       type="warning"
       show-icon
-      class="pipeline-alert"
+      class="task-alert"
     />
 
-    <div class="pipeline">
+    <div class="task-list">
       <!-- 剿灭代理：日常之前的独立一轮流程 -->
       <PipelineRow
         name="剿灭代理"
@@ -227,9 +227,9 @@
 
       <!-- 无配置的一键任务：低频改动，压成一行 -->
       <PipelineRow
-        name="日常杂项"
+        name="日常任务"
         :checked="dailyTasks.some(task => formData.Task[task.key])"
-        :switchable="false"
+        :toggleable="false"
         :has-detail="false"
       >
         <template #summary>
@@ -250,7 +250,7 @@
       <!-- 只有一个开关，不必套一层详情面板 -->
       <PipelineRow
         name="自动肉鸽"
-        :summary="formData.Task.IfRoguelike ? '已启用 · 长时间运行可能被误判超时' : '已关闭'"
+        :summary="formData.Task.IfRoguelike ? '长时间运行可能被误判超时' : ''"
         :checked="formData.Task.IfRoguelike"
         :disabled="loading"
         :has-detail="false"
@@ -411,7 +411,7 @@ const depotSummary = computed(() =>
   color: var(--ant-color-text-tertiary);
 }
 
-.pipeline-alert {
+.task-alert {
   margin: 12px 0;
 }
 

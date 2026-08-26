@@ -33,7 +33,7 @@
           <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
             @save="handleFieldSave" />
 
-          <!-- 任务流程：按后端 MAA_TASKS 执行顺序排列 -->
+          <!-- 任务配置：按后端 MAA_TASKS 执行顺序排列 -->
           <TaskPipelineSection
             v-model:form-data="formData"
             :loading="loading"
