@@ -7,10 +7,10 @@
             ],
             "程序优化": [
                 "MAA专项 用户配置页面UI重构 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "移除各专项中的「人工排查」任务模式及前端入口，签到功能统一由游戏签到工具页承接"
+                "移除各专项中的「人工排查」任务模式及前端入口，签到功能统一由游戏签到工具页承接 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "开发流程": [
-                "清理前端 TypeScript 类型错误与 ESLint 告警，恢复 typecheck 与 lint 全量通过"
+                "清理前端 TypeScript 类型错误与 ESLint 告警，恢复 typecheck 与 lint 全量通过 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "修复BUG": []
         },
