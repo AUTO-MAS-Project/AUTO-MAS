@@ -73,6 +73,18 @@ _TEMPLATES = {
 
 Box = tuple[int, int, int, int]
 OCRItem = tuple[str, Box]
+_FRAME_WIDTH = 1920
+_FRAME_HEIGHT = 1080
+# 纵向延伸到画面底部以容纳展开的下拉列表，横向保持表单宽度，避免圈入左下角版本号
+_LOGIN_SCAN_ROI: Box = (480, 270, 1440, _FRAME_HEIGHT)
+# 下拉框展开时每行账号都带该文案，用它正向判断下拉框开合
+_DROPDOWN_MARKER = "上次登录"
+# 点击后等待界面响应的冷却秒数，避免同一目标被连续点击
+_ACCOUNT_CLICK_COOLDOWN = 3.0
+# 提交前需要连续确认目标账号的帧数
+_SUBMIT_CONFIRM_FRAMES = 2
+# 展开态连续多少帧读到账号行却没有目标就判定账号不可用
+_ACCOUNT_MISSING_FRAMES = 3
 # 多显示器适配
 _user32 = ctypes.windll.user32
 _user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
@@ -150,7 +162,9 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
             )
         )
 
-    screenshot = screenshot.resize((1920, 1080), Image.Resampling.LANCZOS)
+    screenshot = screenshot.resize(
+        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
+    )
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
@@ -160,6 +174,7 @@ def _find_template(frame: np.ndarray, name: str) -> Box | None:
     search = frame[top:bottom, left:right]
     template = _load_template(path)
     if template is None:
+        logger.warning(f"模板图片加载失败: {path}")
         return None
     if search.shape[0] < template.shape[0] or search.shape[1] < template.shape[1]:
         return None
@@ -167,7 +182,9 @@ def _find_template(frame: np.ndarray, name: str) -> Box | None:
     result = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
     _, score, _, location = cv2.minMaxLoc(result)
     if score < threshold:
+        logger.debug(f"模板 {name} 未命中: 得分 {score:.3f} < 阈值 {threshold}")
         return None
+    logger.debug(f"模板 {name} 命中: 得分 {score:.3f}")
 
     x = left + location[0]
     y = top + location[1]
@@ -192,14 +209,22 @@ def _read_text(frame: np.ndarray, roi: Box) -> list[OCRItem]:
     return items
 
 
+def _format_ocr_items(items: list[OCRItem]) -> str:
+    """将 OCR 结果压缩成单行日志，便于实机排查识别问题。"""
+
+    if not items:
+        return "无识别结果"
+    return " | ".join(f"{text}@{box[0]},{box[1]}" for text, box in items)
+
+
 def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
     with _per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
         x, y, box_width, box_height = box
-        client_x = round((x + box_width / 2) * width / 1920)
-        client_y = round((y + box_height / 2) * height / 1080)
+        client_x = round((x + box_width / 2) * width / _FRAME_WIDTH)
+        client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
     original_position = pyautogui.position()
@@ -218,7 +243,9 @@ def _press_escape(hwnd: int) -> None:
 
 
 def _login_form_visible(frame: np.ndarray) -> bool:
-    texts = [text for text, _ in _read_text(frame, (480, 270, 1440, 810))]
+    items = _read_text(frame, _LOGIN_SCAN_ROI)
+    logger.debug(f"登录表单检测: {_format_ocr_items(items)}")
+    texts = [text for text, _ in items]
     return "登录" in texts and any(
         "最近" in text or "其他账号登录" in text for text in texts
     )
@@ -280,62 +307,156 @@ async def _open_login_form(hwnd: int) -> None:
     raise RuntimeError("打开终末地登录表单超时")
 
 
+def _group_rows(items: list[OCRItem]) -> list[OCRItem]:
+    """把同一行被拆成多个文本框的 OCR 结果拼回整行。
+
+    下拉列表中的账号常被拆成 `135` `****` `9623` 三个框，逐框匹配会丢失后四位。
+    按纵向重叠归行、横向排序后拼接，可恢复完整账号文本。
+
+    Args:
+        items: 单帧 OCR 结果。
+
+    Returns:
+        整行文本与其合并后的外框，按纵坐标升序排列。
+    """
+
+    rows: list[list[OCRItem]] = []
+    for item in sorted(items, key=lambda item: item[1][1]):
+        _, (_, top, _, height) = item
+        # 容差取行高一半，缩放后的行高差异不会把相邻行并到一起
+        for row in rows:
+            row_top = min(box[1] for _, box in row)
+            row_bottom = max(box[1] + box[3] for _, box in row)
+            if top < row_bottom - height / 2 and top + height > row_top + height / 2:
+                row.append(item)
+                break
+        else:
+            rows.append([item])
+
+    grouped: list[OCRItem] = []
+    for row in rows:
+        row.sort(key=lambda item: item[1][0])
+        left = min(box[0] for _, box in row)
+        top = min(box[1] for _, box in row)
+        right = max(box[0] + box[2] for _, box in row)
+        bottom = max(box[1] + box[3] for _, box in row)
+        grouped.append(
+            ("".join(text for text, _ in row), (left, top, right - left, bottom - top))
+        )
+    return grouped
+
+
+def _match_account(rows: list[OCRItem], account_id: str) -> Box | None:
+    """按后四位匹配账号，后四位撞号时再用前三位消歧。
+
+    界面对账号做掩码显示，只暴露前三位与后四位。后四位作为主判据；同一帧内多行
+    命中同一后四位时，用前三位收窄候选，收窄后仍不唯一则无法区分，直接报错而不是
+    赌一个候选。
+
+    Args:
+        rows: 单帧整行 OCR 结果，须先经 `_group_rows` 归行。
+        account_id: 完整账号。
+
+    Returns:
+        命中的文本框，未命中时为 None。
+
+    Raises:
+        RuntimeError: 掩码信息不足以区分多个候选账号。
+    """
+
+    suffix = account_id[-4:]
+    candidates = [box for text, box in rows if suffix in text]
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+
+    # 前三位仅用于收窄候选，不放宽匹配：后四位未命中时不会走到这里
+    prefix = account_id[:3]
+    narrowed = [
+        box for text, box in rows if suffix in text and prefix in text
+    ]
+    if len(narrowed) == 1:
+        logger.warning(f"后四位 {suffix} 命中多行，已按前三位 {prefix} 收窄")
+        return narrowed[0]
+
+    raise RuntimeError(
+        f"登录列表中有 {len(candidates)} 个账号的掩码显示相同，无法区分目标账号，"
+        "请改用 MAAEND 内置任务切换账号"
+    )
+
+
 async def _submit_login_form(hwnd: int, account_id: str) -> None:
-    """Select a saved account when needed, then submit the login form."""
+    """在登录表单中选中目标账号并提交。
+
+    每帧独立判断下拉框开合，不缓存上一帧的推断状态：折叠态与展开态共用同一片
+    区域，缓存状态一旦与实际不符，会拿展开列表当折叠表单，把上一个账号提交上去。
+
+    Args:
+        hwnd: 终末地主窗口句柄。
+        account_id: 完整账号。
+
+    Raises:
+        RuntimeError: 客户端未保存目标账号，或在超时前未能提交表单。
+    """
 
     masked_id = f"***{account_id[-4:]}"
-    account_list_top: int | None = None
-    selector_expanded = False
+    # 点击后需要几帧才收起下拉框，冷却期内不重复点击
+    click_deadline = 0.0
+    # 折叠态连续确认目标账号的帧数，避免把展开列表误判成折叠表单就提交
+    confirmed_frames = 0
+    # 展开态连续识别到账号行但没有目标的帧数，用于区分漏识别与账号确实没保存
+    missing_frames = 0
 
-    async for frame in _poll_frames(hwnd, 30, activate=False):
-        ocr_items = await asyncio.to_thread(
-            _read_text, frame, (480, 270, 1440, 810)
-        )
-        recent = next(
-            (box for text, box in ocr_items if "最近" in text), None
-        )
-        if recent is not None:
-            account_list_top = recent[1] + recent[3]
+    async for frame in _poll_frames(hwnd, 40, activate=False):
+        now = asyncio.get_running_loop().time()
+        items = await asyncio.to_thread(_read_text, frame, _LOGIN_SCAN_ROI)
+        # 账号匹配用归行结果，按钮定位仍用原始框，保持既有点击几何
+        rows = _group_rows(items)
+        logger.debug(f"登录表单识别结果: {_format_ocr_items(rows)}")
+        target = _match_account(rows, account_id)
 
-        target = next(
-            (
-                box
-                for text, box in ocr_items
-                if account_id[-4:] in text
-                and (
-                    not selector_expanded
-                    or (
-                        account_list_top is not None
-                        and box[1] >= account_list_top
+        # 下拉框展开时每行账号都带“上次登录”，据此正向判断，不依赖上一帧状态
+        if any(_DROPDOWN_MARKER in text for text, _ in rows):
+            confirmed_frames = 0
+            if target is None:
+                missing_frames += 1
+                # 连续多帧都读到账号行却没有目标，继续等下去也不会出现，直接报错
+                if missing_frames >= _ACCOUNT_MISSING_FRAMES:
+                    raise RuntimeError(
+                        f"登录列表中未找到目标账号: {masked_id}，"
+                        "请确认客户端已保存该账号且显示在列表中"
                     )
-                )
-            ),
-            None,
-        )
-        login_button = next(
-            (box for text, box in ocr_items if text == "登录"), None
-        )
+                continue
 
-        if selector_expanded and target is not None:
+            missing_frames = 0
+            if now < click_deadline:
+                continue
             logger.info(f"在登录下拉框中选择账号: {masked_id}")
             await asyncio.to_thread(_click_box, hwnd, target, activate=False)
-            selector_expanded = False
+            click_deadline = now + _ACCOUNT_CLICK_COOLDOWN
             continue
 
-        if not selector_expanded and target is not None and login_button is not None:
-            logger.info(f"登录表单已选中目标账号: {masked_id}")
-            await asyncio.to_thread(
-                _click_box, hwnd, login_button, activate=False
-            )
-            logger.info("已点击终末地登录按钮")
-            return
-
-        if not selector_expanded:
+        missing_frames = 0
+        login_button = next((box for text, box in items if text == "登录"), None)
+        if target is None or login_button is None:
+            confirmed_frames = 0
+            recent = next((box for text, box in items if "最近" in text), None)
             if recent is None:
                 continue
             logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
             await asyncio.to_thread(_click_box, hwnd, recent, activate=False)
-            selector_expanded = True
+            click_deadline = now + _ACCOUNT_CLICK_COOLDOWN
+            continue
+
+        # 提交前多确认一帧：登录后界面不再显示账号，这是最后一次能校验账号身份的时机
+        confirmed_frames += 1
+        if confirmed_frames < _SUBMIT_CONFIRM_FRAMES:
+            logger.debug(f"登录表单已选中目标账号，待确认帧数: {confirmed_frames}")
+            continue
+
+        logger.info(f"登录表单已选中目标账号: {masked_id}")
+        await asyncio.to_thread(_click_box, hwnd, login_button, activate=False)
+        logger.info("已点击终末地登录按钮")
+        return
 
     raise RuntimeError(f"登录表单中未找到目标账号: {masked_id}")
 
