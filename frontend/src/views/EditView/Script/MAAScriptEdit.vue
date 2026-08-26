@@ -143,7 +143,7 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="切换账号时需要执行的操作">
@@ -161,7 +161,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
@@ -174,24 +174,6 @@
                 <a-input-number v-model:value="maaConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    title="当剿灭已打满但无法全权代理时，MAA 仍会继续执行代理任务导致理智浪费。开启本项后，将把单次剿灭关卡代理次数限制为 1 次，规避理智浪费，但可能需要数日才能打满剿灭。建议使用代理卡代理保全派驻的用户开启本项。">
-                    <span class="form-label">
-                      剿灭避免无代理卡时浪费理智
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select v-model:value="maaConfig.Run.AnnihilationAvoidWaste" size="large"
-                  @change="handleChange('Run', 'AnnihilationAvoidWaste', $event)">
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -306,7 +288,6 @@ const maaConfig = reactive<MAAScriptConfig>({
     RunTimesLimit: 3,
     AnnihilationTimeLimit: 40,
     RoutineTimeLimit: 10,
-    AnnihilationAvoidWaste: false,
   },
   Emulator: {
     Id: '',
@@ -367,8 +348,8 @@ const refreshScript = async () => {
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -768,30 +749,28 @@ const selectMAAPath = async () => {
   color: var(--ant-color-text);
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
 
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
 
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
 }
 
 /* 响应式设计 */

@@ -42,27 +42,27 @@ jobs:
           python -m pip install ruff==0.15.14
           ruff format .
 
-      - name: 设置 pnpm
-        uses: pnpm/action-setup@v6.0.10
-        with:
-          version: 10
-
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
 
+      - name: 设置 Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+
       - name: 安装前端依赖
         working-directory: frontend
-        env:
-          npm_config_package_manager_strict: 'false'
-        run: pnpm install --lockfile=false --ignore-scripts
+        run: yarn install --immutable --mode=skip-build
+
+      - name: 修复前端 Lint
+        working-directory: frontend
+        run: yarn lint:fix
 
       - name: 格式化前端代码
         working-directory: frontend
-        env:
-          npm_config_package_manager_strict: 'false'
-        run: pnpm format
+        run: yarn format
 
       - name: 提交格式化结果
         run: |

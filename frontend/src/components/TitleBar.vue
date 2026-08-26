@@ -9,6 +9,10 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
+          <span v-if="isBootstrapping" class="startup-status">
+            <LoadingOutlined />
+            后端启动中
+          </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
           </span>
@@ -67,14 +71,19 @@ import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useUiPreferences } from '@/composables/useUiPreferences'
-import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import {
+  BorderOutlined,
+  CloseOutlined,
+  LoadingOutlined,
+  MinusOutlined,
+} from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
-const { resetInitializationStatus } = useAppInitialization()
+const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 
@@ -336,6 +345,14 @@ onMounted(async () => {
 
 .title-bar-dark .title-text {
   color: #fff;
+}
+
+.startup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  color: var(--ant-color-primary);
 }
 
 .title-bar-dark .version-text {

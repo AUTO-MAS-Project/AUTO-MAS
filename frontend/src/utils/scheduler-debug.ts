@@ -54,7 +54,7 @@ export async function testWebSocketConnection() {
 
   try {
     // 从 Electron 获取 WebSocket 端点
-    let wsUrl = 'ws://localhost:36163/api/core/ws'
+    let wsUrl = 'ws://127.0.0.1:36163/api/core/ws'
     if (window.electronAPI?.getApiEndpoint) {
       try {
         const wsEndpoint = await window.electronAPI.getApiEndpoint('websocket')

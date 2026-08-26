@@ -40,8 +40,10 @@
     <HomeLayoutDrawer
       v-model:open="layoutDrawerOpen"
       :modules="homeModules"
+      :scroll-hint-hidden="scrollHintHidden"
       @reorder="reorderHomeModules"
       @visibility-change="setHomeModuleShown"
+      @scroll-hint-change="setScrollHintHidden"
     />
 
     <div v-if="layoutReady && !isBootstrapping" class="home-content">
@@ -147,6 +149,9 @@
         </section>
       </template>
     </div>
+
+    <HomeScrollHint v-if="!scrollHintHidden" />
+    <HomeBackToTop />
   </div>
 </template>
 
@@ -157,6 +162,7 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
+import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
 import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
@@ -164,6 +170,7 @@ import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
 import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
+import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
@@ -181,9 +188,11 @@ const {
   layoutDrawerOpen,
   homeModuleOrder,
   homeModules,
+  scrollHintHidden,
   loadHomeLayout,
   reorderHomeModules,
   setHomeModuleShown,
+  setScrollHintHidden,
   isHomeModuleVisible,
 } = useHomeLayout()
 const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfirmed, showNotice } =

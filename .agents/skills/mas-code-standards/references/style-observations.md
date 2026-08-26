@@ -133,7 +133,7 @@ Signal examples:
 6. Config manager/container layers own type safety for stored instances; downstream validators should not repeat those checks unless an unsupported input path can bypass the container.
 7. Avoid duplicating user-facing config choices. Merge mutually exclusive modes into one selector, or keep the existing selector and apply behavior to the relevant first matching task.
 8. Product architecture is config-swap plus log-monitor driven: AUTO-MAS imports a script's config before task start, restores it after completion, and judges run state through log text, log timestamp, and process-exit signals. Refactors should preserve that explicit operating model.
-9. Documented localhost integration surfaces such as the MCP SSE endpoint are part of the product contract; avoid casual renames or hidden behavior changes at those entrypoints.
+9. Documented localhost integration surfaces such as the MCP endpoint mounted in `main.py` are part of the product contract; avoid casual renames or hidden behavior changes at those entrypoints.
 10. Developer documentation treats config, schema, API, task dispatch, task folder, and frontend page work as one complete script-adaptation path. Partial adaptation is a review smell even when the edited layer is internally correct.
 11. Function calls should stay readable at the call site: positional arguments are fine for tiny obvious calls, while boolean arguments and calls with more than two arguments should use keywords.
 12. Commit messages follow the documented Conventional Commits shape, but local history often uses concise Chinese subjects; match both the formal structure and the nearby tone.

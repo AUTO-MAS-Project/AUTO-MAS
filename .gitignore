@@ -15,8 +15,8 @@ list/
 .env
 
 # IDE and editors
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 .DS_Store

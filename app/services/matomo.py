@@ -21,7 +21,6 @@
 
 
 import asyncio
-import aiohttp
 import json
 import uuid
 import platform
@@ -48,6 +47,9 @@ class _MatomoHandler:
         """获取HTTP会话"""
 
         if self.session is None or self.session.closed:
+            # aiohttp 导入约 105ms，延迟到首次上报时
+            import aiohttp
+
             timeout = aiohttp.ClientTimeout(total=10)
             self.session = aiohttp.ClientSession(timeout=timeout)
         return self.session

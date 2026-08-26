@@ -56,6 +56,7 @@ class SraActivityService:
     async def get_overview(self) -> dict[str, Any]:
         if time.monotonic() >= self._next_check and self._refresh_task is None:
             self._refresh_task = asyncio.create_task(self._refresh())
+        activities = self._data.get("activities")
         return {
             "Available": bool(self._data),
             "Stale": bool(self._data and self._last_error),
@@ -73,6 +74,7 @@ class SraActivityService:
                 )
             ),
             **self._data,
+            "activities": activities if isinstance(activities, list) else [],
         }
 
     async def _refresh(self) -> None:

@@ -33,6 +33,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.services import Notify, System
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
+from app.utils.io import read_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
@@ -47,6 +48,27 @@ logger = get_logger("OK-NTE 自动代理")
 
 # 异环 PC 客户端进程名固定，MAS 接管启动前据此避免重复拉起
 _NTE_CLIENT_PROCESS = "HTGame.exe"
+_NTE_LAUNCHER_RELATIVE_PATH = Path("Neverness To Everness/NTELauncher/NTEGame.exe")
+
+
+def _load_nte_launcher_path(config_path: Path) -> Path | None:
+    launcher_config_path = (
+        config_path / "LauncherTask.json" if config_path.is_dir() else config_path
+    )
+    config = read_file(launcher_config_path)
+    if not isinstance(config, dict):
+        return None
+
+    launcher_path = Path(str(config.get("Launcher Path") or "").strip())
+    expected_parts = tuple(
+        part.casefold() for part in _NTE_LAUNCHER_RELATIVE_PATH.parts
+    )
+    actual_parts = tuple(
+        part.casefold() for part in launcher_path.parts[-len(expected_parts) :]
+    )
+    if not launcher_path.is_absolute() or actual_parts != expected_parts:
+        return None
+    return launcher_path
 
 
 def _yes_no(value: bool) -> str:
@@ -855,6 +877,14 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(Path(track_exe))
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 追踪进程失败: {e}")
+        try:
+            launcher_path = _load_nte_launcher_path(self.script_config_path)
+            if launcher_path is None:
+                logger.warning("未找到有效的异环启动器路径，跳过进程清理")
+            else:
+                await System.kill_process(launcher_path, kill_tree=False)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""

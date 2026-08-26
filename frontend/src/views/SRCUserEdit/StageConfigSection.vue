@@ -259,8 +259,8 @@
 import { computed, ref } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
-const props = defineProps<{
-  formData: any
+const formData = defineModel<any>('formData', { required: true })
+defineProps<{
   loading: boolean
 }>()
 
@@ -356,28 +356,28 @@ const filteredMaterialOptions = computed(() => {
 
 // 获取当前生效关卡
 const getCurrentStage = () => {
-  const channel = props.formData.Stage.Channel
+  const channel = formData.value.Stage.Channel
   if (channel === 'Relic') {
-    return getStageLabel(props.formData.Stage.Relic, 'Relic')
+    return getStageLabel(formData.value.Stage.Relic, 'Relic')
   } else if (channel === 'Materials') {
-    return getStageLabel(props.formData.Stage.Materials, 'Materials')
+    return getStageLabel(formData.value.Stage.Materials, 'Materials')
   } else if (channel === 'Ornament') {
-    return getStageLabel(props.formData.Stage.Ornament, 'Ornament')
+    return getStageLabel(formData.value.Stage.Ornament, 'Ornament')
   }
   return '未配置'
 }
 
 // 获取当前生效关卡的颜色（根据前缀）
 const getCurrentStageColor = () => {
-  const channel = props.formData.Stage.Channel
+  const channel = formData.value.Stage.Channel
   let value = ''
 
   if (channel === 'Relic') {
-    value = props.formData.Stage.Relic
+    value = formData.value.Stage.Relic
   } else if (channel === 'Materials') {
-    value = props.formData.Stage.Materials
+    value = formData.value.Stage.Materials
   } else if (channel === 'Ornament') {
-    value = props.formData.Stage.Ornament
+    value = formData.value.Stage.Ornament
   }
 
   if (!value || value === '-') return 'default'

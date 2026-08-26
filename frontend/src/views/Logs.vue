@@ -6,8 +6,10 @@ import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useTheme } from '@/composables/useTheme'
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 const logger = window.electronAPI.getLogger('日志查看')
-const { themeMode } = useTheme()
+const { isDark } = useTheme()
 const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
+
+defineOptions({ name: 'LogViewer' })
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
@@ -18,16 +20,10 @@ const logMode = ref<LogMode>('follow')
 const selectedLogFile = ref<'app' | 'frontend'>('app')
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
-let refreshInterval: NodeJS.Timeout | null = null
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-// Monaco Editor 主题
-const editorTheme = computed(() => {
-    const mode = themeMode.value
-    if (mode === 'system') {
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs'
-    }
-    return mode === 'dark' ? 'vs-dark' : 'vs'
-})
+// Monaco Editor 主题（isDark 由 useTheme 响应式驱动，system 模式下跟随系统变化）
+const editorTheme = computed(() => (isDark.value ? 'vs-dark' : 'vs'))
 
 // Monaco Editor 配置
 const editorOptions = {

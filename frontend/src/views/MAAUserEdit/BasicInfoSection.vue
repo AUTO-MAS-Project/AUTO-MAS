@@ -118,63 +118,6 @@
           ]" :disabled="loading" size="large" @change="emitSave('Info.Mode', formData.Info.Mode)" />
         </a-form-item>
       </a-col>
-
-      <a-col :span="12">
-        <a-form-item name="mode">
-          <template #label>
-            <a-tooltip title="选择基建模式，自定义基建模式需要自行选择自定义基建配置文件">
-              <span class="form-label">
-                基建模式
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select v-model:value="formData.Info.InfrastMode" :options="[
-            { label: '常规模式', value: 'Normal' },
-            { label: '一键轮休', value: 'Rotation' },
-            { label: '自定义基建', value: 'Custom' },
-          ]" :disabled="loading" size="large" @change="emitSave('Info.InfrastMode', formData.Info.InfrastMode)" />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <!-- 自定义基建配置文件选择 -->
-    <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="24">
-      <a-col :span="12">
-        <a-form-item name="infrastructureConfigFile">
-          <template #label>
-            <a-tooltip title="自定义基建配置名称与描述">
-              <span class="form-label">
-                自定义基建名称
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <div style="display: flex; gap: 12px; align-items: center">
-            <a-input v-model:value="formData.Info.InfrastName" placeholder="自定义基建名称" readonly size="large"
-              style="flex: 1" />
-            <a-button type="primary" :disabled="loading || !isEdit" :loading="infrastructureImporting" size="large"
-              @click="$emit('selectAndImportInfrastructureConfig')">
-              选择并导入
-            </a-button>
-          </div>
-        </a-form-item>
-      </a-col>
-      <a-col :span="12">
-        <a-form-item name="infrastructureIndex">
-          <template #label>
-            <a-tooltip title="从已导入的基建配置中选择当前的排班">
-              <span class="form-label">
-                自定义基建排班
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select v-model:value="formData.Info.InfrastIndex" placeholder="请选择自定义基建排班" :disabled="loading"
-            :loading="infrastructureOptionsLoading" :options="infrastructureOptions" size="large"
-            @change="emitSave('Info.InfrastIndex', formData.Info.InfrastIndex)" />
-        </a-form-item>
-      </a-col>
     </a-row>
 
     <a-form-item name="notes">
@@ -195,19 +138,14 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
   serverOptions: any[]
-  infrastructureConfigPath: string
-  infrastructureImporting: boolean
-  infrastructureOptions: Array<{ label: string; value: string }>
-  infrastructureOptionsLoading: boolean
-  isEdit: boolean
 }>()
 
 const emit = defineEmits<{
-  selectAndImportInfrastructureConfig: []
   save: [key: string, value: any]
 }>()
 

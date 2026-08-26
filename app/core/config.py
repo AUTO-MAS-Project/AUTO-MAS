@@ -121,19 +121,122 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏签到结果快照失败: {e}")
 
 
-if (Path.cwd() / "environment/git/bin/git.exe").exists():
-    os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
-        Path.cwd() / "environment/git/bin/git.exe"
+def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
+    """按理智任务边界解析 MAA 日志中的关卡掉落统计。
+
+    Args:
+        logs: MAA 日志行列表。
+
+    Returns:
+        按关卡汇总的掉落统计。
+    """
+
+    target_task_names = {
+        "Fight",
+        "理智作战",
+        "活动关优先",
+        "库存保持",
+        "剩余理智",
+    }
+    annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
+    fight_start_markers = (
+        "开始任务: Fight",
+        "开始任务: 理智作战",
+        "Start Task Chain: Fight",
     )
 
-try:
-    from git import Repo
-except ImportError:
-    Repo = None
+    def is_task_boundary(line: str) -> bool:
+        return "完成任务:" in line or "Completed Task Chain:" in line
+
+    def get_completed_task_name(line: str) -> str | None:
+        match = re.search(r"完成任务:\s*([^\r\n]+)", line)
+        if match is not None:
+            return match.group(1).strip() or None
+
+        match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
+        if match is None:
+            return None
+        return match.group(1).strip() or None
+
+    task_ranges: list[tuple[int, int]] = []
+    for end_index, line in enumerate(logs):
+        task_name = get_completed_task_name(line)
+        if task_name not in target_task_names:
+            continue
+
+        previous_boundary = max(
+            (
+                index
+                for index, item in enumerate(logs[:end_index])
+                if is_task_boundary(item)
+            ),
+            default=-1,
+        )
+        start_candidates = [
+            index
+            for index, item in enumerate(logs[:end_index])
+            if index > previous_boundary
+            and any(marker in item for marker in fight_start_markers)
+        ]
+        start_index = max(start_candidates, default=previous_boundary + 1)
+
+        if task_name == "Fight" and any(
+            marker in item
+            for item in logs[start_index : end_index + 1]
+            for marker in annihilation_markers
+        ):
+            continue
+
+        task_ranges.append((start_index, end_index))
+
+    all_stage_drops: dict[str, dict[str, int]] = {}
+    for start_index, end_index in task_ranges:
+        current_stage = None
+        last_drop_stats: dict[str, int] = {}
+
+        for line in logs[start_index : end_index + 1]:
+            drop_match = re.search(
+                r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line
+            )
+            if drop_match:
+                current_stage = drop_match.group(1)
+                last_drop_stats = {}
+                continue
+
+            if not current_stage:
+                continue
+
+            item_match: list[tuple[str, str]] = re.findall(
+                r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
+                line,
+                re.M,
+            )
+            for item, total in item_match:
+                total = total.replace(",", "")
+                if total.lower().endswith("k"):
+                    total = int(total[:-1]) * 1000
+                else:
+                    total = int(total)
+
+                if item not in [
+                    "当前次数",
+                    "理智",
+                    "最快截图耗时",
+                    "专精等级",
+                    "剩余时间",
+                ]:
+                    last_drop_stats[item] = total
+
+        if current_stage and last_drop_stats:
+            stage_drops = all_stage_drops.setdefault(current_stage, {})
+            for item, count in last_drop_stats.items():
+                stage_drops[item] = stage_drops.get(item, 0) + count
+
+    return all_stage_drops
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.4.0-beta.8"
+    VERSION = "v5.5.0-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -155,15 +258,9 @@ class AppConfig(GlobalConfig):
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
-        # 初始化Git仓库（如果可用）
-        try:
-            if Repo is not None:
-                self.repo = Repo(Path.cwd())
-            else:
-                self.repo = None
-        except Exception as e:
-            logger.warning(f"Git仓库初始化失败: {e}")
-            self.repo = None
+        # Git 仓库延迟初始化，避免启动时导入 GitPython
+        self._repo: Any = None
+        self._repo_initialized = False
 
         self.notify_env = Environment(
             loader=FileSystemLoader(str(Path.cwd() / "res/html"))
@@ -185,7 +282,50 @@ class AppConfig(GlobalConfig):
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
-        truststore.inject_into_ssl()
+        self._inject_truststore()
+
+    @staticmethod
+    def _inject_truststore() -> None:
+        """等效 truststore.inject_into_ssl()，但避免其内部导入 requests (约 460ms)。
+
+        requests 未加载时无需 patch：注入后再导入的 requests 会基于
+        已替换的 ssl.SSLContext 创建预加载上下文，效果一致。
+        """
+        import ssl
+
+        ssl.SSLContext = truststore.SSLContext  # type: ignore[misc]
+        try:
+            import urllib3.util.ssl_ as urllib3_ssl
+
+            urllib3_ssl.SSLContext = truststore.SSLContext  # type: ignore[assignment]
+        except ImportError:
+            pass
+        requests_adapters = sys.modules.get("requests.adapters")
+        if requests_adapters is not None and (
+            getattr(requests_adapters, "_preloaded_ssl_context", None) is not None
+        ):
+            setattr(
+                requests_adapters,
+                "_preloaded_ssl_context",
+                truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+            )
+
+    def _get_repo(self) -> Any:
+        """惰性初始化 Git 仓库，避免启动时导入 GitPython。"""
+        if not self._repo_initialized:
+            self._repo_initialized = True
+            if (Path.cwd() / "environment/git/bin/git.exe").exists():
+                os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
+                    Path.cwd() / "environment/git/bin/git.exe"
+                )
+            try:
+                from git import Repo
+
+                self._repo = Repo(Path.cwd())
+            except Exception as e:
+                logger.warning(f"Git仓库初始化失败: {e}")
+                self._repo = None
+        return self._repo
 
     async def init_config(self) -> None:
         """初始化配置管理"""
@@ -222,7 +362,7 @@ class AppConfig(GlobalConfig):
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
-        await System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
         set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
@@ -574,12 +714,13 @@ class AppConfig(GlobalConfig):
 
         def _get_git_info():
 
-            if self.repo is None:
+            repo = self._get_repo()
+            if repo is None:
                 logger.warning("Git仓库不可用，返回默认版本信息")
                 return False, "unknown", "unknown"
 
             # 获取当前 commit
-            current_commit = self.repo.head.commit
+            current_commit = repo.head.commit
             # 获取 commit 哈希
             commit_hash = current_commit.hexsha
             # 获取 commit 时间
@@ -588,10 +729,10 @@ class AppConfig(GlobalConfig):
             # 检查是否为最新 commit
             try:
                 # 获取远程分支的最新 commit
-                origin = self.repo.remotes.origin
+                origin = repo.remotes.origin
                 origin.fetch()  # 拉取最新信息
-                remote_commit = self.repo.commit(
-                    f"origin/{self.repo.active_branch.name}"
+                remote_commit = repo.commit(
+                    f"origin/{repo.active_branch.name}"
                 )
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
@@ -698,10 +839,7 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        script_config = self.ScriptConfig[uid]
-        for group, items in data.items():
-            for name, value in items.items():
-                await script_config.set(group, name, value)
+        await self.ScriptConfig[uid].update(data)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -1284,9 +1422,7 @@ class AppConfig(GlobalConfig):
                     user_config.get("Info", "SklandToken") != info_data["SklandToken"]
                 )
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await user_config.set(group, name, value)
+        await user_config.update(data)
 
         if skland_token_changed:
             await user_config.set("Data", "LastSklandDate", "2000-01-01")
@@ -1498,9 +1634,7 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.PlanConfig[plan_uid].set(group, name, value)
+        await self.PlanConfig[plan_uid].update(data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
@@ -1569,9 +1703,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新模拟器配置: {emulator_id}")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.EmulatorConfig[emulator_uid].set(group, name, value)
+        await self.EmulatorConfig[emulator_uid].update(data)
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
@@ -1644,9 +1776,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.QueueConfig[queue_uid].set(group, name, value)
+        await self.QueueConfig[queue_uid].update(data)
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
@@ -1699,13 +1829,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .TimeSet[time_set_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].TimeSet[time_set_uid].update(data)
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
@@ -1768,13 +1892,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .QueueItem[queue_item_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
@@ -1850,9 +1968,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新工具设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.ToolsConfig.set(group, name, value)
+        await self.ToolsConfig.update(data)
 
         logger.success("工具设置更新成功")
 
@@ -1973,9 +2089,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新全局设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.set(group, name, value)
+        await self.update(data)
 
         logger.success("全局设置更新成功")
 
@@ -2607,84 +2721,9 @@ class AppConfig(GlobalConfig):
 
             i += 1
 
-        # 掉落统计
-        # 存储所有关卡的掉落统计
-        all_stage_drops = {}
-
-        # 查找所有Fight任务的开始和结束位置
-        fight_tasks = []
-        for i, line in enumerate(logs):
-            if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
-                # 查找对应的任务结束位置
-                end_index = -1
-                for j in range(i + 1, len(logs)):
-                    if "完成任务: Fight" in logs[j] or "完成任务: 理智作战" in logs[j]:
-                        end_index = j
-                        break
-                    # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
-                    if j < len(logs) and (
-                        "开始任务: Fight" in logs[j] or "开始任务: 理智作战" in logs[j]
-                    ):
-                        break
-
-                # 如果找到了结束位置, 记录这个任务的范围
-                if end_index != -1:
-                    fight_tasks.append((i, end_index))
-
-        # 处理每个Fight任务
-        for start_idx, end_idx in fight_tasks:
-            # 提取当前任务的日志
-            task_logs = logs[start_idx : end_idx + 1]
-
-            # 查找任务中的最后一次掉落统计
-            last_drop_stats = {}
-            current_stage = None
-
-            for line in task_logs:
-                # 匹配掉落统计行, 如"1-7 掉落统计:"
-                drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
-                if drop_match:
-                    # 发现新的掉落统计, 重置当前关卡的掉落数据
-                    current_stage = drop_match.group(1)
-                    last_drop_stats = {}
-                    continue
-
-                # 如果已经找到了关卡, 处理掉落物
-                if current_stage:
-                    item_match: List[str] = re.findall(
-                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
-                        line,
-                        re.M,
-                    )
-                    for item, total in item_match:
-                        total = total.replace(",", "")
-                        if total.lower().endswith("k"):
-                            total = int(total[:-1]) * 1000
-                        else:
-                            total = int(total)
-
-                        # 黑名单
-                        if item not in [
-                            "当前次数",
-                            "理智",
-                            "最快截图耗时",
-                            "专精等级",
-                            "剩余时间",
-                        ]:
-                            last_drop_stats[item] = total
-
-            # 如果任务中有掉落统计, 更新总统计
-            if current_stage and last_drop_stats:
-                if current_stage not in all_stage_drops:
-                    all_stage_drops[current_stage] = {}
-
-                # 累加掉落数据
-                for item, count in last_drop_stats.items():
-                    all_stage_drops[current_stage].setdefault(item, 0)
-                    all_stage_drops[current_stage][item] += count
-
-        # 将累加后的掉落数据保存到结果中
-        data["drop_statistics"] = all_stage_drops
+        # 掉落统计收集所有由理智任务产生的有效 Fight 任务链，包括活动关优先、
+        # 库存保持和剩余理智任务。
+        data["drop_statistics"] = _parse_maa_drop_statistics(logs)
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)

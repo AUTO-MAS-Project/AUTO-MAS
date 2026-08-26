@@ -45,13 +45,18 @@ def _normalize_language(language: str) -> str:
 class MaaEndResourceLoader:
     """按 MaaEnd 根目录缓存解析后的动态资源。"""
 
-    _disk_cache_version = 2
+    _disk_cache_version = 3
     _loader_cache: dict[Path, "MaaEndResourceLoader"] = {}
     _cache_lock = RLock()
 
-    def __init__(self, root_path: Path):
+    def __init__(
+        self,
+        root_path: Path,
+        file_cache: dict[Path, tuple[tuple, Any]] | None = None,
+    ):
         self.root_path = root_path.resolve()
-        self._dependency_paths: set[Path] = set()
+        self._file_cache = dict(file_cache or {})
+        self._cache_dirty = False
         self._interface: dict[str, Any] = {}
         self._locales: dict[str, dict[str, str]] = {}
         self._tasks: list[dict[str, Any]] = []
@@ -116,20 +121,6 @@ class MaaEndResourceLoader:
         return ("file", str(path), stat.st_mtime_ns, stat.st_size)
 
     @classmethod
-    def _build_signature(cls, dependency_paths: set[Path]) -> tuple:
-        return tuple(
-            cls._file_signature(path)
-            for path in sorted(dependency_paths, key=lambda item: str(item))
-        )
-
-    def _current_signature(self) -> tuple:
-        return self._build_signature(self._dependency_paths)
-
-    @staticmethod
-    def _signature_to_json(signature: tuple) -> list[list]:
-        return [list(part) for part in signature]
-
-    @classmethod
     def _load_from_disk_cache(
         cls,
         root_path: Path,
@@ -143,92 +134,79 @@ class MaaEndResourceLoader:
             if not isinstance(payload, dict) or payload.get("version") != cls._disk_cache_version:
                 return None
 
-            dependency_values = payload.get("dependency_paths")
-            if not isinstance(dependency_values, list) or not all(
-                isinstance(path, str) for path in dependency_values
-            ):
-                return None
-            dependency_paths = {Path(path) for path in dependency_values}
-            signature = cls._build_signature(dependency_paths)
-            if payload.get("signature") != cls._signature_to_json(signature):
-                logger.info(f"MaaEnd 本地资源缓存已失效：{root_path}")
-                return None
+            file_cache: dict[Path, tuple[tuple, Any]] = {}
+            for raw_path, entry in payload["files"].items():
+                signature = tuple(entry["signature"])
+                path = Path(raw_path)
+                if cls._file_signature(path) == signature:
+                    file_cache[path] = (signature, entry["data"])
 
-            interface = payload.get("interface")
-            locales = payload.get("locales")
-            tasks = payload.get("tasks")
-            tasks_loaded = payload.get("tasks_loaded")
-            task_options = payload.get("task_options")
-            options = payload.get("options")
-            if not (
-                isinstance(interface, dict)
-                and isinstance(locales, dict)
-                and isinstance(tasks, list)
-                and isinstance(tasks_loaded, bool)
-                and isinstance(task_options, dict)
-                and isinstance(options, dict)
-            ):
-                return None
-
-            loader = cls.__new__(cls)
-            loader.root_path = root_path
-            loader._dependency_paths = dependency_paths
-            loader._interface = deepcopy(interface)
-            loader._locales = deepcopy(locales)
-            loader._tasks = deepcopy(tasks)
-            loader._task_options = deepcopy(task_options)
-            loader._options = deepcopy(options)
-            loader._tasks_loaded = tasks_loaded
-            logger.info(f"读取 MaaEnd 本地资源缓存：{root_path}")
+            loader = cls(root_path, file_cache=file_cache)
+            loader._save_disk_cache()
+            logger.info(f"读取 MaaEnd 源文件资源缓存：{root_path}")
             return loader
         except Exception as error:
-            logger.warning(f"读取 MaaEnd 本地资源缓存失败，重新解析资源：{error}")
+            logger.warning(f"读取 MaaEnd 源文件资源缓存失败，重新解析资源：{error}")
             return None
 
     def _save_disk_cache(self) -> None:
+        if not self._cache_dirty:
+            return
+
         cache_path = self._disk_cache_path(self.root_path)
-        payload = {
-            "version": self._disk_cache_version,
-            "root_path": str(self.root_path),
-            "dependency_paths": [
-                str(path) for path in sorted(self._dependency_paths, key=lambda item: str(item))
-            ],
-            "signature": self._signature_to_json(self._current_signature()),
-            "interface": self._interface,
-            "locales": self._locales,
-            "tasks": self._tasks,
-            "tasks_loaded": self._tasks_loaded,
-            "task_options": self._task_options,
-            "options": self._options,
-        }
         try:
+            payload = {
+                "version": self._disk_cache_version,
+                "files": {
+                    str(path): {
+                        "signature": list(signature),
+                        "data": data,
+                    }
+                    for path, (signature, data) in self._file_cache.items()
+                },
+            }
             atomic_write(
                 cache_path,
-                json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             )
-            logger.debug(f"已写入 MaaEnd 本地资源缓存：{cache_path}")
+            self._cache_dirty = False
+            logger.debug(f"已更新 MaaEnd 源文件资源缓存：{cache_path}")
         except Exception as error:
-            logger.warning(f"写入 MaaEnd 本地资源缓存失败：{error}")
+            logger.warning(f"写入 MaaEnd 源文件资源缓存失败：{error}")
 
     def _read_json5(self, path: Path) -> Any:
         path = path.resolve()
-        self._dependency_paths.add(path)
-        return json5.loads(path.read_text(encoding="utf-8"))
+        signature = self._file_signature(path)
+
+        cached = self._file_cache.get(path)
+        if cached is not None and cached[0] == signature:
+            return deepcopy(cached[1])
+
+        data = json5.loads(path.read_text(encoding="utf-8"))
+        self._file_cache[path] = (signature, deepcopy(data))
+        self._cache_dirty = True
+        return data
 
     def _load_all_resources(self) -> None:
         interface_path = self.root_path / "interface.json"
-        config_path = self.root_path / "config/mxu-MaaEnd.json"
         interface = self._read_json5(interface_path)
-        config = self._read_json5(config_path)
-        if not isinstance(interface, dict) or not isinstance(config, dict):
-            raise ValueError("MaaEnd interface 或配置不是 JSON 对象")
+        if not isinstance(interface, dict):
+            raise ValueError("MaaEnd interface 不是 JSON 对象")
 
         self._interface = interface
+        active_paths = {interface_path.resolve()}
         for language, relative_path in interface["languages"].items():
-            locale = self._read_json5(interface_path.parent / relative_path)
+            locale_path = (interface_path.parent / relative_path).resolve()
+            active_paths.add(locale_path)
+            locale = self._read_json5(locale_path)
             if not isinstance(locale, dict):
                 raise ValueError(f"MaaEnd 本地化资源不是 JSON 对象: {relative_path}")
             self._locales[_normalize_language(str(language))] = locale
+
+        active_paths.update(
+            (interface_path.parent / relative_path).resolve()
+            for relative_path in interface["import"]
+        )
 
         essence_resource = next(
             (
@@ -247,8 +225,11 @@ class MaaEndResourceLoader:
                 raise ValueError(f"MaaEnd 任务选项格式错误: {essence_resource}")
             self._task_options[Path(essence_resource).stem] = options
 
-        language = _normalize_language(str(config["settings"]["language"]))
-        self._options = self._build_options(language)
+        self._options = self._build_options("zh_cn")
+        stale_paths = set(self._file_cache) - active_paths
+        for path in stale_paths:
+            self._file_cache.pop(path, None)
+        self._cache_dirty = self._cache_dirty or bool(stale_paths)
 
     def _load_task_resources(self) -> None:
         with self._cache_lock:

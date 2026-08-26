@@ -475,6 +475,17 @@ class MaaUserConfig_Info(BaseModel):
             "LungmenDowntown@Annihilation",
         ]
     ] = Field(default=None, description="剿灭模式")
+    AnnihilationStartWeekday: Optional[
+        Literal[
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+    ] = Field(default=None, description="剿灭开始星期")
     InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
         default=None, description="基建模式"
     )
@@ -506,6 +517,9 @@ class MaaUserConfig_Info(BaseModel):
 
 class MaaUserConfig_Data(BaseModel):
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过人工排查")
+    AnnihilationCompletedWeek: Optional[str] = Field(
+        default=None, description="剿灭达到周上限时的 ISO 周"
+    )
 
 
 class MaaUserConfig_Task(BaseModel):
@@ -523,6 +537,9 @@ class MaaUserConfig_Task(BaseModel):
     )
     ActivityStageIndex: Optional[int] = Field(
         default=None, description="优先刷取的活动关卡序号"
+    )
+    ActivityMedicineNumb: Optional[int] = Field(
+        default=None, description="活动关优先任务吃理智药数量"
     )
     DepotMaintainPlans: Optional[str] = Field(
         default=None, description="库存保持计划 JSON"
@@ -583,9 +600,6 @@ class MaaConfig_Run(BaseModel):
         default=None, description="剿灭超时限制"
     )
     RoutineTimeLimit: Optional[int] = Field(default=None, description="日常超时限制")
-    AnnihilationAvoidWaste: Optional[bool] = Field(
-        default=None, description="剿灭避免无代理卡浪费理智"
-    )
 
 
 class MaaConfig(BaseModel):

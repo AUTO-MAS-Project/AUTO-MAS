@@ -3,12 +3,15 @@ import { DownloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 
+import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
+
 const { openDevTools } = defineProps<{
   openDevTools: () => void
 }>()
 
 const logger = window.electronAPI.getLogger('日志管理')
 const exportingLogs = ref(false)
+const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
 const exportLogsZip = async () => {
   exportingLogs.value = true
@@ -41,21 +44,32 @@ const exportLogsZip = async () => {
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>日志导出</h3>
+        <h3>MAS 本体日志导出</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
-          <a-space direction="vertical" size="middle">
-            <div class="section-description">
-              导出当前日志压缩包，便于备份或反馈问题时提供附件。
-            </div>
-            <a-button type="primary" :loading="exportingLogs" @click="exportLogsZip">
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              导出日志压缩包
-            </a-button>
-          </a-space>
+          <a-button type="primary" :loading="exportingLogs" @click="exportLogsZip">
+            <template #icon>
+              <DownloadOutlined />
+            </template>
+            导出日志压缩包
+          </a-button>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>MaaEnd 日志包导出</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="24">
+          <a-button type="primary" :loading="exportingMaaEndLogs" @click="exportMaaEndIssueReport">
+            <template #icon>
+              <DownloadOutlined />
+            </template>
+            导出 MaaEnd 问题包
+          </a-button>
         </a-col>
       </a-row>
     </div>
@@ -74,9 +88,3 @@ const exportLogsZip = async () => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.section-description {
-  color: var(--ant-color-text-description);
-}
-</style>

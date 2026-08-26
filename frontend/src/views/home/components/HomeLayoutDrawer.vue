@@ -39,6 +39,18 @@
         </div>
       </template>
     </draggable>
+
+    <a-divider style="margin: 16px 0" />
+
+    <div class="home-layout-extra">
+      <span class="home-layout-title">滚动提示</span>
+      <a-switch
+        size="small"
+        :checked="!scrollHintHidden"
+        aria-label="滚动提示显示状态"
+        @change="emit('scroll-hint-change', !$event)"
+      />
+    </div>
   </a-drawer>
 </template>
 
@@ -55,6 +67,7 @@ defineOptions({
 interface Props {
   open: boolean
   modules: HomeModuleDescriptor[]
+  scrollHintHidden: boolean
 }
 
 defineProps<Props>()
@@ -68,6 +81,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
   reorder: [order: HomeModuleKey[]]
   'visibility-change': [key: HomeModuleKey, visible: boolean]
+  'scroll-hint-change': [hidden: boolean]
 }>()
 
 const onReorder = (modules: HomeModuleDescriptor[]) => {
@@ -137,5 +151,15 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
 
 .home-layout-ghost {
   opacity: 0.35;
+}
+
+.home-layout-extra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
 }
 </style>

@@ -1,60 +1,32 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>关卡配置</h3>
-      <!-- 只在计划表模式时显示跳转按钮 -->
-      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
-        <template #icon>
-          <CalendarOutlined />
-        </template>
-        跳转到计划表
-      </a-button>
-    </div>
-    <a-row :gutter="24">
+  <div>
+    <a-row :gutter="16">
       <a-col :xs="24" :md="12">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="剿灭代理关卡选择">
-              <span class="form-label">
-                剿灭代理
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="关卡配置模式"
+              hint="「固定」直接在此配置关卡；「计划表」按计划自动切换"
+            />
           </template>
-          <a-select v-model:value="formData.Info.Annihilation" :options="[
-            { label: '关闭', value: 'Close' },
-            { label: '当期剿灭', value: 'Annihilation' },
-            { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
-            { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
-            { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
-          ]" :disabled="loading" size="large" @change="emitSave('Info.Annihilation', formData.Info.Annihilation)" />
-        </a-form-item>
-      </a-col>
-      <a-col :xs="24" :md="12">
-        <a-form-item name="mode">
-          <template #label>
-            <a-tooltip title="可选择「固定」或「计划表」">
-              <span class="form-label">
-                关卡配置模式
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading" size="large"
+          <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading"
             @change="emitSave('Info.StageMode', formData.Info.StageMode)" />
         </a-form-item>
       </a-col>
+      <a-col v-if="isPlanMode" :xs="24" :md="12" class="plans-link-col">
+        <a-button type="link" class="plans-button" @click="handleGoToPlans">
+          <template #icon>
+            <CalendarOutlined />
+          </template>
+          跳转到计划表
+        </a-button>
+      </a-col>
     </a-row>
-    <a-row :gutter="24">
+    <a-row :gutter="16">
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
-            <a-tooltip title="吃理智药数量">
-              <span class="form-label">
-                吃理智药数量
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint text="吃理智药数量" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -69,18 +41,16 @@
           </div>
           <!-- 固定模式：显示输入框 -->
           <a-input-number v-else :value="displayMedicineNumb" :min="0" :max="9999" placeholder="0" :disabled="loading"
-            size="large" style="width: 100%" @update:value="$emit('update-medicine-numb', $event)" />
+            style="width: 100%" @update:value="$emit('update-medicine-numb', $event)" />
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定">
-              <span class="form-label">
-                连战次数
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="连战次数"
+              hint="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -110,19 +80,14 @@
             { label: '5', value: '5' },
             { label: '6', value: '6' },
             { label: '不切换', value: '-1' },
-          ]" :disabled="loading" size="large" @update:value="$emit('update-series-numb', $event)" />
+          ]" :disabled="loading" @update:value="$emit('update-series-numb', $event)" />
         </a-form-item>
       </a-col>
 
       <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="关卡选择">
-              <span class="form-label">
-                关卡选择
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint text="关卡选择" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -143,16 +108,14 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-row :gutter="24">
+    <a-row :gutter="16">
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
-              <span class="form-label">
-                备选关卡-1
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="备选关卡-1"
+              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -175,12 +138,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
-              <span class="form-label">
-                备选关卡-2
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="备选关卡-2"
+              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -203,12 +164,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
-              <span class="form-label">
-                备选关卡-3
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint
+              text="备选关卡-3"
+              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -231,12 +190,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip title="剩余理智关卡，选择「不选择」时视为不使用剩余理智关卡">
-              <span class="form-label">
-                剩余理智关卡
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <LabelWithHint text="剩余理智关卡" hint="选择「不选择」时视为不使用剩余理智关卡" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -262,12 +216,13 @@
 </template>
 
 <script setup lang="ts">
-import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined } from '@ant-design/icons-vue'
+import LabelWithHint from './LabelWithHint.vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
 
+const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
-  formData: any
   loading: boolean
   stageModeOptions: any[]
   stageOptions: any[]
@@ -320,8 +275,8 @@ const handleAddCustomStageRemain = (stageName: string) =>
 // 跳转到计划表
 const handleGoToPlans = () => {
   const planId =
-    props.isPlanMode && props.formData?.Info?.StageMode && props.formData.Info.StageMode !== 'Fixed'
-      ? props.formData.Info.StageMode
+    props.isPlanMode && formData.value?.Info?.StageMode && formData.value.Info.StageMode !== 'Fixed'
+      ? formData.value.Info.StageMode
       : undefined
   navigateTo('/plans', { query: { from: 'stage-config', ...(planId ? { planId } : {}) } })
 }
@@ -339,35 +294,10 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+.plans-link-col {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
+  align-items: flex-end;
+  padding-bottom: 24px;
 }
 
 .plans-button {
@@ -377,26 +307,6 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 
 .plan-mode-display {
@@ -432,5 +342,9 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   line-height: 1.5;
   max-width: 320px;
   font-size: 12px;
+}
+
+:deep(.ant-form-item) {
+  margin-bottom: 12px;
 }
 </style>

@@ -50,11 +50,24 @@ jobs:
           node-version: '20'
 
       - name: 构建应用程序
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
           cd frontend
           corepack enable
           corepack prepare yarn@4.9.1 --activate
           yarn install
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
+            throw '缺少 GitHub Actions secret: SENTRY_AUTH_TOKEN'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_ORG)) {
+            throw '缺少 GitHub Actions variable: SENTRY_ORG'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_PROJECT)) {
+            throw '缺少 GitHub Actions variable: SENTRY_PROJECT'
+          }
           yarn build
           Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
         shell: pwsh

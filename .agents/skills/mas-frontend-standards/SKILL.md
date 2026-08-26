@@ -8,6 +8,12 @@ description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electr
 ## Objective
 Keep AUTO-MAS frontend changes aligned with the current Vue 3, TypeScript, Vite, Electron, Ant Design Vue, Vue Router, OpenAPI, ESLint, Prettier, and Yarn 4 project conventions.
 
+## Dependency Installation
+
+1. Run frontend dependency commands from the `frontend/` directory.
+2. Use `yarn install` by default.
+3. If the Electron binary download is slow or fails, use the one-shot mirror command: `yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install`.
+
 ## Authority
 This skill is self-contained for frontend engineering rules. If local code differs from this summary, inspect neighboring implementations and prefer the current module pattern unless it violates a red line here.
 
@@ -89,15 +95,44 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 
 ## Verification Gate
 
-Use verification proportional to the touched surface:
+All commands run from `frontend/`.
 
-1. Business code changes: run `yarn lint` at minimum.
-2. Build, routing, type, or Electron entry changes: run `yarn build` or the relevant type/build command.
-3. Documentation-only changes: check file existence, headings, section completeness, and `git status --short`.
-4. UI changes: also follow `mas-frontend-ui` verification.
-5. If a command cannot run, state the exact command and reason.
+**The repo-wide lint and typecheck baseline is not clean.** As of `v5.4.0-beta.8`, untouched `dev` reports roughly 4900 ESLint problems across ~77 hand-written files (overwhelmingly `prettier/prettier` indentation drift) and 92 `vue-tsc` errors across 7 files (~84 of them in the two `OkNte` edit views). Do not treat a non-empty `yarn lint` or `yarn typecheck` output as evidence that you broke something, and do not try to clean the repo as a side effect of an unrelated task.
 
-Never claim "complete", "fixed", or "passed" without verification evidence.
+| Touched surface | Command | Passing criterion |
+| --- | --- | --- |
+| Any business code | `npx eslint <your changed files>` | clean, exit 0 |
+| Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | no **new** error naming a file you touched |
+| A module with a sibling `*.test.ts`, or shared logic/styles under test | `yarn test` | fully green |
+| Build, routing, or Electron entry | `yarn build` | succeeds |
+| Documentation only | file existence, headings, sections, `git status --short` | — |
+| UI | also follow `mas-frontend-ui` verification | — |
+
+Rules that follow from the dirty baseline:
+
+1. Scope lint to the files you changed. `npx eslint <paths>` exits 0 on a clean file and nonzero on a dirty one, so it is a real gate; `yarn lint` is not, because it cannot pass.
+2. `yarn typecheck` has no scoping flag, so run it whole and grep the output for your own file paths. Compare against the baseline instead of expecting zero.
+3. Lint and typecheck are orthogonal. `OkNteUserEdit.vue` is lint-clean with 41 type errors; `scheduler-debug.ts` is the reverse. Passing one says nothing about the other.
+4. `yarn test` is the one gate that is green repo-wide. It must stay green — a failure there is always yours.
+5. If you touch a file that is already in the dirty baseline, leave the pre-existing problems alone and say so in your result. Fixing them is a separate, explicitly-requested task.
+
+Prefer `yarn typecheck` over a full `yarn build` for type validation; it is much faster and covers the renderer via `tsconfig.app.json`.
+
+If a command cannot run, state the exact command and the reason. Never claim "complete", "fixed", or "passed" without verification evidence, and never restate a pre-existing baseline failure as a result of your change.
+
+## Frontend Tests
+
+Vitest runs with **no config file and no DOM environment**. There is no `vitest.config.ts`, no `jsdom`, and no `@vue/test-utils`. Tests execute in the default node environment and are colocated next to their subject as `*.test.ts`.
+
+Three established patterns, in order of preference:
+
+1. **Pure logic** — extract the logic out of the `.vue` file into a sibling `.ts`, then import and test it directly. `views/scripts/scriptSearch.ts` with `scriptSearch.test.ts` is the reference. This is the main reason to extract logic from a component: testability.
+2. **Composables** — test in node with `vi.mock()` for boundaries. Mock `@/api` (the generated `Service`) and `ant-design-vue` (`message`) rather than reaching for a DOM. See `composables/useEmulatorDeviceOptions.test.ts`.
+3. **Component structure** — `readFileSync` the `.vue` (or `.css`) source and assert on its text. Used to lock in constraints that have no runtime assertion point, such as overlay `z-index`, viewport-height clamps, and stylesheet imports. See `views/scripts/components/ScriptCreateDialog.test.ts` and `styles/scrollbar.test.ts`.
+
+Do not introduce `mount()`, `jsdom`, `happy-dom`, or `@vue/test-utils` for a routine change; that is a project-wide testing-stack decision, not a task-level one. If a behavior genuinely cannot be covered by these three patterns, say so in your result instead of adding a test dependency.
+
+Pattern 3 is how several `mas-frontend-ui` layout rules are actually enforced. When you change an overlay's `z-index`, a dialog's height clamp, or a global stylesheet import, expect a source-text test to assert on the exact string you edited, and update it in the same change.
 
 ## Red Lines
 
@@ -109,6 +144,10 @@ Never claim "complete", "fixed", or "passed" without verification evidence.
 | "Pinia should hold every frontend value." | Keep isolated short-lived state local, and keep persistent authoritative data in its backend or Electron configuration owner. |
 | "I can tweak generated API files." | `src/api` is generated; regenerate through the project command instead. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
+| "`yarn lint` is failing, so I broke the build." | ~4900 problems and 92 type errors pre-exist on clean `dev`. Scope lint to your own files and compare typecheck against the baseline. |
+| "Lint passed, so the types are fine." | The two are orthogonal. Lint-clean files carry dozens of type errors in this repo. |
+| "I'll fix the surrounding lint noise while I'm here." | Baseline cleanup is a separate, explicitly-requested task; it buries your real diff. |
+| "I need jsdom to test this component." | Tests run in node with no DOM. Extract logic to a sibling `.ts`, or assert on source text. |
 
 ## Final Response
 For frontend tasks, report:

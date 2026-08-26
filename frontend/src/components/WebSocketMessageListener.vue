@@ -272,7 +272,7 @@ onUnmounted(() => {
 .modal-message {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text-secondary, #595959);
+  color: var(--ant-color-text-secondary);
   margin: 0;
   word-wrap: break-word;
   white-space: pre-wrap;
@@ -280,10 +280,10 @@ onUnmounted(() => {
 
 .modal-queue-hint {
   font-size: 12px;
-  color: var(--text-tertiary, #8c8c8c);
+  color: var(--ant-color-text-tertiary);
   margin-top: 12px;
   margin-bottom: 0;
   padding-top: 8px;
-  border-top: 1px solid var(--border-secondary, #f0f0f0);
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 </style>
