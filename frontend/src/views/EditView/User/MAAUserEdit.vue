@@ -31,52 +31,47 @@
         <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
           <!-- 基本信息组件 -->
           <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
-            :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
-            :infrastructure-options="infrastructureOptions"
-            :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
-            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
+            @save="handleFieldSave" />
 
-          <!-- 关卡配置组件 -->
-          <StageConfigSection v-model:form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
-            :stage-options="stageOptions" :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
-            :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
-            :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
-            :display-stage3="displayStage3" :display-stage-remain="displayStageRemain"
-            :medicine-numb-tooltip="medicineNumbTooltip" :series-numb-tooltip="seriesNumbTooltip"
-            :stage-tooltip="stageTooltip" :stage1-tooltip="stage1Tooltip" :stage2-tooltip="stage2Tooltip"
-            :stage3-tooltip="stage3Tooltip" :stage-remain-tooltip="stageRemainTooltip"
-            @update-medicine-numb="updateMedicineNumb" @update-series-numb="updateSeriesNumb"
-            @update-stage="updateStage" @update-stage1="updateStage1" @update-stage2="updateStage2"
-            @update-stage3="updateStage3" @update-stage-remain="updateStageRemain"
-            @handle-add-custom-stage="addCustomStage" @handle-add-custom-stage1="addCustomStage1"
-            @handle-add-custom-stage2="addCustomStage2" @handle-add-custom-stage3="addCustomStage3"
-            @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
-
-          <!-- 任务配置组件 -->
-          <TaskConfigSection
-            v-model:activity-first="formData.Task.IfActivityFirst"
-            v-model:activity-stage-index="formData.Task.ActivityStageIndex"
+          <!-- 任务配置：按后端 MAA_TASKS 执行顺序排列 -->
+          <TaskPipelineSection
             v-model:form-data="formData"
             :loading="loading"
+            :is-plan-mode="isPlanMode"
+            :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-index="displayActivityStageIndex"
+            :depot-item-options="depotItemOptions"
+            :depot-item-options-loading="depotItemOptionsLoading"
+            :depot-item-options-error="depotItemOptionsError"
+            :fight-summary="fightSummary"
+            :is-edit="isEdit"
+            :infrastructure-importing="infrastructureImporting"
+            :infrastructure-options="infrastructureOptions"
+            :infrastructure-options-loading="infrastructureOptionsLoading"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @save="handleFieldSave"
-          />
-
-          <!-- 库存保持配置组件 -->
-          <DepotMaintainConfigSection
-            v-if="!isPlanMode"
-            v-model:enabled="formData.Task.IfDepotMaintain"
-            :form-data="formData"
-            :loading="loading"
-            :stage-options="stageOptions"
-            :item-options="depotItemOptions"
-            :item-options-loading="depotItemOptionsLoading"
-            :item-options-error="depotItemOptionsError"
-            @save="handleFieldSave"
-          />
+          >
+            <template #fight-detail>
+              <StageConfigSection v-model:form-data="formData" :loading="loading"
+                :stage-mode-options="stageModeOptions" :stage-options="stageOptions"
+                :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
+                :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
+                :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
+                :display-stage3="displayStage3" :display-stage-remain="displayStageRemain"
+                :medicine-numb-tooltip="medicineNumbTooltip" :series-numb-tooltip="seriesNumbTooltip"
+                :stage-tooltip="stageTooltip" :stage1-tooltip="stage1Tooltip" :stage2-tooltip="stage2Tooltip"
+                :stage3-tooltip="stage3Tooltip" :stage-remain-tooltip="stageRemainTooltip"
+                @update-medicine-numb="updateMedicineNumb" @update-series-numb="updateSeriesNumb"
+                @update-stage="updateStage" @update-stage1="updateStage1" @update-stage2="updateStage2"
+                @update-stage3="updateStage3" @update-stage-remain="updateStageRemain"
+                @handle-add-custom-stage="addCustomStage" @handle-add-custom-stage1="addCustomStage1"
+                @handle-add-custom-stage2="addCustomStage2" @handle-add-custom-stage3="addCustomStage3"
+                @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
+            </template>
+          </TaskPipelineSection>
 
           <!-- 森空岛配置组件 -->
           <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
@@ -115,8 +110,8 @@ const logger = window.electronAPI.getLogger('MAA用户编辑')
 import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
-import TaskConfigSection from '@/views/MAAUserEdit/TaskConfigSection.vue'
-import DepotMaintainConfigSection from '@/views/MAAUserEdit/DepotMaintainConfigSection.vue'
+import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
+import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -165,7 +160,6 @@ const showMAAConfigMask = ref(false)
 let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
-const infrastructureConfigPath = ref('')
 const infrastructureImporting = ref(false)
 const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
 const infrastructureOptionsLoading = ref(false)
@@ -504,6 +498,21 @@ const displayActivityStageIndex = computed(() => {
     ? configuredIndex
     : activityStageOptions.value[0]?.value
 })
+
+// 折叠态摘要：不展开也能确认当前生效的关卡配置
+const fightSummary = computed(() =>
+  summarizeFight({
+    enabled: formData.Task.IfFight,
+    planLabel: isPlanMode.value
+      ? stageModeOptions.value.find(option => option.value === formData.Info.StageMode)?.label ||
+        formData.Info.StageMode
+      : '',
+    stage: displayStage.value,
+    series: displaySeriesNumb.value,
+    medicine: displayMedicineNumb.value ?? 0,
+    remain: displayStageRemain.value,
+  })
+)
 
 // 表单验证规则
 const rules = computed(() => {
