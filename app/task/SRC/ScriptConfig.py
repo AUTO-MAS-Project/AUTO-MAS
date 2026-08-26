@@ -20,7 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-import shutil
 from pathlib import Path
 
 from app.core import Config
@@ -168,17 +167,6 @@ class ScriptConfigTask(TaskExecuteBase):
             expected_installation_id=self.src_installation_id,
             overlay_path=config_path if config_path.exists() else None,
         )
-
-        if not (staging_path / "src.json").exists():
-            for json_path in staging_path.glob("*.json"):
-                if json_path.name != "template.json":
-                    shutil.copy(json_path, staging_path / "src.json")
-                    break
-            else:
-                shutil.copy(
-                    staging_path / "template.json",
-                    staging_path / "src.json",
-                )
 
         src_set = read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read((staging_path / "deploy.yaml"))

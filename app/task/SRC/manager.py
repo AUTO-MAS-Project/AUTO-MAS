@@ -45,6 +45,7 @@ from .tools import (
     push_notification,
     read_src_config_snapshot_state,
     read_src_installation_id,
+    recover_interrupted_src_config_swap,
     recover_src_user_config,
     read_src_process_state,
     save_src_user_config,
@@ -321,8 +322,9 @@ class SrcManager(TaskExecuteBase):
                     "SRC 配置恢复事务的历史根目录范围不安全，拒绝自动回滚: "
                     f"{snapshot_state.src_root_path}"
                 ) from e
-            self._rollback_interrupted_src_config_swap(
-                snapshot_state.src_root_path / "config"
+            recover_interrupted_src_config_swap(
+                snapshot_state.src_root_path / "config",
+                expected_installation_id=snapshot_state.installation_id,
             )
 
         cleanup_success = True
@@ -732,19 +734,6 @@ class SrcManager(TaskExecuteBase):
             )
         if backup_path.exists():
             shutil.rmtree(backup_path)
-
-    def _rollback_interrupted_src_config_swap(self, src_set_path: Path) -> None:
-        """在进程清理前回滚仅剩 old 的目录交换，恢复路径安全哨兵。"""
-
-        backup_path = src_set_path.with_name(src_set_path.name + ".old")
-        if src_set_path.exists() or not backup_path.exists():
-            return
-        if not self._is_src_config_available(backup_path):
-            raise RuntimeError(
-                f"SRC 配置恢复备份不完整，已保留事务现场: {backup_path}"
-            )
-        backup_path.rename(src_set_path)
-        logger.warning(f"已回滚中断的 SRC 配置目录交换: {src_set_path}")
 
     def _retire_src_config_snapshot(self) -> None:
         """先移出有效快照路径，再清理已恢复的快照。"""

@@ -17,7 +17,6 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
-import hashlib
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -43,11 +42,10 @@ class SrcConfigSnapshotState:
 
 
 def read_src_installation_id(src_root_path: Path) -> str:
-    """读取可跨进程校验的 SRC 安装实例标识。"""
+    """读取基于文件元数据的 SRC 安装实例标识。"""
 
     src_exe_path = src_root_path.resolve() / "src.exe"
     before_stat = src_exe_path.stat()
-    digest = hashlib.sha256()
     identity = ":".join(
         str(value)
         for value in (
@@ -58,10 +56,6 @@ def read_src_installation_id(src_root_path: Path) -> str:
             before_stat.st_mtime_ns,
         )
     )
-    digest.update(identity.encode("ascii"))
-    with src_exe_path.open("rb") as src_exe:
-        while chunk := src_exe.read(1024 * 1024):
-            digest.update(chunk)
     after_stat = src_exe_path.stat()
     if (
         before_stat.st_dev,
@@ -77,7 +71,7 @@ def read_src_installation_id(src_root_path: Path) -> str:
         after_stat.st_mtime_ns,
     ):
         raise OSError(f"读取 SRC 安装标识时文件发生变化: {src_exe_path}")
-    return digest.hexdigest()
+    return identity
 
 
 def validate_src_installation(
@@ -177,9 +171,20 @@ def is_src_config_available(path: Path) -> bool:
     try:
         json_paths = list(path.glob("*.json"))
         deploy_path = path / "deploy.yaml"
-        if not json_paths or not deploy_path.is_file():
+        deploy_template_path = path / "deploy.template-cn.yaml"
+        if not json_paths:
             return False
-        if not isinstance(read_file(deploy_path), dict):
+        if deploy_path.exists():
+            if not deploy_path.is_file() or not isinstance(
+                read_file(deploy_path), dict
+            ):
+                return False
+        elif deploy_template_path.exists():
+            if not deploy_template_path.is_file() or not isinstance(
+                read_file(deploy_template_path), dict
+            ):
+                return False
+        else:
             return False
         for json_path in json_paths:
             read_file(json_path)
@@ -315,6 +320,50 @@ def save_src_user_config(
         _remove_directory(backup_path)
 
 
+def recover_interrupted_src_config_swap(
+    src_set_path: Path,
+    *,
+    expected_installation_id: str,
+) -> None:
+    """回滚只留下备份目录的 SRC 配置交换。"""
+
+    staging_path, _, backup_path = _transaction_paths(src_set_path)
+    if src_set_path.exists() or not backup_path.exists():
+        return
+    if not is_src_config_available(backup_path):
+        raise RuntimeError(f"SRC 配置恢复备份不完整: {backup_path}")
+
+    validate_src_installation(src_set_path.parent, expected_installation_id)
+    if staging_path.exists():
+        _quarantine_directory(staging_path)
+    backup_path.rename(src_set_path)
+    validate_src_installation(src_set_path.parent, expected_installation_id)
+    logger.warning(f"已回滚中断的 SRC 配置目录交换: {src_set_path}")
+
+
+def _prepare_runtime_config_files(staging_path: Path) -> None:
+    """为全新 SRC 安装生成运行期必需的配置入口。"""
+
+    src_json_path = staging_path / "src.json"
+    if not src_json_path.exists():
+        template_path = next(
+            (
+                path
+                for path in staging_path.glob("*.json")
+                if path.name != "template.json"
+            ),
+            staging_path / "template.json",
+        )
+        if not template_path.is_file():
+            raise RuntimeError(f"SRC 配置缺少 JSON 入口: {staging_path}")
+        shutil.copyfile(template_path, src_json_path)
+
+    deploy_path = staging_path / "deploy.yaml"
+    deploy_template_path = staging_path / "deploy.template-cn.yaml"
+    if not deploy_path.exists() and deploy_template_path.is_file():
+        shutil.copyfile(deploy_template_path, deploy_path)
+
+
 def stage_src_config_update(
     src_set_path: Path,
     *,
@@ -324,6 +373,10 @@ def stage_src_config_update(
     """在 SRC 配置目录旁构建待提交副本，不直接修改运行目录。"""
 
     validate_src_installation(src_set_path.parent, expected_installation_id)
+    recover_interrupted_src_config_swap(
+        src_set_path,
+        expected_installation_id=expected_installation_id,
+    )
     staging_path = src_set_path.with_name(src_set_path.name + ".tmp")
     backup_path = src_set_path.with_name(src_set_path.name + ".old")
     if staging_path.exists():
@@ -340,6 +393,7 @@ def stage_src_config_update(
     shutil.copytree(src_set_path, staging_path)
     if overlay_path is not None:
         shutil.copytree(overlay_path, staging_path, dirs_exist_ok=True)
+    _prepare_runtime_config_files(staging_path)
     if not is_src_config_available(staging_path):
         raise RuntimeError(f"SRC 待提交配置内容不完整: {staging_path}")
     validate_src_installation(src_set_path.parent, expected_installation_id)
