@@ -824,6 +824,12 @@ class OkwwConfig_Game(BaseModel):
     Path: Optional[str] = Field(default=None, description="游戏启动器路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None, description="任务开始前是否由 MAS 检查并接管更新鸣潮"
+    )
+    UpdateFullSyncLimit: Optional[int] = Field(
+        default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
+    )
 
 
 class OkwwConfig_Run(GeneralConfig_Run):

@@ -346,6 +346,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         if self.launcher_path is None:
             return
+        if not self.script_config.get("Game", "IfAutoUpdate"):
+            logger.info("已关闭启动前自动更新，跳过鸣潮更新检查")
+            return
         resource = str(self.cur_user_config.get("Info", "Resource"))
         try:
             update_info = await check_wuthering_waves_update(
@@ -368,11 +371,13 @@ class AutoProxyTask(TaskExecuteBase):
             f"鸣潮需更新: {update_info.current_version}"
             f" -> {update_info.release_version}"
         )
+        limit_gb = int(self.script_config.get("Game", "UpdateFullSyncLimit") or 0)
         await update_wuthering_waves(
             update_info.install_dir,
             resource,
             update_info.current_version,
             on_progress=self._push_dispatch_log,
+            full_sync_limit=max(limit_gb, 1) * 1024**3,
         )
 
     async def _mas_launch_game_before_task(self) -> None:

@@ -131,6 +131,58 @@
             </a-col>
           </a-row>
 
+          <a-row :gutter="24" class="game-control-row">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="开启后，代理启动游戏前由 MAS 检查官方版本并自行完成更新；关闭则直接启动游戏"
+                  >
+                    <span class="form-label">
+                      启动前自动更新
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="okwwConfig.Game.IfAutoUpdate"
+                  size="large"
+                  class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @change="handleChange('Game', 'IfAutoUpdate', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="版本跨越较大时需整文件同步，超过该体积不再自动下载，改为中止并提示手动处理"
+                  >
+                    <span class="form-label">
+                      整文件同步上限（GB）
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="okwwConfig.Game.UpdateFullSyncLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @blur="
+                    handleChange('Game', 'UpdateFullSyncLimit', okwwConfig.Game.UpdateFullSyncLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -360,6 +412,8 @@ interface OkwwGameForm {
   Path: string
   Arguments: string
   WaitTime: number
+  IfAutoUpdate: boolean
+  UpdateFullSyncLimit: number
 }
 
 interface OkwwRunForm {
@@ -393,6 +447,8 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     Path: '.',
     Arguments: '',
     WaitTime: 60,
+    IfAutoUpdate: true,
+    UpdateFullSyncLimit: 10,
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })

@@ -2953,6 +2953,12 @@ class OkwwConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务前是否由 MAS 检查并接管更新游戏
+        self.Game_IfAutoUpdate = ConfigItem("Game", "IfAutoUpdate", True, BoolValidator())
+        ## 整文件同步体积上限（GB），超过则中止并提示手动处理
+        self.Game_UpdateFullSyncLimit = ConfigItem(
+            "Game", "UpdateFullSyncLimit", 10, RangeValidator(1, 9999)
+        )
         ## Run -------------------------------------------------------------
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
