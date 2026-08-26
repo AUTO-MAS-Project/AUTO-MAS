@@ -446,7 +446,17 @@ const oknteTaskOptions = [
   { label: '19 - CinemaDateTask（影院约会）', value: 19 },
 ]
 
-const getDefaultUserData = () => ({
+type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
+
+type OkNteUserFormData = {
+  userName: string
+  Info: FormSection<NonNullable<OkNteUserConfig['Info']>>
+  Task: FormSection<NonNullable<OkNteUserConfig['Task']>>
+  Notify: FormSection<NonNullable<OkNteUserConfig['Notify']>>
+  Data: FormSection<NonNullable<OkNteUserConfig['Data']>>
+}
+
+const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
   Info: {
     Name: '',
     Status: true,
@@ -455,7 +465,12 @@ const getDefaultUserData = () => ({
     Mode: '简洁',
     Resource: '官服',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
+    Tag: '',
   },
   Task: {
     TaskIndex: 2,
@@ -468,17 +483,18 @@ const getDefaultUserData = () => ({
     ToAddress: '',
     IfServerChan: false,
     ServerChanKey: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    LastProxyStatus: '',
+    LastTaskIndex: 0,
   },
 })
 
-const formData = reactive({
+const formData = reactive<OkNteUserFormData>({
   userName: '',
-  ...(getDefaultUserData() as unknown as OkNteUserConfig),
+  ...getDefaultUserData(),
 })
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 2} -e`)
@@ -673,7 +689,7 @@ const loadUser = async () => {
     }
     const resp = await getUsers(scriptId, userId)
     const userIndex = resp?.index?.find(i => i.uid === userId)
-    const data = resp?.data?.[userId]
+    const data = resp?.data?.[userId] as OkNteUserConfig | undefined
     if (!userIndex || !data) {
       throw new Error('用户不存在或加载失败')
     }

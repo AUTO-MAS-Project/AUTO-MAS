@@ -155,10 +155,7 @@
                 <a-radio :value="template.downloadUrl" />
               </label>
             </a-radio-group>
-            <a-empty
-              v-else
-              :description="templateKeyword ? '未找到匹配的模板' : '暂无可用模板'"
-            >
+            <a-empty v-else :description="templateKeyword ? '未找到匹配的模板' : '暂无可用模板'">
               <a-button v-if="templateKeyword" @click="templateKeyword = ''">清空搜索</a-button>
               <a-button v-else @click="chooseCustomConfig">改为自定义配置</a-button>
             </a-empty>
