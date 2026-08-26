@@ -75,7 +75,8 @@ onBeforeUnmount(() => {
 
 .scroll-hint-text {
   color: var(--ant-color-primary);
-  font-size: 12px;
+  text-shadow: 0px 0px 10px white;
+  font-size: 14px;
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
