@@ -55,6 +55,10 @@ _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 
 # 空配置名的显式兜底配置名
 _DEFAULT_CONFIG_NAME = "默认配置"
+# MAS 运行时专属槽位配置名：开启「用户独立配置」时，把 per-user 配置落地到这个独立文件并据此启动，
+# 绝不覆盖 BGI 同名的用户实配（{RootPath}/User/OneDragon/{用户所选名}.json 全程零接触）。
+# 该槽位由 MAS 独占、运行后删除；名称避免与常见用户配置名冲突。
+_MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
 _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
@@ -108,6 +112,24 @@ def list_auto_boss_strategies(root: Path) -> list[str]:
 def resolve_config_name(name: str) -> str:
     """解析一条龙配置名，空值显式兜底为「默认配置」。"""
     return (name or "").strip() or _DEFAULT_CONFIG_NAME
+
+
+def launch_slot_name() -> str:
+    """MAS 运行时专属槽位配置名（开启「用户独立配置」时据此启动一条龙）。"""
+    return _MAS_ONE_DRAGON_SLOT_NAME
+
+
+def one_dragon_slot_path(root: Path) -> Path:
+    """MAS 运行时槽位配置文件的绝对路径（``{RootPath}/User/OneDragon/MAS独立配置.json``）。"""
+    return one_dragon_path(root, _MAS_ONE_DRAGON_SLOT_NAME)
+
+
+def remove_one_dragon_slot(root: Path) -> bool:
+    """删除 MAS 运行时槽位配置（幂等）。返回是否确实存在并删除了。"""
+    path = one_dragon_slot_path(root)
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return existed
 
 
 def parse_custom_groups(raw: Any) -> list[dict[str, Any]]:
@@ -234,9 +256,13 @@ def write_user_one_dragon(
     custom_groups: list[dict[str, Any]] | None = None,
     manage_custom_groups: bool = False,
 ) -> None:
-    """把组开关与队伍/策略设置应用到一条龙配置，写入 BetterGI 并缓存 per-user 副本。
+    """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
     种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
+    关键：物化结果写入 MAS 专属槽位 ``{RootPath}/User/OneDragon/MAS独立配置.json``（据此启动，
+    运行后由 ``remove_one_dragon_slot`` 删除），而 **不写入用户所选名的 BGI 实配**——BGI 同名
+    配置全程零接触，不会被覆盖成用户独立配置的样子。per-user 缓存仍以用户所选名 key。
+
     非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）；
     其中「战斗队伍/战斗策略」会落到秘境 ``PartyName`` 与首领讨伐的
     ``AutoBossTeamName`` / ``AutoBossStrategyName``（秘境策略仍走全局
@@ -265,7 +291,7 @@ def write_user_one_dragon(
         config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         config["AutoBossStrategyName"] = auto_boss_strategy_name
-    write_one_dragon(root, config_name, config)
+    write_one_dragon(root, _MAS_ONE_DRAGON_SLOT_NAME, config)
     write_file(user_path, config)
 
 

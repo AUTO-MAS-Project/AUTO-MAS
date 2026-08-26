@@ -28,6 +28,11 @@ def _od(root, name="默认配置"):
     return read_file(one_dragon.one_dragon_path(root, name))
 
 
+def _od_slot(root):
+    """读取 MAS 运行时槽位配置（write_user_one_dragon 的物化落点）。"""
+    return read_file(one_dragon.one_dragon_slot_path(root))
+
+
 def _write(root, party="", tmp_path=None, monkeypatch=None):
     """调用 write_user_one_dragon，per-user 缓存写入 root 内避免污染仓库 data/。"""
     if monkeypatch is not None:
@@ -108,7 +113,7 @@ def test_write_user_one_dragon_sets_auto_boss_team(tmp_path, monkeypatch) -> Non
     _seed_cache(root, tmp_path)
     _write(root, party="锄地队", tmp_path=tmp_path, monkeypatch=monkeypatch)
 
-    cfg = _od(root)
+    cfg = _od_slot(root)  # per-user 配置物化到 MAS 槽位，而非用户实配
     assert cfg["PartyName"] == "锄地队"
     assert cfg["AutoBossTeamName"] == "锄地队"
 
@@ -119,7 +124,7 @@ def test_write_user_one_dragon_empty_keeps_auto_boss_team(tmp_path, monkeypatch)
     _seed_cache(root, tmp_path, AutoBossTeamName="团队X")
     _write(root, party="", tmp_path=tmp_path, monkeypatch=monkeypatch)
 
-    cfg = _od(root)
+    cfg = _od_slot(root)
     assert cfg["AutoBossTeamName"] == "团队X"
 
 
@@ -129,7 +134,7 @@ def test_write_user_one_dragon_keeps_other_fields(tmp_path, monkeypatch) -> None
     _seed_cache(root, tmp_path, AutoBossStrategyName="自定义策略")
     _write(root, party="锄地队", tmp_path=tmp_path, monkeypatch=monkeypatch)
 
-    cfg = _od(root)
+    cfg = _od_slot(root)
     assert cfg["AutoBossStrategyName"] == "自定义策略"
     assert cfg["AutoBossTeamName"] == "锄地队"
     assert cfg["PartyName"] == "锄地队"
@@ -255,3 +260,51 @@ def test_restore_preserves_original_strategy(tmp_path) -> None:
     cfg = read_file(root / "User" / "config.json")
     assert cfg["autoFightConfig"]["strategyName"] == "手动通用"
     assert cfg["autoLeyLineOutcropConfig"]["fightConfig"]["strategyName"] == "手动地脉"
+
+
+def test_write_user_one_dragon_does_not_touch_bgi_original(tmp_path, monkeypatch) -> None:
+    """隔离核心：per-user 配置写入 MAS 槽位，BGI 同名用户实配不被创建/覆盖。"""
+    root = tmp_path
+    _seed_cache(root, tmp_path)  # 建立 BGI 实配 + per-user 缓存
+    bgi_path = one_dragon.one_dragon_path(root, "默认配置")
+    bgi_before = bgi_path.read_bytes()
+
+    _write(root, party="锄地队", tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    # BGI 用户实配字节级零接触
+    assert bgi_path.read_bytes() == bgi_before
+    # per-user 配置落在（且仅落在）MAS 槽位
+    assert _od_slot(root)["PartyName"] == "锄地队"
+    assert _od_slot(root)["Name"] == one_dragon.launch_slot_name()
+
+
+def test_remove_one_dragon_slot_idempotent(tmp_path, monkeypatch) -> None:
+    """运行结束后删除 MAS 槽位：一次删除即消失，重复删除幂等不报错。"""
+    root = tmp_path
+    _seed_cache(root, tmp_path)
+    _write(root, party="锄地队", tmp_path=tmp_path, monkeypatch=monkeypatch)
+    assert one_dragon.one_dragon_slot_path(root).exists()
+
+    assert one_dragon.remove_one_dragon_slot(root) is True
+    assert not one_dragon.one_dragon_slot_path(root).exists()
+    assert one_dragon.remove_one_dragon_slot(root) is False  # 已删，幂等
+
+
+def test_launch_slot_name_stable(tmp_path) -> None:
+    """MAS 槽位名固定为「MAS独立配置」，与 launch_slot_name 一致。"""
+    assert one_dragon.launch_slot_name() == "MAS独立配置"
+
+
+def test_remove_slot_preserves_bgi_original(tmp_path, monkeypatch) -> None:
+    """删除槽位不影响 BGI 同名用户实配。"""
+    root = tmp_path
+    _seed_cache(root, tmp_path)
+    bgi_path = one_dragon.one_dragon_path(root, "默认配置")
+    bgi_before = bgi_path.read_bytes()
+
+    _write(root, party="锄地队", tmp_path=tmp_path, monkeypatch=monkeypatch)
+    assert _od_slot(root)["PartyName"] == "锄地队"
+
+    one_dragon.remove_one_dragon_slot(root)
+    assert bgi_path.read_bytes() == bgi_before
+    assert not one_dragon.one_dragon_slot_path(root).exists()

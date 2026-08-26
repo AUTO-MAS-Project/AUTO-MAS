@@ -265,14 +265,22 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_custom_groups = one_dragon.parse_custom_groups(
             self.cur_user_config.get("OneDragon", "CustomGroups") or ""
         )
-        self.bettergi_args = ["startOneDragon", self.one_dragon_config]
+        # 「用户独立配置」开启时，per-user 配置落到 MAS 专属槽位并据此启动，BGI 同名的
+        # 用户实配全程零接触。若用户恰好把配置命名为槽位名，退化为直连（防自伤）。
+        self.use_mas_launch_slot = (
+            self.use_mas_config
+            and one_dragon.launch_slot_name() != self.one_dragon_config
+        )
+        self.launch_config_name = (
+            one_dragon.launch_slot_name()
+            if self.use_mas_launch_slot
+            else self.one_dragon_config
+        )
+        self.bettergi_args = ["startOneDragon", self.launch_config_name]
 
         self.run_book = False
 
-        # 独立配置覆盖前备份：None 表示尚未接管（use_mas_config=False 或未开始写入）
-        self._reseed_live_config: dict | None = None
-        self._reseed_live_existed = False
-        # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示未接管
+        # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示尚未接管
         self._reseed_global_config: dict | None = None
 
     def _build_log_path(self) -> Path:
@@ -335,53 +343,34 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     def _backup_one_dragon_config(self) -> None:
-        """覆盖前备份 BetterGI 现有一条龙配置，供结束后还原。
+        """运行前快照乐观覆盖的全局 config.json 队伍/策略叶子，供结束后还原。
 
-        独立配置模式会覆盖现场文件；若不备份还原，`IfUseMasConfig=false` 的用户
-        会继承前一个独立用户留下的配置，切号失败或异常退出也会污染原配置。
+        独立配置模式下 per-user 配置落到 MAS 专属槽位，不写 BGI 同名实配；BGI 那套
+        一条龙文件无需备份。全局 config.json 的队伍/策略叶子（地脉花/幽境危战/秘境读段）
+        仍需运行时临时补写、结束还原，故这里先快照。
         """
         if not self.use_mas_config:
             return
-        self._reseed_live_existed = one_dragon.one_dragon_path(
-            self.script_root_path, self.one_dragon_config
-        ).exists()
-        self._reseed_live_config = one_dragon.load_one_dragon(
-            self.script_root_path, self.one_dragon_config
-        )
-        # 同时快照全局 config.json 待改写的队伍/策略叶子，供结束后还原
         self._reseed_global_config = one_dragon.snapshot_global_battle_config(
             self.script_root_path
         )
 
     def _restore_one_dragon_config(self) -> None:
-        """运行/异常结束后把 BetterGI 一条龙配置与全局 config.json 队伍/策略字段还原。
+        """运行/异常结束后还原全局 config.json 队伍/策略叶子，并删除 MAS 运行时槽位。
 
-        仅在本次确接管过（``_reseed_live_config`` / ``_reseed_global_config`` 任一
-        非 None）时生效；还原一次后置 None 保证幂等，避免 final_task 与 on_crash
-        相继触发时重复覆盖。原本不存在的一条龙配置更名为删除，回到最初状态。
+        仅在本次确接管过（``_reseed_global_config`` 非 None）时生效；还原一次后置 None
+        保证幂等，避免 final_task 与 on_crash 相继触发时重复覆盖。槽位文件在 ``finally``
+        中无条件删除（幂等），使 BGI GUI 不残留 MAS 运行时配置。
         """
-        if self._reseed_live_config is None and self._reseed_global_config is None:
+        if self._reseed_global_config is None:
             return
         try:
             # 还原全局 config.json 队伍/策略叶子字段（秘境/地脉花/幽境危战读取段）
-            if self._reseed_global_config is not None:
-                one_dragon.restore_global_battle_config(
-                    self.script_root_path, self._reseed_global_config
-                )
-            path = one_dragon.one_dragon_path(
-                self.script_root_path, self.one_dragon_config
+            one_dragon.restore_global_battle_config(
+                self.script_root_path, self._reseed_global_config
             )
-            if self._reseed_live_existed and self._reseed_live_config:
-                one_dragon.write_one_dragon(
-                    self.script_root_path,
-                    self.one_dragon_config,
-                    self._reseed_live_config,
-                )
-            elif not self._reseed_live_existed:
-                with suppress(Exception):
-                    path.unlink(missing_ok=True)
         finally:
-            self._reseed_live_config = None
+            one_dragon.remove_one_dragon_slot(self.script_root_path)
             self._reseed_global_config = None
 
     async def main_task(self):
@@ -424,7 +413,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
             await self._push_dispatch_log(
-                f"启动 BetterGI: startOneDragon {self.one_dragon_config}"
+                f"启动 BetterGI: startOneDragon {self.launch_config_name}"
             )
             logger.info(
                 f"启动 BetterGI 进程: {self.script_exe_path} "
