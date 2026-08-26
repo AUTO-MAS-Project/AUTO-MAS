@@ -265,7 +265,7 @@ class _TaskManager:
 
     async def add_task(
         self,
-        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "Update"],
+        mode: Literal["AutoProxy", "ScriptConfig", "Update"],
         id: str,
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,

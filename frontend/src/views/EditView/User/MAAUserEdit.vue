@@ -14,7 +14,12 @@
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button v-if="maaWebsocketId" type="primary" size="large" @click="handleSaveMAAConfig">
+            <a-button
+              v-if="maaWebsocketId"
+              type="primary"
+              size="large"
+              @click="handleSaveMAAConfig"
+            >
               保存配置
             </a-button>
           </div>
@@ -22,16 +27,34 @@
       </div>
     </teleport>
     <!-- 头部组件 -->
-    <MAAUserEditHeader :script-id="scriptId" :script-name="scriptName" :is-edit="isEdit" :user-mode="formData.Info.Mode"
-      :maa-config-loading="maaConfigLoading" :show-maa-config-mask="showMAAConfigMask" :loading="loading"
-      @handle-m-a-a-config="handleMAAConfig" @handle-cancel="handleCancel" />
+    <MAAUserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      :user-mode="formData.Info.Mode"
+      :maa-config-loading="maaConfigLoading"
+      :show-maa-config-mask="showMAAConfigMask"
+      :loading="loading"
+      @handle-m-a-a-config="handleMAAConfig"
+      @handle-cancel="handleCancel"
+    />
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <!-- 基本信息组件 -->
-          <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
-            @save="handleFieldSave" />
+          <BasicInfoSection
+            v-model:form-data="formData"
+            :loading="loading"
+            :server-options="serverOptions"
+            @save="handleFieldSave"
+          />
 
           <!-- 任务配置：按后端 MAA_TASKS 执行顺序排列 -->
           <TaskPipelineSection
@@ -55,33 +78,59 @@
             @save="handleFieldSave"
           >
             <template #fight-detail>
-              <StageConfigSection v-model:form-data="formData" :loading="loading"
-                :stage-mode-options="stageModeOptions" :stage-options="stageOptions"
-                :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
-                :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
-                :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
-                :display-stage3="displayStage3" :display-stage-remain="displayStageRemain"
-                :medicine-numb-tooltip="medicineNumbTooltip" :series-numb-tooltip="seriesNumbTooltip"
-                :stage-tooltip="stageTooltip" :stage1-tooltip="stage1Tooltip" :stage2-tooltip="stage2Tooltip"
-                :stage3-tooltip="stage3Tooltip" :stage-remain-tooltip="stageRemainTooltip"
-                @update-medicine-numb="updateMedicineNumb" @update-series-numb="updateSeriesNumb"
-                @update-stage="updateStage" @update-stage1="updateStage1" @update-stage2="updateStage2"
-                @update-stage3="updateStage3" @update-stage-remain="updateStageRemain"
-                @handle-add-custom-stage="addCustomStage" @handle-add-custom-stage1="addCustomStage1"
-                @handle-add-custom-stage2="addCustomStage2" @handle-add-custom-stage3="addCustomStage3"
-                @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
+              <StageConfigSection
+                v-model:form-data="formData"
+                :loading="loading"
+                :stage-mode-options="stageModeOptions"
+                :stage-options="stageOptions"
+                :stage-remain-options="stageRemainOptions"
+                :is-plan-mode="isPlanMode"
+                :display-medicine-numb="displayMedicineNumb"
+                :display-series-numb="displaySeriesNumb"
+                :display-stage="displayStage"
+                :display-stage1="displayStage1"
+                :display-stage2="displayStage2"
+                :display-stage3="displayStage3"
+                :display-stage-remain="displayStageRemain"
+                :medicine-numb-tooltip="medicineNumbTooltip"
+                :series-numb-tooltip="seriesNumbTooltip"
+                :stage-tooltip="stageTooltip"
+                :stage1-tooltip="stage1Tooltip"
+                :stage2-tooltip="stage2Tooltip"
+                :stage3-tooltip="stage3Tooltip"
+                :stage-remain-tooltip="stageRemainTooltip"
+                @update-medicine-numb="updateMedicineNumb"
+                @update-series-numb="updateSeriesNumb"
+                @update-stage="updateStage"
+                @update-stage1="updateStage1"
+                @update-stage2="updateStage2"
+                @update-stage3="updateStage3"
+                @update-stage-remain="updateStageRemain"
+                @handle-add-custom-stage="addCustomStage"
+                @handle-add-custom-stage1="addCustomStage1"
+                @handle-add-custom-stage2="addCustomStage2"
+                @handle-add-custom-stage3="addCustomStage3"
+                @handle-add-custom-stage-remain="addCustomStageRemain"
+                @save="handleFieldSave"
+              />
             </template>
           </TaskPipelineSection>
 
-          <!-- 森空岛配置组件 -->
-          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
-
           <!-- 额外脚本组件 -->
-          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection v-model:form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
-            @save="handleFieldSave" />
+          <NotifyConfigSection
+            v-model:form-data="formData"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -112,19 +161,12 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
-import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  error: userError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -398,8 +440,7 @@ const getPlanCurrentConfig = (planData: any) => {
     logger.debug(`计划表周模式调试: 
       东4区星期几: ${todayWeekday},
       星期: ${today},
-      计划数据: ${JSON.stringify(planData)}`
-    )
+      计划数据: ${JSON.stringify(planData)}`)
 
     // 优先使用今天的配置，如果没有或为空则使用ALL配置
     const todayConfig = planData[today]
@@ -445,8 +486,6 @@ const getDefaultMAAUserData = () => ({
     Stage_2: '',
     Stage_3: '',
     Stage_Remain: '',
-    IfSkland: false,
-    SklandToken: '',
   },
   Task: {
     IfStartUp: true,
@@ -476,9 +515,7 @@ const getDefaultMAAUserData = () => ({
     CustomWebhooks: [],
   },
   Data: {
-    IfPassCheck: false,
     LastProxyDate: '',
-    LastSklandDate: '',
     ProxyTimes: 0,
   },
 })
@@ -911,13 +948,13 @@ const loadInfrastructureOptions = async () => {
     infrastructureOptionsLoading.value = true
     const result = await Service.getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost({
       scriptId: scriptId,
-      userId: userId
+      userId: userId,
     })
 
     if (result && result.code === 200 && result.data) {
       infrastructureOptions.value = result.data.map((item: any) => ({
         label: item.label,
-        value: item.value
+        value: item.value,
       }))
     }
   } catch (error) {
@@ -929,7 +966,6 @@ const loadInfrastructureOptions = async () => {
 }
 
 const handleMAAConfig = async () => {
-
   try {
     maaConfigLoading.value = true
 
@@ -983,10 +1019,12 @@ const handleMAAConfig = async () => {
         }
 
         // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
-          logger.info(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`
-          )
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
+          logger.info(`用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`)
           // 根据结果显示不同消息
           const result = wsMessage.data.Accomplish
           if (result && !result.includes('异常') && !result.includes('错误')) {
@@ -1271,11 +1309,13 @@ onMounted(() => {
             fullPlanData.value = planData
             logger.debug('fullPlanData.value已更新')
 
-            logger.info(`计划配置加载成功:${JSON.stringify({
-              planId: newStageMode,
-              currentConfig: JSON.parse(JSON.stringify(currentConfig)),
-              planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
-            })}`)
+            logger.info(
+              `计划配置加载成功:${JSON.stringify({
+                planId: newStageMode,
+                currentConfig: JSON.parse(JSON.stringify(currentConfig)),
+                planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
+              })}`
+            )
 
             // 从stageModeOptions中查找对应的计划名称
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
