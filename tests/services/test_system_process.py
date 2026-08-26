@@ -30,6 +30,45 @@ class SystemProcessTest(unittest.IsolatedAsyncioTestCase):
         run_process.assert_awaited_once_with("taskkill", "/F", "/T", "/PID", "123")
         self.assertFalse(success)
 
+    async def test_kill_process_by_pid_can_skip_process_tree(self) -> None:
+        handler = _SystemHandler()
+        process_result = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "app.services.system.ProcessRunner.run_process",
+                new_callable=AsyncMock,
+                return_value=process_result,
+            ) as run_process,
+            patch("app.services.system.psutil.pid_exists", return_value=False),
+        ):
+            success = await handler.kill_process_by_pid(123, kill_tree=False)
+
+        run_process.assert_awaited_once_with("taskkill", "/F", "/PID", "123")
+        self.assertTrue(success)
+
+    async def test_kill_process_preserves_process_tree_option(self) -> None:
+        handler = _SystemHandler()
+
+        with (
+            patch.object(
+                handler,
+                "_scan_processes_by_path",
+                new_callable=AsyncMock,
+                return_value=_ProcessPathScan([123], [], True),
+            ),
+            patch.object(
+                handler,
+                "kill_process_by_pid",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as kill_process_by_pid,
+        ):
+            success = await handler.kill_process(Path("SRC/src.exe"), kill_tree=False)
+
+        kill_process_by_pid.assert_awaited_once_with(123, kill_tree=False)
+        self.assertTrue(success)
+
     async def test_kill_process_by_pid_accepts_already_exited_process(self) -> None:
         handler = _SystemHandler()
         process_result = SimpleNamespace(
@@ -94,10 +133,10 @@ class SystemProcessTest(unittest.IsolatedAsyncioTestCase):
                 await handler.kill_process(Path("SRC/src.exe"))
 
         self.assertEqual(kill_process_by_pid.await_count, 2)
-        kill_process_by_pid.assert_any_await(123)
-        kill_process_by_pid.assert_any_await(456)
+        kill_process_by_pid.assert_any_await(123, kill_tree=True)
+        kill_process_by_pid.assert_any_await(456, kill_tree=True)
 
-    async def test_kill_process_fails_closed_for_unreadable_same_name(self) -> None:
+    async def test_kill_process_skips_unreadable_same_name(self) -> None:
         handler = _SystemHandler()
         process = SimpleNamespace(info={"pid": 123, "name": "src.exe", "exe": None})
 
@@ -112,7 +151,7 @@ class SystemProcessTest(unittest.IsolatedAsyncioTestCase):
             success = await handler.kill_process(Path("SRC/src.exe"))
 
         kill_process_by_pid.assert_not_awaited()
-        self.assertFalse(success)
+        self.assertTrue(success)
 
     async def test_kill_process_ignores_readable_same_name_at_other_path(self) -> None:
         handler = _SystemHandler()
@@ -153,8 +192,8 @@ class SystemProcessTest(unittest.IsolatedAsyncioTestCase):
         ):
             success = await handler.kill_process(Path("SRC/src.exe"))
 
-        kill_process_by_pid.assert_awaited_once_with(123)
-        self.assertFalse(success)
+        kill_process_by_pid.assert_awaited_once_with(123, kill_tree=True)
+        self.assertTrue(success)
 
     async def test_kill_process_reports_incomplete_scan(self) -> None:
         handler = _SystemHandler()

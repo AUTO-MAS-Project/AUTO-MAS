@@ -411,7 +411,7 @@ class _SystemHandler:
         logger.info(f"开始中止进程: {path}")
 
         scan = await self._scan_processes_by_path(path)
-        success = scan.complete and not scan.uncertain_pids
+        success = scan.complete
         first_error: Exception | None = None
         if scan.uncertain_pids:
             logger.warning(
@@ -420,7 +420,7 @@ class _SystemHandler:
 
         for pid in scan.pids:
             try:
-                pid_success = await self.kill_process_by_pid(pid)
+                pid_success = await self.kill_process_by_pid(pid, kill_tree=kill_tree)
             except Exception as e:
                 pid_success = False
                 if first_error is None:
@@ -486,10 +486,6 @@ class _SystemHandler:
                 try:
                     info = proc.info
                 except (psutil.NoSuchProcess, psutil.ZombieProcess):
-                    continue
-                except (psutil.AccessDenied, OSError) as e:
-                    complete = False
-                    logger.warning(f"读取进程信息失败: {e}")
                     continue
 
                 process_path = info.get("exe")
