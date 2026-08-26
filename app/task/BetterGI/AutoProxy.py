@@ -51,22 +51,28 @@ _BGI_LOG_FILE_PREFIX = "better-genshin-impact"
 # ── BetterGI 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # BetterGI 使用 Serilog 文件日志，行格式：
 #   [{HH:mm:ss.fff}] [{Level:u3}] [{BgiInstance}] {SourceContext}\n{Message}
-# 成功/失败判定取自 TaskRunner 的统一日志片段，BetterGI 不向用户暴露关键词配置。
+# 成功/失败判定取自 BetterGI 的统一日志片段，BetterGI 不向用户暴露关键词配置。
+#
+# 进程级致命只有下面两种，会直接判异常：
+#   [FTL]          —— BetterGI 自己的 Fatal 级别，出现即进程级崩溃；
+#   「任务启动失败」—— 任务锁被占用（多半残留进程占锁），单条被跳过但整条可信度存疑。
+# ⚠️ 不得把 [ERR] 放进此表：它是 TaskRunner.Run 在每个【子任务】的 catch(Exception) 里打印的
+# 「任务级」异常（TaskRunner.cs 的 Run 包裹每条任务/配置组，捕获后不 rethrow，一条龙继续跑
+# 下一条）。直接 BGI 中这是可恢复的“跳过该步继续跑”，一条龙仍会正常走完收尾行；若 MAS 按
+# [ERR] 判 fatal，会把本可直接跑完的一条龙中途强杀（本次已实际复现）。真正跑不动由「收尾行
+# 缺失 + 进程提前退出 / 卡死 / 超时」兜底（见 check_log）。
 _BGI_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("[FTL]", "BetterGI 出现致命错误"),
     ("任务启动失败", "BetterGI 任务启动失败"),
-    ("任务执行异常", "BetterGI 任务执行异常"),
-    ("[ERR]", "BetterGI 任务执行异常"),
 )
-# 成功判定：命中也仍受 fatal-优先 / 进程提前退出 / 超时 三重兜底约束（见 check_log）。
-# ⚠️「任务结束」是 BetterGI TaskRunner 在【每个子任务边界】输出的统一日志片段，并非整条
-# 一条龙序列收尾信号。单凭它会把 4 任务的一条龙在任务 1 就误判成功而提前强杀；同样，
-# 一条龙里的「配置组任务」（如切换账号）结束也会打「→ 任务结束」+「配置组任务执行: X/Y」，
-# 若按其单判，会在真正的一条龙任务开始前就把 BetterGI 强杀（本次两类都实际发生过）。
 # 唯一权威收尾是 OneDragonFlowViewModel.RunThreadAsync 在全部任务 + 配置组任务 +
 # CheckRewardsTask 完成后打印的固定行「一条龙和配置组任务结束」（仅正常完成路径，取消/异常
-# 分支会在其前 return，不打印该行）。命中条件见 _one_dragon_sequence_done。
+# 分支会在其前 return，不打印该行）。run 中即使有杂散 [ERR]，只要最终走到收尾行，即证明各步
+# 异常均可恢复，按成功处理。命中条件见 _one_dragon_sequence_done。
 _BGI_SEQUENCE_DONE_MARKER = "一条龙和配置组任务结束"
+# 出现过 [ERR] 后、若连续这么久没有任何新日志行（BGI 既未完成也未退出），判定卡死提前失败。
+# 仅在出错后静默触发，正常推进时 latest_time 会被新行持续刷新、不会误触。
+_BGI_ERR_STALL_MINUTES = 5
 _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
 _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
@@ -665,13 +671,25 @@ class AutoProxyTask(TaskExecuteBase):
                     log_status = msg
                     user_item_status = "异常"
                     break
-            # 仅在未命中致命日志时判定成功/提前退出/超时（for…else）
+            # 仅在未命中进程级致命日志时判定成功/提前退出/卡死/超时（for…else）
             else:
                 if _one_dragon_sequence_done(log):
                     log_status = "Success!"
                     user_item_status = "完成"
                 elif not await self.bettergi_process_manager.is_running():
                     log_status = "BetterGI 在完成任务前退出"
+                    user_item_status = "异常"
+                elif (
+                    "[ERR]" in log
+                    and datetime.now() - latest_time
+                    > timedelta(minutes=_BGI_ERR_STALL_MINUTES)
+                ):
+                    # [ERR] 后长时间无任何新日志行：BGI 既没走完收尾、也没继续推进也没退出，
+                    # 判定卡死提前失败（不等 RunTimeLimit）。仍在新行推进则不触发。
+                    log_status = (
+                        f"BetterGI 出现 [ERR] 后 {_BGI_ERR_STALL_MINUTES} "
+                        "分钟无进展（疑似卡死）"
+                    )
                     user_item_status = "异常"
                 elif datetime.now() - latest_time > timedelta(
                     minutes=self.script_config.get("Run", "RunTimeLimit")

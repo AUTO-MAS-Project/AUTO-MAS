@@ -7,6 +7,8 @@
 #   the License, or (at your option) any later version.
 
 from app.task.BetterGI.AutoProxy import (
+    _BGI_BUILTIN_FATAL,
+    _BGI_ERR_STALL_MINUTES,
     _is_switch_script_updated,
     _latest_repo_progress,
     _one_dragon_sequence_done,
@@ -93,6 +95,45 @@ def test_sequence_done_marker_present(tmp_path) -> None:
     """日志命中唯一权威收尾行即判完成（即使其后还有杂散任务结束）。"""
     log = "\n一条龙和配置组任务结束\n→ 任务结束"
     assert _one_dragon_sequence_done(log) is True
+
+
+def test_complete_with_stray_err_is_done(tmp_path) -> None:
+    """日志里既有 [ERR]（可恢复的『任务级』异常）又走到权威收尾行 → 判整条完成。
+
+    这是修复核心：BGI 的 TaskRunner 在某条子任务抛异常时会打印 [ERR] 但吞掉异常
+    （不 rethrow），一条龙继续跑下一条最终仍正常收尾。若按 [ERR] 判失败会把本可跑完
+    的一龙中途强杀。只要能命中收尾行，历史 [ERR] 一律视为可恢复。
+    """
+    log = "[ERR] Sequence contains no elements\n一条龙和配置组任务结束"
+    assert _one_dragon_sequence_done(log) is True
+
+
+def test_complete_with_multiple_errs_is_done(tmp_path) -> None:
+    """多条任务都跳过（含 [ERR]）但仍走完收尾行 → 判完成。"""
+    log = "\n".join(
+        [
+            "[ERR] 任务A异常",
+            _progress(1, 3),
+            "[ERR] 任务B异常",
+            _progress(2, 3),
+            _progress(3, 3),
+            "一条龙和配置组任务结束",
+        ]
+    )
+    assert _one_dragon_sequence_done(log) is True
+
+
+def test_fatal_table_excludes_recoverable_err(tmp_path) -> None:
+    """[ERR]/「任务执行异常」是任务级可恢复异常，不得进进程级致命表。"""
+    needles = [n for n, _ in _BGI_BUILTIN_FATAL]
+    assert "[ERR]" not in needles
+    assert "任务执行异常" not in needles
+    assert "[FTL]" in needles  # BGI 真正的进程级致命仍在表内
+
+
+def test_err_stall_window(tmp_path) -> None:
+    """[ERR] 后卡死兜底的静默阈值固定为 5 分钟（见 check_log 的 _BGI_ERR_STALL_MINUTES）。"""
+    assert _BGI_ERR_STALL_MINUTES == 5
 
 
 def _progress_msg(*lines: str) -> str:
