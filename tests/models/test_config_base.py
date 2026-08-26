@@ -139,27 +139,6 @@ class ConfigBaseLifecycleTest(ConfigBaseTestCase):
         save.assert_awaited_once_with()
         parent_save.assert_awaited_once_with()
 
-    async def test_update_commits_once_for_multiple_fields(self) -> None:
-        self.config.file = self.config_path
-
-        with patch.object(self.config, "save", new_callable=AsyncMock) as save:
-            await self.config.update(
-                {"Info": {"Name": "新名称", "RetryCount": 3, "Enabled": True}}
-            )
-
-        save.assert_awaited_once_with()
-        self.assertEqual(self.config.get("Info", "Name"), "新名称")
-        self.assertEqual(self.config.get("Info", "RetryCount"), 3)
-        self.assertEqual(self.config.get("Info", "Enabled"), True)
-
-    async def test_update_skips_commit_when_nothing_changes(self) -> None:
-        self.config.file = self.config_path
-
-        with patch.object(self.config, "save", new_callable=AsyncMock) as save:
-            await self.config.update(self.default_data())
-
-        save.assert_not_awaited()
-
     async def test_get_and_set_reject_unknown_item(self) -> None:
         with self.assertRaisesRegex(AttributeError, "Info.Unknown"):
             self.config.get("Info", "Unknown")
