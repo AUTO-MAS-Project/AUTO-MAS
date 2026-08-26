@@ -59,7 +59,11 @@
       </h2>
       <p class="mask-description">
         当前正在配置
-        {{ currentMaaEndConfigUser ? `用户 ${currentMaaEndConfigUser.Info.Name}` : '脚本级 MaaEnd 配置' }}
+        {{
+          currentMaaEndConfigUser
+            ? `用户 ${currentMaaEndConfigUser.Info.Name}`
+            : '脚本级 MaaEnd 配置'
+        }}
         ，请在 MaaEnd 配置界面完成相关设置。
         <br />
         配置完成后，点击“保存配置”解除页面锁定。
@@ -77,13 +81,66 @@
     </div>
   </div>
 
+  <div v-if="showOkwwConfigMask" class="maa-config-mask">
+    <div class="mask-content">
+      <div class="mask-icon">
+        <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
+      </div>
+      <h2 class="mask-title">正在进行 ok-ww 设置</h2>
+      <p class="mask-description">
+        请在 ok-ww 界面完成设置。
+        <br />
+        完成后点击“保存设置”结束本次会话。
+      </p>
+      <div class="mask-actions">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveOkwwConfig(currentConfigScript)"
+        >
+          保存设置
+        </a-button>
+      </div>
+    </div>
+  </div>
+
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
       <h1 class="page-title">脚本管理</h1>
+      <a-input
+        v-model:value="scriptSearchKeyword"
+        allow-clear
+        class="script-search"
+        placeholder="搜索脚本或用户名称、ID"
+        aria-label="搜索脚本或用户"
+      >
+        <template #prefix><SearchOutlined /></template>
+      </a-input>
     </div>
     <div class="header-actions">
       <a-space size="middle">
+        <a-tooltip title="收起所有脚本的用户列表">
+          <a-button
+            size="large"
+            :disabled="scripts.length === 0 || isSearching"
+            @click="handleCollapseAll"
+          >
+            <template #icon><UpOutlined /></template>
+            一键收起
+          </a-button>
+        </a-tooltip>
+        <a-tooltip title="展开所有脚本的用户列表">
+          <a-button
+            size="large"
+            :disabled="scripts.length === 0 || isSearching"
+            @click="handleExpandAll"
+          >
+            <template #icon><DownOutlined /></template>
+            一键展开
+          </a-button>
+        </a-tooltip>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
@@ -108,11 +165,22 @@
     </div>
   </div>
 
+  <div v-else-if="!addLoading && loadedOnce && filteredScripts.length === 0" class="empty-state">
+    <a-empty description="未找到匹配的脚本或用户">
+      <a-button @click="scriptSearchKeyword = ''">清空搜索</a-button>
+    </a-empty>
+  </div>
+
   <ScriptTable
-    :scripts="scripts"
+    v-else
+    ref="scriptTableRef"
+    :scripts="filteredScripts"
+    :searching="isSearching"
     :active-connections="activeConnections"
+    :copying-script-id="copyingScriptId"
     :all-plans-data="allPlansData"
     @edit="handleEditScript"
+    @copy="handleCopyScript"
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
@@ -124,8 +192,19 @@
     @start-maa-end-config="handleStartMaaEndConfig"
     @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @save-maa-end-config="handleSaveMaaEndConfig"
+    @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
     @pass-check-user="handlePassCheckUser"
+  />
+
+  <ScriptCreateDialog
+    v-model:open="scriptCreateVisible"
+    :templates="templates"
+    :submitting="addLoading || templateLoading"
+    :template-loading="templateLoading"
+    :template-error="templateError"
+    @request-templates="loadTemplates"
+    @submit="handleSubmitScriptCreate"
   />
 
   <!-- 创建方式选择弹窗 -->
@@ -229,6 +308,18 @@
                 alt="ok-ww"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'OkNte'"
+                src="@/assets/ok-nte.ico"
+                alt="ok-nte"
+                class="type-icon"
+              />
+              <img
+                v-else-if="script.type === 'HSR'"
+                src="@/assets/hsr.png"
+                alt="HSR"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -236,20 +327,29 @@
               <div class="script-meta">
                 <span
                   class="script-type"
-                  :class="{ 'script-type-okww': script.type === 'Okww' }"
-                >{{
-                  script.type === 'MAA'
-                    ? 'MAA脚本'
-                    : script.type === 'SRC'
-                      ? 'SRC脚本'
-                      : script.type === 'MaaEnd'
-                        ? 'MaaEnd脚本'
-                        : script.type === 'M9A'
-                          ? 'M9A脚本'
-                          : script.type === 'Okww'
-                            ? 'ok-ww脚本'
-                          : '通用脚本'
-                }}</span>
+                  :class="{
+                    'script-type-okww': script.type === 'Okww',
+                    'script-type-oknte': script.type === 'OkNte',
+                  }"
+                >
+                  {{
+                    script.type === 'MAA'
+                      ? 'MAA脚本'
+                      : script.type === 'SRC'
+                        ? 'SRC脚本'
+                        : script.type === 'MaaEnd'
+                          ? 'MaaEnd脚本'
+                          : script.type === 'M9A'
+                            ? 'M9A脚本'
+                            : script.type === 'Okww'
+                              ? 'ok-ww脚本'
+                              : script.type === 'OkNte'
+                                ? 'ok-nte脚本'
+                                : script.type === 'HSR'
+                                  ? 'HSR脚本'
+                                  : '通用脚本'
+                  }}
+                </span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -306,7 +406,7 @@
             <div class="type-info">
               <div class="type-title">MaaEnd 脚本</div>
               <div class="type-description">
-                MaaEnd 自动化脚本，沿用 SRC 风格的多账号代理管理界面
+                明日方舟：终末地自动化脚本，支持多账号代理与协议空间配置
               </div>
             </div>
           </div>
@@ -332,6 +432,28 @@
             <div class="type-info">
               <div class="type-title">ok-ww脚本</div>
               <div class="type-description">ok-script 线专项：通过 -t/-e 启动参数运行任务</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="OkNte" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/ok-nte.ico" alt="ok-nte" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">ok-nte脚本</div>
+              <div class="type-description">异环 OK-NTE 自动化脚本，支持 -t/-e 任务启动</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="HSR" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/hsr.png" alt="HSR" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">HSR 脚本</div>
+              <div class="type-description">崩坏：星穹铁道 三月七 / SRA 双脚本适配</div>
             </div>
           </div>
         </a-radio-button>
@@ -423,6 +545,7 @@
                 v-model:value="pendingSearchKeyword"
                 placeholder="搜索模板名称、作者或描述..."
                 allow-clear
+                size="large"
                 class="template-search"
                 @press-enter="handleSearchTemplates"
                 @change="handleSearchInputChange"
@@ -485,30 +608,43 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
+  DownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
+  SearchOutlined,
   SettingOutlined,
+  UpOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
+import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { Script, ScriptType, User } from '@/types/script'
+import {
+  getScriptEditSegment,
+  type ScriptCreateRequest,
+} from '@/views/scripts/components/scriptCreateFlow'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
+import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
+
+defineOptions({ name: 'ScriptsPage' })
+
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
+const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
 const { getPlans } = usePlanApi()
 
 // 初始化markdown解析器
@@ -519,10 +655,17 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+const scriptSearchKeyword = ref('')
+const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
+const filteredScripts = computed(() =>
+  filterScriptsByKeyword(scripts.value, scriptSearchKeyword.value)
+)
+const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
 const allPlansData = ref<Record<string, Record<string, any>>>({})
+const scriptCreateVisible = ref(false)
 const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
 const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
 const typeSelectVisible = ref(false)
@@ -535,14 +678,29 @@ const selectedGeneralMode = ref('template')
 const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
+const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
 const pendingSearchKeyword = ref('')
 const appliedSearchKeyword = ref('')
 const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
 const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
+const showOkwwConfigMask = ref(false) // 控制ok-ww配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 const currentMaaEndConfigUser = ref<User | null>(null)
+
+const scriptEditPathMap: Record<ScriptType, string> = {
+  MAA: 'maa',
+  General: 'general',
+  Okww: 'okww',
+  OkNte: 'oknte',
+  SRC: 'src',
+  MaaEnd: 'maaend',
+  M9A: 'm9a',
+  HSR: 'hsr',
+}
+
+const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
 
 // WebSocket连接管理
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
@@ -636,9 +794,16 @@ const loadScripts = async () => {
 const loadCurrentPlan = async () => {
   try {
     const response = await getPlans()
-    if (response.data) {
-      // 加载所有计划表数据
-      allPlansData.value = response.data
+    if (response.data && response.index) {
+      const maaPlanIds = response.index
+        .filter(plan => plan.type === PLAN_CONFIG_TYPES.MAA)
+        .map(plan => plan.uid)
+
+      allPlansData.value = Object.fromEntries(
+        maaPlanIds
+          .filter(planId => response.data[planId])
+          .map(planId => [planId, response.data[planId]])
+      )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -648,16 +813,64 @@ const loadCurrentPlan = async () => {
 }
 
 const handleAddScript = () => {
-  // 如果当前没有脚本，直接进入类型选择
-  if (scripts.value.length === 0) {
-    selectedType.value = 'MAA'
-    typeSelectVisible.value = true
-    return
-  }
+  scriptCreateVisible.value = true
+}
 
-  // 如果有脚本，显示创建方式选择弹窗
-  selectedCreateMode.value = 'new'
-  createModeSelectVisible.value = true
+const handleCollapseAll = () => {
+  scriptTableRef.value?.collapseAllUsers()
+}
+
+const handleExpandAll = () => {
+  scriptTableRef.value?.expandAllUsers()
+}
+
+const navigateToCreatedScript = (
+  scriptId: string,
+  type: ScriptType,
+  data?: Record<string, unknown>
+) => {
+  const route = {
+    path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    ...(data
+      ? {
+          state: {
+            scriptData: {
+              id: scriptId,
+              type,
+              config: JSON.parse(JSON.stringify(data)),
+            },
+          },
+        }
+      : {}),
+  }
+  router.push(route)
+}
+
+const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
+  addLoading.value = true
+  try {
+    const type = request.kind === 'new' ? request.type : 'General'
+    const result = await addScript(type)
+    if (!result) return
+
+    if (request.kind === 'general-template') {
+      const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
+      if (!imported) return
+      message.success(`已根据模板 "${request.template.configName}" 创建脚本`)
+      await loadScripts()
+      scriptCreateVisible.value = false
+      navigateToCreatedScript(result.scriptId, 'General')
+      return
+    }
+
+    scriptCreateVisible.value = false
+    navigateToCreatedScript(result.scriptId, type, result.data)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`创建脚本失败: ${errorMsg}`)
+  } finally {
+    addLoading.value = false
+  }
 }
 
 const handleConfirmCreateMode = () => {
@@ -694,14 +907,7 @@ const handleConfirmScriptSelect = async () => {
     if (result) {
       scriptSelectVisible.value = false
       // 跳转到编辑页面
-      const editPath =
-        selectedScript.type === 'MAA'
-          ? 'maa'
-          : selectedScript.type === 'SRC'
-            ? 'src'
-            : selectedScript.type === 'MaaEnd'
-              ? 'maaend'
-              : 'general'
+      const editPath = getScriptEditPath(selectedScript.type)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -736,18 +942,7 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath =
-        selectedType.value === 'MAA'
-          ? 'maa'
-          : selectedType.value === 'SRC'
-            ? 'src'
-            : selectedType.value === 'MaaEnd'
-              ? 'maaend'
-              : selectedType.value === 'M9A'
-                ? 'm9a'
-                : selectedType.value === 'Okww'
-                  ? 'okww'
-                : 'general'
+      const editPath = getScriptEditPath(selectedType.value)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -861,26 +1056,28 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  // 根据脚本类型跳转到对应的编辑页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/edit/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/edit/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/edit/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/edit/m9a`)
-  } else if (script.type === 'Okww') {
-    router.push(`/scripts/${script.id}/edit/okww`)
-  } else {
-    router.push(`/scripts/${script.id}/edit/general`)
-  }
+  router.push(`/scripts/${script.id}/edit/${getScriptEditPath(script.type)}`)
 }
 
 const handleDeleteScript = async (script: Script) => {
   const result = await deleteScript(script.id)
   if (result) {
     loadScripts()
+  }
+}
+
+const handleCopyScript = async (script: Script) => {
+  addLoading.value = true
+  copyingScriptId.value = script.id
+  try {
+    const result = await addScript(script.type, script.id)
+    if (result) {
+      await loadScripts()
+      message.success(`已复制脚本「${script.name}」`)
+    }
+  } finally {
+    addLoading.value = false
+    copyingScriptId.value = null
   }
 }
 
@@ -896,6 +1093,10 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/m9a`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
+  } else if (script.type === 'OkNte') {
+    router.push(`/scripts/${script.id}/users/add/oknte`)
+  } else if (script.type === 'HSR') {
+    router.push(`/scripts/${script.id}/users/add/hsr`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -916,6 +1117,10 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
+    } else if (script.type === 'OkNte') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
+    } else if (script.type === 'HSR') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
@@ -1210,6 +1415,81 @@ const handleSaveSRCConfig = async (script: Script) => {
   }
 }
 
+const clearConfigSession = (
+  targetId: string,
+  subscriptionId: string | undefined,
+  clearState: () => void
+) => {
+  if (subscriptionId) unsubscribe(subscriptionId)
+  activeConnections.value.delete(targetId)
+  clearState()
+}
+
+const startConfigSession = async (
+  targetId: string,
+  label: string,
+  setActiveState: () => void,
+  clearState: () => void
+) => {
+  if (activeConnections.value.has(targetId)) {
+    message.warning('该配置目标已在配置中，请先保存当前配置')
+    return false
+  }
+
+  const response = await Service.addTaskApiDispatchStartPost({
+    taskId: targetId,
+    mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+  })
+  if (response.code !== 200 || !response.taskId) {
+    throw new Error(response.message || `启动 ${label} 配置失败`)
+  }
+
+  setActiveState()
+  let sessionEnded = false
+  let subscriptionId = ''
+  subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+    if (wsMessage.type === 'error') {
+      sessionEnded = true
+      message.error(`${label} 配置连接失败: ${String(wsMessage.data)}`)
+      clearConfigSession(targetId, subscriptionId, clearState)
+      return
+    }
+    if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+      message.error(`${label} 配置失败: ${String(wsMessage.data.Error)}`)
+      return
+    }
+    if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+      sessionEnded = true
+      clearConfigSession(targetId, subscriptionId, clearState)
+    }
+  })
+  if (sessionEnded) {
+    unsubscribe(subscriptionId)
+    return false
+  }
+  activeConnections.value.set(targetId, {
+    subscriptionId,
+    websocketId: response.taskId,
+  })
+  return true
+}
+
+const stopConfigSession = async (targetId: string, label: string, clearState: () => void) => {
+  const connection = activeConnections.value.get(targetId)
+  if (!connection) {
+    message.error('未找到活动的配置会话')
+    return false
+  }
+  const response = await Service.stopTaskApiDispatchStopPost({
+    taskId: connection.websocketId,
+  })
+  if (response.code !== 200) {
+    throw new Error(response.message || `保存 ${label} 配置失败`)
+  }
+  clearConfigSession(targetId, connection.subscriptionId, clearState)
+  return true
+}
+
 const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {
     const controllerType = (script.config as any).Game?.ControllerType
@@ -1219,91 +1499,41 @@ const handleStartMaaEndConfig = async (script: Script, user: User | null = null)
     }
 
     const targetId = user?.id ?? script.id
-    const existingConnection = activeConnections.value.get(targetId)
-    if (existingConnection) {
-      message.warning('该配置目标已在配置中，请先保存当前配置')
-      return
+    const clearState = () => {
+      showMaaEndConfigMask.value = false
+      currentConfigScript.value = null
+      currentMaaEndConfigUser.value = null
     }
+    const started = await startConfigSession(
+      targetId,
+      'MaaEnd',
+      () => {
+        showMaaEndConfigMask.value = true
+        currentConfigScript.value = script
+        currentMaaEndConfigUser.value = user
+      },
+      clearState
+    )
+    if (!started) return
 
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: targetId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (response.code === 200) {
-      showMaaEndConfigMask.value = true
-      currentConfigScript.value = script
-      currentMaaEndConfigUser.value = user
-
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`MaaEnd 配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(targetId)
-          showMaaEndConfigMask.value = false
-          currentConfigScript.value = null
-          currentMaaEndConfigUser.value = null
-          return
-        }
-
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`MaaEnd 配置失败: ${errorMsg}`)
-          return
-        }
-
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
-          unsubscribe(subscriptionId)
-          activeConnections.value.delete(targetId)
-          showMaaEndConfigMask.value = false
-          currentConfigScript.value = null
-          currentMaaEndConfigUser.value = null
-        }
-      })
-
-      activeConnections.value.set(targetId, {
-        subscriptionId,
-        websocketId: response.taskId,
-      })
-      message.success(
-        user
-          ? `已启动 ${script.name} / ${user.Info.Name} 的 MaaEnd 配置`
-          : `已启动 ${script.name} 的 MaaEnd 配置`
-      )
-
-      setTimeout(
-        () => {
-          if (activeConnections.value.has(targetId)) {
-            const connection = activeConnections.value.get(targetId)
-            if (connection) {
-              unsubscribe(connection.subscriptionId)
-            }
-            activeConnections.value.delete(targetId)
-            showMaaEndConfigMask.value = false
-            currentConfigScript.value = null
-            currentMaaEndConfigUser.value = null
-            message.info(
-              user
-                ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
-                : `${script.name} 配置会话已超时断开`
-            )
-          }
-        },
-        30 * 60 * 1000
-      )
-    } else {
-      message.error(response.message || '启动 MaaEnd 配置失败')
-    }
+    message.success(
+      user
+        ? `已启动 ${script.name} / ${user.Info.Name} 的 MaaEnd 配置`
+        : `已启动 ${script.name} 的 MaaEnd 配置`
+    )
+    setTimeout(
+      () => {
+        const connection = activeConnections.value.get(targetId)
+        if (!connection) return
+        clearConfigSession(targetId, connection.subscriptionId, clearState)
+        message.info(
+          user
+            ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
+            : `${script.name} 配置会话已超时断开`
+        )
+      },
+      30 * 60 * 1000
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 MaaEnd 配置失败: ${errorMsg}`)
@@ -1318,35 +1548,59 @@ const handleStartMaaEndUserConfig = async (script: Script, user: User) => {
 const handleSaveMaaEndConfig = async (script: Script) => {
   try {
     const targetId = currentMaaEndConfigUser.value?.id ?? script.id
-    const connection = activeConnections.value.get(targetId)
-    if (!connection) {
-      message.error('未找到活动的配置会话')
-      return
-    }
-
-    const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
-    })
-
-    if (response.code === 200) {
-      unsubscribe(connection.subscriptionId)
-      activeConnections.value.delete(targetId)
+    const currentUser = currentMaaEndConfigUser.value
+    const saved = await stopConfigSession(targetId, 'MaaEnd', () => {
       showMaaEndConfigMask.value = false
       currentConfigScript.value = null
-      const currentUser = currentMaaEndConfigUser.value
       currentMaaEndConfigUser.value = null
+    })
+    if (saved) {
       message.success(
         currentUser
           ? `${script.name} / ${currentUser.Info.Name} 的配置已保存`
           : `${script.name} 的配置已保存`
       )
-    } else {
-      message.error(response.message || '保存配置失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
     message.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
+  }
+}
+
+const handleStartOkwwConfig = async (script: Script) => {
+  try {
+    const started = await startConfigSession(
+      script.id,
+      'ok-ww',
+      () => {
+        showOkwwConfigMask.value = true
+        currentConfigScript.value = script
+      },
+      () => {
+        showOkwwConfigMask.value = false
+        currentConfigScript.value = null
+      }
+    )
+    if (started) message.success(`已打开 ${script.name} 的 ok-ww 设置`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动 ok-ww 设置失败: ${errorMsg}`)
+    message.error(`启动 ok-ww 设置失败: ${errorMsg}`)
+  }
+}
+
+const handleSaveOkwwConfig = async (script: Script) => {
+  try {
+    const saved = await stopConfigSession(script.id, 'ok-ww', () => {
+      showOkwwConfigMask.value = false
+      currentConfigScript.value = null
+    })
+    if (saved) message.success(`${script.name} 的设置已保存`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
+    message.error(`保存 ok-ww 设置失败: ${errorMsg}`)
   }
 }
 
@@ -1360,12 +1614,9 @@ const handleToggleUserStatus = async (user: User) => {
     }
     const newStatus = !user.Info.Status
 
-    // 调用 updateUser API
+    // 后端是单字段 set：只发送 Status，避免 Info.Tag 等虚拟字段混入触发后端报错
     const result = await updateUser(script.id, user.id, {
-      Info: {
-        ...user.Info,
-        Status: newStatus,
-      },
+      Info: { Status: newStatus },
     })
 
     if (result) {
@@ -1521,8 +1772,15 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .header-left {
+  display: flex;
   flex: 1;
   min-width: 0;
+  align-items: center;
+  gap: 24px;
+}
+
+.script-search {
+  width: min(360px, 40vw);
 }
 
 .header-actions {
@@ -1536,11 +1794,24 @@ const handlePassCheckUser = async (user: User) => {
   }
 
   .scripts-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
     padding: 0 2px;
   }
 
+  .header-left {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .script-search {
+    width: 100%;
+  }
+
   .header-actions {
-    margin-left: 8px;
+    margin-left: 0;
   }
 }
 
@@ -2035,6 +2306,14 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .script-type-okww {
+  color: var(--ant-color-primary);
+}
+
+.script-type-oknte {
+  color: var(--ant-color-primary);
+}
+
+.script-type-hsr {
   color: var(--ant-color-primary);
 }
 

@@ -66,16 +66,89 @@
         </a-form-item>
       </a-col>
     </a-row>
+    <a-alert
+      v-if="activityStageError"
+      :message="activityStageError"
+      type="warning"
+      show-icon
+      class="activity-stage-alert"
+    />
+    <a-row :gutter="24">
+      <a-col :span="6">
+        <a-form-item label="优先刷取活动关">
+          <a-switch
+            v-model:checked="activityFirst"
+            :disabled="loading"
+            @change="emitSave('Task.IfActivityFirst', $event)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item>
+          <template #label>
+            <a-tooltip
+              title="按列表序号保存；活动更新后自动选择相同序号的新关卡，序号失效时回退到第一项"
+            >
+              <span>活动关卡 </span>
+              <QuestionCircleOutlined class="help-icon" />
+            </a-tooltip>
+          </template>
+          <a-select
+            :value="displayActivityStageIndex"
+            :options="activityStageOptions"
+            :loading="activityStageLoading"
+            :disabled="
+              loading || activityStageLoading || !activityFirst || activityStageOptions.length === 0
+            "
+            :placeholder="activityStageOptions.length ? '请选择活动关卡' : '当前无可刷活动关'"
+            show-search
+            option-filter-prop="label"
+            size="large"
+            @change="handleActivityStageChange"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="6">
+        <a-form-item>
+          <template #label>
+            <a-tooltip
+              title="活动关优先任务使用的理智药数量，不影响普通理智作战"
+            >
+              <span>活动关理智药 </span>
+              <QuestionCircleOutlined class="help-icon" />
+            </a-tooltip>
+          </template>
+          <a-input-number
+            :value="formData.Task.ActivityMedicineNumb"
+            :min="0"
+            :max="9999"
+            :disabled="loading || !activityFirst"
+            placeholder="0"
+            size="large"
+            style="width: 100%"
+            @change="handleActivityMedicineChange"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
   </div>
 </template>
 
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
+  activityStageOptions: Array<{ label: string; value: number }>
+  activityStageLoading: boolean
+  activityStageError: string
+  displayActivityStageIndex?: number
 }>()
+
+const activityFirst = defineModel<boolean>('activityFirst', { required: true })
+const activityStageIndex = defineModel<number>('activityStageIndex', { required: true })
 
 const emit = defineEmits<{
   save: [key: string, value: any]
@@ -83,6 +156,15 @@ const emit = defineEmits<{
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
+}
+
+const handleActivityStageChange = (value: number) => {
+  activityStageIndex.value = value
+  emitSave('Task.ActivityStageIndex', value)
+}
+
+const handleActivityMedicineChange = (value: number | null) => {
+  emitSave('Task.ActivityMedicineNumb', value ?? 0)
 }
 </script>
 
@@ -127,5 +209,9 @@ const emitSave = (key: string, value: any) => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
+}
+
+.activity-stage-alert {
+  margin-bottom: 16px;
 }
 </style>

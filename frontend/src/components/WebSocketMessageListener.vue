@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 
@@ -41,11 +41,6 @@ let subscriptionId: string
 const modalQueue = ref<ModalData[]>([])
 const currentModal = ref<ModalData | null>(null)
 const isModalOpen = ref(false)
-
-// 检查是否在 Electron 环境中
-const isElectron = () => {
-  return typeof window !== 'undefined' && (window as any).electronAPI
-}
 
 // 激活窗口到前台
 const focusWindow = async () => {
@@ -235,7 +230,7 @@ const handleStringMessage = (data: string) => {
     const parsed = JSON.parse(data)
     logger.debug(`解析后的JSON: ${JSON.stringify(parsed)}`)
     handleObjectMessage(parsed)
-  } catch (error) {
+  } catch {
     // 不是JSON格式，作为普通字符串处理
     logger.debug(`普通字符串消息: ${data}`)
   }
@@ -277,7 +272,7 @@ onUnmounted(() => {
 .modal-message {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text-secondary, #595959);
+  color: var(--ant-color-text-secondary);
   margin: 0;
   word-wrap: break-word;
   white-space: pre-wrap;
@@ -285,10 +280,10 @@ onUnmounted(() => {
 
 .modal-queue-hint {
   font-size: 12px;
-  color: var(--text-tertiary, #8c8c8c);
+  color: var(--ant-color-text-tertiary);
   margin-top: 12px;
   margin-bottom: 0;
   padding-top: 8px;
-  border-top: 1px solid var(--border-secondary, #f0f0f0);
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 </style>

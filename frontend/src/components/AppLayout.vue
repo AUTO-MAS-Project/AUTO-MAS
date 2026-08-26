@@ -1,25 +1,47 @@
 <template>
   <a-layout style="flex: 1; min-height: 0; overflow: hidden">
-    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" :style="{
-      background: 'var(--ant-color-bg-elevated)',
-      borderRight: '1px solid var(--ant-color-border)',
-    }">
+    <a-layout-sider
+      :width="SIDER_WIDTH"
+      :theme="isDark ? 'dark' : 'light'"
+      :style="{
+        background: 'var(--ant-color-bg-elevated)',
+        borderRight: '1px solid var(--ant-color-border)',
+      }"
+    >
       <div class="sider-content">
-        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
-          :items="mainMenuItems" @click="onMenuClick" />
+        <a-menu
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          :items="mainMenuItems"
+          @click="onMenuClick"
+        />
         <!-- 测试路由分隔区域 -->
-        <a-menu v-if="isDevelopment" v-model:selected-keys="selectedKeys" mode="inline"
-          :theme="isDark ? 'dark' : 'light'" class="dev-menu" :items="devMenuItems" @click="onMenuClick" />
-        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
-          class="bottom-menu" :items="bottomMenuItems" @click="onMenuClick" />
+        <a-menu
+          v-if="isDevelopment"
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="dev-menu"
+          :items="devMenuItems"
+          @click="onMenuClick"
+        />
+        <a-menu
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="bottom-menu"
+          :items="bottomMenuItems"
+          @click="onMenuClick"
+        />
       </div>
     </a-layout-sider>
 
     <a-layout style="flex: 1; min-width: 0">
       <a-layout-content class="content-area">
-        <router-view v-slot="{ Component, route }">
-          <keep-alive :include="['Scheduler']">
-            <component :is="Component" :key="route.path" />
+        <router-view v-slot="{ Component, route: currentRoute }">
+          <keep-alive :include="['SchedulerPage']">
+            <component :is="Component" :key="currentRoute.path" />
           </keep-alive>
         </router-view>
       </a-layout-content>
@@ -30,7 +52,9 @@
 <script lang="ts" setup>
 import {
   ApiOutlined,
+  BugOutlined,
   CalendarOutlined,
+  CarryOutOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FileTextOutlined,
@@ -80,9 +104,13 @@ const devMenuItems = [
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
   { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
   { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
+  ...(import.meta.env.DEV
+    ? [{ key: '/update-download-dev', label: '更新下载测试', icon: icon(BugOutlined) }]
+    : []),
 ]
 
 const bottomMenuItems = [
+  { key: '/gamesign', label: '游戏签到', icon: icon(CarryOutOutlined) },
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
   { key: '/tools', label: '工具', icon: icon(ToolOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
@@ -109,6 +137,19 @@ const onMenuClick: MenuProps['onClick'] = info => {
     // 如果路由被锁定，触发回调而不进行路由跳转
     triggerBlockCallback(target)
     return
+  }
+
+  if (
+    target === '/update-download-dev' &&
+    import.meta.env.DEV &&
+    !router.hasRoute('UpdateDownloadDev')
+  ) {
+    router.addRoute({
+      path: '/update-download-dev',
+      name: 'UpdateDownloadDev',
+      component: () => import('@/views/UpdateDownloadDev.vue'),
+      meta: { title: '更新下载测试', skipGuard: true },
+    })
   }
 
   if (route.path !== target) router.push(target)

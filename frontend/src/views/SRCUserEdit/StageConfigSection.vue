@@ -58,6 +58,7 @@
           <a-select v-model:value="formData.Stage.Relic" size="large" placeholder="请选择遗器关卡" show-search
             :filter-option="filterOption" @change="emitSave('Stage.Relic', formData.Stage.Relic)">
             <a-select-option value="-">沿用原始配置</a-select-option>
+            <a-select-option value="Cavern_of_Corrosion_Path_of_Insight">遗器：领航员 & 名冶（观火之径）</a-select-option>
             <a-select-option value="Cavern_of_Corrosion_Path_of_Possession">遗器：魔法少女 & 卜者（魔占之径）</a-select-option>
             <a-select-option value="Cavern_of_Corrosion_Path_of_Hidden_Salvation">遗器：救世主 & 隐士（隐救之径）</a-select-option>
             <a-select-option value="Cavern_of_Corrosion_Path_of_Thundersurge">遗器：烈阳 & 船长（雳涌之径）</a-select-option>
@@ -89,6 +90,8 @@
           <a-select v-model:value="formData.Stage.Ornament" size="large" placeholder="请选择饰品关卡" show-search
             :filter-option="filterOption" @change="emitSave('Stage.Ornament', formData.Stage.Ornament)">
             <a-select-option value="-">沿用原始配置</a-select-option>
+            <a-select-option value="Divergent_Universe_Bugs_Incoming">饰品：坠星 & 寰宇（虫虫来袭）</a-select-option>
+            <a-select-option value="Divergent_Universe_Gilded_Recollection">饰品：朋克洛德 & 千星荟萃（鎏金追忆）</a-select-option>
             <a-select-option value="Divergent_Universe_Within_the_West_Wind">饰品：翁法罗斯 & 天国（西风丛中）</a-select-option>
             <a-select-option value="Divergent_Universe_Moonlit_Blood">饰品：妖精 & 沉醉（月下朱殷）</a-select-option>
             <a-select-option value="Divergent_Universe_Unceasing_Strife">饰品：拾骨地 & 巨树（纷争不休）</a-select-option>
@@ -162,6 +165,7 @@
           <a-select v-model:value="formData.Stage.EchoOfWar" size="large" placeholder="请选择历战余响" show-search
             :filter-option="filterOption" @change="emitSave('Stage.EchoOfWar', formData.Stage.EchoOfWar)">
             <a-select-option value="-">禁用</a-select-option>
+            <a-select-option value="Echo_of_War_The_Comedy_of_Doom">坏灭的喜剧（二相乐园）</a-select-option>
             <a-select-option value="Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass">铁骸的锈冢（翁法罗斯）</a-select-option>
             <a-select-option value="Echo_of_War_Glance_of_Twilight">晨昏的回眸（翁法罗斯）</a-select-option>
             <a-select-option value="Echo_of_War_Inner_Beast_Battlefield">心兽的战场（仙舟「罗浮」）</a-select-option>
@@ -255,8 +259,8 @@
 import { computed, ref } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
-const props = defineProps<{
-  formData: any
+const formData = defineModel<any>('formData', { required: true })
+defineProps<{
   loading: boolean
 }>()
 
@@ -292,6 +296,7 @@ const materialOptions = [
   // 拟造花萼（赤）
   { value: 'Calyx_Crimson_Destruction_Herta_StorageZone', label: '行迹材料：毁灭（收容舱段）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape', label: '行迹材料：毁灭（鳞渊境）', category: 'Calyx_Crimson' },
+  { value: 'Calyx_Crimson_Destruction_Planarcadia_InkfordHermitage', label: '行迹材料：毁灭（渡画泉隐）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Preservation_Herta_SupplyZone', label: '行迹材料：存护（支援舱段）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark', label: '行迹材料：存护（克劳克影视乐园）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains', label: '行迹材料：巡猎（城郊雪原）', category: 'Calyx_Crimson' },
@@ -301,40 +306,44 @@ const materialOptions = [
   { value: 'Calyx_Crimson_Abundance_Luofu_FyxestrollGarden', label: '行迹材料：丰饶（绥园）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Erudition_Jarilo_RivetTown', label: '行迹材料：智识（铆钉镇）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater', label: '行迹材料：智识（匹诺康尼大剧院）', category: 'Calyx_Crimson' },
+  { value: 'Calyx_Crimson_Erudition_Planarcadia_SeafeldTVTower', label: '行迹材料：智识（海原电视塔）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Harmony_Jarilo_RobotSettlement', label: '行迹材料：同谐（机械聚落）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape', label: '行迹材料：同谐（白日梦酒店-梦境）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Nihility_Jarilo_GreatMine', label: '行迹材料：虚无（大矿区）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Nihility_Luofu_AlchemyCommission', label: '行迹材料：虚无（丹鼎司）', category: 'Calyx_Crimson' },
+  { value: 'Calyx_Crimson_Nihility_Amphoreus_RadiantScarwoodGroveofEpiphany', label: '行迹材料：虚无（辉痕圣林神悟树庭）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos', label: '行迹材料：记忆（纷争荒墟悬锋城）', category: 'Calyx_Crimson' },
   { value: 'Calyx_Crimson_Elation_Planarcadia_WorldEndTavern', label: '行迹材料：欢愉（世界尽头酒馆）', category: 'Calyx_Crimson' },
   // 凝滞虚影
-  { value: 'Stagnant_Shadow_Quanta', label: '晋阶材料：量子（银狼 / 希儿 / 青雀）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Gust', label: '晋阶材料：风（丹恒 / 布洛妮娅 / 桑博）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Fulmination', label: '晋阶材料：雷（阿兰 / 希露瓦 / 停云 / 白露）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Blaze', label: '晋阶材料：火（姬子 / 艾丝妲 / 虎克）', category: 'Stagnant_Shadow' },
   { value: 'Stagnant_Shadow_Spike', label: '晋阶材料：物理（娜塔莎 / 克拉拉 / 卢卡 / 素裳）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Rime', label: '晋阶材料：冰（三月七 / 黑塔 / 杰帕德 / 佩拉）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Mirage', label: '晋阶材料：虚数（瓦尔特 / 罗刹 / 驭空）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Icicle', label: '晋阶材料：冰（彦卿 / 镜流 / 阮•梅）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Doom', label: '晋阶材料：雷（卡芙卡 / 景元 / 黄泉）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Puppetry', label: '晋阶材料：虚数（丹恒•饮月 / 砂金 / 真理医生）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Abomination', label: '晋阶材料：量子（玲可 / 符玄 / 雪衣）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Scorch', label: '晋阶材料：火（托帕&账账 / 桂乃芬 / 忘归人）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Celestial', label: '晋阶材料：风（刃 / 藿藿 / 黑天鹅）', category: 'Stagnant_Shadow' },
   { value: 'Stagnant_Shadow_Perdition', label: '晋阶材料：物理（寒鸦 / 银枝）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Nectar', label: '晋阶材料：冰（米沙 / 大黑塔）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Duty', label: '晋阶材料：物理（云璃 / 知更鸟 / 波提欧）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Deepsheaf', label: '晋阶材料：物理（白厄 / 海瑟音 / 丹恒•腾荒 / 爻光 / 绯英）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Blaze', label: '晋阶材料：火（姬子 / 艾丝妲 / 虎克）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Scorch', label: '晋阶材料：火（托帕&账账 / 桂乃芬 / 忘归人）', category: 'Stagnant_Shadow' },
   { value: 'Stagnant_Shadow_Roast', label: '晋阶材料：量子（花火 / 翡翠）', category: 'Stagnant_Shadow' },
   { value: 'Stagnant_Shadow_Ire', label: '晋阶材料：火（椒丘 / 灵砂 / 加拉赫 / 流萤）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Duty', label: '晋阶材料：物理（云璃 / 知更鸟 / 波提欧）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Timbre', label: '晋阶材料：虚数（星期日 / 乱破）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Mechwolf', label: '晋阶材料：雷（貊泽 / 阿格莱雅）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Gloam', label: '晋阶材料：风（飞霄 / 那刻夏 / 风堇 / Saber）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Sloggyre', label: '晋阶材料：虚数（万敌）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Gelidmoon', label: '晋阶材料：量子（缇宝 / 赛飞儿 / 遐蝶 / Archer）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Deepsheaf', label: '晋阶材料：物理（白厄 / 海瑟音 / 丹恒•腾荒 / 爻光）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Cinders', label: '晋阶材料：风（刻律德菈）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Ashes', label: '晋阶材料：火（大丽花 / 火花 / 千冶•刃 / 姬子•启行）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Rime', label: '晋阶材料：冰（三月七 / 黑塔 / 杰帕德 / 佩拉）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Icicle', label: '晋阶材料：冰（彦卿 / 镜流 / 阮•梅）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Nectar', label: '晋阶材料：冰（米沙 / 大黑塔）', category: 'Stagnant_Shadow' },
   { value: 'Stagnant_Shadow_Sirens', label: '晋阶材料：冰（长夜月 / 昔涟）', category: 'Stagnant_Shadow' },
-  { value: 'Stagnant_Shadow_Ashes', label: '晋阶材料：火（大丽花 / 火花）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Fulmination', label: '晋阶材料：雷（阿兰 / 希露瓦 / 停云 / 白露）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Doom', label: '晋阶材料：雷（卡芙卡 / 景元 / 黄泉）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Mechwolf', label: '晋阶材料：雷（貊泽 / 阿格莱雅）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Soundburst', label: '晋阶材料：雷（不死途 / 吉尔伽美什）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Gust', label: '晋阶材料：风（丹恒 / 布洛妮娅 / 桑博）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Celestial', label: '晋阶材料：风（刃 / 藿藿 / 黑天鹅）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Gloam', label: '晋阶材料：风（飞霄 / 那刻夏 / 风堇 / Saber）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Cinders', label: '晋阶材料：风（刻律德菈）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Quanta', label: '晋阶材料：量子（银狼 / 希儿 / 青雀）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Abomination', label: '晋阶材料：量子（玲可 / 符玄 / 雪衣）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Gelidmoon', label: '晋阶材料：量子（缇宝 / 赛飞儿 / 遐蝶 / Archer）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Devour', label: '晋阶材料：量子（远坂凛）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Mirage', label: '晋阶材料：虚数（瓦尔特 / 罗刹 / 驭空）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Puppetry', label: '晋阶材料：虚数（丹恒•饮月 / 砂金 / 真理医生）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Timbre', label: '晋阶材料：虚数（星期日 / 乱破）', category: 'Stagnant_Shadow' },
+  { value: 'Stagnant_Shadow_Sloggyre', label: '晋阶材料：虚数（万敌 / 银狼LV.999）', category: 'Stagnant_Shadow' },
 ]
 
 // 筛选后的材料关卡选项
@@ -347,28 +356,28 @@ const filteredMaterialOptions = computed(() => {
 
 // 获取当前生效关卡
 const getCurrentStage = () => {
-  const channel = props.formData.Stage.Channel
+  const channel = formData.value.Stage.Channel
   if (channel === 'Relic') {
-    return getStageLabel(props.formData.Stage.Relic, 'Relic')
+    return getStageLabel(formData.value.Stage.Relic, 'Relic')
   } else if (channel === 'Materials') {
-    return getStageLabel(props.formData.Stage.Materials, 'Materials')
+    return getStageLabel(formData.value.Stage.Materials, 'Materials')
   } else if (channel === 'Ornament') {
-    return getStageLabel(props.formData.Stage.Ornament, 'Ornament')
+    return getStageLabel(formData.value.Stage.Ornament, 'Ornament')
   }
   return '未配置'
 }
 
 // 获取当前生效关卡的颜色（根据前缀）
 const getCurrentStageColor = () => {
-  const channel = props.formData.Stage.Channel
+  const channel = formData.value.Stage.Channel
   let value = ''
 
   if (channel === 'Relic') {
-    value = props.formData.Stage.Relic
+    value = formData.value.Stage.Relic
   } else if (channel === 'Materials') {
-    value = props.formData.Stage.Materials
+    value = formData.value.Stage.Materials
   } else if (channel === 'Ornament') {
-    value = props.formData.Stage.Ornament
+    value = formData.value.Stage.Ornament
   }
 
   if (!value || value === '-') return 'default'
@@ -391,6 +400,7 @@ const getStageLabel = (value: string, type: string) => {
 
   const stageMap: Record<string, string> = {
     // 遗器
+    'Cavern_of_Corrosion_Path_of_Insight': '遗器：领航员 & 名冶（观火之径）',
     'Cavern_of_Corrosion_Path_of_Possession': '遗器：魔法少女 & 卜者（魔占之径）',
     'Cavern_of_Corrosion_Path_of_Hidden_Salvation': '遗器：救世主 & 隐士（隐救之径）',
     'Cavern_of_Corrosion_Path_of_Thundersurge': '遗器：烈阳 & 船长（雳涌之径）',
@@ -407,6 +417,8 @@ const getStageLabel = (value: string, type: string) => {
     'Cavern_of_Corrosion_Path_of_Jabbing_Punch': '遗器：物理套 & 怪盗（迅拳之径）',
     'Cavern_of_Corrosion_Path_of_Gelid_Wind': '遗器：冰套 & 风套（霜风之径）',
     // 饰品
+    'Divergent_Universe_Bugs_Incoming': '饰品：坠星 & 寰宇（虫虫来袭）',
+    'Divergent_Universe_Gilded_Recollection': '饰品：朋克洛德 & 千星荟萃（鎏金追忆）',
     'Divergent_Universe_Within_the_West_Wind': '饰品：翁法罗斯 & 天国（西风丛中）',
     'Divergent_Universe_Moonlit_Blood': '饰品：妖精 & 沉醉（月下朱殷）',
     'Divergent_Universe_Unceasing_Strife': '饰品：拾骨地 & 巨树（纷争不休）',

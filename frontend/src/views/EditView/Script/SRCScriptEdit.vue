@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
+            <img src="@/assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -211,9 +211,10 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { SRCScriptConfig, ScriptType } from '../../../types/script.ts'
-import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service, type ComboBoxItem } from '../../../api'
+import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -224,7 +225,13 @@ const logger = window.electronAPI.getLogger('SRC脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -271,9 +278,7 @@ const rules = {
 
 // 模拟器相关状态
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 const handleChange = async (category: string, key: string, value: any) => {
@@ -341,7 +346,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (srcConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
       }
     } else {
       // 编辑现有脚本时，从API获取数据
@@ -360,7 +365,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (srcConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
       }
     }
   } catch (error) {
@@ -396,32 +401,14 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
-    })
-    if (response && response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    } else {
-      message.error('加载模拟器实例选项失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
-    message.error('加载模拟器实例选项失败')
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   srcConfig.Emulator.Index = ''
-  emulatorDeviceOptions.value = []
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
 
   // 保存模拟器选择和清空的实例字段
   isSaving.value = true
@@ -443,11 +430,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
   } finally {
     isSaving.value = false
   }
-
-  // 加载新的模拟器实例选项
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
-  }
 }
 
 // 文件选择方法
@@ -458,7 +440,7 @@ const selectSRCPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       if (!srcConfig.Info) {
         srcConfig.Info = { Name: '', Path: '' }
@@ -727,30 +709,28 @@ const selectSRCPath = async () => {
   color: var(--ant-color-text);
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
 
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
 
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
 }
 
 /* 响应式设计 */

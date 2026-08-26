@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-mutating-props -->
 <template>
   <div class="form-section">
     <div class="section-header">
@@ -55,7 +54,7 @@
             <span class="form-label">
               账号ID
               <a-tooltip
-                title="用于切换账号，无需切换则留空。官服输入 11 位手机号。模拟器暂不支持账号切换"
+                title="用于切换账号，官服输入手机号，两种方式均按账号末四位匹配，无需切换则留空"
               >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
@@ -75,14 +74,14 @@
           <template #label>
             <span class="form-label">
               密码
-              <a-tooltip title="用户密码，PC 端需要切换账号时必须填写，模拟器暂不支持账号切换">
+              <a-tooltip title="用户密码，仅用于存储以防遗忘，此外无任何作用">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            placeholder="请输入密码"
+            placeholder="密码仅用于存储以防遗忘，此外无任何作用"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -247,7 +246,6 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
-
 const emit = defineEmits<{
   save: [key: string, value: any]
   configure: []
@@ -255,8 +253,9 @@ const emit = defineEmits<{
   scriptConfig: []
 }>()
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
   resourceOptions: Array<{ label: string; value: string }>
   presetSupported?: boolean

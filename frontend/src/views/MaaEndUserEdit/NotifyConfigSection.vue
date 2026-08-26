@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-mutating-props -->
 <template>
   <div class="form-section">
     <div class="section-header">
@@ -83,8 +82,9 @@
 <script setup lang="ts">
 import WebhookManager from '@/components/WebhookManager.vue'
 
+const formData = defineModel<any>('formData', { required: true })
+
 defineProps<{
-  formData: any
   loading: boolean
   scriptId?: string
   userId?: string

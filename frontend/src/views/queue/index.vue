@@ -170,12 +170,14 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+
+defineOptions({ name: 'QueueManager' })
 
 const logger = window.electronAPI.getLogger('调度队列')
-const { playSound } = useAudioPlayer()
 
+// 卸载守卫：防止组件卸载后的 async 回调写入响应式状态，导致 Vue 运行时错误
+let isMounted = true
 // 队列列表和当前选中的队列
 const queueList = ref<Array<{ id: string; name: string }>>([])
 const activeQueueId = ref<string>('')
@@ -201,6 +203,8 @@ const afterAccomplishOptions = [
   { label: '休眠', value: 'Hibernate' },
   { label: '睡眠', value: 'Sleep' },
   { label: '退出软件', value: 'KillSelf' },
+
+  { label: '注销此账户', value: 'Logoff' },
 ]
 
 // 当前队列的定时项和队列项
@@ -214,6 +218,7 @@ const fetchQueues = async () => {
   loading.value = true
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
+    if (!isMounted) return
     if (response.code === 200) {
       // 处理队列数据
       logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
@@ -278,6 +283,7 @@ const loadQueueData = async (queueId: string) => {
 
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
+    if (!isMounted) return
     currentQueueData.value = response.data
 
     // 根据API响应数据更新队列信息
@@ -292,6 +298,7 @@ const loadQueueData = async (queueId: string) => {
 
       // 使用nextTick确保DOM更新后再加载数据
       await nextTick()
+      if (!isMounted) return
 
       // 更新开关状态 - 从API响应中获取
       currentStartUpEnabled.value = queueData.Info?.StartUpEnabled ?? false
@@ -299,6 +306,7 @@ const loadQueueData = async (queueId: string) => {
       // 更新完成后操作状态 - 从API响应中获取
       currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
       await new Promise(resolve => setTimeout(resolve, 50))
+      if (!isMounted) return
 
       // 加载定时项和队列项数据 - 添加错误处理
       try {
@@ -377,6 +385,7 @@ const refreshTimeSets = async () => {
 
     // 使用nextTick确保数据更新不会导致渲染问题
     await nextTick()
+    if (!isMounted) return
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
     logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
@@ -431,6 +440,7 @@ const refreshQueueItems = async () => {
 
     // 使用nextTick确保数据更新不会导致渲染问题
     await nextTick()
+    if (!isMounted) return
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
     logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
@@ -574,6 +584,7 @@ const refreshQueueConfig = async () => {
 
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
+    if (!isMounted) return
     if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
       currentQueueData.value = response.data
       const queueData = response.data[activeQueueId.value]
@@ -640,6 +651,10 @@ onMounted(async () => {
     logger.error(`初始化失败: ${errorMsg}`)
     loading.value = false
   }
+})
+
+onUnmounted(() => {
+  isMounted = false
 })
 </script>
 
@@ -1018,16 +1033,5 @@ onMounted(async () => {
 
 .queue-title-input :deep(.ant-input:focus) {
   box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .queue-selector-card {
-    background: var(--ant-color-bg-container);
-  }
-
-  .queue-config-card {
-    background: var(--ant-color-bg-container);
-  }
 }
 </style>

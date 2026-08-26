@@ -35,7 +35,8 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果" and (
-        Config.get("Notify", "SendTaskResultTime") == "任何时刻"
+        message.get("game_sign_summary", False)
+        or Config.get("Notify", "SendTaskResultTime") == "任何时刻"
         or (
             Config.get("Notify", "SendTaskResultTime") == "仅失败时"
             and message["uncompleted_count"] != 0
@@ -69,13 +70,42 @@ async def push_notification(
             await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
 
     elif mode == "统计信息":
+        matrix_lines = []
+        if "matrix_statistics" in message and message["matrix_statistics"]:
+            matrix_lines.append("基质统计:")
+            for skill, weapon in message["matrix_statistics"].items():
+                matrix_lines.append(f"  {skill}: {weapon}")
+        elif "matrix_statistics" in message:
+            matrix_lines.append("基质统计: 无合适的基质")
+
+        pull_count_lines = []
+        pull_count = message.get("pull_count_statistics")
+        if pull_count:
+            pull_count_lines.extend(
+                [
+                    "抽数统计:",
+                    f"  当前池可用: {pull_count['current_pool_total']} 抽",
+                    f"  下版本池子总计: {pull_count['next_pool_total']} 抽",
+                    f"  资源折算: {pull_count['resource_pulls']} 抽",
+                    f"  可留到下版本的券: {pull_count['carry_over_pulls']} 抽",
+                ]
+            )
+
+        statistic_sections = [
+            section
+            for section in ("\n".join(pull_count_lines), "\n".join(matrix_lines))
+            if section
+        ]
+
         message_text = (
             f"开始时间: {message['start_time']}\n"
             f"结束时间: {message['end_time']}\n"
-            f"MaaEnd执行结果: {message['user_result']}\n\n"
+            f"MaaEnd执行结果: {message['user_result']}"
         )
+        if statistic_sections:
+            message_text += f"\n\n{'\n\n'.join(statistic_sections)}"
 
-        template = Config.notify_env.get_template("general_statistics.html")
+        template = Config.notify_env.get_template("MaaEnd_statistics.html")
         message_html = template.render(message)
         serverchan_message = message_text.replace("\n", "\n\n")
 
@@ -114,7 +144,7 @@ async def push_notification(
                         user_config.get("Notify", "ToAddress"),
                     )
                 else:
-                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
             if user_config.get("Notify", "IfServerChan"):
                 if user_config.get("Notify", "ServerChanKey"):
@@ -124,7 +154,9 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.error("用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知")
+                    logger.warning(
+                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
+                    )
 
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(

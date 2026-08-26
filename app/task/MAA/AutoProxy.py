@@ -21,6 +21,8 @@
 
 
 import json
+import calendar
+import re
 import uuid
 import asyncio
 import shutil
@@ -35,6 +37,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.io import read_file, write_file
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -48,8 +51,181 @@ from app.utils.constants import (
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
 from .tools import push_notification, agree_bilibili, update_maa
+from app.task.general.tools import execute_script_task
+
+# OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
+# 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
+_MAA_CLIENT_TYPE_TO_INT = {
+    "Official": 0,
+    "Bilibili": 1,
+    "YoStarEN": 2,
+    "YoStarJP": 3,
+    "YoStarKR": 4,
+    "txwy": 5,
+}
+
 
 logger = get_logger("MAA 自动代理")
+_ANNIHILATION_PROGRESS_RE = re.compile(
+    r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
+    re.IGNORECASE,
+)
+_MAA_SANITY_COMPLETION_MARKERS = (
+    "完成任务: 理智作战",
+    "完成任务: 活动关优先",
+    "完成任务: 库存保持",
+    "完成任务: 剩余理智",
+)
+_MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
+
+
+def _current_week_marker(now: datetime) -> str:
+    """返回 ISO 周标记。"""
+
+    iso_year, iso_week, _ = now.isocalendar()
+    return f"{iso_year:04d}-W{iso_week:02d}"
+
+
+def _should_run_annihilation(
+    start_weekday: str,
+    completed_week: str,
+    now: datetime,
+) -> bool:
+    """判断当前用户本次是否应执行剿灭。"""
+
+    if completed_week == _current_week_marker(now):
+        return False
+    return now.weekday() >= getattr(calendar, start_weekday.upper())
+
+
+def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
+    """解析 MAA 输出的剿灭周进度。"""
+
+    matches = _ANNIHILATION_PROGRESS_RE.findall(log)
+    if not matches:
+        return None
+    current, total = (int(value) for value in matches[-1])
+    return (current, total) if total > 0 else None
+
+
+def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
+    """判断日志记录中是否已经完成过体力任务。"""
+
+    for log_record in log_records:
+        lines = log_record.content
+        if any(
+            marker in line
+            for line in lines
+            for marker in _MAA_SANITY_COMPLETION_MARKERS
+        ):
+            return True
+
+        for index, line in enumerate(lines):
+            if _MAA_FIGHT_COMPLETION_MARKER not in line:
+                continue
+            previous_task = next(
+                (item for item in reversed(lines[:index]) if "完成任务:" in item),
+                "",
+            )
+            if "剿灭" in previous_task:
+                continue
+            if not previous_task and _ANNIHILATION_PROGRESS_RE.search(
+                "".join(lines[max(0, index - 8) : index + 1])
+            ):
+                continue
+            return True
+
+    return False
+
+
+def _build_depot_maintain_task(plans_json: str) -> dict:
+    """生成 MAA 库存保持任务配置。"""
+
+    plans = []
+    for plan in json.loads(plans_json):
+        if (
+            isinstance(plan, dict)
+            and isinstance(plan.get("Stage"), str)
+            and bool(plan["Stage"])
+            and isinstance(plan.get("DropId"), str)
+            and bool(plan["DropId"])
+            and isinstance(plan.get("DropCount"), int)
+            and not isinstance(plan.get("DropCount"), bool)
+            and plan["DropCount"] > 0
+        ):
+            plans.append(
+                {
+                    "Stage": plan["Stage"],
+                    "DropId": plan["DropId"],
+                    "DropCount": plan["DropCount"],
+                    "UseMedicine": False,
+                    "MedicineCount": 0,
+                    "UseStone": False,
+                    "StoneCount": 0,
+                }
+            )
+
+    return {
+        "$type": "DepotMaintainTask",
+        "Name": "库存保持",
+        "IsEnable": True,
+        "TaskType": "DepotMaintain",
+        "UpdateDepot": True,
+        "IsStageManually": False,
+        "SkipDuringActivity": False,
+        "SkipDuringResourceCollection": False,
+        "UseAutoSeries": True,
+        "PlanList": plans,
+    }
+
+
+def _resolve_activity_stage(
+    activity_stages: list[dict], configured_index: int
+) -> str | None:
+    """按序号选择当前活动材料关卡，序号失效时回退到第一项。"""
+
+    stages = [
+        stage["Value"]
+        for stage in activity_stages
+        if isinstance(stage, dict)
+        and isinstance(stage.get("Value"), str)
+        and stage["Value"]
+    ]
+    if not stages:
+        return None
+    return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
+
+
+def _build_activity_priority_fight(
+    fight_task: dict, activity_stage: str, medicine_numb: int
+) -> dict:
+    """生成 MAA 活动关优先任务，使用独立理智药额度。
+
+    活动关优先与理智作战刻意保持为两个独立任务，分别使用各自的理智药
+    额度（Task.ActivityMedicineNumb 与计划表 MedicineNumb），互不转移。
+    """
+
+    activity_fight = fight_task.copy()
+    activity_fight.update(
+        {
+            "Name": "活动关优先",
+            "IsEnable": True,
+            "StagePlan": [activity_stage],
+            "IsStageManually": True,
+            "UseOptionalStage": False,
+            "UseWeeklySchedule": False,
+            "EnableTargetDrop": False,
+            "DropId": "",
+            "DropCount": 0,
+            "IsInventoryTarget": False,
+            "EnableTimesLimit": False,
+            "UseMedicine": medicine_numb > 0,
+            "MedicineCount": medicine_numb,
+            "UseExpiringMedicine": False,
+            "UseExpireMedicineForActivity": False,
+        }
+    )
+    return activity_fight
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -76,6 +252,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
+        self._annihilation_weekly_completion_recorded = False
 
     async def check(self) -> str:
 
@@ -124,6 +301,22 @@ class AutoProxyTask(TaskExecuteBase):
             "Routine": False,
         }
 
+        if not self.run_book["Annihilation"]:
+            now = datetime.now(tz=UTC4)
+            start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
+
+            if not _should_run_annihilation(
+                start_weekday,
+                self.cur_user_config.get("Data", "AnnihilationCompletedWeek"),
+                now,
+            ):
+                self.run_book["Annihilation"] = True
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 本次跳过剿灭："
+                    f"开始日={start_weekday}，本周记录="
+                    f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
+                )
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -150,55 +343,67 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
-        # 森空岛签到
-        if (
-            self.cur_user_config.get("Info", "IfSkland")
-            and self.cur_user_config.get("Info", "SklandToken")
-            and self.cur_user_config.get("Data", "LastSklandDate")
-            != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-        ):
-            self.script_info.log = "正在执行森空岛签到"
-            skland_result = await skland_sign_in(
-                self.cur_user_config.get("Info", "SklandToken"),
-                app_code="arknights",
-            )
-            for t, user_list in skland_result.items():
-                if t != "总计" and len(user_list) > 0:
-                    logger.info(
-                        f"用户: {self.cur_user_uid} - 森空岛签到{t}: {'、'.join(user_list)}"
-                    )
+        # 兼容 5.3.1 旧用户：签到工具未启用时继续使用专项内置森空岛签到。
+        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+            if (
+                self.cur_user_config.get("Info", "IfSkland")
+                and self.cur_user_config.get("Info", "SklandToken")
+                and self.cur_user_config.get("Data", "LastSklandDate")
+                != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+            ):
+                self.script_info.log = "正在执行森空岛签到"
+                skland_result = await skland_sign_in(
+                    self.cur_user_config.get("Info", "SklandToken"),
+                    app_code="arknights",
+                )
+                for result_type, user_list in skland_result.items():
+                    if result_type != "总计" and len(user_list) > 0:
+                        logger.info(
+                            f"用户: {self.cur_user_uid} - 森空岛签到{result_type}: {'、'.join(user_list)}"
+                        )
+                        await Config.send_websocket_message(
+                            id=self.task_info.task_id,
+                            type="Info",
+                            data={
+                                (
+                                    "Info" if result_type != "失败" else "Error"
+                                ): f"用户 {self.cur_user_item.name} 森空岛签到{result_type}: {'、'.join(user_list)}"
+                            },
+                        )
+                if skland_result["总计"] == 0:
+                    logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
-                        data={
-                            (
-                                "Info" if t != "失败" else "Error"
-                            ): f"用户 {self.cur_user_item.name} 森空岛签到{t}: {'、'.join(user_list)}"
-                        },
+                        data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
                     )
-            if skland_result["总计"] == 0:
-                logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
+                if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
+                    await self.cur_user_config.set(
+                        "Data",
+                        "LastSklandDate",
+                        datetime.now(tz=UTC8).strftime("%Y-%m-%d"),
+                    )
+            elif self.cur_user_config.get(
+                "Info", "IfSkland"
+            ) and self.cur_user_config.get("Data", "LastSklandDate") != datetime.now(
+                tz=UTC8
+            ).strftime("%Y-%m-%d"):
+                logger.warning(
+                    f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
+                )
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
-                    data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
+                    data={
+                        "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
+                    },
                 )
-            if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
-                await self.cur_user_config.set(
-                    "Data", "LastSklandDate", datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-                )
-        elif self.cur_user_config.get("Info", "IfSkland") and self.cur_user_config.get(
-            "Data", "LastSklandDate"
-        ) != datetime.now(tz=UTC8).strftime("%Y-%m-%d"):
-            logger.warning(
-                f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
-            )
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Info",
-                data={
-                    "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
-                },
+
+        # 执行任务前脚本（每用户仅一次）
+        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                "脚本前任务",
             )
 
         # 执行剿灭 + 日常
@@ -213,6 +418,8 @@ class AutoProxyTask(TaskExecuteBase):
                     task: self.cur_user_config.get("Task", f"If{task}")
                     for task in MAA_TASKS
                 }
+                if self.cur_user_config.get("Info", "StageMode") != "Fixed":
+                    self.task_dict["DepotMaintain"] = False
             else:  # Annihilation
                 self.task_dict = {
                     task: bool(task in ("StartUp", "Fight")) for task in MAA_TASKS
@@ -242,7 +449,7 @@ class AutoProxyTask(TaskExecuteBase):
                         ],
                     )
                 except Exception as e:
-                    logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                    logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
@@ -258,7 +465,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Emulator", "Index")
                         )
                     except Exception as e:
-                        logger.exception(f"关闭模拟器失败: {e}")
+                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -274,7 +481,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Emulator", "Index"), False
                         )
                     except Exception as e:
-                        logger.exception(f"模拟器隐藏失败: {e}")
+                        logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
                 await self.set_maa(emulator_info)
 
@@ -295,7 +502,7 @@ class AutoProxyTask(TaskExecuteBase):
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
                     )
                 else:
-                    logger.error(
+                    logger.warning(
                         f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                     )
                     self.script_info.log = (
@@ -308,7 +515,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Emulator", "Index")
                         )
                     except Exception as e:
-                        logger.exception(f"关闭模拟器失败: {e}")
+                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                     await System.kill_process(self.maa_exe_path)
 
                     await Notify.push_plyer(
@@ -320,6 +527,13 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
+
+        # 执行任务后脚本（每用户仅一次）
+        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                "脚本后任务",
+            )
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -352,12 +566,8 @@ class AutoProxyTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
+        gui_set = read_file(self.maa_set_path / "gui.json")
+        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
         # 多配置使用默认配置
         if gui_set["Current"] != "Default":
@@ -374,11 +584,32 @@ class AutoProxyTask(TaskExecuteBase):
         default_set = gui_set["Configurations"]["Default"]
 
         # 使用简体中文
-        global_set["GUI.Localization"] = "zh-cn"
+        global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
+        gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         task_set = {}
+        activity_stage = None
+        if (
+            self.mode == "Routine"
+            and self.task_dict["Fight"]
+            and self.cur_user_config.get("Task", "IfActivityFirst")
+        ):
+            stage_info = await Config.get_stage_info(
+                "Info",
+                server=self.cur_user_config.get("Info", "Server"),
+                refresh=True,
+            )
+            activity_stage = _resolve_activity_stage(
+                stage_info.get("Activity", []),
+                self.cur_user_config.get("Task", "ActivityStageIndex"),
+            )
+
         # 每个任务类型匹配第一个配置作为配置基础
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
+
+            # 默认关闭时不写入新任务，兼容尚未支持库存保持的 MAA 版本
+            if en_task == "DepotMaintain" and not self.task_dict[en_task]:
+                continue
 
             for task_item in gui_new_set["Configurations"]["Default"]["TaskQueue"]:
                 if task_item.get("TaskType", "") == en_task:
@@ -393,28 +624,67 @@ class AutoProxyTask(TaskExecuteBase):
                     "TaskType": en_task,
                 }
 
+        if "DepotMaintain" in task_set:
+            task_set["DepotMaintain"] = _build_depot_maintain_task(
+                self.cur_user_config.get("Task", "DepotMaintainPlans")
+            )
+
         # 关闭所有定时
         for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"
+            global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
+        # NEW: Timers.List[*].IsEnabled = false
+        if "Timers" not in gui_new_set:
+            gui_new_set["Timers"] = {}
+        if "List" not in gui_new_set["Timers"]:
+            gui_new_set["Timers"]["List"] = []
+        for timer in gui_new_set["Timers"].get("List", []):
+            if isinstance(timer, dict):
+                timer["IsEnabled"] = False
 
         # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
-            default_set["Connect.Address"] = emulator_info.adb_address
+            default_set["Connect.Address"] = emulator_info.adb_address  # OLD: 即将移除
+            gui_new_set.setdefault("Configurations", {}).setdefault(
+                "Default", {}
+            ).setdefault("Gui", {}).setdefault("ConnectSettings", {})[
+                "Address"
+            ] = emulator_info.adb_address
 
         # 任务间切换方式
-        default_set["MainFunction.PostActions"] = MAA_TASK_TRANSITION_METHOD_BOOK[
+        post_actions_str = MAA_TASK_TRANSITION_METHOD_BOOK[
             self.script_config.get("Run", "TaskTransitionMethod")
         ]
+        default_set["MainFunction.PostActions"] = post_actions_str  # OLD: 即将移除
+        # NEW: PostActions [Flags] 枚举整数 (None=0, ExitSelf=8, ExitArknights=1, ExitEmulator=4)
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {})["PostActions"] = int(post_actions_str)
 
         # 直接运行任务
-        default_set["Start.StartGame"] = "True"
-        default_set["Start.RunDirectly"] = "True"
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
+        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
+        default_set["Start.RunDirectly"] = "True"  # OLD: 即将移除
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
+            "StartEmulator"
+        ] = False
 
         # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "True"
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "True"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
+        gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = True
+        gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
 
         # 理智作战强制配置项
         task_set["Fight"]["IsDrGrandet"] = False
@@ -424,12 +694,26 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
-            global_set["GUI.UseTray"] = "True"
-            global_set["GUI.MinimizeToTray"] = "True"
-            global_set["Start.MinimizeDirectly"] = "True"
+            global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
+            global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
+            global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
+            # NEW:
+            gui_new_set.setdefault("Gui", {})["UseTray"] = True
+            gui_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
+            gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
 
         # 服务器与账号切换
-        default_set["Start.ClientType"] = self.cur_user_config.get("Info", "Server")
+        default_set["Start.ClientType"] = self.cur_user_config.get(
+            "Info", "Server"
+        )  # OLD: 即将移除
+        # NEW: ClientType 枚举整数 (Official=0, Bilibili=1, ...)
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})[
+            "ClientType"
+        ] = _MAA_CLIENT_TYPE_TO_INT.get(
+            self.cur_user_config.get("Info", "Server"), 0
+        )
         if self.cur_user_config.get("Info", "Server") == "Official":
             task_set["StartUp"]["AccountName"] = (
                 f"{self.cur_user_config.get('Info', 'Id')[:3]}****{self.cur_user_config.get('Info', 'Id')[7:]}"
@@ -462,9 +746,6 @@ class AutoProxyTask(TaskExecuteBase):
                 plan_data.get("MedicineNumb", 0) != 0
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
-            if self.script_config.get("Run", "AnnihilationAvoidWaste"):
-                task_set["Fight"]["EnableTimesLimit"] = True
-                task_set["Fight"]["TimesLimit"] = 1
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
                 "Info", "Annihilation"
             )
@@ -543,13 +824,28 @@ class AutoProxyTask(TaskExecuteBase):
                     "Info", "InfrastMode"
                 )
 
+        activity_fight = None
+        if self.mode == "Routine" and activity_stage:
+            activity_medicine_numb = self.cur_user_config.get(
+                "Task", "ActivityMedicineNumb"
+            )
+            activity_fight = _build_activity_priority_fight(
+                task_set["Fight"], activity_stage, activity_medicine_numb
+            )
+
         # 导出任务配置
         self.task_dict["StartUp"] = True
         task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
         for task_type in MAA_TASKS:
 
+            if task_type not in task_set:
+                continue
+
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
             task_queue.append(task_set[task_type])
+
+            if task_type == "StartUp" and activity_fight:
+                task_queue.append(activity_fight)
 
             # 剩余理智关卡配置
             if (
@@ -568,12 +864,11 @@ class AutoProxyTask(TaskExecuteBase):
                 ]
                 task_queue.append(remain_fight)
 
-        (self.maa_set_path / "gui.json").write_text(
-            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
+            json.dumps(gui_set, ensure_ascii=False, indent=4),
+            encoding="utf-8",  # OLD: 即将移除
+        )  # OLD: 即将移除
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
 
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
@@ -584,6 +879,28 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
+        if self.mode == "Annihilation":
+            progress = _parse_annihilation_weekly_progress(log)
+            completed = progress and progress[0] >= progress[1]
+            completed = completed or "完成任务: 剿灭作战" in log
+            if completed:
+                self.task_dict["Fight"] = False
+                self.run_book["Annihilation"] = True
+                if not self._annihilation_weekly_completion_recorded:
+                    await self.cur_user_config.set(
+                        "Data",
+                        "AnnihilationCompletedWeek",
+                        _current_week_marker(datetime.now(tz=UTC4)),
+                    )
+                    self._annihilation_weekly_completion_recorded = True
+                    progress_text = (
+                        f"{progress[0]}/{progress[1]}" if progress else "完成任务日志"
+                    )
+                    logger.info(
+                        f"用户 {self.cur_user_item.name} 剿灭已达到本周上限："
+                        f"{progress_text}"
+                    )
+
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
@@ -591,12 +908,19 @@ class AutoProxyTask(TaskExecuteBase):
         elif "任务已全部完成！" in log:
 
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-                if f"完成任务: {zh_task}" in log:
+                if (
+                    f"完成任务: {zh_task}" in log
+                    or f"{zh_task} 任务跳过" in log
+                ):
                     self.task_dict[en_task] = False
 
-            if self.mode == "Annihilation" and "完成任务: 剿灭作战" in log:
-                self.task_dict["Fight"] = False
-            elif self.mode == "Routine" and "任务出错: 剩余理智" in log:
+            if self.mode == "Routine" and (
+                "任务出错: 理智作战" in log
+                or any(
+                    f"理智作战: {task_name} 添加任务失败" in log
+                    for task_name in ("活动关优先", "理智作战", "剩余理智")
+                )
+            ):
                 self.task_dict["Fight"] = True
 
             if any(self.task_dict.values()):
@@ -643,7 +967,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index")
                 )
             except Exception as e:
-                logger.exception(f"关闭模拟器失败: {e}")
+                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
         user_logs_list = []
         if_six_star = False
@@ -653,9 +977,10 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "任务被用户手动中止"
 
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=dt,
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
@@ -676,27 +1001,42 @@ class AutoProxyTask(TaskExecuteBase):
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
         success_symbol = "√" if if_success else "X"
 
-        try:
-            if if_six_star:
+        # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计。
+        should_send_statistics = if_success or _has_completed_sanity_task(
+            list(self.cur_user_item.log_record.values())
+        )
+        if should_send_statistics:
+            try:
+                await push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送统计通知时出现异常: {e}"},
+                )
+
+        # 六星通知独立处理，避免单个通知异常阻断掉落统计。
+        if if_six_star:
+            try:
                 await push_notification(
                     "公招六星",
                     f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
                     {"user_name": self.cur_user_item.name},
                     self.cur_user_config,
                 )
-            await push_notification(
-                "统计信息",
-                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                statistics,
-                self.cur_user_config,
-            )
-        except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
-            )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送六星通知时出现异常: {e}"},
+                )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
             if (
@@ -737,12 +1077,12 @@ class AutoProxyTask(TaskExecuteBase):
                 3,
             )
         else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

@@ -117,8 +117,13 @@
                   @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)" />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <!-- 占位列 -->
+            <a-col :span="24">
+              <GeneralConfigModeSelector
+                :model-value="formData.Info.IfUseMasConfig"
+                :disabled="loading"
+                :saving="configModeSaving"
+                @change="handleConfigModeChange"
+              />
             </a-col>
           </a-row>
 
@@ -137,69 +142,7 @@
         </div>
 
         <!-- 额外脚本 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>额外脚本</h3>
-          </div>
-          <a-form-item name="scriptBeforeTask">
-            <template #label>
-              <a-tooltip title="在任务执行前运行自定义脚本">
-                <span class="form-label">
-                  任务前执行脚本
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="4">
-                <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default"
-                  @change="handleFieldSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)" />
-              </a-col>
-              <a-col :span="20">
-                <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请选择脚本文件"
-                    :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" class="path-input" readonly />
-                  <a-button size="large" :disabled="loading || !formData.Info.IfScriptBeforeTask" class="path-button"
-                    @click="selectScriptBeforeTask">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    选择文件
-                  </a-button>
-                </a-input-group>
-              </a-col>
-            </a-row>
-          </a-form-item>
-          <a-form-item name="scriptAfterTask">
-            <template #label>
-              <a-tooltip title="在任务执行后运行自定义脚本">
-                <span class="form-label">
-                  任务后执行脚本
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="4">
-                <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default"
-                  @change="handleFieldSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)" />
-              </a-col>
-              <a-col :span="20">
-                <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请选择脚本文件"
-                    :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" class="path-input" readonly />
-                  <a-button size="large" :disabled="loading || !formData.Info.IfScriptAfterTask" class="path-button"
-                    @click="selectScriptAfterTask">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    选择文件
-                  </a-button>
-                </a-input-group>
-              </a-col>
-            </a-row>
-          </a-form-item>
-        </div>
+        <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
         <!-- 通知配置 -->
         <div class="form-section">
@@ -272,13 +215,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FileOutlined,
-  QuestionCircleOutlined,
-  SaveOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -286,6 +223,8 @@ import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import WebhookManager from '@/components/WebhookManager.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -310,6 +249,7 @@ const scriptName = ref('')
 
 // 通用配置相关
 const generalConfigLoading = ref(false)
+const configModeSaving = ref(false)
 const generalSubscriptionId = ref<string | null>(null)
 const generalWebsocketId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
@@ -323,6 +263,7 @@ const getDefaultGeneralUserData = () => ({
     Notes: '',
     Status: true,
     RemainedDay: -1,
+    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
     ScriptBeforeTask: '',
@@ -418,8 +359,40 @@ const handleFieldSave = async (key: string, value: any) => {
   }
 }
 
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'boolean') return
+  if (
+    isInitializing.value ||
+    configModeSaving.value ||
+    !userId ||
+    formData.Info.IfUseMasConfig === value
+  ) {
+    return
+  }
+
+  const previousValue = formData.Info.IfUseMasConfig
+  formData.Info.IfUseMasConfig = value
+  configModeSaving.value = true
+
+  try {
+    const saved = await updateUser(scriptId, userId, {
+      Info: { IfUseMasConfig: value },
+    })
+
+    if (!saved) {
+      formData.Info.IfUseMasConfig = previousValue
+      return
+    }
+
+    await loadUserData()
+    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+  } finally {
+    configModeSaving.value = false
+  }
+}
+
 // 保存完整用户数据（仅用于特殊批量操作）
-const saveFullUserData = async () => {
+const _saveFullUserData = async () => {
   if (isInitializing.value || isSaving.value || !userId) return
 
   isSaving.value = true
@@ -705,47 +678,6 @@ const handleSaveGeneralConfig = async () => {
   }
 }
 
-// 文件选择方法
-const selectScriptBeforeTask = async () => {
-  try {
-    const path = await window.electronAPI?.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
-      { name: '所有文件', extensions: ['*'] },
-    ])
-
-    if (path && path.length > 0) {
-      formData.Info.ScriptBeforeTask = path[0]
-      message.success('任务前脚本路径选择成功')
-      await handleFieldSave('Info.ScriptBeforeTask', path[0])
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`选择任务前脚本失败: ${errorMsg}`)
-    message.error('选择文件失败')
-  }
-}
-
-const selectScriptAfterTask = async () => {
-  try {
-    const path = await window.electronAPI?.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
-      { name: '所有文件', extensions: ['*'] },
-    ])
-
-    if (path && path.length > 0) {
-      formData.Info.ScriptAfterTask = path[0]
-      message.success('任务后脚本路径选择成功')
-      await handleFieldSave('Info.ScriptAfterTask', path[0])
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`选择任务后脚本失败: ${errorMsg}`)
-    message.error('选择文件失败')
-  }
-}
-
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // Webhook 有自己的保存逻辑，这里只记录日志
@@ -912,50 +844,6 @@ onMounted(() => {
 .float-button {
   width: 60px;
   height: 60px;
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-  background: var(--ant-color-bg-container) !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
 }
 
 /* 响应式设计 */

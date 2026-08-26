@@ -41,19 +41,34 @@ TYPE_BOOK = {
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
     "OkwwConfig": "ok-ww",
+    "OkNteConfig": "OK-NTE",
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
+    "HSRConfig": "HSR",
 }
 """配置类型映射表"""
+
+PLAN_CONSUMER_VALUES = ("maa", "maaend")
+"""计划表消费方列表"""
 
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 
-MAA_TASKS = ["StartUp", "Fight", "Infrast", "Recruit", "Mall", "Award", "Roguelike"]
+MAA_TASKS = [
+    "StartUp",
+    "DepotMaintain",
+    "Fight",
+    "Infrast",
+    "Recruit",
+    "Mall",
+    "Award",
+    "Roguelike",
+]
 """MAA任务列表"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
+    "库存保持",
     "理智作战",
     "基建换班",
     "自动公招",
@@ -62,6 +77,38 @@ MAA_TASKS_ZH = [
     "自动肉鸽",
 ]
 """MAA任务列表"""
+
+MAA_DEPOT_EXCLUDED_ITEM_IDS = {
+    "3213",
+    "3223",
+    "3233",
+    "3243",
+    "3253",
+    "3263",
+    "3273",
+    "3283",
+    "7001",
+    "7002",
+    "7003",
+    "7004",
+    "4004",
+    "4005",
+    "3105",
+    "3131",
+    "3132",
+    "3133",
+    "6001",
+    "3141",
+    "4002",
+    "32001",
+    "30115",
+    "30125",
+    "30135",
+    "30145",
+    "30155",
+    "30165",
+}
+"""MAA 库存保持不可刷取物品 ID"""
 
 MAA_STAGE_KEY = [
     "MedicineNumb",
@@ -197,13 +244,6 @@ MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
-    "VFTheHub": "枢纽区",
-    "VFOriginiumSciencePark": "源石研究园",
-    "VFOriginLodespring": "矿脉源区",
-    "VFPowerPlateau": "供能高地",
-    "WLWulingCity": "武陵城区",
-    "WLQingboStockade": "清波寨",
-    "WLMarkerStone": "首墩",
 }
 """MaaEnd理智任务详细选项展示文案"""
 
@@ -227,17 +267,6 @@ MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     ),
 }
 """MaaEnd协议空间任务选项列表"""
-
-MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
-    "VFTheHub",
-    "VFOriginiumSciencePark",
-    "VFOriginLodespring",
-    "VFPowerPlateau",
-    "WLWulingCity",
-    "WLQingboStockade",
-    "WLMarkerStone",
-)
-"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
@@ -275,6 +304,7 @@ MAAEND_TASK_GROUPS = {
             ("AutoSell", "售卖弹性物资"),
             ("EnvironmentMonitoring", "环境监测"),
             ("AutoCollect", "自动采集"),
+            ("TrialOfSwordmancy", "选剑演武"),
         ),
     },
     "Rewards": {
@@ -283,6 +313,10 @@ MAAEND_TASK_GROUPS = {
             ("DailyRewards", "日常奖励领取"),
             ("ResourceRecycleStation", "资源回收站"),
         ),
+    },
+    "Statistics": {
+        "label": "数据统计",
+        "tasks": (("PullCountCalculator", "抽数计算"),),
     },
 }
 """MaaEnd任务分组"""
@@ -294,16 +328,13 @@ MAAEND_TASKS = tuple(
 )
 """MaaEnd托管任务列表"""
 
-MAAEND_CONTROLLER_TASKS = {"Win32-Front": MAAEND_TASKS}
-"""MaaEnd控制器支持的托管任务列表"""
-
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",
     "OperatorProgression": "OperatorEXP",
     "WeaponProgression": "WeaponEXP",
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
-    "AutoEssenceSpecifiedLocation": "VFTheHub",
+    "AutoEssenceSpecifiedLocation": "",
 }
 """MaaEnd理智任务字段默认值"""
 
@@ -637,6 +668,7 @@ STARRAIL_STAGE_BOOK = {
     "Calyx_Golden_Memories_Jarilo_VI": "材料：角色经验（回忆之蕾 雅利洛-Ⅵ）",
     "Calyx_Golden_Aether_Jarilo_VI": "材料：武器经验（以太之蕾 雅利洛-Ⅵ）",
     "Calyx_Golden_Treasures_Jarilo_VI": "材料：信用点（藏珍之蕾 雅利洛-Ⅵ）",
+    "Calyx_Crimson_Destruction_Amphoreus_InkfordHermitage": "行迹材料：毁灭（渡画泉隐）",
     "Calyx_Crimson_Destruction_Herta_StorageZone": "行迹材料：毁灭（收容舱段）",
     "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape": "行迹材料：毁灭（鳞渊境）",
     "Calyx_Crimson_Preservation_Herta_SupplyZone": "行迹材料：存护（支援舱段）",
@@ -652,6 +684,8 @@ STARRAIL_STAGE_BOOK = {
     "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape": "行迹材料：同谐（白日梦酒店-梦境）",
     "Calyx_Crimson_Nihility_Jarilo_GreatMine": "行迹材料：虚无（大矿区）",
     "Calyx_Crimson_Nihility_Luofu_AlchemyCommission": "行迹材料：虚无（丹鼎司）",
+    "Calyx_Crimson_Nihility_Amphoreus_SacredTracewoodGroveofDivineInsight": "行迹材料：虚无（「辉痕圣林」神悟树庭）",
+    "Calyx_Crimson_Erudition_Amphoreus_SeafeldTVTower": "行迹材料：智识（海原电视塔）",
     "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos": "行迹材料：记忆（纷争荒墟悬锋城）",
     "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern": "行迹材料：欢愉（世界尽头酒馆）",
     "Stagnant_Shadow_Quanta": "晋阶材料：量子（银狼 / 希儿 / 青雀）",
@@ -681,7 +715,9 @@ STARRAIL_STAGE_BOOK = {
     "Stagnant_Shadow_Cinders": "晋阶材料：风（刻律德菈）",
     "Stagnant_Shadow_Sirens": "晋阶材料：冰（长夜月 / 昔涟）",
     "Stagnant_Shadow_Ashes": "晋阶材料：火（大丽花 / 火花）",
-    "Stagnant_Shadow_Soundburst": "-",
+    "Stagnant_Shadow_Soundburst": "晋阶材料：雷（狂雷扫弦）",
+    "Stagnant_Shadow_Devour": "晋阶材料：量子（嗤笑丑面）",
+    "Cavern_of_Corrosion_Path_of_Insight": "遗器：领航员 & 名冶（观火之径）",
     "Cavern_of_Corrosion_Path_of_Possession": "遗器：魔法少女 & 卜者（魔占之径）",
     "Cavern_of_Corrosion_Path_of_Hidden_Salvation": "遗器：救世主 & 隐士（隐救之径）",
     "Cavern_of_Corrosion_Path_of_Thundersurge": "遗器：烈阳 & 船长（雳涌之径）",
@@ -701,10 +737,11 @@ STARRAIL_STAGE_BOOK = {
     "Echo_of_War_Glance_of_Twilight": "晨昏的回眸（翁法罗斯）",
     "Echo_of_War_Inner_Beast_Battlefield": "心兽的战场（仙舟「罗浮」）",
     "Echo_of_War_Salutations_of_Ashen_Dreams": "尘梦的赞礼（匹诺康尼）",
-    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧魇（空间站「黑塔」）",
+    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧靥（空间站「黑塔」）",
     "Echo_of_War_Divine_Seed": "不死的神实（仙舟「罗浮」）",
     "Echo_of_War_End_of_the_Eternal_Freeze": "寒潮的落幕（雅利洛-Ⅵ）",
     "Echo_of_War_Destruction_Beginning": "毁灭的开端（空间站「黑塔」）",
+    "Divergent_Universe_Gilded_Reminiscence": "饰品：朋克洛德 & 千星（鎏金追忆）",
     "Divergent_Universe_Within_the_West_Wind": "饰品：翁法罗斯 & 天国（西风丛中）",
     "Divergent_Universe_Moonlit_Blood": "饰品：妖精 & 沉醉（月下朱殷）",
     "Divergent_Universe_Unceasing_Strife": "饰品：拾骨地 & 巨树（纷争不休）",
@@ -717,6 +754,11 @@ STARRAIL_STAGE_BOOK = {
     "Divergent_Universe_Gentle_Words": "饰品：商业公司 & 差分机（温柔话语）",
     "Divergent_Universe_Smelted_Heart": "饰品：盗贼 & 翁瓦克（浴火钢心）",
     "Divergent_Universe_Untoppled_Walls": "饰品：太空 & 仙舟（坚城不倒）",
+    "Simulated_Universe_World_3": "第三世界",
+    "Simulated_Universe_World_4": "第四世界",
+    "Simulated_Universe_World_5": "第五世界",
+    "Simulated_Universe_World_6": "第六世界",
+    "Simulated_Universe_World_8": "第八世界",
 }
 """星穹铁道关卡文本索引表"""
 
@@ -740,6 +782,7 @@ POWER_SIGN_MAP = {
     "Hibernate": "休眠",
     "Sleep": "睡眠",
     "KillSelf": "退出程序",
+    "Logoff": "注销此账户",
 }
 """电源操作类型索引表"""
 
@@ -772,6 +815,35 @@ RESERVED_NAMES = {
 
 ILLEGAL_CHARS = set('<>:"/\\|?*')
 """文件名非法字符集合"""
+
+KEYBOARD_KEYS = frozenset(
+    [
+        "\t", "\n", "\r", " ", "!", '"', "#", "$", "%", "&", "'", "(", ")", "*",
+        "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8",
+        "9", ":", ";", "<", "=", ">", "?", "@", "[", "\\", "]", "^", "_", "`",
+        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n",
+        "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "{", "|",
+        "}", "~", "accept", "add", "alt", "altleft", "altright", "apps",
+        "backspace", "browserback", "browserfavorites", "browserforward",
+        "browserhome", "browserrefresh", "browsersearch", "browserstop",
+        "capslock", "clear", "convert", "ctrl", "ctrlleft", "ctrlright",
+        "decimal", "del", "delete", "divide", "down", "end", "enter", "esc",
+        "escape", "execute", "f1", "f10", "f11", "f12", "f13", "f14", "f15",
+        "f16", "f17", "f18", "f19", "f2", "f20", "f21", "f22", "f23", "f24",
+        "f3", "f4", "f5", "f6", "f7", "f8", "f9", "final", "fn", "hanguel",
+        "hangul", "hanja", "help", "home", "insert", "junja", "kana", "kanji",
+        "launchapp1", "launchapp2", "launchmail", "launchmediaselect", "left",
+        "modechange", "multiply", "nexttrack", "nonconvert", "num0", "num1",
+        "num2", "num3", "num4", "num5", "num6", "num7", "num8", "num9",
+        "numlock", "pagedown", "pageup", "pause", "pgdn", "pgup", "playpause",
+        "prevtrack", "print", "printscreen", "prntscrn", "prtsc", "prtscr",
+        "return", "right", "scrolllock", "select", "separator", "shift",
+        "shiftleft", "shiftright", "sleep", "space", "stop", "subtract", "tab",
+        "up", "volumedown", "volumemute", "volumeup", "win", "winleft",
+        "winright", "yen", "command", "option", "optionleft", "optionright",
+    ]
+)
+"""键盘按键名称集合 (与 pyautogui.KEYBOARD_KEYS 一致, 内联以避免启动时导入 pyautogui)"""
 
 MIRROR_ERROR_INFO = {
     1001: "获取版本信息的URL参数不正确",

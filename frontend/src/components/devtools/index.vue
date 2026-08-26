@@ -31,12 +31,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useEventListener, useDraggable, useWindowSize } from '@vueuse/core'
+import { useEventListener, useWindowSize } from '@vueuse/core'
 import RouteInfoPage from './RouteInfoPage.vue'
 import EnvironmentPage from './EnvironmentPage.vue'
 import QuickNavPage from './QuickNavPage.vue'
 import MessageTestPage from './MessageTestPage.vue'
 import BackendLaunchPage from './BackendLaunchPage.vue'
+
+defineOptions({ name: 'DevtoolsPanel' })
 
 // 调试页面配置
 const tabs = [

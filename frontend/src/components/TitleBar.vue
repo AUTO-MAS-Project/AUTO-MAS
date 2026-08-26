@@ -9,15 +9,25 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
+          <span v-if="isBootstrapping" class="startup-status">
+            <LoadingOutlined />
+            后端启动中
+          </span>
+          <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
+            {{ downloadHint }}
+          </span>
           <span
-            v-if="updateInfo?.if_need_update"
+            v-else-if="updateInfo?.if_need_update"
             class="update-hint clickable"
             @click="handleAppUpdateClick"
           >
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
-          <span v-if="backendUpdateInfo?.if_need_update" class="update-hint clickable"
-            @click="handleBackendUpdateClick">
+          <span
+            v-if="backendUpdateInfo?.if_need_update"
+            class="update-hint clickable"
+            @click="handleBackendUpdateClick"
+          >
             检测到后端更新，点击以更新后端
           </span>
         </span>
@@ -33,10 +43,19 @@
         <button class="control-button minimize-button" title="最小化" @click="minimizeWindow">
           <MinusOutlined />
         </button>
-        <button class="control-button maximize-button" :title="isMaximized ? '还原' : '最大化'" @click="toggleMaximize">
+        <button
+          class="control-button maximize-button"
+          :title="isMaximized ? '还原' : '最大化'"
+          @click="toggleMaximize"
+        >
           <BorderOutlined />
         </button>
-        <button class="control-button close-button" title="关闭" @click="closeWindow">
+        <button
+          v-if="!hideCloseButton"
+          class="control-button close-button"
+          title="关闭"
+          @click="closeWindow"
+        >
           <CloseOutlined />
         </button>
       </div>
@@ -50,15 +69,42 @@ import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import { useUiPreferences } from '@/composables/useUiPreferences'
+import {
+  BorderOutlined,
+  CloseOutlined,
+  LoadingOutlined,
+  MinusOutlined,
+} from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
-const { resetInitializationStatus } = useAppInitialization()
+const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
+const { hideCloseButton, syncUiPreferences } = useUiPreferences()
+
+const {
+  status: downloadStatus,
+  sourceLabel,
+  progressPercent,
+  open: openDownloadModal,
+} = useUpdateDownload()
+
+const downloadHint = computed(() => {
+  if (downloadStatus.value === 'completed') return '下载完成，点击安装'
+  if (downloadStatus.value === 'switchingSource') return '正在切换至 CNB 源'
+  if (downloadStatus.value === 'cancelling') return '正在取消下载'
+  if (downloadStatus.value === 'failed') return '下载失败，点击查看'
+  if (downloadStatus.value === 'downloading') {
+    const sourceText = sourceLabel.value ? `从 ${sourceLabel.value}` : ''
+    return `正在${sourceText}下载 ${progressPercent.value.toFixed(1)}%`
+  }
+  return ''
+})
 
 // 检查是否有运行中的队列任务
 const hasRunningTasks = (): boolean => {
@@ -83,23 +129,6 @@ const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
 const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
-
-// 生成更新提示的详细信息
-const getUpdateTooltip = () => {
-  if (!updateInfo.value?.update_info) return ''
-
-  const updateDetails = []
-  for (const [category, items] of Object.entries(updateInfo.value.update_info)) {
-    if (items && items.length > 0) {
-      updateDetails.push(`${category}:`)
-      items.forEach(item => {
-        updateDetails.push(`• ${item}`)
-      })
-      updateDetails.push('')
-    }
-  }
-  return updateDetails.join('\n')
-}
 
 // 处理版本更新点击
 const handleAppUpdateClick = () => {
@@ -212,6 +241,14 @@ const closeWindow = async () => {
 
 onMounted(async () => {
   try {
+    const config = await window.electronAPI?.loadConfig()
+    syncUiPreferences(config?.UI)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取界面设置失败: ${errorMsg}`)
+  }
+
+  try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -244,7 +281,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   padding-left: 12px;
+  min-width: 64px;
   height: 100%;
+  -webkit-app-region: drag;
 }
 
 .logo-section {
@@ -306,6 +345,14 @@ onMounted(async () => {
 
 .title-bar-dark .title-text {
   color: #fff;
+}
+
+.startup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  color: var(--ant-color-primary);
 }
 
 .title-bar-dark .version-text {
@@ -378,16 +425,18 @@ onMounted(async () => {
   font-weight: 600;
   margin-left: 4px;
   cursor: help;
-  background: linear-gradient(45deg,
-      #ff1744,
-      #ff5722,
-      #ff9800,
-      #ffc107,
-      #4caf50,
-      #00bcd4,
-      #2196f3,
-      #9c27b0,
-      #ff1744);
+  background: linear-gradient(
+    45deg,
+    #ff1744,
+    #ff5722,
+    #ff9800,
+    #ffc107,
+    #4caf50,
+    #00bcd4,
+    #2196f3,
+    #9c27b0,
+    #ff1744
+  );
   background-size: 400% 400%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -407,6 +456,7 @@ onMounted(async () => {
 .update-hint.clickable {
   cursor: pointer;
   user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .update-hint.clickable:hover {
@@ -431,16 +481,18 @@ onMounted(async () => {
   left: -2px;
   right: -2px;
   bottom: -2px;
-  background: linear-gradient(45deg,
-      #ff1744,
-      #ff5722,
-      #ff9800,
-      #ffc107,
-      #4caf50,
-      #00bcd4,
-      #2196f3,
-      #9c27b0,
-      #ff1744);
+  background: linear-gradient(
+    45deg,
+    #ff1744,
+    #ff5722,
+    #ff9800,
+    #ffc107,
+    #4caf50,
+    #00bcd4,
+    #2196f3,
+    #9c27b0,
+    #ff1744
+  );
   background-size: 400% 400%;
   border-radius: 6px;
   z-index: -1;
@@ -463,7 +515,7 @@ onMounted(async () => {
 }
 
 /* 为相邻的更新提示添加间距 */
-.update-hint+.update-hint {
+.update-hint + .update-hint {
   margin-left: 12px;
 }
 

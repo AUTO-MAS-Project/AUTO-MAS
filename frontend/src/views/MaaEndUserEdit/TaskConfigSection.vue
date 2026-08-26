@@ -1,8 +1,11 @@
-<!-- eslint-disable vue/no-mutating-props -->
 <template>
   <div class="form-section">
     <div class="section-header">
       <h3>任务配置</h3>
+      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
+        <template #icon><CalendarOutlined /></template>
+        跳转到计划表
+      </a-button>
     </div>
 
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
@@ -55,6 +58,18 @@
 
     <a-row v-if="showSanityDetail" :gutter="24">
       <a-col :span="optionColumnSpan">
+        <a-form-item label="理智任务配置模式">
+          <a-select
+            v-model:value="formData.Info.SanityMode"
+            :options="sanityModeOptions"
+            :disabled="loading"
+            size="large"
+            @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
+          />
+        </a-form-item>
+      </a-col>
+
+      <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
             <a-tooltip title="选择当前执行的理智任务类型">
@@ -64,9 +79,14 @@
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displaySanityTaskType }}</span>
+            <span class="plan-source">来自计划表</span>
+          </div>
           <a-select
+            v-else
             v-model:value="formData.Task.SanityTaskType"
-            :options="SANITY_TASK_TYPE_OPTIONS"
+            :options="sanityTaskTypeOptions"
             :disabled="optionControlsDisabled"
             size="large"
             @change="handleSanityTaskTypeChange"
@@ -84,10 +104,16 @@
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayCurrentTask }}</span>
+            <span class="plan-source">来自计划表</span>
+          </div>
           <a-select
+            v-else
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
             :disabled="optionControlsDisabled"
+            :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
             size="large"
             @change="handleTaskOptionChange"
           />
@@ -106,7 +132,12 @@
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayRewardsSet }}</span>
+            <span class="plan-source">来自计划表</span>
+          </div>
           <a-select
+            v-else
             v-model:value="formData.Task.RewardsSetOption"
             :options="REWARD_OPTIONS"
             :disabled="optionControlsDisabled"
@@ -121,17 +152,23 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import type { ComboBoxItem } from '@/api'
+import { navigateTo } from '@/router'
 import {
-  AUTO_ESSENCE_LOCATION_OPTIONS,
-  MAAEND_CONTROLLER_TASKS,
   MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
   PROTOCOL_SPACE_TASK_TOOLTIP_MAP,
   REWARD_OPTIONS,
+  REWARD_LABEL_MAP,
   SANITY_TASK_TYPE_OPTIONS,
+  SANITY_TASK_TYPE_LABEL_MAP,
+  getSanityTaskDisplayValue,
+  isProtocolSpaceRewardEnabled,
+  normalizeMaaEndSanityConfig,
+  type MaaEndSanityConfig,
   type MaaEndTaskSwitch,
   type ProtocolSpaceTab,
   type SanityTaskType,
@@ -147,12 +184,21 @@ const props = withDefaults(
     formData: any
     loading?: boolean
     ifQuickConfig?: boolean
-    controllerType?: string | null
+    essenceLocationOptions: ComboBoxItem[]
+    optionsLoading?: boolean
+    optionsLoaded?: boolean
+    isPlanMode?: boolean
+    sanityModeOptions?: Array<{ label: string; value: string }>
+    planModeConfig?: MaaEndSanityConfig | null
   }>(),
   {
     loading: false,
     ifQuickConfig: true,
-    controllerType: null,
+    optionsLoading: false,
+    optionsLoaded: false,
+    isPlanMode: false,
+    sanityModeOptions: () => [{ label: '固定', value: 'Fixed' }],
+    planModeConfig: null,
   }
 )
 
@@ -162,19 +208,10 @@ const emit = defineEmits<{
 }>()
 
 const formData = props.formData
-const optionColumnSpan = 12
+const optionColumnSpan = 8
 const activeGroupKey = ref('')
 const showManagedTaskConfig = computed(() => props.ifQuickConfig)
-const supportedTaskNames = computed(
-  () => new Set(MAAEND_CONTROLLER_TASKS[props.controllerType ?? ''] ?? [])
-)
-const showSanityOptions = computed(() => supportedTaskNames.value.has('Sanity'))
-const visibleTaskGroups = computed(() =>
-  MAAEND_TASK_GROUPS.map(group => ({
-    ...group,
-    tasks: group.tasks.filter(task => supportedTaskNames.value.has(task.name)),
-  })).filter(group => group.tasks.length > 0)
-)
+const visibleTaskGroups = computed(() => MAAEND_TASK_GROUPS)
 const activeGroup = computed(
   () => visibleTaskGroups.value.find(group => group.key === activeGroupKey.value) ?? null
 )
@@ -186,21 +223,55 @@ const controlsDisabled = computed(() => {
   return props.loading || !props.ifQuickConfig
 })
 
-const optionControlsDisabled = computed(() => controlsDisabled.value)
+const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const displayPlanConfig = computed(() =>
+  props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
+)
+const displaySanityTaskType = computed(() =>
+  displayPlanConfig.value
+    ? SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
+    : '未读取到计划表配置'
+)
+const displayCurrentTask = computed(() =>
+  displayPlanConfig.value
+    ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
+    : '未读取到计划表配置'
+)
+const displayRewardsSet = computed(() =>
+  displayPlanConfig.value
+    ? REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
+    : '未读取到计划表配置'
+)
+
+const sanityTaskTypeOptions = computed(() =>
+  SANITY_TASK_TYPE_OPTIONS.filter(
+    option =>
+      option.value !== 'Essence' || !props.optionsLoaded || props.essenceLocationOptions.length > 0
+  )
+)
 
 const normalizedSanityTaskType = computed<SanityTaskType>(() =>
-  SANITY_TASK_TYPE_OPTIONS.some(option => option.value === formData.Task.SanityTaskType)
+  sanityTaskTypeOptions.value.some(option => option.value === formData.Task.SanityTaskType)
     ? formData.Task.SanityTaskType
     : 'OperatorProgression'
+)
+
+const effectiveSanityTaskType = computed<SanityTaskType>(
+  () => displayPlanConfig.value?.SanityTaskType ?? normalizedSanityTaskType.value
 )
 
 const currentField = computed(
   () => PROTOCOL_SPACE_TASK_FIELD_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
 )
+const currentTaskSaveKey = computed(() =>
+  normalizedSanityTaskType.value === 'Essence'
+    ? 'Task.AutoEssenceSpecifiedLocation'
+    : `Task.${currentField.value}`
+)
 
 const currentTaskOptions = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') {
-    return AUTO_ESSENCE_LOCATION_OPTIONS
+    return props.essenceLocationOptions
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
 })
@@ -229,22 +300,22 @@ const rewardGroupEnabled = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') return false
   return Boolean(
     currentTaskOption.value &&
-      'rewards' in currentTaskOption.value &&
-      currentTaskOption.value.rewards
+    'rewards' in currentTaskOption.value &&
+    currentTaskOption.value.rewards
   )
 })
 
 const taskOptionLabel = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
+  effectiveSanityTaskType.value === 'Essence'
     ? '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
-  normalizedSanityTaskType.value === 'Essence'
+  effectiveSanityTaskType.value === 'Essence'
     ? '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
 
@@ -259,13 +330,20 @@ const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
   Boolean(formData.Task[taskSwitchKey(taskName)])
 
 const showSanityDetail = computed(
-  () =>
-    props.ifQuickConfig &&
-    activeGroupHasSanity.value &&
-    showSanityOptions.value &&
-    isTaskEnabled('Sanity')
+  () => props.ifQuickConfig && activeGroupHasSanity.value && isTaskEnabled('Sanity')
 )
-const showRewardGroupSelect = computed(() => showSanityDetail.value && rewardGroupEnabled.value)
+const showRewardGroupSelect = computed(
+  () =>
+    showSanityDetail.value &&
+    (displayPlanConfig.value
+      ? displayPlanConfig.value.SanityTaskType !== 'Essence' &&
+        isProtocolSpaceRewardEnabled(displayPlanConfig.value)
+      : rewardGroupEnabled.value)
+)
+
+const handleGoToPlans = () => {
+  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
+}
 
 const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
   emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
@@ -296,13 +374,14 @@ const emitSaveBatch = (changes: FieldChange[]) => {
   emit('saveBatch', changes)
 }
 
-const ensureCurrentTaskValue = () => {
-  if (optionControlsDisabled.value) return
+const ensureCurrentTaskValue = (): FieldChange | null => {
+  if (optionControlsDisabled.value) return null
   const options = currentTaskOptions.value
-  if (!options.length) return
-  if (!options.some(option => option.value === currentTaskValue.value)) {
-    currentTaskValue.value = options[0].value
-  }
+  if (!options.length) return null
+  if (options.some(option => option.value === currentTaskValue.value)) return null
+
+  currentTaskValue.value = options[0].value
+  return { key: currentTaskSaveKey.value, value: currentTaskValue.value }
 }
 
 const normalizeRewardGroupState = (): FieldChange | null => {
@@ -316,20 +395,12 @@ const normalizeRewardGroupState = (): FieldChange | null => {
 const handleSanityTaskTypeChange = (value: SanityTaskType) => {
   if (optionControlsDisabled.value) return
   formData.Task.SanityTaskType = value
-  ensureCurrentTaskValue()
+  const taskValueChange = ensureCurrentTaskValue()
 
   const changes: FieldChange[] = [
     { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
+    taskValueChange ?? { key: currentTaskSaveKey.value, value: currentTaskValue.value },
   ]
-
-  if (value === 'Essence') {
-    changes.push({
-      key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub',
-    })
-  } else {
-    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
-  }
 
   const rewardGroupChange = normalizeRewardGroupState()
   if (rewardGroupChange) {
@@ -341,16 +412,7 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
 
 const handleTaskOptionChange = () => {
   if (optionControlsDisabled.value) return
-  const changes: FieldChange[] = []
-
-  if (normalizedSanityTaskType.value === 'Essence') {
-    changes.push({
-      key: 'Task.AutoEssenceSpecifiedLocation',
-      value: formData.Task.AutoEssenceSpecifiedLocation,
-    })
-  } else {
-    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
-  }
+  const changes: FieldChange[] = [{ key: currentTaskSaveKey.value, value: currentTaskValue.value }]
 
   const rewardGroupChange = normalizeRewardGroupState()
   if (rewardGroupChange) {
@@ -361,7 +423,12 @@ const handleTaskOptionChange = () => {
 }
 
 watch(
-  () => formData.Task.SanityTaskType,
+  [
+    () => props.loading,
+    () => props.optionsLoading,
+    () => formData.Task.SanityTaskType,
+    () => props.essenceLocationOptions,
+  ],
   () => {
     if (optionControlsDisabled.value) return
     const changes: FieldChange[] = []
@@ -369,7 +436,10 @@ watch(
       formData.Task.SanityTaskType = normalizedSanityTaskType.value
       changes.push({ key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType })
     }
-    ensureCurrentTaskValue()
+    const taskValueChange = ensureCurrentTaskValue()
+    if (taskValueChange) {
+      changes.push(taskValueChange)
+    }
     const rewardGroupChange = normalizeRewardGroupState()
     if (rewardGroupChange) {
       changes.push(rewardGroupChange)
@@ -520,6 +590,28 @@ watch(
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
+}
+
+.plans-button {
+  padding-inline: 0;
+}
+
+.plan-mode-display {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-source {
+  flex-shrink: 0;
+  color: var(--ant-color-primary);
+  font-size: 12px;
 }
 
 .form-label {

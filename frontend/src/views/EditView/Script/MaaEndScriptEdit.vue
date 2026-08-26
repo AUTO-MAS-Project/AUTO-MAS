@@ -33,14 +33,14 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
+            <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
-    <a-space size="middle">
+    <a-space size="middle" wrap>
       <a-button
         type="primary"
         size="large"
@@ -75,7 +75,7 @@
             <p>
               MaaEnd专项还在积极测试中，如有问题请加入
               <a
-                href="https://qm.qq.com/q/1FKvD6Q8H6"
+                :href="MAS_QQ_GROUP_URL"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click="handleExternalLink"
@@ -167,6 +167,8 @@
                   v-model:value="maaEndConfig.Game.ControllerType"
                   size="large"
                   :options="controllerOptions"
+                  :loading="maaEndOptionsLoading"
+                  :disabled="maaEndOptionsLoading || isSaving"
                   @change="handleControllerTypeChange"
                 />
               </a-form-item>
@@ -260,7 +262,7 @@
             </a-col>
           </a-row>
 
-          <a-row v-else :gutter="24">
+          <a-row v-else-if="isAdbController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
@@ -339,7 +341,27 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    账号切换方式
+                    <a-tooltip
+                      title="选择由 MAS 切换游戏内已保存账号，或由 MAAEND 内置任务按账号末四位切换"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  :options="accountSwitchMethodOptions"
+                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -361,7 +383,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -381,7 +403,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -416,10 +438,11 @@ import { message } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { handleExternalLink } from '@/utils/openExternal'
+import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -429,7 +452,13 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -437,6 +466,7 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
 const maaEndSubscriptionId = ref<string | null>(null)
@@ -463,9 +493,10 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
+    AccountSwitchMethod: 'MAS',
   },
   Game: {
-    ControllerType: 'Win32-Front',
+    ControllerType: '',
     Path: '',
     Arguments: '',
     WaitTime: 60,
@@ -480,22 +511,27 @@ const rules = {
   path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
 }
 
-const controllerOptions = [
-  { label: '电脑端-前台', value: 'Win32-Front' },
-  { label: '安卓端', value: 'ADB' },
-]
+const controllerOptions = ref<ComboBoxItem[]>([])
+const controllerProtocols = ref<Record<string, string>>({})
 
 const booleanOptions = [
   { label: '是', value: true },
   { label: '否', value: false },
 ]
 
-const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
+const accountSwitchMethodOptions = [
+  { label: 'MAS 自建账号切换', value: 'MAS' },
+  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
+]
 
-const isWinController = computed(() => maaEndConfig.Game.ControllerType !== 'ADB')
+const emulatorLoading = ref(false)
+const emulatorOptions = ref<ComboBoxItem[]>([])
+
+const controllerProtocol = computed(
+  () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
+)
+const isWinController = computed(() => controllerProtocol.value === 'Win32')
+const isAdbController = computed(() => controllerProtocol.value === 'Adb')
 const showManualEmulatorIndexInput = computed(
   () =>
     emulatorDeviceOptions.value.length === 0 &&
@@ -544,19 +580,16 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
+const loadMaaEndOptions = async () => {
+  maaEndOptionsLoading.value = true
   try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId,
-    })
-    if (response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    }
+    const response = await getMaaEndOptions(scriptId)
+    if (response?.code !== 200) return
+
+    controllerOptions.value = response.controllers
+    controllerProtocols.value = response.controllerTypes
   } finally {
-    emulatorDeviceLoading.value = false
+    maaEndOptionsLoading.value = false
   }
 }
 
@@ -582,7 +615,7 @@ const loadScript = async () => {
     applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
 
     if (maaEndConfig.Game.EmulatorId) {
-      await loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
+      void loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
     }
   } finally {
     pageLoading.value = false
@@ -590,10 +623,15 @@ const loadScript = async () => {
 }
 
 const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['ControllerType']) => {
+  if (!value) return
+
+  const protocol = controllerProtocols.value[value]
+  if (!protocol) return
+
   isSaving.value = true
   try {
     const gamePayload =
-      value === 'ADB'
+      protocol === 'Adb'
         ? {
             ControllerType: value,
             Path: '',
@@ -606,8 +644,8 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
             EmulatorIndex: '',
           }
 
-    if (value !== 'ADB') {
-      emulatorDeviceOptions.value = []
+    if (protocol !== 'Adb') {
+      clearEmulatorDeviceOptions()
       maaEndConfig.Game.EmulatorId = ''
       maaEndConfig.Game.EmulatorIndex = ''
     } else {
@@ -623,14 +661,18 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     isSaving.value = false
   }
 
-  if (value === 'ADB') {
+  if (protocol === 'Adb') {
     await loadEmulatorOptions()
   }
 }
 
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   maaEndConfig.Game.EmulatorIndex = ''
-  emulatorDeviceOptions.value = []
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
 
   isSaving.value = true
   try {
@@ -646,10 +688,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
   } finally {
     isSaving.value = false
   }
-
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
-  }
 }
 
 const selectMaaEndPath = async () => {
@@ -657,6 +695,7 @@ const selectMaaEndPath = async () => {
   if (!path) return
   maaEndConfig.Info.Path = path
   await handleChange('Info', 'Path', path)
+  await loadMaaEndOptions()
 }
 
 const selectGamePath = async () => {
@@ -765,6 +804,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScript()
+  await loadMaaEndOptions()
   await loadEmulatorOptions()
   isInitializing.value = false
 })

@@ -71,12 +71,14 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 
 
 def is_process_running(process_name: str) -> bool:
-    """检查指定进程名是否正在运行"""
+    """检查指定进程名是否正在运行且存在可见窗口"""
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             if proc.info.get("name") == process_name:
-                return True
+                for hwnd in get_window_handles(proc.pid):
+                    if win32gui.IsWindowVisible(hwnd):
+                        return True
     return False
 
 
@@ -188,6 +190,7 @@ class ProcessManager:
         self.target_process: psutil.Process | None = None
         self.window_title = window_title
         self.window_class_name = window_class_name
+        self._drain_tasks: list[asyncio.Task[None]] = []
 
     @property
     def main_pid(self) -> int | None:
@@ -225,8 +228,10 @@ class ProcessManager:
         *args: str,
         cwd: Path | None = None,
         target_process: ProcessInfo | None = None,
+        stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
+        null_stream_to_pipe: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -236,8 +241,10 @@ class ProcessManager:
             *args (str): 传递给可执行文件的参数
             cwd (Path | None): 可选的工作目录, 默认为可执行文件所在目录
             target_process (ProcessInfo | None): 期望目标进程信息, 用于跟踪主进程及其子进程, 默认为 None 表示跟踪直接启动的子进程
+            stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
+            null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
         """
 
         if await self.is_running():
@@ -254,21 +261,55 @@ class ProcessManager:
 
         await self.clear()
 
+        # 若指定了 null_stream_to_pipe, 将 stdout/stderr 为 DEVNULL 的流替换为管道, 并在后台消费以防止阻塞
+        drain_streams = []
+        if null_stream_to_pipe:
+            if stdout == asyncio.subprocess.DEVNULL:
+                stdout = asyncio.subprocess.PIPE
+                drain_streams.append("stdout")
+            if stderr == asyncio.subprocess.DEVNULL:
+                stderr = asyncio.subprocess.PIPE
+                drain_streams.append("stderr")
+
         self.process = await asyncio.create_subprocess_exec(
             program,
             *args,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=stdin,
             stdout=stdout,
             stderr=stderr,
             creationflags=CREATION_FLAGS,
         )
+
+        # 启动协程消费管道流以防止阻塞
+        if drain_streams:
+            for name in drain_streams:
+                stream = getattr(self.process, name)
+                if stream is not None:
+                    self._drain_tasks.append(asyncio.create_task(self._drain(stream)))
 
         if target_process is not None:
 
             await self.search_process(
                 target_process, datetime.now() + timedelta(seconds=60)
             )
+
+    async def _drain(self, stream: asyncio.StreamReader) -> None:
+        """
+        消费子进程标准流, 丢弃写入, 防止管道背压阻塞子进程。
+
+        Args:
+            stream (asyncio.StreamReader): 子进程的标准流对象
+        """
+
+        try:
+            while _ := await stream.readline():
+                pass
+        except (ValueError, OSError):
+            # 管道读端在子进程退出后被关闭, 属正常终止; 忽略无效句柄冲突
+            pass
+        except Exception:
+            pass
 
     async def open_protocol(
         self, protocol_url: str, target_process: ProcessInfo
@@ -352,6 +393,15 @@ class ProcessManager:
 
     async def clear(self) -> None:
         """清空跟踪的进程信息"""
+
+        # 清理残留的排水任务, 避免泄漏
+        if self._drain_tasks:
+            for task in self._drain_tasks:
+                if not task.done():
+                    task.cancel()
+            with suppress(asyncio.CancelledError):
+                await asyncio.gather(*self._drain_tasks, return_exceptions=True)
+            self._drain_tasks = []
 
         self.process = None
         self.target_process = None

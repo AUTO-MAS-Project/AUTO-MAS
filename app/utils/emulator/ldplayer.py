@@ -35,6 +35,12 @@ from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")
 
+_CONFIG_GUARD_DELAY_SECONDS = 3.0
+_INSTANCE_LOCKS: dict[
+    tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock
+] = {}
+_INSTANCE_CONFIG_SNAPSHOTS: dict[tuple[str, str], bytes] = {}
+
 
 class LDPlayerDevice(BaseModel):
     idx: int
@@ -67,7 +73,106 @@ class LDManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    def _get_instance_key(self, idx: str) -> tuple[str, str]:
+        return str(self.emulator_path.resolve()).casefold(), str(idx)
+
+    def _get_instance_lock(self, idx: str) -> asyncio.Lock:
+        instance_key = self._get_instance_key(idx)
+        lock_key = (asyncio.get_running_loop(), *instance_key)
+        return _INSTANCE_LOCKS.setdefault(lock_key, asyncio.Lock())
+
+    def _get_instance_config_path(self, idx: str) -> Path | None:
+        idx_text = str(idx)
+        if not idx_text.isdecimal():
+            logger.warning(f"无法保护雷电模拟器配置，实例索引无效: {idx}")
+            return None
+        return (
+            self.emulator_path.parent
+            / "vms"
+            / "config"
+            / f"leidian{idx_text}.config"
+        )
+
+    @staticmethod
+    def _is_config_guard_enabled() -> bool:
+        try:
+            from app.core import Config
+
+            return bool(Config.get("Function", "IfBlockAd"))
+        except Exception as e:
+            logger.warning(f"读取雷电模拟器配置保护开关失败: {e}")
+            return False
+
+    async def _capture_instance_config(self, idx: str) -> None:
+        instance_key = self._get_instance_key(idx)
+        if not self._is_config_guard_enabled():
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            return
+
+        if instance_key in _INSTANCE_CONFIG_SNAPSHOTS:
+            return
+
+        config_path = self._get_instance_config_path(idx)
+        if config_path is None:
+            return
+
+        try:
+            snapshot = await asyncio.to_thread(config_path.read_bytes)
+        except Exception as e:
+            logger.warning(f"读取雷电模拟器 {idx} 配置快照失败: {e}")
+            return
+
+        _INSTANCE_CONFIG_SNAPSHOTS[instance_key] = snapshot
+        logger.info(f"已保存雷电模拟器 {idx} 启动前配置快照")
+
+    async def _verify_and_restore_instance_config(self, idx: str) -> None:
+        instance_key = self._get_instance_key(idx)
+        snapshot = _INSTANCE_CONFIG_SNAPSHOTS.get(instance_key)
+        if snapshot is None:
+            return
+
+        if not self._is_config_guard_enabled():
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            return
+
+        logger.info(
+            f"雷电模拟器 {idx} 已关闭，等待 "
+            f"{_CONFIG_GUARD_DELAY_SECONDS:g} 秒后校验配置"
+        )
+        await asyncio.sleep(_CONFIG_GUARD_DELAY_SECONDS)
+
+        config_path = self._get_instance_config_path(idx)
+        if config_path is None:
+            return
+
+        try:
+            current = await asyncio.to_thread(config_path.read_bytes)
+        except FileNotFoundError:
+            logger.warning(f"关闭后未找到雷电模拟器 {idx} 配置，将尝试恢复快照")
+            current = None
+        except Exception as e:
+            logger.warning(f"校验雷电模拟器 {idx} 配置失败: {e}")
+            return
+
+        if current == snapshot:
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            logger.info(f"雷电模拟器 {idx} 配置校验通过")
+            return
+
+        try:
+            await asyncio.to_thread(config_path.write_bytes, snapshot)
+        except Exception as e:
+            logger.warning(f"恢复雷电模拟器 {idx} 配置失败: {e}")
+            return
+
+        _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+        logger.warning(f"雷电模拟器 {idx} 配置发生变化，已恢复启动前快照")
+
     async def open(self, idx: str, package_name="") -> DeviceInfo:
+        async with self._get_instance_lock(idx):
+            return await self._open_locked(idx, package_name)
+
+    async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
@@ -84,6 +189,8 @@ class LDManager(DeviceBase):
 
         else:
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
+
+        await self._capture_instance_config(idx)
 
         result = await ProcessRunner.run_process(
             self.emulator_path,
@@ -124,9 +231,15 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
+        async with self._get_instance_lock(idx):
+            return await self._close_locked(idx)
+
+    async def _close_locked(self, idx: str) -> DeviceStatus:
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
+            if status == DeviceStatus.OFFLINE:
+                await self._verify_and_restore_instance_config(idx)
             return status
 
         result = await ProcessRunner.run_process(
@@ -147,6 +260,7 @@ class LDManager(DeviceBase):
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
+                await self._verify_and_restore_instance_config(idx)
                 return DeviceStatus.OFFLINE
             await asyncio.sleep(0.1)
 
@@ -197,6 +311,10 @@ class LDManager(DeviceBase):
             )
 
         return result
+
+    async def list_devices(self) -> dict[str, str]:
+        data = await self.get_device_info(None)
+        return {idx: info.title for idx, info in data.items()}
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         status = await self.getStatus(idx)

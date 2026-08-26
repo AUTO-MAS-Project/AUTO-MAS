@@ -101,6 +101,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        self.use_mas_config = bool(
+            self.cur_user_config.get("Info", "IfUseMasConfig")
+        )
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -115,7 +118,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if not (
+        if self.use_mas_config and not (
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
         ).exists():
@@ -424,7 +427,7 @@ class AutoProxyTask(TaskExecuteBase):
                     await self.update_config()
 
             else:
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -459,14 +462,14 @@ class AutoProxyTask(TaskExecuteBase):
     ):
 
         if e is None:
-            logger.error(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
                 data={"Error": error_message},
             )
         else:
-            logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -486,7 +489,16 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def update_config(self):
 
+        if not self.use_mas_config:
+            logger.info("脚本直控配置：跳过回写用户独立配置")
+            return
+
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.rmtree(
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                ignore_errors=True,
+            )
             shutil.copytree(
                 self.script_config_path,
                 Path.cwd()
@@ -510,7 +522,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.general_process_manager.kill()
             await System.kill_process(self.script_exe_path)
         except Exception as e:
-            logger.exception(f"中止通用脚本进程失败: {e}")
+            logger.opt(exception=True).warning(f"中止通用脚本进程失败: {e}")
         if self.game_manager is not None:
             logger.info("中止游戏/模拟器进程")
             try:
@@ -525,7 +537,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.script_config.get("Game", "EmulatorIndex"),
                     )
             except Exception as e:
-                logger.exception(f"关闭游戏/模拟器失败: {e}")
+                logger.opt(exception=True).warning(f"关闭游戏/模拟器失败: {e}")
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
@@ -534,8 +546,16 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置前关闭可能未正常退出的脚本进程
         await System.kill_process(self.script_exe_path)
 
+        if not self.use_mas_config:
+            logger.info("脚本直控配置：跳过写入脚本配置")
+            return
+
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if self.script_config_path.is_dir():
+                shutil.rmtree(self.script_config_path)
+            elif self.script_config_path.exists():
+                self.script_config_path.unlink()
             shutil.copytree(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
@@ -601,9 +621,10 @@ class AutoProxyTask(TaskExecuteBase):
         for t, log_item in self.cur_user_item.log_record.items():
 
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=dt,
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
@@ -635,7 +656,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config,
             )
         except Exception as e:
-            logger.exception(f"推送通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -666,12 +687,12 @@ class AutoProxyTask(TaskExecuteBase):
                 3,
             )
         else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"自动代理任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

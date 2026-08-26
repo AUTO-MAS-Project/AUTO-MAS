@@ -3,6 +3,7 @@ import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getPlanCreateType, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 const logger = window.electronAPI.getLogger('计划API')
 
@@ -26,13 +27,15 @@ export function usePlanApi() {
   }
 
   // 创建计划
-  const createPlan = async (type: string) => {
+  const createPlan = async (type: PlanConfigType) => {
     loading.value = true
     try {
-      if (type === 'MaaPlanConfig') {
-        type = 'MaaPlan'
+      const createType = getPlanCreateType(type)
+      if (!createType) {
+        throw new Error(`不支持的计划表类型: ${type}`)
       }
-      const params: PlanCreateIn = { type }
+
+      const params: PlanCreateIn = { type: createType }
       const response = await Service.addPlanApiPlanAddPost(params)
 
       // 播放添加计划成功音频

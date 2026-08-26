@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
+import type { CursorEffect } from '@/types/cursorEffect'
+import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { setTelemetryEnabled } from '@/utils/sentry'
+import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
+import { useCursorEffectStore } from '@/stores/cursorEffect'
+import { usePerformanceStore } from '@/stores/performance'
 import { Service, type VersionOut } from '@/api'
+
+defineOptions({ name: 'SettingsPage' })
+
 const logger = window.electronAPI.getLogger('设置')
 
 // 引入拆分后的 Tab 组件
@@ -19,6 +28,9 @@ import TabOthers from './TabOthers.vue'
 
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
+const { syncUiPreferences } = useUiPreferences()
+const cursorEffectStore = useCursorEffectStore()
+const performanceStore = usePerformanceStore()
 const {
   restartPolling,
   updateVisible,
@@ -29,7 +41,7 @@ const {
 
 // 活动标签
 const activeKey = ref('basic')
-const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
+const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
@@ -98,19 +110,27 @@ const themeColorOptions = Object.entries(themeColors).map(([key, color]) => ({
   color,
 }))
 
+const cursorEffectOptions: { label: string; value: CursorEffect }[] = [
+  { label: '关闭', value: 'none' },
+  { label: '流线光标', value: 'sleek-line' },
+  { label: '流体光标（炫酷RGB！）', value: 'fluid' },
+]
+
 // 加载和保存
 const loadSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+    syncUiPreferences(data.UI)
 
     // 同步配置到 Electron 主进程
     try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
+      if (window.electronAPI?.syncBackendConfig) {
+        await window.electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
+          Function: data.Function,
         })
         logger.info('后端配置已同步到 Electron')
       }
@@ -144,14 +164,16 @@ const refreshSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+    syncUiPreferences(data.UI)
 
     // 同步所有配置到 Electron
     try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
+      if (window.electronAPI?.syncBackendConfig) {
+        await window.electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
+          Function: data.Function,
         })
         logger.info('所有配置已同步到 Electron')
       }
@@ -174,11 +196,15 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   // 更新成功后重新获取最新配置（会自动同步到 Electron）
   await refreshSettings()
 
+  if (category === 'Function' && key === 'IfEnableTelemetry') {
+    setTelemetryEnabled(Boolean(value))
+  }
+
   // 处理托盘相关配置（需要额外的实时更新调用）
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
-      if ((window as any).electronAPI?.updateTraySettings) {
-        await (window as any).electronAPI.updateTraySettings({ [key]: value })
+      if (window.electronAPI?.updateTraySettings) {
+        await window.electronAPI.updateTraySettings({ [key]: value })
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -207,8 +233,53 @@ const handleThemeColorChange = (value: SelectValue) => {
   if (typeof value === 'string') setThemeColor(value as ThemeColor)
 }
 
+const confirmFluidCursor = () =>
+  new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: '确认开启流体光标？',
+      content: '该效果会持续进行 WebGL 流体渲染，可能增加 GPU 使用率。确认后立即应用。',
+      okText: '确认开启',
+      cancelText: '取消',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    })
+  })
+
+const handleCursorEffectChange = async (value: SelectValue) => {
+  if (typeof value !== 'string') {
+    return
+  }
+
+  const nextEffect = normalizeCursorEffect(value)
+  if (nextEffect === cursorEffectStore.effect) {
+    return
+  }
+
+  if (nextEffect === 'fluid' && !(await confirmFluidCursor())) {
+    return
+  }
+
+  try {
+    await cursorEffectStore.setEffect(nextEffect)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存光标效果失败: ${errorMsg}`)
+    message.error('光标效果保存失败')
+  }
+}
+
+const handleLowPerformanceModeChange = async (enabled: boolean) => {
+  try {
+    await performanceStore.setLowPerformanceMode(enabled)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存低性能模式失败: ${errorMsg}`)
+    message.error('低性能模式保存失败')
+  }
+}
+
 // 其他操作
-const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
+const openDevTools = () => window.electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
@@ -221,11 +292,13 @@ const checkUpdate = async () => {
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    logger.info(`全局更新检查完成，状态: ${JSON.stringify({
-      updateVisible: updateVisible.value,
-      updateData: updateData.value,
-      latestVersion: latestVersion.value,
-    })}`)
+    logger.info(
+      `全局更新检查完成，状态: ${JSON.stringify({
+        updateVisible: updateVisible.value,
+        updateData: updateData.value,
+        latestVersion: latestVersion.value,
+      })}`
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局更新检查失败: ${errorMsg}`)
@@ -262,6 +335,8 @@ const testNotify = async () => {
 }
 
 onMounted(() => {
+  void cursorEffectStore.load()
+  void performanceStore.initialize()
   loadSettings()
   getBackendVersion()
 })
@@ -275,26 +350,53 @@ onMounted(() => {
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
-          <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
-            :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
-            :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
-            :handle-setting-change="handleSettingChange" />
+          <TabBasic
+            :settings="settings"
+            :theme-mode="themeMode"
+            :theme-color="themeColor"
+            :theme-mode-options="themeModeOptions"
+            :theme-color-options="themeColorOptions"
+            :cursor-effect="cursorEffectStore.effect"
+            :cursor-effect-options="cursorEffectOptions"
+            :low-performance-mode="performanceStore.lowPerformanceMode"
+            :low-performance-mode-saving="performanceStore.saving"
+            :handle-theme-mode-change="handleThemeModeChange"
+            :handle-theme-color-change="handleThemeColorChange"
+            :handle-cursor-effect-change="handleCursorEffectChange"
+            :handle-low-performance-mode-change="handleLowPerformanceModeChange"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
-          <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
+          <TabFunction
+            :settings="settings"
+            :history-retention-options="historyRetentionOptions"
+            :voice-type-options="voiceTypeOptions"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
-          <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
-            :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
+          <TabNotify
+            :settings="settings"
+            :send-task-result-time-options="sendTaskResultTimeOptions"
+            :handle-setting-change="handleSettingChange"
+            :test-notify="testNotify"
+            :testing-notify="testingNotify"
+          />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="日志管理">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="关于">
-          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" :settings="settings"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :handle-setting-change="handleSettingChange" :check-update="checkUpdate" />
+          <TabOthers
+            :version="version"
+            :backend-update-info="backendUpdateInfo"
+            :settings="settings"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate"
+          />
         </a-tab-pane>
       </a-tabs>
     </div>

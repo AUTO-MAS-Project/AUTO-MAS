@@ -83,6 +83,16 @@ Visit the official AUTO-MAS documentation site for user guides and additional pr
 
 - [Official Documentation](https://doc.auto-mas.top)
 
+## 参与贡献 / Contributing
+
+如需参与项目开发或提交贡献，请先阅读开发与贡献指南：
+
+- [开发与贡献指南](https://doc.auto-mas.top/developer/)
+
+To participate in development or contribute to the project, please read the development and contribution guide first:
+
+- [Development and Contribution Guide](https://doc.auto-mas.top/developer/)
+
 ## 代码签名策略 / Code Signing Policy
 
 免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
@@ -99,15 +109,17 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 
 - 软件版本号
 - 运行时错误信息
+- 性能追踪信息
 
-AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
+AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。匿名遥测默认开启，可在“设置 → 功能设置”中关闭；关闭后前后端均不再发送遥测数据。
 
 To better serve you, AUTO-MAS will automatically collect the following information:
 
 - Software version number
 - Runtime error information
+- Performance tracing information
 
-AUTO-MAS respects and protects user privacy. All collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS and will not be transmitted to any third-party institution or facility.
+AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under Settings → Function Settings; once disabled, neither the frontend nor backend sends telemetry data.
 
 ---
 
@@ -135,16 +147,26 @@ We thank the following contributors for their work on this project
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=AUTO-MAS-Project/AUTO-MAS&type=Date)](https://star-history.com/#AUTO-MAS-Project/AUTO-MAS&Date)
+<a href="https://www.star-history.com/?repos=AUTO-MAS-Project%2FAUTO-MAS&type=date&legend=top-left">
+
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=AUTO-MAS-Project/AUTO-MAS&type=date&theme=dark&legend=top-left&sealed_token=tzZpfkoUQl3n13ptQrCOpskCv49TRKf6ChW1P2gpvDLfKXtjjy853wsRzl7qsI3J3ryH6456XHLUG15UveDTCcgKmop9fdLrxjOG4pFgeRdH5HR_SYbHSd24ZhBEfVKHPEMwtZkSOW7-i1CUKC8aWLxiW1I97KfvHgU4-PlMTZcqPw9CTBUfQhpB9iS0" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=AUTO-MAS-Project/AUTO-MAS&type=date&legend=top-left&sealed_token=tzZpfkoUQl3n13ptQrCOpskCv49TRKf6ChW1P2gpvDLfKXtjjy853wsRzl7qsI3J3ryH6456XHLUG15UveDTCcgKmop9fdLrxjOG4pFgeRdH5HR_SYbHSd24ZhBEfVKHPEMwtZkSOW7-i1CUKC8aWLxiW1I97KfvHgU4-PlMTZcqPw9CTBUfQhpB9iS0" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=AUTO-MAS-Project/AUTO-MAS&type=date&legend=top-left&sealed_token=tzZpfkoUQl3n13ptQrCOpskCv49TRKf6ChW1P2gpvDLfKXtjjy853wsRzl7qsI3J3ryH6456XHLUG15UveDTCcgKmop9fdLrxjOG4pFgeRdH5HR_SYbHSd24ZhBEfVKHPEMwtZkSOW7-i1CUKC8aWLxiW1I97KfvHgU4-PlMTZcqPw9CTBUfQhpB9iS0" />
+ </picture>
+
+</a>
 
 ## 官方社区 / Official Community
 
 欢迎加入 AUTO-MAS 项目组官方社群！
 
 - QQ 交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
+- QQ 开发者交流群：[1094208135](https://qm.qq.com/q/MJYbfjwScM)
 - Telegram：[@AUTO_MAS_top](https://t.me/AUTO_MAS_top)
 
 Join the official AUTO-MAS community!
 
-- QQ Group: [957750551](https://qm.qq.com/q/bd9fISNoME)  
+- QQ Group: [957750551](https://qm.qq.com/q/bd9fISNoME)
+- QQ Developer Community: [1094208135](https://qm.qq.com/q/MJYbfjwScM)
 - Telegram: [@AUTO_MAS_top](https://t.me/AUTO_MAS_top)

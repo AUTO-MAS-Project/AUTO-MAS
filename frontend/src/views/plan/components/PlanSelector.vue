@@ -13,10 +13,16 @@
       <!-- 计划按钮组 -->
       <div class="plan-buttons-container">
         <a-space wrap size="middle">
-          <a-button v-for="plan in planList" :key="plan.id" :type="activePlanId === plan.id ? 'primary' : 'default'"
-            size="large" class="plan-button" @click="handlePlanClick(plan.id)">
+          <a-button
+            v-for="plan in planList"
+            :key="plan.id"
+            :type="activePlanId === plan.id ? 'primary' : 'default'"
+            size="large"
+            class="plan-button"
+            @click="handlePlanClick(plan.id)"
+          >
             <span class="plan-name">{{ plan.name }}</span>
-            <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">
+            <a-tag v-if="hasMixedPlanTypes()" size="small" color="blue" class="plan-type-tag">
               {{ getPlanTypeLabel(plan.type) }}
             </a-tag>
           </a-button>
@@ -27,12 +33,12 @@
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn } from '@vueuse/core'
+import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 interface Plan {
   id: string
   name: string
-  type: string
+  type: PlanConfigType
 }
 
 interface Props {
@@ -40,44 +46,24 @@ interface Props {
   activePlanId: string
 }
 
-interface Emits {
-  (e: 'plan-change', planId: string): void
-}
-
 const props = defineProps<Props>()
-const emit = defineEmits<Emits>()
+const emit = defineEmits<{
+  'plan-change': [planId: string]
+}>()
 
-// 使用 VueUse 的 useDebounceFn 替换手写的 debounce
-const handlePlanClick = useDebounceFn((planId: string) => {
+const handlePlanClick = (planId: string) => {
   if (planId === props.activePlanId) return
   emit('plan-change', planId)
-}, 100)
+}
 
-// 判断是否需要显示计划类型标签
-// 当所有计划的类型都相同时不显示标签，否则显示非默认类型的标签
-const shouldShowPlanTypeTag = () => {
-  // 如果只有一个计划或没有计划，不显示类型标签
-  if (props.planList.length <= 1) {
-    return false
-  }
+const hasMixedPlanTypes = () => {
+  if (props.planList.length <= 1) return false
 
-  // 检查是否所有计划的类型都相同
   const firstType = props.planList[0].type
-  const allSameType = props.planList.every(p => p.type === firstType)
-
-  // 如果所有计划类型相同，则不显示任何标签
-  return !allSameType
+  return !props.planList.every(plan => plan.type === firstType)
 }
 
-const getPlanTypeLabel = (planType: string) => {
-  const normalizedPlanType = planType
-  const labelMap: Record<string, string> = {
-    MaaPlanConfig: 'MAA',
-    GeneralPlan: '通用',
-    CustomPlan: '自定义',
-  }
-  return labelMap[normalizedPlanType] || normalizedPlanType
-}
+const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planType].selectorTag
 </script>
 
 <style scoped>

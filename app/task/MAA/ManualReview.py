@@ -35,7 +35,20 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, MAA_STARTUP_BASE, ARKNIGHTS_PACKAGE_NAME
+from app.utils.io import read_file, write_file
 from .tools import agree_bilibili
+
+# OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
+# 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
+_MAA_CLIENT_TYPE_TO_INT = {
+    "Official": 0,
+    "Bilibili": 1,
+    "YoStarEN": 2,
+    "YoStarJP": 3,
+    "YoStarKR": 4,
+    "txwy": 5,
+}
+
 
 logger = get_logger("MAA 人工排查")
 
@@ -131,7 +144,7 @@ class ManualReviewTask(TaskExecuteBase):
                 )
             except Exception as e:
 
-                logger.exception(
+                logger.opt(exception=True).warning(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
                 self.script_info.log = (
@@ -142,7 +155,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -183,7 +196,7 @@ class ManualReviewTask(TaskExecuteBase):
                 break
             else:
 
-                logger.error(
+                logger.warning(
                     f"用户: {self.cur_user_item.user_id} - MAA进程异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -194,7 +207,7 @@ class ManualReviewTask(TaskExecuteBase):
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.maa_exe_path)
 
                 uid = str(uuid.uuid4())
@@ -220,7 +233,7 @@ class ManualReviewTask(TaskExecuteBase):
                     self.script_config.get("Emulator", "Index"), True
                 )
             except Exception as e:
-                logger.exception(f"模拟器显示失败: {e}")
+                logger.opt(exception=True).warning(f"模拟器显示失败: {e}")
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -277,12 +290,8 @@ class ManualReviewTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
+        gui_set = read_file(self.maa_set_path / "gui.json")
+        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
         # 多配置使用默认配置
         if gui_set["Current"] != "Default":
@@ -300,32 +309,79 @@ class ManualReviewTask(TaskExecuteBase):
 
         # 关闭所有定时
         for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"
+            global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
+        # NEW: Timers.List[*].IsEnabled = false
+        if "Timers" not in gui_new_set:
+            gui_new_set["Timers"] = {}
+        if "List" not in gui_new_set["Timers"]:
+            gui_new_set["Timers"]["List"] = []
+        for timer in gui_new_set["Timers"].get("List", []):
+            if isinstance(timer, dict):
+                timer["IsEnabled"] = False
 
         # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
-            default_set["Connect.Address"] = emulator_info.adb_address
+            default_set["Connect.Address"] = emulator_info.adb_address  # OLD: 即将移除
+            gui_new_set.setdefault("Configurations", {}).setdefault(
+                "Default", {}
+            ).setdefault("Gui", {}).setdefault("ConnectSettings", {})[
+                "Address"
+            ] = emulator_info.adb_address
 
         # 任务间切换方式
-        default_set["MainFunction.PostActions"] = "8"
+        default_set["MainFunction.PostActions"] = "8"  # OLD: 即将移除
+        # NEW: PostActions [Flags] 枚举整数 ExitSelf=8
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {})["PostActions"] = 8
 
         # 直接运行任务
-        default_set["Start.StartGame"] = "True"
-        default_set["Start.RunDirectly"] = "True"
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
+        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
+        default_set["Start.RunDirectly"] = "True"  # OLD: 即将移除
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = True
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
+            "StartEmulator"
+        ] = False
 
         # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
+        gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
+        gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
 
         # 静默模式相关配置
-        global_set["GUI.UseTray"] = "True"
-        global_set["GUI.MinimizeToTray"] = "True"
-        global_set["Start.MinimizeDirectly"] = "True"
+        global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
+        global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
+        global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
+        # NEW:
+        gui_new_set.setdefault("Gui", {})["UseTray"] = True
+        gui_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
+        gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
 
         # 服务器与账号切换
-        default_set["Start.ClientType"] = self.cur_user_config.get("Info", "Server")
+        default_set["Start.ClientType"] = self.cur_user_config.get(
+            "Info", "Server"
+        )  # OLD: 即将移除
+        # NEW: ClientType 枚举整数 (Official=0, Bilibili=1, ...)
+        gui_new_set.setdefault("Configurations", {}).setdefault(
+            "Default", {}
+        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})[
+            "ClientType"
+        ] = _MAA_CLIENT_TYPE_TO_INT.get(
+            self.cur_user_config.get("Info", "Server"), 0
+        )
         startup = MAA_STARTUP_BASE.copy()
         if self.cur_user_config.get("Info", "Server") == "Official":
             startup["AccountName"] = (
@@ -339,12 +395,11 @@ class ManualReviewTask(TaskExecuteBase):
         # 导出任务配置
         gui_new_set["Configurations"]["Default"]["TaskQueue"] = [startup]
 
-        (self.maa_set_path / "gui.json").write_text(
-            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
+            json.dumps(gui_set, ensure_ascii=False, indent=4),
+            encoding="utf-8",  # OLD: 即将移除
+        )  # OLD: 即将移除
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         logger.success("MAA运行参数配置完成: 人工排查")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
@@ -400,7 +455,7 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        logger.exception(f"人工排查任务出现异常: {e}")
+        logger.opt(exception=True).warning(f"人工排查任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

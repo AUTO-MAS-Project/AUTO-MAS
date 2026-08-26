@@ -19,6 +19,10 @@ export type OkwwUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
+     * 是否使用用户独立脚本配置
+     */
+    IfUseMasConfig?: (boolean | null);
+    /**
      * 是否在任务前执行脚本
      */
     IfScriptBeforeTask?: (boolean | null);
@@ -51,12 +55,16 @@ export type OkwwUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 用户配置模式（简洁/详细）
+     * 配置来源（脚本共享、用户独立、直控优先读取脚本原配置）
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置覆盖 OK-WW 高频任务字段
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 游戏资源
      */
-    Resource?: (string | null);
+    Resource?: ('官服' | '国际服' | null);
 };
 

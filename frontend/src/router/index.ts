@@ -57,6 +57,12 @@ const routes = [
     meta: { title: '编辑M9A脚本' },
   },
   {
+    path: '/scripts/:id/edit/hsr',
+    name: 'HSRScriptEdit',
+    component: () => import('../views/EditView/Script/HSRScriptEdit.vue'),
+    meta: { title: '编辑HSR脚本' },
+  },
+  {
     path: '/scripts/:id/edit/general',
     name: 'GeneralScriptEdit',
     component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
@@ -67,6 +73,12 @@ const routes = [
     name: 'OkwwScriptEdit',
     component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
     meta: { title: '编辑ok-ww脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/oknte',
+    name: 'OkNteScriptEdit',
+    component: () => import('../views/EditView/Script/OkNteScriptEdit.vue'),
+    meta: { title: '编辑ok-nte脚本' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
@@ -99,6 +111,12 @@ const routes = [
     meta: { title: '添加M9A用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/hsr',
+    name: 'HSRUserAdd',
+    component: () => import('../views/EditView/User/HSRUserEdit.vue'),
+    meta: { title: '添加HSR用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/src',
     name: 'SRCUserEdit',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
@@ -115,6 +133,12 @@ const routes = [
     name: 'M9AUserEdit',
     component: () => import('../views/EditView/User/M9AUserEdit.vue'),
     meta: { title: '编辑M9A用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/hsr',
+    name: 'HSRUserEdit',
+    component: () => import('../views/EditView/User/HSRUserEdit.vue'),
+    meta: { title: '编辑HSR用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
@@ -139,6 +163,18 @@ const routes = [
     name: 'OkwwUserEdit',
     component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
     meta: { title: '编辑ok-ww用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/oknte',
+    name: 'OkNteUserAdd',
+    component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
+    meta: { title: '添加ok-nte用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/oknte',
+    name: 'OkNteUserEdit',
+    component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
+    meta: { title: '编辑ok-nte用户' },
   },
   {
     path: '/plans',
@@ -196,6 +232,12 @@ const routes = [
     name: 'History',
     component: () => import('../views/history/index.vue'),
     meta: { title: '历史记录' },
+  },
+  {
+    path: '/gamesign',
+    name: 'GameSign',
+    component: () => import('../views/gamesign/index.vue'),
+    meta: { title: '游戏签到' },
   },
   {
     path: '/tools',

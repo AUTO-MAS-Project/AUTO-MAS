@@ -36,6 +36,8 @@ import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
 
+defineOptions({ name: 'InitializationPage' })
+
 const logger = window.electronAPI.getLogger('初始化流程')
 
 // ==================== 步骤定义 ====================
@@ -102,7 +104,7 @@ const stepStates = ref<Record<string, StepState>>({
 })
 
 // 倒计时定时器
-let countdownTimer: NodeJS.Timeout | null = null
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // ==================== 计算属性 ====================
 const currentStep = computed(() => steps[currentStepIndex.value])
@@ -484,7 +486,7 @@ async function handleBackendComplete() {
   message.success('初始化完成')
 
   // 保存初始化版本号，用于下次启动时比对
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   await api.setInitializedVersion?.(version)
   logger.info(`初始化版本号已保存: ${version}`)
 
@@ -560,7 +562,7 @@ async function handleLocalEnterApp() {
 // ==================== 生命周期 ====================
 // 从后端加载镜像源配置
 async function loadMirrorConfigs() {
-  const api = window.electronAPI as any
+  const api = window.electronAPI
 
   try {
     logger.info('正在从后端加载镜像源配置...')
@@ -611,7 +613,7 @@ async function loadMirrorConfigs() {
 onMounted(async () => {
   logger.info('初始化界面已加载')
 
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   let startFromIndex = 0
 
   // 开发环境：完全跳过初始化流程
@@ -638,7 +640,7 @@ onMounted(async () => {
     } else {
       logger.warn('配置中未找到 IfAutoUpdate，默认为 false')
     }
-  } catch (error) {
+  } catch {
     logger.warn('读取配置失败，默认执行完整初始化')
   }
 
@@ -719,7 +721,7 @@ onUnmounted(() => {
     countdownTimer = null
   }
 
-  const api = window.electronAPI as any
+  const api = window.electronAPI
 
   // 移除监听器
   api.removePythonProgressListener?.()

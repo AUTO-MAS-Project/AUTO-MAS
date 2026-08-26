@@ -21,10 +21,21 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
+
 from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
+from app.services.endfield_activity import endfield_activity_service
+from app.services.reverse1999_activity import reverse1999_activity_service
+from app.services.starrail_activity import (
+    genshin_activity_service,
+    neverness_to_everness_activity_service,
+    starrail_activity_service,
+    wuthering_waves_activity_service,
+    zenless_zone_zero_activity_service,
+)
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
@@ -126,10 +137,10 @@ async def get_task_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_plan_combox() -> ComboBoxOut:
+async def get_plan_combox(plan: PlanComboxIn = Body(...)) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_plan_combox()
+        raw_data = await Config.get_plan_combox(plan.consumer)
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(
@@ -257,14 +268,64 @@ async def get_web_config() -> InfoOut:
     status_code=200,
 )
 async def get_overview() -> InfoOut:
+    (
+        endfield_overview,
+        starrail_overview,
+        genshin_overview,
+        zenless_overview,
+        wuthering_waves_overview,
+        neverness_to_everness_overview,
+        reverse1999_overview,
+    ) = await asyncio.gather(
+        endfield_activity_service.get_overview(),
+        starrail_activity_service.get_overview(),
+        genshin_activity_service.get_overview(),
+        zenless_zone_zero_activity_service.get_overview(),
+        wuthering_waves_activity_service.get_overview(),
+        neverness_to_everness_activity_service.get_overview(),
+        reverse1999_activity_service.get_overview(),
+    )
     try:
-        stage = await Config.get_stage_info("Info")
+        stage_by_server = {
+            server: await Config.get_stage_info("Info", server=server)
+            for server in (
+                "Official",
+                "Bilibili",
+                "YoStarEN",
+                "YoStarJP",
+                "YoStarKR",
+                "txwy",
+            )
+        }
         proxy = await Config.get_proxy_overview()
     except Exception as e:
         return InfoOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data={"Stage": [], "Proxy": []},
+            data={
+                "Stage": [],
+                "Proxy": [],
+                "Endfield": endfield_overview,
+                "StarRail": starrail_overview,
+                "Genshin": genshin_overview,
+                "ZenlessZoneZero": zenless_overview,
+                "WutheringWaves": wuthering_waves_overview,
+                "NevernessToEverness": neverness_to_everness_overview,
+                "Reverse1999": reverse1999_overview,
+            },
         )
-    return InfoOut(data={"Stage": stage, "Proxy": proxy})
+    return InfoOut(
+        data={
+            "Stage": stage_by_server["Official"],
+            "StageByServer": stage_by_server,
+            "Proxy": proxy,
+            "Endfield": endfield_overview,
+            "StarRail": starrail_overview,
+            "Genshin": genshin_overview,
+            "ZenlessZoneZero": zenless_overview,
+            "WutheringWaves": wuthering_waves_overview,
+            "NevernessToEverness": neverness_to_everness_overview,
+            "Reverse1999": reverse1999_overview,
+        }
+    )

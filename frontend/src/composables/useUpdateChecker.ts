@@ -6,7 +6,7 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 const logger = window.electronAPI.getLogger('更新检查器')
 
 // 获取版本号，优先使用环境变量，否则使用一个测试版本
-const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
+const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // 全局状态 - 在所有组件间共享
 const updateVisible = ref(false)
@@ -15,11 +15,31 @@ const latestVersion = ref('')
 
 // 定时器相关 - 参考顶栏TitleBar.vue的实现
 const POLL_MS = 4 * 60 * 60 * 1000 // 4小时
-let updateCheckTimer: NodeJS.Timeout | null = null
+let updateCheckTimer: ReturnType<typeof setInterval> | null = null
+let initialUpdateCheckTimer: ReturnType<typeof setTimeout> | null = null
 const isPolling = ref(false)
+
+type UpdateCheckPromise = ReturnType<typeof Service.checkUpdateApiUpdateCheckPost>
+const updateCheckRequests = new Map<boolean, UpdateCheckPromise>()
 
 // 防止重复弹出的状态
 let lastShownVersion: string | null = null
+
+export const requestUpdateCheck = (forceCheck = false): UpdateCheckPromise => {
+  const inFlightRequest = updateCheckRequests.get(forceCheck)
+  if (inFlightRequest) return inFlightRequest
+
+  const request = Service.checkUpdateApiUpdateCheckPost({
+    current_version: version,
+    if_force: forceCheck,
+  })
+  updateCheckRequests.set(forceCheck, request)
+
+  const clearRequest = () => updateCheckRequests.delete(forceCheck)
+  void request.then(clearRequest, clearRequest)
+
+  return request
+}
 
 const showUpdateModal = (data: Record<string, string[]>, version: string) => {
   updateData.value = data
@@ -61,10 +81,7 @@ export function useUpdateChecker() {
     isPolling.value = true
 
     try {
-      const response = await Service.checkUpdateApiUpdateCheckPost({
-        current_version: version,
-        if_force: false, // 定时检查不强制获取，和顶栏一致
-      })
+      const response = await requestUpdateCheck(false)
 
       if (response.code === 200) {
         if (response.if_need_update) {
@@ -97,10 +114,7 @@ export function useUpdateChecker() {
   const checkUpdate = async (silent = false, forceCheck = false) => {
     const { playSound } = useAudioPlayer()
     try {
-      const response = await Service.checkUpdateApiUpdateCheckPost({
-        current_version: version,
-        if_force: forceCheck,
-      })
+      const response = await requestUpdateCheck(forceCheck)
 
       if (response.code === 200) {
         if (response.if_need_update) {
@@ -151,7 +165,8 @@ export function useUpdateChecker() {
     logger.info('启动定时版本检查任务')
 
     // 延迟3秒后再执行首次检查，确保后端已经完全启动
-    setTimeout(async () => {
+    initialUpdateCheckTimer = setTimeout(async () => {
+      initialUpdateCheckTimer = null
       await pollOnce()
     }, 3000)
 
@@ -161,6 +176,10 @@ export function useUpdateChecker() {
 
   // 停止定时检查器
   const stopPolling = () => {
+    if (initialUpdateCheckTimer) {
+      clearTimeout(initialUpdateCheckTimer)
+      initialUpdateCheckTimer = null
+    }
     if (updateCheckTimer) {
       clearInterval(updateCheckTimer)
       updateCheckTimer = null

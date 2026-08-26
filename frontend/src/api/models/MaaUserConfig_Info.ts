@@ -36,6 +36,10 @@ export type MaaUserConfig_Info = {
      */
     Annihilation?: ('Close' | 'Annihilation' | 'Chernobog@Annihilation' | 'LungmenOutskirts@Annihilation' | 'LungmenDowntown@Annihilation' | null);
     /**
+     * 剿灭开始星期
+     */
+    AnnihilationStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
+    /**
      * 基建模式
      */
     InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);
@@ -51,6 +55,22 @@ export type MaaUserConfig_Info = {
      * 密码
      */
     Password?: (string | null);
+    /**
+     * 是否在任务前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否在任务后执行脚本
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
     /**
      * 备注
      */

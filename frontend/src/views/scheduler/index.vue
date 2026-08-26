@@ -151,12 +151,6 @@
   </div>
 </template>
 
-<script lang="ts">
-export default {
-  name: 'Scheduler', // 用于 keep-alive 识别
-}
-</script>
-
 <script setup lang="ts">
 import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref } from 'vue'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -167,6 +161,10 @@ import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
 import OverlayRainMask from '@/components/OverlayRainMask.vue'
 import type { SchedulerTab } from './schedulerConstants'
+
+// 用于 keep-alive 识别
+defineOptions({ name: 'SchedulerPage' })
+
 const logger = window.electronAPI.getLogger('调度中心')
 
 // 使用业务逻辑层

@@ -1,488 +1,254 @@
 <template>
-  <div class="header">
-    <a-typography-title>{{ greeting }}</a-typography-title>
-    <!-- 右上角公告按钮 -->
-    <div class="header-actions">
-      <a-button
-        type="primary"
-        ghost
-        :loading="noticeLoading"
-        class="notice-button"
-        @click="showNotice"
-      >
-        <template #icon>
-          <BellOutlined />
-        </template>
-        查看公告
-      </a-button>
+  <div class="home-page">
+    <div class="home-header">
+      <div>
+        <a-typography-title :level="2" class="home-title">{{ greeting }}</a-typography-title>
+      </div>
+
+      <div class="header-actions">
+        <a-button
+          :type="layoutDrawerOpen ? 'primary' : 'default'"
+          class="layout-edit-button"
+          @click="layoutDrawerOpen = !layoutDrawerOpen"
+        >
+          <template #icon>
+            <EditOutlined />
+          </template>
+          编辑布局
+        </a-button>
+        <a-button
+          type="primary"
+          ghost
+          :loading="noticeLoading"
+          class="notice-button"
+          @click="showNotice"
+        >
+          <template #icon>
+            <BellOutlined />
+          </template>
+          查看公告
+        </a-button>
+      </div>
     </div>
-  </div>
 
-  <!-- 公告模态框 -->
-  <NoticeModal
-    v-model:visible="noticeVisible"
-    :notice-data="noticeData"
-    @confirmed="onNoticeConfirmed"
-  />
+    <NoticeModal
+      v-model:visible="noticeVisible"
+      :notice-data="noticeData"
+      @confirmed="onNoticeConfirmed"
+    />
 
-  <div class="content">
-    <!-- 当期活动关卡 -->
-    <a-card
-      v-if="activityData?.length"
-      title="当期活动关卡"
-      class="activity-card"
-      :loading="loading"
-    >
-      <div v-if="error" class="error-message">
-        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-      </div>
+    <HomeLayoutDrawer
+      v-model:open="layoutDrawerOpen"
+      :modules="homeModules"
+      :scroll-hint-hidden="scrollHintHidden"
+      @reorder="reorderHomeModules"
+      @visibility-change="setHomeModuleShown"
+      @scroll-hint-change="setScrollHintHidden"
+    />
 
-      <!-- 活动信息展示 -->
-      <div v-if="currentActivity && !loading" class="activity-info">
-        <div class="activity-header">
-          <div class="activity-left">
-            <div class="activity-name">
-              <span class="activity-title">{{ currentActivity.Tip }}</span>
-              <!--              <a-tag color="blue" class="activity-tip">{{ currentActivity.StageName }}</a-tag>-->
-            </div>
-            <div class="activity-end-time">
-              <ClockCircleOutlined class="time-icon" />
-              <span class="time-label">结束时间：</span>
-              <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
-            </div>
-          </div>
+    <div v-if="layoutReady && !isBootstrapping" class="home-content">
+      <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
+        <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
+          <HomeCommandCard
+            v-if="moduleKey === 'command'"
+            v-model:selected-task-id="selectedHomeTaskId"
+            :is-bootstrapping="isBootstrapping"
+            :command-title="commandTitle"
+            :command-author="commandAuthor"
+            :scheduler-task-options="schedulerTaskOptions"
+            :scheduler-tasks-loading="schedulerTasksLoading"
+            :starting-home-task="startingHomeTask"
+            @dropdown-visible-change="onSchedulerDropdownVisibleChange"
+            @start="startHomeTask"
+          />
 
-          <div class="activity-right">
-            <!-- 活动已结束时显示提示 -->
-            <a-statistic-countdown
-              v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
-              title=""
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="活动已结束"
-              :value-style="{
-                color: '#ff4d4f',
-                fontWeight: 'bold',
-                fontSize: '18px',
-              }"
-              @finish="onCountdownFinish"
-            />
+          <HomeQuickActionsCard v-else-if="moduleKey === 'quick'" />
 
-            <!-- 剩余时间小于两天时显示炫彩倒计时 -->
-            <a-statistic-countdown
-              v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-              class="rainbow-text"
-              @finish="onCountdownFinish"
-            />
+          <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
+            <SatelliteAnimation v-show="!performanceStore.isBackgrounded" />
+          </section>
 
-            <!-- 剩余时间大于等于两天时显示常规倒计时 -->
-            <a-statistic-countdown
-              v-else
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分"
-              :value-style="{
-                color: 'var(--ant-color-text)',
-                fontWeight: '600',
-                fontSize: '20px',
-              }"
-              @finish="onCountdownFinish"
-            />
-          </div>
-        </div>
-      </div>
+          <HomeProxyCard
+            v-else-if="moduleKey === 'proxy'"
+            :loading="loading"
+            :proxy-data="proxyData"
+          />
 
-      <div class="activity-list">
-        <div v-for="item in activityData" :key="item.Value" class="activity-item">
-          <div class="stage-info">
-            <div class="stage-name">{{ item.Display }}</div>
-          </div>
+          <HomeEndfieldOverview
+            v-else-if="moduleKey === 'endfield'"
+            :loading="loading"
+            :overview="endfieldData"
+            @refresh="fetchOverviewData"
+          />
 
-          <div class="drop-info">
-            <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
-              />
-            </div>
+          <HomeArknightsOverview
+            v-else-if="moduleKey === 'arknights'"
+            :loading="loading"
+            :error="error"
+            :activity-data="activityData"
+            :resource-data="resourceData"
+            @refresh="fetchOverviewData"
+            @clear-error="clearOverviewError"
+          />
 
-            <div class="drop-details">
-              <div class="drop-name">
-                {{ item.DropName }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </a-card>
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'starrail'"
+            title="崩坏：星穹铁道活动信息"
+            accent="#62c4e7"
+            empty-text="暂无进行中的星穹铁道活动"
+            :loading="loading"
+            :overview="starRailData"
+            @refresh="fetchOverviewData"
+          />
 
-    <!-- 资源收集关卡 -->
-    <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
-      <div v-if="error" class="error-message">
-        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-      </div>
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'genshin'"
+            title="原神活动信息"
+            accent="#8fe3b0"
+            empty-text="暂无进行中的原神活动"
+            :loading="loading"
+            :overview="genshinData"
+            @refresh="fetchOverviewData"
+          />
 
-      <div v-if="resourceData?.length" class="resource-list">
-        <div v-for="item in resourceData" :key="item.Value" class="resource-item">
-          <div class="stage-info">
-            <div class="stage-name">{{ item.Display }}</div>
-          </div>
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'zenless'"
+            title="绝区零活动信息"
+            accent="#ffd24a"
+            empty-text="暂无进行中的绝区零活动"
+            :loading="loading"
+            :overview="zenlessZoneZeroData"
+            @refresh="fetchOverviewData"
+          />
 
-          <div class="drop-info">
-            <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
-              />
-            </div>
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'wutheringwaves'"
+            title="鸣潮活动信息"
+            accent="#7aa2ff"
+            empty-text="暂无进行中的鸣潮活动"
+            :loading="loading"
+            :overview="wutheringWavesData"
+            @refresh="fetchOverviewData"
+          />
 
-            <div class="drop-details">
-              <div class="drop-name">{{ item.DropName }}</div>
-              <div class="drop-tip">{{ item.Activity.Tip }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'nte'"
+            title="异环活动信息"
+            accent="#c9a7ff"
+            empty-text="暂无进行中的异环活动"
+            :loading="loading"
+            :overview="nevernessToEvernessData"
+            @refresh="fetchOverviewData"
+          />
 
-      <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
-    </a-card>
-
-    <!-- 代理状态 -->
-    <a-card title="代理状态" class="proxy-card" :loading="loading">
-      <template #extra>
-        <a-tag :color="getProxyStatusColor()"> {{ Object.keys(proxyData).length }} 个用户</a-tag>
+          <HomeReverse1999Overview
+            v-else-if="moduleKey === 'reverse1999'"
+            :loading="loading"
+            :overview="reverse1999Data"
+          />
+        </section>
       </template>
+    </div>
 
-      <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
-        <a-row :gutter="16">
-          <a-col v-for="(proxy, username) in proxyData" :key="username" :span="8">
-            <div class="proxy-item">
-              <div class="proxy-header">
-                <div class="proxy-username">
-                  <UserOutlined class="user-icon" />
-                  <span class="username">{{ username }}</span>
-                </div>
-                <!--                <div class="proxy-status">-->
-                <!--                  <a-tag :color="proxy.ErrorTimes > 0 ? 'error' : 'success'" size="small">-->
-                <!--                    {{ proxy.ErrorTimes > 0 ? '有错误' : '正常' }}-->
-                <!--                  </a-tag>-->
-                <!--                </div>-->
-              </div>
-
-              <div class="proxy-stats">
-                <!-- 第一行：最后代理时间，独占一行 -->
-                <div class="stat-item full-width">
-                  <a-statistic
-                    title="最后代理时间"
-                    :value="formatProxyDisplay(proxy.LastProxyDate)"
-                  />
-                </div>
-
-                <!-- 第二行：代理次数 和 错误次数 -->
-                <div class="stat-item half-width">
-                  <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
-                </div>
-                <div class="stat-item half-width">
-                  <a-statistic
-                    title="错误次数"
-                    :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
-                  />
-                </div>
-              </div>
-
-              <!--              &lt;!&ndash; 错误信息 &ndash;&gt;-->
-              <!--              <div-->
-              <!--                v-if="proxy.ErrorTimes > 0 && Object.keys(proxy.ErrorInfo).length > 0"-->
-              <!--                class="proxy-errors"-->
-              <!--              >-->
-              <!--                <a-alert message="错误信息" type="error" show-icon size="small" class="error-alert">-->
-              <!--                  <template #description>-->
-              <!--                    <div class="error-list">-->
-              <!--                      <div-->
-              <!--                        v-for="(errorMsg, errorKey) in proxy.ErrorInfo"-->
-              <!--                        :key="errorKey"-->
-              <!--                        class="error-item"-->
-              <!--                      >-->
-              <!--                        <strong>{{ errorKey }}:</strong> {{ errorMsg }}-->
-              <!--                      </div>-->
-              <!--                    </div>-->
-              <!--                  </template>-->
-              <!--                </a-alert>-->
-              <!--              </div>-->
-            </div>
-          </a-col>
-        </a-row>
-      </div>
-
-      <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
-    </a-card>
+    <HomeScrollHint v-if="!scrollHintHidden" />
+    <HomeBackToTop />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
-import { message } from 'ant-design-vue'
-import { ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
-import { Service } from '@/api/services/Service'
+import { computed, onMounted, watch } from 'vue'
+import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
-import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import { OpenAPI } from '@/api'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
-const logger = window.electronAPI.getLogger('首页')
+import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
+import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
+import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
+import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
+import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
+import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
+import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
+import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
+import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
+import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
+import { useHomeLayout } from '@/views/home/useHomeLayout'
+import { useHomeNotice } from '@/views/home/useHomeNotice'
+import { useHomeOverview } from '@/views/home/useHomeOverview'
+import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
+import { usePerformanceStore } from '@/stores/performance'
 
-interface ActivityInfo {
-  Tip: string
-  StageName: string
-  UtcStartTime: string
-  UtcExpireTime: string
-  TimeZone: number
-}
-
-interface ActivityItem {
-  Display: string
-  Value: string
-  Drop: string
-  DropName: string
-  Activity: ActivityInfo
-}
-
-interface ProxyInfo {
-  LastProxyDate: string
-  ProxyTimes: number
-  ErrorTimes: number
-  ErrorInfo: Record<string, any>
-}
-
-interface ApiResponse {
-  Stage: {
-    Activity: ActivityItem[]
-    Resource: ResourceItem[]
-  }
-  Proxy: Record<string, ProxyInfo>
-}
-
-interface ResourceItem {
-  Display: string
-  Value: string
-  Drop: string
-  DropName: string
-  Activity: {
-    Tip: string
-    StageName: string
-  }
-}
-
-const loading = ref(false)
-const error = ref('')
-const activityData = ref<ActivityItem[]>([])
-const resourceData = ref<ResourceItem[]>([])
-const proxyData = ref<Record<string, ProxyInfo>>({})
-
-// 公告系统相关状态
-const noticeVisible = ref(false)
-const noticeData = ref<Record<string, string>>({})
-const noticeLoading = ref(false)
-const { isBootstrapping } = useAppInitialization()
-
-// 音频播放器
-const { playSound } = useAudioPlayer()
-
-// 获取当前活动信息
-const currentActivity = computed(() => {
-  if (!activityData.value.length) return null
-  return activityData.value[0]?.Activity
+defineOptions({
+  name: 'HomeView',
 })
 
-const formatProxyDisplay = (dateStr: string) => {
-  if (dateStr === '暂无代理数据') {
-    return dateStr
-  }
-  return formatBackendDateTime(dateStr)
-}
-
-// 格式化时间显示 - 直接使用给定时间，不进行时区转换
-const formatTime = (timeString: string) => {
-  try {
-    // 直接使用给定的时间字符串，因为已经是中国时间
-    const date = new Date(timeString)
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return timeString
-  }
-}
-
-// 获取倒计时的目标时间戳
-const getCountdownValue = (expireTime: string) => {
-  try {
-    return new Date(expireTime).getTime()
-  } catch {
-    return Date.now()
-  }
-}
-
-// 检查剩余时间状态：normal（>2天）、warning（<=2天>0）、ended（<=0）
-const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
-  try {
-    const expire = new Date(expireTime)
-    const now = new Date()
-    const remaining = expire.getTime() - now.getTime()
-    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
-    if (remaining <= 0) return 'ended'
-    if (remaining <= twoDaysInMs) return 'warning'
-    return 'normal'
-  } catch {
-    return 'ended'
-  }
-}
-
-// 倒计时结束回调
-const onCountdownFinish = () => {
-  message.warning('活动已结束')
-  // 重新获取数据
-  fetchActivityData()
-}
-
-const getMaterialImage = (dropName: string) => {
-  if (!dropName) {
-    return ''
-  }
-  // 直接拼接后端图片接口地址
-  return `${OpenAPI.BASE}/api/res/materials/${dropName}.png`
-}
-
-const handleImageError = (event: Event) => {
-  const img = event.target as HTMLImageElement
-  img.style.display = 'none'
-}
-
-const fetchActivityData = async () => {
-  loading.value = true
-  error.value = ''
-
-  try {
-    const response = await Service.getOverviewApiInfoGetOverviewPost()
-
-    if (response.code === 200) {
-      const data = response.data as ApiResponse
-      if (data.Stage) {
-        activityData.value = data.Stage.Activity || []
-        resourceData.value = data.Stage.Resource || []
-      }
-      if (data.Proxy) {
-        proxyData.value = data.Proxy
-      }
-    } else {
-      error.value = response.message || '获取数据失败'
-    }
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
-    logger.error(`获取数据失败: ${errorMsg}`)
-    error.value = '网络请求失败，请检查连接'
-  } finally {
-    loading.value = false
-  }
-}
-
-// 获取代理状态颜色
-const getProxyStatusColor = () => {
-  const hasError = Object.values(proxyData.value).some(proxy => proxy.ErrorTimes > 0)
-  return hasError ? 'error' : 'success'
-}
+const { isBootstrapping } = useAppInitialization()
+const performanceStore = usePerformanceStore()
+const {
+  layoutReady,
+  layoutDrawerOpen,
+  homeModuleOrder,
+  homeModules,
+  scrollHintHidden,
+  loadHomeLayout,
+  reorderHomeModules,
+  setHomeModuleShown,
+  setScrollHintHidden,
+  isHomeModuleVisible,
+} = useHomeLayout()
+const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfirmed, showNotice } =
+  useHomeNotice()
+const {
+  commandTitle,
+  commandAuthor,
+  schedulerTasksLoading,
+  startingHomeTask,
+  schedulerTaskOptions,
+  selectedHomeTaskId,
+  fetchSchedulerTaskOptions,
+  onSchedulerDropdownVisibleChange,
+  startHomeTask,
+} = useHomeQuickStart()
+const {
+  loading,
+  error,
+  activityData,
+  resourceData,
+  proxyData,
+  endfieldData,
+  starRailData,
+  genshinData,
+  zenlessZoneZeroData,
+  wutheringWavesData,
+  nevernessToEvernessData,
+  reverse1999Data,
+  clearOverviewError,
+  fetchOverviewData,
+} = useHomeOverview()
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) {
-    return '早上好，博士，咕~'
+    return '早上好！欢迎使用 AUTO-MAS'
   } else if (hour >= 11 && hour < 14) {
-    return '中午好，博士，咕~'
+    return '中午好！欢迎使用 AUTO-MAS'
   } else if (hour >= 14 && hour < 18) {
-    return '下午好，博士，咕~'
+    return '下午好！欢迎使用 AUTO-MAS'
   } else if (hour >= 18 && hour < 23) {
-    return '晚上好，博士，咕~'
+    return '晚上好！欢迎使用 AUTO-MAS'
   } else {
-    return '夜深了，博士，请注意休息，咕~'
+    return '夜深了，欢迎使用 AUTO-MAS'
   }
 })
 
-// 获取公告信息
-const fetchNoticeData = async () => {
-  try {
-    const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
-
-    if (response.code === 200) {
-      // 检查是否需要显示公告
-      if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
-        noticeData.value = response.data
-        noticeVisible.value = true
-        // 播放公告展示音频
-        await playSound('announcement_display')
-      }
-    } else {
-      logger.warn(`获取公告失败: ${response.message}`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取公告失败: ${errorMsg}`)
-  }
-}
-
-// 公告确认回调
-const onNoticeConfirmed = () => {
-  noticeVisible.value = false
-}
-
-// 显示公告的处理函数
-const showNotice = async () => {
-  noticeLoading.value = true
-  try {
-    const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
-
-    if (response.code === 200) {
-      // 忽略 if_need_show 字段，只要有公告数据就显示
-      if (response.data && Object.keys(response.data).length > 0) {
-        noticeData.value = response.data
-        noticeVisible.value = true
-        // 手动查看公告时也播放音频
-        await playSound('announcement_display')
-      } else {
-        message.info('暂无公告信息')
-      }
-    } else {
-      message.error(response.message || '获取公告失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`显示公告失败: ${errorMsg}`)
-    message.error('显示公告失败，请稍后重试')
-  } finally {
-    noticeLoading.value = false
-  }
-}
-
 const loadHomeData = () => {
-  fetchActivityData()
+  fetchSchedulerTaskOptions({ quiet: true })
+  fetchOverviewData()
   fetchNoticeData()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadHomeLayout()
+
   if (isBootstrapping.value) {
     loading.value = true
     noticeLoading.value = true
@@ -503,298 +269,69 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.header {
+.home-page {
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.home-header {
   margin-bottom: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header h1 {
-  margin: 0;
-  color: var(--ant-color-text);
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.notice-button {
-  min-width: 120px;
-}
-
-.activity-card,
-.resource-card,
-.proxy-card {
-  margin-bottom: 24px;
-}
-
-.activity-card :deep(.ant-card-head-title),
-.resource-card :deep(.ant-card-head-title),
-.proxy-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.resource-list {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
-}
-
-.resource-item,
-.activity-item {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.resource-item:hover,
-.activity-item:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.drop-tip {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  margin-top: 2px;
-}
-
-.error-message {
-  margin-bottom: 16px;
-}
-
-.activity-info {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.activity-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
 }
 
-.activity-left {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.activity-right {
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.activity-end-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.activity-name {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.activity-title {
-  font-size: 18px;
+.home-title {
+  margin: 0 0 4px;
+  color: var(--ant-color-text);
+  font-size: 24px;
   font-weight: 600;
-  color: var(--ant-color-text);
+  letter-spacing: 0;
 }
 
-.time-icon {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-}
-
-.time-label {
-  color: var(--ant-color-text-secondary);
-  min-width: 80px;
-}
-
-.time-value {
-  color: var(--ant-color-text);
-  font-weight: 500;
-}
-
-.activity-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-
-.stage-info {
-  flex: 1;
-  margin-right: 16px;
-  text-align: center;
-  min-width: 50px;
-  max-width: 80px;
-}
-
-.stage-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 4px;
-}
-
-.drop-info {
-  display: flex;
-  align-items: center;
-  flex: 2;
-}
-
-.drop-image {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  margin-right: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.drop-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.drop-details {
-  flex: 1;
-  min-width: 70px;
-}
-
-.drop-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-  margin-bottom: 4px;
-  word-break: break-all;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 40px 0;
-}
-
-.proxy-list .proxy-item {
-  padding: 16px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  margin-bottom: 16px;
-}
-
-.proxy-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.proxy-username {
+.header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.user-icon {
-  color: var(--ant-color-text-secondary);
+.layout-edit-button {
+  min-width: 104px;
 }
 
-.username {
-  font-weight: 600;
-  color: var(--ant-color-text);
+.notice-button {
+  min-width: 120px;
 }
 
-.proxy-stats {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
+.home-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.stat-item.full-width {
-  grid-column: 1 / -1;
+.satellite-animation-section {
+  width: 100%;
+  margin-top: 0;
 }
 
-.stat-item.half-width {
-  display: inline-block;
-}
-
-.proxy-stats .stat-item.half-width:nth-child(2),
-.proxy-stats .stat-item.half-width:nth-child(3) {
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.rainbow-text {
-  font-weight: bold;
-  font-size: 18px;
-  background: linear-gradient(270deg, #ff4d4f, #fffa00, #00ffea, #ff4d4f, #ff4d4f);
-  background-size: 400% 400%;
-  color: transparent;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: rainbow-move 4s linear infinite;
-}
-
-@keyframes rainbow-move {
-  0% {
-    background-position: 0 50%;
-  }
-
-  100% {
-    background-position: 100% 50%;
-  }
-}
-
-/* 响应式设计 */
-@media (max-width: 1500px) {
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-@media (max-width: 1240px) {
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(3, 1fr);
-  }
+.home-module {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 @media (max-width: 800px) {
-  .header {
+  .home-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
 
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(2, 1fr);
+  .header-actions {
+    justify-content: flex-start;
   }
 }
 </style>

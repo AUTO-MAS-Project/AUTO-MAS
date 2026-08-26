@@ -145,8 +145,19 @@ class _MaaFWManager:
             RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
         """
 
+        target_port = (
+            int(raw_info.adb_address.removeprefix("127.0.0.1:"))
+            if raw_info.adb_address.startswith("127.0.0.1:")
+            else int(raw_info.adb_address.removeprefix("emulator-")) + 1
+        )
+
         for emulator in Toolkit.find_adb_devices():
-            if raw_info.adb_address == emulator.address:
+            emulator_port = (
+                int(emulator.address.removeprefix("127.0.0.1:"))
+                if emulator.address.startswith("127.0.0.1:")
+                else int(emulator.address.removeprefix("emulator-")) + 1
+            )
+            if target_port == emulator_port:
                 return emulator
         else:
             raise RuntimeError("无法找到指定设备")

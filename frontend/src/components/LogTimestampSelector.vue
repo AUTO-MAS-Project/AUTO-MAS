@@ -113,17 +113,19 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 
+const logger = window.electronAPI.getLogger('日志时间戳选择器')
+
 interface Props {
-  formData: {
-    logTimeStart?: number
-    logTimeEnd?: number
-    logFilePath?: string
-  }
   logFilePath?: string
   handleChange: (_section: string, _key: string, _value: any) => void
   rules: Record<string, any>
 }
 
+const formData = defineModel<{
+  logTimeStart?: number
+  logTimeEnd?: number
+  logFilePath?: string
+}>('formData', { required: true })
 const props = defineProps<Props>()
 
 // 视图模式 ('input' 或 'visual')
@@ -146,9 +148,8 @@ const selection = reactive({
 
 // 监听formData的变化，确保选择状态与表单数据同步
 watch(
-  () => props.formData.logTimeStart,
-  (newVal, oldVal) => {
-    console.log('[LogTimestampSelector] logTimeStart changed:', { oldVal, newVal })
+  () => formData.value.logTimeStart,
+  newVal => {
     if (newVal !== undefined && newVal !== null) {
       selection.startPos = newVal - 1 // 转换为0索引
     }
@@ -157,9 +158,8 @@ watch(
 )
 
 watch(
-  () => props.formData.logTimeEnd,
-  (newVal, oldVal) => {
-    console.log('[LogTimestampSelector] logTimeEnd changed:', { oldVal, newVal })
+  () => formData.value.logTimeEnd,
+  newVal => {
     if (newVal !== undefined && newVal !== null) {
       selection.endPos = newVal - 1 // 转换为0索引
     }
@@ -170,13 +170,12 @@ watch(
 // 当模式切换时，确保数据同步
 const onViewModeChange = (e: any) => {
   const mode = e?.target?.value || e
-  console.log('[LogTimestampSelector] onViewModeChange:', { mode, formData: props.formData })
 
   if (mode === 'visual') {
     // 切换到可视化模式时，将表单数据同步到选择状态
-    selection.startPos = props.formData.logTimeStart ? props.formData.logTimeStart - 1 : 0
-    selection.endPos = props.formData.logTimeEnd ? props.formData.logTimeEnd - 1 : 0
-    selection.valid = !!props.formData.logTimeStart && !!props.formData.logTimeEnd
+    selection.startPos = formData.value.logTimeStart ? formData.value.logTimeStart - 1 : 0
+    selection.endPos = formData.value.logTimeEnd ? formData.value.logTimeEnd - 1 : 0
+    selection.valid = !!formData.value.logTimeStart && !!formData.value.logTimeEnd
   }
   // 切换到输入模式时不需要特别处理，因为 formData 是通过 props 绑定的，
   // watch 会自动同步 selection 到 formData 的变化
@@ -243,9 +242,6 @@ const handleMouseUp = () => {
           return
         }
 
-        // 获取原始文本
-        const fullText = logLines.value[startLineIndex]
-
         // 使用 Range API 计算在渲染文本中的位置
         const tempRange = document.createRange()
         tempRange.selectNodeContents(lineContentElement)
@@ -253,27 +249,12 @@ const handleMouseUp = () => {
         const startOffset = tempRange.toString().length
         const endOffset = startOffset + selectedText.length
 
-        console.log('[LogTimestampSelector] 选择信息:', {
-          selectedText,
-          fullText,
-          startOffset,
-          endOffset,
-          lineIndex: startLineIndex,
-        })
-
         // 直接使用 DOM 计算的偏移量（纯文本模式下最精确）
         selection.startLineIndex = startLineIndex
         selection.endLineIndex = startLineIndex
         selection.startPos = startOffset
         selection.endPos = endOffset - 1
         selection.valid = true
-
-        console.log('[LogTimestampSelector] 选择有效:', {
-          'selection.startPos': selection.startPos,
-          'selection.endPos': selection.endPos,
-          'selected text': selectedText,
-          'verified text': fullText.substring(selection.startPos, selection.endPos + 1),
-        })
       } else {
         selection.valid = false
       }
@@ -323,7 +304,7 @@ const loadLogFile = async () => {
 
     message.success(`日志文件加载成功，共加载 ${logLines.value.length} 行`)
   } catch (error) {
-    console.error('加载日志文件失败:', error)
+    logger.error(`加载日志文件失败: ${String(error)}`)
     message.error('加载日志文件失败: ' + (error as Error).message)
   } finally {
     loadingPreview.value = false
@@ -340,29 +321,9 @@ const applySelection = async () => {
   const startPos = selection.startPos + 1 // 转换为1索引
   const endPos = selection.endPos + 1 // 转换为1索引
 
-  console.log('[LogTimestampSelector] 应用选择:', {
-    startPos,
-    endPos,
-    'selection.startPos': selection.startPos,
-    'selection.endPos': selection.endPos,
-    'formData.logTimeStart before': props.formData.logTimeStart,
-    'formData.logTimeEnd before': props.formData.logTimeEnd,
-  })
-
   // 按顺序执行两次更新，避免竞态条件
   await props.handleChange('Script', 'LogTimeStart', startPos)
-  console.log('[LogTimestampSelector] LogTimeStart 已更新')
-
   await props.handleChange('Script', 'LogTimeEnd', endPos)
-  console.log('[LogTimestampSelector] LogTimeEnd 已更新')
-
-  // 使用 setTimeout 确保在数据刷新后检查值
-  setTimeout(() => {
-    console.log('[LogTimestampSelector] 应用选择后:', {
-      'formData.logTimeStart after': props.formData.logTimeStart,
-      'formData.logTimeEnd after': props.formData.logTimeEnd,
-    })
-  }, 500)
 
   message.success(`已应用选择：起始位置 ${startPos}，结束位置 ${endPos}`)
 }

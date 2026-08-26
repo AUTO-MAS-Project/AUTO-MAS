@@ -30,14 +30,14 @@
       <a-card class="config-card">
         <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
           <!-- 基本信息组件 -->
-          <BasicInfoSection :form-data="formData" :loading="loading" :server-options="serverOptions"
+          <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
             :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
             :infrastructure-options="infrastructureOptions"
             :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
 
           <!-- 关卡配置组件 -->
-          <StageConfigSection :form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
+          <StageConfigSection v-model:form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
             :stage-options="stageOptions" :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
             :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
             :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
@@ -53,13 +53,39 @@
             @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
 
           <!-- 任务配置组件 -->
-          <TaskConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <TaskConfigSection
+            v-model:activity-first="formData.Task.IfActivityFirst"
+            v-model:activity-stage-index="formData.Task.ActivityStageIndex"
+            v-model:form-data="formData"
+            :loading="loading"
+            :activity-stage-options="activityStageOptions"
+            :activity-stage-loading="activityStageLoading"
+            :activity-stage-error="activityStageError"
+            :display-activity-stage-index="displayActivityStageIndex"
+            @save="handleFieldSave"
+          />
+
+          <!-- 库存保持配置组件 -->
+          <DepotMaintainConfigSection
+            v-if="!isPlanMode"
+            v-model:enabled="formData.Task.IfDepotMaintain"
+            :form-data="formData"
+            :loading="loading"
+            :stage-options="stageOptions"
+            :item-options="depotItemOptions"
+            :item-options-loading="depotItemOptionsLoading"
+            :item-options-error="depotItemOptionsError"
+            @save="handleFieldSave"
+          />
 
           <!-- 森空岛配置组件 -->
-          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+
+          <!-- 额外脚本组件 -->
+          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
+          <NotifyConfigSection v-model:form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
         </a-form>
       </a-card>
@@ -71,30 +97,39 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
-import { GetStageIn } from '@/api/models/GetStageIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
+import type { HomeOverviewResponse } from '@/types/home.ts'
 
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
 // 导入拆分的组件
-import MAAUserEditHeader from '../../MAAUserEdit/MAAUserEditHeader.vue'
-import BasicInfoSection from '../../MAAUserEdit/BasicInfoSection.vue'
-import StageConfigSection from '../../MAAUserEdit/StageConfigSection.vue'
-import TaskConfigSection from '../../MAAUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '../../MAAUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '../../MAAUserEdit/NotifyConfigSection.vue'
+import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
+import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
+import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
+import TaskConfigSection from '@/views/MAAUserEdit/TaskConfigSection.vue'
+import DepotMaintainConfigSection from '@/views/MAAUserEdit/DepotMaintainConfigSection.vue'
+import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
+import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  error: userError,
+} = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -103,6 +138,16 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+const pendingFieldSaves = new Map<string, any>()
+let fieldSavePromise: Promise<boolean> | null = null
+
+const reportFieldSaveFailure = () => {
+  const errorMsg = userError.value
+  if (!errorMsg || errorMsg.includes('HTTP error')) {
+    message.error('用户配置保存失败，请检查后端连接后重试')
+  }
+  logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
+}
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -125,6 +170,11 @@ const infrastructureImporting = ref(false)
 const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
 const infrastructureOptionsLoading = ref(false)
 
+// 库存保持物品选项
+const depotItemOptions = ref<Array<{ label: string; value: string }>>([])
+const depotItemOptionsLoading = ref(false)
+const depotItemOptionsError = ref('')
+
 // 服务器选项
 const serverOptions = [
   { label: '官服', value: 'Official' },
@@ -137,6 +187,10 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
+const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
+const activityStageLoading = ref(false)
+const activityStageError = ref('')
+const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
 
 // 剩余理智关卡专用选项（将"当前/上次"改为"不选择"）
 const stageRemainOptions = computed(() => {
@@ -379,6 +433,10 @@ const getDefaultMAAUserData = () => ({
     Server: 'Official',
     MedicineNumb: 0,
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     SeriesNumb: '0',
     Notes: '',
     Status: true,
@@ -405,6 +463,11 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfReclamation: false,
     IfRoguelike: false,
+    IfDepotMaintain: false,
+    IfActivityFirst: false,
+    ActivityStageIndex: 1,
+    ActivityMedicineNumb: 0,
+    DepotMaintainPlans: '[]',
   },
   Notify: {
     Enabled: false,
@@ -433,6 +496,13 @@ const formData = reactive({
   userId: '',
   // 嵌套的实际数据
   ...getDefaultMAAUserData(),
+})
+
+const displayActivityStageIndex = computed(() => {
+  const configuredIndex = formData.Task.ActivityStageIndex
+  return activityStageOptions.value.some(option => option.value === configuredIndex)
+    ? configuredIndex
+    : activityStageOptions.value[0]?.value
 })
 
 // 表单验证规则
@@ -487,44 +557,73 @@ watch(
   }
 )
 
-// 即时保存单个字段变更
-const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+// 即时保存单个字段变更。保存中的后续变更保留最后一次值，避免被 isSaving 直接丢弃。
+const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
+  if (isInitializing.value || !userId) return false
 
-  isSaving.value = true
-  try {
-    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-    const parts = key.split('.')
-    let userData: Record<string, any> = {}
-    let current = userData
+  pendingFieldSaves.set(key, value)
+  if (fieldSavePromise) return fieldSavePromise
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
+  const savePromise = (async (): Promise<boolean> => {
+    isSaving.value = true
+    try {
+      while (pendingFieldSaves.size > 0) {
+        const pendingEntry = pendingFieldSaves.entries().next().value as [string, any] | undefined
+        if (!pendingEntry) break
+
+        const [pendingKey, pendingValue] = pendingEntry
+        pendingFieldSaves.delete(pendingKey)
+
+        // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+        const parts = pendingKey.split('.')
+        let userData: Record<string, any> = {}
+        let current = userData
+        let localTarget: any = formData
+
+        for (let i = 0; i < parts.length - 1; i++) {
+          current[parts[i]] = {}
+          current = current[parts[i]]
+          localTarget = localTarget[parts[i]]
+        }
+        current[parts[parts.length - 1]] = pendingValue
+        localTarget[parts[parts.length - 1]] = pendingValue
+
+        // 特殊处理：userName 和 userId 需要同步到 Info
+        if (pendingKey === 'userName') {
+          userData = { Info: { Name: pendingValue } }
+        } else if (pendingKey === 'userId') {
+          userData = { Info: { Id: pendingValue } }
+        }
+
+        const success = await updateUser(scriptId, userId, userData)
+        if (!success) {
+          pendingFieldSaves.clear()
+          reportFieldSaveFailure()
+          return false
+        }
+
+        logger.info(`用户配置已保存: ${pendingKey}`)
+      }
+      return true
+    } catch (error) {
+      pendingFieldSaves.clear()
+      reportFieldSaveFailure()
+      if (error instanceof Error) {
+        logger.error(`保存异常: ${error.message}`)
+      }
+      return false
+    } finally {
+      isSaving.value = false
+      fieldSavePromise = null
     }
-    current[parts[parts.length - 1]] = value
+  })()
+  fieldSavePromise = savePromise
 
-    // 特殊处理：userName 和 userId 需要同步到 Info
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
-    } else if (key === 'userId') {
-      userData = { Info: { Id: value } }
-    }
-
-    await updateUser(scriptId, userId, userData)
-    // 刷新数据
-    await loadUserData()
-    logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  return savePromise
 }
 
 // 保存完整用户数据（仅用于特殊批量操作）
-const saveFullUserData = async () => {
+const _saveFullUserData = async () => {
   if (isInitializing.value || isSaving.value || !userId) return
 
   isSaving.value = true
@@ -630,22 +729,7 @@ const loadUserData = async () => {
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
 
-        // 检查并添加自定义关卡到选项列表
-        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
-        stageFields.forEach(field => {
-          const stageValue = (formData.Info as any)[field]
-          if (stageValue && isCustomStage(stageValue)) {
-            // 检查是否已存在
-            const exists = stageOptions.value.find((option: any) => option.value === stageValue)
-            if (!exists) {
-              stageOptions.value.push({
-                label: stageValue,
-                value: stageValue,
-                isCustom: true,
-              })
-            }
-          }
-        })
+        appendConfiguredCustomStages()
 
         logger.info('用户数据加载成功')
 
@@ -669,26 +753,89 @@ const loadUserData = async () => {
   }
 }
 
-const loadStageOptions = async () => {
-  try {
-    const response = await Service.getStageComboxApiInfoComboxStagePost({
-      type: GetStageIn.type.USER,
-    })
-    if (response && response.code === 200 && response.data) {
-      stageOptions.value = [...response.data].map(option => ({
-        ...option,
-        isCustom: false, // 明确标记从API加载的关卡为非自定义
-      }))
+const appendConfiguredCustomStages = () => {
+  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+  stageFields.forEach(field => {
+    const stageValue = (formData.Info as any)[field]
+    if (stageValue && isCustomStage(stageValue)) {
+      const exists = stageOptions.value.find((option: any) => option.value === stageValue)
+      if (!exists) {
+        stageOptions.value.push({
+          label: stageValue,
+          value: stageValue,
+          isCustom: true,
+        })
+      }
     }
+  })
+}
+
+const applyServerStageOptions = () => {
+  const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
+  const stageOverview = stageOverviewByServer.value[server]
+  if (!stageOverview) {
+    return
+  }
+
+  stageOptions.value = stageOverview.Options.map(option => ({
+    ...option,
+    isCustom: false,
+  }))
+  appendConfiguredCustomStages()
+  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
+    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
+    value: index + 1,
+  }))
+}
+
+const loadActivityStageOptions = async () => {
+  activityStageLoading.value = true
+  activityStageError.value = ''
+  try {
+    const response = await Service.getOverviewApiInfoGetOverviewPost()
+    if (response.code !== 200) {
+      activityStageError.value = response.message || '加载活动关卡失败'
+      return
+    }
+
+    const overview = response.data as HomeOverviewResponse
+    stageOverviewByServer.value = overview.StageByServer
+    applyServerStageOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载关卡选项失败: ${errorMsg}`)
+    logger.error(`加载活动关卡失败: ${errorMsg}`)
+    activityStageError.value = '加载活动关卡失败'
+  } finally {
+    activityStageLoading.value = false
+  }
+}
+
+const loadDepotItemOptions = async () => {
+  depotItemOptionsLoading.value = true
+  depotItemOptionsError.value = ''
+  try {
+    const response = await Service.getMaaDepotItemsApiScriptsMaaDepotItemsPost({ scriptId })
+    if (response.code !== 200) {
+      depotItemOptionsError.value = response.message || '加载 MAA 库存物品失败'
+      return
+    }
+    depotItemOptions.value = response.data
+      .filter(option => option.value)
+      .map(option => ({ label: option.label, value: option.value as string }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载 MAA 库存物品失败: ${errorMsg}`)
+    depotItemOptionsError.value = '加载 MAA 库存物品失败'
+  } finally {
+    depotItemOptionsLoading.value = false
   }
 }
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MAA,
+    })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }
@@ -708,7 +855,7 @@ const selectAndImportInfrastructureConfig = async () => {
 
   try {
     // 选择文件
-    const path = await (window as any).electronAPI?.selectFile([
+    const path = await window.electronAPI?.selectFile([
       { name: 'JSON 文件', extensions: ['json'] },
       { name: '所有文件', extensions: ['*'] },
     ])
@@ -921,6 +1068,15 @@ const validateStageName = (stageName: string): boolean => {
   return stagePattern.test(stageName.trim())
 }
 
+type StageField = 'Stage' | 'Stage_1' | 'Stage_2' | 'Stage_3' | 'Stage_Remain'
+
+const updateStageField = (field: StageField, value: string) => {
+  if (isPlanMode.value) return
+
+  formData.Info[field] = value
+  void handleFieldSave(`Info.${field}`, value)
+}
+
 // 添加自定义关卡到选项列表
 const addStageToOptions = (stageName: string) => {
   if (!stageName || !stageName.trim()) {
@@ -955,9 +1111,7 @@ const addCustomStage = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage = stageName.trim()
-    }
+    updateStageField('Stage', stageName.trim())
   }
 }
 
@@ -969,9 +1123,7 @@ const addCustomStage1 = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_1 = stageName.trim()
-    }
+    updateStageField('Stage_1', stageName.trim())
   }
 }
 
@@ -983,9 +1135,7 @@ const addCustomStage2 = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_2 = stageName.trim()
-    }
+    updateStageField('Stage_2', stageName.trim())
   }
 }
 
@@ -997,9 +1147,7 @@ const addCustomStage3 = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_3 = stageName.trim()
-    }
+    updateStageField('Stage_3', stageName.trim())
   }
 }
 
@@ -1011,13 +1159,14 @@ const addCustomStageRemain = (stageName: string) => {
   }
 
   if (addStageToOptions(stageName)) {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_Remain = stageName.trim()
-    }
+    updateStageField('Stage_Remain', stageName.trim())
   }
 }
 
-const handleCancel = () => {
+const handleCancel = async () => {
+  const pendingSave = fieldSavePromise
+  if (pendingSave && !(await pendingSave)) return
+
   if (maaSubscriptionId.value) {
     unsubscribe(maaSubscriptionId.value)
     maaSubscriptionId.value = null
@@ -1025,7 +1174,6 @@ const handleCancel = () => {
   }
   router.push('/scripts')
 }
-// 新增：处理来自StageConfigSection的值更新事件
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
     formData.Info.MedicineNumb = value
@@ -1041,39 +1189,29 @@ const updateSeriesNumb = (value: string) => {
 }
 
 const updateStage = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage = value
-    handleFieldSave('Info.Stage', value)
-  }
+  updateStageField('Stage', value)
 }
 
 const updateStage1 = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_1 = value
-    handleFieldSave('Info.Stage_1', value)
-  }
+  updateStageField('Stage_1', value)
 }
 
 const updateStage2 = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_2 = value
-    handleFieldSave('Info.Stage_2', value)
-  }
+  updateStageField('Stage_2', value)
 }
 
 const updateStage3 = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_3 = value
-    handleFieldSave('Info.Stage_3', value)
-  }
+  updateStageField('Stage_3', value)
 }
 
 const updateStageRemain = (value: string) => {
-  if (!isPlanMode.value) {
-    formData.Info.Stage_Remain = value
-    handleFieldSave('Info.Stage_Remain', value)
-  }
+  updateStageField('Stage_Remain', value)
 }
+
+watch(
+  () => formData.Info.Server,
+  () => applyServerStageOptions()
+)
 
 // 初始化加载
 onMounted(() => {
@@ -1085,7 +1223,8 @@ onMounted(() => {
 
   loadScriptInfo()
   loadStageModeOptions()
-  loadStageOptions()
+  loadActivityStageOptions()
+  loadDepotItemOptions()
 
   // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
   // 如果是新建模式，也尝试加载基建配置选项（如果已经有用户ID）

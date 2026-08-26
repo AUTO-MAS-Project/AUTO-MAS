@@ -32,18 +32,38 @@
       <div class="custom-form">
         <div class="form-group">
           <label>标题:</label>
-          <input v-model="customMessage.title" type="text" placeholder="请输入弹窗标题" class="form-input" />
+          <input
+            v-model="customMessage.title"
+            type="text"
+            placeholder="请输入弹窗标题"
+            class="form-input"
+          />
         </div>
         <div class="form-group">
           <label>消息内容:</label>
-          <textarea v-model="customMessage.message" placeholder="请输入消息内容" class="form-textarea" rows="3"></textarea>
+          <textarea
+            v-model="customMessage.message"
+            placeholder="请输入消息内容"
+            class="form-textarea"
+            rows="3"
+          ></textarea>
         </div>
         <div class="form-group">
           <label>发送数量:</label>
-          <input v-model.number="sendCount" type="number" min="1" max="10" class="form-input" style="width: 80px" />
+          <input
+            v-model.number="sendCount"
+            type="number"
+            min="1"
+            max="10"
+            class="form-input"
+            style="width: 80px"
+          />
         </div>
-        <button class="test-btn primary" :disabled="!customMessage.title || !customMessage.message"
-          @click="sendCustomMessage">
+        <button
+          class="test-btn primary"
+          :disabled="!customMessage.title || !customMessage.message"
+          @click="sendCustomMessage"
+        >
           发送自定义弹窗
         </button>
       </div>
@@ -58,7 +78,12 @@
         </div>
         <div v-if="testHistory.length === 0" class="no-history">暂无测试历史</div>
       </div>
-      <button v-if="testHistory.length > 0" class="test-btn secondary" style="margin-top: 8px" @click="clearHistory">
+      <button
+        v-if="testHistory.length > 0"
+        class="test-btn secondary"
+        style="margin-top: 8px"
+        @click="clearHistory"
+      >
         清空历史
       </button>
     </div>
@@ -153,7 +178,7 @@ const clearHistory = () => {
 
 // 检查调试接口是否可用
 const isDebugApiAvailable = () => {
-  return typeof (window as any).__debugShowQuestion === 'function'
+  return typeof window.__debugShowQuestion === 'function'
 }
 
 // 通过调试接口触发弹窗（直接在前端触发，不经过后端）
@@ -163,7 +188,7 @@ const triggerModalViaDebugApi = (messageData: {
   options?: string[]
   message_id?: string
 }) => {
-  const debugShowQuestion = (window as any).__debugShowQuestion
+  const debugShowQuestion = window.__debugShowQuestion
 
   if (!debugShowQuestion) {
     logger.warn('调试接口不可用，WebSocketMessageListener 可能未挂载')
@@ -287,7 +312,8 @@ const sendCustomMessage = () => {
   const count = Math.min(Math.max(sendCount.value, 1), 10)
 
   for (let i = 0; i < count; i++) {
-    const title = count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
+    const title =
+      count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
     triggerModalViaDebugApi({
       title,
       message: customMessage.value.message,
@@ -295,9 +321,8 @@ const sendCustomMessage = () => {
     })
   }
 
-  lastResponse.value = count > 1
-    ? `已触发 ${count} 个自定义弹窗`
-    : `已触发自定义弹窗: ${customMessage.value.title}`
+  lastResponse.value =
+    count > 1 ? `已触发 ${count} 个自定义弹窗` : `已触发自定义弹窗: ${customMessage.value.title}`
 
   setTimeout(() => {
     isTesting.value = false
@@ -583,76 +608,74 @@ onUnmounted(() => {
   font-style: italic;
 }
 
-/* 暗色主题专用样式增强 */
-@media (prefers-color-scheme: dark) {
-  .test-page {
-    color: #e8e8e8;
-  }
+/* 暗色主题专用样式增强（跟随应用主题 html.dark） */
+html.dark .test-page {
+  color: #e8e8e8;
+}
 
-  .page-title {
-    color: #66bb6a;
-    text-shadow: 0 0 8px rgba(102, 187, 106, 0.3);
-  }
+html.dark .page-title {
+  color: #66bb6a;
+  text-shadow: 0 0 8px rgba(102, 187, 106, 0.3);
+}
 
-  .test-section {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(8px);
-  }
+html.dark .test-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+}
 
-  .test-section h4 {
-    color: #f0f0f0;
-  }
+html.dark .test-section h4 {
+  color: #f0f0f0;
+}
 
-  .test-btn.primary {
-    background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
-    border: 1px solid rgba(76, 175, 80, 0.3);
-  }
+html.dark .test-btn.primary {
+  background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
 
-  .test-btn.primary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #45a049 0%, #5cb85c 100%);
-    border-color: rgba(76, 175, 80, 0.5);
-  }
+html.dark .test-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #45a049 0%, #5cb85c 100%);
+  border-color: rgba(76, 175, 80, 0.5);
+}
 
-  .test-btn.secondary {
-    background: linear-gradient(135deg, #2196f3 0%, #42a5f5 100%);
-    border: 1px solid rgba(33, 150, 243, 0.3);
-  }
+html.dark .test-btn.secondary {
+  background: linear-gradient(135deg, #2196f3 0%, #42a5f5 100%);
+  border: 1px solid rgba(33, 150, 243, 0.3);
+}
 
-  .test-btn.secondary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #1976d2 0%, #1e88e5 100%);
-    border-color: rgba(33, 150, 243, 0.5);
-  }
+html.dark .test-btn.secondary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1976d2 0%, #1e88e5 100%);
+  border-color: rgba(33, 150, 243, 0.5);
+}
 
-  .form-input,
-  .form-textarea {
-    background: rgba(0, 0, 0, 0.2);
-    border-color: rgba(255, 255, 255, 0.15);
-  }
+html.dark .form-input,
+html.dark .form-textarea {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.15);
+}
 
-  .form-input:focus,
-  .form-textarea:focus {
-    background: rgba(0, 0, 0, 0.3);
-    border-color: #66bb6a;
-    box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.2);
-  }
+html.dark .form-input:focus,
+html.dark .form-textarea:focus {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: #66bb6a;
+  box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.2);
+}
 
-  .history-item {
-    background: rgba(255, 255, 255, 0.02);
-    border-bottom-color: rgba(255, 255, 255, 0.06);
-  }
+html.dark .history-item {
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
 
-  .history-item:hover {
-    background: rgba(255, 255, 255, 0.08);
-  }
+html.dark .history-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
 
-  .history-time {
-    color: #aaa;
-  }
+html.dark .history-time {
+  color: #aaa;
+}
 
-  .history-content {
-    color: #ddd;
-  }
+html.dark .history-content {
+  color: #ddd;
 }
 
 /* 高对比度模式适配 */
@@ -681,7 +704,6 @@ onUnmounted(() => {
 
 /* 减少动画模式适配 */
 @media (prefers-reduced-motion: reduce) {
-
   .test-btn,
   .form-input,
   .form-textarea,

@@ -34,13 +34,21 @@ def sanitize_log_message(message: str) -> str:
     :return: 过滤后的日志消息
     :rtype: str
     """
-    # 定义需要过滤的敏感参数模式
+    # 定义需要过滤的敏感参数模式，兼容 URL、表单和 JSON 日志格式。
+    sensitive_key = (
+        r"(?:cdk|password|passwd|pwd|token|access[_-]?token|"
+        r"refresh[_-]?token|authorization|cookies?[_-]?str|cookie|"
+        r"secret|api[_-]?key|username|phone|cellphone|useridentity)"
+    )
     sensitive_patterns = [
-        (r"(cdk=)[^&\s]+", r"\1***"),  # cdk参数
-        (r"(password=)[^&\s]+", r"\1***"),  # password参数
-        (r"(token=)[^&\s]+", r"\1***"),  # token参数
-        (r"(api_key=)[^&\s]+", r"\1***"),  # api_key参数
-        (r"(secret=)[^&\s]+", r"\1***"),  # secret参数
+        # JSON 字符串值，例如 "password": "..."
+        (rf"([\"']{sensitive_key}[\"']\s*:\s*[\"'])(.*?)([\"'])", r"\1***\3"),
+        # JSON 数字、布尔或未加引号值，例如 "uid": ...（仅匹配敏感 key）
+        (rf"([\"']{sensitive_key}[\"']\s*:\s*)(?![\"'])([^,}}\]]+)", r"\1***"),
+        # URL、表单和普通日志中的 key=value
+        (rf"(\b{sensitive_key}\b\s*=\s*)([^&\s,}}\]]+)", r"\1***"),
+        # 请求头或字典中的 key: value
+        (rf"(\b{sensitive_key}\b\s*:\s*)([^\r\n,}}\]]+)", r"\1***"),
     ]
 
     sanitized_message = message
@@ -50,6 +58,32 @@ def sanitize_log_message(message: str) -> str:
         )
 
     return sanitized_message
+
+
+def format_exception_reason(
+    error: BaseException,
+    *,
+    stage: str,
+    include_message: bool = True,
+) -> str:
+    """生成不为空且不包含 URL 查询参数的异常原因。"""
+
+    exception_name = type(error).__name__
+    message = sanitize_log_message(str(error).strip()) if include_message else ""
+    message = re.sub(
+        r"(https?://[^\s?#]+)[?#][^\s]*",
+        r"\1",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if not message:
+        if "timeout" in exception_name.lower():
+            message = "请求超时"
+        elif include_message:
+            message = "未提供异常详情"
+        else:
+            message = "程序内部异常"
+    return f"{stage}（{exception_name}）：{message}"
 
 
 def dpapi_encrypt(

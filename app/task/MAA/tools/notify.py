@@ -35,7 +35,8 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果" and (
-        Config.get("Notify", "SendTaskResultTime") == "任何时刻"
+        message.get("game_sign_summary", False)
+        or Config.get("Notify", "SendTaskResultTime") == "任何时刻"
         or (
             Config.get("Notify", "SendTaskResultTime") == "仅失败时"
             and message["uncompleted_count"] != 0
@@ -123,7 +124,7 @@ async def push_notification(
                         user_config.get("Notify", "ToAddress"),
                     )
                 else:
-                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
             if user_config.get("Notify", "IfServerChan"):
                 if user_config.get("Notify", "ServerChanKey"):
                     await Notify.ServerChanPush(
@@ -132,7 +133,7 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.error(
+                    logger.warning(
                         "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                     )
             for webhook in user_config.Notify_CustomWebhooks.values():
@@ -173,7 +174,7 @@ async def push_notification(
                         user_config.get("Notify", "ToAddress"),
                     )
                 else:
-                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
             if user_config.get("Notify", "IfServerChan"):
                 if user_config.get("Notify", "ServerChanKey"):
                     await Notify.ServerChanPush(
@@ -182,7 +183,7 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.error(
+                    logger.warning(
                         "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                     )
             for webhook in user_config.Notify_CustomWebhooks.values():

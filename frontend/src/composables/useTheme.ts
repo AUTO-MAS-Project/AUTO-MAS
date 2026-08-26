@@ -70,6 +70,8 @@ const updateTheme = () => {
 const updateCSSVariables = () => {
   const root = document.documentElement
   const primaryColor = themeColors[themeColor.value]
+  const algorithm = isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm
+  const antTokens = algorithm({ ...theme.defaultSeed, colorPrimary: primaryColor })
 
   // 基础背景（用于估算混合）
   const baseLightBg = '#ffffff'
@@ -88,38 +90,51 @@ const updateCSSVariables = () => {
   const menuTextColor = pickAccessibleColor(candidateTextDark, candidateTextLight, siderBg)
   const iconColor = menuTextColor
 
-  // ===== AntD token 变量（保留） =====
-  if (isDark.value) {
-    root.style.setProperty('--ant-color-primary', primaryColor)
-    root.style.setProperty('--ant-color-primary-hover', hslLighten(primaryColor, 6))
-    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
-    root.style.setProperty('--ant-color-text', 'rgba(255, 255, 255, 0.88)')
-    root.style.setProperty('--ant-color-text-secondary', 'rgba(255, 255, 255, 0.65)')
-    root.style.setProperty('--ant-color-text-tertiary', 'rgba(255, 255, 255, 0.45)')
-    root.style.setProperty('--ant-color-bg-container', baseDarkBg)
-    root.style.setProperty('--ant-color-bg-layout', '#000000')
-    root.style.setProperty('--ant-color-bg-elevated', '#1f1f1f')
-    root.style.setProperty('--ant-color-border', '#424242')
-    root.style.setProperty('--ant-color-border-secondary', '#303030')
-    root.style.setProperty('--ant-color-error', '#ff4d4f')
-    root.style.setProperty('--ant-color-success', '#52c41a')
-    root.style.setProperty('--ant-color-warning', '#faad14')
-  } else {
-    root.style.setProperty('--ant-color-primary', primaryColor)
-    root.style.setProperty('--ant-color-primary-hover', hslDarken(primaryColor, 6))
-    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
-    root.style.setProperty('--ant-color-text', 'rgba(0, 0, 0, 0.88)')
-    root.style.setProperty('--ant-color-text-secondary', 'rgba(0, 0, 0, 0.65)')
-    root.style.setProperty('--ant-color-text-tertiary', 'rgba(0, 0, 0, 0.45)')
-    root.style.setProperty('--ant-color-bg-container', baseLightBg)
-    root.style.setProperty('--ant-color-bg-layout', '#f5f5f5')
-    root.style.setProperty('--ant-color-bg-elevated', '#ffffff')
-    root.style.setProperty('--ant-color-border', '#d9d9d9')
-    root.style.setProperty('--ant-color-border-secondary', '#d9d9d9')
-    root.style.setProperty('--ant-color-error', '#ff4d4f')
-    root.style.setProperty('--ant-color-success', '#52c41a')
-    root.style.setProperty('--ant-color-warning', '#faad14')
-  }
+  // ===== AntD token 变量 =====
+  // 与 ConfigProvider 使用同一套 seed 和算法，避免 CSS 变量与组件主题分叉。
+  root.style.setProperty('--ant-color-primary', antTokens.colorPrimary)
+  root.style.setProperty('--ant-color-primary-hover', antTokens.colorPrimaryHover)
+  root.style.setProperty('--ant-color-primary-active', antTokens.colorPrimaryActive)
+  root.style.setProperty('--ant-color-primary-bg', antTokens.colorPrimaryBg)
+  root.style.setProperty('--ant-color-primary-bg-hover', antTokens.colorPrimaryBgHover)
+  root.style.setProperty('--ant-color-primary-border', antTokens.colorPrimaryBorder)
+
+  root.style.setProperty('--ant-color-text', antTokens.colorText)
+  root.style.setProperty('--ant-color-text-secondary', antTokens.colorTextSecondary)
+  root.style.setProperty('--ant-color-text-tertiary', antTokens.colorTextTertiary)
+  root.style.setProperty('--ant-color-text-quaternary', antTokens.colorTextQuaternary)
+  root.style.setProperty('--ant-color-text-heading', antTokens.colorText)
+  root.style.setProperty('--ant-color-text-description', antTokens.colorTextTertiary)
+  root.style.setProperty('--ant-color-text-placeholder', antTokens.colorTextQuaternary)
+  root.style.setProperty('--ant-color-text-disabled', antTokens.colorTextQuaternary)
+
+  root.style.setProperty('--ant-color-bg-container', antTokens.colorBgContainer)
+  root.style.setProperty('--ant-color-bg-layout', antTokens.colorBgLayout)
+  root.style.setProperty('--ant-color-bg-elevated', antTokens.colorBgElevated)
+  root.style.setProperty('--ant-color-border', antTokens.colorBorder)
+  root.style.setProperty('--ant-color-border-secondary', antTokens.colorBorderSecondary)
+
+  root.style.setProperty('--ant-color-fill', antTokens.colorFill)
+  root.style.setProperty('--ant-color-fill-secondary', antTokens.colorFillSecondary)
+  root.style.setProperty('--ant-color-fill-tertiary', antTokens.colorFillTertiary)
+  root.style.setProperty('--ant-color-fill-quaternary', antTokens.colorFillQuaternary)
+
+  root.style.setProperty('--ant-color-error', antTokens.colorError)
+  root.style.setProperty('--ant-color-error-bg', antTokens.colorErrorBg)
+  root.style.setProperty('--ant-color-error-bg-hover', antTokens.colorErrorBgHover)
+  root.style.setProperty('--ant-color-error-border', antTokens.colorErrorBorder)
+  root.style.setProperty('--ant-color-success', antTokens.colorSuccess)
+  root.style.setProperty('--ant-color-success-bg', antTokens.colorSuccessBg)
+  root.style.setProperty('--ant-color-success-bg-hover', antTokens.colorSuccessBgHover)
+  root.style.setProperty('--ant-color-success-border', antTokens.colorSuccessBorder)
+  root.style.setProperty('--ant-color-warning', antTokens.colorWarning)
+  root.style.setProperty('--ant-color-warning-bg', antTokens.colorWarningBg)
+  root.style.setProperty('--ant-color-warning-bg-hover', antTokens.colorWarningBgHover)
+  root.style.setProperty('--ant-color-warning-border', antTokens.colorWarningBorder)
+
+  root.style.setProperty('--ant-color-info', antTokens.colorInfo)
+  root.style.setProperty('--ant-color-info-hover', antTokens.colorInfoHover)
+  root.style.setProperty('--ant-color-info-bg', antTokens.colorInfoBg)
 
   // ===== 自定义菜单配色 =====
   // 动态 Alpha：根据主色亮度调整透明度以保持区分度
@@ -158,7 +173,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--app-menu-item-selected-bg-hex', addAlpha(primaryColor, selectedAlpha))
 }
 
-// ===== 新增缺失基础函数（从旧版本恢复） =====
+// ===== 颜色辅助函数 =====
 const addAlpha = (hex: string, alpha: number) => {
   const a = alpha > 1 ? alpha / 100 : alpha
   const clamped = Math.min(1, Math.max(0, a))

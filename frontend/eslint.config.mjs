@@ -21,14 +21,34 @@ export default [
 
   // -------- 渲染端（Vite + Vue）类型感知 ----------
   {
-    files: ['src/**/*.{ts,tsx,vue}', 'vite.config.ts'],
+    files: ['src/**/*.{ts,tsx}', 'vite.config.ts'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.browser, ...globals.node },
+      parser: tseslint.parser,
+      parserOptions: {
+        project: [path.join(__dirname, 'tsconfig.app.json')],
+        tsconfigRootDir: __dirname,
+      },
+    },
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.vue'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
         extraFileExtensions: ['.vue'],
-        // 让 <script lang="ts"> 用 TS 解析器
         parser: tseslint.parser,
         project: [path.join(__dirname, 'tsconfig.app.json')],
         tsconfigRootDir: __dirname,
@@ -36,6 +56,7 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
@@ -50,6 +71,7 @@ export default [
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: globals.node,
+      parser: tseslint.parser,
       parserOptions: {
         project: [path.join(__dirname, 'tsconfig.electron.json')],
         tsconfigRootDir: __dirname,
@@ -57,6 +79,9 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      // TypeScript 已负责全局符号与类型命名空间检查
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',

@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
+            <img src="@/assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -29,6 +29,15 @@
       <template #extra>
         <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
+
+      <a-alert message="使用说明" type="info" show-icon class="notice-alert">
+        <template #description>
+          <div class="notice-content">
+            <p>剿灭任务会独立启动一次 MAA。</p>
+            <p>MAA 专项仅支持模拟器；PC 版请使用通用脚本。</p>
+          </div>
+        </template>
+      </a-alert>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
@@ -134,7 +143,7 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="切换账号时需要执行的操作">
@@ -152,7 +161,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
@@ -165,24 +174,6 @@
                 <a-input-number v-model:value="maaConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    title="当剿灭已打满但无法全权代理时，MAA 仍会继续执行代理任务导致理智浪费。开启本项后，将把单次剿灭关卡代理次数限制为 1 次，规避理智浪费，但可能需要数日才能打满剿灭。建议使用代理卡代理保全派驻的用户开启本项。">
-                    <span class="form-label">
-                      剿灭避免无代理卡时浪费理智
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select v-model:value="maaConfig.Run.AnnihilationAvoidWaste" size="large"
-                  @change="handleChange('Run', 'AnnihilationAvoidWaste', $event)">
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -245,9 +236,10 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
-import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service, type ComboBoxItem } from '../../../api'
+import type { MAAScriptConfig, ScriptType } from '@/types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -258,7 +250,13 @@ const logger = window.electronAPI.getLogger('MAA脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -290,7 +288,6 @@ const maaConfig = reactive<MAAScriptConfig>({
     RunTimesLimit: 3,
     AnnihilationTimeLimit: 40,
     RoutineTimeLimit: 10,
-    AnnihilationAvoidWaste: false,
   },
   Emulator: {
     Id: '',
@@ -311,9 +308,7 @@ const rules = {
 
 // 模拟器相关状态
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 const handleChange = async (category: string, key: string, value: any) => {
@@ -353,8 +348,8 @@ const refreshScript = async () => {
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -381,7 +376,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (maaConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
       }
     } else {
       // 编辑现有脚本时，从API获取数据
@@ -400,7 +395,7 @@ const loadScript = async () => {
 
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (maaConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
       }
     }
   } catch (error) {
@@ -436,32 +431,14 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
-    })
-    if (response && response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    } else {
-      message.error('加载模拟器实例选项失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
-    message.error('加载模拟器实例选项失败')
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   maaConfig.Emulator.Index = ''
-  emulatorDeviceOptions.value = []
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
 
   // 保存模拟器选择和清空的实例字段
   isSaving.value = true
@@ -483,11 +460,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
   } finally {
     isSaving.value = false
   }
-
-  // 加载新的模拟器实例选项
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
-  }
 }
 
 // 文件选择方法
@@ -498,7 +470,7 @@ const selectMAAPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       maaConfig.Info.Path = path
       // 选择路径后立即保存
@@ -591,6 +563,19 @@ const selectMAAPath = async () => {
   padding: 8px 16px;
   border-radius: 8px;
   border: none;
+}
+
+.notice-alert {
+  margin-bottom: 24px;
+  border-radius: 8px;
+}
+
+.notice-content p {
+  margin: 0;
+}
+
+.notice-content p + p {
+  margin-top: 4px;
 }
 
 /* 表单样式 */
@@ -764,30 +749,28 @@ const selectMAAPath = async () => {
   color: var(--ant-color-text);
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
 
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
 
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
 }
 
 /* 响应式设计 */

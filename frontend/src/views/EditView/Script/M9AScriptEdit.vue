@@ -174,6 +174,38 @@
                   @blur="handleChange('Run', 'RunTimesLimit', m9aConfig.Run.RunTimesLimit)" />
               </a-form-item>
             </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务">
+                    <span class="form-label">
+                      每日心相每日只执行一次
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="m9aConfig.Run.IfPsychubeDailyOnce"
+                  @change="handleChange('Run', 'IfPsychubeDailyOnce', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务">
+                    <span class="form-label">
+                      深眠浅梦每月只执行一次
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="m9aConfig.Run.IfSleepDreamMonthlyOnce"
+                  @change="handleChange('Run', 'IfSleepDreamMonthlyOnce', $event)"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="8">
@@ -222,20 +254,26 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { M9AScriptConfig, ScriptType } from '../../../types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
-  BookOutlined,
 } from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('M9A脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -264,6 +302,8 @@ const m9aConfig = reactive<M9AScriptConfig>({
     RunTimesLimit: 3,
     RunTimeLimit: 30,
     IfAutoUpdateAfterQueue: false,
+    IfPsychubeDailyOnce: false,
+    IfSleepDreamMonthlyOnce: false,
   },
   Emulator: {
     Id: '',
@@ -283,9 +323,7 @@ const rules = {
 }
 
 const emulatorLoading = ref(false)
-const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
-const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value || isSaving.value) return
@@ -344,7 +382,7 @@ const loadScript = async () => {
       }
 
       if (m9aConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
       }
     } else {
       const scriptDetail = await getScript(scriptId)
@@ -361,7 +399,7 @@ const loadScript = async () => {
       Object.assign(m9aConfig, scriptDetail.config as M9AScriptConfig)
 
       if (m9aConfig.Emulator?.Id) {
-        await loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
+        void loadEmulatorDeviceOptions(m9aConfig.Emulator.Id)
       }
     }
   } catch (error) {
@@ -393,28 +431,13 @@ const loadEmulatorOptions = async () => {
   }
 }
 
-const loadEmulatorDeviceOptions = async (emulatorId: string) => {
-  if (!emulatorId) return
-
-  emulatorDeviceLoading.value = true
-  try {
-    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
-    })
-    if (response && response.code === 200) {
-      emulatorDeviceOptions.value = response.data || []
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
-  } finally {
-    emulatorDeviceLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   m9aConfig.Emulator.Index = ''
-  emulatorDeviceOptions.value = []
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
 
   isSaving.value = true
   try {
@@ -434,10 +457,6 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     logger.error(`保存模拟器配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
-  }
-
-  if (emulatorId) {
-    await loadEmulatorDeviceOptions(emulatorId)
   }
 }
 
@@ -707,29 +726,28 @@ const selectM9APath = async () => {
   color: var(--ant-color-text);
 }
 
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
 
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
 
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
 }
 
 @media (max-width: 1200px) {

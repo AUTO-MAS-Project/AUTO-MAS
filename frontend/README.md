@@ -39,6 +39,12 @@ src/
 yarn install
 ```
 
+如果 Electron 二进制下载缓慢或失败，可以使用 npmmirror 镜像执行一次性安装：
+
+```bash
+yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install
+```
+
 ### 开发模式
 
 直接打开electron窗口
@@ -69,4 +75,5 @@ eslint + Prettier 代码规范相关
 yarn lint          # 查看问题
 yarn lint:fix      # 自动修复
 yarn format        # 仅 Prettier 全量改格式（非必须）
+yarn typecheck     # 检查 Vue renderer 类型
 ```

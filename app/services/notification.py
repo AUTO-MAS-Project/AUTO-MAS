@@ -1,7 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-import asyncio
 
 #   This file is part of AUTO-MAS.
 
@@ -21,6 +20,7 @@ import asyncio
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import re
 import json
 import smtplib
@@ -39,6 +39,8 @@ from app.models.config import Webhook
 from app.utils import get_logger, ImageUtils
 
 logger = get_logger("通知服务")
+
+SMTP_TIMEOUT_SECONDS = 15
 
 
 class Notification:
@@ -65,7 +67,8 @@ class Notification:
         logger.info(f"推送系统通知: {title}")
 
         if notification.notify is not None:
-            notification.notify(
+            await asyncio.to_thread(
+                notification.notify,
                 title=title,
                 message=message,
                 app_name="AUTO-MAS",
@@ -75,7 +78,7 @@ class Notification:
                 toast=True,
             )
         else:
-            logger.error("plyer.notification 未正确导入, 无法推送系统通知")
+            raise RuntimeError("plyer.notification 未正确导入，无法推送系统通知")
 
     async def send_mail(
         self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
@@ -133,15 +136,20 @@ class Notification:
         if mode == "网页":
             message.attach(MIMEText(content, "html", "utf-8"))
 
-        smtpObj = smtplib.SMTP_SSL(Config.get("Notify", "SMTPServerAddress"), 465)
-        smtpObj.login(
-            Config.get("Notify", "FromAddress"),
-            Config.get("Notify", "AuthorizationCode"),
-        )
-        smtpObj.sendmail(
-            Config.get("Notify", "FromAddress"), to_address, message.as_string()
-        )
-        smtpObj.quit()
+        smtp_server = Config.get("Notify", "SMTPServerAddress")
+        from_address = Config.get("Notify", "FromAddress")
+        authorization_code = Config.get("Notify", "AuthorizationCode")
+
+        def send() -> None:
+            with smtplib.SMTP_SSL(
+                smtp_server,
+                465,
+                timeout=SMTP_TIMEOUT_SECONDS,
+            ) as smtp_obj:
+                smtp_obj.login(from_address, authorization_code)
+                smtp_obj.sendmail(from_address, to_address, message.as_string())
+
+        await asyncio.to_thread(send)
         logger.success(f"邮件发送成功: {title}")
 
     async def ServerChanPush(self, title: str, content: str, send_key: str) -> None:
@@ -221,8 +229,7 @@ class Notification:
                 "time": datetime.now().strftime("%H:%M:%S"),
             }
 
-            logger.debug(f"原始模板: {template}")
-            logger.debug(f"模板变量: {template_vars}")
+            logger.debug("开始解析 Webhook 消息模板")
 
             # 先尝试作为JSON模板处理
             try:
@@ -244,7 +251,7 @@ class Notification:
                         return obj
 
                 data = replace_variables(template_obj)
-                logger.debug(f"成功解析JSON模板: {data}")
+                logger.debug("Webhook JSON 模板解析成功")
 
             except json.JSONDecodeError:
                 # 如果不是有效的JSON，作为字符串模板处理
@@ -265,11 +272,11 @@ class Notification:
                 # 再次尝试解析为JSON
                 try:
                     data = json.loads(formatted_template)
-                    logger.debug(f"字符串模板解析为JSON成功: {data}")
+                    logger.debug("Webhook 字符串模板已解析为 JSON")
                 except json.JSONDecodeError:
                     # 最终作为纯文本发送
                     data = formatted_template
-                    logger.debug(f"作为纯文本发送: {data}")
+                    logger.debug("Webhook 模板将作为纯文本发送")
 
         except Exception as e:
             logger.warning(f"模板解析失败，使用默认格式: {e}")

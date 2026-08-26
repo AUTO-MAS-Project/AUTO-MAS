@@ -1,5 +1,7 @@
-// Frontend mirror of app/utils/constants.py. Keep values in sync with the backend
-// constants and regenerate frontend/src/api when OpenAPI schemas change.
+import type { ComboBoxItem } from '@/api'
+
+// Frontend mirror of app/utils/constants.py. Keep fixed protocol-space values in sync
+// with the backend; AutoEssence locations come from MaaEnd's dynamic resource API.
 export const PROTOCOL_SPACE_OPTIONS = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
@@ -8,6 +10,44 @@ export const PROTOCOL_SPACE_OPTIONS = [
 
 export type ProtocolSpaceTab = (typeof PROTOCOL_SPACE_OPTIONS)[number]['value']
 export type CurrentTaskField = ProtocolSpaceTab
+
+export type PlanTimeKey =
+  | 'ALL'
+  | 'Monday'
+  | 'Tuesday'
+  | 'Wednesday'
+  | 'Thursday'
+  | 'Friday'
+  | 'Saturday'
+  | 'Sunday'
+
+export type PlanWeekdayKey = Exclude<PlanTimeKey, 'ALL'>
+
+export const MAAEND_PLAN_TIME_KEYS: PlanTimeKey[] = [
+  'ALL',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+]
+
+export const MAAEND_PLAN_WEEKDAY_KEYS: PlanWeekdayKey[] = MAAEND_PLAN_TIME_KEYS.filter(
+  (key): key is PlanWeekdayKey => key !== 'ALL'
+)
+
+export const MAAEND_PLAN_TIME_LABELS: Record<PlanTimeKey, string> = {
+  ALL: '全局',
+  Monday: '周一',
+  Tuesday: '周二',
+  Wednesday: '周三',
+  Thursday: '周四',
+  Friday: '周五',
+  Saturday: '周六',
+  Sunday: '周日',
+}
 
 export const SANITY_TASK_TYPE_OPTIONS = [
   ...PROTOCOL_SPACE_OPTIONS,
@@ -23,17 +63,7 @@ export const REWARD_OPTIONS = [
 
 export type RewardSetOption = (typeof REWARD_OPTIONS)[number]['value']
 
-export const AUTO_ESSENCE_LOCATION_OPTIONS = [
-  { label: '枢纽区', value: 'VFTheHub' },
-  { label: '源石研究园', value: 'VFOriginiumSciencePark' },
-  { label: '矿脉源区', value: 'VFOriginLodespring' },
-  { label: '供能高地', value: 'VFPowerPlateau' },
-  { label: '武陵城区', value: 'WLWulingCity' },
-  { label: '清波寨', value: 'WLQingboStockade' },
-  { label: '首墩', value: 'WLMarkerStone' },
-] as const
-
-export type AutoEssenceLocation = (typeof AUTO_ESSENCE_LOCATION_OPTIONS)[number]['value']
+export type AutoEssenceLocation = string
 
 export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
   OperatorProgression: [
@@ -96,6 +126,7 @@ export const MAAEND_TASK_GROUPS = [
       { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
       { name: 'AutoCollect', label: '🧺 自动采集' },
+      { name: 'TrialOfSwordmancy', label: '🗡️ 选剑演武' },
     ],
   },
   {
@@ -105,6 +136,11 @@ export const MAAEND_TASK_GROUPS = [
       { name: 'DailyRewards', label: '📅 日常奖励领取' },
       { name: 'ResourceRecycleStation', label: '🦉 资源回收站' },
     ],
+  },
+  {
+    key: 'Statistics',
+    label: '📊 数据统计',
+    tasks: [{ name: 'PullCountCalculator', label: '🧮 抽数计算' }],
   },
 ] as const
 
@@ -125,6 +161,26 @@ export interface MaaEndSanityConfig {
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
 }
 
+export interface MaaEndProtocolSpacePlanKey {
+  SanityTaskType: ProtocolSpaceTab
+  OperatorProgression: MaaEndSanityConfig['OperatorProgression']
+  WeaponProgression: MaaEndSanityConfig['WeaponProgression']
+  CrisisDrills: MaaEndSanityConfig['CrisisDrills']
+  RewardsSetOption: RewardSetOption
+}
+
+export interface MaaEndAutoEssencePlanKey {
+  SanityTaskType: 'Essence'
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
+export type MaaEndPlanKey = MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey
+
+type MaaEndLegacyPlanKey = Omit<Partial<MaaEndSanityConfig>, 'SanityTaskType'> & {
+  SanityTaskType?: SanityTaskType | 'ProtocolSpace' | 'Matrix' | 'AutoEssence'
+  ProtocolSpaceTab?: ProtocolSpaceTab
+}
+
 export interface MaaEndTaskSwitchItem {
   name: MaaEndTaskSwitch
   label: string
@@ -136,12 +192,7 @@ export interface MaaEndTaskSwitchGroup {
   tasks: MaaEndTaskSwitchItem[]
 }
 
-// 保留旧别名，避免历史引用爆炸
 export type ProtocolSpaceConfig = MaaEndSanityConfig
-
-export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
-  'Win32-Front': MAAEND_TASK_GROUPS.flatMap(group => group.tasks.map(task => task.name)),
-}
 
 export const PROTOCOL_SPACE_TASK_FIELD_MAP: Record<ProtocolSpaceTab, CurrentTaskField> = {
   OperatorProgression: 'OperatorProgression',
@@ -162,10 +213,6 @@ export const PROTOCOL_SPACE_TASK_LABEL_MAP = Object.fromEntries(
     .flat()
     .map(option => [option.value, option.label])
 ) as Record<ProtocolSpaceTaskValue, string>
-
-export const AUTO_ESSENCE_LOCATION_LABEL_MAP = Object.fromEntries(
-  AUTO_ESSENCE_LOCATION_OPTIONS.map(option => [option.value, option.label])
-) as Record<AutoEssenceLocation, string>
 
 export const PROTOCOL_SPACE_TASK_TITLE_MAP: Record<ProtocolSpaceTab, string> = {
   OperatorProgression: '干员养成任务',
@@ -189,14 +236,15 @@ export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
   WeaponProgression: 'WeaponEXP',
   CrisisDrills: 'AdvancedProgression1',
   RewardsSetOption: 'RewardsSetA',
-  AutoEssenceSpecifiedLocation: 'VFTheHub',
+  AutoEssenceSpecifiedLocation: '',
 })
 
 export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
   PROTOCOL_SPACE_TASK_FIELD_MAP[tab]
 
-export const getProtocolSpaceTaskOptions = (tab: ProtocolSpaceTab): ProtocolSpaceTaskOption[] =>
-  PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
+export const getProtocolSpaceTaskOptions = (
+  tab: ProtocolSpaceTab
+): readonly ProtocolSpaceTaskOption[] => PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
 
 export const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): ProtocolSpaceTaskValue =>
   config[getProtocolSpaceTaskField(config.SanityTaskType as ProtocolSpaceTab)]
@@ -215,16 +263,22 @@ export const isProtocolSpaceRewardEnabled = (config: MaaEndSanityConfig): boolea
   )
 }
 
-export const getSanityTaskDisplayValue = (rawConfig?: Partial<MaaEndSanityConfig> | null) => {
+export const getSanityTaskDisplayValue = (
+  rawConfig?: Partial<MaaEndSanityConfig> | null,
+  essenceLocationOptions: readonly ComboBoxItem[] = []
+) => {
   const config = normalizeMaaEndSanityConfig(rawConfig)
   if (config.SanityTaskType === 'Essence') {
-    return AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation]
+    return (
+      essenceLocationOptions.find(option => option.value === config.AutoEssenceSpecifiedLocation)
+        ?.label || config.AutoEssenceSpecifiedLocation
+    )
   }
   return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(config)]
 }
 
 export const normalizeMaaEndSanityConfig = (
-  rawConfig?: Partial<MaaEndSanityConfig> | null
+  rawConfig?: MaaEndLegacyPlanKey | null
 ): MaaEndSanityConfig => {
   const config = {
     ...createDefaultMaaEndSanityConfig(),
@@ -233,9 +287,6 @@ export const normalizeMaaEndSanityConfig = (
 
   if (!SANITY_TASK_TYPE_LABEL_MAP[config.SanityTaskType]) {
     config.SanityTaskType = 'OperatorProgression'
-  }
-  if (!AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation]) {
-    config.AutoEssenceSpecifiedLocation = 'VFTheHub'
   }
   if (!REWARD_LABEL_MAP[config.RewardsSetOption]) {
     config.RewardsSetOption = 'RewardsSetA'
@@ -256,6 +307,41 @@ export const normalizeMaaEndSanityConfig = (
   }
 
   return config
+}
+
+export const maaEndPlanKeyToSanityConfig = (rawSlot?: unknown): MaaEndSanityConfig => {
+  const slot = rawSlot && typeof rawSlot === 'object' ? (rawSlot as Record<string, unknown>) : {}
+  const rawKey = slot.Key && typeof slot.Key === 'object' ? slot.Key : slot
+  const legacyKey = { ...(rawKey as MaaEndLegacyPlanKey) }
+
+  if (legacyKey.SanityTaskType === 'ProtocolSpace') {
+    const protocolSpaceTab = legacyKey.ProtocolSpaceTab
+    if (PROTOCOL_SPACE_OPTIONS.some(option => option.value === protocolSpaceTab)) {
+      legacyKey.SanityTaskType = protocolSpaceTab as ProtocolSpaceTab
+    }
+  } else if (legacyKey.SanityTaskType === 'Matrix' || legacyKey.SanityTaskType === 'AutoEssence') {
+    legacyKey.SanityTaskType = 'Essence'
+  }
+
+  return normalizeMaaEndSanityConfig(legacyKey)
+}
+
+export const normalizeMaaEndPlanKey = (rawSlot?: unknown): MaaEndPlanKey => {
+  const config = maaEndPlanKeyToSanityConfig(rawSlot)
+  if (config.SanityTaskType === 'Essence') {
+    return {
+      SanityTaskType: 'Essence',
+      AutoEssenceSpecifiedLocation: config.AutoEssenceSpecifiedLocation,
+    }
+  }
+
+  return {
+    SanityTaskType: config.SanityTaskType,
+    OperatorProgression: config.OperatorProgression,
+    WeaponProgression: config.WeaponProgression,
+    CrisisDrills: config.CrisisDrills,
+    RewardsSetOption: config.RewardsSetOption,
+  }
 }
 
 // 保留旧导出，兼容既有调用

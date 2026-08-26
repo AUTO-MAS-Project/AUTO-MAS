@@ -21,10 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
 import time
 import asyncio
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
@@ -36,11 +36,28 @@ router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
 
 
-def is_backend_dev_mode() -> bool:
-    """判断后端是否处于开发模式。"""
+class BackendHealthOut(BaseModel):
+    """后端核心服务与后台初始化状态。"""
 
-    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    ready: bool = Field(description="核心 API 是否可用")
+    backgroundStatus: str = Field(description="后台初始化状态")
+    backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
+
+
+@router.get(
+    "/health",
+    summary="获取后端就绪状态",
+    response_model=BackendHealthOut,
+    status_code=200,
+)
+async def get_health(request: Request) -> BackendHealthOut:
+    """返回核心 API 与后台初始化状态。"""
+
+    return BackendHealthOut(
+        ready=True,
+        backgroundStatus=getattr(request.app.state, "background_status", "starting"),
+        backgroundError=getattr(request.app.state, "background_error", None),
+    )
 
 
 @router.websocket("/ws")
@@ -57,43 +74,40 @@ async def connect_websocket(websocket: WebSocket):
     data = {}
 
     asyncio.create_task(TaskManager.start_startup_queue())
+    try:
+        while True:
 
-    while True:
+            try:
 
-        try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+                if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
+                    last_pong = time.monotonic()
+                elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+                    await websocket.send_json(
+                        WebSocketMessage(
+                            id="Main", type="Signal", data={"Pong": "无描述"}
+                        ).model_dump()
+                    )
+                else:
+                    await Broadcast.put(data)
 
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
-            if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
-                last_pong = time.monotonic()
-            elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+            except asyncio.TimeoutError:
+
+                if last_pong < last_ping:
+                    await websocket.close(code=1000, reason="Ping超时")
+                    break
                 await websocket.send_json(
                     WebSocketMessage(
-                        id="Main", type="Signal", data={"Pong": "无描述"}
+                        id="Main", type="Signal", data={"Ping": "无描述"}
                     ).model_dump()
                 )
-            else:
-                await Broadcast.put(data)
-
-        except asyncio.TimeoutError:
-
-            if last_pong < last_ping:
-                await websocket.close(code=1000, reason="Ping超时")
-                break
-            await websocket.send_json(
-                WebSocketMessage(
-                    id="Main", type="Signal", data={"Ping": "无描述"}
-                ).model_dump()
-            )
-            last_ping = time.monotonic()
-
-        except WebSocketDisconnect:
-            break
-
-    Config.websocket = None
-    if is_backend_dev_mode():
-        logger.warning("后端开发模式下检测到 WS 断链，跳过 KillSelf 自动退出")
-    else:
-        await System.set_power("KillSelf", from_frontend=True)
+                last_ping = time.monotonic()
+    except (WebSocketDisconnect, RuntimeError) as e:
+        logger.warning(f"主 WebSocket 通信失败: {type(e).__name__}: {e}")
+    finally:
+        if Config.websocket is websocket:
+            Config.websocket = None
+    logger.warning("主 WebSocket 已断开，等待前端重新连接")
 
 
 @ws_command("core.close")

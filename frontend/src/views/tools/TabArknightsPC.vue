@@ -2,14 +2,13 @@
 import { QuestionCircleOutlined, WarningOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import type { ToolsConfig_ArknightsPC } from '@/api'
 
-const { config, disabled, onFieldChange, recordingKeyField, startRecordKey, stopRecordKey, onSelectVisibleChange } = defineProps<{
+const { config, disabled, onFieldChange, recordingKeyField, startRecordKey, stopRecordKey } = defineProps<{
     config: ToolsConfig_ArknightsPC
     disabled?: boolean
     onFieldChange?: (key: string, value: any) => void
     recordingKeyField?: string | null
     startRecordKey?: (fieldName: string) => void
     stopRecordKey?: () => void
-    onSelectVisibleChange?: (visible: boolean) => void
 }>()
 
 // 处理字段变更
@@ -92,11 +91,8 @@ const isRecording = (fieldName: string) => {
                                 <QuestionCircleOutlined class="help-icon" />
                             </a-tooltip>
                         </div>
-                        <a-select v-model:value="config.Enabled" size="large" style="width: 100%" :disabled="disabled"
-                            @change="handleChange('Enabled', $event)" @dropdownVisibleChange="onSelectVisibleChange">
-                            <a-select-option :value="true">启用</a-select-option>
-                            <a-select-option :value="false">禁用</a-select-option>
-                        </a-select>
+                        <a-switch :checked="config.Enabled" :disabled="disabled"
+                            @change="handleChange('Enabled', $event)" />
                     </div>
                 </a-col>
             </a-row>
@@ -316,43 +312,43 @@ const isRecording = (fieldName: string) => {
 
 /* 使用要求卡片 */
 .requirement-card {
-    border-left: 3px solid var(--ant-warning-color);
-    background: linear-gradient(to right, var(--ant-warning-color-deprecated-bg), transparent);
+    border-left: 3px solid var(--ant-color-warning);
+    background: linear-gradient(to right, var(--ant-color-warning-bg), transparent);
     margin-left: -1px;
     border-radius: 6px 0 0 6px;
 }
 
 .requirement-card .card-header {
-    color: var(--ant-warning-color-hover);
+    color: var(--ant-color-warning);
 }
 
 .requirement-card .item-dot {
-    background: var(--ant-warning-color);
+    background: var(--ant-color-warning);
 }
 
 .requirement-card .content-item strong {
-    color: var(--ant-warning-color-hover);
+    color: var(--ant-color-warning);
     background: rgba(250, 173, 20, 0.15);
 }
 
 /* 工具性能卡片 */
 .performance-card {
-    border-left: 3px solid var(--ant-primary-color);
-    background: linear-gradient(to right, var(--ant-primary-color-deprecated-bg), transparent);
+    border-left: 3px solid var(--ant-color-primary);
+    background: linear-gradient(to right, var(--ant-color-primary-bg), transparent);
     margin-left: -1px;
     border-radius: 6px 0 0 6px;
 }
 
 .performance-card .card-header {
-    color: var(--ant-primary-color-hover);
+    color: var(--ant-color-primary-hover);
 }
 
 .performance-card .item-dot {
-    background: var(--ant-primary-color);
+    background: var(--ant-color-primary);
 }
 
 .performance-card .content-item strong {
-    color: var(--ant-primary-color-hover);
+    color: var(--ant-color-primary-hover);
     background: rgba(24, 144, 255, 0.15);
 }
 
@@ -432,13 +428,13 @@ const isRecording = (fieldName: string) => {
     }
 
     .requirement-card {
-        border-left: 3px solid var(--ant-warning-color);
-        background: linear-gradient(135deg, var(--ant-warning-color-deprecated-bg) 0%, rgba(255, 251, 230, 0.3) 100%);
+        border-left: 3px solid var(--ant-color-warning);
+        background: linear-gradient(135deg, var(--ant-color-warning-bg) 0%, rgba(255, 251, 230, 0.3) 100%);
     }
 
     .performance-card {
-        border-left: 3px solid var(--ant-primary-color);
-        background: linear-gradient(135deg, var(--ant-primary-color-deprecated-bg) 0%, rgba(230, 244, 255, 0.3) 100%);
+        border-left: 3px solid var(--ant-color-primary);
+        background: linear-gradient(135deg, var(--ant-color-primary-bg) 0%, rgba(230, 244, 255, 0.3) 100%);
     }
 }
 </style>
