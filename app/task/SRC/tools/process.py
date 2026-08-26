@@ -39,6 +39,7 @@ from .poor_yaml import poor_yaml_read
 logger = get_logger("SRC 进程清理")
 
 _WEBUI_LISTENER_RETRY_INTERVAL = 0.2
+_PROCESS_CLEANUP_TIMEOUT_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,13 @@ class SrcProcessState:
     installation_id: str
     webui_port: int | None
     config_user_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _SrcToolkitContext:
+    """一次 SRC 清理内复用的 toolkit 可执行文件扫描结果。"""
+
+    executable_names: frozenset[str]
 
 
 def validate_src_cleanup_paths(
@@ -254,21 +262,35 @@ def read_src_webui_port(src_set_path: Path) -> int | None:
     return webui_port
 
 
-async def _kill_src_toolkit_processes(src_root_path: Path) -> bool:
+def _scan_src_toolkit_context(src_root_path: Path) -> _SrcToolkitContext:
+    """扫描 toolkit 内的可执行文件名，用于识别后端进程候选。"""
+
+    src_root_path = src_root_path.resolve()
+    toolkit_path = src_root_path / "toolkit"
+    executable_names = (
+        frozenset(
+            executable_path.name.casefold()
+            for executable_path in toolkit_path.rglob("*.exe")
+        )
+        if toolkit_path.exists()
+        else frozenset()
+    )
+    return _SrcToolkitContext(executable_names=executable_names)
+
+
+async def _kill_src_toolkit_processes(
+    src_root_path: Path,
+    *,
+    toolkit_context: _SrcToolkitContext | None = None,
+) -> bool:
     """中止可执行文件位于 SRC toolkit 目录内的后端进程。"""
 
     src_root_path = src_root_path.resolve()
     toolkit_path = src_root_path / "toolkit"
+    if toolkit_context is None:
+        toolkit_context = _scan_src_toolkit_context(src_root_path)
     success = True
     try:
-        executable_names = (
-            {
-                executable_path.name.casefold()
-                for executable_path in toolkit_path.rglob("*.exe")
-            }
-            if toolkit_path.exists()
-            else set()
-        )
         processes = psutil.process_iter(["pid", "name", "exe"])
         for process in processes:
             try:
@@ -284,16 +306,19 @@ async def _kill_src_toolkit_processes(src_root_path: Path) -> bool:
             process_pid = process_info.get("pid")
             if not isinstance(process_pid, int):
                 continue
+            if process_pid == os.getpid():
+                continue
             if not process_path:
                 process_name = process_info.get("name")
-                if process_name and str(process_name).casefold() in executable_names:
-                    success = False
+                if (
+                    process_name
+                    and str(process_name).casefold()
+                    in toolkit_context.executable_names
+                ):
                     logger.warning(
-                        "无法确认同名 SRC toolkit 后端进程路径，拒绝判定清理成功 "
+                        "无法确认同名 SRC toolkit 后端进程路径，跳过进程 "
                         f"PID: {process_pid}, 进程名: {process_name}"
                     )
-                continue
-            if process_pid == os.getpid():
                 continue
 
             try:
@@ -328,6 +353,39 @@ async def _kill_src_toolkit_processes(src_root_path: Path) -> bool:
 
 
 async def kill_src_processes(
+    process_manager: ProcessManager,
+    *,
+    src_exe_path: Path,
+    src_root_path: Path,
+    src_set_path: Path,
+    webui_port: int | None = None,
+    listener_wait_timeout: float | None = None,
+    expected_installation_id: str | None = None,
+) -> bool:
+    """在总超时内中止 SRC 相关进程。"""
+
+    try:
+        return await asyncio.wait_for(
+            _kill_src_processes(
+                process_manager,
+                src_exe_path=src_exe_path,
+                src_root_path=src_root_path,
+                src_set_path=src_set_path,
+                webui_port=webui_port,
+                listener_wait_timeout=listener_wait_timeout,
+                expected_installation_id=expected_installation_id,
+            ),
+            timeout=_PROCESS_CLEANUP_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "SRC 进程清理超时 "
+            f"{_PROCESS_CLEANUP_TIMEOUT_SECONDS} 秒，按清理失败处理"
+        )
+        return False
+
+
+async def _kill_src_processes(
     process_manager: ProcessManager,
     *,
     src_exe_path: Path,
@@ -386,11 +444,18 @@ async def kill_src_processes(
                 logger.opt(exception=True).warning(
                     f"中止 SRC 跟踪进程失败: {cleanup_error}"
                 )
-        return False
+        raise
 
     if not src_root_path.exists() and tracked_pid is None:
         logger.info(f"SRC 历史清理根目录已不存在，跳过进程扫描: {src_root_path}")
         return success
+
+    toolkit_context: _SrcToolkitContext | None = None
+    try:
+        toolkit_context = _scan_src_toolkit_context(src_root_path)
+    except OSError as e:
+        success = False
+        logger.warning(f"扫描 SRC toolkit 可执行文件失败: {e}")
 
     try:
         if not await System.kill_process(src_exe_path):
@@ -400,7 +465,10 @@ async def kill_src_processes(
         logger.opt(exception=True).warning(f"按路径中止 SRC 进程失败: {e}")
 
     try:
-        if not await _kill_src_toolkit_processes(src_root_path):
+        if toolkit_context is not None and not await _kill_src_toolkit_processes(
+            src_root_path,
+            toolkit_context=toolkit_context,
+        ):
             success = False
     except Exception as e:
         success = False
@@ -431,7 +499,10 @@ async def kill_src_processes(
     # 端口等待期间仍可能有已脱离主进程、但尚未开始监听的后端进程启动。
     # 恢复配置前再扫描一次 toolkit，避免将这类进程误判为已清理。
     try:
-        if not await _kill_src_toolkit_processes(src_root_path):
+        if toolkit_context is not None and not await _kill_src_toolkit_processes(
+            src_root_path,
+            toolkit_context=toolkit_context,
+        ):
             success = False
     except Exception as e:
         success = False
