@@ -136,6 +136,56 @@ class ScriptTaskReservationsTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(reservations.release(script_uid, "first"))
         self.assertTrue(reservations.try_acquire(script_uid, "second"))
 
+    async def test_release_only_clears_the_requested_script(self) -> None:
+        reservations = _ScriptTaskReservations()
+        first_script_uid = uuid.uuid4()
+        second_script_uid = uuid.uuid4()
+
+        self.assertTrue(reservations.try_acquire(first_script_uid, "owner"))
+        self.assertTrue(reservations.try_acquire(second_script_uid, "owner"))
+        self.assertTrue(reservations.release(first_script_uid, "owner"))
+
+        self.assertTrue(reservations.try_acquire(first_script_uid, "next-owner"))
+        self.assertFalse(reservations.try_acquire(second_script_uid, "next-owner"))
+
+    async def test_release_keeps_src_root_shared_by_owner_scripts(self) -> None:
+        reservations = _ScriptTaskReservations()
+        first_script_uid = uuid.uuid4()
+        second_script_uid = uuid.uuid4()
+        shared_root = Path("SRC").resolve()
+
+        self.assertTrue(
+            reservations.try_acquire(
+                first_script_uid,
+                "owner",
+                src_root_path=shared_root,
+            )
+        )
+        self.assertTrue(
+            reservations.try_acquire(
+                second_script_uid,
+                "owner",
+                src_root_path=shared_root,
+            )
+        )
+        self.assertTrue(reservations.release(first_script_uid, "owner"))
+
+        self.assertFalse(
+            reservations.try_acquire(
+                uuid.uuid4(),
+                "next-owner",
+                src_root_path=shared_root,
+            )
+        )
+        self.assertTrue(reservations.release(second_script_uid, "owner"))
+        self.assertTrue(
+            reservations.try_acquire(
+                uuid.uuid4(),
+                "next-owner",
+                src_root_path=shared_root,
+            )
+        )
+
     async def test_different_scripts_cannot_share_src_root(self) -> None:
         reservations = _ScriptTaskReservations()
         first_script_uid = uuid.uuid4()

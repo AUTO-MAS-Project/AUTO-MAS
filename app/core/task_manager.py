@@ -22,6 +22,7 @@
 
 import uuid
 import asyncio
+import os
 from pathlib import Path
 from typing import Dict, Literal
 
@@ -66,7 +67,8 @@ class _ScriptTaskReservations:
 
     def __init__(self) -> None:
         self._owners: dict[tuple[str, str], str] = {}
-        self._owner_keys: dict[str, set[tuple[str, str]]] = {}
+        self._owner_keys: dict[str, dict[uuid.UUID, set[tuple[str, str]]]] = {}
+        self._src_root_paths: dict[str, Path] = {}
 
     @staticmethod
     def _resource_keys(
@@ -75,8 +77,7 @@ class _ScriptTaskReservations:
     ) -> set[tuple[str, str]]:
         keys = {("script", str(script_uid))}
         if src_root_path is not None:
-            normalized_root = str(src_root_path.resolve()).casefold()
-            keys.add(("src-root", normalized_root))
+            keys.add(("src-root", _normalize_src_root_path(src_root_path.resolve())))
         return keys
 
     def try_acquire(
@@ -86,37 +87,65 @@ class _ScriptTaskReservations:
         *,
         src_root_path: Path | None = None,
     ) -> bool:
-        keys = self._resource_keys(script_uid, src_root_path)
+        resolved_root_path = (
+            src_root_path.resolve() if src_root_path is not None else None
+        )
+        keys = self._resource_keys(script_uid, resolved_root_path)
         if any(self._owners.get(key) not in (None, owner) for key in keys):
             return False
 
         root_key = next((key for key in keys if key[0] == "src-root"), None)
-        if root_key is not None:
-            root_path = Path(root_key[1])
+        if root_key is not None and resolved_root_path is not None:
+            root_path = _normalize_src_root_path(resolved_root_path)
             for key, existing_owner in self._owners.items():
                 if key[0] != "src-root" or existing_owner == owner:
                     continue
-                existing_root_path = Path(key[1])
+                existing_src_root_path = self._src_root_paths.get(key)
+                if existing_src_root_path is None:
+                    continue
+                existing_root_path = _normalize_src_root_path(existing_src_root_path)
                 if (
                     root_path == existing_root_path
-                    or root_path.is_relative_to(existing_root_path)
-                    or existing_root_path.is_relative_to(root_path)
+                    or _is_relative_src_root(root_path, existing_root_path)
+                    or _is_relative_src_root(existing_root_path, root_path)
                 ):
                     return False
 
         for key in keys:
             self._owners[key] = owner
-        self._owner_keys.setdefault(owner, set()).update(keys)
+        self._owner_keys.setdefault(owner, {}).setdefault(script_uid, set()).update(keys)
+        if root_key is not None and resolved_root_path is not None:
+            self._src_root_paths[root_key] = resolved_root_path
         return True
 
     def release(self, script_uid: uuid.UUID, owner: str) -> bool:
         script_key = ("script", str(script_uid))
         if self._owners.get(script_key) != owner:
             return False
-        for key in self._owner_keys.pop(owner, set()):
-            if self._owners.get(key) == owner:
+        keys = self._owner_keys.get(owner, {}).pop(script_uid, set())
+        for key in keys:
+            key_still_reserved = any(
+                key in other_keys
+                for other_keys in self._owner_keys.get(owner, {}).values()
+            )
+            if not key_still_reserved and self._owners.get(key) == owner:
                 self._owners.pop(key)
+            if key[0] == "src-root":
+                if not key_still_reserved:
+                    self._src_root_paths.pop(key, None)
+        if not self._owner_keys.get(owner):
+            self._owner_keys.pop(owner, None)
         return True
+
+
+def _normalize_src_root_path(path: Path) -> str:
+    return os.path.normcase(str(path)).casefold()
+
+
+def _is_relative_src_root(path: Path | str, parent: Path | str) -> bool:
+    path = str(path)
+    parent = str(parent)
+    return path.startswith(parent + os.sep)
 
 
 def _get_src_root_path(script_config: object) -> Path | None:
