@@ -332,7 +332,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     def _snapshot_one_dragon_config(self) -> None:
-        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。"""
+        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。
+
+        独立模式下读取源是 MAS 槽位 ``launch_config_name``（用户在 BGI GUI 里编辑的就是这份），
+        缓存 key 仍是用户所选名 ``one_dragon_config``，供下一轮 ``write_user_one_dragon`` 种子。
+        """
         if not self.use_mas_config:
             return
         one_dragon.snapshot_user_one_dragon(
@@ -340,6 +344,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.script_id,
             self.cur_user_item.user_id,
             self.one_dragon_config,
+            read_name=self.launch_config_name,
         )
 
     def _backup_one_dragon_config(self) -> None:

@@ -773,18 +773,26 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
     status_code=200,
 )
 async def get_bettergi_custom_groups_api(
-    scriptId: str, configName: str = ""
+    scriptId: str, configName: str = "", useMasConfig: bool = False
 ) -> BetterGICustomGroupsOut:
-    """返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。"""
+    """返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
+
+    ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
+    per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
+    独立配置添加的自定义组。
+    """
 
     try:
         script_config = _bettergi_script_config(scriptId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
-        items = one_dragon.list_custom_groups(
-            root, one_dragon.resolve_config_name(configName)
+        read_name = (
+            one_dragon.launch_slot_name()
+            if useMasConfig
+            else one_dragon.resolve_config_name(configName)
         )
+        items = one_dragon.list_custom_groups(root, read_name)
         data = [BetterGICustomGroupOut(**item) for item in items]
         return BetterGICustomGroupsOut(
             code=200,

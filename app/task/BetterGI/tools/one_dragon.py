@@ -441,10 +441,17 @@ def snapshot_user_one_dragon(
     script_id: str,
     user_id: str,
     config_name: str,
+    read_name: str | None = None,
 ) -> None:
-    """回读 BetterGI 现有一条龙配置为 per-user 副本（捕获 GUI 中改的设置）。"""
+    """回读 BetterGI 现有一条龙配置为 per-user 副本（捕获 GUI 中改的设置）。
+
+    ``read_name`` 指定实际读取的配置名：独立模式下用户编辑的是 MAS 槽位「MAS独立配置」，
+    而 per-user 缓存 key 仍是用户所选名 ``config_name``，故读取源与缓存 key 解耦。
+    缺省 ``read_name=None`` 时与 ``config_name`` 相同（直控/旧行为）。
+    """
     config_name = resolve_config_name(config_name)
-    config = load_one_dragon(root, config_name)
+    source_name = resolve_config_name(read_name or config_name)
+    config = load_one_dragon(root, source_name)
     if config:
         write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
 

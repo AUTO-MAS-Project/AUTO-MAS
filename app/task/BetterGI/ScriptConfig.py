@@ -93,17 +93,28 @@ class ScriptConfigTask(TaskExecuteBase):
         )
 
     def _snapshot_one_dragon_config(self) -> None:
-        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。"""
+        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。
+
+        独立模式下 ``write_user_one_dragon`` 物化到 MAS 槽位，用户在 BGI GUI 里编辑的就是
+        槽位，故读取源改为槽位名，per-user 缓存 key 仍是用户所选名。
+        """
         if not self.use_mas_config:
             return
         target = self._target_user_config()
         if target is None:
             return
+        config_name = str(target.get("Task", "OneDragonConfigName") or "")
+        read_name = (
+            one_dragon.launch_slot_name()
+            if one_dragon.launch_slot_name() != one_dragon.resolve_config_name(config_name)
+            else config_name
+        )
         one_dragon.snapshot_user_one_dragon(
             self.root_path,
             self.script_info.script_id,
             self.cur_user_item.user_id,
-            str(target.get("Task", "OneDragonConfigName") or ""),
+            config_name,
+            read_name=read_name,
         )
 
     async def main_task(self) -> None:

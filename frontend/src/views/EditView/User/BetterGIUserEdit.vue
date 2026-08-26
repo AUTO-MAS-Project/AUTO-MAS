@@ -478,10 +478,14 @@
             @ok="confirmAddCustomGroup"
             @cancel="customGroupModal.open = false"
           >
-            <a-input
+            <a-select
               v-model:value="customGroupModal.name"
-              placeholder="请输入配置组名称（添加后默认启用）"
-              @press-enter="confirmAddCustomGroup"
+              :options="customGroupModal.addOptions"
+              placeholder="选择 BGI 现有的配置组（添加后默认启用）"
+              show-search
+              allow-clear
+              style="width: 100%"
+              option-filter-prop="label"
             />
           </a-modal>
         </a-form>
@@ -763,8 +767,9 @@ const {
   toggleEnabled: toggleCustomGroupEnabled,
 } = useBettergiCustomGroups({
   scriptId,
-  oneDragon: formData.OneDragon,
+  oneDragon: () => formData.OneDragon,
   configName: () => formData.Task.OneDragonConfigName,
+  masConfig: () => formData.Info.IfUseMasConfig,
   editable: () => formData.Info.IfUseMasConfig,
   saveField,
 })
