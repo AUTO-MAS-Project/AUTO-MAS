@@ -921,6 +921,9 @@ ipcMain.handle('log:export', async () => {
       if (stat.isFile()) {
         zip.addLocalFile(filePath)
         logger.info(`添加文件到压缩包: ${file}`)
+      } else if (stat.isDirectory() && file === 'maaend-login') {
+        zip.addLocalFolder(filePath, 'maaend-login')
+        logger.info('添加 MaaEnd 登录错误截图到压缩包')
       }
     }
 
