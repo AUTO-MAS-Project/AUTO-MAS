@@ -56,6 +56,7 @@ from app.models.config import (
     MaaUserConfig,
     SrcUserConfig,
     M9AUserConfig,
+    MaaFWUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
     OkwwUserConfig,
@@ -1050,6 +1051,7 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
+        | MaaFWUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig,
@@ -1085,6 +1087,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, MaaFWConfig):
+            uid, config = await script_config.UserData.add(MaaFWUserConfig)
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         else:
