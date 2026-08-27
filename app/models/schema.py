@@ -434,6 +434,7 @@ class ScriptIndexItem(BaseModel):
         "SrcConfig",
         "MaaEndConfig",
         "M9AConfig",
+        "MaaFWConfig",
         "HSRConfig",
     ] = Field(
         ..., description="配置类型"
@@ -1699,6 +1700,227 @@ class M9AConfig(BaseModel):
     Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+class MaaFWConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="MaaFW 脚本名称")
+    Path: Optional[str] = Field(default=None, description="MaaFW 项目根目录")
+
+
+class MaaFWConfig_Run(BaseModel):
+    Engine: Literal["external"] = Field(
+        default="external", description="MaaFW 运行引擎"
+    )
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="运行时间限制（分钟）"
+    )
+
+
+class MaaFWConfig_Selection(BaseModel):
+    """MaaFW 选择项的 API DTO。
+
+    ConfigBase 将这三个列表以 JSON 字符串保存；API 同时接受已解析的
+    字符串列表，便于后续编辑页直接提交结构化值。
+    """
+
+    Controller: Optional[Union[str, List[str]]] = Field(
+        default=None, description="选中的 controller 名称 JSON 字符串或列表"
+    )
+    Resource: Optional[Union[str, List[str]]] = Field(
+        default=None, description="选中的 resource 名称 JSON 字符串或列表"
+    )
+    Tasks: Optional[Union[str, List[str]]] = Field(
+        default=None, description="选中的 task 名称 JSON 字符串或列表"
+    )
+
+
+class MaaFWConfig(BaseModel):
+    Info: Optional[MaaFWConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[MaaFWConfig_Run] = Field(default=None, description="脚本运行配置")
+    Selection: Optional[MaaFWConfig_Selection] = Field(
+        default=None, description="controller、resource 与 task 选择"
+    )
+
+
+class MaaFWUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+
+
+class MaaFWUserConfig(BaseModel):
+    """MaaFW 用户配置最小 DTO，暂不开放独立用户 API。"""
+
+    Info: Optional[MaaFWUserConfig_Info] = Field(default=None, description="用户信息")
+
+
+class MaaFWInterfacePreviewIn(BaseModel):
+    path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+
+
+class MaaFWAdbEmulatorExtraCapabilityInfo(BaseModel):
+    screencap: bool = Field(default=False, description="ADB EmulatorExtras 截图能力")
+    input: bool = Field(default=False, description="ADB EmulatorExtras 输入能力")
+
+
+class MaaFWControlCapabilitiesInfo(BaseModel):
+    emulatorExtras: Dict[str, MaaFWAdbEmulatorExtraCapabilityInfo] = Field(
+        default_factory=dict, description="按模拟器类型列出的 EmulatorExtras 能力"
+    )
+
+
+class MaaFWProjectInfo(BaseModel):
+    name: str = Field(..., description="项目标识")
+    label: Optional[str] = Field(default=None, description="项目显示名称")
+    title: Optional[str] = Field(default=None, description="项目标题")
+    version: Optional[str] = Field(default=None, description="项目版本")
+    github: Optional[str] = Field(default=None, description="项目 GitHub 地址")
+    mirrorchyanRid: Optional[str] = Field(default=None, description="MirrorChyan RID")
+    mirrorchyanMultiplatform: Optional[bool] = Field(
+        default=None, description="MirrorChyan 是否多平台"
+    )
+    description: Optional[str] = Field(default=None, description="项目描述")
+    icon: Optional[str] = Field(default=None, description="项目图标路径")
+
+
+class MaaFWControllerInfo(BaseModel):
+    name: str = Field(..., description="控制器名称")
+    label: Optional[str] = Field(default=None, description="控制器显示名称")
+    type: str = Field(..., description="控制器类型")
+    description: Optional[str] = Field(default=None, description="控制器描述")
+    icon: Optional[str] = Field(default=None, description="控制器图标路径")
+    option: List[str] = Field(default_factory=list, description="控制器选项")
+    permissionRequired: bool = Field(default=False, description="是否需要管理员权限")
+
+
+class MaaFWResourceInfo(BaseModel):
+    name: str = Field(..., description="资源名称")
+    label: Optional[str] = Field(default=None, description="资源显示名称")
+    description: Optional[str] = Field(default=None, description="资源描述")
+    icon: Optional[str] = Field(default=None, description="资源图标路径")
+    path: List[str] = Field(default_factory=list, description="资源路径列表")
+    controller: List[str] = Field(default_factory=list, description="适用控制器列表")
+    option: List[str] = Field(default_factory=list, description="资源选项")
+
+
+class MaaFWGroupInfo(BaseModel):
+    name: str = Field(..., description="任务分组名称")
+    label: Optional[str] = Field(default=None, description="任务分组显示名称")
+    description: Optional[str] = Field(default=None, description="任务分组描述")
+    icon: Optional[str] = Field(default=None, description="任务分组图标路径")
+    defaultExpand: bool = Field(default=True, description="是否默认展开")
+
+
+class MaaFWSettingInfo(BaseModel):
+    name: str = Field(..., description="设置分组名称")
+    label: Optional[str] = Field(default=None, description="设置分组显示名称")
+    description: Optional[str] = Field(default=None, description="设置分组描述")
+    icon: Optional[str] = Field(default=None, description="设置分组图标路径")
+    option: List[str] = Field(default_factory=list, description="设置分组选项")
+    defaultExpand: bool = Field(default=True, description="是否默认展开")
+
+
+class MaaFWTaskInfo(BaseModel):
+    name: str = Field(..., description="任务名称")
+    label: Optional[str] = Field(default=None, description="任务显示名称")
+    entry: str = Field(..., description="MaaFW pipeline 入口")
+    description: Optional[str] = Field(default=None, description="任务描述")
+    icon: Optional[str] = Field(default=None, description="任务图标路径")
+    group: List[str] = Field(default_factory=list, description="所属分组")
+    controller: List[str] = Field(default_factory=list, description="适用控制器")
+    resource: List[str] = Field(default_factory=list, description="适用资源")
+    option: List[str] = Field(default_factory=list, description="任务选项")
+    defaultCheck: bool = Field(default=False, description="是否默认勾选")
+
+
+class MaaFWOptionCaseInfo(BaseModel):
+    name: str = Field(..., description="选项 case 名称")
+    label: Optional[str] = Field(default=None, description="选项 case 显示名称")
+    description: Optional[str] = Field(default=None, description="选项 case 描述")
+    icon: Optional[str] = Field(default=None, description="选项 case 图标路径")
+    option: List[str] = Field(default_factory=list, description="子选项列表")
+
+
+class MaaFWOptionInputInfo(BaseModel):
+    name: str = Field(..., description="输入项名称")
+    label: Optional[str] = Field(default=None, description="输入项显示名称")
+    description: Optional[str] = Field(default=None, description="输入项描述")
+    icon: Optional[str] = Field(default=None, description="输入项图标路径")
+    default: Optional[str] = Field(default=None, description="默认值")
+    pipelineType: Optional[str] = Field(default=None, description="pipeline 覆盖值类型")
+    verify: Optional[str] = Field(default=None, description="输入校验正则")
+    verifyError: Optional[str] = Field(default=None, description="输入校验提示")
+    patternMsg: Optional[str] = Field(default=None, description="输入校验提示")
+
+
+class MaaFWOptionHotkeyInfo(BaseModel):
+    name: str = Field(..., description="热键项名称")
+    label: Optional[str] = Field(default=None, description="热键项显示名称")
+    description: Optional[str] = Field(default=None, description="热键项描述")
+    default: Optional[str] = Field(default=None, description="默认热键")
+
+
+class MaaFWOptionInfo(BaseModel):
+    name: str = Field(..., description="选项名称")
+    type: str = Field(..., description="选项类型")
+    label: Optional[str] = Field(default=None, description="选项显示名称")
+    description: Optional[str] = Field(default=None, description="选项描述")
+    icon: Optional[str] = Field(default=None, description="选项图标路径")
+    controller: List[str] = Field(default_factory=list, description="适用控制器")
+    resource: List[str] = Field(default_factory=list, description="适用资源")
+    cases: List[MaaFWOptionCaseInfo] = Field(default_factory=list, description="可选 case")
+    inputs: List[MaaFWOptionInputInfo] = Field(default_factory=list, description="输入项")
+    hotkeys: List[MaaFWOptionHotkeyInfo] = Field(default_factory=list, description="热键项")
+    defaultCase: Optional[Union[str, List[str]]] = Field(
+        default=None, description="默认 case"
+    )
+
+
+class MaaFWTaskSnapshot(BaseModel):
+    taskOrder: List[str] = Field(default_factory=list, description="任务 name 顺序")
+    taskChecked: Dict[str, bool] = Field(default_factory=dict, description="任务勾选状态")
+    taskOptions: Dict[str, Dict[str, Union[str, List[str], Dict[str, str]]]] = Field(
+        default_factory=dict, description="任务选项值"
+    )
+
+
+class MaaFWPresetInfo(BaseModel):
+    name: str = Field(..., description="预设名称")
+    label: Optional[str] = Field(default=None, description="预设显示名称")
+    description: Optional[str] = Field(default=None, description="预设描述")
+    taskCount: int = Field(default=0, description="预设声明任务数")
+    checkedCount: int = Field(default=0, description="转换后勾选任务数")
+    snapshot: MaaFWTaskSnapshot = Field(..., description="预设转换后的任务快照")
+
+
+class MaaFWInterfacePreviewData(BaseModel):
+    """MaaFW interface 预览数据。
+
+    外层字段在宿主 schema 中明确建模；各列表条目的字段与 Phase 1
+    ``build_interface_preview_data`` 返回的 MaaFWInterfacePreviewData 契约一致。
+    """
+
+    path: str = Field(..., description="MaaFW 项目根目录")
+    project: MaaFWProjectInfo = Field(..., description="项目基础信息")
+    globalOption: List[str] = Field(default_factory=list, description="全局选项")
+    controlCapabilities: MaaFWControlCapabilitiesInfo = Field(
+        default_factory=MaaFWControlCapabilitiesInfo,
+        description="MaaFW control capabilities",
+    )
+    controllers: List[MaaFWControllerInfo] = Field(default_factory=list, description="控制器列表")
+    resources: List[MaaFWResourceInfo] = Field(default_factory=list, description="资源列表")
+    groups: List[MaaFWGroupInfo] = Field(default_factory=list, description="任务分组列表")
+    settings: List[MaaFWSettingInfo] = Field(default_factory=list, description="设置分组列表")
+    tasks: List[MaaFWTaskInfo] = Field(default_factory=list, description="任务列表")
+    options: List[MaaFWOptionInfo] = Field(default_factory=list, description="选项列表")
+    presets: List[MaaFWPresetInfo] = Field(default_factory=list, description="预设列表")
+    importCount: int = Field(default=0, description="根 interface import 数量")
+    agentCount: int = Field(default=0, description="agent 配置数量")
+
+
+class MaaFWInterfacePreviewOut(OutBase):
+    data: Optional[MaaFWInterfacePreviewData] = Field(
+        default=None, description="MaaFW interface 预览数据"
+    )
+
+
 PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
 PlanComboxConsumer = Literal["maa", "maaend"]
 
@@ -1853,8 +2075,10 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "HSR"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
+    type: Literal[
+        "MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "MaaFW", "HSR"
+    ] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1871,6 +2095,7 @@ class ScriptCreateOut(OutBase):
         OkNteConfig,
         MaaEndConfig,
         M9AConfig,
+        MaaFWConfig,
         HSRConfig,
     ] = Field(
         ..., description="脚本配置数据"
@@ -1895,6 +2120,7 @@ class ScriptGetOut(OutBase):
             OkNteConfig,
             MaaEndConfig,
             M9AConfig,
+            MaaFWConfig,
             HSRConfig,
         ],
     ] = Field(
@@ -1912,6 +2138,7 @@ class ScriptUpdateIn(BaseModel):
         OkNteConfig,
         MaaEndConfig,
         M9AConfig,
+        MaaFWConfig,
         HSRConfig,
     ] = Field(
         ..., description="脚本更新数据"

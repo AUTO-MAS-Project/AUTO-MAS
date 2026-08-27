@@ -32,6 +32,13 @@ from app.core import Config
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
+from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+    MaaFWInterfaceLoadError,
+    load_interface_model,
+)
+from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
+    build_interface_preview_data,
+)
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -85,6 +92,7 @@ SCRIPT_BOOK = {
     "SrcConfig": SrcConfig,
     "MaaEndConfig": MaaEndConfig,
     "M9AConfig": M9AConfig,
+    "MaaFWConfig": MaaFWConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
     "OkNteConfig": OkNteConfig,
@@ -616,6 +624,50 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/maafw/preview",
+    tags=["MaaFW"],
+    summary="预览 MaaFW interface",
+    response_model=MaaFWInterfacePreviewOut,
+    status_code=200,
+)
+async def preview_maafw_interface(
+    payload: MaaFWInterfacePreviewIn = Body(...),
+) -> MaaFWInterfacePreviewOut:
+    """读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。"""
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = await asyncio.to_thread(load_interface_model, root_path)
+        preview = await asyncio.to_thread(
+            build_interface_preview_data,
+            root_path,
+            interface,
+        )
+        data = MaaFWInterfacePreviewData.model_validate(
+            preview.model_dump(mode="json")
+        )
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWInterfacePreviewOut(
+            code=400,
+            status="error",
+            message=str(exc),
+            data=None,
+        )
+    except Exception as exc:
+        return MaaFWInterfacePreviewOut(
+            code=500,
+            status="error",
+            message=f"MaaFW interface 预览失败: {exc}",
+            data=None,
+        )
+
+    return MaaFWInterfacePreviewOut(
+        message=f"已读取 MaaFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
+        data=data,
+    )
 
 
 @router.post(
