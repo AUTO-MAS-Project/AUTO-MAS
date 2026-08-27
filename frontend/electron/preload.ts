@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
+  // 托盘自定义菜单项
+  updateTrayConfig: (trayItems: any) => ipcRenderer.invoke('update-tray-config', trayItems),
+
   // 同步后端配置
   syncBackendConfig: (backendSettings: any) =>
     ipcRenderer.invoke('sync-backend-config', backendSettings),

@@ -1,4 +1,4 @@
-﻿import { exec, spawn } from 'child_process'
+import { exec, spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -6,6 +6,7 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  type MenuItemConstructorOptions,
   nativeImage,
   nativeTheme,
   Notification,
@@ -41,6 +42,22 @@ interface ApiResult {
   code?: number
   message?: string
 }
+
+// 托盘菜单项类型
+type TrayAction = 'show' | 'hide' | 'stopAll' | 'restartApp' | 'quit'
+
+interface TrayItem {
+  id: string
+  label: string
+  action: TrayAction
+}
+
+// 默认托盘菜单项（与旧版硬编码菜单保持一致）
+const DEFAULT_TRAY_ITEMS: TrayItem[] = [
+  { id: 'show', label: '显示窗口', action: 'show' },
+  { id: 'hide', label: '隐藏窗口', action: 'hide' },
+  { id: 'quit', label: '退出', action: 'quit' },
+]
 
 function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -183,6 +200,7 @@ interface AppConfig {
     location: string
     maximized: boolean
     size: string
+    TrayItems?: TrayItem[]
   }
   Start: {
     IfMinimizeDirectly: boolean
@@ -301,65 +319,112 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon)
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: '显示窗口',
-      click: () => {
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) {
-            mainWindow.restore()
-          }
-          mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      },
-    },
-    {
-      label: '隐藏窗口',
-      click: () => {
-        if (mainWindow) {
-          const currentConfig = loadConfig()
-          if (currentConfig.UI.IfToTray) {
-            mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-          }
-          mainWindow.hide()
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isQuitting = true
-        app.quit()
-      },
-    },
-  ])
-
-  tray.setContextMenu(contextMenu)
   tray.setToolTip('AUTO-MAS')
+
+  // 从配置读取托盘菜单项，未配置时回落到默认菜单
+  const currentConfig = loadConfig()
+  const trayItems = currentConfig.UI.TrayItems
+  const items = trayItems?.length ? trayItems : DEFAULT_TRAY_ITEMS
+  rebuildTrayMenu(items)
 
   // 双击托盘图标显示/隐藏窗口
   tray.on('double-click', () => {
-    if (mainWindow) {
-      const currentConfig = loadConfig()
-      if (mainWindow.isVisible()) {
-        if (currentConfig.UI.IfToTray) {
-          mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-        }
-        mainWindow.hide()
-      } else {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore()
-        }
-        mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
-        mainWindow.show()
-        mainWindow.focus()
-      }
+    if (!mainWindow) return
+    if (mainWindow.isVisible()) {
+      hideMainWindow()
+    } else {
+      showMainWindow()
     }
   })
+}
+
+// 显示主窗口
+function showMainWindow(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+// 隐藏主窗口
+function hideMainWindow(): void {
+  if (!mainWindow) return
+  const currentConfig = loadConfig()
+  if (currentConfig.UI.IfToTray) {
+    mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
+  }
+  mainWindow.hide()
+}
+
+// 重建托盘右键菜单
+function rebuildTrayMenu(items: TrayItem[]): void {
+  if (!tray) return
+
+  // 空列表时回落到默认菜单，避免托盘右键菜单为空
+  const effectiveItems = items.length ? items : DEFAULT_TRAY_ITEMS
+
+  const menuItems: MenuItemConstructorOptions[] = []
+  effectiveItems.forEach((item, index) => {
+    // 在「退出」前插入分隔线，保持与旧版菜单一致的视觉区分
+    if (item.action === 'quit' && index > 0) {
+      menuItems.push({ type: 'separator' })
+    }
+    menuItems.push({
+      label: item.label,
+      click: () => handleTrayAction(item.action),
+    })
+  })
+
+  tray.setContextMenu(Menu.buildFromTemplate(menuItems))
+}
+
+// 执行托盘菜单项动作
+function handleTrayAction(action: TrayAction): void {
+  switch (action) {
+    case 'show':
+      showMainWindow()
+      break
+    case 'hide':
+      hideMainWindow()
+      break
+    case 'stopAll':
+      void stopAllTasksByShortcut()
+      break
+    case 'restartApp':
+      void restartAppFromTray()
+      break
+    case 'quit':
+      isQuitting = true
+      app.quit()
+      break
+  }
+}
+
+// 从托盘重启整个应用（会停止当前运行的任务，需用户确认）
+async function restartAppFromTray(): Promise<void> {
+  try {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: '重启应用',
+      message: '重启 AUTO-MAS 会停止当前正在运行的任务，确定继续？',
+      buttons: ['取消', '确定'],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    if (response !== 1) return
+
+    logger.info('托盘触发重启应用')
+    isQuitting = true
+    app.relaunch()
+    app.exit(0)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`托盘重启应用失败: ${errorMsg}`)
+    showShortcutNotification('AUTO-MAS', `重启应用失败: ${errorMsg}`)
+  }
 }
 
 // 销毁托盘
@@ -1346,6 +1411,9 @@ ipcMain.handle('save-config', async (_event, config) => {
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
+      if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
+        rebuildTrayMenu(config.UI.TrayItems)
+      }
     }
   } catch (error) {
     logger.error('保存配置文件失败')
@@ -1368,6 +1436,29 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     return true
   } catch (error) {
     logger.error('更新托盘设置失败')
+    throw error
+  }
+})
+
+// 更新托盘自定义菜单项
+ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
+  try {
+    const currentConfig = loadConfig()
+    currentConfig.UI = { ...currentConfig.UI, TrayItems: trayItems }
+    saveConfig(currentConfig)
+
+    // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
+    try {
+      if (tray) destroyTray()
+      updateTrayVisibility(currentConfig)
+    } catch (refreshError) {
+      logger.error('刷新托盘菜单失败', refreshError)
+    }
+
+    logger.info('托盘菜单项已更新')
+    return true
+  } catch (error) {
+    logger.error('更新托盘菜单项失败')
     throw error
   }
 })
