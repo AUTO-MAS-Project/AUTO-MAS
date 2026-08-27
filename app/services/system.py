@@ -29,6 +29,7 @@ import subprocess
 import tempfile
 import getpass
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
@@ -45,8 +46,16 @@ from app.utils import ProcessRunner, get_logger
 logger = get_logger("系统服务")
 
 
-class _SystemHandler:
+@dataclass(frozen=True, slots=True)
+class _ProcessPathScan:
+    """按可执行文件路径扫描进程的结果。"""
 
+    pids: list[int]
+    uncertain_pids: list[int]
+    complete: bool
+
+
+class _SystemHandler:
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
     countdown = 60
@@ -391,26 +400,120 @@ class _SystemHandler:
     #     win32gui.EnumWindows(callback, window_info)
     #     return window_info
 
-    async def kill_process(self, path: Path, *, kill_tree: bool = True) -> None:
-        """
-        根据路径中止进程
+    async def kill_process(
+        self, path: Path | str, *, kill_tree: bool = True
+    ) -> bool:
+        """根据路径中止进程。
 
-        :param path: 进程路径
-        :param kill_tree: 是否同时中止子进程树
+        Args:
+            path (Path | str): 目标进程路径。
+            kill_tree (bool): 是否同时中止子进程树。
+
+        Returns:
+            bool: 所有匹配进程均成功中止时返回 True。
         """
 
+        path = Path(path)
         logger.info(f"开始中止进程: {path}")
 
-        for pid in await self.search_pids(path):
-            args = ["taskkill", "/F"]
-            if kill_tree:
-                args.append("/T")
-            args.extend(["/PID", str(pid)])
-            await ProcessRunner.run_process(*args)
+        scan = await self._scan_processes_by_path(path)
+        success = scan.complete
+        first_error: Exception | None = None
+        if scan.uncertain_pids:
+            logger.warning(
+                f"存在无法确认路径的同名进程: {path.name}, PID: {scan.uncertain_pids}"
+            )
 
-        logger.success(f"进程已中止: {path}")
+        for pid in scan.pids:
+            try:
+                pid_success = await self.kill_process_by_pid(pid, kill_tree=kill_tree)
+            except Exception as e:
+                pid_success = False
+                if first_error is None:
+                    first_error = e
+                logger.opt(exception=True).warning(
+                    f"进程中止异常 PID: {pid}, 原因: {e}"
+                )
+            if not pid_success:
+                success = False
 
-    async def search_pids(self, path: Path) -> list:
+        if first_error is not None:
+            raise first_error
+        if success:
+            logger.success(f"进程已中止: {path}")
+        return success
+
+    async def kill_process_by_pid(self, pid: int, *, kill_tree: bool = True) -> bool:
+        """根据 PID 中止进程。
+
+        Args:
+            pid (int): 目标进程 PID。
+            kill_tree (bool): 是否同时中止子进程树。
+
+        Returns:
+            bool: taskkill 成功执行时返回 True。
+        """
+
+        logger.info(f"开始中止进程 PID: {pid}")
+        args = ["taskkill", "/F"]
+        if kill_tree:
+            args.append("/T")
+        args.extend(["/PID", str(pid)])
+        result = await ProcessRunner.run_process(
+            *args,
+        )
+        if result.returncode != 0:
+            if not psutil.pid_exists(pid):
+                logger.info(f"进程已自行退出 PID: {pid}")
+                return True
+
+            output = result.stderr.strip() or result.stdout.strip() or "无错误信息"
+            logger.warning(
+                f"进程中止失败 PID: {pid}, 返回码: {result.returncode}, 原因: {output}"
+            )
+            return False
+
+        logger.success(f"进程已中止 PID: {pid}")
+        return True
+
+    async def _scan_processes_by_path(self, path: Path | str) -> _ProcessPathScan:
+        """扫描精确路径进程，并记录无法确认路径的同名候选。"""
+
+        path = Path(path)
+        pids: list[int] = []
+        uncertain_pids: list[int] = []
+        complete = True
+        target_path = str(path).casefold()
+        target_name = path.name.casefold()
+
+        try:
+            processes = psutil.process_iter(["pid", "name", "exe"])
+            for proc in processes:
+                try:
+                    info = proc.info
+                except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                    continue
+
+                process_path = info.get("exe")
+                if process_path:
+                    if str(process_path).casefold() == target_path:
+                        pids.append(info["pid"])
+                    continue
+
+                process_name = info.get("name")
+                if process_name and str(process_name).casefold() == target_name:
+                    uncertain_pids.append(info["pid"])
+        except (psutil.AccessDenied, OSError) as e:
+            complete = False
+            logger.warning(f"扫描进程路径失败: {e}")
+
+        return _ProcessPathScan(
+            pids=pids,
+            uncertain_pids=uncertain_pids,
+            complete=complete,
+        )
+
+    async def search_pids(self, path: Path | str) -> list[int]:
         """
         根据路径查找进程PID
 
@@ -420,14 +523,7 @@ class _SystemHandler:
 
         logger.info(f"开始查找进程 PID: {path}")
 
-        pids = []
-        for proc in psutil.process_iter(["pid", "exe"]):
-            with suppress(
-                psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess
-            ):  # 进程可能在此期间已结束或无法访问, 忽略这些异常
-                if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
-                    pids.append(proc.info["pid"])
-        return pids
+        return (await self._scan_processes_by_path(path)).pids
 
 
 System = _SystemHandler()
