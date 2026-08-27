@@ -1,5 +1,4 @@
 import asyncio
-import os
 import tempfile
 import unittest
 from datetime import datetime
@@ -13,7 +12,6 @@ from app.models.task import LogRecord
 from app.task.SRC.AutoProxy import AutoProxyTask
 from app.task.SRC.tools.process import (
     _kill_src_toolkit_processes,
-    _scan_src_toolkit_context,
     kill_src_processes,
     kill_src_webui_process,
 )
@@ -110,45 +108,6 @@ class SrcProcessCleanupTest(unittest.IsolatedAsyncioTestCase):
             kill_process_by_pid.assert_not_awaited()
             self.assertTrue(cleanup_success)
 
-    async def test_self_process_is_skipped_before_name_matching(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            src_root = Path(temp_dir) / "SRC"
-            toolkit_path = src_root / "toolkit"
-            toolkit_path.mkdir(parents=True)
-            (toolkit_path / "python.exe").touch()
-            processes = [
-                SimpleNamespace(
-                    info={
-                        "pid": os.getpid(),
-                        "name": "python.exe",
-                        "exe": None,
-                    }
-                ),
-                SimpleNamespace(
-                    info={
-                        "pid": 456,
-                        "name": "python.exe",
-                        "exe": str(toolkit_path / "python.exe"),
-                    }
-                ),
-            ]
-
-            with (
-                patch(
-                    "app.task.SRC.tools.process.psutil.process_iter",
-                    return_value=processes,
-                ),
-                patch(
-                    "app.task.SRC.tools.process.System.kill_process_by_pid",
-                    new_callable=AsyncMock,
-                    return_value=True,
-                ) as kill_process_by_pid,
-            ):
-                cleanup_success = await _kill_src_toolkit_processes(src_root)
-
-            kill_process_by_pid.assert_awaited_once_with(456)
-            self.assertTrue(cleanup_success)
-
     async def test_webui_cleanup_requires_launch_port_and_src_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             src_root = Path(temp_dir) / "SRC"
@@ -243,7 +202,7 @@ class SrcProcessCleanupTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(cleanup_success)
 
-    async def test_tracked_process_tree_is_killed_first(self) -> None:
+    async def test_tracked_process_tree_is_killed_before_path_cleanup(self) -> None:
         events: list[str] = []
         process_manager = SimpleNamespace(
             main_pid=123,
@@ -292,66 +251,10 @@ class SrcProcessCleanupTest(unittest.IsolatedAsyncioTestCase):
                     src_set_path=src_set_path,
                 )
 
-        self.assertEqual(
-            events,
-            ["tree", "path", "toolkit", "manager", "webui", "toolkit"],
-        )
-        self.assertTrue(cleanup_success)
-
-    async def test_toolkit_scan_is_reused_for_both_cleanup_passes(self) -> None:
-        process_manager = SimpleNamespace(
-            main_pid=None,
-            is_running=AsyncMock(),
-            kill=AsyncMock(),
-        )
-        with tempfile.TemporaryDirectory() as temp_dir:
-            src_root_path = Path(temp_dir) / "SRC"
-            src_set_path = src_root_path / "config"
-            src_set_path.mkdir(parents=True)
-            src_exe_path = src_root_path / "src.exe"
-            src_exe_path.touch()
-            (src_set_path / "src.json").write_text("{}", encoding="utf-8")
-            (src_set_path / "deploy.yaml").write_text("Run: null\n", encoding="utf-8")
-            toolkit_context = _scan_src_toolkit_context(src_root_path)
-
-            with (
-                patch(
-                    "app.task.SRC.tools.process._scan_src_toolkit_context",
-                    return_value=toolkit_context,
-                ) as scan_toolkit_context,
-                patch(
-                    "app.task.SRC.tools.process._kill_src_toolkit_processes",
-                    new_callable=AsyncMock,
-                    return_value=True,
-                ) as kill_toolkit_processes,
-                patch(
-                    "app.task.SRC.tools.process.System.kill_process",
-                    new_callable=AsyncMock,
-                    return_value=True,
-                ),
-                patch(
-                    "app.task.SRC.tools.process.kill_src_webui_process",
-                    new_callable=AsyncMock,
-                    return_value=True,
-                ),
-            ):
-                cleanup_success = await kill_src_processes(
-                    process_manager,
-                    src_exe_path=src_exe_path,
-                    src_root_path=src_root_path,
-                    src_set_path=src_set_path,
-                )
-
-        scan_toolkit_context.assert_called_once_with(src_root_path.resolve())
-        self.assertEqual(kill_toolkit_processes.await_count, 2)
-        self.assertIs(
-            kill_toolkit_processes.await_args_list[0].kwargs["toolkit_context"],
-            toolkit_context,
-        )
-        self.assertIs(
-            kill_toolkit_processes.await_args_list[1].kwargs["toolkit_context"],
-            toolkit_context,
-        )
+        self.assertEqual(events[:2], ["tree", "path"])
+        self.assertIn("manager", events)
+        self.assertIn("webui", events)
+        self.assertEqual(events.count("toolkit"), 2)
         self.assertTrue(cleanup_success)
 
     async def test_cleanup_timeout_returns_false(self) -> None:

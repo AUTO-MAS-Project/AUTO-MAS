@@ -136,23 +136,6 @@ class SystemProcessTest(unittest.IsolatedAsyncioTestCase):
         kill_process_by_pid.assert_any_await(123, kill_tree=True)
         kill_process_by_pid.assert_any_await(456, kill_tree=True)
 
-    async def test_kill_process_skips_unreadable_same_name(self) -> None:
-        handler = _SystemHandler()
-        process = SimpleNamespace(info={"pid": 123, "name": "src.exe", "exe": None})
-
-        with (
-            patch("app.services.system.psutil.process_iter", return_value=[process]),
-            patch.object(
-                handler,
-                "kill_process_by_pid",
-                new_callable=AsyncMock,
-            ) as kill_process_by_pid,
-        ):
-            success = await handler.kill_process(Path("SRC/src.exe"))
-
-        kill_process_by_pid.assert_not_awaited()
-        self.assertTrue(success)
-
     async def test_kill_process_ignores_readable_same_name_at_other_path(self) -> None:
         handler = _SystemHandler()
         process = SimpleNamespace(

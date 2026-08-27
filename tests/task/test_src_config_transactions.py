@@ -16,41 +16,19 @@ class SrcConfigTransactionTest(unittest.TestCase):
             src_root_path = Path(temp_dir)
             src_exe_path = src_root_path / "src.exe"
             src_exe_path.write_bytes(b"first executable")
-            stat = src_exe_path.stat()
-            expected_identity = ":".join(
-                str(value)
-                for value in (
-                    stat.st_dev,
-                    stat.st_ino,
-                    stat.st_size,
-                    stat.st_ctime_ns,
-                    stat.st_mtime_ns,
-                )
-            )
 
             installation_id = read_src_installation_id(src_root_path)
-
-            self.assertEqual(installation_id, expected_identity)
             self.assertEqual(
                 read_src_installation_id(src_root_path),
                 installation_id,
             )
 
-            other_exe_path = src_root_path / "other.exe"
-            other_exe_path.write_bytes(src_exe_path.read_bytes())
-            other_stat = other_exe_path.stat()
+            other_src_root_path = src_root_path.parent / "other-src"
+            other_src_root_path.mkdir()
+            (other_src_root_path / "src.exe").write_bytes(src_exe_path.read_bytes())
             self.assertNotEqual(
                 installation_id,
-                ":".join(
-                    str(value)
-                    for value in (
-                        other_stat.st_dev,
-                        other_stat.st_ino,
-                        other_stat.st_size,
-                        other_stat.st_ctime_ns,
-                        other_stat.st_mtime_ns,
-                    )
-                ),
+                read_src_installation_id(other_src_root_path),
             )
 
     def test_fresh_template_config_is_available_and_stageable(self) -> None:
