@@ -35,7 +35,14 @@ from .config import (
     OkNteConfig,
     HSRConfig,
 )
-from app.services import System
+
+def __getattr__(name: str) -> object:
+    """延迟导入 System，避免 app.services 初始化期间的循环导入。"""
+    if name == "System":
+        from app.services import System
+        return System
+    raise AttributeError(name)
+
 from app.models.task import (
     ScriptItem,
     TaskExecuteBase,
