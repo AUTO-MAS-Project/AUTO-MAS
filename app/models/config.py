@@ -3195,7 +3195,7 @@ class ToolsConfig(ConfigBase):
         )
         ## GameSign - 启动时运行
         self.GameSign_RunOnStartup = ConfigItem(
-            "GameSign", "RunOnStartup", "Never", OptionsValidator(["Never", "Always", "DailyFirst"])
+            "GameSign", "RunOnStartup", False, BoolValidator()
         )
         ## GameSign - 旧版自动签到开关（保留用于读取历史配置，不参与调度）
         self.GameSign_ScheduledRun = ConfigItem(
