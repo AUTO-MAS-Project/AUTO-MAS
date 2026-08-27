@@ -12,9 +12,11 @@ import {
   type HSRConfig,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
+  type MaaFWInterfacePreviewOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
+  MaaFwService,
   Service,
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
@@ -1222,6 +1224,17 @@ export function useScriptApi() {
     }
   }
 
+  // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
+  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+    try {
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
+      return null
+    }
+  }
+
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
@@ -1344,6 +1357,7 @@ export function useScriptApi() {
     getScript,
     getHsrStageOptions,
     getMaaEndOptions,
+    previewMaaFWInterface,
     deleteScript,
     updateScript,
     reorderScript,
