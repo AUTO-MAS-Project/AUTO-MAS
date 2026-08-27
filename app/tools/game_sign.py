@@ -620,21 +620,6 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
 
-        skland_token = tokens.get("SklandToken", "")
-        if "森空岛" in enabled_platforms and _all_enabled_platforms_signed(
-            results,
-            account_uid=account_uid,
-            enabled_platforms=["森空岛"],
-        ):
-            sync_legacy_date = getattr(
-                Config, "_sync_legacy_skland_sign_date", None
-            )
-            if callable(sync_legacy_date):
-                try:
-                    await sync_legacy_date(token=skland_token, sign_date=today)
-                except Exception as e:
-                    logger.warning(f"[{account_name}] 回写旧用户森空岛日期失败: {e}")
-
     if not results:
         logger.info("没有配置任何签到平台")
 

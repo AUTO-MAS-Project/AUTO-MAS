@@ -536,12 +536,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
         ## 备用关卡
         self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
-        ## 是否启用森空岛签到
-        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-        ## 森空岛 Token
-        self.Info_SklandToken = ConfigItem(
-            "Info", "SklandToken", "", EncryptValidator()
-        )
         ## 用户标签信息（虚拟字段，供前端显示）
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -552,10 +546,6 @@ class MaaUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## 上次森空岛签到日期
-        self.Data_LastSklandDate = ConfigItem(
-            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
         ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
@@ -564,8 +554,6 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
@@ -695,10 +683,6 @@ class MaaUserConfig(ConfigBase):
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
-
         # 日常代理标签（使用东4区时间）
         if (
             datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
@@ -712,18 +696,6 @@ class MaaUserConfig(ConfigBase):
             )
         else:
             tags.append({"text": "日常：未代理", "color": "orange"})
-
-        # 森空岛签到标签（使用东8区时间）
-        if self.get("Info", "IfSkland"):
-            if (
-                datetime.strptime(self.get("Data", "LastSklandDate"), "%Y-%m-%d").date()
-                == datetime.now(tz=UTC8).date()
-            ):
-                tags.append({"text": "森空岛：已签到", "color": "green"})
-            else:
-                tags.append({"text": "森空岛：未签到", "color": "orange"})
-        else:
-            tags.append({"text": "森空岛：禁用", "color": "red"})
 
         # 剩余天数标签
         remained_day = self.get("Info", "RemainedDay")
@@ -944,12 +916,6 @@ class MaaEndUserConfig(ConfigBase):
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
-        ## 是否启用森空岛签到
-        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-        ## 森空岛 Token
-        self.Info_SklandToken = ConfigItem(
-            "Info", "SklandToken", "", EncryptValidator()
-        )
         ## 用户标签信息
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -974,12 +940,6 @@ class MaaEndUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
-        ## 上次森空岛签到日期
-        self.Data_LastSklandDate = ConfigItem(
-            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -1060,9 +1020,6 @@ class MaaEndUserConfig(ConfigBase):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
 
         # 上次代理标签
         tags.append(
@@ -1087,18 +1044,6 @@ class MaaEndUserConfig(ConfigBase):
             )
         else:
             tags.append({"text": "日常：未代理", "color": "orange"})
-
-        # 森空岛签到标签（使用东8区时间）
-        if self.get("Info", "IfSkland"):
-            if (
-                datetime.strptime(self.get("Data", "LastSklandDate"), "%Y-%m-%d").date()
-                == datetime.now(tz=UTC8).date()
-            ):
-                tags.append({"text": "森空岛：已签到", "color": "green"})
-            else:
-                tags.append({"text": "森空岛：未签到", "color": "orange"})
-        else:
-            tags.append({"text": "森空岛：禁用", "color": "red"})
 
         # 剩余天数标签
         remained_day = self.get("Info", "RemainedDay")
@@ -1546,8 +1491,6 @@ class SrcUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -1576,10 +1519,6 @@ class SrcUserConfig(ConfigBase):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
 
         # 日常代理标签（使用东4区时间）
         if (
@@ -1747,8 +1686,6 @@ class HSRUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## 本周是否已完成历战余响
         self.Data_EchoOfWarCompletedThisWeek = ConfigItem(
             "Data", "EchoOfWarCompletedThisWeek", False, BoolValidator()
@@ -1885,10 +1822,6 @@ class HSRUserConfig(ConfigBase):
     def getTags(self) -> str:
         """生成 HSR 用户标签列表，返回JSON字符串格式的TagItem列表。"""
         tags: list[dict] = []
-
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
 
         server = self.get("Info", "Server")
         server_label_map = {"CN-Official": "官服"}
@@ -2119,8 +2052,6 @@ class M9AUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -2149,10 +2080,6 @@ class M9AUserConfig(ConfigBase):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
 
         # 日常代理标签（使用东4区时间）
         if (
@@ -2643,6 +2570,10 @@ class OkwwUserConfig(ConfigBase):
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否在任务报告中推送该用户的节点详情（log_box 采集的关键节点）
+        self.Notify_PushLogEnabled = ConfigItem(
+            "Notify", "PushLogEnabled", True, BoolValidator()
+        )
         ## 是否发送用户统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
@@ -2921,6 +2852,12 @@ class GeneralConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+        ## 推送日志启用开关：关闭后保留高级正则配置，但不会实际采集推送日志
+        self.Script_PushLogEnabled = ConfigItem(
+            "Script", "PushLogEnabled", False, BoolValidator()
+        )
+        ## 推送日志高级模式（JSON 数组，每项形如 {"type":"regex|multiline",...}）
+        self.Script_PushLogPatterns = ConfigItem("Script", "PushLogPatterns", "")
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
@@ -2998,6 +2935,12 @@ class OkwwConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务前是否由 MAS 检查并接管更新游戏
+        self.Game_IfAutoUpdate = ConfigItem("Game", "IfAutoUpdate", True, BoolValidator())
+        ## 整文件同步体积上限（GB），超过则中止并提示手动处理
+        self.Game_UpdateFullSyncLimit = ConfigItem(
+            "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
+        )
         ## Run -------------------------------------------------------------
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(

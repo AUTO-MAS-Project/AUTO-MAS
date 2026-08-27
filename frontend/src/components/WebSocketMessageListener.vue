@@ -1,15 +1,27 @@
 <template>
   <!-- 应用内弹窗组件 -->
-  <Modal v-model:open="isModalOpen" :title="currentModal?.title || '操作提示'" :closable="false" :maskClosable="false"
-    :keyboard="true" centered @ok="handleOk" @cancel="handleCancel">
+  <Modal
+    v-model:open="isModalOpen"
+    :title="currentModal?.title || '操作提示'"
+    :closable="false"
+    :mask-closable="false"
+    :keyboard="true"
+    centered
+    @ok="handleOk"
+    @cancel="handleCancel"
+  >
     <p class="modal-message">{{ currentModal?.message || '' }}</p>
     <!-- 显示队列中还有多少待处理的弹窗 -->
     <p v-if="modalQueue.length > 0" class="modal-queue-hint">
       还有 {{ modalQueue.length }} 条消息待处理
     </p>
     <template #footer>
-      <Button v-for="(option, index) in (currentModal?.options || ['确定', '取消'])" :key="index"
-        :type="index === 0 ? 'primary' : 'default'" @click="handleChoice(index === 0)">
+      <Button
+        v-for="(option, index) in currentModal?.options || ['确定', '取消']"
+        :key="index"
+        :type="index === 0 ? 'primary' : 'default'"
+        @click="handleChoice(index === 0)"
+      >
         {{ option }}
       </Button>
     </template>
@@ -94,7 +106,9 @@ const showNextModal = async () => {
   if (modalQueue.value.length > 0) {
     // 从队列头部取出下一个弹窗
     const nextModal = modalQueue.value.shift()!
-    logger.info(`显示队列中的下一个弹窗: ${nextModal.messageId}, 剩余队列: ${modalQueue.value.length}`)
+    logger.info(
+      `显示队列中的下一个弹窗: ${nextModal.messageId}, 剩余队列: ${modalQueue.value.length}`
+    )
 
     // 激活窗口
     await focusWindow()
@@ -142,12 +156,18 @@ const showQuestion = async (questionData: any) => {
 const handleMessage = (message: WebSocketBaseMessage) => {
   try {
     // 只打印摘要信息，避免打印完整消息内容
-    const dataSize = message.data ? (typeof message.data === 'string' ? message.data.length : JSON.stringify(message.data).length) : 0
-    logger.info(`收到Message类型消息: ${JSON.stringify({
-      type: message.type,
-      id: message.id,
-      dataSize: `${dataSize} bytes`
-    })}`)
+    const dataSize = message.data
+      ? typeof message.data === 'string'
+        ? message.data.length
+        : JSON.stringify(message.data).length
+      : 0
+    logger.info(
+      `收到Message类型消息: ${JSON.stringify({
+        type: message.type,
+        id: message.id,
+        dataSize: `${dataSize} bytes`,
+      })}`
+    )
 
     // 解析消息数据
     if (message.data) {
@@ -180,9 +200,7 @@ const handleObjectMessage = (data: any) => {
   logger.debug(`处理对象消息: ${JSON.stringify(data)}`)
 
   // 检查是否为Question类型的消息
-  logger.debug(
-    `检查消息类型 - data.type: ${data.type}, data.message_id: ${data.message_id}`
-  )
+  logger.debug(`检查消息类型 - data.type: ${data.type}, data.message_id: ${data.message_id}`)
 
   if (data.type === 'Question') {
     logger.info('发现Question类型消息')
@@ -251,8 +269,8 @@ onMounted(() => {
   logger.info(`订阅ID: ${subscriptionId}`)
   logger.info(`订阅过滤器: ${JSON.stringify({ type: 'Message' })}`)
 
-    // 暴露调试接口到 window 对象（仅用于开发调试）
-    ; (window as any).__debugShowQuestion = showQuestion
+  // 暴露调试接口到 window 对象（仅用于开发调试）
+  ;(window as any).__debugShowQuestion = showQuestion
   logger.debug('已暴露调试接口: window.__debugShowQuestion')
 })
 

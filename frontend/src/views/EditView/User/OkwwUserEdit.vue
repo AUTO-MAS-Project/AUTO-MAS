@@ -156,6 +156,27 @@
                   />
                 </a-form-item>
               </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      是否采集节点详情
+                      <a-tooltip
+                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Notify.PushLogEnabled"
+                    size="large"
+                    class="modern-select"
+                    :options="quickConfigOptions"
+                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                  />
+                </a-form-item>
+              </a-col>
             </a-row>
 
             <a-row :gutter="24">
@@ -383,7 +404,11 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <ExtraScriptSection v-model:form-data="formData" :loading="pageLoading" @save="saveField" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="pageLoading"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
 
@@ -574,11 +599,17 @@ const additionalTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
+// PushLogEnabled 为本页新增开关；待后端 schema 重新生成前端 API 后，
+// 该字段会并入 OkwwUserConfig['Notify']，届时可移除本地扩展
+type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>> & {
+  PushLogEnabled: boolean
+}
+
 type OkwwUserFormData = {
   userName: string
   Info: FormSection<NonNullable<OkwwUserConfig['Info']>>
   Task: FormSection<NonNullable<OkwwUserConfig['Task']>>
-  Notify: FormSection<NonNullable<OkwwUserConfig['Notify']>>
+  Notify: OkwwNotifyForm
   Data: FormSection<NonNullable<OkwwUserConfig['Data']>>
 }
 
@@ -611,6 +642,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
+    PushLogEnabled: true,
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

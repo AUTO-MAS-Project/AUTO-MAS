@@ -184,8 +184,6 @@ export function useScriptApi() {
                   Stage_2: any
                   Stage_3: any
                   Stage_Remain: any
-                  IfSkland: any
-                  SklandToken: any
                 }
                 Task: {
                   IfStartUp: any
@@ -209,8 +207,6 @@ export function useScriptApi() {
                 }
                 Data: {
                   LastProxyDate: any
-                  LastSklandDate: any
-                  IfPassCheck: any
                   ProxyTimes: any
                 }
               }
@@ -343,14 +339,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Stage_Remain !== undefined
                             ? maaUserData.Info.Stage_Remain
                             : '-',
-                        IfSkland:
-                          maaUserData.Info?.IfSkland !== undefined
-                            ? maaUserData.Info.IfSkland
-                            : false,
-                        SklandToken:
-                          maaUserData.Info?.SklandToken !== undefined
-                            ? maaUserData.Info.SklandToken
-                            : '',
                         Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
@@ -440,14 +428,6 @@ export function useScriptApi() {
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
                             : '',
-                        LastSklandDate:
-                          maaUserData.Data?.LastSklandDate !== undefined
-                            ? maaUserData.Data.LastSklandDate
-                            : '',
-                        IfPassCheck:
-                          maaUserData.Data?.IfPassCheck !== undefined
-                            ? maaUserData.Data.IfPassCheck
-                            : false,
                         ProxyTimes:
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
@@ -556,10 +536,6 @@ export function useScriptApi() {
                           srcUserData.Data?.ProxyTimes !== undefined
                             ? srcUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          srcUserData.Data?.IfPassCheck !== undefined
-                            ? srcUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {
@@ -683,14 +659,6 @@ export function useScriptApi() {
                           maaEndUserData.Info?.RemainedDay !== undefined
                             ? maaEndUserData.Info.RemainedDay
                             : -1,
-                        IfSkland:
-                          maaEndUserData.Info?.IfSkland !== undefined
-                            ? maaEndUserData.Info.IfSkland
-                            : false,
-                        SklandToken:
-                          maaEndUserData.Info?.SklandToken !== undefined
-                            ? maaEndUserData.Info.SklandToken
-                            : '',
                         Notes:
                           maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
                         Tag:
@@ -825,18 +793,10 @@ export function useScriptApi() {
                           maaEndUserData.Data?.LastProxyDate !== undefined
                             ? maaEndUserData.Data.LastProxyDate
                             : '',
-                        LastSklandDate:
-                          maaEndUserData.Data?.LastSklandDate !== undefined
-                            ? maaEndUserData.Data.LastSklandDate
-                            : '',
                         ProxyTimes:
                           maaEndUserData.Data?.ProxyTimes !== undefined
                             ? maaEndUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          maaEndUserData.Data?.IfPassCheck !== undefined
-                            ? maaEndUserData.Data.IfPassCheck
-                            : false,
                         LastProxyStatus:
                           maaEndUserData.Data?.LastProxyStatus !== undefined
                             ? maaEndUserData.Data.LastProxyStatus
@@ -935,10 +895,6 @@ export function useScriptApi() {
                           m9aUserData.Data?.ProxyTimes !== undefined
                             ? m9aUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          m9aUserData.Data?.IfPassCheck !== undefined
-                            ? m9aUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (
@@ -1157,10 +1113,6 @@ export function useScriptApi() {
                           hsrUserData.Data?.ProxyTimes !== undefined
                             ? hsrUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          hsrUserData.Data?.IfPassCheck !== undefined
-                            ? hsrUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   }

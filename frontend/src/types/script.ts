@@ -84,6 +84,8 @@ export interface GeneralScriptConfig {
     LogTimeEnd: number
     LogTimeStart: number
     LogTimeFormat: string
+    PushLogEnabled: boolean
+    PushLogPatterns: string
     ScriptPath: string
     SuccessLog: string
     UpdateConfigMode: string
@@ -189,7 +191,7 @@ export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
  */
 export function resolveTaskMappingValue(
   current: string | undefined,
-  available: Set<'M7A' | 'SRA'>,
+  available: Set<'M7A' | 'SRA'>
 ): 'M7A' | 'SRA' | undefined {
   if (current && available.has(current as 'M7A' | 'SRA')) {
     return current as 'M7A' | 'SRA'
@@ -221,18 +223,15 @@ export interface User {
   id: string
   name: string
   Data: {
-    IfPassCheck: boolean
     LastProxyDate: string
     LastPsychubeDate?: string
     LastLimboMonth?: string
     LastLucidscapeMonth?: string
-    LastSklandDate: string
     ProxyTimes: number
   }
   Info: {
     Annihilation: string
     Id: string
-    IfSkland: boolean
     InfrastMode: string
     InfrastName: string
     InfrastIndex: string
@@ -246,7 +245,6 @@ export interface User {
     IfUseMasConfig?: boolean
     SeriesNumb: string
     Server: string
-    SklandToken: string
     Stage: string
     StageMode: string
     Stage_1: string

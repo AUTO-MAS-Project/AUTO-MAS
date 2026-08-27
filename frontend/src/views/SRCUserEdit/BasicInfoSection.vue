@@ -14,8 +14,14 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
-            class="modern-input" @blur="emitSave('userName', formData.userName)" />
+          <a-input
+            v-model:value="formData.userName"
+            placeholder="请输入用户名"
+            :disabled="loading"
+            size="large"
+            class="modern-input"
+            @blur="emitSave('userName', formData.userName)"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -28,8 +34,11 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Info.Status" size="large"
-            @change="emitSave('Info.Status', formData.Info.Status)">
+          <a-select
+            v-model:value="formData.Info.Status"
+            size="large"
+            @change="emitSave('Info.Status', formData.Info.Status)"
+          >
             <a-select-option :value="true">是</a-select-option>
             <a-select-option :value="false">否</a-select-option>
           </a-select>
@@ -43,10 +52,13 @@
           <template #label>
             <a-tooltip>
               <template #title>
-                <div style="max-width: 520px; line-height: 1.6; white-space: normal;">
+                <div style="max-width: 520px; line-height: 1.6; white-space: normal">
                   用于切换账号，无需切换则留空。<br />
-                  官服输入 11 位手机号，若输入手机号中包含「*」则切换账号时将仅通过识别已登录账号列表登录。<br />
-                  B 服输入用户名片段，允许同时输入 B 站账号/邮箱号/手机号，中间使用「|」分隔，通过账号密码登录时将优先使用 B 站账号/邮箱号/手机号。
+                  官服输入 11
+                  位手机号，若输入手机号中包含「*」则切换账号时将仅通过识别已登录账号列表登录。<br />
+                  B 服输入用户名片段，允许同时输入 B
+                  站账号/邮箱号/手机号，中间使用「|」分隔，通过账号密码登录时将优先使用 B
+                  站账号/邮箱号/手机号。
                 </div>
               </template>
               <span class="form-label">
@@ -55,22 +67,34 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input v-model:value="formData.Info.Id" placeholder="请输入账号" :disabled="loading" size="large"
-            @blur="emitSave('Info.Id', formData.Info.Id)" />
+          <a-input
+            v-model:value="formData.Info.Id"
+            placeholder="请输入账号"
+            :disabled="loading"
+            size="large"
+            @blur="emitSave('Info.Id', formData.Info.Id)"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">
         <a-form-item :name="['Info', 'Password']">
           <template #label>
-            <a-tooltip title="用户密码，填写时将启用备选的通过输入账号密码方式登录，留空时仅通过识别已登录账号列表登录">
+            <a-tooltip
+              title="用户密码，填写时将启用备选的通过输入账号密码方式登录，留空时仅通过识别已登录账号列表登录"
+            >
               <span class="form-label">
                 密码
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
-          <a-input-password v-model:value="formData.Info.Password" placeholder="请输入密码" :disabled="loading" size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)" />
+          <a-input-password
+            v-model:value="formData.Info.Password"
+            placeholder="请输入密码"
+            :disabled="loading"
+            size="large"
+            @blur="emitSave('Info.Password', formData.Info.Password)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -86,8 +110,14 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Info.Server" placeholder="请选择服务器" :disabled="loading"
-            :options="serverOptions" size="large" @change="emitSave('Info.Server', formData.Info.Server)" />
+          <a-select
+            v-model:value="formData.Info.Server"
+            placeholder="请选择服务器"
+            :disabled="loading"
+            :options="serverOptions"
+            size="large"
+            @change="emitSave('Info.Server', formData.Info.Server)"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -100,9 +130,16 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="-1"
-            :disabled="loading" size="large" style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
+          <a-input-number
+            v-model:value="formData.Info.RemainedDay"
+            :min="-1"
+            :max="9999"
+            placeholder="-1"
+            :disabled="loading"
+            size="large"
+            style="width: 100%"
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -118,10 +155,16 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Info.Mode" :options="[
-            { label: '简洁', value: '简洁' },
-            { label: '详细', value: '详细' },
-          ]" :disabled="loading" size="large" @change="emitSave('Info.Mode', formData.Info.Mode)" />
+          <a-select
+            v-model:value="formData.Info.Mode"
+            :options="[
+              { label: '简洁', value: '简洁' },
+              { label: '详细', value: '详细' },
+            ]"
+            :disabled="loading"
+            size="large"
+            @change="emitSave('Info.Mode', formData.Info.Mode)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -135,8 +178,14 @@
           </span>
         </a-tooltip>
       </template>
-      <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading"
-        class="modern-input" @blur="emitSave('Info.Notes', formData.Info.Notes)" />
+      <a-textarea
+        v-model:value="formData.Info.Notes"
+        placeholder="请输入备注信息"
+        :rows="4"
+        :disabled="loading"
+        class="modern-input"
+        @blur="emitSave('Info.Notes', formData.Info.Notes)"
+      />
     </a-form-item>
   </div>
 </template>
