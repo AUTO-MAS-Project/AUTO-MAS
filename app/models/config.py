@@ -396,6 +396,19 @@ class QueueConfig(ConfigBase):
 
         super().__init__()
 
+    async def load(self, data: dict) -> bool:
+        """加载并迁移旧版调度队列配置文件"""
+
+        info_data = data.get("Info")
+        if isinstance(info_data, dict) and "StartUpMode" not in info_data:
+            StartUpEnabled = info_data.get("StartUpEnabled")
+            if isinstance(StartUpEnabled, bool):
+                info_data["StartUpMode"] = (
+                    "Always" if StartUpEnabled else "Never"
+                )
+
+        return await super().load(data)
+
 
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
