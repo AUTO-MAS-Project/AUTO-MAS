@@ -8,13 +8,20 @@ from .mfaavalonia import (
     CONTROLLER_TYPE_CODES,
     TASK_ENTRY_SEPARATOR,
     InstanceOrchestration,
-    ShellMappingError,
-    TaskSelection,
     UnknownControllerTypeError,
     build_current_tasks,
     build_instance_config,
     build_task_items,
     resolve_controller_code,
+)
+from .models import ShellMappingError, TaskSelection
+from .mxu import (
+    append_instance,
+    build_instance_entry,
+    build_interface_task_snapshot,
+    build_task_entries,
+    build_task_entry,
+    default_instance_id,
 )
 from .shell import ShellFamily, detect_shell_family
 
@@ -26,9 +33,15 @@ __all__ = [
     "ShellMappingError",
     "TaskSelection",
     "UnknownControllerTypeError",
+    "append_instance",
     "build_current_tasks",
     "build_instance_config",
+    "build_instance_entry",
+    "build_interface_task_snapshot",
+    "build_task_entries",
+    "build_task_entry",
     "build_task_items",
+    "default_instance_id",
     "detect_shell_family",
     "resolve_controller_code",
 ]
