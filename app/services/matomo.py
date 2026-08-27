@@ -27,7 +27,13 @@ import platform
 import time
 from typing import Dict, Any, Optional
 
-from app.core import Config
+def __getattr__(name: str) -> object:
+    """延迟导入 Config，避免 app.services 初始化期间触发 app.core 循环导入。"""
+    if name == "Config":
+        from app.core import Config
+        return Config
+    raise AttributeError(name)
+
 from app.utils import get_logger
 
 logger = get_logger("信息上报")
