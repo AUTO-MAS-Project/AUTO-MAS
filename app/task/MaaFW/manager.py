@@ -100,6 +100,37 @@ def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
     return data
 
 
+def _instance_has_adb_device(instance_config: dict[str, Any]) -> bool:
+    """实例配置是否携带非空的 ADB 设备标识。
+
+    设备连接字段属 C 类，由现有实例配置透传、映射层不生成（见 tools/external/
+    mfaavalonia.py）。本函数只判断标识存在且非空，不校验其内部结构。已知两种写法：
+    顶层 ``AdbDevice``（字符串，或含非空 ``AdbSerial`` 的对象），或 ``Connect.Address``
+    （点号平铺键，或 ``Connect`` 嵌套对象的 ``Address``）。缺少成功运行样本，不臆造
+    更多字段。
+    """
+
+    adb_device = instance_config.get("AdbDevice")
+    if isinstance(adb_device, str) and adb_device.strip():
+        return True
+    if isinstance(adb_device, dict):
+        serial = adb_device.get("AdbSerial")
+        if isinstance(serial, str) and serial.strip():
+            return True
+
+    flat_address = instance_config.get("Connect.Address")
+    if isinstance(flat_address, str) and flat_address.strip():
+        return True
+
+    connect = instance_config.get("Connect")
+    if isinstance(connect, dict):
+        address = connect.get("Address")
+        if isinstance(address, str) and address.strip():
+            return True
+
+    return False
+
+
 class MaaFWManager(TaskExecuteBase):
     """MaaFW MFAAvalonia 外部运行管理器。"""
 
@@ -216,6 +247,32 @@ class MaaFWManager(TaskExecuteBase):
             return f"MaaFW 选择配置无效：{exc}"
         except Exception as exc:
             return f"MaaFW interface 读取失败：{exc}"
+
+        # 启动前自洽校验：Adb 控制器缺设备标识时，外壳连接必失败却仍会排空队列输出
+        # 完成串（假成功）。设备字段由现有实例配置透传，build 不生成——现有配置里
+        # 没有就是没有，此处在写配置、起外壳之前就拒绝，不浪费一个启动周期。
+        controller_type = next(
+            (
+                item.type
+                for item in interface_model.controller
+                if item.name == controller_name
+            ),
+            None,
+        )
+        if controller_type == "Adb":
+            try:
+                instance_base = _read_json_object(
+                    project_root / "config" / "instances" / "default.json",
+                    label="MaaFW default 实例配置",
+                )
+            except RuntimeError as exc:
+                return f"MaaFW 实例配置无法读取：{exc}"
+            if not _instance_has_adb_device(instance_base):
+                return (
+                    "未配置模拟器设备，MaaFW 无法连接："
+                    "实例配置缺少 AdbDevice / Connect.Address，"
+                    "请先在外壳侧连接一次模拟器"
+                )
 
         exe_path = self._resolve_executable(project_root)
         if isinstance(exe_path, str):
