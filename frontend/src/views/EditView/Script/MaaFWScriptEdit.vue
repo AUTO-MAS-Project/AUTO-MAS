@@ -158,6 +158,129 @@
           @period-task-change="handlePeriodTaskChange"
         />
 
+        <!-- 项目更新 -->
+        <div class="form-section">
+          <div class="section-header"><h3>项目更新</h3></div>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="8">
+              <a-form-item label="更新源（留空跟随全局）">
+                <a-select
+                  v-model:value="maafwConfig.Update.Source"
+                  size="large"
+                  @change="() => handleChange('Update', 'Source', maafwConfig.Update.Source)"
+                >
+                  <a-select-option value="">跟随全局</a-select-option>
+                  <a-select-option value="MirrorChyan">MirrorChyan</a-select-option>
+                  <a-select-option value="GitHub">GitHub</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="8">
+              <a-form-item label="更新渠道（留空跟随全局）">
+                <a-select
+                  v-model:value="maafwConfig.Update.Channel"
+                  size="large"
+                  @change="() => handleChange('Update', 'Channel', maafwConfig.Update.Channel)"
+                >
+                  <a-select-option value="">跟随全局</a-select-option>
+                  <a-select-option value="stable">stable</a-select-option>
+                  <a-select-option value="beta">beta</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="8">
+              <a-form-item label="运行前自动更新">
+                <a-switch
+                  v-model:checked="maafwConfig.Update.IfAutoUpdate"
+                  @change="
+                    () => handleChange('Update', 'IfAutoUpdate', maafwConfig.Update.IfAutoUpdate)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="12">
+              <a-form-item label="Mirror 酱 CDK（留空用全局）">
+                <a-input-password
+                  v-model:value="maafwConfig.Update.MirrorChyanCDK"
+                  size="large"
+                  autocomplete="off"
+                  placeholder="留空时使用全局项目更新 CDK"
+                  @blur="
+                    handleChange('Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="12">
+              <a-form-item label="GitHub 仓库覆盖（owner/repo，留空用 interface）">
+                <a-input
+                  v-model:value="maafwConfig.Update.GitHubRepo"
+                  size="large"
+                  placeholder="例如 MaaXYZ/MaaProject"
+                  @blur="handleChange('Update', 'GitHubRepo', maafwConfig.Update.GitHubRepo)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="12">
+              <a-form-item label="GitHub Release Tag 覆盖">
+                <a-input
+                  v-model:value="maafwConfig.Update.GitHubTag"
+                  size="large"
+                  placeholder="留空时按 MirrorChyan 选定版本解析"
+                  @blur="handleChange('Update', 'GitHubTag', maafwConfig.Update.GitHubTag)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="12">
+              <a-form-item label="GitHub 资源文件名匹配（fnmatch）">
+                <a-input
+                  v-model:value="maafwConfig.Update.GitHubAssetPattern"
+                  size="large"
+                  placeholder="例如 *win*x64*.zip"
+                  @blur="
+                    handleChange(
+                      'Update',
+                      'GitHubAssetPattern',
+                      maafwConfig.Update.GitHubAssetPattern
+                    )
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-space>
+            <a-button :loading="updateChecking" @click="runUpdateCheck">检查更新</a-button>
+            <a-button
+              v-if="updateResult && updateResult.installable"
+              type="primary"
+              :loading="updateApplying"
+              @click="runUpdateApply"
+            >
+              执行更新
+            </a-button>
+          </a-space>
+
+          <a-alert
+            v-if="updateError"
+            type="error"
+            show-icon
+            :message="updateError"
+            style="margin-top: 12px"
+          />
+          <a-alert
+            v-else-if="updateResult"
+            :type="updateResultType"
+            show-icon
+            :message="updateResult.message"
+            style="margin-top: 12px"
+          />
+        </div>
+
         <a-typography-text type="secondary">
           运行引擎：外部运行（MFAAvalonia
           外壳）。设备标识需先在外壳侧连接一次模拟器后由项目自带配置提供，MAS 暂不写入设备字段。
@@ -173,6 +296,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import type { MaaFWControllerInfo, MaaFWResourceInfo, MaaFWTaskInfo } from '@/api'
 import type { MaaFWScriptConfig } from '@/types/script'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
@@ -192,6 +316,7 @@ type PeriodKey = (typeof PERIOD_KEYS)[number]
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript, previewMaaFWInterface } = useScriptApi()
+const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(false)
@@ -225,6 +350,15 @@ const maafwConfig = reactive({
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',
     MonthlyOnceTasks: '[ ]',
+  },
+  Update: {
+    IfAutoUpdate: true,
+    Source: '',
+    Channel: '',
+    MirrorChyanCDK: '',
+    GitHubRepo: '',
+    GitHubTag: '',
+    GitHubAssetPattern: '',
   },
 }) as unknown as MaaFWScriptConfig
 
@@ -375,6 +509,45 @@ const selectProjectPath = async () => {
   }
 }
 
+const updateChecking = ref(false)
+const updateApplying = ref(false)
+const updateError = ref('')
+const updateResult = ref<MaaFWUpdateResult | null>(null)
+
+const updateResultType = computed<'success' | 'warning' | 'info'>(() => {
+  if (!updateResult.value) return 'info'
+  if (updateResult.value.updated || !updateResult.value.updateAvailable) return 'success'
+  return 'warning'
+})
+
+const runUpdateCheck = async () => {
+  updateChecking.value = true
+  updateError.value = ''
+  try {
+    updateResult.value = await checkMaaFWUpdate(scriptId)
+  } catch (error) {
+    updateResult.value = null
+    updateError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+const runUpdateApply = async () => {
+  updateApplying.value = true
+  updateError.value = ''
+  try {
+    updateResult.value = await applyMaaFWUpdate(scriptId)
+    if (updateResult.value.updated && maafwConfig.Info.Path) {
+      await runPreview()
+    }
+  } catch (error) {
+    updateError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    updateApplying.value = false
+  }
+}
+
 const handleCancel = () => {
   router.push('/scripts')
 }
@@ -389,7 +562,10 @@ onMounted(async () => {
       return
     }
     const config = scriptDetail.config as MaaFWScriptConfig
+    const updateDefaults = { ...maafwConfig.Update }
     Object.assign(maafwConfig, config)
+    // 后端未返回 Update 段时回落到默认值，保证更新区块表单始终可绑定
+    maafwConfig.Update = { ...updateDefaults, ...(config.Update ?? {}) }
     maafwConfig.Info.Name = config.Info?.Name ?? scriptDetail.name ?? '新 MaaFW 脚本'
     maafwConfig.Info.Path = config.Info?.Path ?? ''
     maafwConfig.Info.Controller = config.Info?.Controller ?? ''
