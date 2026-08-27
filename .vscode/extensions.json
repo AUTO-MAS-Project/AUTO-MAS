@@ -1,8 +1,0 @@
-{
-  "recommendations": [
-    "astral-sh.ty",
-    "charliermarsh.ruff",
-    "dbaeumer.vscode-eslint",
-    "esbenp.prettier-vscode"
-  ]
-}
