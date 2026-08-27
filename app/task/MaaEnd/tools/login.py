@@ -37,9 +37,13 @@ from typing import Any
 import cv2
 import numpy as np
 import pyautogui
-import win32api
-import win32con
-import win32gui
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32api
+    import win32con
+    import win32gui
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
@@ -77,20 +81,23 @@ OCRItem = tuple[str, Box]
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 _LOGIN_FORM_ROI: Box = (480, 270, 1440, 810)
-# 多显示器适配
-_user32 = ctypes.windll.user32
-_user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-_user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+@lru_cache(maxsize=1)
+def _user32_dpi_api():
+    user32 = ctypes.windll.user32
+    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    return user32
 
 
 @contextmanager
 def _per_monitor_dpi():
-    previous = _user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    user32 = _user32_dpi_api()
+    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     try:
         yield
     finally:
         if previous:
-            _user32.SetThreadDpiAwarenessContext(previous)
+            user32.SetThreadDpiAwarenessContext(previous)
 
 
 @lru_cache(maxsize=1)
@@ -376,6 +383,8 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
 
 async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
     """切换到终末地客户端已保存的最近账号。"""
+    if not IS_WINDOWS:
+        raise RuntimeError("终末地账号切换仅支持 Windows 平台")
     if emulator_info is not None:
         raise RuntimeError("终末地模拟器登录暂未实现")
     if len(id) < 4:

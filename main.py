@@ -33,6 +33,7 @@ if str(current_dir) not in sys.path:
 if __name__ == "__main__":
     os.chdir(current_dir)
 
+from app.utils.platform import IS_WINDOWS
 from app.utils import get_logger, sanitize_log_message
 
 logger = get_logger("主程序")
@@ -59,7 +60,7 @@ for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
 
 def is_admin() -> bool:
     """检查当前程序是否以管理员身份运行"""
-    if sys.platform == 'win32':
+    if IS_WINDOWS:
         try:
             return ctypes.windll.shell32.IsUserAnAdmin()
         except:  # noqa: E722
@@ -68,7 +69,7 @@ def is_admin() -> bool:
 
 def restart_as_admin():
     """以管理员权限重启当前进程"""
-    if sys.platform == 'win32':
+    if IS_WINDOWS:
         executable = sys.executable.removesuffix('.exe')
         executable += '.exe'
         result = ctypes.windll.shell32.ShellExecuteW(
@@ -175,14 +176,16 @@ def main():
                 await Config.get_stage()
                 await Config.clean_old_history()
 
-                # ArknightWin32 导入链含 pyautogui/cv2/numpy (约 700ms 重 CPU)，
-                # 放入线程导入，避免阻塞事件循环影响 API 响应
-                await asyncio.to_thread(
-                    importlib.import_module, "app.MaaFW.ArknightWin32"
-                )
-                from app.MaaFW import ArknightWin32Toolkit
+                if IS_WINDOWS:
+                    for adapter in (
+                        "app.MaaFW.ArknightWin32",
+                        "app.MaaFW.EndFieldPCWin32",
+                    ):
+                        await asyncio.to_thread(importlib.import_module, adapter)
 
-                await ArknightWin32Toolkit.init()
+                    from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+
+                    await ArknightWin32Toolkit.init()
                 await MainTimer.start()
 
                 # 初始化 Koishi 系统客户端（如果已启用）

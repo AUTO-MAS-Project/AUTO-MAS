@@ -23,9 +23,6 @@
 
 import re
 import os
-import sys
-import locale
-import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1035,20 +1032,6 @@ DES_RULE = {
     },
 }
 """DES加密规则"""
-
-
-ENCODINGS = [
-    e
-    for e in dict.fromkeys(
-        ["utf-8", "utf-8-sig", locale.getpreferredencoding(), "gbk", "gb18030"]
-    )
-    if e
-]
-"""编码列表"""
-
-
-CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-"""创建子进程的标志"""
 
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")

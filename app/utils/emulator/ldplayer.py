@@ -23,8 +23,12 @@
 import json
 import psutil
 import asyncio
-import win32gui
-import keyboard
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32gui
+    import keyboard
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from pathlib import Path
@@ -317,6 +321,9 @@ class LDManager(DeviceBase):
         return {idx: info.title for idx, info in data.items()}
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
+
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")

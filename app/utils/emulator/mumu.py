@@ -23,9 +23,13 @@
 import json
 import psutil
 import asyncio
-import win32gui
-import win32con
-import win32process
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32gui
+    import win32con
+    import win32process
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -572,6 +576,9 @@ class MumuManager(DeviceBase):
         Returns:
             int | None: 窗口句柄，未找到返回 None
         """
+
+        if not IS_WINDOWS:
+            return None
 
         def enum_cb(hwnd: int, result_list: list[int | None]) -> bool:
             if result_list[0] is not None:

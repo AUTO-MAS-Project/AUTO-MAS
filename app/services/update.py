@@ -42,6 +42,7 @@ def __getattr__(name: str) -> object:
 
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils import ProcessRunner, get_logger
+from app.utils.platform.process import platform_process
 from .system import System
 
 logger = get_logger("更新服务")
@@ -501,9 +502,7 @@ class _UpdateHandler:
                 "/LANG=Chinese",
                 f"/DIR={Path.cwd()}",
             ],
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NO_WINDOW,
+            creationflags=platform_process.detached_flags,
         )
         await System.set_power("KillSelf")
 
