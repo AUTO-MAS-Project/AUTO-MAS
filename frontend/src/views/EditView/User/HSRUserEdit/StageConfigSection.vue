@@ -225,7 +225,7 @@ import type {
   HSRScriptStagePayload,
   HSRStageEngine,
   HSRUserConfigData,
-} from '@/views/HSRUserEdit/types'
+} from './types'
 
 const EOW_WEEKDAY_OPTIONS: { value: string; label: string }[] = [
   { value: 'Monday', label: '周一' },
@@ -615,25 +615,15 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
 /* 与 HSRUserEdit.vue 主页面 section-header 保持一致：加粗标题 + 分割线 + before 装饰 */
 .section-header {
   margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
-  margin: 0;
   font-size: 18px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
   height: 22px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .current-stage-display {

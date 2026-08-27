@@ -10,7 +10,8 @@
             ],
             "程序优化": [
                 "MAA专项 用户配置页面UI重构 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "移除各专项中的「人工排查」任务模式及前端入口，签到功能统一由游戏签到工具页承接 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "移除各专项中的「人工排查」任务模式及前端入口，签到功能统一由游戏签到工具页承接 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "前端界面 统一脚本与用户编辑页的公共页眉和表单分区样式，收敛 HSR、OK-NTE 页面目录并拆分游戏签到扫码登录状态逻辑，提升主题一致性及取消、切换会话时的状态隔离 by [@ClozyA](https://github.com/ClozyA)"
             ],
             "开发流程": [
                 "清理前端 TypeScript 类型错误与 ESLint 告警，恢复 typecheck 与 lint 全量通过 by [@1w1w11w1](https://github.com/1w1w11w1)"

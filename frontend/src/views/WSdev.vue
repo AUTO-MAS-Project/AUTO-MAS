@@ -19,14 +19,14 @@
         <a-col :span="6">
           <a-statistic title="已连接" :value="connectedCount">
             <template #prefix>
-              <CheckCircleOutlined style="color: #52c41a" />
+              <CheckCircleOutlined style="color: var(--ant-color-success)" />
             </template>
           </a-statistic>
         </a-col>
         <a-col :span="6">
           <a-statistic title="未连接" :value="clientList.length - connectedCount">
             <template #prefix>
-              <CloseCircleOutlined style="color: #ff4d4f" />
+              <CloseCircleOutlined style="color: var(--ant-color-error)" />
             </template>
           </a-statistic>
         </a-col>

@@ -369,13 +369,6 @@ const handleWebhookChange = async () => {
 </template>
 
 <style scoped>
-/* Header layout */
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 /* Doc link and header action parity */
 .section-header .section-update-button {
   /* Apply doc-link visual tokens to the local update button only.

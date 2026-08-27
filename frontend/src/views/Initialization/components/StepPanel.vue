@@ -166,7 +166,7 @@
 
         <!-- 镜像源 -->
         <div v-if="mirrorMirrors.length > 0" class="mirror-section">
-          <div class="section-header">
+          <div class="step-section-header">
             <h4>镜像源</h4>
             <a-tag color="green">推荐使用</a-tag>
           </div>
@@ -191,7 +191,7 @@
 
         <!-- 官方源 -->
         <div v-if="officialMirrors.length > 0" class="mirror-section">
-          <div class="section-header">
+          <div class="step-section-header">
             <h4>官方源</h4>
             <a-tag color="orange">中国大陆连通性不佳</a-tag>
           </div>
@@ -431,14 +431,14 @@ const officialMirrors = computed(() =>
   }
 }
 
-.section-header {
+.step-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
 }
 
-.section-header h4 {
+.step-section-header h4 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;

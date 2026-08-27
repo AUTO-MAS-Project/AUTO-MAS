@@ -135,7 +135,6 @@
               :maxlength="50"
               allow-clear
               size="large"
-              class="modern-input"
               @input="onCustomStageInput(i as 1 | 2 | 3 | 4)"
               @blur="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
               @press-enter="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
@@ -652,23 +651,6 @@ watch(
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 4px;
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.2s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
 }
 
 .task-tag {

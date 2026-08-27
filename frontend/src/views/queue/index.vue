@@ -759,7 +759,7 @@ onUnmounted(() => {
   align-items: center;
   min-height: 500px;
   padding: 60px 20px;
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.02), rgba(24, 144, 255, 0.01));
+  background: linear-gradient(135deg, var(--ant-color-primary-bg), transparent);
   border-radius: 16px;
   margin: 20px 0;
 }
@@ -783,7 +783,7 @@ onUnmounted(() => {
   left: -20px;
   right: -20px;
   bottom: -20px;
-  background: radial-gradient(circle, rgba(24, 144, 255, 0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--ant-color-primary-bg) 0%, transparent 70%);
   border-radius: 50%;
   animation: pulse 3s ease-in-out infinite;
 }

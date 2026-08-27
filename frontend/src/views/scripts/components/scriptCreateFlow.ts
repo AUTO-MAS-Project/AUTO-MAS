@@ -1,13 +1,6 @@
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import type { ScriptType } from '@/types/script'
-import generalIcon from '@/assets/AUTO-MAS.ico'
-import hsrIcon from '@/assets/hsr.png'
-import maaIcon from '@/assets/MAA.png'
-import maaEndIcon from '@/assets/MaaEnd.png'
-import m9aIcon from '@/assets/M9A.png'
-import okNteIcon from '@/assets/ok-nte.ico'
-import okwwIcon from '@/assets/ok-ww.ico'
-import srcIcon from '@/assets/SRC.png'
+import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 export type ConfigMode = 'template' | 'custom'
 export type CreateStepKey = 'type' | 'config'
@@ -45,7 +38,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '适用于具备日志文件的自动化脚本',
     keywords: ['general', '通用', '自定义'],
     group: 'general',
-    icon: generalIcon,
+    icon: SCRIPT_LOGOS.General,
   },
   {
     value: 'MAA',
@@ -53,7 +46,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '明日方舟自动化与多账号日常代理',
     keywords: ['maa', '明日方舟'],
     group: 'specialized',
-    icon: maaIcon,
+    icon: SCRIPT_LOGOS.MAA,
   },
   {
     value: 'SRC',
@@ -61,7 +54,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '星穹铁道自动化与多账号代理',
     keywords: ['src', '星穹铁道'],
     group: 'specialized',
-    icon: srcIcon,
+    icon: SCRIPT_LOGOS.SRC,
   },
   {
     value: 'MaaEnd',
@@ -69,7 +62,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: 'MaaFramework 专项适配脚本',
     keywords: ['maaend', 'maaframework'],
     group: 'specialized',
-    icon: maaEndIcon,
+    icon: SCRIPT_LOGOS.MaaEnd,
   },
   {
     value: 'M9A',
@@ -77,7 +70,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '重返未来：1999 自动化脚本',
     keywords: ['m9a', '1999', '重返未来'],
     group: 'specialized',
-    icon: m9aIcon,
+    icon: SCRIPT_LOGOS.M9A,
   },
   {
     value: 'Okww',
@@ -85,7 +78,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: 'ok-script 专项任务脚本',
     keywords: ['okww', 'ok-ww', 'ok-script'],
     group: 'specialized',
-    icon: okwwIcon,
+    icon: SCRIPT_LOGOS.Okww,
   },
   {
     value: 'OkNte',
@@ -93,7 +86,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '异环 OK-NTE 自动化脚本',
     keywords: ['oknte', 'ok-nte', '异环', 'ok-script'],
     group: 'specialized',
-    icon: okNteIcon,
+    icon: SCRIPT_LOGOS.OkNte,
   },
   {
     value: 'HSR',
@@ -101,7 +94,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '三月七 / SRA 双脚本适配',
     keywords: ['hsr', '三月七', 'sra'],
     group: 'specialized',
-    icon: hsrIcon,
+    icon: SCRIPT_LOGOS.HSR,
   },
 ]
 

@@ -1,28 +1,5 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-            编辑 HSR 脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="HSR" title="编辑 HSR 脚本" @cancel="handleCancel" />
 
   <div class="script-edit-content">
     <a-card title="HSR 脚本配置" :loading="pageLoading" class="config-card">
@@ -67,7 +44,6 @@
                   v-model:value="formData.infoName"
                   placeholder="请输入脚本名称"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.infoName)"
                 />
               </a-form-item>
@@ -107,7 +83,6 @@
                 <a-select
                   :value="hsrConfig.Game.Enabled"
                   size="large"
-                  class="modern-input"
                   @change="handleGameEnabledChange"
                 >
                   <a-select-option :value="true">是</a-select-option>
@@ -258,7 +233,6 @@
                   v-model:value="hsrConfig.Game.Arguments"
                   placeholder="请输入启动参数"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Game', 'Arguments', hsrConfig.Game.Arguments)"
                 />
               </a-form-item>
@@ -377,11 +351,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
   filterHSRCapabilityWarnings,
@@ -680,44 +651,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
 .script-edit-content {
   flex: 1;
 }
@@ -753,32 +686,12 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .section-hint {
@@ -812,23 +725,6 @@ onMounted(async () => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
 }
 
 .path-input-group {
@@ -892,9 +788,5 @@ onMounted(async () => {
 .path-clear-button:hover {
   background: var(--ant-color-error);
   color: white;
-}
-
-.cancel-button {
-  height: 40px;
 }
 </style>

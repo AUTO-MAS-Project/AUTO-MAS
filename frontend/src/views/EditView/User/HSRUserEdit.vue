@@ -1,32 +1,14 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link
-              :to="{ name: 'HSRScriptEdit', params: { id: scriptId } }"
-              class="breadcrumb-link"
-            >
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <span class="breadcrumb-current">
-              <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-              {{ isEdit ? '编辑 HSR 用户' : '添加 HSR 用户' }}
-            </span>
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon><ArrowLeftOutlined /></template>
-        返回
-      </a-button>
-    </div>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="hsr"
+      :current-label="isEdit ? '编辑 HSR 用户' : '添加 HSR 用户'"
+      :logo-src="hsrLogo"
+      @cancel="handleCancel"
+    />
 
     <div class="user-edit-content">
       <a-card class="config-card">
@@ -62,7 +44,6 @@
                   <a-input
                     v-model:value="formData.Info.Name"
                     size="large"
-                    class="modern-input"
                     @blur="handleFieldSave('Info.Name', formData.Info.Name)"
                   />
                 </a-form-item>
@@ -89,7 +70,6 @@
                     v-model:value="formData.Info.Id"
                     placeholder="请输入账号"
                     size="large"
-                    class="modern-input"
                     @blur="handleFieldSave('Info.Id', formData.Info.Id)"
                   />
                 </a-form-item>
@@ -99,12 +79,10 @@
                   <template #label>
                     <span class="form-label">密码</span>
                   </template>
-                  <!-- 用 input-class 把 modern-input 挂到内部 <input>，避免 a-input-password 外层嵌套 div -->
                   <a-input-password
                     v-model:value="formData.Info.Password"
                     placeholder="请输入密码"
                     size="large"
-                    :input-class="'modern-input'"
                     @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
@@ -296,7 +274,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import hsrLogo from '@/assets/hsr.png'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
@@ -309,9 +289,9 @@ import {
 import type { HSRConfig_TaskMapping } from '@/api'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
 import type { HSRScriptConfig } from '@/types/script'
-import StageConfigSection from '@/views/HSRUserEdit/StageConfigSection.vue'
-import type { HSRDynamicStageOptionsData, HSRUserConfigData } from '@/views/HSRUserEdit/types'
-import { buildHSRCapabilityView } from '@/views/HSRUserEdit/capabilityView'
+import StageConfigSection from './HSRUserEdit/StageConfigSection.vue'
+import type { HSRDynamicStageOptionsData, HSRUserConfigData } from './HSRUserEdit/types'
+import { buildHSRCapabilityView } from './HSRUserEdit/capabilityView'
 import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
 import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
 
@@ -934,36 +914,6 @@ const loadUserData = async () => {
   background: var(--ant-color-bg-layout);
 }
 
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  padding: 0 8px;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-}
-
 .user-edit-content {
   max-width: 1400px;
   margin: 0 auto;
@@ -1001,25 +951,15 @@ const loadUserData = async () => {
 
 .section-header {
   margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
-  margin: 0;
   font-size: 18px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
   height: 22px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .form-label {
@@ -1033,24 +973,6 @@ const loadUserData = async () => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
-}
-
-.modern-input,
-.modern-input :deep(.ant-input),
-.modern-input :deep(.ant-input-number) {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-}
-
-.modern-input:focus,
-.modern-input :deep(.ant-input:focus) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
-.cancel-button {
-  height: 40px;
 }
 
 .progress-group {

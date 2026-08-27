@@ -1,63 +1,23 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts">脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/oknte`" class="breadcrumb-link">
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            {{ isEdit ? '编辑用户' : '添加用户' }}
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button
-          v-if="!showOkNteConfigMask"
-          type="primary"
-          ghost
-          size="large"
-          :loading="oknteConfigLoading"
-          :disabled="pageLoading || !activeUserId"
-          @click="handleOkNteConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          配置 OK-NTE
-        </a-button>
-        <a-button
-          v-if="showOkNteConfigMask"
-          type="default"
-          size="large"
-          disabled
-          class="configuring-button"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          正在配置
-        </a-button>
-        <a-button size="large" class="cancel-button" @click="handleCancel">
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          返回
-        </a-button>
-      </a-space>
-    </div>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="oknte"
+      config-label="配置 OK-NTE"
+      :config-loading="oknteConfigLoading"
+      :config-active="showOkNteConfigMask"
+      :config-disabled="pageLoading || !activeUserId"
+      @config="handleOkNteConfig"
+      @cancel="handleCancel"
+    />
 
     <teleport to="body">
       <div v-if="showOkNteConfigMask" class="oknte-config-mask">
         <div class="mask-content">
           <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
           </div>
           <h2 class="mask-title">正在进行 OK-NTE 配置</h2>
           <p class="mask-description">
@@ -102,7 +62,6 @@
                     v-model:value="formData.userName"
                     placeholder="请输入用户名"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Name', formData.userName)"
                   />
                 </a-form-item>
@@ -120,7 +79,6 @@
                   <a-select
                     v-model:value="formData.Info.Status"
                     size="large"
-                    class="modern-select"
                     @change="saveField('Info.Status', formData.Info.Status)"
                   >
                     <a-select-option :value="true">是</a-select-option>
@@ -145,7 +103,6 @@
                     v-model:value="formData.Info.Id"
                     placeholder="请输入账号"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
                 </a-form-item>
@@ -164,7 +121,6 @@
                     v-model:value="formData.Info.Password"
                     placeholder="请输入密码"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
@@ -186,7 +142,6 @@
                     v-model:value="formData.Info.Resource"
                     placeholder="请选择资源"
                     size="large"
-                    class="modern-select"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
                   />
@@ -227,7 +182,6 @@
                 v-model:value="formData.Info.Notes"
                 placeholder="请输入备注"
                 :rows="4"
-                class="modern-input"
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
             </a-form-item>
@@ -274,12 +228,7 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input
-                    :value="currentStartupArguments"
-                    size="large"
-                    readonly
-                    class="modern-input"
-                  />
+                  <a-input :value="currentStartupArguments" size="large" readonly />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -387,14 +336,15 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Service, type OkNteUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
-import OkNteConfigEditor from '@/views/OkNteUserEdit/OkNteConfigEditor.vue'
+import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 
 const logger = window.electronAPI.getLogger('OK-NTE用户编辑')
 const route = useRoute()
@@ -734,33 +684,6 @@ onMounted(async () => {
   background: var(--ant-color-bg-layout);
 }
 
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.configuring-button {
-  color: #52c41a;
-  border-color: #52c41a;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -775,33 +698,6 @@ onMounted(async () => {
   padding: 32px;
 }
 
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -812,20 +708,6 @@ onMounted(async () => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
-.modern-select {
-  width: 100%;
-}
-
-.modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
 }
 
 .oknte-config-mask {
@@ -878,12 +760,6 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .user-edit-container {
     padding: 16px;
-  }
-
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
   }
 
   .config-card :deep(.ant-card-body) {

@@ -24,7 +24,9 @@
                   <a-statistic
                     title="错误次数"
                     :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                    :value-style="{
+                      color: proxy.ErrorTimes > 0 ? 'var(--ant-color-error)' : undefined,
+                    }"
                   />
                 </div>
               </div>

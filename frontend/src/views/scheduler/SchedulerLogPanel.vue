@@ -1,6 +1,6 @@
 <template>
   <div class="log-panel">
-    <div class="section-header">
+    <div class="scheduler-panel-header">
       <h3>日志</h3>
       <div class="log-controls">
         <a-space size="small">
@@ -192,7 +192,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.section-header {
+.scheduler-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -202,7 +202,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.section-header h3 {
+.scheduler-panel-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
@@ -260,7 +260,7 @@ onUnmounted(() => {
     border-radius: 8px;
   }
 
-  .section-header {
+  .scheduler-panel-header {
     padding: 12px;
   }
 

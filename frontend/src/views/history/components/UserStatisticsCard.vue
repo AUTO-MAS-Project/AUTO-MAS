@@ -17,7 +17,7 @@
           v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
           class="stat-section"
         >
-          <div class="section-header">
+          <div class="stat-section-header">
             <TeamOutlined class="section-icon" />
             <span class="section-title">公招统计</span>
           </div>
@@ -44,7 +44,7 @@
 
         <!-- 掉落统计 -->
         <div v-if="dropStatistics && Object.keys(dropStatistics).length > 0" class="stat-section">
-          <div class="section-header">
+          <div class="stat-section-header">
             <GiftOutlined class="section-icon" />
             <span class="section-title">掉落统计</span>
           </div>
@@ -78,7 +78,7 @@
 
       <template v-else-if="activeStatistics === 'maaend' && hasMaaEndStatistics">
         <div v-if="pullCountStatistics" class="stat-section">
-          <div class="section-header">
+          <div class="stat-section-header">
             <BarChartOutlined class="section-icon" />
             <span class="section-title">抽数统计</span>
           </div>
@@ -107,7 +107,7 @@
         />
 
         <div v-if="hasMatrixStatistics" class="stat-section">
-          <div class="section-header">
+          <div class="stat-section-header">
             <InboxOutlined class="section-icon" />
             <span class="section-title">基质统计</span>
           </div>
@@ -265,7 +265,7 @@ watch(
   min-width: 0;
 }
 
-.section-header {
+.stat-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
