@@ -45,13 +45,6 @@ from app.task.general.tools import execute_script_task
 
 logger = get_logger("MaaEnd 自动代理")
 
-_MAAEND_STOP_PATTERNS = (
-    "任务完成: 停止任务",
-    "任务完成: ⛔ 结束进程",
-    "任务完成: __MXU_KILLPROC__",
-    "任务完成: StopTask",
-)
-
 
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
@@ -353,10 +346,23 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.maaend_log_monitor.start_monitor_process(
                     self.maaend_process_manager.main_process, "stdout"
                 )
+                if self.maaend_log_monitor.task is not None:
+                    self.maaend_log_monitor.task.add_done_callback(
+                        lambda _: self.wait_event.set()
+                    )
             maaend_update_monitor_task = asyncio.create_task(
                 self.monitor_maaend_update_download()
             )
             await self.wait_event.wait()
+            if (
+                self.maaend_log_monitor.task is not None
+                and self.maaend_log_monitor.task.done()
+            ):
+                await self.check_log(
+                    self.maaend_log_monitor.log_contents,
+                    self.maaend_log_monitor.latest_time,
+                    if_stream_end=True,
+                )
             maaend_update_monitor_task.cancel()
             try:
                 await maaend_update_monitor_task
@@ -780,27 +786,20 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = "检测到 MaaEnd 正在更新，正在等待更新进程退出"
                 if_maaend_updating = True
 
-            if (
-                if_maaend_updating
-                and not await self.maaend_process_manager.is_running()
-            ):
-                logger.info("MaaEnd 更新进程已退出，后台检测释放日志锁")
-                self.wait_event.set()
-                return
-
             await asyncio.sleep(5)
 
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
+    async def check_log(
+        self,
+        log_content: list[str],
+        latest_time: datetime,
+        if_stream_end: bool = False,
+    ) -> None:
         """日志回调"""
 
         if self.cur_user_log.status == "MaaEnd 正在更新":
-            log = "".join(log_content)
             if log_content:
                 self.cur_user_log.content = log_content
-            if (
-                any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
-                or not await self.maaend_process_manager.is_running()
-            ):
+            if if_stream_end:
                 logger.info("MaaEnd 更新进程已退出，日志锁已释放")
                 self.wait_event.set()
             elif datetime.now() - latest_time > timedelta(
@@ -829,10 +828,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.retryable = False
         elif f"任务失败: {self.account_switch_task_name}" in log:
             self.cur_user_log.status = "MaaEnd 账号切换失败"
-        elif (
-            any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
-            or not await self.maaend_process_manager.is_running()
-        ):
+        elif if_stream_end:
             if self.task_dict is None:
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
