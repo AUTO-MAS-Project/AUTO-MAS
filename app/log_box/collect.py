@@ -23,7 +23,6 @@ from app.utils.expression import compile_expression
 
 from .logtype import LogType
 from .markers import emit, render_flush, render_push
-from .rule import Rule
 from .sources import LogSource, resolve_sources
 
 # 多行聚合默认最大跨行数（与 LogPatternExtractor 保持一致）
@@ -73,11 +72,14 @@ class LogCollect:
 
     # ---------- 生命周期 ----------
 
-    def open(self, processor: Optional[_PreProcessor] = None) -> "LogCollect":
+    def open(
+        self, processor: Optional[_PreProcessor] = None
+    ) -> Union["LogCollect", Callable[[_PreProcessor], _PreProcessor]]:
         """启动采集（幂等）；processor 非 None 时直接登记前置处理器并返回 self。
 
         也可作为装饰器使用：``@col.open()`` 会把被装饰函数登记为前置处理器，
         作用于逐行日志（返回新文本；返回 None 丢弃该行），按序执行。
+        此时（processor 为 None）返回注册器函数而非 LogCollect 实例。
         """
         self._open_sources()
         if processor is None:
@@ -214,21 +216,7 @@ class LogCollect:
         )
         return self
 
-    def rule(self, regex: str, type: str = LogType.NORMAL) -> Rule:
-        """编程式规则构建器：``col.rule(regex).get(1).trim().end()``"""
-        return Rule(self, regex, type)
-
     # ---------- 调试与推送 ----------
-
-    def print(self, text: str) -> None:
-        """调试打印（Flink print 语义）：把结果即时打印到调试输出，不作为推送通道"""
-        print(text)
-
-    def push(self, text: str, type: str = LogType.NORMAL) -> None:
-        """手动直推最终结果（供 host 在脚本/进程关闭等恰当时机触发）"""
-        self._deliver([(type, text)])
-
-    # ---------- 内部 ----------
 
     def _capture(self) -> None:
         """从各日志源采集剩余新行，执行前置处理与规则匹配，累积结果

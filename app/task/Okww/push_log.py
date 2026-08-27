@@ -21,11 +21,19 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
 import re
 from pathlib import Path
 
+from app.log_box.logtype import LogType
+
 # ok-ww 自带翻译文件相对路径（从 RootPath 派生，不硬编码绝对路径）
 OKWW_REL_I18N_PO = "data/apps/ok-ww/repo/i18n/zh_CN/LC_MESSAGES/ok.po"
-# AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，运行时以工作目录解析，
-# 随打包资源分发，不依赖源码树路径；.po 为可读源码，可直接维护）
-OKWW_SUPPLEMENT_PO = Path.cwd() / "res" / "i18n" / "okww.po"
+
+
+def _okww_supplement_po() -> Path:
+    """AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，运行时以工作目录解析，
+    随打包资源分发，不依赖源码树路径；.po 为可读源码，可直接维护）。
+
+    在调用时求值而非 import 时，避免依赖模块 import 时刻的工作目录。
+    """
+    return Path.cwd() / "res" / "i18n" / "okww.po"
 
 # 推送规则：(匹配正则, 提取表达式 [, 日志类型])；匹配与提取均在翻译后行。
 # 提取表达式输出状态标记（裸节点名 / "状态: 节点"），由 okww_resolve 解析。
@@ -109,14 +117,9 @@ def okww_resolve(
         order.append(node)
         if rank > states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
-    # 取最后出现节点的日志类型；按节点名（去状态前缀后）映射，避免与完整
-    # 文本键不匹配而丢失类型（规则可能产出 "状态: 节点" 或裸节点名两种形态）
-    last_type: dict[str, str] = {}
-    for log_type, text in results:
-        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
-        node = m.group(2) if m else text
-        last_type[node] = log_type
+    # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
+    # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
     return [
-        (last_type.get(node, "普通"), f"{states[node][1]}: {node}")
+        (LogType.NORMAL, f"{states[node][1]}: {node}")
         for node in order
     ]

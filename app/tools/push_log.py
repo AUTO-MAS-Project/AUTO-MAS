@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from app.utils.LogPatternExtractor import LOG_TYPE_ERROR
+
 
 def build_push_log_text(users: Iterable, has_uncompleted: bool) -> str:
     """聚合各用户 push_log 为报告文本（每条条目独占一行，不附加用户名）
@@ -29,7 +31,7 @@ def build_push_log_text(users: Iterable, has_uncompleted: bool) -> str:
         "\n".join(
             text
             for log_type, text in user.push_log
-            if log_type != "失败" or has_uncompleted
+            if log_type != LOG_TYPE_ERROR or has_uncompleted
         )
         for user in users
         if user.push_log

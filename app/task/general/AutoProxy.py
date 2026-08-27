@@ -56,6 +56,12 @@ logger = get_logger("通用脚本自动代理")
 
 _PREFIX_SENTINEL = "******"
 
+# 进程启动宽限期（秒）：首次日志回调触发时可能处于「启动器拉起工作进程的延迟」
+# 或「残留进程收尾日志」窗口，宽限期内不据此判定任务结束，等进程被观测到。
+# 取值依据：LogMonitor 轮询周期 1s，叠加启动器拉起工作进程的常见延迟与多次
+# 重试留出的缓冲，取 90s 作为上限（从 log_start_time 起算，每次重试重置）。
+_PROCESS_START_GRACE_SECONDS = 90
+
 _STRPTIME_DIRECTIVES: dict[str, str] = {
     "%Y": r"\d{4}", "%y": r"\d{2}",
     "%m": r"\d{1,2}", "%d": r"\d{1,2}",
@@ -707,16 +713,18 @@ class AutoProxyTask(TaskExecuteBase):
                         self._process_seen = True
                         self.cur_user_log.status = "通用脚本正常运行中"
                     elif not self._process_seen and datetime.now() - self.log_start_time < timedelta(
-                        seconds=90
+                        seconds=_PROCESS_START_GRACE_SECONDS
                     ):
                         # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
                         # 收尾日志触发了回调，不据此判定任务结束
                         self.cur_user_log.status = "通用脚本正常运行中"
-                    elif not self._process_seen or self.success_log:
-                        # 宽限期内从未观测到进程（启动失败），或配置了成功标记但进程
-                        # 退出时未命中（不能确认成功）
+                    elif self.success_log:
+                        # 配置了成功标记但进程退出时未命中（不能确认成功）
                         self.cur_user_log.status = "脚本在完成任务前退出"
                     else:
+                        # 未配置成功标记：进程已退出即视为任务完成。快速结束的脚本可能
+                        # 在首次日志回调前就已退出（未被进程轮询观测到），不能仅凭
+                        # _process_seen 判失败，否则会误报「脚本在完成任务前退出」
                         self.cur_user_log.status = "Success!"
 
         logger.debug(f"通用脚本日志分析结果: {self.cur_user_log.status}")

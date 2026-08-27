@@ -56,6 +56,13 @@ class PoTranslator:
 
     def __init__(self) -> None:
         self._map: dict[str, str] = {}
+        # 按「较长键优先」排好序的键列表；load 后固定，避免逐行翻译时反复重排
+        self._sorted_keys: list[str] = []
+
+    def _rebuild_sorted_keys(self) -> None:
+        # 长键优先替换，避免短键命中长键内部造成碎片化翻译；
+        # 排序结果在 load/load_supplement 后固定，缓存一次即可
+        self._sorted_keys = sorted(self._map, key=len, reverse=True)
 
     def load(
         self,
@@ -78,6 +85,7 @@ class PoTranslator:
             if not path.is_absolute() and base is not None:
                 path = Path(base) / path
             self._map.update(self._load_file(path))
+        self._rebuild_sorted_keys()
         return self
 
     def load_supplement(
@@ -104,6 +112,7 @@ class PoTranslator:
             if not path.is_absolute() and base is not None:
                 path = Path(base) / path
             self._map.update(self._load_file(path))
+        self._rebuild_sorted_keys()
         return self
 
     def translate(self, text: str) -> str:
@@ -119,7 +128,7 @@ class PoTranslator:
         """
         if not self._map or not text:
             return text
-        for key in sorted(self._map, key=len, reverse=True):
+        for key in self._sorted_keys:
             if key in text:
                 text = text.replace(key, self._map[key])
         return text
@@ -127,6 +136,7 @@ class PoTranslator:
     def clear(self) -> None:
         """释放已加载的翻译（会话结束时调用，避免长驻内存）"""
         self._map.clear()
+        self._sorted_keys = []
 
     @staticmethod
     def _load_file(path: Path) -> dict[str, str]:

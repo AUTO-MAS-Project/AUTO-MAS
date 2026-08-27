@@ -136,7 +136,7 @@ class CompiledExpression:
         for func in seg.functions:
             try:
                 result = apply_function(func.name, func.args, result)
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError):
                 # 函数执行失败时跳过，保留原文本
                 continue
 

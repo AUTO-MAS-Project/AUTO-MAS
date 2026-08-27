@@ -5,12 +5,11 @@ log_box 只对日志本身负责：调用方提供「日志源 + 规则 + 处理
 决定：MAS 进程宿主注入 sink 直接写 push_log；脚本子进程宿主走 @@LOGBOX@@
 标记回传。
 
-顶层入口：``from mas_script import log_box, Rule, LogType``。
+顶层入口：``from mas_script import log_box, LogType``。
 """
 
 from .collect import LogCollect
 from .factory import LogBox, log_box
 from .logtype import LogType
-from .rule import Rule
 
-__all__ = ["log_box", "LogBox", "LogCollect", "Rule", "LogType"]
+__all__ = ["log_box", "LogBox", "LogCollect", "LogType"]

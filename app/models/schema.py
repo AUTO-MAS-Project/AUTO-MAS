@@ -789,7 +789,7 @@ class GeneralConfig_Script(BaseModel):
     )
     PushLogPatterns: Optional[str] = Field(
         default=None,
-        description='推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})',
+        description='推送日志高级模式匹配(JSON 数组，每项为 PushLogPattern 对象：type 为 split/regex/multiline，按类型使用对应字段)',
     )
 
 

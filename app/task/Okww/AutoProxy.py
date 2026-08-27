@@ -42,7 +42,7 @@ from app.task.general.tools import execute_script_task
 from .push_log import (
     OKWW_PUSH_RULES,
     OKWW_REL_I18N_PO,
-    OKWW_SUPPLEMENT_PO,
+    _okww_supplement_po,
     okww_resolve,
 )
 from .tools import push_notification
@@ -273,7 +273,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_translator = (
             PoTranslator()
             .load([OKWW_REL_I18N_PO], base=self.script_root_path)
-            .load_supplement([OKWW_SUPPLEMENT_PO])
+            .load_supplement([_okww_supplement_po()])
         )
         self.log_collect.open(self.log_translator.translate)
         for rule in OKWW_PUSH_RULES:
@@ -569,9 +569,13 @@ class AutoProxyTask(TaskExecuteBase):
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
         # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
-        with suppress(Exception):
+        # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
+        # prepare() 未执行完时 self.log_collect 可能不存在，一并在此兜底
+        try:
             self.log_collect.close(okww_resolve)
             self.log_translator.clear()
+        except Exception:
+            logger.opt(exception=True).warning("OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）")
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         statistic_paths: list[Path] = []

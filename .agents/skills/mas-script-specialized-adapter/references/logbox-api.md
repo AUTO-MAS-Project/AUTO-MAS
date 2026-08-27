@@ -14,7 +14,6 @@
 - [LogCollect 采集会话](#logcollect-采集会话)
 - [与通用脚本 web 配置推送日志的分工](#与通用脚本-web-配置推送日志的分工重要)
 - [日志类型与推送时机语义](#日志类型与推送时机语义)
-- [Rule 编程式构建](#rule-编程式构建)
 - [表达式引擎自定义算子](#表达式引擎自定义算子)
 - [专项喂参示例](#专项喂参示例mas-进程宿主)
 - [推送落地](#推送落地聚合与追加通用工具)
@@ -25,7 +24,7 @@
 
 | 类别 | 大小写 | 示例 |
 |---|---|---|
-| 类（类型名） | PascalCase | `LogCollect`、`LogSource`、`LogType`、`Rule` |
+| 类（类型名） | PascalCase | `LogCollect`、`LogSource`、`LogType` |
 | 模块 / 包 | snake_case | `app/log_box/`、`collect.py` |
 | 实例 / 工厂对象 | snake_case | `log_collect`（`LogCollect` 实例）、`log_box`（工厂对象） |
 | 常量 | UPPER_SNAKE | `MSG_PREFIX`、`OKWW_PUSH_RULES` |
@@ -38,7 +37,7 @@
 ## 顶层入口
 
 ```python
-from mas_script import log_box, Rule, LogType
+from mas_script import log_box, LogType
 ```
 
 `log_box` 同时是「包名」与「工厂对象名」：`app/log_box/` 为代码组织，工厂对象
@@ -81,11 +80,8 @@ col = log_box.get_collect(
 | `open(processor=None)` | 启动采集（幂等）；可传前置处理器（逐行 map/filter），也可 `@col.open()` 装饰器。前置处理器返回 `None` 丢弃该行 |
 | `collect(regex, expr="", type=NORMAL)` | 声明式单行规则：匹配正则 + `$()` 提取表达式（可多条） |
 | `collect_scope(start_re, end_re="", expr="", max_lines=50, type=NORMAL)` | 多行聚合规则 |
-| `rule(regex, type=NORMAL) -> Rule` | 编程式规则构建器 |
 | `postprocess(processor)` | 登记后置处理器，作用于捕捉完的**最终结果集**（去重/规整），可 `@col.postprocess()` 装饰器 |
 | `close(processor=None)` | 结束会话：冲刷多行残留 → 后置处理 → 完成推送（幂等）；脚本宿主下 atexit 兜底 |
-| `print(text)` | 调试打印（Flink print 语义），**不作为推送通道** |
-| `push(text, type=NORMAL)` | 手动直推最终结果（host 在脚本/进程关闭等时机触发） |
 
 处理管线：**前置处理（翻译/过滤）→ 匹配与提取均在处理后行 → 后置处理**。
 前置处理器逐行翻译后，规则匹配与提取都作用于翻译后的行，翻译对下游整体生效。
@@ -105,7 +101,7 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 
 ## 日志类型与推送时机语义
 
-**LogType（`collect`/`rule` 的 type 参数，逐条）** 与 **推送任务结果时机（通知设置 `SendTaskResultTime`，全局）** 是两层独立语义（与 MAS 原生推送一致）：
+**LogType（`collect`/`collect_scope` 的 type 参数，逐条）** 与 **推送任务结果时机（通知设置 `SendTaskResultTime`，全局）** 是两层独立语义（与 MAS 原生推送一致）：
 
 - **`LogType.NORMAL`（普通）**：该条目**任何推送报告均包含**。
 - **`LogType.FAIL`（失败）**：该条目**仅在任务存在未完成用户时纳入报告**。
@@ -114,23 +110,6 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
   - `任何时刻`：任务结束即推送整份报告
   - `仅失败时`：**仅当任务存在未完成用户时**推送整份报告
 
-
-## Rule 编程式构建
-
-```python
-# 提取「current_stamina 240」中的数字 240（regex 作用域必须用捕获组，$() 取捕获组内容）
-col.rule(r"current_stamina (\d+)").regex(r"(\d+)").trim().end()
-# 函数链：cut/sub/replace/trim 与自定义算子 func
-col.rule(r"xxx").regex(r"(\d+)").cut(2).sub(0, 3).replace("a", "b").trim().end()
-```
-
-`regex(pattern)` 设置提取作用域（缺省 `$()` 取整行）；提取内容取捕获组中的
-非空组（无捕获组时为空串，继续走函数链）。函数链支持 `func(name, *args)`
-（含注入 REGISTRY 的自定义 Process 算子）、`get`、`cut`、`sub`、`cutby`、
-`subby`、`replace`、`trim`、`upper`、`lower`；`end()` 完成构建并注册。
-
-> 注意：`get(n)`/`cut(n)` 是按**字符数**保留/切除（n>0 取开头、n<0 取结尾），
-> 不是正则分组提取；要取正则分组请用 `regex(r"捕获组正则")` 作用域。
 
 ## 表达式引擎自定义算子
 
@@ -145,7 +124,7 @@ class Translate(Process):
 ```
 
 `@register_process` 把自定义 `Process` 子类登记进引擎 REGISTRY，表达式可调用
-`.translate(...)`；对 web 前端面板不暴露。用 `Rule.func()` 在函数链中调用：
+`.translate(...)`；对 web 前端面板不暴露。在 `$()` 表达式中按算子名调用：
 
 ```python
 @register_process
@@ -154,8 +133,8 @@ class Suffix(Process):
     def run(self, text, args):
         return text + (str(args[0]) if args else "")
 
-col.rule(r"current_stamina (\d+)").regex(r"(\d+)").func("suffix", " 剩余电量").end()
-# 等价表达式：$((\d+)).suffix(" 剩余电量")，作用于整行文本
+# 表达式中调用算子：$((\d+)).suffix(" 剩余电量")，作用于捕获组文本
+self.log_collect.collect(r"current_stamina (\d+)", r'$((\d+)).suffix(" 剩余电量")')
 ```
 
 > **为什么不能用 `.process(fn)` 直接传 Python 函数**：规则是「参数」形态
@@ -202,13 +181,9 @@ def resolve(results):
         order.append(node)
         if rank > states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
-    # 按节点名（去状态前缀后）重建类型映射，避免与完整文本键错配导致类型丢失
-    last_type = {}
-    for log_type, text in results:
-        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
-        node = m.group(2) if m else text
-        last_type[node] = log_type
-    return [(last_type.get(node, "普通"), f"{states[node][1]}: {node}") for node in order]
+    # 规则通常统一产出普通类型，节点级失败由文本「❌ 失败:」体现，
+    # 直接以 LogType.NORMAL 输出即可（无需按节点重建类型映射）
+    return [(LogType.NORMAL, f"{states[node][1]}: {node}") for node in order]
 ```
 
 > 节点级失败用 `LogType.NORMAL` + 文本「❌ 失败:」始终展示；推送时机由全局
@@ -261,8 +236,8 @@ col.close()   # 脚本正常退出时 atexit 也会自动收尾
    时 `close()` 会自动启动源，但此时起点即收尾时刻，可能什么都采不到。
 
 2. **`get(n)`/`cut(n)` 是字符语义，不是正则分组**：`get(1)` 保留前 1 个**字符**，
-   不是「第 1 个捕获组」。要取正则分组，用 `rule(regex).regex(r"捕获组正则")` 作用域
-   或 `collect(match_re, expr)` 里 `$((捕获组))`。
+   不是「第 1 个捕获组」。要取正则分组，在 `collect(match_re, expr)` 的表达式里
+   用捕获组包裹，如 `$((捕获组))`。
 
 3. **正则提取作用域必须有捕获组**：`$()` 取的是捕获组中的**非空组**；正则无捕获组
    时返回空串（继续走函数链与拼接），可能拿不到整段匹配。需要整段匹配就用捕获组包裹，
