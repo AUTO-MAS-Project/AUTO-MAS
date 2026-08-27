@@ -121,8 +121,10 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self._make_project(root)
             before = self._snapshot(root / "config")
             manager, runtime, script_uid = await self._make_manager(root)
+            # 真实成功运行里选中任务名必然在日志中出现过（具体格式未知，只保证子串在）
             _FakeLogMonitor.callback_lines = [
-                "2026-08-27 18:00:00.000 任务已全部完成！\n"
+                "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
+                "2026-08-27 18:00:01.000 任务已全部完成！\n"
             ]
 
             async def no_sleep(_delay):
@@ -216,6 +218,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             manager, runtime, _ = await self._make_manager(root)
             _FakeLogMonitor.callback_lines = [
                 "2026-08-27 18:00:00.000 已放弃本次任务\n"
+                "2026-08-27 18:00:00.500 [INF] [inst=MAS/default] 启动游戏\n"
                 "2026-08-27 18:00:01.000 任务已全部完成！\n"
             ]
             with self._patched_runtime(runtime, manager, self._no_sleep):
@@ -318,6 +321,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 "2026-08-27 19:00:00.000 [ERR] 获取设备唯一标识失败：xxx\n"
                 "2026-08-27 19:00:00.500 [WRN] 跨平台数据解密失败：yyy\n"
                 "2026-08-27 19:00:01.000 [WRN] 公告文件夹不存在：zzz\n"
+                "2026-08-27 19:00:01.500 [INF] [inst=MAS/default] 启动游戏\n"
                 "2026-08-27 19:00:02.000 任务已全部完成！\n"
             ]
             with self._patched_runtime(runtime, manager, self._no_sleep):
@@ -487,12 +491,149 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertTrue(second.backup_path.is_dir())
             self.assertIn("已保留 MaaFW 配置备份", second.cleanup_error or "")
 
+    def test_missing_device_identifier_is_rejected_before_launch(self) -> None:
+        asyncio.run(self._test_missing_device_identifier_is_rejected_before_launch())
+
+    async def _test_missing_device_identifier_is_rejected_before_launch(self) -> None:
+        """Adb 控制器缺设备标识：启动前就拒绝，不起进程、不动配置、不留备份。
+
+        对应实测假成功——MAS 写入的实例配置没有 AdbDevice / Connect.Address，
+        外壳连接必失败却仍排空队列输出「任务已全部完成！」。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root, with_device=False)
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(root)
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertIn("未配置模拟器设备", manager.check_result)
+            self.assertEqual(manager.script_info.status, "异常")
+            # 启动前拒绝：没有任何外壳进程 / 日志监控被创建
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(_FakeLogMonitor.instances, [])
+            self.assertEqual(_FakeSystem.events, [])
+            # 拒绝路径不改动项目配置、不残留备份、不留锁
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+            self.assertEqual(len(runtime.messages), 1)
+            self.assertIn(
+                "未配置模拟器设备", runtime.messages[0]["data"]["Error"]
+            )
+
+    def test_empty_task_selection_is_rejected(self) -> None:
+        asyncio.run(self._test_empty_task_selection_is_rejected())
+
+    async def _test_empty_task_selection_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(root, tasks=[])
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertNotEqual(manager.check_result, "Pass")
+            self.assertIn("不能为空", manager.check_result)
+            self.assertEqual(manager.script_info.status, "异常")
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+
+    def test_completion_requires_selected_tasks_to_appear(self) -> None:
+        asyncio.run(self._test_completion_requires_selected_tasks_to_appear())
+
+    async def _test_completion_requires_selected_tasks_to_appear(self) -> None:
+        """完成串出现时，选中任务必须在日志里露过面才判成功。"""
+
+        cases = {
+            "absent": (
+                ["2026-08-27 18:00:01.000 任务已全部完成！\n"],
+                "tasks_missing",
+                "异常",
+            ),
+            "present": (
+                [
+                    "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
+                    "2026-08-27 18:00:01.000 任务已全部完成！\n"
+                ],
+                "success",
+                "完成",
+            ),
+        }
+        for name, (lines, terminal, status) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir) / "project"
+                self._make_project(root)
+                before = self._snapshot(root / "config")
+                manager, runtime, _ = await self._make_manager(root)
+                _FakeLogMonitor.callback_lines = lines
+                with self._patched_runtime(runtime, manager, self._no_sleep):
+                    await manager.main_task()
+                    await manager.final_task()
+                self.assertEqual(manager.terminal_kind, terminal)
+                self.assertEqual(manager.script_info.status, status)
+                self.assertEqual(self._snapshot(root / "config"), before)
+
+    def test_completion_fails_when_only_some_selected_tasks_appear(self) -> None:
+        asyncio.run(self._test_completion_fails_when_only_some_selected_tasks_appear())
+
+    async def _test_completion_fails_when_only_some_selected_tasks_appear(self) -> None:
+        """选中多个任务、只有一部分出现在日志里 → 不判成功。
+
+        场景取自实测：选中「日常-喝咖啡」在整份日志出现 0 次，真正跑的只有内务
+        任务，完成串却存在。
+        """
+
+        two_task_interface = MaaFWInterface(
+            interface_version=2,
+            name="test-project",
+            controller=[MaaFWController(name="安卓端", type="Adb")],
+            resource=[MaaFWResource(name="简中")],
+            task=[
+                MaaFWTask(name="启动游戏", entry="StartUp"),
+                MaaFWTask(name="日常-喝咖啡", entry="Daily"),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, _ = await self._make_manager(
+                root, tasks=["启动游戏", "日常-喝咖啡"]
+            )
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
+                "2026-08-27 18:00:01.000 任务已全部完成！\n"
+            ]
+            with self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=two_task_interface
+            ):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "tasks_missing")
+            self.assertIn("日常-喝咖啡", manager.current_log.status)
+            self.assertNotIn("启动游戏", manager.current_log.status)
+            self.assertEqual(manager.script_info.status, "异常")
+            self.assertEqual(self._snapshot(root / "config"), before)
+
     def test_dispatch_branch_is_registered(self) -> None:
         source = Path("app/core/task_manager.py").read_text(encoding="utf-8")
         self.assertIn("elif isinstance(script_config, MaaFWConfig):", source)
         self.assertIn("task_item = MaaFWManager(script_item)", source)
 
-    async def _make_manager(self, root: Path, *, runtime=None, script_uid=None):
+    async def _make_manager(
+        self, root: Path, *, runtime=None, script_uid=None, tasks=None
+    ):
         script_uid = script_uid or uuid.uuid4()
         script_config = MaaFWConfig()
         await script_config.update(
@@ -501,7 +642,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 "Selection": {
                     "Controller": json.dumps(["安卓端"], ensure_ascii=False),
                     "Resource": json.dumps(["简中"], ensure_ascii=False),
-                    "Tasks": json.dumps(["启动游戏"], ensure_ascii=False),
+                    "Tasks": json.dumps(
+                        ["启动游戏"] if tasks is None else tasks, ensure_ascii=False
+                    ),
                 },
             }
         )
@@ -523,8 +666,17 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         manager.manifest_path = manager.state_dir / "manifest.json"
         return manager, runtime, script_uid
 
-    @staticmethod
-    def _make_project(root: Path) -> None:
+    # 一个可运行的 MFA 项目：其 instances/default.json 里已有用户此前在外壳侧
+    # 连接过一次模拟器留下的设备标识（AdbDevice）。传 with_device=False 构造缺
+    # 设备标识的项目，用于验证启动前校验。
+    _DEFAULT_INSTANCE = {
+        "original": {"value": 1},
+        "TaskItems": ["old"],
+        "AdbDevice": {"AdbPath": "adb", "AdbSerial": "127.0.0.1:16384"},
+    }
+
+    @classmethod
+    def _make_project(cls, root: Path, *, with_device: bool = True) -> None:
         (root / "config" / "instances").mkdir(parents=True)
         (root / "project").mkdir()
         (root / "logs").mkdir()
@@ -534,8 +686,11 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         (root / "project" / "MFAAvalonia.exe").write_bytes(b"compat-exe")
         (root / "other.exe").write_bytes(b"other-exe")
         (root / "interface.json").write_text("{}", encoding="utf-8")
+        instance = dict(cls._DEFAULT_INSTANCE)
+        if not with_device:
+            instance.pop("AdbDevice")
         (root / "config" / "instances" / "default.json").write_text(
-            json.dumps({"original": {"value": 1}, "TaskItems": ["old"]}),
+            json.dumps(instance),
             encoding="utf-8",
         )
         (root / "config" / "instances" / "other.json").write_text("{}", encoding="utf-8")
@@ -558,7 +713,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
     async def _no_sleep(_delay):
         return None
 
-    def _patched_runtime(self, runtime, manager, sleep):
+    def _patched_runtime(self, runtime, manager, sleep, *, interface=None):
         stack = ExitStack()
         stack.enter_context(patch.object(manager_module, "Config", runtime))
         stack.enter_context(patch.object(manager_module, "ProcessManager", _FakeProcessManager))
@@ -578,7 +733,11 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             )
         )
         stack.enter_context(
-            patch.object(manager_module, "load_interface_model", return_value=_interface())
+            patch.object(
+                manager_module,
+                "load_interface_model",
+                return_value=interface if interface is not None else _interface(),
+            )
         )
         stack.enter_context(patch.object(manager_module.asyncio, "sleep", side_effect=sleep))
         return stack
