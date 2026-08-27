@@ -104,7 +104,7 @@ export interface ElectronAPI {
       taskId?: string
       label?: string
     }) => void
-  ) => void
+  ) => () => void
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作

@@ -45,6 +45,25 @@ const labelOf = (action: TrayAction) =>
 const taskLabelOf = (taskId?: string) =>
   taskOptions.value.find(option => option.value === taskId)?.label ?? ''
 
+const isTrayAction = (action: unknown): action is TrayAction =>
+  typeof action === 'string' && actionOptions.some(option => option.value === action)
+
+const normalizeTrayItem = (item: unknown): TrayMenuItem => {
+  const savedItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
+  const action = isTrayAction(savedItem.action) ? savedItem.action : 'show'
+  const taskId =
+    typeof savedItem.taskId === 'string' && savedItem.taskId.trim()
+      ? savedItem.taskId.trim()
+      : undefined
+
+  return {
+    id: typeof savedItem.id === 'string' && savedItem.id ? savedItem.id : createId(),
+    label: typeof savedItem.label === 'string' ? savedItem.label : labelOf(action),
+    action: action === 'startTask' && !taskId ? 'show' : action,
+    taskId: action === 'startTask' && taskId ? taskId : undefined,
+  }
+}
+
 // 标签未自定义（为空、某个动作默认名或某个任务默认名）时，跟随动作/任务自动更新
 const isDefaultLabel = (label: string) =>
   !label.trim() ||
@@ -75,14 +94,7 @@ const load = async () => {
     const config = await window.electronAPI?.loadConfig()
     const saved = config?.UI?.TrayItems
     items.value =
-      Array.isArray(saved) && saved.length
-        ? saved.map((item: any) => ({
-            id: item.id || createId(),
-            label: String(item.label ?? ''),
-            action: item.action,
-            taskId: item.taskId,
-          }))
-        : [...DEFAULT_TRAY_ITEMS]
+      Array.isArray(saved) && saved.length ? saved.map(normalizeTrayItem) : [...DEFAULT_TRAY_ITEMS]
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger?.warn(`读取托盘菜单配置失败: ${errorMsg}`)

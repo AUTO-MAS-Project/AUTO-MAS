@@ -92,9 +92,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       label?: string
     }) => void
   ) => {
-    ipcRenderer.on('tray-action-request', (_event, request) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      request: {
+        action: 'quit' | 'restart' | 'startTask'
+        taskId?: string
+        label?: string
+      }
+    ) => {
       callback(request)
-    })
+    }
+
+    ipcRenderer.on('tray-action-request', listener)
+    return () => ipcRenderer.removeListener('tray-action-request', listener)
   },
 
   // 同步后端配置

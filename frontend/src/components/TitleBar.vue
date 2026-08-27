@@ -79,7 +79,7 @@ import {
   MinusOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const logger = window.electronAPI.getLogger('标题栏')
@@ -88,6 +88,7 @@ const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 const { startTaskById } = useSchedulerLogic()
+let removeTrayActionListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -305,7 +306,7 @@ const handleTrayActionRequest = (request: {
 
 onMounted(async () => {
   // 监听托盘动作请求（启动任务 / 退出 / 重启）
-  window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+  removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
   try {
     const config = await window.electronAPI?.loadConfig()
@@ -321,6 +322,11 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取窗口状态失败: ${errorMsg}`)
   }
+})
+
+onBeforeUnmount(() => {
+  removeTrayActionListener?.()
+  removeTrayActionListener = undefined
 })
 </script>
 
