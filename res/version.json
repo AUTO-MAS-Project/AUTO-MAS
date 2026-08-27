@@ -12,7 +12,9 @@
             "开发流程": [
                 "清理前端 TypeScript 类型错误与 ESLint 告警，恢复 typecheck 与 lint 全量通过 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
-            "修复BUG": []
+            "修复BUG": [
+                "MaaEnd专项 修复脚本正常退出后 AUTO-MAS 仍持续等待、导致后续调度无法执行的问题"
+            ]
         },
         "v5.4.0": {
             "新增功能": [],
