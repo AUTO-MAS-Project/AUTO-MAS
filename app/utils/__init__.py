@@ -77,35 +77,6 @@ def __getattr__(name: str):
     return _resolve_lazy(name)
 
 
-class LazyProxy:
-    """惰性代理：首次属性访问时才导入真实对象，避免初始化期间的循环导入。
-
-    与模块级 __getattr__ 不同，它绑定为一个真实的模块全局名，因此函数内的
-    裸全局名引用（LOAD_GLOBAL）也能正常解析；同时转发属性读写，保证
-    ``Config.xxx = yyy`` 这类赋值落到真实对象上。
-    """
-
-    def __init__(self, module: str, name: str) -> None:
-        object.__setattr__(self, "_module", module)
-        object.__setattr__(self, "_name", name)
-        object.__setattr__(self, "_obj", None)
-
-    def _resolve(self):
-        obj = self.__dict__["_obj"]
-        if obj is None:
-            from importlib import import_module
-
-            obj = getattr(import_module(self._module), self._name)
-            object.__setattr__(self, "_obj", obj)
-        return obj
-
-    def __getattr__(self, attr: str):
-        return getattr(self._resolve(), attr)
-
-    def __setattr__(self, attr: str, value) -> None:
-        setattr(self._resolve(), attr, value)
-
-
 class _LazyModule(types.ModuleType):
     """拦截 import 系统把惰性子模块挂到本包命名空间的副作用。
 
