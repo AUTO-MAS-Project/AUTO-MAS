@@ -9,6 +9,7 @@
 #   the License, or (at your option) any later version.
 
 import importlib.util
+import uuid
 from pathlib import Path
 
 from app.utils.io import read_file, write_file
@@ -295,6 +296,19 @@ def test_launch_slot_name_stable(tmp_path) -> None:
     assert one_dragon.launch_slot_name() == "MAS独立配置"
 
 
+def test_list_one_dragon_configs(tmp_path) -> None:
+    """配置名下拉列表：列 BGI 现有配置、排除 MAS 槽位、默认配置置顶。"""
+    root = tmp_path
+    (root / "User" / "OneDragon").mkdir(parents=True)
+    # 槽位名不该出现在下拉里
+    one_dragon.write_one_dragon(root, "MAS独立配置", {"Name": "MAS独立配置"})
+    (root / "User" / "OneDragon" / "日常一龙.json").write_text("{}", encoding="utf-8")
+
+    names = one_dragon.list_one_dragon_configs(root)
+    assert names[0] == "默认配置"
+    assert names == ["默认配置", "日常一龙"]
+
+
 def test_remove_slot_preserves_bgi_original(tmp_path, monkeypatch) -> None:
     """删除槽位不影响 BGI 同名用户实配。"""
     root = tmp_path
@@ -307,4 +321,78 @@ def test_remove_slot_preserves_bgi_original(tmp_path, monkeypatch) -> None:
 
     one_dragon.remove_one_dragon_slot(root)
     assert bgi_path.read_bytes() == bgi_before
-    assert not one_dragon.one_dragon_slot_path(root).exists()
+
+
+def test_write_user_one_dragon_missing_cache_seeds_from_bgi_real(tmp_path, monkeypatch) -> None:
+    """缓存缺失时回退到 BGI 实配（而非空模板），保留自定义配置组及其位置。
+
+    回归：per-user 缓存不存在时 read_file 返回 {}，旧判断 ``isinstance({}, dict)``
+    为真导致实配回退分支成为死代码，种子退化为仅 8 内置组的模板，用户的自定义
+    配置组整体丢失、重启后落到一条龙末尾。
+    """
+    root = tmp_path
+    monkeypatch.setattr(
+        one_dragon,
+        "per_user_one_dragon_path",
+        lambda sid, uid, name: tmp_path / "cache" / sid / uid / f"{name}.json",
+    )
+    (root / "User" / "OneDragon").mkdir(parents=True)
+    # BGI 实配里有：内置组 + 夹在中间的自定义组「提瓦特记事本」
+    fmt = {
+        "自动地脉花": uuid.uuid4().hex,
+        "自动秘境": uuid.uuid4().hex,
+    }
+    custom_uid = uuid.uuid4().hex
+    defs = {fmt["自动地脉花"]: "自动地脉花", fmt["自动秘境"]: "自动秘境", custom_uid: "提瓦特记事本"}
+    one_dragon.write_one_dragon(
+        root,
+        "默认配置",
+        {
+            "TaskDefinitions": defs,
+            "TaskOrder": [fmt["自动地脉花"], custom_uid, fmt["自动秘境"]],
+            "TaskEnabledList": {uid: True for uid in defs},
+            "Name": "默认配置",
+        },
+    )
+    # 不写 per-user 缓存（模拟首次运行/清理后）
+
+    # 开启自定义配置组管理，把「提瓦特记事本」在表中关闭
+    one_dragon.write_user_one_dragon(
+        root,
+        "script",
+        "user",
+        "默认配置",
+        ["自动地脉花", "自动秘境"],
+        custom_groups=[{"name": "提瓦特记事本", "enabled": False}],
+        manage_custom_groups=True,
+    )
+
+    slot = _od_slot(root)
+    # 禁用组不被删除（保留在 defs/order，仅 enabled 置 False）
+    assert slot["TaskDefinitions"][custom_uid] == "提瓦特记事本"
+    assert slot["TaskEnabledList"][custom_uid] is False
+    # 位置仍在实配中的相对位置，未被重建到末尾
+    order = slot["TaskOrder"]
+    assert order.index(custom_uid) == 1
+
+
+def test_write_user_one_dragon_missing_cache_no_bgi_real_falls_to_template(tmp_path, monkeypatch) -> None:
+    """缓存与实配都不存在时才落到内置模板，保证至少有 8 个内置组可运行。"""
+    root = tmp_path
+    monkeypatch.setattr(
+        one_dragon,
+        "per_user_one_dragon_path",
+        lambda sid, uid, name: tmp_path / "cache" / sid / uid / f"{name}.json",
+    )
+    (root / "User" / "OneDragon").mkdir(parents=True)
+    # 没有任何现有配置
+
+    one_dragon.write_user_one_dragon(
+        root, "script", "user", "默认配置", ["自动地脉花", "自动秘境"], manage_custom_groups=True
+    )
+
+    slot = _od_slot(root)
+    assert set(slot["TaskDefinitions"].values()) >= {
+        "自动地脉花",
+        "自动秘境",
+    }

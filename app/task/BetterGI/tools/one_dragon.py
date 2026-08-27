@@ -109,6 +109,23 @@ def list_auto_boss_strategies(root: Path) -> list[str]:
     return options
 
 
+def list_one_dragon_configs(root: Path) -> list[str]:
+    """列出可选一条龙配置名：{RootPath}/User/OneDragon/*.json 的文件名。
+
+    排除 MAS 运行时槽位「MAS独立配置」；始终把「默认配置」置顶（空名/首选的兜底）。
+    实时扫描以反映 BGI 侧手工新增/删除的配置。
+    """
+    names: list[str] = []
+    dragon_dir = root / _ONE_DRAGON_REL_DIR
+    if dragon_dir.is_dir():
+        for p in sorted(dragon_dir.glob("*.json"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name != _MAS_ONE_DRAGON_SLOT_NAME and name not in names:
+                names.append(name)
+    names = [name for name in names if name != _DEFAULT_CONFIG_NAME]
+    return [_DEFAULT_CONFIG_NAME] + names
+
+
 def resolve_config_name(name: str) -> str:
     """解析一条龙配置名，空值显式兜底为「默认配置」。"""
     return (name or "").strip() or _DEFAULT_CONFIG_NAME
@@ -275,7 +292,9 @@ def write_user_one_dragon(
     user_path = per_user_one_dragon_path(script_id, user_id, config_name)
 
     config = read_file(user_path)
-    if not isinstance(config, dict):
+    if not config or not isinstance(config, dict):
+        # 缓存缺失/为空时（read_file 对不存在返回 {}）回退到 BGI 实配：否则种子退化为
+        # 仅 8 个内置组的空模板，用户现有自定义配置组会整体丢失、重启后落到一条龙末尾。
         config = load_one_dragon(root, config_name)
     if not config:
         config = load_seed_template()

@@ -811,6 +811,39 @@ async def get_bettergi_custom_groups_api(
 
 
 @router.get(
+    "/bettergi/one-dragon/configs",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 一条龙配置名列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 可选一条龙配置名：{RootPath}/User/OneDragon/*.json 文件名（默认配置置顶）。"""
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_one_dragon_configs(root)
+        data = [ComboBoxItem(label=n, value=n) for n in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个一条龙配置",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
     "/hsr/capabilities",
     tags=["HSR"],
     summary="获取内置 HSR 能力快照",
