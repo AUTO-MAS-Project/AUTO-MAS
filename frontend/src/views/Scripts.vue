@@ -1114,6 +1114,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/maaend`)
   } else if (script.type === 'M9A') {
     router.push(`/scripts/${script.id}/users/add/m9a`)
+  } else if (script.type === 'MaaFW') {
+    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
@@ -1138,6 +1140,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
     } else if (script.type === 'M9A') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
+    } else if (script.type === 'MaaFW') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {
