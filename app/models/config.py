@@ -2202,6 +2202,63 @@ class M9AConfig(ConfigBase):
         super().__init__()
 
 
+class MaaFWUserConfig(ConfigBase):
+    """MaaFW用户配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+
+        super().__init__()
+
+
+class MaaFWConfig(ConfigBase):
+    """MaaFW脚本配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## MaaFW脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MaaFW 脚本")
+        ## MaaFW项目目录，应包含 interface.json
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
+
+        ## Run -------------------------------------------------------------
+        ## 运行引擎，当前仅支持外部运行
+        self.Run_Engine = ConfigItem(
+            "Run", "Engine", "external", OptionsValidator(["external"])
+        )
+        ## 单次运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+        )
+
+        ## Selection -------------------------------------------------------
+        ## 选中的 controller 列表
+        self.Selection_Controller = ConfigItem(
+            "Selection", "Controller", "[ ]", JSONValidator(list)
+        )
+        ## 选中的 resource 列表
+        self.Selection_Resource = ConfigItem(
+            "Selection", "Resource", "[ ]", JSONValidator(list)
+        )
+        ## 选中的 task 列表
+        self.Selection_Tasks = ConfigItem(
+            "Selection", "Tasks", "[ ]", JSONValidator(list)
+        )
+
+        ## 用户配置列表
+        self.UserData = MultipleConfig([MaaFWUserConfig])
+
+        super().__init__()
+
+
 class MaaPlanConfig(ConfigBase):
     """MAA计划表配置"""
 
@@ -3469,6 +3526,7 @@ class GlobalConfig(ConfigBase):
                 MaaEndConfig,
                 SrcConfig,
                 M9AConfig,
+                MaaFWConfig,
                 GeneralConfig,
                 OkwwConfig,
                 OkNteConfig,
@@ -3484,6 +3542,7 @@ class GlobalConfig(ConfigBase):
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
@@ -3576,6 +3635,7 @@ CLASS_BOOK = {
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
     "M9A": M9AConfig,
+    "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,
