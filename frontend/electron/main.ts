@@ -1,4 +1,4 @@
-﻿import { exec, spawn } from 'child_process'
+import { exec, spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -6,6 +6,7 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  type MenuItemConstructorOptions,
   nativeImage,
   nativeTheme,
   Notification,
@@ -41,6 +42,24 @@ interface ApiResult {
   code?: number
   message?: string
 }
+
+// 托盘菜单项类型
+type TrayAction = 'show' | 'hide' | 'startTask' | 'stopAll' | 'restartApp' | 'quit'
+
+interface TrayItem {
+  id: string
+  label: string
+  action: TrayAction
+  // 仅 action === 'startTask' 时有效：要启动的队列/脚本 ID
+  taskId?: string
+}
+
+// 默认托盘菜单项（与旧版硬编码菜单保持一致）
+const DEFAULT_TRAY_ITEMS: TrayItem[] = [
+  { id: 'show', label: '显示窗口', action: 'show' },
+  { id: 'hide', label: '隐藏窗口', action: 'hide' },
+  { id: 'quit', label: '退出', action: 'quit' },
+]
 
 function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -183,6 +202,7 @@ interface AppConfig {
     location: string
     maximized: boolean
     size: string
+    TrayItems?: TrayItem[]
   }
   Start: {
     IfMinimizeDirectly: boolean
@@ -301,65 +321,117 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon)
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: '显示窗口',
-      click: () => {
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) {
-            mainWindow.restore()
-          }
-          mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      },
-    },
-    {
-      label: '隐藏窗口',
-      click: () => {
-        if (mainWindow) {
-          const currentConfig = loadConfig()
-          if (currentConfig.UI.IfToTray) {
-            mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-          }
-          mainWindow.hide()
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isQuitting = true
-        app.quit()
-      },
-    },
-  ])
-
-  tray.setContextMenu(contextMenu)
   tray.setToolTip('AUTO-MAS')
+
+  // 从配置读取托盘菜单项，未配置时回落到默认菜单
+  const currentConfig = loadConfig()
+  const trayItems = currentConfig.UI.TrayItems
+  const items = trayItems?.length ? trayItems : DEFAULT_TRAY_ITEMS
+  rebuildTrayMenu(items)
 
   // 双击托盘图标显示/隐藏窗口
   tray.on('double-click', () => {
-    if (mainWindow) {
-      const currentConfig = loadConfig()
-      if (mainWindow.isVisible()) {
-        if (currentConfig.UI.IfToTray) {
-          mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-        }
-        mainWindow.hide()
-      } else {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore()
-        }
-        mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
-        mainWindow.show()
-        mainWindow.focus()
-      }
+    if (!mainWindow) return
+    if (mainWindow.isVisible()) {
+      hideMainWindow()
+    } else {
+      showMainWindow()
     }
   })
+}
+
+// 显示主窗口
+function showMainWindow(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+// 隐藏主窗口
+function hideMainWindow(): void {
+  if (!mainWindow) return
+  const currentConfig = loadConfig()
+  if (currentConfig.UI.IfToTray) {
+    mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
+  }
+  mainWindow.hide()
+}
+
+// 重建托盘右键菜单
+function rebuildTrayMenu(items: TrayItem[]): void {
+  if (!tray) return
+
+  // 空列表时回落到默认菜单，避免托盘右键菜单为空
+  const effectiveItems = items.length ? items : DEFAULT_TRAY_ITEMS
+
+  const menuItems: MenuItemConstructorOptions[] = []
+  effectiveItems.forEach((item, index) => {
+    // 在「退出」前插入分隔线，保持与旧版菜单一致的视觉区分
+    if (item.action === 'quit' && index > 0) {
+      menuItems.push({ type: 'separator' })
+    }
+    menuItems.push({
+      label: item.label,
+      click: () => handleTrayAction(item),
+    })
+  })
+
+  tray.setContextMenu(Menu.buildFromTemplate(menuItems))
+}
+
+// 执行托盘菜单项动作
+function handleTrayAction(item: TrayItem): void {
+  switch (item.action) {
+    case 'show':
+      showMainWindow()
+      break
+    case 'hide':
+      hideMainWindow()
+      break
+    case 'stopAll':
+      void stopAllTasksByShortcut()
+      break
+    case 'startTask':
+      // 一键启动指定任务：需携带任务 ID 转发给渲染进程，由调度台新建任务并启动
+      if (item.taskId) {
+        requestTrayAction('startTask', item.taskId, item.label)
+      } else {
+        logger.warn('托盘启动任务缺少 taskId，忽略')
+      }
+      break
+    case 'restartApp':
+    case 'quit':
+      // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
+      requestTrayAction(item.action === 'restartApp' ? 'restart' : 'quit')
+      break
+  }
+}
+
+// 请求渲染进程处理托盘动作：启动需读取任务 ID 新建调度台，退出/重启由渲染进程按运行状态弹统一确认窗
+function requestTrayAction(
+  action: 'quit' | 'restart' | 'startTask',
+  taskId?: string,
+  label?: string
+): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tray-action-request', { action, taskId, label })
+  } else {
+    // 无主窗口时无法弹确认窗/新建调度台，仅退出与重启可直接执行
+    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出/重启')
+    if (action === 'restart') {
+      isQuitting = true
+      app.relaunch()
+      app.exit(0)
+    } else if (action === 'quit') {
+      isQuitting = true
+      app.quit()
+    }
+    // startTask 依赖渲染进程新建调度台，无窗口时忽略
+  }
 }
 
 // 销毁托盘
@@ -1346,6 +1418,9 @@ ipcMain.handle('save-config', async (_event, config) => {
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
+      if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
+        rebuildTrayMenu(config.UI.TrayItems)
+      }
     }
   } catch (error) {
     logger.error('保存配置文件失败')
@@ -1368,6 +1443,29 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     return true
   } catch (error) {
     logger.error('更新托盘设置失败')
+    throw error
+  }
+})
+
+// 更新托盘自定义菜单项
+ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
+  try {
+    const currentConfig = loadConfig()
+    currentConfig.UI = { ...currentConfig.UI, TrayItems: trayItems }
+    saveConfig(currentConfig)
+
+    // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
+    try {
+      if (tray) destroyTray()
+      updateTrayVisibility(currentConfig)
+    } catch (refreshError) {
+      logger.error('刷新托盘菜单失败', refreshError)
+    }
+
+    logger.info('托盘菜单项已更新')
+    return true
+  } catch (error) {
+    logger.error('更新托盘菜单项失败')
     throw error
   }
 })

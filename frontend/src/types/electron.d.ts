@@ -97,6 +97,14 @@ export interface ElectronAPI {
 
   // 托盘设置
   updateTraySettings: (uiSettings: any) => Promise<boolean>
+  updateTrayConfig: (trayItems: any) => Promise<boolean>
+  onTrayActionRequest: (
+    callback: (request: {
+      action: 'quit' | 'restart' | 'startTask'
+      taskId?: string
+      label?: string
+    }) => void
+  ) => () => void
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
