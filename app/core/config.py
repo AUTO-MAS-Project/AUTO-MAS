@@ -358,7 +358,19 @@ class AppConfig(GlobalConfig):
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
-        asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
+        # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
+        self_start_task = asyncio.create_task(
+            System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        )
+        self.temp_task.append(self_start_task)
+
+        def _self_start_done(t: asyncio.Task) -> None:
+            if t in self.temp_task:
+                self.temp_task.remove(t)
+            if not t.cancelled() and t.exception() is not None:
+                logger.warning(f"设置开机自启动失败: {t.exception()}")
+
+        self_start_task.add_done_callback(_self_start_done)
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
         set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
