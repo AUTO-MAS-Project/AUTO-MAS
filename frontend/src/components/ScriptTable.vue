@@ -65,30 +65,17 @@
                     alt="HSR"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'MaaFW'"
+                    src="@/assets/AUTO-MAS.ico"
+                    alt="MaaFW"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag
-                    :color="
-                      script.type === 'MAA'
-                        ? 'blue'
-                        : script.type === 'SRC'
-                          ? 'purple'
-                          : script.type === 'MaaEnd'
-                            ? 'blue'
-                            : script.type === 'M9A'
-                              ? 'cyan'
-                              : script.type === 'Okww'
-                                ? 'blue'
-                                : script.type === 'OkNte'
-                                  ? 'blue'
-                                  : script.type === 'HSR'
-                                    ? 'purple'
-                                    : 'green'
-                    "
-                    class="script-type"
-                  >
+                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
                 </div>
@@ -745,6 +732,20 @@ const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'OkNte') return 'ok-nte'
   return type
 }
+
+const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+  MAA: 'blue',
+  SRC: 'purple',
+  MaaEnd: 'blue',
+  M9A: 'cyan',
+  MaaFW: 'geekblue',
+  Okww: 'blue',
+  OkNte: 'blue',
+  HSR: 'purple',
+  General: 'green',
+}
+
+const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
 
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
