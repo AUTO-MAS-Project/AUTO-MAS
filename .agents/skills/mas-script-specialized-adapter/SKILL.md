@@ -42,7 +42,7 @@ description: >-
 - 配置与 schema：`app/models/config.py`、`app/models/schema.py`
 - 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
 - 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
-- 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink；报告聚合与追加复用通用工具 `app/tools/push_log.py`（`build_push_log_text` / `append_push_log`），专项不要自行拼接实现
+- 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink；报告聚合与追加复用通用工具 `app/tools/push_log.py`（`build_push_log_text` / `append_push_log`），专项不要自行拼接实现。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogEnabled`）
 - 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
 - Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
 - 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`

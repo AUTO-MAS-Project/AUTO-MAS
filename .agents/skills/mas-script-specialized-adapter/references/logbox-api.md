@@ -14,6 +14,7 @@
 - [LogCollect 采集会话](#logcollect-采集会话)
 - [与通用脚本 web 配置推送日志的分工](#与通用脚本-web-配置推送日志的分工重要)
 - [日志类型与推送时机语义](#日志类型与推送时机语义)
+- [推送详情开关](#推送详情开关在专项侧不在-log-box)
 - [表达式引擎自定义算子](#表达式引擎自定义算子)
 - [专项喂参示例](#专项喂参示例mas-进程宿主)
 - [推送落地](#推送落地聚合与追加通用工具)
@@ -73,6 +74,20 @@ col = log_box.get_collect(
 )
 ```
 
+### 日志源行为（LogSource）
+
+单个被采集文件按 **offset 增量读取**，`close()` 收尾时一次性读完会话剩余内容：
+
+- **轮转补偿**：检测到文件身份变化（inode/Windows 创建时间任一变化）时，先读被轮换的
+  旧日志（`.bak` 备份，按 `x.log.bak` / `x.bak` 惯例探测）中**尚未读过**的部分，再从头
+  读新文件，避免轮转前内容静默丢失。
+- **截断**：文件变小但身份未变时，重置到文件头重读。
+- **会话外内容**：`start_from_end=True` 时只采会话内新增，会话开始（`open()`）前的
+  历史内容不进入结果。
+
+> 单次任务日志量大时，结果是一次性入内存的（`close()` 时整体采集）。专项若运行极长、
+> 日志极大，需自行评估该内存占用（当前 okww 单会话日志量在可接受范围）。
+
 ## LogCollect 采集会话
 
 | 方法 | 说明 |
@@ -110,6 +125,23 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
   - `任何时刻`：任务结束即推送整份报告
   - `仅失败时`：**仅当任务存在未完成用户时**推送整份报告
 
+## 推送详情开关（在专项侧，不在 log_box）
+
+「任务报告中是否展示采集的节点详情」由**专项（或其用户配置）**决定，log_box 对此
+无感知——它只负责把结果写进 `push_log`。开关在专项**是否创建/启用 log_box** 的入口
+消费（从源头决定是否产生数据），而不是在聚合层做事后过滤：
+
+- **通用脚本**：`PushLogEnabled`（web UI 配置）控制是否采集并聚合推送日志。
+- **OK-WW专项**：用户级 `Notify.PushLogEnabled`（用户编辑页「是否采集节点详情」，与快速配置同排）
+  ——关闭时 **AutoProxy 侧不创建 log_box**（不读日志、不翻译、不匹配），该用户 push_log 为空，
+  报告聚合（`build_push_log_text`）自然不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
+  的 `prepare()` 按开关启停 + `final_task()` 判空收尾。
+
+**给未来适配器的模式**：开关 = 专项自己的配置项，在专项**是否创建/启用 log_box** 的
+入口（如 AutoProxy `prepare()`）消费——关闭即不创建（省采集开销），**不要**在 log_box
+里加通用开关，也不要在聚合层做采后过滤；各专项的开关语义、默认值、UI 位置不同，
+放 log_box 只会强塞专项语义。
+
 
 ## 表达式引擎自定义算子
 
@@ -134,7 +166,7 @@ class Suffix(Process):
         return text + (str(args[0]) if args else "")
 
 # 表达式中调用算子：$((\d+)).suffix(" 剩余电量")，作用于捕获组文本
-self.log_collect.collect(r"current_stamina (\d+)", r'$((\d+)).suffix(" 剩余电量")')
+col.collect(r"current_stamina (\d+)", r'$((\d+)).suffix(" 剩余电量")')
 ```
 
 > **为什么不能用 `.process(fn)` 直接传 Python 函数**：规则是「参数」形态
@@ -160,6 +192,10 @@ for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态�
     self.log_collect.collect(match_re, expr, log_type)
 # 结束时机（如进程关闭判定 / final_task）：col.close(resolve)
 ```
+
+> okww 实际用法：在 `AutoProxy.prepare()` 里先读用户级「是否采集节点详情」开关，关闭则
+> **不创建 log_box**（`final_task` 判空收尾），见上文「推送详情开关」；规则为二元组时
+> 用 `collect(*rule)` 展开即可。
 
 后处理示例：按节点解析最终状态（失败 > 跳过 > 成功），裸节点名 = 开始标记默认成功
 （需消费并返回 `(log_type, text)` 元组，以保留日志类型）：

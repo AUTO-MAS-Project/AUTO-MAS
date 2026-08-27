@@ -181,6 +181,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_target_process_info: ProcessInfo | None = None
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
+        # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
+        self.log_collect = None
+        self.log_translator = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -263,21 +266,24 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         # ── log_box：日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
-        # 采集 ok-script.log 会话内新增内容；open 挂前置翻译，close 挂后置去重
-        self.log_collect = log_box.get_collect(
-            paths=[self.script_log_path],
-            sink=self._append_push_log,
-            start_from_end=True,
-        )
-        # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
-        self.log_translator = (
-            PoTranslator()
-            .load([OKWW_REL_I18N_PO], base=self.script_root_path)
-            .load_supplement([_okww_supplement_po()])
-        )
-        self.log_collect.open(self.log_translator.translate)
-        for rule in OKWW_PUSH_RULES:
-            self.log_collect.collect(*rule)
+        # 受用户级「是否采集节点详情」开关控制：关闭时不创建（不读日志、不翻译、
+        # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
+        # 为空，报告聚合时自然不含其节点详情
+        if self.cur_user_config.get("Notify", "PushLogEnabled"):
+            self.log_collect = log_box.get_collect(
+                paths=[self.script_log_path],
+                sink=self._append_push_log,
+                start_from_end=True,
+            )
+            # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
+            self.log_translator = (
+                PoTranslator()
+                .load([OKWW_REL_I18N_PO], base=self.script_root_path)
+                .load_supplement([_okww_supplement_po()])
+            )
+            self.log_collect.open(self.log_translator.translate)
+            for rule in OKWW_PUSH_RULES:
+                self.log_collect.collect(*rule)
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.okww_args = ["-t", str(self.task_index), "-e"]
@@ -570,10 +576,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
         # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
-        # prepare() 未执行完时 self.log_collect 可能不存在，一并在此兜底
+        # 开关关闭（未创建）或 prepare 未执行完时 log_collect 为 None，一并在此兜底
         try:
-            self.log_collect.close(okww_resolve)
-            self.log_translator.clear()
+            if self.log_collect is not None:
+                self.log_collect.close(okww_resolve)
+            if self.log_translator is not None:
+                self.log_translator.clear()
         except Exception:
             logger.opt(exception=True).warning("OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）")
 

@@ -705,6 +705,11 @@ class OkwwUserConfig_Data(GeneralUserConfig_Data):
 class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
     """OK-WW 用户通知（复用通用字段）"""
 
+    PushLogEnabled: Optional[bool] = Field(
+        default=None,
+        description="任务报告中是否推送该用户的节点详情（log_box 采集的关键节点）",
+    )
+
 
 class OkwwUserConfig(BaseModel):
     Info: Optional[OkwwUserConfig_Info] = Field(default=None, description="用户信息")
