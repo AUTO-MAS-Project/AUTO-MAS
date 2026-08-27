@@ -68,6 +68,8 @@ HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     "货币战争开拓者名称为空",         # CosmicStrifeTask.py:34
     "旷宇纷争-货币战争任务失败",      # CosmicStrifeTask.py:63
     "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:50
+    # ---- M7A 切换游戏界面失败（对应日志「发生错误 无法切换到指定游戏界面」）----
+    "无法切换到指定游戏界面",
 )
 HSR_BENIGN_FAILURE_MARKERS: tuple[str, ...] = (
     "未找到匹配文字",
