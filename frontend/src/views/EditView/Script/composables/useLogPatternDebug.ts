@@ -1,10 +1,6 @@
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import {
-  ActionService,
-  type PatternDebugIn,
-  type PushLogPattern as ApiPushLogPattern,
-} from '@/api'
+import { ActionService, type PatternDebugIn, type PushLogPattern as ApiPushLogPattern } from '@/api'
 import type { PushLogPattern } from './usePushLogPatterns'
 
 export interface DebugResult {

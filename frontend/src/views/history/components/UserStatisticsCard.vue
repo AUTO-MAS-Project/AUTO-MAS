@@ -7,11 +7,7 @@
       class="statistics-tabs"
       size="small"
     >
-      <a-tab-pane
-        v-for="option in availableStatistics"
-        :key="option.value"
-        :tab="option.label"
-      />
+      <a-tab-pane v-for="option in availableStatistics" :key="option.value" :tab="option.label" />
     </a-tabs>
 
     <div class="card-content">
@@ -218,7 +214,6 @@ watch(
   },
   { immediate: true }
 )
-
 </script>
 
 <style scoped>

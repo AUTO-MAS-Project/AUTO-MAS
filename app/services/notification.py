@@ -34,7 +34,13 @@ from email.utils import formataddr
 from pathlib import Path
 from typing import Literal
 
-from app.core import Config
+def __getattr__(name: str) -> object:
+    """延迟导入 Config，避免 app.services 初始化期间触发 app.core 循环导入。"""
+    if name == "Config":
+        from app.core import Config
+        return Config
+    raise AttributeError(name)
+
 from app.models.config import Webhook
 from app.utils import get_logger, ImageUtils
 

@@ -78,7 +78,6 @@ const getScriptStats = (scripts: Script[]) => {
 
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
-
   if (message.type === 'Update') {
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
@@ -172,18 +171,6 @@ defineExpose({
   align-items: center;
   justify-content: center;
   height: 100%;
-}
-
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .overview-panel {
-    background: var(--ant-color-bg-container, #1f1f1f);
-    border: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .section-header {
-    border-bottom: 1px solid var(--ant-color-border, #424242);
-  }
 }
 
 @media (max-width: 768px) {

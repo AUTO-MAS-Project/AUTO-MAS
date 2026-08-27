@@ -97,9 +97,7 @@ export const parsePushLogPatterns = (json: string): PushLogPattern[] => {
         const type = normalizePatternType(item.type)
         const enabled = item.enabled === false ? false : true
         const name =
-          typeof item.name === 'string' && item.name.trim()
-            ? item.name.trim()
-            : undefined
+          typeof item.name === 'string' && item.name.trim() ? item.name.trim() : undefined
         const logType = normalizeLogType(item.logType)
 
         if (type === 'split') {
@@ -149,9 +147,9 @@ export const parsePushLogPatterns = (json: string): PushLogPattern[] => {
  * 停用（enabled=false）时保留配置不参与采集，视为可保存，不做字段要求。 */
 const ruleHasRequiredField = (p: PushLogPattern): boolean => {
   if (p.enabled === false) return true
-  if (p.type === 'split') return !!((p.match || '').trim())
-  if (p.type === 'regex') return !!((p.match || '').trim())
-  if (p.type === 'multiline') return !!((p.start || '').trim())
+  if (p.type === 'split') return !!(p.match || '').trim()
+  if (p.type === 'regex') return !!(p.match || '').trim()
+  if (p.type === 'multiline') return !!(p.start || '').trim()
   return false
 }
 
@@ -216,7 +214,7 @@ export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => 
  */
 export const migratePatternOnTypeChange = (
   oldPattern: PushLogPattern,
-  newType: PushLogPatternType,
+  newType: PushLogPatternType
 ): PushLogPattern => {
   const base: PushLogPattern = {
     _uid: oldPattern._uid || newUid(),
@@ -278,7 +276,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
       .map(({ p, i }) => ruleDisplayName(p, i))
     if (dropped.length > 0) {
       message.warning(
-        `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`,
+        `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`
       )
     }
     onChange?.(json)
@@ -316,9 +314,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
     save()
   }
 
-  const activePatternCount = computed(
-    () => patterns.value.filter(p => p.enabled !== false).length,
-  )
+  const activePatternCount = computed(() => patterns.value.filter(p => p.enabled !== false).length)
 
   return {
     patterns,

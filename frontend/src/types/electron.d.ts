@@ -243,5 +243,11 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    /** 调试用:由 WebSocketMessageListener 挂载的消息弹窗触发接口 */
+    __debugShowQuestion?: (questionData: Record<string, unknown>) => Promise<void>
+    /** 调试用:调度中心调试信息输出 */
+    debugScheduler?: () => void
+    /** 调试用:WebSocket 连接测试 */
+    testWebSocketConnection?: () => Promise<void>
   }
 }

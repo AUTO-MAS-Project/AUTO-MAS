@@ -2,7 +2,7 @@
   <div class="task-option-renderer">
     <div v-for="(option, index) in currentOptions" :key="index" class="option-item">
       <div class="option-label">{{ getOptionLabel(option.name) }}</div>
-      
+
       <template v-if="optionDefinitions && optionDefinitions[option.name]">
         <a-radio-group
           v-if="optionDefinitions[option.name].type === 'switch'"
@@ -17,7 +17,7 @@
             {{ getCaseLabel(caseItem) }}
           </a-radio>
         </a-radio-group>
-        
+
         <a-select
           v-else-if="['select', 'scan_select'].includes(optionDefinitions[option.name].type)"
           v-model:value="option.index"
@@ -32,7 +32,7 @@
             {{ getCaseLabel(caseItem) }}
           </a-select-option>
         </a-select>
-        
+
         <div
           v-else-if="optionDefinitions[option.name].type === 'input' && option.input_values"
           class="input-fields"
@@ -47,22 +47,19 @@
               v-model:value="option.input_values[input.name]"
               :min="0"
               style="width: 100%"
-              @change="handleInputChange(index)"
+              @change="handleInputChange"
             />
             <a-input
               v-else
               v-model:value="option.input_values[input.name]"
               :placeholder="input.description || input.name"
               style="width: 100%"
-              @change="handleInputChange(index)"
+              @change="handleInputChange"
             />
           </a-form-item>
         </div>
-        
-        <div
-          v-else-if="optionDefinitions[option.name].type === 'checkbox'"
-          class="checkbox-cases"
-        >
+
+        <div v-else-if="optionDefinitions[option.name].type === 'checkbox'" class="checkbox-cases">
           <a-checkbox-group
             v-model:value="option.selected_cases"
             @change="handleCheckboxChange(index)"
@@ -77,7 +74,7 @@
           </a-checkbox-group>
         </div>
       </template>
-      
+
       <div v-if="option.sub_options && option.sub_options.length > 0" class="sub-options">
         <TaskOptionRenderer
           :task-options="option.sub_options"
@@ -105,7 +102,7 @@ const emit = defineEmits<{
 const currentOptions = ref<M9ATaskOption[]>([])
 
 const getDisplayLabel = (label: string | undefined, fallback: string | undefined) => {
-  return label && !label.startsWith('$') ? label : fallback ?? ''
+  return label && !label.startsWith('$') ? label : (fallback ?? '')
 }
 
 const getOptionLabel = (optionName: string) => {
@@ -121,15 +118,17 @@ const getDisplayCases = (optionDef: any) => {
   if (!optionDef || !optionDef.cases) {
     return []
   }
-  
+
   const cases = [...optionDef.cases]
-  
-  const isYesNoSwitch = cases.some(c => c.name === 'Yes' || c.name === 'No' || c.name === '是' || c.name === '否')
-  
+
+  const isYesNoSwitch = cases.some(
+    c => c.name === 'Yes' || c.name === 'No' || c.name === '是' || c.name === '否'
+  )
+
   if (!isYesNoSwitch) {
     return cases
   }
-  
+
   return cases.sort((a, b) => {
     const aIsYes = a.name === 'Yes' || a.name === '是'
     const bIsYes = b.name === 'Yes' || b.name === '是'
@@ -148,10 +147,10 @@ const getCaseIndex = (optionDef: any, caseItem: any) => {
 
 const buildSubOptions = (optionNames: string[]): M9ATaskOption[] => {
   const subOpts: M9ATaskOption[] = []
-  
+
   for (const optName of optionNames) {
     const optItem: M9ATaskOption = { name: optName, index: 0 }
-    
+
     const optDef = props.optionDefinitions[optName]
     if (optDef && optDef.cases && optDef.cases.length > 0) {
       const subSubOpts = getSubOptions(optDef, 0)
@@ -159,10 +158,10 @@ const buildSubOptions = (optionNames: string[]): M9ATaskOption[] => {
         optItem.sub_options = subSubOpts
       }
     }
-    
+
     subOpts.push(optItem)
   }
-  
+
   return subOpts
 }
 
@@ -186,7 +185,7 @@ const getCheckboxSubOptions = (optionDef: any, selectedCases: string[] = []): M9
 
   const optionNames = optionDef.cases
     .filter((caseItem: any) => selectedCases.includes(caseItem.name))
-    .flatMap((caseItem: any) => Array.isArray(caseItem.option) ? caseItem.option : [])
+    .flatMap((caseItem: any) => (Array.isArray(caseItem.option) ? caseItem.option : []))
 
   return buildSubOptions(Array.from(new Set(optionNames)))
 }
@@ -207,26 +206,26 @@ const getDefaultCaseNames = (optionDef: any) => {
 
 const initializeOptions = () => {
   currentOptions.value = props.taskOptions.map(opt => {
-    const newOpt: M9ATaskOption = { 
-      name: opt.name, 
+    const newOpt: M9ATaskOption = {
+      name: opt.name,
       index: opt.index ?? 0,
       sub_options: opt.sub_options ? [...opt.sub_options] : undefined,
       input_values: opt.input_values ? { ...opt.input_values } : undefined,
-      selected_cases: opt.selected_cases ? [...opt.selected_cases] : undefined
+      selected_cases: opt.selected_cases ? [...opt.selected_cases] : undefined,
     }
-    
+
     if (props.optionDefinitions && props.optionDefinitions[opt.name]) {
       const optDef = props.optionDefinitions[opt.name]
 
       if (optDef.type === 'checkbox' && newOpt.selected_cases === undefined) {
         newOpt.selected_cases = getDefaultCaseNames(optDef)
       }
-      
+
       if (optDef.type === 'input' && optDef.inputs) {
         if (!newOpt.input_values) {
           newOpt.input_values = {}
         }
-        
+
         for (const input of optDef.inputs) {
           if (newOpt.input_values[input.name] === undefined && input.default !== undefined) {
             if (input.pipeline_type === 'int') {
@@ -237,18 +236,19 @@ const initializeOptions = () => {
           }
         }
       }
-      
-      const subOpts = optDef.type === 'checkbox'
-        ? getCheckboxSubOptions(optDef, newOpt.selected_cases ?? [])
-        : getSubOptions(optDef, opt.index ?? 0)
-      
+
+      const subOpts =
+        optDef.type === 'checkbox'
+          ? getCheckboxSubOptions(optDef, newOpt.selected_cases ?? [])
+          : getSubOptions(optDef, opt.index ?? 0)
+
       if (subOpts.length > 0) {
         if (!newOpt.sub_options || newOpt.sub_options.length === 0) {
           newOpt.sub_options = subOpts
         } else {
-          const currentSubOptNames = newOpt.sub_options.map((o) => o.name)
-          const newSubOptNames = subOpts.map((o) => o.name)
-          
+          const currentSubOptNames = newOpt.sub_options.map(o => o.name)
+          const newSubOptNames = subOpts.map(o => o.name)
+
           if (JSON.stringify(currentSubOptNames) !== JSON.stringify(newSubOptNames)) {
             newOpt.sub_options = subOpts
           }
@@ -257,7 +257,7 @@ const initializeOptions = () => {
         newOpt.sub_options = []
       }
     }
-    
+
     return newOpt
   })
 }
@@ -266,14 +266,14 @@ const handleOptionChange = (index: number) => {
   if (props.optionDefinitions && props.optionDefinitions[currentOptions.value[index].name]) {
     const optDef = props.optionDefinitions[currentOptions.value[index].name]
     const subOpts = getSubOptions(optDef, currentOptions.value[index].index)
-    
+
     if (subOpts.length > 0) {
       currentOptions.value[index].sub_options = subOpts
     } else {
       currentOptions.value[index].sub_options = []
     }
   }
-  
+
   emit('update', currentOptions.value)
 }
 

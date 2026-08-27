@@ -29,7 +29,7 @@ watch(
       debug.compileError = null
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 const title = computed(() => {
@@ -127,9 +127,7 @@ const configPreview = computed(() => {
           <span class="debug-section-label">
             结果（{{ debug.hitCount }}/{{ debug.results.length }}）
           </span>
-          <a-checkbox v-model:checked="debug.onlyHit" size="small">
-            仅显示已命中
-          </a-checkbox>
+          <a-checkbox v-model:checked="debug.onlyHit" size="small"> 仅显示已命中 </a-checkbox>
         </div>
 
         <a-alert
@@ -160,14 +158,10 @@ const configPreview = computed(() => {
               <span v-else-if="item.error" class="debug-result-error">{{ item.error }}</span>
             </div>
           </div>
-          <div v-if="debug.filteredResults.length === 0" class="debug-results-empty">
-            无命中行
-          </div>
+          <div v-if="debug.filteredResults.length === 0" class="debug-results-empty">无命中行</div>
         </div>
 
-        <div v-else class="debug-results-empty">
-          点击「调试」查看匹配结果
-        </div>
+        <div v-else class="debug-results-empty">点击「调试」查看匹配结果</div>
       </div>
     </div>
   </a-modal>

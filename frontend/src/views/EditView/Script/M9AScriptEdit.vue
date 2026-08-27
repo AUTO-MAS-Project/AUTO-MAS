@@ -46,8 +46,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)" />
+                <a-input
+                  v-model:value="formData.name"
+                  placeholder="请输入脚本名称"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -61,8 +66,13 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.path" placeholder="请选择M9A所在的文件夹" size="large" class="path-input"
-                    readonly />
+                  <a-input
+                    v-model:value="formData.path"
+                    placeholder="请选择M9A所在的文件夹"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectM9APath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -90,9 +100,18 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="m9aConfig.Emulator.Id" size="large" placeholder="请选择模拟器"
-                  :loading="emulatorLoading" @change="handleEmulatorSelectChange">
-                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-model:value="m9aConfig.Emulator.Id"
+                  size="large"
+                  placeholder="请选择模拟器"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorSelectChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -102,20 +121,44 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                    :title="
+                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                        ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
+                        : '选择模拟器的具体实例'
+                    "
+                  >
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && m9aConfig.Emulator.Id"
-                  v-model:value="m9aConfig.Emulator.Index" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
-                  class="modern-input" @blur="handleChange('Emulator', 'Index', m9aConfig.Emulator.Index)" />
-                <a-select v-else v-model:value="m9aConfig.Emulator.Index" size="large" placeholder="请先选择模拟器"
-                  :loading="emulatorDeviceLoading" :disabled="!m9aConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)">
-                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
+                <a-input
+                  v-if="
+                    emulatorDeviceOptions.length === 0 &&
+                    !emulatorDeviceLoading &&
+                    m9aConfig.Emulator.Id
+                  "
+                  v-model:value="m9aConfig.Emulator.Index"
+                  size="large"
+                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  class="modern-input"
+                  @blur="handleChange('Emulator', 'Index', m9aConfig.Emulator.Index)"
+                />
+                <a-select
+                  v-else
+                  v-model:value="m9aConfig.Emulator.Index"
+                  size="large"
+                  placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!m9aConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -132,16 +175,24 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                  <a-tooltip
+                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
+                  >
                     <span class="form-label">
                       用户单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="m9aConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', m9aConfig.Run.ProxyTimesLimit)" />
+                <a-input-number
+                  v-model:value="m9aConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', m9aConfig.Run.ProxyTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -154,9 +205,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="m9aConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', m9aConfig.Run.RunTimeLimit)" />
+                <a-input-number
+                  v-model:value="m9aConfig.Run.RunTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimeLimit', m9aConfig.Run.RunTimeLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -169,15 +226,23 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="m9aConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', m9aConfig.Run.RunTimesLimit)" />
+                <a-input-number
+                  v-model:value="m9aConfig.Run.RunTimesLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', m9aConfig.Run.RunTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务">
+                  <a-tooltip
+                    title="开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务"
+                  >
                     <span class="form-label">
                       每日心相每日只执行一次
                       <QuestionCircleOutlined class="help-icon" />
@@ -193,7 +258,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务">
+                  <a-tooltip
+                    title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务"
+                  >
                     <span class="form-label">
                       深眠浅梦每月只执行一次
                       <QuestionCircleOutlined class="help-icon" />
@@ -211,15 +278,20 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源">
+                  <a-tooltip
+                    title="开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源"
+                  >
                     <span class="form-label">
                       队列结束后自动更新
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="m9aConfig.Run.IfAutoUpdateAfterQueue" size="large"
-                  @change="handleChange('Run', 'IfAutoUpdateAfterQueue', $event)">
+                <a-select
+                  v-model:value="m9aConfig.Run.IfAutoUpdateAfterQueue"
+                  size="large"
+                  @change="handleChange('Run', 'IfAutoUpdateAfterQueue', $event)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -227,7 +299,6 @@
             </a-col>
           </a-row>
         </div>
-
       </a-form>
     </a-card>
 
@@ -237,8 +308,11 @@
         <img src="@/assets/M9A.png" alt="M9A" class="guide-logo" />
         <div class="guide-message">
           <span class="guide-text">提醒您：阁下若是遇到了难题，不妨查看</span>
-          <a href="https://doc.auto-mas.top/docs/script-guide/m9a.html"
-             target="_blank" class="guide-link">
+          <a
+            href="https://doc.auto-mas.top/docs/script-guide/m9a.html"
+            target="_blank"
+            class="guide-link"
+          >
             M9A 官方配置指南
           </a>
           <span class="guide-text">，其中清晰写明了所有配置步骤。</span>
@@ -444,8 +518,8 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     const updateData = {
       Emulator: {
         Id: emulatorId,
-        Index: ''
-      }
+        Index: '',
+      },
     }
     const success = await updateScript(scriptId, updateData)
     if (success) {
@@ -726,29 +800,28 @@ const selectM9APath = async () => {
   color: var(--ant-color-text);
 }
 
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
 
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
 
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
 }
 
 @media (max-width: 1200px) {

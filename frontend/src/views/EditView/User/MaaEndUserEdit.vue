@@ -69,8 +69,11 @@
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
-          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
-          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
           <NotifyConfigSection
             v-model:form-data="formData"
             :loading="loading"
@@ -109,7 +112,6 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '@/views/MaaEndUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
@@ -167,8 +169,6 @@ const getDefaultMaaEndUserData = () => ({
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
-    IfSkland: false,
-    SklandToken: '',
     Notes: '',
     Tag: '',
   },
@@ -207,9 +207,7 @@ const getDefaultMaaEndUserData = () => ({
   },
   Data: {
     LastProxyDate: '',
-    LastSklandDate: '',
     ProxyTimes: 0,
-    IfPassCheck: false,
   },
 })
 

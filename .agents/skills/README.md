@@ -25,6 +25,7 @@
 - `mas-schema-naming`：用于统一后端 schema 的命名方式，减少字段语义漂移。
 - `mas-script-specialized-adapter`：用于新增或维护专项脚本适配，按脚本前端架构线完成问诊、前端表面与后端任务接入。
 - `mas-plan-schedule`：用于新增、重构或审查计划表类型与调度配置。
+- `mas-game-sign`：用于新增、重构或审查游戏社区签到，涵盖平台注册表、凭据加密与登录路由、签到锁与触发路径、结果与通知契约。
 - `grill-me`：用于对方案做高强度问诊，不属于 AUTO-MAS 工程规则 hub 的默认路由。
 
 ## 使用方式
@@ -33,3 +34,17 @@
 2. 按任务意图选择最小必要的子 Skill。
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
+
+## Claude Code 接入
+
+本目录采用 `.agents/skills` 约定，Codex 一侧通过各 Skill 的 `agents/openai.yaml` 直接识别。
+Claude Code 只扫描 `.claude/skills`，且 `.claude/` 已在 `.gitignore` 中忽略，因此需要在本地
+建立一次目录联接，让两侧共用同一份 Skill 源：
+
+```powershell
+cmd /c "mklink /J .claude\skills .agents\skills"
+```
+
+联接是本地开发环境配置，不纳入版本库，也不会产生 `git status` 变更。未建立联接时
+Claude Code 无法自动发现 `mas-*` Skill，只能按根目录 `AGENTS.md` 手动读取
+`mas-skills/SKILL.md`。不要改为复制目录，避免出现第二份会漂移的 Skill 源。

@@ -872,22 +872,6 @@ watch(
   margin-bottom: 0;
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .webhook-item {
-    border-color: var(--ant-color-border-secondary);
-  }
-
-  .webhook-item.webhook-disabled {
-    background: var(--ant-color-bg-base);
-  }
-
-  .headers-input {
-    background: var(--ant-color-bg-base);
-    border-color: var(--ant-color-border-secondary);
-  }
-}
-
 /* 响应式设计 */
 @media (max-width: 768px) {
   .webhook-item {

@@ -14,8 +14,14 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
-            class="modern-input" @blur="emitSave('userName', formData.userName)" />
+          <a-input
+            v-model:value="formData.userName"
+            placeholder="请输入用户名"
+            :disabled="loading"
+            size="large"
+            class="modern-input"
+            @blur="emitSave('userName', formData.userName)"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -28,8 +34,11 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Info.Status" size="large"
-            @change="emitSave('Info.Status', formData.Info.Status)">
+          <a-select
+            v-model:value="formData.Info.Status"
+            size="large"
+            @change="emitSave('Info.Status', formData.Info.Status)"
+          >
             <a-select-option :value="true">是</a-select-option>
             <a-select-option :value="false">否</a-select-option>
           </a-select>
@@ -63,8 +72,8 @@
           <template #label>
             <a-tooltip>
               <template #title>
-                <div style="max-width: 260px; white-space: normal;">
-                  填写目标账号时会在账号列表中逐页下滑查找并切换，找不到则任务失败<br><br>
+                <div style="max-width: 260px; white-space: normal">
+                  填写目标账号时会在账号列表中逐页下滑查找并切换，找不到则任务失败<br /><br />
                   目前该功能仅支持官服，且仅支持 1280×720 实际未缩放分辨率
                 </div>
               </template>
@@ -97,9 +106,16 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
-            :disabled="loading" size="large" style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
+          <a-input-number
+            v-model:value="formData.Info.RemainedDay"
+            :min="-1"
+            :max="9999"
+            placeholder="0"
+            :disabled="loading"
+            size="large"
+            style="width: 100%"
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -113,8 +129,14 @@
           </span>
         </a-tooltip>
       </template>
-      <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading"
-        class="modern-input" @blur="emitSave('Info.Notes', formData.Info.Notes)" />
+      <a-textarea
+        v-model:value="formData.Info.Notes"
+        placeholder="请输入备注信息"
+        :rows="4"
+        :disabled="loading"
+        class="modern-input"
+        @blur="emitSave('Info.Notes', formData.Info.Notes)"
+      />
     </a-form-item>
   </div>
 </template>

@@ -10,7 +10,11 @@ import draggable from 'vuedraggable'
 import LogPatternRule from './LogPatternRule.vue'
 import LogPatternDebugModal from './LogPatternDebugModal.vue'
 import LogPatternDocsModal from '../LogPatternDocsModal.vue'
-import { usePushLogPatterns, type PushLogPattern, type PushLogPatternType } from '../composables/usePushLogPatterns'
+import {
+  usePushLogPatterns,
+  type PushLogPattern,
+  type PushLogPatternType,
+} from '../composables/usePushLogPatterns'
 
 const props = defineProps<{
   enabled: boolean

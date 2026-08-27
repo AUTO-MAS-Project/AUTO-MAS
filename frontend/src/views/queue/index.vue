@@ -20,8 +20,13 @@
             新建队列
           </a-button>
 
-          <a-popconfirm v-if="queueList.length > 0" title="确定要删除这个队列吗？" ok-text="确定" cancel-text="取消"
-            @confirm="handleRemoveQueue(activeQueueId)">
+          <a-popconfirm
+            v-if="queueList.length > 0"
+            title="确定要删除这个队列吗？"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleRemoveQueue(activeQueueId)"
+          >
             <a-button danger size="large" :disabled="!activeQueueId">
               <template #icon>
                 <DeleteOutlined />
@@ -63,9 +68,14 @@
           <!-- 队列按钮组 -->
           <div class="queue-buttons-container">
             <a-space wrap size="middle">
-              <a-button v-for="queue in queueList" :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'" size="large" class="queue-button"
-                @click="onQueueChange(queue.id)">
+              <a-button
+                v-for="queue in queueList"
+                :key="queue.id"
+                :type="activeQueueId === queue.id ? 'primary' : 'default'"
+                size="large"
+                class="queue-button"
+                @click="onQueueChange(queue.id)"
+              >
                 {{ queue.name }}
               </a-button>
             </a-space>
@@ -86,9 +96,15 @@
               </a-button>
             </div>
             <div v-else class="queue-title-edit">
-              <a-input ref="queueNameInputRef" v-model:value="currentQueueName" placeholder="请输入队列名称"
-                class="queue-title-input" :maxlength="50" @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName" />
+              <a-input
+                ref="queueNameInputRef"
+                v-model:value="currentQueueName"
+                placeholder="请输入队列名称"
+                class="queue-title-input"
+                :maxlength="50"
+                @blur="finishEditQueueName"
+                @press-enter="finishEditQueueName"
+              />
             </div>
           </div>
         </template>
@@ -104,8 +120,12 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentStartUpEnabled" style="width: 100%" size="large"
-                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)">
+                <a-select
+                  v-model:value="currentStartUpEnabled"
+                  style="width: 100%"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -119,8 +139,12 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentTimeEnabled" style="width: 100%" size="large"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)">
+                <a-select
+                  v-model:value="currentTimeEnabled"
+                  style="width: 100%"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -134,9 +158,14 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentAfterAccomplish" style="width: 100%" :options="afterAccomplishOptions"
-                  placeholder="请选择操作" size="large"
-                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)" />
+                <a-select
+                  v-model:value="currentAfterAccomplish"
+                  style="width: 100%"
+                  :options="afterAccomplishOptions"
+                  placeholder="请选择操作"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
+                />
               </div>
             </a-col>
           </a-row>
@@ -145,14 +174,24 @@
 
         <!-- 定时项管理 -->
         <a-col :span="24" class="manager-col">
-          <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-            :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
+          <TimeSetManager
+            v-if="activeQueueId && currentQueueData"
+            :queue-id="activeQueueId"
+            :time-sets="currentTimeSets"
+            style="font-size: 14px"
+            @refresh="refreshTimeSets"
+          />
         </a-col>
 
         <!-- 队列项管理 -->
         <a-col :span="24" class="manager-col">
-          <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-            :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
+          <QueueItemManager
+            v-if="activeQueueId && currentQueueData"
+            :queue-id="activeQueueId"
+            :queue-items="currentQueueItems"
+            style="font-size: 14px"
+            @refresh="refreshQueueItems"
+          />
         </a-col>
       </a-card>
     </div>
@@ -798,7 +837,6 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 0.6;
@@ -1033,16 +1071,5 @@ onUnmounted(() => {
 
 .queue-title-input :deep(.ant-input:focus) {
   box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .queue-selector-card {
-    background: var(--ant-color-bg-container);
-  }
-
-  .queue-config-card {
-    background: var(--ant-color-bg-container);
-  }
 }
 </style>

@@ -255,22 +255,6 @@ onUnmounted(() => {
   height: 100%;
 }
 
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .log-panel {
-    background: var(--ant-color-bg-container, #1f1f1f);
-    border: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .section-header {
-    border-bottom: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .log-text {
-    color: var(--ant-color-text, #ffffff);
-  }
-}
-
 @media (max-width: 768px) {
   .log-panel {
     border-radius: 8px;

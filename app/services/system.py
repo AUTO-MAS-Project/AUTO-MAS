@@ -33,7 +33,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from app.core import Config
+def __getattr__(name: str) -> object:
+    """延迟导入 Config，避免 app.services 初始化期间触发 app.core 循环导入。"""
+    if name == "Config":
+        from app.core import Config
+        return Config
+    raise AttributeError(name)
+
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("系统服务")
@@ -385,17 +391,22 @@ class _SystemHandler:
     #     win32gui.EnumWindows(callback, window_info)
     #     return window_info
 
-    async def kill_process(self, path: Path) -> None:
+    async def kill_process(self, path: Path, *, kill_tree: bool = True) -> None:
         """
         根据路径中止进程
 
         :param path: 进程路径
+        :param kill_tree: 是否同时中止子进程树
         """
 
         logger.info(f"开始中止进程: {path}")
 
         for pid in await self.search_pids(path):
-            await ProcessRunner.run_process("taskkill", "/F", "/T", "/PID", str(pid))
+            args = ["taskkill", "/F"]
+            if kill_tree:
+                args.append("/T")
+            args.extend(["/PID", str(pid)])
+            await ProcessRunner.run_process(*args)
 
         logger.success(f"进程已中止: {path}")
 

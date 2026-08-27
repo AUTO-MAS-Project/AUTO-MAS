@@ -405,8 +405,12 @@
 
           <a-row :gutter="24">
             <a-col :span="12">
-              <LogTimestampSelector v-model:form-data="formData" :log-file-path="formData.logPath"
-                :handle-change="handleChange" :rules="rules" />
+              <LogTimestampSelector
+                v-model:form-data="formData"
+                :log-file-path="formData.logPath"
+                :handle-change="handleChange"
+                :rules="rules"
+              />
             </a-col>
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
@@ -888,7 +892,6 @@
       </a-alert>
     </a-form>
   </a-modal>
-
 </template>
 
 <script setup lang="ts">
@@ -907,7 +910,6 @@ import {
   DeleteOutlined,
   FileOutlined,
   FolderOpenOutlined,
-  PlusOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
@@ -1475,10 +1477,7 @@ const refreshScript = async () => {
 // isSaving 互斥与保存队列。保存期间 handleChange 排入的 pendingChange 在此一并落盘，
 // 避免其被随后的 refreshScript 覆盖，也防止队列内容残留到下一次用户变更。
 // 全部落盘后再刷新，保证界面与后端状态一致。
-const persistAndRefresh = async (
-  updateData: Record<string, any>,
-  label: string,
-) => {
+const persistAndRefresh = async (updateData: Record<string, any>, label: string) => {
   isSaving.value = true
   let success = false
   try {
@@ -1662,7 +1661,7 @@ const handleEmulatorChange = async (emulatorId: string) => {
         EmulatorIndex: '',
       },
     },
-    '模拟器配置',
+    '模拟器配置'
   )
 }
 
@@ -2317,30 +2316,28 @@ const handleUpload = async () => {
   color: var(--ant-color-text);
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .config-card {
-    box-shadow:
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
 
-  .path-input-group:focus-within {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-input:focus,
-  .modern-input.ant-input-focused {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
 
-  .modern-select.ant-select-focused :deep(.ant-select-selector) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-  }
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
 
-  .modern-number-input :deep(.ant-input-number-focused) {
-    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-  }
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
 }
 
 /* 响应式设计 */
@@ -2469,5 +2466,4 @@ const handleUpload = async () => {
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
 }
-
 </style>

@@ -35,7 +35,14 @@ from .config import (
     OkNteConfig,
     HSRConfig,
 )
-from app.services import System
+
+def __getattr__(name: str) -> object:
+    """延迟导入 System，避免 app.services 初始化期间的循环导入。"""
+    if name == "System":
+        from app.services import System
+        return System
+    raise AttributeError(name)
+
 from app.models.task import (
     ScriptItem,
     TaskExecuteBase,
@@ -265,7 +272,7 @@ class _TaskManager:
 
     async def add_task(
         self,
-        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
+        mode: Literal["AutoProxy", "ScriptConfig", "Update"],
         id: str,
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
@@ -286,7 +293,7 @@ class _TaskManager:
 
         uid = uuid.UUID(id)
 
-        if mode == "ScriptConfig":
+        if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
                 task_uid = uuid.uuid4()
                 queue_id = None
