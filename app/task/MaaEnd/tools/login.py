@@ -29,6 +29,7 @@ import ctypes
 import time
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -121,7 +122,9 @@ def _activate_window(hwnd: int) -> None:
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+        else win32con.SW_SHOW
+        if not win32gui.IsWindowVisible(hwnd)
+        else None
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
@@ -145,7 +148,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
     return width, height
 
 
-def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
+def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
     with _per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
@@ -153,7 +156,7 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
         virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
         virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        screenshot = pyautogui.screenshot(allScreens=True).crop(
+        return pyautogui.screenshot(allScreens=True).crop(
             (
                 left - virtual_left,
                 top - virtual_top,
@@ -162,10 +165,29 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
             )
         )
 
-    screenshot = screenshot.resize(
+
+def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
+    screenshot = _capture_window_image(hwnd, activate=activate).resize(
         (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
     )
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+
+
+def _save_error_screenshot(hwnd: int) -> Path | None:
+    """保存登录失败时未经缩放或标注的游戏窗口截图。"""
+
+    try:
+        screenshot_dir = Path.cwd() / "debug/maaend-login"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = screenshot_dir / (
+            f"login-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
+        )
+        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
+        logger.warning(f"终末地登录错误截图已保存: {screenshot_path}")
+        return screenshot_path
+    except Exception as error:
+        logger.warning(f"终末地登录错误截图保存失败: {error}")
+        return None
 
 
 def _find_template(frame: np.ndarray, name: str) -> Box | None:
@@ -290,7 +312,12 @@ async def _open_login_form(hwnd: int) -> None:
 
         for name, confirm, message, error in (
             ("logout", "logout_confirm", "正在登出当前终末地账号", "确认登出超时"),
-            ("main_out", "main_out_confirm", "正在退出终末地主界面", "确认退出终末地主界面超时"),
+            (
+                "main_out",
+                "main_out_confirm",
+                "正在退出终末地主界面",
+                "确认退出终末地主界面超时",
+            ),
         ):
             if (match := _find_template(frame, name)) is None:
                 continue
@@ -346,7 +373,9 @@ def _group_rows(items: list[OCRItem]) -> list[OCRItem]:
     return grouped
 
 
-def _match_account(rows: list[OCRItem], account_id: str) -> Box | None:
+def _match_account(
+    rows: list[OCRItem], account_id: str, *, list_top: int | None = None
+) -> Box | None:
     """按后四位匹配账号，后四位撞号时再用前三位消歧。
 
     界面对账号做掩码显示，只暴露前三位与后四位。后四位作为主判据；同一帧内多行
@@ -356,6 +385,7 @@ def _match_account(rows: list[OCRItem], account_id: str) -> Box | None:
     Args:
         rows: 单帧整行 OCR 结果，须先经 `_group_rows` 归行。
         account_id: 完整账号。
+        list_top: 下拉列表顶边；传入时忽略当前账号栏等列表上方内容。
 
     Returns:
         命中的文本框，未命中时为 None。
@@ -364,16 +394,17 @@ def _match_account(rows: list[OCRItem], account_id: str) -> Box | None:
         RuntimeError: 掩码信息不足以区分多个候选账号。
     """
 
+    account_rows = [
+        (text, box) for text, box in rows if list_top is None or box[1] >= list_top
+    ]
     suffix = account_id[-4:]
-    candidates = [box for text, box in rows if suffix in text]
+    candidates = [box for text, box in account_rows if suffix in text]
     if len(candidates) <= 1:
         return candidates[0] if candidates else None
 
     # 前三位仅用于收窄候选，不放宽匹配：后四位未命中时不会走到这里
     prefix = account_id[:3]
-    narrowed = [
-        box for text, box in rows if suffix in text and prefix in text
-    ]
+    narrowed = [box for text, box in account_rows if suffix in text and prefix in text]
     if len(narrowed) == 1:
         logger.warning(f"后四位 {suffix} 命中多行，已按前三位 {prefix} 收窄")
         return narrowed[0]
@@ -412,10 +443,12 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
         # 账号匹配用归行结果，按钮定位仍用原始框，保持既有点击几何
         rows = _group_rows(items)
         logger.debug(f"登录表单识别结果: {_format_ocr_items(rows)}")
-        target = _match_account(rows, account_id)
+        dropdown_markers = [box for text, box in rows if _DROPDOWN_MARKER in text]
+        list_top = min((box[1] for box in dropdown_markers), default=None)
+        target = _match_account(rows, account_id, list_top=list_top)
 
         # 下拉框展开时每行账号都带“上次登录”，据此正向判断，不依赖上一帧状态
-        if any(_DROPDOWN_MARKER in text for text, _ in rows):
+        if list_top is not None:
             confirmed_frames = 0
             if target is None:
                 missing_frames += 1
@@ -474,9 +507,13 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
 
     masked_id = f"***{id[-4:]}"
     logger.info(f"开始切换终末地账号: {masked_id}")
-    await _open_login_form(hwnd)
-    await _submit_login_form(hwnd, id)
-    await _wait_template(hwnd, "logout", 120, "登录确认超时")
+    try:
+        await _open_login_form(hwnd)
+        await _submit_login_form(hwnd, id)
+        await _wait_template(hwnd, "logout", 120, "登录确认超时")
+    except Exception:
+        await asyncio.to_thread(_save_error_screenshot, hwnd)
+        raise
 
     logger.success(f"终末地账号切换成功: {masked_id}")
     return True
