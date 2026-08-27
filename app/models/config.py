@@ -353,8 +353,8 @@ class QueueConfig(ConfigBase):
             "Info", "TimeEnabled", False, BoolValidator()
         )
         ## 是否在启动时自动运行
-        self.Info_StartUpEnabled = ConfigItem(
-            "Info", "StartUpEnabled", False, BoolValidator()
+        self.Info_StartUpMode = ConfigItem(
+            "Info", "StartUpMode", "Never", OptionsValidator(["Never", "Always", "DailyFirst"])
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -382,6 +382,13 @@ class QueueConfig(ConfigBase):
             "LastTimedStart",
             "2000-01-01 00:00",
             DateTimeValidator("%Y-%m-%d %H:%M"),
+        )
+        # 上次启动时运行时间
+        self.Data_LastStartupTime = ConfigItem(
+            "Data",
+            "LastStartupTime",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
         )
 
         self.TimeSet = MultipleConfig([TimeSet])
@@ -3175,7 +3182,7 @@ class ToolsConfig(ConfigBase):
         )
         ## GameSign - 启动时运行
         self.GameSign_RunOnStartup = ConfigItem(
-            "GameSign", "RunOnStartup", False, BoolValidator()
+            "GameSign", "RunOnStartup", "Never", OptionsValidator(["Never", "Always", "DailyFirst"])
         )
         ## GameSign - 旧版自动签到开关（保留用于读取历史配置，不参与调度）
         self.GameSign_ScheduledRun = ConfigItem(
