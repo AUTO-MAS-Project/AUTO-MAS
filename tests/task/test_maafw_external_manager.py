@@ -11,7 +11,7 @@ from unittest.mock import patch
 import app.core
 
 from app.core.task_manager import TaskInfo
-from app.models.config import MaaFWConfig
+from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.task import ScriptItem
 from app.task.MaaFW import manager as manager_module
 from app.task.MaaFW.manager import MaaFWManager
@@ -64,6 +64,8 @@ class _FakeProcessManager:
 class _FakeLogMonitor:
     instances = []
     callback_lines = None
+    # 多用户：按监视器创建顺序依次取一组日志行，用尽后回退到 callback_lines。
+    pending_callback_lines: list = []
 
     def __init__(self, time_stamp_range, time_format, callback):
         self.time_stamp_range = time_stamp_range
@@ -75,8 +77,12 @@ class _FakeLogMonitor:
 
     async def start_monitor_file(self, path, start_time):
         self.start_calls.append((path, start_time))
-        if self.callback_lines is not None:
-            await self.callback(self.callback_lines, datetime.now())
+        if self.__class__.pending_callback_lines:
+            lines = self.__class__.pending_callback_lines.pop(0)
+        else:
+            lines = self.callback_lines
+        if lines is not None:
+            await self.callback(lines, datetime.now())
 
     async def stop(self):
         self.stop_calls += 1
@@ -109,8 +115,14 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         _FakeProcessManager.fail_open = False
         _FakeLogMonitor.instances = []
         _FakeLogMonitor.callback_lines = None
+        _FakeLogMonitor.pending_callback_lines = []
         _FakeSystem.events = []
         _FakeSystem.kill_success = True
+
+    _SUCCESS_LOG = (
+        "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
+        "2026-08-27 18:00:01.000 任务已全部完成！\n"
+    )
 
     def test_success_writes_config_and_starts_bare_exe(self) -> None:
         asyncio.run(self._test_success_writes_config_and_starts_bare_exe())
@@ -631,23 +643,199 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         self.assertIn("elif isinstance(script_config, MaaFWConfig):", source)
         self.assertIn("task_item = MaaFWManager(script_item)", source)
 
+    # ---- 用户层迁移：用户遍历 / 字段回退 ----
+
+    def test_iterates_every_enabled_user(self) -> None:
+        asyncio.run(self._test_iterates_every_enabled_user())
+
+    async def _test_iterates_every_enabled_user(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "甲", "tasks": ["启动游戏"]},
+                    {"Name": "乙", "tasks": ["启动游戏"]},
+                ],
+            )
+            _FakeLogMonitor.pending_callback_lines = [
+                [self._SUCCESS_LOG],
+                [self._SUCCESS_LOG],
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(
+                [u.name for u in manager.script_info.user_list], ["甲", "乙"]
+            )
+            self.assertEqual(
+                [u.status for u in manager.script_info.user_list], ["完成", "完成"]
+            )
+            self.assertEqual(manager.script_info.status, "完成")
+            # 每个用户一份外壳进程 + 日志监控；用户间外壳先结束再起下一个。
+            self.assertEqual(len(_FakeProcessManager.instances), 2)
+            self.assertEqual(_FakeProcessManager.instances[0].kill_calls, 1)
+            self.assertEqual(_FakeLogMonitor.instances[0].stop_calls, 1)
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+
+    def test_disabled_and_expired_users_are_filtered(self) -> None:
+        asyncio.run(self._test_disabled_and_expired_users_are_filtered())
+
+    async def _test_disabled_and_expired_users_are_filtered(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "启用", "tasks": ["启动游戏"]},
+                    {"Name": "停用", "tasks": ["启动游戏"], "Status": False},
+                    {"Name": "到期", "tasks": ["启动游戏"], "RemainedDay": 0},
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(
+                [u.name for u in manager.script_info.user_list], ["启用"]
+            )
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+
+    def test_no_runnable_user_is_explicit_error(self) -> None:
+        asyncio.run(self._test_no_runnable_user_is_explicit_error())
+
+    async def _test_no_runnable_user_is_explicit_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(
+                root,
+                users=[{"Name": "停用", "tasks": ["启动游戏"], "Status": False}],
+            )
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertIn("没有可运行的用户", manager.check_result)
+            self.assertEqual(manager.script_info.status, "异常")
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+            self.assertEqual(len(runtime.messages), 1)
+            self.assertIn("没有可运行的用户", runtime.messages[0]["data"]["Error"])
+
+    def test_user_controller_falls_back_to_script_default(self) -> None:
+        asyncio.run(self._test_user_controller_falls_back_to_script_default())
+
+    async def _test_user_controller_falls_back_to_script_default(self) -> None:
+        # 用户级 Info.Controller 留空 → 取脚本级默认；用户级填了则以用户级为准。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(
+                root, users=[{"Name": "甲", "tasks": ["启动游戏"], "Controller": "安卓端"}]
+            )
+            # 抹掉脚本级默认，仅靠用户级 Info.Controller
+            await runtime.ScriptConfig[script_uid].update({"Info": {"Controller": ""}})
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+
+    def test_missing_controller_on_both_levels_is_rejected(self) -> None:
+        asyncio.run(self._test_missing_controller_on_both_levels_is_rejected())
+
+    async def _test_missing_controller_on_both_levels_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(
+                root, users=[{"Name": "甲", "tasks": ["启动游戏"]}]
+            )
+            await runtime.ScriptConfig[script_uid].update({"Info": {"Controller": ""}})
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                result = await manager.check()
+            self.assertIn("未确定 MaaFW controller", result)
+
+    def test_user_failure_does_not_abort_the_queue(self) -> None:
+        asyncio.run(self._test_user_failure_does_not_abort_the_queue())
+
+    async def _test_user_failure_does_not_abort_the_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "先失败", "tasks": ["启动游戏"]},
+                    {"Name": "后成功", "tasks": ["启动游戏"]},
+                ],
+            )
+            _FakeLogMonitor.pending_callback_lines = [
+                ["2026-08-27 18:00:00.000 已放弃本次任务\n"],
+                [self._SUCCESS_LOG],
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(
+                [u.status for u in manager.script_info.user_list], ["异常", "完成"]
+            )
+            self.assertEqual(manager.script_info.status, "异常")
+            self.assertEqual(self._snapshot(root / "config"), before)
+
     async def _make_manager(
-        self, root: Path, *, runtime=None, script_uid=None, tasks=None
+        self, root: Path, *, runtime=None, script_uid=None, tasks=None, users=None
     ):
         script_uid = script_uid or uuid.uuid4()
         script_config = MaaFWConfig()
+        # 用户层迁移后：controller / resource 走 Info.*，运行范围走用户 TaskSnapshot。
         await script_config.update(
             {
-                "Info": {"Name": "测试 MaaFW", "Path": str(root)},
-                "Selection": {
-                    "Controller": json.dumps(["安卓端"], ensure_ascii=False),
-                    "Resource": json.dumps(["简中"], ensure_ascii=False),
-                    "Tasks": json.dumps(
-                        ["启动游戏"] if tasks is None else tasks, ensure_ascii=False
-                    ),
+                "Info": {
+                    "Name": "测试 MaaFW",
+                    "Path": str(root),
+                    "Controller": "安卓端",
+                    "Resource": "简中",
                 },
             }
         )
+        selected_tasks = ["启动游戏"] if tasks is None else list(tasks)
+        user_specs = users if users is not None else [{"Name": "用户A", "tasks": selected_tasks}]
+        for spec in user_specs:
+            _, user_cfg = await script_config.UserData.add(MaaFWUserConfig)
+            spec_tasks = spec.get("tasks", selected_tasks)
+            snapshot = {
+                "taskOrder": list(spec_tasks),
+                "taskChecked": {name: True for name in spec_tasks},
+                "taskOptions": {},
+            }
+            await user_cfg.update(
+                {
+                    "Info": {
+                        "Name": spec.get("Name", "用户A"),
+                        "Status": spec.get("Status", True),
+                        "RemainedDay": spec.get("RemainedDay", -1),
+                        "Controller": spec.get("Controller", ""),
+                        "Resource": spec.get("Resource", ""),
+                    },
+                    "Task": {
+                        "SelectedPreset": spec.get("SelectedPreset", ""),
+                        "TaskSnapshot": json.dumps(snapshot, ensure_ascii=False),
+                    },
+                }
+            )
         runtime = runtime or _RuntimeConfig(script_uid, script_config)
         runtime.ScriptConfig[script_uid] = script_config
         task_info = TaskInfo(

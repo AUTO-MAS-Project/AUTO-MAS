@@ -11,14 +11,17 @@ import asyncio
 import json
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from app.core import Config
-from app.models.config import MaaFWConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
+from app.utils.constants import UTC4
 from app.task.MaaFW.tools.config_write_guard import atomic_write_maafw_config
 from app.task.MaaFW.tools.core.automas_maafw_interface import load_interface_model
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
@@ -134,6 +137,43 @@ def _instance_has_adb_device(instance_config: dict[str, Any]) -> bool:
     return False
 
 
+def _load_json_dict(value: Any) -> dict[str, Any]:
+    """把 ConfigBase 中的 JSON 字符串或裸 dict 收敛成 dict。"""
+
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        with suppress(json.JSONDecodeError):
+            data = json.loads(value)
+            if isinstance(data, dict):
+                return data
+    return {}
+
+
+def _checked_task_names_from_snapshot(snapshot: dict[str, Any]) -> list[str]:
+    """从用户任务快照的 taskOrder / taskChecked 取按序勾选的任务名。
+
+    结构为 ``{"taskOrder": [...], "taskChecked": {...}, "taskOptions": {...}}``。
+    pretask 伪任务由 ``is_pretask_task_name`` 过滤掉，绝不进入运行范围。
+    """
+
+    order = snapshot.get("taskOrder")
+    checked = snapshot.get("taskChecked")
+    if not isinstance(order, list) or not isinstance(checked, dict):
+        return []
+    names: list[str] = []
+    for name in order:
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not checked.get(name):
+            continue
+        if is_pretask_task_name(name):
+            continue
+        if name not in names:
+            names.append(name)
+    return names
+
+
 class MaaFWManager(TaskExecuteBase):
     """MaaFW MFAAvalonia 外部运行管理器。"""
 
@@ -183,7 +223,16 @@ class MaaFWManager(TaskExecuteBase):
         self.process_pid: int | None = None
         self.monitor_started = False
 
-        self.virtual_user: UserItem | None = None
+        # 用户层运行：任务队列属于用户，遍历真实用户而非单个虚拟用户。
+        self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
+        self.runnable_user_uids: list[uuid.UUID] = []
+        self.current_user_item: UserItem | None = None
+        self.current_user_uid: uuid.UUID | None = None
+        self.current_user_config: MaaFWUserConfig | None = None
+        self._fallback_user: UserItem | None = None
+        self.user_terminal: dict[str, str | None] = {}
+        self.curdate: str = ""
+
         self.current_log: LogRecord | None = None
         self.terminal_event = asyncio.Event()
         self.terminal_kind: str | None = None
@@ -229,27 +278,61 @@ class MaaFWManager(TaskExecuteBase):
 
         try:
             interface_model = load_interface_model(project_root)
-            controller_name = self._parse_single_selection(
-                script_config.get("Selection", "Controller"), "controller"
-            )
-            resource_name = self._parse_single_selection(
-                script_config.get("Selection", "Resource"), "resource"
-            )
-            task_names = self._parse_task_selection(
-                script_config.get("Selection", "Tasks")
-            )
-            if controller_name not in {item.name for item in interface_model.controller}:
-                raise ValueError(f"interface 未定义 controller：{controller_name}")
-            if resource_name not in {item.name for item in interface_model.resource}:
-                raise ValueError(f"interface 未定义 resource：{resource_name}")
-            task_index = {item.name for item in interface_model.task}
-            unknown_tasks = [name for name in task_names if name not in task_index]
-            if unknown_tasks:
-                raise ValueError(f"interface 未定义 task：{unknown_tasks[0]}")
+        except Exception as exc:
+            return f"MaaFW interface 读取失败：{exc}"
+
+        # 用户层：controller / resource 走 Info.*（用户级留空回退脚本级），
+        # 运行范围走用户 Task.TaskSnapshot；不再从脚本级 Selection.* 读取。
+        user_config: MultipleConfig[MaaFWUserConfig] = MultipleConfig([MaaFWUserConfig])
+        await user_config.load(await script_config.UserData.toDict())
+        runnable_uids = [
+            uid
+            for uid, cfg in user_config.items()
+            if cfg.get("Info", "Status") and cfg.get("Info", "RemainedDay") != 0
+        ]
+        if not runnable_uids:
+            return "MaaFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"
+
+        controller_index = {item.name for item in interface_model.controller}
+        resource_index = {item.name for item in interface_model.resource}
+        task_index = {item.name for item in interface_model.task}
+
+        try:
+            for uid in runnable_uids:
+                cfg = user_config[uid]
+                user_name = cfg.get("Info", "Name")
+                controller_name = self._resolve_controller_name(cfg, script_config)
+                if not controller_name:
+                    raise ValueError(
+                        f"用户 {user_name} 未确定 MaaFW controller，"
+                        "请在脚本编辑页或用户配置中选择"
+                    )
+                if controller_name not in controller_index:
+                    raise ValueError(f"interface 未定义 controller：{controller_name}")
+                resource_name = self._resolve_resource_name(
+                    cfg, script_config, interface_model, controller_name
+                )
+                if not resource_name:
+                    raise ValueError(f"用户 {user_name} 未确定 MaaFW resource")
+                if resource_name not in resource_index:
+                    raise ValueError(f"interface 未定义 resource：{resource_name}")
+                task_names = self._parse_snapshot_task_selection(
+                    cfg.get("Task", "TaskSnapshot")
+                )
+                unknown_tasks = [name for name in task_names if name not in task_index]
+                if unknown_tasks:
+                    raise ValueError(f"interface 未定义 task：{unknown_tasks[0]}")
         except (ValueError, ShellMappingError) as exc:
             return f"MaaFW 选择配置无效：{exc}"
         except Exception as exc:
             return f"MaaFW interface 读取失败：{exc}"
+
+        # 供下方启动前设备校验使用的代表性 controller / resource：取首个可运行用户。
+        first_cfg = user_config[runnable_uids[0]]
+        controller_name = self._resolve_controller_name(first_cfg, script_config)
+        resource_name = self._resolve_resource_name(
+            first_cfg, script_config, interface_model, controller_name
+        )
 
         # 启动前自洽校验：Adb 控制器缺设备标识时，外壳连接必失败却仍会排空队列输出
         # 完成串（假成功）。设备字段由现有实例配置透传，build 不生成——现有配置里
@@ -294,38 +377,56 @@ class MaaFWManager(TaskExecuteBase):
         self.interface_model = interface_model
         self.controller_name = controller_name
         self.resource_name = resource_name
-        self.task_selections = [TaskSelection(name=name) for name in task_names]
+        # 运行范围按用户在运行循环里逐个解析并写入 self.task_selections。
+        self.task_selections = []
+        self.user_config = user_config
+        self.runnable_user_uids = runnable_uids
         self.log_path = project_root / "logs" / f"log-{datetime.now():%Y%m%d}.log"
         return "Pass"
 
     @staticmethod
-    def _parse_json_list(value: Any, label: str) -> list[str]:
-        """把 ConfigBase 中的 JSON 字符串解析为非空字符串列表。"""
+    def _parse_snapshot_task_selection(value: Any) -> list[str]:
+        """用户 Task.TaskSnapshot → 按序勾选的任务名列表（pretask 已滤除）。"""
 
-        raw = value
-        if isinstance(value, str):
-            try:
-                raw = json.loads(value)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{label} 不是有效 JSON") from exc
-        if not isinstance(raw, list) or not raw:
-            raise ValueError(f"{label} 不能为空")
-        if not all(isinstance(item, str) and item.strip() for item in raw):
-            raise ValueError(f"{label} 必须是非空字符串数组")
-        return [item.strip() for item in raw]
+        names = _checked_task_names_from_snapshot(_load_json_dict(value))
+        if not names:
+            raise ValueError("task 不能为空")
+        return names
 
-    @classmethod
-    def _parse_single_selection(cls, value: Any, label: str) -> str:
-        values = cls._parse_json_list(value, label)
-        return values[0]
+    @staticmethod
+    def _resolve_controller_name(
+        user_config: MaaFWUserConfig,
+        script_config: MaaFWConfig,
+    ) -> str:
+        """controller 走简单 or 回退：用户级留空则取脚本级默认。"""
 
-    @classmethod
-    def _parse_task_selection(cls, value: Any) -> list[str]:
-        values = cls._parse_json_list(value, "task")
-        for task_name in values:
-            if is_pretask_task_name(task_name):
-                raise ValueError(f"task 不允许选择 pretask 伪任务：{task_name}")
-        return values
+        return str(
+            user_config.get("Info", "Controller")
+            or script_config.get("Info", "Controller")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _resolve_resource_name(
+        user_config: MaaFWUserConfig,
+        script_config: MaaFWConfig,
+        interface_model: Any,
+        controller_name: str,
+    ) -> str:
+        """resource 走简单 or 回退；两级都留空时取首个匹配 controller 的 resource。"""
+
+        configured = str(
+            user_config.get("Info", "Resource")
+            or script_config.get("Info", "Resource")
+            or ""
+        ).strip()
+        if configured:
+            return configured
+        for resource in interface_model.resource:
+            controllers = getattr(resource, "controller", None) or []
+            if not controllers or controller_name in controllers:
+                return resource.name
+        return ""
 
     @staticmethod
     def _resolve_executable(project_root: Path) -> Path | str:
@@ -359,7 +460,19 @@ class MaaFWManager(TaskExecuteBase):
         logger.success(f"{self.script_info.script_id} 已锁定，MaaFW 配置提取完成")
 
         self.begin_time = datetime.now()
-        self._ensure_virtual_user()
+        if self.user_config is None:
+            raise RuntimeError("MaaFW 用户配置未加载")
+        self.script_info.user_list = [
+            UserItem(
+                user_id=str(uid),
+                name=self.user_config[uid].get("Info", "Name"),
+                status="等待",
+            )
+            for uid in self.runnable_user_uids
+        ]
+        logger.info(
+            f"MaaFW 用户列表加载完成，已筛选用户数: {len(self.script_info.user_list)}"
+        )
         self.script_info.status = "运行"
 
         # 启动时先恢复上一次被强杀遗留的快照，再发布本轮有效备份。
@@ -376,17 +489,27 @@ class MaaFWManager(TaskExecuteBase):
             logger.info(f"MaaFW 已结束残留外壳，准备恢复：{self.exe_path}")
         self._recover_residual_backup()
         self._backup_project_config()
-        self._write_runtime_config()
+        # 运行配置按用户在运行循环里逐个写入，备份只发布一次。
 
     def _ensure_virtual_user(self) -> UserItem:
-        if self.virtual_user is None:
-            self.virtual_user = UserItem(
-                user_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"maafw:{self.script_info.script_id}")),
+        """返回当前正在执行的用户项；运行循环外（检查失败等）退回一个占位用户。
+
+        ``_mark_terminal`` / ``check_log`` 等终态代码调用本方法拿「当前用户」，
+        因此签名和返回类型保持不变。
+        """
+
+        if self.current_user_item is not None:
+            return self.current_user_item
+        if self._fallback_user is None:
+            self._fallback_user = UserItem(
+                user_id=str(
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"maafw:{self.script_info.script_id}")
+                ),
                 name=self.script_info.name or "MaaFW 项目",
                 status="等待",
             )
-        self.script_info.user_list = [self.virtual_user]
-        return self.virtual_user
+            self.script_info.user_list = [self._fallback_user]
+        return self._fallback_user
 
     def _backup_project_config(self) -> None:
         if self.project_root is None or self.config_dir is None:
@@ -520,7 +643,12 @@ class MaaFWManager(TaskExecuteBase):
         ):
             raise RuntimeError("MaaFW 运行配置路径或选择未初始化")
 
-        base = _read_json_object(self.instance_path, label="MaaFW default 实例配置")
+        # 多用户逐个写入：base 始终取本轮备份里的原始实例配置，避免上一个用户
+        # 写入的 controller / TaskItems 漏进下一个用户。设备标识等 C 类字段仍随
+        # base 透传。
+        backup_instance = self.backup_path / "instances" / "default.json"
+        base_path = backup_instance if backup_instance.is_file() else self.instance_path
+        base = _read_json_object(base_path, label="MaaFW default 实例配置")
         instance_config = build_instance_config(
             self.interface_model,
             controller_name=self.controller_name,
@@ -784,6 +912,115 @@ class MaaFWManager(TaskExecuteBase):
         if cancellation is not None:
             raise cancellation
 
+    async def _mark_run_started(self) -> None:
+        """写入用户级本次运行的 LastProxyDate / ProxyTimes / LastProxyStatus。"""
+
+        if self.current_user_config is None:
+            return
+        if self.current_user_config.get("Data", "LastProxyDate") != self.curdate:
+            await self.current_user_config.set("Data", "LastProxyDate", self.curdate)
+            await self.current_user_config.set("Data", "ProxyTimes", 0)
+        await self.current_user_config.set("Data", "LastProxyStatus", "运行中")
+
+    # ---- 逐用户运行 ----
+
+    def _reset_user_run_state(self) -> None:
+        """清掉上一个用户遗留的单轮运行状态。"""
+
+        self.current_log = None
+        self.terminal_kind = None
+        self.process_manager = None
+        self.log_monitor = None
+        self.process_started = False
+        self.process_pid = None
+        self.monitor_started = False
+        self.last_log_text = ""
+
+    async def _teardown_shell_between_users(self) -> None:
+        """结束当前用户的外壳与日志监控，给下一个用户留干净环境。"""
+
+        if self.log_monitor is not None:
+            with suppress(Exception):
+                await self.log_monitor.stop()
+            self.monitor_started = False
+        if self.process_manager is not None:
+            with suppress(Exception):
+                await self.process_manager.kill()
+        if self.process_started and self.exe_path is not None:
+            with suppress(Exception):
+                await System.kill_process(self.exe_path)
+
+    async def _run_user(self, index: int, uid: uuid.UUID) -> None:
+        """执行单个用户：解析范围 → 写配置 → 起外壳 → 判终态。"""
+
+        if self.user_config is None or self.interface_model is None:
+            raise RuntimeError("MaaFW 运行前置状态未初始化")
+
+        self.current_user_uid = uid
+        self.current_user_config = self.user_config[uid]
+        self.current_user_item = self.script_info.user_list[index]
+        self._reset_user_run_state()
+        self.current_user_item.status = "运行"
+
+        user_name = self.current_user_item.name
+        controller_name = self._resolve_controller_name(
+            self.current_user_config, self.script_config
+        )
+        resource_name = self._resolve_resource_name(
+            self.current_user_config,
+            self.script_config,
+            self.interface_model,
+            controller_name,
+        )
+        task_names = self._parse_snapshot_task_selection(
+            self.current_user_config.get("Task", "TaskSnapshot")
+        )
+
+        self.controller_name = controller_name
+        self.resource_name = resource_name
+        self.task_selections = [TaskSelection(name=name) for name in task_names]
+
+        await self._mark_run_started()
+        self._write_runtime_config()
+        logger.info(f"开始代理用户 {user_name}（{uid}）")
+        await self._run_external()
+
+        self.user_terminal[str(uid)] = self.terminal_kind
+        if self.terminal_kind == "success":
+            with suppress(Exception):
+                if (
+                    self.current_user_config.get("Data", "ProxyTimes") == 0
+                    and self.current_user_config.get("Info", "RemainedDay") != -1
+                ):
+                    await self.current_user_config.set(
+                        "Info",
+                        "RemainedDay",
+                        self.current_user_config.get("Info", "RemainedDay") - 1,
+                    )
+                await self.current_user_config.set(
+                    "Data",
+                    "ProxyTimes",
+                    self.current_user_config.get("Data", "ProxyTimes") + 1,
+                )
+                await self.current_user_config.set("Data", "LastProxyStatus", "成功")
+        else:
+            with suppress(Exception):
+                await self.current_user_config.set("Data", "LastProxyStatus", "失败")
+
+    async def _persist_user_config(self) -> None:
+        """把本次运行对用户配置的写入回写到脚本配置并落盘。"""
+
+        if self.user_config is None:
+            return
+        try:
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+            await script_config.UserData.load(await self.user_config.toDict())
+            save = getattr(Config.ScriptConfig, "save", None)
+            if callable(save):
+                await save()
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MaaFW 用户配置回写失败：{exc}")
+
     async def main_task(self) -> None:
         """执行一轮 MaaFW 外部任务；所有运行期状态都在 finally 清理。"""
 
@@ -791,7 +1028,7 @@ class MaaFWManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            self.virtual_user.status = "异常"
+            self._ensure_virtual_user().status = "异常"
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -801,7 +1038,14 @@ class MaaFWManager(TaskExecuteBase):
 
         try:
             await self.prepare()
-            await self._run_external()
+            self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+            user_uids = list(self.runnable_user_uids)
+            for index, uid in enumerate(user_uids):
+                self.script_info.current_index = index
+                await self._run_user(index, uid)
+                # 用户间：先结束当前外壳；最后一个用户的收尾交给 _cleanup。
+                if index < len(user_uids) - 1:
+                    await self._teardown_shell_between_users()
         finally:
             # TaskExecuteBase 在取消路径也会等待 final_task；这里先做一次显式保护。
             await self._await_cleanup()
@@ -815,12 +1059,25 @@ class MaaFWManager(TaskExecuteBase):
             self.cleanup_error = str(exc)
             logger.opt(exception=True).warning(f"MaaFW 收尾清理异常：{exc}")
 
-        if self.check_result == "Pass" and self.terminal_kind == "success" and not self.cleanup_error:
+        await self._persist_user_config()
+
+        for user in self.script_info.user_list:
+            if user.status in ("等待", "运行"):
+                user.status = "异常"
+
+        error_users = [
+            user
+            for user in self.script_info.user_list
+            if user.status not in ("完成", "跳过")
+        ]
+        if (
+            self.check_result == "Pass"
+            and not self.cleanup_error
+            and not error_users
+        ):
             self.script_info.status = "完成"
         else:
             self.script_info.status = "异常"
-            if self.virtual_user is not None and self.virtual_user.status == "等待":
-                self.virtual_user.status = "异常"
 
     async def on_crash(self, e: Exception) -> None:
         """异常处理必须自保护，不能阻断配置恢复。"""
@@ -828,13 +1085,13 @@ class MaaFWManager(TaskExecuteBase):
         try:
             self.terminal_kind = self.terminal_kind or "error"
             self.script_info.status = "异常"
-            if self.virtual_user is not None:
-                self.virtual_user.status = "异常"
-                if self.current_log is None:
-                    self.current_log = LogRecord()
-                    start_time = self.log_start_time or datetime.now()
-                    self.virtual_user.log_record[start_time] = self.current_log
-                self.current_log.status = f"MaaFW 运行异常：{e}"
+            crash_user = self.current_user_item or self._ensure_virtual_user()
+            crash_user.status = "异常"
+            if self.current_log is None:
+                self.current_log = LogRecord()
+                start_time = self.log_start_time or datetime.now()
+                crash_user.log_record[start_time] = self.current_log
+            self.current_log.status = f"MaaFW 运行异常：{e}"
             logger.opt(exception=True).warning(f"MaaFW 外部任务出现异常：{e}")
             try:
                 await Config.send_websocket_message(
