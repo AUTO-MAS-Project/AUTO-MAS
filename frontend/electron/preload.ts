@@ -84,6 +84,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘自定义菜单项
   updateTrayConfig: (trayItems: any) => ipcRenderer.invoke('update-tray-config', trayItems),
 
+  // 托盘退出/重启请求（由渲染进程统一弹确认窗）
+  onTrayActionRequest: (callback: (action: 'quit' | 'restart') => void) => {
+    ipcRenderer.on('tray-action-request', (_event, action: string) => {
+      callback(action as 'quit' | 'restart')
+    })
+  },
+
   // 同步后端配置
   syncBackendConfig: (backendSettings: any) =>
     ipcRenderer.invoke('sync-backend-config', backendSettings),

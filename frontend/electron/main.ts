@@ -394,36 +394,28 @@ function handleTrayAction(action: TrayAction): void {
       void stopAllTasksByShortcut()
       break
     case 'restartApp':
-      void restartAppFromTray()
-      break
     case 'quit':
-      isQuitting = true
-      app.quit()
+      // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
+      requestTrayAction(action === 'restartApp' ? 'restart' : 'quit')
       break
   }
 }
 
-// 从托盘重启整个应用（会停止当前运行的任务，需用户确认）
-async function restartAppFromTray(): Promise<void> {
-  try {
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
-      title: '重启应用',
-      message: '重启 AUTO-MAS 会停止当前正在运行的任务，确定继续？',
-      buttons: ['取消', '确定'],
-      defaultId: 0,
-      cancelId: 0,
-    })
-    if (response !== 1) return
-
-    logger.info('托盘触发重启应用')
-    isQuitting = true
-    app.relaunch()
-    app.exit(0)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`托盘重启应用失败: ${errorMsg}`)
-    showShortcutNotification('AUTO-MAS', `重启应用失败: ${errorMsg}`)
+// 请求渲染进程处理托盘退出/重启动作：由渲染进程按运行状态弹统一确认窗
+function requestTrayAction(action: 'quit' | 'restart'): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tray-action-request', action)
+  } else {
+    // 无主窗口时无法弹确认窗，直接执行
+    logger.warn('无主窗口，跳过托盘动作确认，直接执行')
+    if (action === 'restart') {
+      isQuitting = true
+      app.relaunch()
+      app.exit(0)
+    } else {
+      isQuitting = true
+      app.quit()
+    }
   }
 }
 

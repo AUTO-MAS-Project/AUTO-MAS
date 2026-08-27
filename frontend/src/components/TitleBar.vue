@@ -239,7 +239,57 @@ const closeWindow = async () => {
   }
 }
 
+// 托盘触发退出：与窗口关闭按钮走同一套确认流程
+const handleTrayQuit = () => {
+  if (hasRunningTasks()) {
+    // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
+    window.electronAPI?.windowFocus?.()
+    Modal.confirm({
+      title: '确认关闭',
+      content: '队列正在运行中，确认关闭AUTO-MAS吗？',
+      okText: '确认关闭',
+      cancelText: '取消',
+      okType: 'danger',
+      centered: true,
+      onOk: () => {
+        doCloseWindow()
+      },
+    })
+  } else {
+    void doCloseWindow()
+  }
+}
+
+// 托盘触发重启：统一确认窗风格（与关闭确认一致）
+const handleTrayRestart = () => {
+  // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
+  window.electronAPI?.windowFocus?.()
+  Modal.confirm({
+    title: '确认重启',
+    content: '重启 AUTO-MAS 会停止当前正在运行的任务，确认重启吗？',
+    okText: '确认重启',
+    cancelText: '取消',
+    okType: 'danger',
+    centered: true,
+    onOk: async () => {
+      await window.electronAPI?.appRestart()
+    },
+  })
+}
+
+// 托盘退出/重启请求统一入口
+const handleTrayActionRequest = (action: 'quit' | 'restart') => {
+  if (action === 'restart') {
+    handleTrayRestart()
+  } else {
+    handleTrayQuit()
+  }
+}
+
 onMounted(async () => {
+  // 监听托盘退出/重启请求，统一走确认流程
+  window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+
   try {
     const config = await window.electronAPI?.loadConfig()
     syncUiPreferences(config?.UI)
