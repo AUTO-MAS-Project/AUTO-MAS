@@ -55,8 +55,11 @@ _CONTROLLER_FAILURE_MARKERS = (
 )
 
 # 终态优先级：数值越大越不可被覆盖。未列出的按 1 处理。
+# controller_failed 与 tasks_missing 都表示「选中的任务并没有真正执行」，同级压过
+# success；同级之间按现有约定先到的结论稳定。
 _TERMINAL_PRIORITY = {
     "controller_failed": 3,
+    "tasks_missing": 3,
     "success": 2,
 }
 
@@ -582,7 +585,7 @@ class MaaFWManager(TaskExecuteBase):
                 if self._contains_controller_failure(self.last_log_text):
                     self._mark_controller_failure()
                 elif self._contains_completion(self.last_log_text):
-                    self._mark_terminal("success", "Success!")
+                    self._mark_completion(self.last_log_text)
                 elif _ABANDON_MARKER in self.last_log_text:
                     self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
                 else:
@@ -613,6 +616,36 @@ class MaaFWManager(TaskExecuteBase):
             "MaaFW 控制器初始化失败，任务未实际执行",
         )
 
+    def _mark_completion(self, log_text: str) -> None:
+        """完成串出现时收口：选中任务全部在日志里露过面才判成功。
+
+        弱形式的逐任务校验——只回答「选中的事到底有没有被尝试」。实测的假成功里
+        选中任务在整份日志出现 0 次，完成串却存在。不解析逐任务成功/失败：没有一次
+        成功运行的样本，任何日志格式假设都是臆造。
+        """
+
+        absent = self._selected_tasks_absent_from(log_text)
+        if absent:
+            self._mark_terminal(
+                "tasks_missing",
+                f"MaaFW 输出完成串，但选中任务未出现：{'、'.join(absent)}",
+            )
+        else:
+            self._mark_terminal("success", "Success!")
+
+    def _selected_tasks_absent_from(self, log_text: str) -> list[str]:
+        """选中任务名里在整份日志中从未以子串形式出现过的那些。
+
+        空串或非字符串的异常选择项跳过，不纳入判断也不崩溃。
+        """
+
+        absent: list[str] = []
+        for selection in self.task_selections:
+            name = selection.name.strip() if isinstance(selection.name, str) else ""
+            if name and name not in log_text:
+                absent.append(name)
+        return absent
+
     def _runtime_limit_seconds(self) -> float:
         if self.script_config is None:
             return 0
@@ -640,11 +673,12 @@ class MaaFWManager(TaskExecuteBase):
             self.last_log_at = datetime.now()
 
         # 控制器初始化失败压过完成串：外壳排空队列时照样输出完成串，但选中的任务
-        # 从未执行，此时判成功是假成功。其次完成串优先于放弃串。
+        # 从未执行，此时判成功是假成功。完成串本身还要过 _mark_completion 里「选中
+        # 任务是否露过面」这道关，都通过才判成功。其次完成串优先于放弃串。
         if self._contains_controller_failure(log_text):
             self._mark_controller_failure()
         elif self._contains_completion(log_text):
-            self._mark_terminal("success", "Success!")
+            self._mark_completion(log_text)
         elif _ABANDON_MARKER in log_text:
             self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
         elif self.terminal_kind is None:
