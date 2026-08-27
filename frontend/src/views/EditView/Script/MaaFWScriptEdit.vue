@@ -137,86 +137,57 @@
                 </a-form-item>
               </a-col>
             </a-row>
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <a-form-item label="任务（多选，按选中顺序执行）">
-                  <a-select
-                    v-model:value="selectedTasks"
-                    mode="multiple"
-                    size="large"
-                    placeholder="请选择要执行的任务"
-                    :disabled="!taskOptions.length"
-                    option-filter-prop="label"
-                    @change="handleTasksChange"
-                  >
-                    <a-select-option
-                      v-for="item in taskOptions"
-                      :key="item.name"
-                      :value="item.name"
-                      :label="item.label || item.name"
-                    >
-                      {{ item.label || item.name }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-                <a-alert
-                  v-if="previewProject && !selectedTasks.length"
-                  type="warning"
-                  show-icon
-                  message="尚未选择任何任务，MaaFW 运行时会被后端拒绝启动。"
-                  style="margin-top: -12px"
-                />
-              </a-col>
-            </a-row>
+            <a-alert
+              type="info"
+              show-icon
+              message="任务队列已下沉到用户层：请在「用户管理 → 编辑用户」中为每个用户排任务与预设。"
+              style="margin-top: -4px"
+            />
           </a-spin>
         </div>
 
-        <!-- 运行配置 -->
-        <div class="form-section">
-          <div class="section-header"><h3>运行配置</h3></div>
-          <a-row :gutter="24">
-            <a-col :xs="24" :lg="8">
-              <a-form-item label="单次运行时间限制">
-                <a-input-number
-                  v-model:value="maafwConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  addon-after="分钟"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleRunTimeLimitChange"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-typography-text type="secondary">
-            运行引擎：外部运行（MFAAvalonia
-            外壳）。设备标识需先在外壳侧连接一次模拟器后由项目自带配置提供，MAS 暂不写入设备字段。
-          </a-typography-text>
-        </div>
+        <!-- 运行配置（回收自 fdde4d51） -->
+        <RunConfigSection
+          :maafw-config="maafwConfig"
+          :daily-once-tasks="dailyOnceTasks"
+          :weekly-once-tasks="weeklyOnceTasks"
+          :monthly-once-tasks="monthlyOnceTasks"
+          :period-task-options="periodTaskOptions"
+          :interface-dependent-disabled="interfaceDependentDisabled"
+          @change="handleChange"
+          @period-task-change="handlePeriodTaskChange"
+        />
+
+        <a-typography-text type="secondary">
+          运行引擎：外部运行（MFAAvalonia
+          外壳）。设备标识需先在外壳侧连接一次模拟器后由项目自带配置提供，MAS 暂不写入设备字段。
+        </a-typography-text>
       </a-form>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import type { MaaFWControllerInfo, MaaFWResourceInfo, MaaFWTaskInfo } from '@/api'
 import type { MaaFWScriptConfig } from '@/types/script'
+import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
 
 // MaaFW pretask 伪任务：预览接口会把它们混进 tasks[]（entry 固定为 MXU_PRETASK、
-// name 带 __MXU_PRETASK__ 前缀），而后端 _parse_task_selection 用 is_pretask_task_name
-// 明确拒绝，绝不能让用户选到。此处按 entry 过滤、name 前缀兜底。
+// name 带 __MXU_PRETASK__ 前缀），周期跳过下拉不能让用户选到。按 entry 过滤、name 前缀兜底。
 const PRETASK_TASK_ENTRY = 'MXU_PRETASK'
 const PRETASK_TASK_PREFIX = '__MXU_PRETASK__'
 const isPretaskTask = (task: MaaFWTaskInfo): boolean =>
   task.entry === PRETASK_TASK_ENTRY || task.name.startsWith(PRETASK_TASK_PREFIX)
+
+const PERIOD_KEYS = ['DailyOnceTasks', 'WeeklyOnceTasks', 'MonthlyOnceTasks'] as const
+type PeriodKey = (typeof PERIOD_KEYS)[number]
 
 const route = useRoute()
 const router = useRouter()
@@ -237,16 +208,38 @@ const taskOptions = ref<MaaFWTaskInfo[]>([])
 
 const selectedController = ref<string | undefined>(undefined)
 const selectedResource = ref<string | undefined>(undefined)
-const selectedTasks = ref<string[]>([])
 
+const dailyOnceTasks = ref<string[]>([])
+const weeklyOnceTasks = ref<string[]>([])
+const monthlyOnceTasks = ref<string[]>([])
+
+// RunConfigSection 逐字节回收自 fdde4d51，其 prop 类型为 MaaFWScriptConfig；
+// 本简版脚本页只维护 Info.* / Run.*，其余分组在加载时从后端整份合并进来。
 const maafwConfig = reactive({
-  Info: { Name: '', Path: '' },
-  Run: { Engine: 'external', RunTimeLimit: 30 },
-})
+  Info: { Name: '', ProjectLabel: '', Path: '', Controller: '', Resource: '' },
+  Run: {
+    Engine: 'external',
+    ProxyTimesLimit: 0,
+    RunTimesLimit: 1,
+    RunTimeLimit: 30,
+    DailyOnceTasks: '[ ]',
+    WeeklyOnceTasks: '[ ]',
+    MonthlyOnceTasks: '[ ]',
+  },
+}) as unknown as MaaFWScriptConfig
 
-// ConfigBase 把 Selection 三个列表以 JSON 字符串保存、读回也是字符串；
+const periodTaskOptions = computed(() =>
+  taskOptions.value.map(task => ({
+    label: task.label ? `${task.label}（${task.name}）` : task.name,
+    value: task.name,
+  }))
+)
+
+const interfaceDependentDisabled = computed(() => previewLoading.value || !taskOptions.value.length)
+
+// ConfigBase 把周期任务列表以 JSON 字符串保存、读回也是字符串；
 // 兼容后端某天直接返回数组的情况，统一收敛成字符串数组。
-const parseSelectionList = (value: unknown): string[] => {
+const parseTaskNameList = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
   if (typeof value === 'string' && value.trim()) {
     try {
@@ -261,26 +254,21 @@ const parseSelectionList = (value: unknown): string[] => {
   return []
 }
 
-const saveSelection = async (key: 'Controller' | 'Resource' | 'Tasks', list: string[]) => {
-  if (isInitializing.value) return
-  isSaving.value = true
-  try {
-    // 后端 JSONValidator(list) 只接受 JSON 字符串，裸数组会被清空成 "[ ]"
-    const success = await updateScript(scriptId, { Selection: { [key]: JSON.stringify(list) } })
-    if (success) logger.info(`配置已保存: Selection.${key}`)
-  } catch (error) {
-    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    isSaving.value = false
-  }
-}
+const stringifyTaskNameList = (value: string[]): string => JSON.stringify(value)
 
-const handleChange = async (category: 'Info' | 'Run', key: string, value: unknown) => {
+const periodTaskRef = (key: PeriodKey): typeof dailyOnceTasks =>
+  key === 'DailyOnceTasks'
+    ? dailyOnceTasks
+    : key === 'WeeklyOnceTasks'
+      ? weeklyOnceTasks
+      : monthlyOnceTasks
+
+const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
   if (isInitializing.value || isSaving.value) return
   isSaving.value = true
   try {
     const success = await updateScript(scriptId, { [category]: { [key]: value } })
-    if (success) logger.info(`配置已保存: ${category}.${key}`)
+    if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
   } catch (error) {
     logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
@@ -288,25 +276,34 @@ const handleChange = async (category: 'Info' | 'Run', key: string, value: unknow
   }
 }
 
-const handleRunTimeLimitChange = (value: number | string | null) => {
-  const normalized = typeof value === 'number' && value >= 1 ? Math.floor(value) : 30
-  maafwConfig.Run.RunTimeLimit = normalized
-  void handleChange('Run', 'RunTimeLimit', normalized)
-}
-
 const handleControllerChange = (value: string | undefined) => {
   selectedController.value = value || undefined
-  void saveSelection('Controller', value ? [value] : [])
+  maafwConfig.Info.Controller = value || ''
+  void handleChange('Info', 'Controller', value || '')
 }
 
 const handleResourceChange = (value: string | undefined) => {
   selectedResource.value = value || undefined
-  void saveSelection('Resource', value ? [value] : [])
+  maafwConfig.Info.Resource = value || ''
+  void handleChange('Info', 'Resource', value || '')
 }
 
-const handleTasksChange = (value: string[]) => {
-  selectedTasks.value = value
-  void saveSelection('Tasks', value)
+const handlePeriodTaskChange = async (key: PeriodKey, values: string[]) => {
+  const normalized = Array.from(new Set(values.filter(Boolean)))
+  periodTaskRef(key).value = normalized
+  maafwConfig.Run[key] = stringifyTaskNameList(normalized)
+  await handleChange('Run', key, maafwConfig.Run[key])
+}
+
+const prunePeriodTaskSelections = async () => {
+  const available = new Set(taskOptions.value.map(task => task.name))
+  for (const key of PERIOD_KEYS) {
+    const current = periodTaskRef(key).value
+    const next = current.filter(name => available.has(name))
+    if (next.length !== current.length) {
+      await handlePeriodTaskChange(key, next)
+    }
+  }
 }
 
 const clearPreviewOptions = () => {
@@ -333,7 +330,6 @@ const runPreview = async () => {
       return
     }
     if (response.code !== 200 || !response.data) {
-      // 后端 message 原样呈现：目录缺 interface.json、解析失败等都在这里
       previewError.value = response.message || 'MaaFW interface 预览失败'
       clearPreviewOptions()
       return
@@ -347,14 +343,13 @@ const runPreview = async () => {
     // 预览结果变化后，剔除已不存在的历史选择，避免提交后端未定义项
     const controllerNames = new Set(controllerOptions.value.map(item => item.name))
     const resourceNames = new Set(resourceOptions.value.map(item => item.name))
-    const taskNames = new Set(taskOptions.value.map(item => item.name))
     if (selectedController.value && !controllerNames.has(selectedController.value)) {
-      selectedController.value = undefined
+      handleControllerChange(undefined)
     }
     if (selectedResource.value && !resourceNames.has(selectedResource.value)) {
-      selectedResource.value = undefined
+      handleResourceChange(undefined)
     }
-    selectedTasks.value = selectedTasks.value.filter(name => taskNames.has(name))
+    await prunePeriodTaskSelections()
   } catch (error) {
     previewError.value = error instanceof Error ? error.message : String(error)
     clearPreviewOptions()
@@ -394,13 +389,18 @@ onMounted(async () => {
       return
     }
     const config = scriptDetail.config as MaaFWScriptConfig
+    Object.assign(maafwConfig, config)
     maafwConfig.Info.Name = config.Info?.Name ?? scriptDetail.name ?? '新 MaaFW 脚本'
     maafwConfig.Info.Path = config.Info?.Path ?? ''
-    maafwConfig.Run.Engine = config.Run?.Engine ?? 'external'
-    maafwConfig.Run.RunTimeLimit = config.Run?.RunTimeLimit ?? 30
-    selectedController.value = parseSelectionList(config.Selection?.Controller)[0]
-    selectedResource.value = parseSelectionList(config.Selection?.Resource)[0]
-    selectedTasks.value = parseSelectionList(config.Selection?.Tasks)
+    maafwConfig.Info.Controller = config.Info?.Controller ?? ''
+    maafwConfig.Info.Resource = config.Info?.Resource ?? ''
+
+    selectedController.value = maafwConfig.Info.Controller || undefined
+    selectedResource.value = maafwConfig.Info.Resource || undefined
+
+    dailyOnceTasks.value = parseTaskNameList(config.Run?.DailyOnceTasks)
+    weeklyOnceTasks.value = parseTaskNameList(config.Run?.WeeklyOnceTasks)
+    monthlyOnceTasks.value = parseTaskNameList(config.Run?.MonthlyOnceTasks)
 
     if (maafwConfig.Info.Path) {
       await runPreview()
