@@ -30,7 +30,11 @@ from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
-from app.services.wuthering_waves import resolve_wuthering_waves_process_path
+from app.services.wuthering_waves import (
+    check_wuthering_waves_update,
+    resolve_wuthering_waves_process_path,
+)
+from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
@@ -165,6 +169,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkwwUserConfig = self.user_config[self.cur_user_uid]
         self.cur_user_log: LogRecord | None = None
+        self.launcher_path: Path | None = None
         self.game_process_path: Path | None = None
         self.okww_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
@@ -198,6 +203,7 @@ class AutoProxyTask(TaskExecuteBase):
             launcher_path = Path(
                 str(self.script_config.get("Game", "Path") or "").strip()
             )
+            self.launcher_path = launcher_path
             try:
                 self.game_process_path = resolve_wuthering_waves_process_path(
                     launcher_path
@@ -318,7 +324,7 @@ class AutoProxyTask(TaskExecuteBase):
             shutil.rmtree(self.script_config_path, ignore_errors=True)
             tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
-        logger.info(f"OK-WW 运行参数配置完成: 自动代理")
+        logger.info("OK-WW 运行参数配置完成: 自动代理")
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -327,10 +333,58 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
+    async def _ensure_wuthering_waves_updated(self) -> None:
+        """确保游戏已是官方最新版，需要时由 MAS 自行下载覆写。
+
+        全程不启动官方启动器、不做界面识别：版本元数据取自官方接口，
+        包体下载、md5 校验、增量应用与覆写全部由 MAS 完成。
+
+        接口不可用属于「无法判断」，放行启动流程（旧客户端通常仍能登录，
+        不该因为查不到版本就拦住用户）；而更新已确认需要却失败，
+        则必须抛错阻断，否则会拿旧客户端撞登录失败。
+        """
+
+        if self.launcher_path is None:
+            return
+        if not self.script_config.get("Game", "IfAutoUpdate"):
+            logger.info("已关闭启动前自动更新，跳过鸣潮更新检查")
+            return
+        resource = str(self.cur_user_config.get("Info", "Resource"))
+        try:
+            update_info = await check_wuthering_waves_update(
+                self.launcher_path,
+                resource,
+            )
+        except Exception as e:
+            logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
+            return
+
+        if update_info.predownload_available:
+            logger.info(
+                "官方已开放预下载 {}，MAS 暂不接管预下载",
+                update_info.predownload_version or "未知",
+            )
+        if not update_info.update_available:
+            return
+
+        await self._push_dispatch_log(
+            f"鸣潮需更新: {update_info.current_version}"
+            f" -> {update_info.release_version}"
+        )
+        limit_gb = int(self.script_config.get("Game", "UpdateFullSyncLimit") or 0)
+        await update_wuthering_waves(
+            update_info.install_dir,
+            resource,
+            update_info.current_version,
+            on_progress=self._push_dispatch_log,
+            full_sync_limit=max(limit_gb, 1) * 1024**3,
+        )
+
     async def _mas_launch_game_before_task(self) -> None:
-        """启动鸣潮并跟踪客户端进程。"""
+        """检查并触发官方启动器更新，然后启动鸣潮客户端。"""
 
         if isinstance(self.game_manager, ProcessManager):
+            await self._ensure_wuthering_waves_updated()
             if is_process_running(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(

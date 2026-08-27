@@ -57,7 +57,6 @@ from .tools import (
     write_src_process_state,
 )
 from .AutoProxy import AutoProxyTask
-from .ManualReview import ManualReviewTask
 from .ScriptConfig import ScriptConfigTask
 
 
@@ -67,9 +66,8 @@ _EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
 _NOTIFICATION_TIMEOUT_SECONDS = 30
 _WEBSOCKET_REPORT_TIMEOUT_SECONDS = 5
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
-    "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
 
@@ -829,8 +827,9 @@ class SrcManager(TaskExecuteBase):
                 self._retire_src_config_snapshot()
             else:
                 logger.warning(f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}")
+            if self.task_info.mode in ["AutoProxy"]:
 
-            should_notify = await self._complete_locked_final_task()
+                should_notify = await self._complete_locked_final_task()
         finally:
             await script_config.unlock()
             self.config_lock_acquired = False
@@ -849,7 +848,7 @@ class SrcManager(TaskExecuteBase):
         else:
             self.script_info.status = "完成"
 
-        if self.task_info.mode not in ["AutoProxy", "ManualReview"]:
+        if self.task_info.mode not in ["AutoProxy"]:
             return False
 
         try:

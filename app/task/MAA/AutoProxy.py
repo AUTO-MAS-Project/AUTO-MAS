@@ -35,12 +35,10 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
-from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.io import read_file, write_file
 from app.utils.constants import (
     UTC4,
-    UTC8,
     MAA_TASKS,
     MAA_TASKS_ZH,
     MAA_STAGE_KEY,
@@ -196,6 +194,38 @@ def _resolve_activity_stage(
     return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
 
 
+def _build_activity_priority_fight(
+    fight_task: dict, activity_stage: str, medicine_numb: int
+) -> dict:
+    """生成 MAA 活动关优先任务，使用独立理智药额度。
+
+    活动关优先与理智作战刻意保持为两个独立任务，分别使用各自的理智药
+    额度（Task.ActivityMedicineNumb 与计划表 MedicineNumb），互不转移。
+    """
+
+    activity_fight = fight_task.copy()
+    activity_fight.update(
+        {
+            "Name": "活动关优先",
+            "IsEnable": True,
+            "StagePlan": [activity_stage],
+            "IsStageManually": True,
+            "UseOptionalStage": False,
+            "UseWeeklySchedule": False,
+            "EnableTargetDrop": False,
+            "DropId": "",
+            "DropCount": 0,
+            "IsInventoryTarget": False,
+            "EnableTimesLimit": False,
+            "UseMedicine": medicine_numb > 0,
+            "MedicineCount": medicine_numb,
+            "UseExpiringMedicine": False,
+            "UseExpireMedicineForActivity": False,
+        }
+    )
+    return activity_fight
+
+
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
 
@@ -310,62 +340,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
-
-        # 兼容 5.3.1 旧用户：签到工具未启用时继续使用专项内置森空岛签到。
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
-            if (
-                self.cur_user_config.get("Info", "IfSkland")
-                and self.cur_user_config.get("Info", "SklandToken")
-                and self.cur_user_config.get("Data", "LastSklandDate")
-                != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-            ):
-                self.script_info.log = "正在执行森空岛签到"
-                skland_result = await skland_sign_in(
-                    self.cur_user_config.get("Info", "SklandToken"),
-                    app_code="arknights",
-                )
-                for result_type, user_list in skland_result.items():
-                    if result_type != "总计" and len(user_list) > 0:
-                        logger.info(
-                            f"用户: {self.cur_user_uid} - 森空岛签到{result_type}: {'、'.join(user_list)}"
-                        )
-                        await Config.send_websocket_message(
-                            id=self.task_info.task_id,
-                            type="Info",
-                            data={
-                                (
-                                    "Info" if result_type != "失败" else "Error"
-                                ): f"用户 {self.cur_user_item.name} 森空岛签到{result_type}: {'、'.join(user_list)}"
-                            },
-                        )
-                if skland_result["总计"] == 0:
-                    logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
-                    await Config.send_websocket_message(
-                        id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
-                    )
-                if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
-                    await self.cur_user_config.set(
-                        "Data",
-                        "LastSklandDate",
-                        datetime.now(tz=UTC8).strftime("%Y-%m-%d"),
-                    )
-            elif self.cur_user_config.get(
-                "Info", "IfSkland"
-            ) and self.cur_user_config.get("Data", "LastSklandDate") != datetime.now(
-                tz=UTC8
-            ).strftime("%Y-%m-%d"):
-                logger.warning(
-                    f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
-                )
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
-                    },
-                )
 
         # 执行任务前脚本（每用户仅一次）
         if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -797,34 +771,8 @@ class AutoProxyTask(TaskExecuteBase):
             activity_medicine_numb = self.cur_user_config.get(
                 "Task", "ActivityMedicineNumb"
             )
-            activity_fight = task_set["Fight"].copy()
-            activity_fight.update(
-                {
-                    "Name": "活动关优先",
-                    "IsEnable": True,
-                    "StagePlan": [activity_stage],
-                    "IsStageManually": True,
-                    "UseOptionalStage": False,
-                    "UseWeeklySchedule": False,
-                    "EnableTargetDrop": False,
-                    "DropId": "",
-                    "DropCount": 0,
-                    "IsInventoryTarget": False,
-                    "EnableTimesLimit": False,
-                    "UseMedicine": activity_medicine_numb > 0,
-                    "MedicineCount": activity_medicine_numb,
-                    "UseExpiringMedicine": False,
-                    "UseExpireMedicineForActivity": False,
-                }
-            )
-            # 理智药额度只交给优先活动关，避免后续普通作战重复消耗。
-            task_set["Fight"].update(
-                {
-                    "UseMedicine": False,
-                    "MedicineCount": 0,
-                    "UseExpiringMedicine": False,
-                    "UseExpireMedicineForActivity": False,
-                }
+            activity_fight = _build_activity_priority_fight(
+                task_set["Fight"], activity_stage, activity_medicine_numb
             )
 
         # 导出任务配置

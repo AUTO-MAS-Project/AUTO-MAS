@@ -383,7 +383,11 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <ExtraScriptSection v-model:form-data="formData" :loading="pageLoading" @save="saveField" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="pageLoading"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
 

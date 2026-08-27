@@ -78,7 +78,6 @@ const getScriptStats = (scripts: Script[]) => {
 
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
-
   if (message.type === 'Update') {
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
