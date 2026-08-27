@@ -12,12 +12,27 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from app.task.MaaFW.tools.core.automas_maafw_interface import MaaFWInterface
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWTask
+from app.task.MaaFW.tools.external.models import ShellMappingError, TaskSelection
+
+# 兼容旧导入路径：共享输入模型已迁到 external/models.py，这里保留 re-export。
+__all__ = [
+    "CONTROLLER_TYPE_CODES",
+    "TASK_ENTRY_SEPARATOR",
+    "InstanceOrchestration",
+    "ShellMappingError",
+    "TaskSelection",
+    "UnknownControllerTypeError",
+    "build_current_tasks",
+    "build_instance_config",
+    "build_task_items",
+    "resolve_controller_code",
+]
 
 # CurrentTasks / TaskItems 里任务名与 entry 的字面量分隔符。
 TASK_ENTRY_SEPARATOR = "<|||>"
@@ -30,10 +45,6 @@ CONTROLLER_TYPE_CODES: dict[str, int] = {
 }
 
 
-class ShellMappingError(ValueError):
-    """interface 到 MFAAvalonia 实例配置映射失败。"""
-
-
 class UnknownControllerTypeError(ShellMappingError):
     """遇到未登记的 controller type，无法安全得出 CurrentController。"""
 
@@ -44,20 +55,6 @@ class UnknownControllerTypeError(ShellMappingError):
             f"controller「{controller_name}」的 type「{controller_type}」"
             "未登记 CurrentController 取值，拒绝猜测"
         )
-
-
-@dataclass(frozen=True)
-class TaskSelection:
-    """一个被选中的任务及其在 MFAAvalonia 里的勾选 / 选项状态。"""
-
-    name: str
-    # MFA 的 default_check：是否勾选。
-    checked: bool = True
-    # 选项条目按 MFA 实际格式原样透传，如 {"name": ..., "index": 0}
-    # 或 {"name": ..., "data": {...}}。None 表示按 interface 声明的选项名给默认。
-    options: Sequence[Mapping[str, Any]] | None = None
-    # 覆盖 interface task 自带的 pipeline_override；None 表示沿用 interface。
-    pipeline_override: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
