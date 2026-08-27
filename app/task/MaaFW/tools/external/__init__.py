@@ -4,9 +4,31 @@
 「生成配置 dict」的纯逻辑，不写文件、不删实例、不起进程。
 """
 
+from .mfaavalonia import (
+    CONTROLLER_TYPE_CODES,
+    TASK_ENTRY_SEPARATOR,
+    InstanceOrchestration,
+    ShellMappingError,
+    TaskSelection,
+    UnknownControllerTypeError,
+    build_current_tasks,
+    build_instance_config,
+    build_task_items,
+    resolve_controller_code,
+)
 from .shell import ShellFamily, detect_shell_family
 
 __all__ = [
+    "CONTROLLER_TYPE_CODES",
+    "TASK_ENTRY_SEPARATOR",
+    "InstanceOrchestration",
     "ShellFamily",
+    "ShellMappingError",
+    "TaskSelection",
+    "UnknownControllerTypeError",
+    "build_current_tasks",
+    "build_instance_config",
+    "build_task_items",
     "detect_shell_family",
+    "resolve_controller_code",
 ]
