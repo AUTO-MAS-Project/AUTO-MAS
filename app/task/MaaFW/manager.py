@@ -42,6 +42,24 @@ _COMPLETION_MARKERS = ("任务已全部完成！", "All tasks completed")
 _ABANDON_MARKER = "已放弃本次任务"
 _STATE_DIR_NAME = "MaaFWExternal"
 
+# 外壳在控制器初始化失败后仍会输出完成串——该串由 MFA 的 Monitor 组件在任务
+# 队列排空时发出，语义是「没有待办了」，而非「任务都成功了」。实测：控制器初始化
+# 失败 21 毫秒后即出现「任务已全部完成！」，紧随其后的耗时行为 (用时 0h 0m 0s)，
+# 真正选中的任务从未执行。因此控制器初始化失败必须**压过**完成串。
+#
+# 只取带 op=ExecuteTaskQueue 的判别性标记；同一份日志里还有「获取设备唯一标识
+# 失败」（24 次）、「跨平台数据解密失败」（14 次）等与运行结果无关的噪音，不能采用。
+_CONTROLLER_FAILURE_MARKERS = (
+    "初始化控制器失败",
+    "控制器初始化结果为空",
+)
+
+# 终态优先级：数值越大越不可被覆盖。未列出的按 1 处理。
+_TERMINAL_PRIORITY = {
+    "controller_failed": 3,
+    "success": 2,
+}
+
 
 def _remove_owned_path(path: Path) -> None:
     """删除本模块创建的临时路径。"""
@@ -504,7 +522,9 @@ class MaaFWManager(TaskExecuteBase):
             if not await self.process_manager.is_running():
                 # 让并发中的 monitor callback 有机会先提交完成标记；完成优先于退出。
                 await asyncio.sleep(0)
-                if self._contains_completion(self.last_log_text):
+                if self._contains_controller_failure(self.last_log_text):
+                    self._mark_controller_failure()
+                elif self._contains_completion(self.last_log_text):
                     self._mark_terminal("success", "Success!")
                 elif _ABANDON_MARKER in self.last_log_text:
                     self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
@@ -523,6 +543,18 @@ class MaaFWManager(TaskExecuteBase):
     @staticmethod
     def _contains_completion(text: str) -> bool:
         return any(marker in text for marker in _COMPLETION_MARKERS)
+
+    @staticmethod
+    def _contains_controller_failure(text: str) -> bool:
+        """控制器初始化失败——外壳未能真正开始执行选中的任务。"""
+
+        return any(marker in text for marker in _CONTROLLER_FAILURE_MARKERS)
+
+    def _mark_controller_failure(self) -> None:
+        self._mark_terminal(
+            "controller_failed",
+            "MaaFW 控制器初始化失败，任务未实际执行",
+        )
 
     def _runtime_limit_seconds(self) -> float:
         if self.script_config is None:
@@ -550,8 +582,11 @@ class MaaFWManager(TaskExecuteBase):
             self.last_log_text = log_text
             self.last_log_at = datetime.now()
 
-        # 完成串必须优先于放弃串，且累计日志中任一完成串都可收口。
-        if self._contains_completion(log_text):
+        # 控制器初始化失败压过完成串：外壳排空队列时照样输出完成串，但选中的任务
+        # 从未执行，此时判成功是假成功。其次完成串优先于放弃串。
+        if self._contains_controller_failure(log_text):
+            self._mark_controller_failure()
+        elif self._contains_completion(log_text):
             self._mark_terminal("success", "Success!")
         elif _ABANDON_MARKER in log_text:
             self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
@@ -559,14 +594,13 @@ class MaaFWManager(TaskExecuteBase):
             self.current_log.status = "MaaFW 正常运行中"
 
     def _mark_terminal(self, kind: str, log_status: str) -> None:
-        if kind == "success":
-            self.terminal_kind = "success"
-        elif self.terminal_kind == "success":
+        # 按优先级收口：controller_failed > success > 其余。同级或更低不覆盖已有终态，
+        # 保证先到的结论稳定；更高优先级可以推翻已提交的结论（假成功必须能被纠正）。
+        if self.terminal_kind is not None and _TERMINAL_PRIORITY.get(
+            kind, 1
+        ) <= _TERMINAL_PRIORITY.get(self.terminal_kind, 1):
             return
-        elif self.terminal_kind is None:
-            self.terminal_kind = kind
-        else:
-            return
+        self.terminal_kind = kind
 
         current_user = self._ensure_virtual_user()
         if self.current_log is None:

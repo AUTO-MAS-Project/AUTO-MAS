@@ -224,6 +224,108 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertEqual(manager.terminal_kind, "success")
             self.assertEqual(manager.script_info.status, "完成")
 
+    def test_controller_failure_overrides_completion_string(self) -> None:
+        asyncio.run(self._test_controller_failure_overrides_completion_string())
+
+    async def _test_controller_failure_overrides_completion_string(self) -> None:
+        """外壳排空队列时照样输出完成串——控制器初始化失败必须压过它。
+
+        fixture 取自真实运行日志 D:/MAS/tmp/slice-e2e/logs/log-20260827.log：
+        控制器初始化失败 21 毫秒后即出现「任务已全部完成！」，紧随其后的耗时行
+        为 (用时 0h 0m 0s)，选中的任务从未执行。若判成功即为假成功。
+        """
+
+        real_log = (
+            "2026-08-27 19:08:22.666 [ERR] [cfg=Default][inst=MAS/default]"
+            "[src=Worker][op=ExecuteTaskQueue] 初始化控制器失败："
+            "message=连接模拟器时发生错误！, reason=The value cannot be an "
+            "empty string.（Parameter 'info.AdbSerial')\n"
+            "2026-08-27 19:08:22.687 [INF] [cfg=Default][inst=MAS/default]"
+            "[src=Monitor][op=MonitorLog] 任务已全部完成！\n"
+            "(用时 0h 0m 0s)\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [real_log]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "controller_failed")
+            self.assertEqual(manager.script_info.status, "异常")
+            # 失败路径同样必须还原项目配置
+            self.assertEqual(self._snapshot(root / "config"), before)
+
+    def test_controller_failure_can_overturn_an_earlier_success(self) -> None:
+        asyncio.run(self._test_controller_failure_can_overturn_an_earlier_success())
+
+    async def _test_controller_failure_can_overturn_an_earlier_success(self) -> None:
+        """完成串先到、控制器失败后到时，仍须推翻已提交的成功结论。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 19:00:00.000 任务已全部完成！\n",
+                "2026-08-27 19:00:01.000 [ERR] [op=ExecuteTaskQueue] "
+                "初始化控制器失败：message=连接模拟器时发生错误！\n",
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "controller_failed")
+            self.assertEqual(manager.script_info.status, "异常")
+
+    def test_empty_controller_result_also_counts_as_failure(self) -> None:
+        asyncio.run(self._test_empty_controller_result_also_counts_as_failure())
+
+    async def _test_empty_controller_result_also_counts_as_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 19:00:00.000 [WRN] [op=ExecuteTaskQueue] "
+                "控制器初始化结果为空\n"
+                "2026-08-27 19:00:01.000 任务已全部完成！\n"
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+            self.assertEqual(manager.terminal_kind, "controller_failed")
+
+    def test_benign_error_lines_do_not_trigger_failure(self) -> None:
+        asyncio.run(self._test_benign_error_lines_do_not_trigger_failure())
+
+    async def _test_benign_error_lines_do_not_trigger_failure(self) -> None:
+        """同一份真实日志里的噪音错误不得误判为失败。
+
+        「获取设备唯一标识失败」出现 24 次、「跨平台数据解密失败」14 次，
+        均与运行结果无关；只有带 op=ExecuteTaskQueue 的控制器标记才有判别性。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 19:00:00.000 [ERR] 获取设备唯一标识失败：xxx\n"
+                "2026-08-27 19:00:00.500 [WRN] 跨平台数据解密失败：yyy\n"
+                "2026-08-27 19:00:01.000 [WRN] 公告文件夹不存在：zzz\n"
+                "2026-08-27 19:00:02.000 任务已全部完成！\n"
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+            self.assertEqual(manager.terminal_kind, "success")
+            self.assertEqual(manager.script_info.status, "完成")
+
     def test_exception_and_cancel_restore_config_and_await_cleanup(self) -> None:
         asyncio.run(self._test_exception_and_cancel_restore_config_and_await_cleanup())
 
