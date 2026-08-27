@@ -13,6 +13,7 @@ import app.core
 from app.core.task_manager import TaskInfo
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.task import ScriptItem
+from app.utils.constants import UTC4
 from app.task.MaaFW import manager as manager_module
 from app.task.MaaFW.manager import MaaFWManager
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
@@ -795,8 +796,141 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertEqual(manager.script_info.status, "异常")
             self.assertEqual(self._snapshot(root / "config"), before)
 
+    # ---- 周期性跳过 ----
+
+    @staticmethod
+    def _daily_period_key() -> str:
+        return datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+
+    def test_period_once_task_skipped_when_done_this_period(self) -> None:
+        asyncio.run(self._test_period_once_task_skipped_when_done_this_period())
+
+    async def _test_period_once_task_skipped_when_done_this_period(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, _ = await self._make_manager(
+                root,
+                run_config={"DailyOnceTasks": json.dumps(["启动游戏"], ensure_ascii=False)},
+                users=[
+                    {
+                        "Name": "甲",
+                        "tasks": ["启动游戏"],
+                        "PeriodTaskRecords": {"daily": {"启动游戏": self._daily_period_key()}},
+                    }
+                ],
+            )
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.script_info.user_list[0].status, "跳过")
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(self._snapshot(root / "config"), before)
+
+    def test_period_task_runs_when_record_is_stale(self) -> None:
+        asyncio.run(self._test_period_task_runs_when_record_is_stale())
+
+    async def _test_period_task_runs_when_record_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                run_config={"DailyOnceTasks": json.dumps(["启动游戏"], ensure_ascii=False)},
+                users=[
+                    {
+                        "Name": "甲",
+                        "tasks": ["启动游戏"],
+                        "PeriodTaskRecords": {"daily": {"启动游戏": "2000-01-01"}},
+                    }
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+            self.assertEqual(len(_FakeProcessManager.instances), 1)
+
+    def test_success_records_period_task_completion(self) -> None:
+        asyncio.run(self._test_success_records_period_task_completion())
+
+    async def _test_success_records_period_task_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(
+                root,
+                run_config={
+                    "WeeklyOnceTasks": json.dumps(["启动游戏"], ensure_ascii=False)
+                },
+                users=[{"Name": "甲", "tasks": ["启动游戏"]}],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+            uid = next(iter(manager.user_config.keys()))
+            records = json.loads(
+                manager.user_config[uid].get("Data", "PeriodTaskRecords")
+            )
+            self.assertIn("启动游戏", records.get("weekly", {}))
+
+    def test_partial_period_skip_keeps_remaining_task(self) -> None:
+        asyncio.run(self._test_partial_period_skip_keeps_remaining_task())
+
+    async def _test_partial_period_skip_keeps_remaining_task(self) -> None:
+        two_task_interface = MaaFWInterface(
+            interface_version=2,
+            name="test-project",
+            controller=[MaaFWController(name="安卓端", type="Adb")],
+            resource=[MaaFWResource(name="简中")],
+            task=[
+                MaaFWTask(name="启动游戏", entry="StartUp"),
+                MaaFWTask(name="日常", entry="Daily"),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                tasks=["启动游戏", "日常"],
+                run_config={"DailyOnceTasks": json.dumps(["日常"], ensure_ascii=False)},
+                users=[
+                    {
+                        "Name": "甲",
+                        "tasks": ["启动游戏", "日常"],
+                        "PeriodTaskRecords": {"daily": {"日常": self._daily_period_key()}},
+                    }
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=two_task_interface
+            ):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(
+                [s.name for s in manager.task_selections], ["启动游戏"]
+            )
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+
     async def _make_manager(
-        self, root: Path, *, runtime=None, script_uid=None, tasks=None, users=None
+        self,
+        root: Path,
+        *,
+        runtime=None,
+        script_uid=None,
+        tasks=None,
+        users=None,
+        run_config=None,
     ):
         script_uid = script_uid or uuid.uuid4()
         script_config = MaaFWConfig()
@@ -811,6 +945,8 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 },
             }
         )
+        if run_config:
+            await script_config.update({"Run": dict(run_config)})
         selected_tasks = ["启动游戏"] if tasks is None else list(tasks)
         user_specs = users if users is not None else [{"Name": "用户A", "tasks": selected_tasks}]
         for spec in user_specs:
@@ -821,21 +957,26 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 "taskChecked": {name: True for name in spec_tasks},
                 "taskOptions": {},
             }
-            await user_cfg.update(
-                {
-                    "Info": {
-                        "Name": spec.get("Name", "用户A"),
-                        "Status": spec.get("Status", True),
-                        "RemainedDay": spec.get("RemainedDay", -1),
-                        "Controller": spec.get("Controller", ""),
-                        "Resource": spec.get("Resource", ""),
-                    },
-                    "Task": {
-                        "SelectedPreset": spec.get("SelectedPreset", ""),
-                        "TaskSnapshot": json.dumps(snapshot, ensure_ascii=False),
-                    },
+            user_update = {
+                "Info": {
+                    "Name": spec.get("Name", "用户A"),
+                    "Status": spec.get("Status", True),
+                    "RemainedDay": spec.get("RemainedDay", -1),
+                    "Controller": spec.get("Controller", ""),
+                    "Resource": spec.get("Resource", ""),
+                },
+                "Task": {
+                    "SelectedPreset": spec.get("SelectedPreset", ""),
+                    "TaskSnapshot": json.dumps(snapshot, ensure_ascii=False),
+                },
+            }
+            if "PeriodTaskRecords" in spec:
+                user_update["Data"] = {
+                    "PeriodTaskRecords": json.dumps(
+                        spec["PeriodTaskRecords"], ensure_ascii=False
+                    )
                 }
-            )
+            await user_cfg.update(user_update)
         runtime = runtime or _RuntimeConfig(script_uid, script_config)
         runtime.ScriptConfig[script_uid] = script_config
         task_info = TaskInfo(

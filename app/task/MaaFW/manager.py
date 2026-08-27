@@ -150,6 +150,27 @@ def _load_json_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _load_json_list(value: Any) -> list[str]:
+    """把 ConfigBase 中的 JSON 字符串或裸 list 收敛成非空字符串列表。"""
+
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        with suppress(json.JSONDecodeError):
+            data = json.loads(value)
+            if isinstance(data, list):
+                return [str(item) for item in data if str(item).strip()]
+    return []
+
+
+def _current_period_keys() -> tuple[str, str, str]:
+    """返回当前 (日, 周, 月) 的周期键，与 mfwa tools/AutoProxy.py 语义一致。"""
+
+    now = datetime.now(tz=UTC4)
+    iso_year, iso_week, _ = now.date().isocalendar()
+    return now.strftime("%Y-%m-%d"), f"{iso_year}-W{iso_week:02d}", now.strftime("%Y-%m")
+
+
 def _checked_task_names_from_snapshot(snapshot: dict[str, Any]) -> list[str]:
     """从用户任务快照的 taskOrder / taskChecked 取按序勾选的任务名。
 
@@ -912,6 +933,110 @@ class MaaFWManager(TaskExecuteBase):
         if cancellation is not None:
             raise cancellation
 
+    # ---- 周期性跳过：语义照搬 mfwa tools/AutoProxy.py ----
+
+    def _load_period_task_records(self) -> dict[str, dict[str, str]]:
+        """读取当前用户的 Data.PeriodTaskRecords，规整为 daily/weekly/monthly 三段。"""
+
+        raw_records = _load_json_dict(
+            self.current_user_config.get("Data", "PeriodTaskRecords")
+            if self.current_user_config is not None
+            else None
+        )
+        records: dict[str, dict[str, str]] = {"daily": {}, "weekly": {}, "monthly": {}}
+        for period in records:
+            raw_period_records = raw_records.get(period, {})
+            if isinstance(raw_period_records, dict):
+                records[period] = {
+                    str(task_name): str(period_key)
+                    for task_name, period_key in raw_period_records.items()
+                }
+        return records
+
+    def _filter_period_once_tasks(
+        self, task_names: list[str]
+    ) -> tuple[list[str], list[str]]:
+        """按脚本级 每日/每周/每月 一次配置与用户级完成记录过滤任务。
+
+        返回 (runnable, skipped)：与 mfwa ``_filter_period_once_tasks`` 同语义，
+        本层作用于任务名列表而非 run plan。
+        """
+
+        daily_tasks = set(
+            _load_json_list(self.script_config.get("Run", "DailyOnceTasks"))
+        )
+        weekly_tasks = set(
+            _load_json_list(self.script_config.get("Run", "WeeklyOnceTasks"))
+        )
+        monthly_tasks = set(
+            _load_json_list(self.script_config.get("Run", "MonthlyOnceTasks"))
+        )
+        if not daily_tasks and not weekly_tasks and not monthly_tasks:
+            return list(task_names), []
+
+        daily_key, weekly_key, monthly_key = _current_period_keys()
+        records = self._load_period_task_records()
+        runnable: list[str] = []
+        skipped: list[str] = []
+        for name in task_names:
+            daily_done = (
+                name in daily_tasks and records["daily"].get(name) == daily_key
+            )
+            weekly_done = (
+                name in weekly_tasks and records["weekly"].get(name) == weekly_key
+            )
+            monthly_done = (
+                name in monthly_tasks and records["monthly"].get(name) == monthly_key
+            )
+            if daily_done or weekly_done or monthly_done:
+                skipped.append(name)
+            else:
+                runnable.append(name)
+        return runnable, skipped
+
+    async def _mark_period_tasks_completed(self, completed_tasks: list[str]) -> None:
+        """把本次正常完成的任务写入用户级 Data.PeriodTaskRecords。"""
+
+        if not completed_tasks or self.current_user_config is None:
+            return
+
+        daily_tasks = set(
+            _load_json_list(self.script_config.get("Run", "DailyOnceTasks"))
+        )
+        weekly_tasks = set(
+            _load_json_list(self.script_config.get("Run", "WeeklyOnceTasks"))
+        )
+        monthly_tasks = set(
+            _load_json_list(self.script_config.get("Run", "MonthlyOnceTasks"))
+        )
+        if not daily_tasks and not weekly_tasks and not monthly_tasks:
+            return
+
+        daily_key, weekly_key, monthly_key = _current_period_keys()
+        completed_task_names = set(completed_tasks)
+        records = self._load_period_task_records()
+        changed = False
+
+        for task_name in completed_task_names.intersection(daily_tasks):
+            if records["daily"].get(task_name) != daily_key:
+                records["daily"][task_name] = daily_key
+                changed = True
+        for task_name in completed_task_names.intersection(weekly_tasks):
+            if records["weekly"].get(task_name) != weekly_key:
+                records["weekly"][task_name] = weekly_key
+                changed = True
+        for task_name in completed_task_names.intersection(monthly_tasks):
+            if records["monthly"].get(task_name) != monthly_key:
+                records["monthly"][task_name] = monthly_key
+                changed = True
+
+        if changed:
+            await self.current_user_config.set(
+                "Data",
+                "PeriodTaskRecords",
+                json.dumps(records, ensure_ascii=False),
+            )
+
     async def _mark_run_started(self) -> None:
         """写入用户级本次运行的 LastProxyDate / ProxyTimes / LastProxyStatus。"""
 
@@ -951,7 +1076,7 @@ class MaaFWManager(TaskExecuteBase):
                 await System.kill_process(self.exe_path)
 
     async def _run_user(self, index: int, uid: uuid.UUID) -> None:
-        """执行单个用户：解析范围 → 写配置 → 起外壳 → 判终态。"""
+        """执行单个用户：解析范围 → 周期过滤 → 写配置 → 起外壳 → 判终态。"""
 
         if self.user_config is None or self.interface_model is None:
             raise RuntimeError("MaaFW 运行前置状态未初始化")
@@ -975,10 +1100,20 @@ class MaaFWManager(TaskExecuteBase):
         task_names = self._parse_snapshot_task_selection(
             self.current_user_config.get("Task", "TaskSnapshot")
         )
+        runnable, skipped = self._filter_period_once_tasks(task_names)
+        if skipped:
+            logger.info(f"用户 {user_name} 周期跳过任务：{'、'.join(skipped)}")
+        if not runnable:
+            self.current_user_item.status = "跳过"
+            self.script_info.log = (
+                f"用户 {user_name} 的选中任务本周期均已正常完成，跳过本次运行"
+            )
+            logger.info(self.script_info.log)
+            return
 
         self.controller_name = controller_name
         self.resource_name = resource_name
-        self.task_selections = [TaskSelection(name=name) for name in task_names]
+        self.task_selections = [TaskSelection(name=name) for name in runnable]
 
         await self._mark_run_started()
         self._write_runtime_config()
@@ -987,6 +1122,7 @@ class MaaFWManager(TaskExecuteBase):
 
         self.user_terminal[str(uid)] = self.terminal_kind
         if self.terminal_kind == "success":
+            await self._mark_period_tasks_completed(runnable)
             with suppress(Exception):
                 if (
                     self.current_user_config.get("Data", "ProxyTimes") == 0
