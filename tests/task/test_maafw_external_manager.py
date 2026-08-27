@@ -84,10 +84,12 @@ class _FakeLogMonitor:
 
 class _FakeSystem:
     events = []
+    kill_success = True
 
     @classmethod
     async def kill_process(cls, path):
         cls.events.append(("kill", Path(path)))
+        return cls.kill_success
 
 
 def _interface() -> MaaFWInterface:
@@ -108,6 +110,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         _FakeLogMonitor.instances = []
         _FakeLogMonitor.callback_lines = None
         _FakeSystem.events = []
+        _FakeSystem.kill_success = True
 
     def test_success_writes_config_and_starts_bare_exe(self) -> None:
         asyncio.run(self._test_success_writes_config_and_starts_bare_exe())
@@ -346,6 +349,41 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertEqual(self._snapshot(manager.backup_path), before)
             await manager.final_task()
             self.assertEqual(self._snapshot(root / "config"), before)
+
+    def test_residual_kill_failure_preserves_backup_and_live_config(self) -> None:
+        asyncio.run(
+            self._test_residual_kill_failure_preserves_backup_and_live_config()
+        )
+
+    async def _test_residual_kill_failure_preserves_backup_and_live_config(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            first, runtime, script_uid = await self._make_manager(root)
+            with self._patched_runtime(runtime, first, self._no_sleep):
+                self.assertEqual(await first.check(), "Pass")
+                first._backup_project_config()
+
+            crash_marker = root / "config" / "written-by-running-shell.json"
+            crash_marker.write_text("{}", encoding="utf-8")
+            second, _, _ = await self._make_manager(
+                root, runtime=runtime, script_uid=script_uid
+            )
+            _FakeSystem.kill_success = False
+            with self._patched_runtime(runtime, second, self._no_sleep):
+                self.assertEqual(await second.check(), "Pass")
+                with self.assertRaisesRegex(
+                    RuntimeError, "残留外壳无法确认已结束"
+                ):
+                    await second.prepare()
+                await second.final_task()
+
+            self.assertTrue(crash_marker.exists())
+            self.assertTrue(second.manifest_path.is_file())
+            self.assertTrue(second.backup_path.is_dir())
+            self.assertIn("已保留 MaaFW 配置备份", second.cleanup_error or "")
 
     def test_dispatch_branch_is_registered(self) -> None:
         source = Path("app/core/task_manager.py").read_text(encoding="utf-8")

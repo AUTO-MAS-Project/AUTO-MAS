@@ -291,7 +291,10 @@ class MaaFWManager(TaskExecuteBase):
             # 旧外壳可能仍在写 config；必须先按精确 exe 路径结束它，再恢复快照。
             if self.exe_path is None:
                 raise RuntimeError("MaaFW 外壳路径未初始化")
-            await System.kill_process(self.exe_path)
+            if not await System.kill_process(self.exe_path):
+                raise RuntimeError(
+                    "MaaFW 残留外壳无法确认已结束，已保留备份并拒绝恢复 config"
+                )
             logger.info(f"MaaFW 已结束残留外壳，准备恢复：{self.exe_path}")
         self._recover_residual_backup()
         self._backup_project_config()
@@ -597,19 +600,28 @@ class MaaFWManager(TaskExecuteBase):
                 errors.append(f"结束进程管理器失败：{exc}")
                 logger.opt(exception=True).warning(f"结束 MaaFW 进程失败：{exc}")
 
-        if self.process_started and self.exe_path is not None:
+        needs_restore = not self.restored and (
+            self.backup_published or self.manifest_path.exists()
+        )
+        process_stopped = True
+        if (self.process_started or needs_restore) and self.exe_path is not None:
             try:
-                await System.kill_process(self.exe_path)
+                process_stopped = await System.kill_process(self.exe_path)
+                if not process_stopped:
+                    errors.append("强制结束外壳失败：无法确认目标进程已结束")
             except Exception as exc:  # noqa: BLE001
+                process_stopped = False
                 errors.append(f"强制结束外壳失败：{exc}")
                 logger.opt(exception=True).warning(f"强制结束 MFAAvalonia.exe 失败：{exc}")
 
-        if not self.restored and (self.backup_published or self.manifest_path.exists()):
+        if needs_restore and process_stopped:
             try:
                 self._restore_backup_from_state()
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"恢复 MaaFW 配置失败：{exc}")
                 logger.opt(exception=True).warning(f"恢复 MaaFW 配置失败：{exc}")
+        elif needs_restore:
+            errors.append("外壳仍可能运行；为避免并发写入，已保留 MaaFW 配置备份")
 
         script_config = self.script_config
         if script_config is not None and script_config.is_locked:
