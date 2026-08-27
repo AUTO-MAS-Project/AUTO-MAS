@@ -378,6 +378,8 @@ const oknteConfig = reactive<OkNteFormConfig>({
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
     SuccessLog: '',
     ErrorLog: '',
+    PushLogEnabled: false,
+    PushLogPatterns: '',
   },
   Game: {
     Enabled: false,

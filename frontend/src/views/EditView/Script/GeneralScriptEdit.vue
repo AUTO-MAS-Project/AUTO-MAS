@@ -483,7 +483,12 @@
             </a-col>
           </a-row>
 
-          <a-row :gutter="24"></a-row>
+          <PushLogConfig
+            v-model:enabled="generalConfig.Script.PushLogEnabled"
+            v-model:patterns="generalConfig.Script.PushLogPatterns"
+            :log-path="generalConfig.Script.LogPath"
+            @change="(group, key, value) => handleChange(group, key, value)"
+          />
 
           <div class="section-header">
             <h3>游戏配置</h3>
@@ -908,6 +913,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
+import PushLogConfig from './components/PushLogConfig.vue'
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
@@ -919,6 +925,8 @@ const formRef = ref<FormInstance>()
 const uploadFormRef = ref<FormInstance>()
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+// 保存进行中触发的新变更，串行合并保存（避免静默丢弃）
+const pendingChange = ref<{ category: string; key: string; value: any } | null>(null)
 
 // 路径处理工具函数
 const pathUtils = {
@@ -1292,6 +1300,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
     LogTimeFormat: '%Y-%m-%d %H:%M:%S',
     ScriptPath: '.',
     SuccessLog: '',
+    PushLogEnabled: false,
+    PushLogPatterns: '',
     UpdateConfigMode: 'Never',
   },
   SubConfigsInfo: {
@@ -1301,6 +1311,7 @@ const generalConfig = reactive<GeneralScriptConfig>({
   },
 })
 
+// ==================== 表单校验规则 ====================
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
@@ -1409,21 +1420,37 @@ const setupConfigPathModeWatcher = () => {
   )
 }
 
-// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）；保存进行中的新变更串行合并，
+// 避免 isSaving 为 true 时静默丢弃，也防止 refreshScript 覆盖尚未落盘的编辑
 const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
+
+  // 保存进行中：暂存最新一次的变更，待当前循环轮询继续保存
+  if (isSaving.value) {
+    pendingChange.value = { category, key, value }
+    return
+  }
 
   isSaving.value = true
   try {
-    // 构建只包含单个修改字段的更新数据（遵循最小原则）
-    const updateData: any = { [category]: { [key]: value } }
-
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-      // 保存成功后刷新数据
-      await refreshScript()
+    let next: { category: string; key: string; value: any } | null = {
+      category,
+      key,
+      value,
     }
+    // 串行合并：依次保存当前与排队的最新变更，直到队列清空
+    while (next) {
+      const updateData: any = { [next.category]: { [next.key]: next.value } }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${next.category}.${next.key}`)
+      }
+      const queued = pendingChange.value
+      pendingChange.value = null
+      next = queued
+    }
+    // 全部落盘后刷新一次最新数据
+    await refreshScript()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
@@ -1443,6 +1470,41 @@ const refreshScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`刷新配置失败: ${errorMsg}`)
+  }
+}
+
+// 一次性批量保存入口（模拟器/游戏切换、根路径选择等）：与 handleChange 共用同一套
+// isSaving 互斥与保存队列。保存期间 handleChange 排入的 pendingChange 在此一并落盘，
+// 避免其被随后的 refreshScript 覆盖，也防止队列内容残留到下一次用户变更。
+// 全部落盘后再刷新，保证界面与后端状态一致。
+const persistAndRefresh = async (updateData: Record<string, any>, label: string) => {
+  isSaving.value = true
+  let success = false
+  try {
+    success = await updateScript(scriptId, updateData)
+    if (success) {
+      // 排空保存期间排队的最新变更
+      let queued = pendingChange.value
+      pendingChange.value = null
+      while (queued) {
+        const q: Record<string, any> = {
+          [queued.category]: { [queued.key]: queued.value },
+        }
+        success = await updateScript(scriptId, q)
+        queued = pendingChange.value
+        pendingChange.value = null
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存${label}失败: ${errorMsg}`)
+  } finally {
+    isSaving.value = false
+  }
+  // 待处理变更全部落盘后再刷新，避免覆盖界面上的编辑
+  if (success) {
+    logger.info(`${label}已保存`)
+    await refreshScript()
   }
 }
 
@@ -1544,6 +1606,8 @@ const loadScript = async () => {
         void loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
       }
     }
+
+    // 同步推送日志采集规则：将后端返回的 JSON 字符串解析为可编辑的列表
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
@@ -1589,26 +1653,16 @@ const handleEmulatorChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  // 保存模拟器选择和清空的实例字段
-  isSaving.value = true
-  try {
-    const updateData = {
+  // 保存模拟器选择和清空的实例字段（与其他保存入口共用串行保存，落盘并刷新界面）
+  await persistAndRefresh(
+    {
       Game: {
         EmulatorId: emulatorId,
         EmulatorIndex: '',
       },
-    }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('模拟器配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存模拟器配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+    },
+    '模拟器配置'
+  )
 }
 
 const handleGameTypeChange = async (gameType: string) => {
@@ -1666,21 +1720,8 @@ const handleGameTypeChange = async (gameType: string) => {
     }
   }
 
-  // 保存所有更改的字段
-  isSaving.value = true
-  try {
-    const updateData = { Game: updateFields }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('游戏配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存游戏配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  // 保存所有更改的字段（共用串行保存，落盘并刷新界面）
+  await persistAndRefresh({ Game: updateFields }, '游戏配置')
 }
 
 const selectRootPath = async () => {
@@ -1728,24 +1769,12 @@ const selectRootPath = async () => {
           scriptPathUpdates.TrackProcessExe = generalConfig.Script.TrackProcessExe
         }
 
-        // 保存所有更改
-        isSaving.value = true
-        try {
-          const updateData: any = { Info: updateFields }
-          if (Object.keys(scriptPathUpdates).length > 0) {
-            updateData.Script = scriptPathUpdates
-          }
-          const success = await updateScript(scriptId, updateData)
-          if (success) {
-            logger.info('根路径及关联路径已保存')
-            await refreshScript()
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.error(`保存路径失败: ${errorMsg}`)
-        } finally {
-          isSaving.value = false
+        // 保存所有更改（共用串行保存，落盘并刷新界面）
+        const updateData: any = { Info: updateFields }
+        if (Object.keys(scriptPathUpdates).length > 0) {
+          updateData.Script = scriptPathUpdates
         }
+        await persistAndRefresh(updateData, '根路径及关联路径')
         message.success('根路径选择成功，其他路径已自动调整以保持相对关系')
       } else {
         // 保存根目录更改
@@ -2125,6 +2154,21 @@ const handleUpload = async () => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
+}
+
+/* 字段标题旁的文档入口：蓝色书形图标 + 文字，区别于灰色问号 */
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ant-color-primary);
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.doc-link:hover {
+  color: var(--ant-color-primary-hover);
 }
 
 .modern-input {

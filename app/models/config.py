@@ -2550,6 +2550,10 @@ class OkwwUserConfig(ConfigBase):
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否在任务报告中推送该用户的节点详情（log_box 采集的关键节点）
+        self.Notify_PushLogEnabled = ConfigItem(
+            "Notify", "PushLogEnabled", True, BoolValidator()
+        )
         ## 是否发送用户统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
@@ -2828,6 +2832,12 @@ class GeneralConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+        ## 推送日志启用开关：关闭后保留高级正则配置，但不会实际采集推送日志
+        self.Script_PushLogEnabled = ConfigItem(
+            "Script", "PushLogEnabled", False, BoolValidator()
+        )
+        ## 推送日志高级模式（JSON 数组，每项形如 {"type":"regex|multiline",...}）
+        self.Script_PushLogPatterns = ConfigItem("Script", "PushLogPatterns", "")
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
