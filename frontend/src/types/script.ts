@@ -9,6 +9,7 @@ import type {
   SrcConfig,
   MaaEndConfig,
   M9AConfig,
+  MaaFWConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -18,7 +19,16 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
+export type ScriptType =
+  | 'MAA'
+  | 'General'
+  | 'Okww'
+  | 'OkNte'
+  | 'SRC'
+  | 'MaaEnd'
+  | 'M9A'
+  | 'MaaFW'
+  | 'HSR'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
@@ -184,6 +194,9 @@ export interface M9AScriptConfig {
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
 
+// MaaFW 脚本配置（后端已通过 MaaFWConfig OpenAPI 暴露类型）
+export type MaaFWScriptConfig = MaaFWConfig
+
 // HSR TaskMapping 默认值（Daily / ReceiveRewards / DivergentUniverse / CurrencyWars 默认走 SRA）
 export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
   Daily: 'SRA',
@@ -221,6 +234,7 @@ export interface Script {
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
+    | MaaFWConfig
     | HSRConfig
   users: User[]
 }
@@ -322,6 +336,7 @@ export interface AddScriptResponse {
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
+    | MaaFWScriptConfig
     | HSRScriptConfig
 }
 
@@ -336,6 +351,7 @@ export interface ScriptIndexItem {
     | 'SrcConfig'
     | 'MaaEndConfig'
     | 'M9AConfig'
+    | 'MaaFWConfig'
     | 'HSRConfig'
 }
 
@@ -354,6 +370,7 @@ export interface GetScriptsResponse {
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
+    | MaaFWScriptConfig
     | HSRScriptConfig
   >
 }
@@ -371,6 +388,7 @@ export interface ScriptDetail {
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
+    | MaaFWConfig
     | HSRConfig
   users?: User[]
   createTime?: string

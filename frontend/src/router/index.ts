@@ -82,6 +82,12 @@ const routes = [
     meta: { title: '编辑M9A脚本' },
   },
   {
+    path: '/scripts/:id/edit/maafw',
+    name: 'MaaFWScriptEdit',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: '编辑MaaFW脚本' },
+  },
+  {
     path: '/scripts/:id/edit/hsr',
     name: 'HSRScriptEdit',
     component: () => import('../views/EditView/Script/HSRScriptEdit.vue'),

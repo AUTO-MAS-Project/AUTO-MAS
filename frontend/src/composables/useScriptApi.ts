@@ -5,6 +5,7 @@ import {
   type MaaConfig,
   type MaaEndConfig,
   type M9AConfig,
+  type MaaFWConfig,
   type OkwwConfig,
   type OkNteConfig,
   type SrcConfig,
@@ -29,6 +30,7 @@ type ScriptListConfig =
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
+  | MaaFWConfig
   | HSRConfig
 
 type HSRStageEngine = 'M7A' | 'SRA'
@@ -38,6 +40,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   SRC: ScriptCreateIn.type.SRC,
   MaaEnd: ScriptCreateIn.type.MAA_END,
   M9A: ScriptCreateIn.type.M9A,
+  MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
@@ -51,6 +54,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
   M9AConfig: 'M9A',
+  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
 }
 

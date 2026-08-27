@@ -73,6 +73,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: SCRIPT_LOGOS.M9A,
   },
   {
+    value: 'MaaFW',
+    title: 'MaaFW 脚本',
+    description: 'MaaFramework 项目外部运行脚本',
+    keywords: ['maafw', 'maaframework', 'framework', '外部运行'],
+    group: 'specialized',
+    icon: generalIcon,
+  },
+  {
     value: 'Okww',
     title: 'ok-ww 脚本',
     description: 'ok-script 专项任务脚本',
@@ -126,6 +134,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   SRC: 'src',
   MaaEnd: 'maaend',
   M9A: 'm9a',
+  MaaFW: 'maafw',
   Okww: 'okww',
   OkNte: 'oknte',
   HSR: 'hsr',
