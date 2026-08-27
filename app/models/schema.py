@@ -1732,11 +1732,34 @@ class MaaFWConfig_Selection(BaseModel):
     )
 
 
+class MaaFWConfig_Update(BaseModel):
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None, description="是否在运行前自动更新 MaaFW 项目"
+    )
+    Source: Optional[Literal["", "MirrorChyan", "GitHub"]] = Field(
+        default=None, description="项目更新源，留空时使用全局更新源"
+    )
+    Channel: Optional[Literal["", "stable", "beta"]] = Field(
+        default=None, description="项目更新渠道，留空时使用全局更新渠道"
+    )
+    MirrorChyanCDK: Optional[str] = Field(
+        default=None, description="Mirror 酱 CDK，留空时使用全局项目更新 CDK"
+    )
+    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库覆盖")
+    GitHubTag: Optional[str] = Field(default=None, description="GitHub release tag 覆盖")
+    GitHubAssetPattern: Optional[str] = Field(
+        default=None, description="GitHub release asset 文件名匹配模式"
+    )
+
+
 class MaaFWConfig(BaseModel):
     Info: Optional[MaaFWConfig_Info] = Field(default=None, description="脚本基础信息")
     Run: Optional[MaaFWConfig_Run] = Field(default=None, description="脚本运行配置")
     Selection: Optional[MaaFWConfig_Selection] = Field(
         default=None, description="controller、resource 与 task 选择"
+    )
+    Update: Optional[MaaFWConfig_Update] = Field(
+        default=None, description="项目更新配置"
     )
 
 
@@ -1918,6 +1941,36 @@ class MaaFWInterfacePreviewData(BaseModel):
 class MaaFWInterfacePreviewOut(OutBase):
     data: Optional[MaaFWInterfacePreviewData] = Field(
         default=None, description="MaaFW interface 预览数据"
+    )
+
+
+class MaaFWProjectUpdateIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    action: Literal["check", "apply"] = Field(
+        default="check",
+        description="check 仅检查是否有新版本；apply 触发实际更新",
+    )
+
+
+class MaaFWProjectUpdateData(BaseModel):
+    checked: bool = Field(default=False, description="是否完成了一次更新检查")
+    updated: bool = Field(default=False, description="本次是否实际应用了更新")
+    updateAvailable: bool = Field(default=False, description="是否存在更新版本")
+    installable: bool = Field(
+        default=False, description="更新版本是否有可安装的更新包"
+    )
+    currentVersion: Optional[str] = Field(
+        default=None, description="interface 声明的当前项目版本"
+    )
+    latestVersion: Optional[str] = Field(
+        default=None, description="发现的最新项目版本"
+    )
+    source: Optional[str] = Field(default=None, description="更新包来源")
+
+
+class MaaFWProjectUpdateOut(OutBase):
+    data: Optional[MaaFWProjectUpdateData] = Field(
+        default=None, description="MaaFW 项目更新结果"
     )
 
 
