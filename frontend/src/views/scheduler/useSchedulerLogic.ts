@@ -506,6 +506,41 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 按任务 ID 直接启动（供托盘「启动任务」等外部入口使用）：新建调度台并启动，与正常运行行为一致
+  const startTaskById = async (taskId: string, taskLabel?: string) => {
+    if (!taskId) return false
+
+    try {
+      const response = await Service.addTaskApiDispatchStartPost({
+        taskId,
+        mode: TaskCreateIn.mode.AUTO_PROXY,
+      })
+
+      if (response.code !== 200) {
+        message.error(response.message || '启动任务失败')
+        return false
+      }
+
+      trackStartedTask({
+        taskId: response.taskId,
+        selectedTaskId: taskId,
+        selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+        taskLabel: taskLabel || taskId,
+        modeLabel: '自动代理',
+      })
+
+      const { playSound } = useAudioPlayer()
+      await playSound('task_started')
+      message.success('任务已开始')
+      return true
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`按任务 ID 启动失败: ${errorMsg}`)
+      message.error('启动任务失败')
+      return false
+    }
+  }
+
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
@@ -1375,6 +1410,7 @@ export function useSchedulerLogic() {
     // 任务操作
     trackStartedTask,
     startTask,
+    startTaskById,
     stopTask,
     handleTaskSelectionChange,
     loadResumeScriptOptions,

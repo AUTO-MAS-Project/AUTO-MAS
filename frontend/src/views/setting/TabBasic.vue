@@ -5,6 +5,7 @@ import type { CursorEffect } from '@/types/cursorEffect'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
+import TrayMenuEditor from './components/TrayMenuEditor.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -209,6 +210,7 @@ const {
           </div>
         </a-col>
       </a-row>
+      <TrayMenuEditor />
     </div>
     <div class="form-section">
       <div class="section-header">

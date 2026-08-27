@@ -81,6 +81,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
+  // 托盘自定义菜单项
+  updateTrayConfig: (trayItems: any) => ipcRenderer.invoke('update-tray-config', trayItems),
+
+  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出 / 重启）
+  onTrayActionRequest: (
+    callback: (request: {
+      action: 'quit' | 'restart' | 'startTask'
+      taskId?: string
+      label?: string
+    }) => void
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      request: {
+        action: 'quit' | 'restart' | 'startTask'
+        taskId?: string
+        label?: string
+      }
+    ) => {
+      callback(request)
+    }
+
+    ipcRenderer.on('tray-action-request', listener)
+    return () => ipcRenderer.removeListener('tray-action-request', listener)
+  },
+
   // 同步后端配置
   syncBackendConfig: (backendSettings: any) =>
     ipcRenderer.invoke('sync-backend-config', backendSettings),
