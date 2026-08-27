@@ -353,8 +353,8 @@ class QueueConfig(ConfigBase):
             "Info", "TimeEnabled", False, BoolValidator()
         )
         ## 是否在启动时自动运行
-        self.Info_StartUpEnabled = ConfigItem(
-            "Info", "StartUpEnabled", False, BoolValidator()
+        self.Info_StartUpMode = ConfigItem(
+            "Info", "StartUpMode", "Never", OptionsValidator(["Never", "Always", "DailyFirst"])
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -383,11 +383,31 @@ class QueueConfig(ConfigBase):
             "2000-01-01 00:00",
             DateTimeValidator("%Y-%m-%d %H:%M"),
         )
+        # 上次启动时运行时间
+        self.Data_LastStartupTime = ConfigItem(
+            "Data",
+            "LastStartupTime",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
 
         self.TimeSet = MultipleConfig([TimeSet])
         self.QueueItem = MultipleConfig([QueueItem])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载并迁移旧版调度队列配置文件"""
+
+        info_data = data.get("Info")
+        if isinstance(info_data, dict) and "StartUpMode" not in info_data:
+            StartUpEnabled = info_data.get("StartUpEnabled")
+            if isinstance(StartUpEnabled, bool):
+                info_data["StartUpMode"] = (
+                    "Always" if StartUpEnabled else "Never"
+                )
+
+        return await super().load(data)
 
 
 class MaaUserConfig(ConfigBase):

@@ -24,6 +24,7 @@ import uuid
 import asyncio
 import os
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Literal
 
 from .config import (
@@ -584,6 +585,7 @@ class _TaskManager:
             return
 
         self._startup_queue_running = True
+        curday = datetime.now().strftime("%Y-%m-%d")
 
         try:
             await asyncio.sleep(10)
@@ -596,7 +598,8 @@ class _TaskManager:
             logger.info("开始运行启动时任务")
             for uid, queue in Config.QueueConfig.items():
 
-                if queue.get("Info", "StartUpEnabled"):
+                StartUpMode = queue.get("Info", "StartUpMode")
+                if StartUpMode == "Always":
                     logger.info(f"启动时需要运行的队列：{uid}")
                     await TaskManager.add_task(
                         "AutoProxy",
@@ -608,6 +611,29 @@ class _TaskManager:
                         },
                         trigger_source="startup_task",
                     )
+                    await queue.set("Data", "LastStartupTime", curday)
+
+                elif StartUpMode == "DailyFirst":
+                    # 检查 DailyFirst 模式是否已在今日运行过
+                    if queue.get("Data", "LastStartupTime") == curday:
+                        logger.info(
+                            f"队列 {uid} 已在今日运行过，跳过该次运行"
+                        )
+                        continue
+
+                    logger.info(f"启动时需要运行的队列：{uid}")
+                    await TaskManager.add_task(
+                        "AutoProxy",
+                        str(uid),
+                        new_task_info={
+                            "queueId": str(uid),
+                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                            "taskType": "启动时代理",
+                        },
+                        trigger_source="startup_task",
+                    )
+                    await queue.set("Data", "LastStartupTime", curday)
+                
         finally:
             self._startup_queue_running = False
 

@@ -405,7 +405,7 @@ class TimeSet(BaseModel):
 class QueueConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="队列名称")
     TimeEnabled: Optional[bool] = Field(default=None, description="是否启用定时")
-    StartUpEnabled: Optional[bool] = Field(default=None, description="是否启动时运行")
+    StartUpMode: Optional[Literal["Never", "Always", "DailyFirst"]] = Field(default=None, description="启动时运行模式")
     AfterAccomplish: Optional[
         Literal[
             "NoAction",
