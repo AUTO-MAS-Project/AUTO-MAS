@@ -44,12 +44,14 @@ interface ApiResult {
 }
 
 // 托盘菜单项类型
-type TrayAction = 'show' | 'hide' | 'stopAll' | 'restartApp' | 'quit'
+type TrayAction = 'show' | 'hide' | 'startTask' | 'stopAll' | 'restartApp' | 'quit'
 
 interface TrayItem {
   id: string
   label: string
   action: TrayAction
+  // 仅 action === 'startTask' 时有效：要启动的队列/脚本 ID
+  taskId?: string
 }
 
 // 默认托盘菜单项（与旧版硬编码菜单保持一致）
@@ -374,7 +376,7 @@ function rebuildTrayMenu(items: TrayItem[]): void {
     }
     menuItems.push({
       label: item.label,
-      click: () => handleTrayAction(item.action),
+      click: () => handleTrayAction(item),
     })
   })
 
@@ -382,8 +384,8 @@ function rebuildTrayMenu(items: TrayItem[]): void {
 }
 
 // 执行托盘菜单项动作
-function handleTrayAction(action: TrayAction): void {
-  switch (action) {
+function handleTrayAction(item: TrayItem): void {
+  switch (item.action) {
     case 'show':
       showMainWindow()
       break
@@ -393,29 +395,42 @@ function handleTrayAction(action: TrayAction): void {
     case 'stopAll':
       void stopAllTasksByShortcut()
       break
+    case 'startTask':
+      // 一键启动指定任务：需携带任务 ID 转发给渲染进程，由调度台新建任务并启动
+      if (item.taskId) {
+        requestTrayAction('startTask', item.taskId, item.label)
+      } else {
+        logger.warn('托盘启动任务缺少 taskId，忽略')
+      }
+      break
     case 'restartApp':
     case 'quit':
       // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
-      requestTrayAction(action === 'restartApp' ? 'restart' : 'quit')
+      requestTrayAction(item.action === 'restartApp' ? 'restart' : 'quit')
       break
   }
 }
 
-// 请求渲染进程处理托盘退出/重启动作：由渲染进程按运行状态弹统一确认窗
-function requestTrayAction(action: 'quit' | 'restart'): void {
+// 请求渲染进程处理托盘动作：启动需读取任务 ID 新建调度台，退出/重启由渲染进程按运行状态弹统一确认窗
+function requestTrayAction(
+  action: 'quit' | 'restart' | 'startTask',
+  taskId?: string,
+  label?: string
+): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('tray-action-request', action)
+    mainWindow.webContents.send('tray-action-request', { action, taskId, label })
   } else {
-    // 无主窗口时无法弹确认窗，直接执行
-    logger.warn('无主窗口，跳过托盘动作确认，直接执行')
+    // 无主窗口时无法弹确认窗/新建调度台，仅退出与重启可直接执行
+    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出/重启')
     if (action === 'restart') {
       isQuitting = true
       app.relaunch()
       app.exit(0)
-    } else {
+    } else if (action === 'quit') {
       isQuitting = true
       app.quit()
     }
+    // startTask 依赖渲染进程新建调度台，无窗口时忽略
   }
 }
 

@@ -7,6 +7,7 @@ import {
   QuestionCircleOutlined,
   UpOutlined,
 } from '@ant-design/icons-vue'
+import { Service } from '@/api/services/Service'
 import {
   DEFAULT_TRAY_ITEMS,
   TRAY_ACTION_OPTIONS,
@@ -14,13 +15,20 @@ import {
   type TrayMenuItem,
 } from '@/types/tray'
 
+interface TaskOption {
+  label: string
+  value: string
+}
+
 const items = ref<TrayMenuItem[]>([])
 const actionOptions = TRAY_ACTION_OPTIONS
+// 可启动的任务列表（队列 + 未锁定的脚本），供「启动任务」动作选择
+const taskOptions = ref<TaskOption[]>([])
 const logger = window.electronAPI?.getLogger?.('托盘菜单')
 
 const columns: TableColumnsType = [
   { title: '菜单文本', key: 'label', width: 240 },
-  { title: '动作', key: 'action', width: 180 },
+  { title: '动作', key: 'action', width: 260 },
   { title: '操作', key: 'ops', width: 140, align: 'center' },
 ]
 
@@ -34,10 +42,30 @@ const createId = () =>
 const labelOf = (action: TrayAction) =>
   actionOptions.find(option => option.value === action)?.label ?? ''
 
-// 标签未自定义（为空或仍是某个动作的默认名）时，跟随动作更新默认名
+const taskLabelOf = (taskId?: string) =>
+  taskOptions.value.find(option => option.value === taskId)?.label ?? ''
+
+// 标签未自定义（为空、某个动作默认名或某个任务默认名）时，跟随动作/任务自动更新
+const isDefaultLabel = (label: string) =>
+  !label.trim() ||
+  actionOptions.some(option => option.label === label) ||
+  taskOptions.value.some(option => option.label === label)
+
+// 标签未自定义时，跟随动作更新默认名
 const onActionChange = (item: TrayMenuItem, value: TrayAction) => {
-  if (!item.label.trim() || actionOptions.some(option => option.label === item.label)) {
+  if (isDefaultLabel(item.label)) {
     item.label = labelOf(value)
+  }
+  if (value !== 'startTask') {
+    item.taskId = undefined
+  }
+  schedulePersist()
+}
+
+// 选中具体任务后，标签未自定义时自动采用任务名
+const onTaskChange = (item: TrayMenuItem) => {
+  if (isDefaultLabel(item.label)) {
+    item.label = taskLabelOf(item.taskId)
   }
   schedulePersist()
 }
@@ -52,12 +80,28 @@ const load = async () => {
             id: item.id || createId(),
             label: String(item.label ?? ''),
             action: item.action,
+            taskId: item.taskId,
           }))
         : [...DEFAULT_TRAY_ITEMS]
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger?.warn(`读取托盘菜单配置失败: ${errorMsg}`)
     items.value = [...DEFAULT_TRAY_ITEMS]
+  }
+}
+
+const loadTaskOptions = async () => {
+  try {
+    const response = await Service.getTaskComboxApiInfoComboxTaskPost()
+    if (response.code === 200) {
+      // 过滤「未选择」占位项（value 为 null）
+      taskOptions.value = (response.data || [])
+        .filter(item => item.value)
+        .map(item => ({ label: item.label, value: item.value as string }))
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger?.warn(`读取可启动任务列表失败: ${errorMsg}`)
   }
 }
 
@@ -68,6 +112,7 @@ const save = async () => {
       id: item.id,
       label: item.label,
       action: item.action,
+      taskId: item.taskId,
     }))
     const ok = await window.electronAPI?.updateTrayConfig(payload)
     if (!ok) {
@@ -124,7 +169,10 @@ const confirmReset = () => {
   })
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadTaskOptions()
+})
 onBeforeUnmount(() => {
   if (persistTimer) clearTimeout(persistTimer)
 })
@@ -136,7 +184,7 @@ onBeforeUnmount(() => {
       <div class="tray-menu-section-title">
         <span class="tray-menu-label">托盘菜单自定义</span>
         <a-tooltip
-          title="右键托盘图标时的菜单项，可增删与排序；「重启应用」会停止当前正在运行的任务"
+          title="右键托盘图标时的菜单项，可增删与排序；「启动任务」可一键启动指定队列/脚本，「重启应用」会停止当前正在运行的任务"
         >
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
@@ -152,7 +200,7 @@ onBeforeUnmount(() => {
         :columns="columns"
         :data-source="items"
         :pagination="false"
-        :scroll="{ x: 560 }"
+        :scroll="{ x: 640 }"
         size="small"
       >
         <template #bodyCell="{ column, record, index }">
@@ -165,17 +213,29 @@ onBeforeUnmount(() => {
             style="width: 100%"
             @change="schedulePersist"
           />
-          <a-select
-            v-else-if="column.key === 'action'"
-            v-model:value="record.action"
-            size="small"
-            style="width: 100%"
-            @change="(value: any) => onActionChange(record, value)"
-          >
-            <a-select-option v-for="opt in actionOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </a-select-option>
-          </a-select>
+          <div v-else-if="column.key === 'action'" class="action-cell">
+            <a-select
+              v-model:value="record.action"
+              size="small"
+              style="width: 100%"
+              @change="(value: any) => onActionChange(record, value)"
+            >
+              <a-select-option v-for="opt in actionOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </a-select-option>
+            </a-select>
+            <a-select
+              v-if="record.action === 'startTask'"
+              v-model:value="record.taskId"
+              size="small"
+              style="width: 100%"
+              placeholder="选择要启动的任务"
+              show-search
+              option-filter-prop="label"
+              :options="taskOptions"
+              @change="() => onTaskChange(record)"
+            />
+          </div>
           <a-space v-else-if="column.key === 'ops'" :size="4">
             <a-button
               size="small"
@@ -238,5 +298,11 @@ onBeforeUnmount(() => {
 /* 限定宽度，避免全屏下输入框过长，降低眼动成本 */
 .tray-menu-table-wrap {
   max-width: 640px;
+}
+
+.action-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 </style>

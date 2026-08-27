@@ -89,7 +89,7 @@ export async function killProcess(pid: number): Promise<boolean> {
       return
     }
 
-    exec(`taskkill /f /t /pid ${pid}`, error => {
+    exec(`taskkill /f /t /pid ${pid}`, { timeout: 5000, windowsHide: true }, error => {
       if (error) {
         logger.error(`结束进程 ${pid} 失败: ${error.message}`)
         resolve(false)
@@ -136,7 +136,7 @@ export async function waitForProcessExit(pid: number, timeoutMs: number = 5000):
         return
       }
 
-      exec(`tasklist /fi "PID eq ${pid}"`, (error, stdout) => {
+      exec(`tasklist /fi "PID eq ${pid}"`, { timeout: 2000, windowsHide: true }, (error, stdout) => {
         if (error || !stdout.includes(pid.toString())) {
           resolve(true)
         } else {

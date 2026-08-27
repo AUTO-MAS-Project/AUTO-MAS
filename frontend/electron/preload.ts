@@ -84,10 +84,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘自定义菜单项
   updateTrayConfig: (trayItems: any) => ipcRenderer.invoke('update-tray-config', trayItems),
 
-  // 托盘退出/重启请求（由渲染进程统一弹确认窗）
-  onTrayActionRequest: (callback: (action: 'quit' | 'restart') => void) => {
-    ipcRenderer.on('tray-action-request', (_event, action: string) => {
-      callback(action as 'quit' | 'restart')
+  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出 / 重启）
+  onTrayActionRequest: (
+    callback: (request: {
+      action: 'quit' | 'restart' | 'startTask'
+      taskId?: string
+      label?: string
+    }) => void
+  ) => {
+    ipcRenderer.on('tray-action-request', (_event, request) => {
+      callback(request)
     })
   },
 

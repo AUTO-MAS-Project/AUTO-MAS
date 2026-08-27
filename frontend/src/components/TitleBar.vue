@@ -71,6 +71,7 @@ import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useUiPreferences } from '@/composables/useUiPreferences'
+import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
@@ -86,6 +87,7 @@ const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
+const { startTaskById } = useSchedulerLogic()
 
 const {
   status: downloadStatus,
@@ -277,17 +279,32 @@ const handleTrayRestart = () => {
   })
 }
 
-// 托盘退出/重启请求统一入口
-const handleTrayActionRequest = (action: 'quit' | 'restart') => {
-  if (action === 'restart') {
+// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
+const handleTrayStartTask = (taskId?: string, label?: string) => {
+  if (!taskId) {
+    logger.warn('托盘启动任务缺少任务 ID，忽略')
+    return
+  }
+  void startTaskById(taskId, label)
+}
+
+// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+const handleTrayActionRequest = (request: {
+  action: 'quit' | 'restart' | 'startTask'
+  taskId?: string
+  label?: string
+}) => {
+  if (request.action === 'restart') {
     handleTrayRestart()
-  } else {
+  } else if (request.action === 'quit') {
     handleTrayQuit()
+  } else {
+    handleTrayStartTask(request.taskId, request.label)
   }
 }
 
 onMounted(async () => {
-  // 监听托盘退出/重启请求，统一走确认流程
+  // 监听托盘动作请求（启动任务 / 退出 / 重启）
   window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
   try {
