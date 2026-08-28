@@ -87,6 +87,7 @@ export const useHomeLayout = () => {
     const snapshot: HomeLayoutConfig = {
       moduleOrder: [...layout.moduleOrder],
       hiddenModules: [...layout.hiddenModules],
+      hideScrollHint: layout.hideScrollHint === true,
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
     saveQueue = saveTask.catch(error => {
