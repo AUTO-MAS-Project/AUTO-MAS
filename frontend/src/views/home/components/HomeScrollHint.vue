@@ -54,7 +54,7 @@ onBeforeUnmount(() => {
 .scroll-hint {
   position: fixed;
   bottom: 0;
-  left: 50%;
+  left: calc(50% + 80px);
   transform: translateX(-50%);
   z-index: 100;
   display: flex;
