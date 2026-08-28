@@ -834,10 +834,15 @@ class MaaFWManager(TaskExecuteBase):
         self.last_log_at = datetime.now()
         self.log_start_time = datetime.now()
 
-        # MFAAvalonia 需显式请求自动运行，任务队列仍从 MAS 写入的活动实例读取。
+        # 只指定活动实例，不传 --autostart：外壳的 --autostart 走
+        # StartCommandLineAutoRun 直接 StartTask()，跳过 TryReadAdbDeviceFromConfig /
+        # WaitSoftware，Config.AdbDevice 永不填充，控制器初始化即报 AdbSerial 为空。
+        # 实测（D:/MAS/tmp/m9a-test，非提权 MuMu）：
+        #   --autostart --instance  → device=<none> → AdbSerial 为空 → 放弃
+        #   --instance（本行）      → 已连接 → 开始任务：启动游戏
+        # 自动运行由实例配置的 BeforeTask=StartupSoftwareAndScript 驱动。
         await self.process_manager.open_process(
             self.exe_path,
-            "--autostart",
             "--instance",
             self.instance_path.stem,
         )

@@ -239,10 +239,19 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         "2026-08-27 18:00:01.000 任务已全部完成！\n"
     )
 
-    def test_success_autostarts_the_active_instance(self) -> None:
-        asyncio.run(self._test_success_autostarts_the_active_instance())
+    def test_success_launches_shell_with_active_instance_only(self) -> None:
+        asyncio.run(self._test_success_launches_shell_with_active_instance_only())
 
-    async def _test_success_autostarts_the_active_instance(self) -> None:
+    async def _test_success_launches_shell_with_active_instance_only(self) -> None:
+        """外壳只接 --instance，绝不接 --autostart。
+
+        实测（D:/MAS/tmp/m9a-test，非提权 MuMu）：外壳的 --autostart 走
+        StartCommandLineAutoRun 直接 StartTask()，跳过 TryReadAdbDeviceFromConfig /
+        WaitSoftware，Config.AdbDevice 永不填充，控制器初始化即报 AdbSerial 为空；
+        只传 --instance 才会经 WaitSoftware 完成设备恢复并连上。
+        自动运行由实例配置的 BeforeTask=StartupSoftwareAndScript 驱动。
+        """
+
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "project"
             self._make_project(root)
@@ -275,7 +284,6 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                     (
                         (
                             root / "MFAAvalonia.exe",
-                            "--autostart",
                             "--instance",
                             "adbe33bf",
                         ),
@@ -283,6 +291,8 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                     )
                 ],
             )
+            # 回归守护：--autostart 一旦被重新加回来，设备恢复就会被外壳跳过。
+            self.assertNotIn("--autostart", process.open_calls[0][0])
             self.assertEqual(manager.process_pid, 4312)
             self.assertEqual(process.kill_calls, 1)
             self.assertEqual(_FakeLogMonitor.instances[0].stop_calls, 1)
