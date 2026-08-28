@@ -19,7 +19,7 @@ from typing import Any
 from app.core import Config, EmulatorManager
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaFWConfig, MaaFWUserConfig
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
 from app.utils.constants import UTC4
@@ -295,6 +295,8 @@ class MaaFWManager(TaskExecuteBase):
 
         # 运行前启动准备（Adb 起模拟器 / Win32 起 PC 游戏）跨用户复用的句柄与状态。
         self.emulator_manager: DeviceBase | None = None
+        self.emulator_info: DeviceInfo | None = None
+        self.generated_adb_device: dict[str, Any] | None = None
         self.emulator_opened = False
         self.emulator_index: str = ""
         self.game_launch_spec: MaaFWGameLaunchSpec | None = None
@@ -411,9 +413,9 @@ class MaaFWManager(TaskExecuteBase):
             first_cfg, script_config, interface_model, controller_name
         )
 
-        # 启动前自洽校验：Adb 控制器缺设备标识时，外壳连接必失败却仍会排空队列输出
-        # 完成串（假成功）。设备字段由现有实例配置透传，build 不生成——现有配置里
-        # 没有就是没有，此处在写配置、起外壳之前就拒绝，不浪费一个启动周期。
+        # 启动前自洽校验：登记了 MAS 模拟器时，本轮会在启动后生成 AdbDevice；
+        # 未登记时才沿用活动实例里的设备字段，并提前拒绝确定无效的透传配置。
+        emulator_selection = self._get_emulator_selection(script_config)
         controller_type = next(
             (
                 item.type
@@ -422,7 +424,7 @@ class MaaFWManager(TaskExecuteBase):
             ),
             None,
         )
-        if controller_type == "Adb":
+        if controller_type == "Adb" and emulator_selection is None:
             # 必须校验 MAS 实际会写入的那个实例文件。MFAAvalonia 的实例文件按实例 ID
             # 命名（MaaKes 恰好叫 default，M9A 那份是随机 ID），此前这里硬编码
             # default.json，与 _write_runtime_config 的写入目标不一致：对只有
@@ -442,6 +444,19 @@ class MaaFWManager(TaskExecuteBase):
                     "实例配置缺少 AdbDevice / Connect.Address，"
                     "请先在外壳侧连接一次模拟器"
                 )
+            adb_device = instance_base.get("AdbDevice")
+            if isinstance(adb_device, dict):
+                adb_path_value = str(adb_device.get("AdbPath") or "").strip()
+                adb_path = Path(adb_path_value)
+                if (
+                    adb_path_value
+                    and adb_path.is_absolute()
+                    and not adb_path.is_file()
+                ):
+                    return (
+                        f"MaaFW 实例配置中的 ADB 程序不存在：{adb_path_value}。"
+                        "请在 MAS 中选择当前模拟器，或先在外壳侧重新连接设备"
+                    )
         elif controller_type and resolve_controller_code(controller_type) is None:
             # 向映射层求证，而非在此硬编码「只支持 Adb」：CONTROLLER_TYPE_CODES 是
             # CurrentController 枚举的单一真源（当前只登记 Adb=2，已在 M9A / MaaKes /
@@ -744,13 +759,17 @@ class MaaFWManager(TaskExecuteBase):
             raise RuntimeError("MaaFW 运行配置路径或选择未初始化")
 
         # 多用户逐个写入：base 始终取本轮备份里的原始实例配置，避免上一个用户
-        # 写入的 controller / TaskItems 漏进下一个用户。设备标识等 C 类字段仍随
-        # base 透传。
+        # 写入的 controller / TaskItems 漏进下一个用户。登记了 MAS 模拟器时覆盖
+        # AdbDevice；否则继续透传实例原值。
         backup_instance = (
             self.backup_path / "instances" / self.instance_path.name
         )
         base_path = backup_instance if backup_instance.is_file() else self.instance_path
         base = _read_json_object(base_path, label="MaaFW default 实例配置")
+        if self.generated_adb_device is not None:
+            base["AdbDevice"] = self.generated_adb_device
+            logger.info("MaaFW 已按 MAS 模拟器配置覆盖 AdbDevice")
+
         instance_config = build_instance_config(
             self.interface_model,
             controller_name=self.controller_name,
@@ -1173,6 +1192,20 @@ class MaaFWManager(TaskExecuteBase):
             None,
         )
 
+    @staticmethod
+    def _get_emulator_selection(
+        script_config: MaaFWConfig | None,
+    ) -> tuple[str, str] | None:
+        """返回完整的 MAS 模拟器选择；未完整登记时返回 ``None``。"""
+
+        if script_config is None:
+            return None
+        emulator_id = str(script_config.get("Emulator", "Id") or "").strip()
+        emulator_index = str(script_config.get("Emulator", "Index") or "").strip()
+        if emulator_id in ("", "-") or emulator_index in ("", "-"):
+            return None
+        return emulator_id, emulator_index
+
     async def _prepare_launch_for_user(self, controller_name: str | None) -> str | None:
         """启动外壳之前的启动准备。
 
@@ -1197,9 +1230,8 @@ class MaaFWManager(TaskExecuteBase):
 
         if self.script_config is None:
             return "MaaFW 脚本配置未加载"
-        emulator_id = str(self.script_config.get("Emulator", "Id") or "").strip()
-        emulator_index = str(self.script_config.get("Emulator", "Index") or "").strip()
-        if emulator_id in ("", "-") or emulator_index in ("", "-"):
+        emulator_selection = self._get_emulator_selection(self.script_config)
+        if emulator_selection is None:
             # 未配置 MAS 模拟器。check() 中受保护的启动前 Adb 设备校验已确认活动
             # 实例带有设备标识（AdbDevice / Connect.Address）——缺标识的情况早在
             # check() 就被明确拒绝。这里是「用户自行在外壳侧连接、自行管理模拟器」
@@ -1207,7 +1239,10 @@ class MaaFWManager(TaskExecuteBase):
             logger.info(
                 "MaaFW 未配置 MAS 模拟器，跳过自动启动，沿用活动实例已有的设备连接"
             )
+            self.emulator_info = None
+            self.generated_adb_device = None
             return None
+        emulator_id, emulator_index = emulator_selection
 
         try:
             if self.emulator_manager is None:
@@ -1215,21 +1250,147 @@ class MaaFWManager(TaskExecuteBase):
                     emulator_id
                 )
             self.script_info.log = "正在启动模拟器"
-            await self.emulator_manager.open(emulator_index)
+            self.emulator_info = await self.emulator_manager.open(emulator_index)
             self.emulator_opened = True
             self.emulator_index = emulator_index
+            self.generated_adb_device = await self._build_adb_device_config(
+                self.emulator_info,
+                emulator_id,
+                emulator_index,
+                self.emulator_manager,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MaaFW 模拟器启动失败：{exc}")
             with suppress(Exception):
                 if self.emulator_manager is not None:
                     await self.emulator_manager.close(emulator_index)
             self.emulator_opened = False
+            self.emulator_info = None
+            self.generated_adb_device = None
             return f"模拟器启动失败：{exc}"
 
         if Config.get("Function", "IfSilence"):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
         return None
+
+    async def _build_adb_device_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_id: str,
+        emulator_index: str,
+        emulator_manager: Any,
+    ) -> dict[str, Any] | None:
+        """按 MAS 登记的模拟器类型生成 MFAAvalonia AdbDevice。"""
+
+        try:
+            emulator_uid = uuid.UUID(emulator_id)
+            emulator_config = Config.EmulatorConfig[emulator_uid]
+
+            emulator_type = emulator_config.get("Info", "Type")
+            emulator_path = Path(emulator_config.get("Info", "Path"))
+
+            if emulator_type == "ldplayer":
+                return await self._build_ldplayer_config(
+                    emulator_info,
+                    emulator_path,
+                    emulator_index,
+                    emulator_manager,
+                )
+            if emulator_type == "mumu":
+                return self._build_mumu_config(
+                    emulator_info,
+                    emulator_path,
+                    emulator_index,
+                )
+            logger.info(f"不支持的模拟器类型: {emulator_type}，使用实例原配置")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"构建 AdbDevice 配置时出错，使用实例原配置: {exc}")
+            return None
+
+    async def _build_ldplayer_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_path: Path,
+        emulator_index: str,
+        emulator_manager: Any,
+    ) -> dict[str, Any]:
+        """构建雷电模拟器 AdbDevice。整体回收自 M9A 专项。"""
+
+        logger.info("构建雷电模拟器 AdbDevice 配置")
+
+        ld_player_device = None
+        try:
+            devices = await emulator_manager.get_device_info(emulator_index)
+            if emulator_index in devices:
+                ld_player_device = devices[emulator_index]
+                logger.info(
+                    "成功获取雷电模拟器设备信息: "
+                    f"idx={ld_player_device.idx}, pid={ld_player_device.pid}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"获取雷电模拟器设备信息失败: {exc}")
+
+        emulator_root = emulator_path.parent
+        adb_path = emulator_root / "adb.exe"
+
+        name = ld_player_device.title if ld_player_device else "雷电模拟器-LDPlayer"
+        idx = ld_player_device.idx if ld_player_device else int(emulator_index)
+        pid = ld_player_device.pid if ld_player_device else 0
+
+        ld_extras = {
+            "enable": True,
+            "index": idx,
+            "path": str(emulator_root).replace("\\", "/"),
+            "pid": pid,
+        }
+
+        config_json = json.dumps({"extras": {"ld": ld_extras}}, ensure_ascii=False)
+
+        return {
+            "Name": name,
+            "AdbPath": str(adb_path).replace("\\", "/"),
+            "AdbSerial": f"emulator-{5554 + idx * 2}",
+            "ScreencapMethods": 64,
+            "InputMethods": 18446744073709551607,
+            "Config": config_json,
+            "AgentPath": "./MaaAgentBinary",
+        }
+
+    def _build_mumu_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_path: Path,
+        emulator_index: str,
+    ) -> dict[str, Any]:
+        """构建 MuMu 模拟器 AdbDevice。整体回收自 M9A 专项。"""
+
+        logger.info("构建 MuMu 模拟器 AdbDevice 配置")
+
+        shell_dir = emulator_path.parent
+        emulator_root = shell_dir.parent
+        adb_path = shell_dir / "adb.exe"
+
+        mumu_extras = {
+            "enable": True,
+            "index": int(emulator_index),
+            "path": str(emulator_root).replace("\\", "/"),
+        }
+
+        config_json = json.dumps(
+            {"extras": {"mumu": mumu_extras}}, ensure_ascii=False
+        )
+
+        return {
+            "Name": "MuMu模拟器",
+            "AdbPath": str(adb_path).replace("\\", "/"),
+            "AdbSerial": emulator_info.adb_address,
+            "ScreencapMethods": 64,
+            "InputMethods": 18446744073709551607,
+            "Config": config_json,
+            "AgentPath": "./MaaAgentBinary",
+        }
 
     async def _prepare_desktop_game(self) -> str | None:
         """Win32 控制器：按 ``Game.LaunchMode`` 起 PC 游戏，复用 ``game_lifecycle``。"""
@@ -1269,6 +1430,8 @@ class MaaFWManager(TaskExecuteBase):
                 logger.opt(exception=True).warning(f"MaaFW 关闭模拟器失败：{exc}")
             finally:
                 self.emulator_opened = False
+                self.emulator_info = None
+                self.generated_adb_device = None
 
         if self.game_owned_process is not None:
             spec = self.game_launch_spec
