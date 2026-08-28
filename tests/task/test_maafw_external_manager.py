@@ -1107,6 +1107,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 written = json.loads(manager.instance_path.read_text(encoding="utf-8"))
                 await manager.final_task()
 
+            # 外壳的「连接目标」取自 Connect.Address，只写 AdbDevice 不足以选中设备。
+            self.assertEqual(written["Connect.Address"], "127.0.0.1:16384")
+
             device = written["AdbDevice"]
             self.assertEqual(device["Name"], "MuMu模拟器")
             self.assertEqual(
@@ -1193,6 +1196,42 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 await manager.final_task()
 
             self.assertEqual(written["AdbDevice"], self._DEFAULT_INSTANCE["AdbDevice"])
+            # 未登记模拟器时不得凭空写入连接目标，保持透传语义。
+            self.assertNotIn("Connect.Address", written)
+
+    def test_unknown_adb_address_does_not_write_connect_address(self) -> None:
+        asyncio.run(self._test_unknown_adb_address_does_not_write_connect_address())
+
+    async def _test_unknown_adb_address_does_not_write_connect_address(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            await self._configure_emulator(
+                runtime.ScriptConfig[script_uid],
+                runtime=runtime,
+                index="3",
+                emulator_type="mumu",
+                path="C:/Netease/MuMuPlayer-12.0/shell/MuMuManager.exe",
+            )
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                self.assertIsNone(await manager._prepare_emulator())
+                # 模拟器管理器拿不到地址时会返回哨兵值 "Unknown"（见 utils/emulator）。
+                manager.emulator_info = DeviceInfo(
+                    title="fake",
+                    status=DeviceStatus.ONLINE,
+                    adb_address="Unknown",
+                )
+                manager._write_runtime_config()
+                written = json.loads(manager.instance_path.read_text(encoding="utf-8"))
+                await manager.final_task()
+
+            self.assertNotIn("Connect.Address", written)
+            # 设备本身仍按 MAS 登记生成，只是不写连接目标。
+            self.assertEqual(written["AdbDevice"]["Name"], "MuMu模拟器")
 
     def test_device_build_failure_preserves_instance_adb_device(self) -> None:
         asyncio.run(self._test_device_build_failure_preserves_instance_adb_device())

@@ -769,6 +769,11 @@ class MaaFWManager(TaskExecuteBase):
         if self.generated_adb_device is not None:
             base["AdbDevice"] = self.generated_adb_device
             logger.info("MaaFW 已按 MAS 模拟器配置覆盖 AdbDevice")
+        # 外壳的「连接目标」取自 Connect.Address，只写 AdbDevice 时它仍是未选中
+        # （日志表现为 device=<none>，启动被拒）。与 M9A / MAA / SRC 同一约定。
+        if self.emulator_info is not None and self.emulator_info.adb_address != "Unknown":
+            base["Connect.Address"] = self.emulator_info.adb_address
+            logger.info(f"MaaFW 已写入连接目标：{self.emulator_info.adb_address}")
 
         instance_config = build_instance_config(
             self.interface_model,
