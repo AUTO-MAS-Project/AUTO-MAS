@@ -21,7 +21,8 @@
                 "SRC专项 修复任务结束后进程残留、异常清理时配置丢失及 traceback 日志误判人工接管问题 by [@Craun718](https://github.com/Craun718)",
                 "MaaEnd专项 修复脚本正常退出后 AUTO-MAS 仍持续等待、导致后续调度无法执行的问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换游戏界面失败（无法切换到指定游戏界面）时未触发任务失败重启、导致任务长时间挂起的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复开机自启动设置的后台任务异常被静默忽略的问题：持有任务引用并在失败时记录警告日志 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "修复开机自启动设置的后台任务异常被静默忽略的问题：持有任务引用并在失败时记录警告日志 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "修复通知服务延迟加载回归：Webhook 测试、通知推送、更新检查、电源调度、匿名遥测等链路调用 Config/System 时抛「name 'Config' is not defined」，恢复 LazyProxy 延迟加载并应用于相关服务模块"
             ]
         },
         "v5.4.0": {
