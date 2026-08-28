@@ -27,6 +27,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional, Literal
 
+from app.runtime_tasks import RuntimeTasks
+
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -62,7 +64,7 @@ class UserItem:
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
-                asyncio.create_task(ti.on_change())
+                ti.schedule_on_change()
 
     @property
     def result(self) -> str:
@@ -97,7 +99,7 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
-            asyncio.create_task(self.task_info.on_change())
+            self.task_info.schedule_on_change()
 
     @property
     def task_info(self) -> Optional[TaskItem]:
@@ -130,6 +132,10 @@ class TaskItem(ABC):
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
     game_sign_results: list[dict] = field(default_factory=list, repr=False)
     game_sign_summary_consumed: bool = field(default=False, repr=False)
+    _change_task: asyncio.Task[None] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -152,15 +158,39 @@ class TaskItem(ABC):
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
 
+    def schedule_on_change(self) -> None:
+        """合并高频字段变化，并由应用任务注册表持有异步通知。"""
+
+        self._change_dirty = True
+        if self._change_task is not None and not self._change_task.done():
+            return
+
+        async def _flush_changes() -> None:
+            try:
+                while self._change_dirty:
+                    self._change_dirty = False
+                    await self.on_change()
+            finally:
+                self._change_task = None
+
+        self._change_task = RuntimeTasks.spawn(
+            _flush_changes(), name=f"task-state-change:{self.task_id}"
+        )
+        if self._change_task is None:
+            # teardown 已开始时不再发布状态；RuntimeTasks 已关闭协程对象。
+            self._change_dirty = False
+
     @property
     def asdict(self) -> list:
         """将 TaskItem 转换为字典形式"""
         return [
             {
+                "script_id": script_item.script_id,
                 "name": script_item.name,
                 "status": script_item.status,
                 "userList": [
                     {
+                        "user_id": user_item.user_id,
                         "name": user_item.name,
                         "status": user_item.status,
                     }

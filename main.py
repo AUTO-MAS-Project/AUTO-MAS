@@ -187,8 +187,11 @@ def main():
 
                 # 初始化 Koishi 系统客户端（如果已启用）
                 if Config.get("Notify", "IfKoishiSupport"):
+                    from app.api.ws_command import execute_ws_command
                     from app.utils.websocket import ws_client_manager
 
+                    # 出站客户端不再反射导入 API，命令执行器需显式注入
+                    ws_client_manager.set_command_executor(execute_ws_command)
                     await ws_client_manager.init_system_client_koishi()
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
@@ -271,7 +274,6 @@ def main():
         setting_router,
         update_router,
         ocr_router,
-        ws_debug_router,
         qr_login_router,
     )
 
@@ -302,7 +304,6 @@ def main():
     app.include_router(setting_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
-    app.include_router(ws_debug_router)
 
     # 可选补丁：米游社扫码登录
     if qr_login_router is not None:

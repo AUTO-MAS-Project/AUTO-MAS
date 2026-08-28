@@ -34,6 +34,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
+from app.core.ws import MainConnection, Publisher, protocol
+from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData
 from app.utils import LazyProxy, ProcessRunner, get_logger
 
 logger = get_logger("系统服务")
@@ -55,9 +57,23 @@ class _SystemHandler:
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
     countdown = 60
+    frontend_close_timeout = 10.0
 
     def __init__(self) -> None:
         self.power_task: Optional[asyncio.Task] = None
+        self._power_cancelled_event_task: Optional[asyncio.Task] = None
+        self.current_power_operation: Optional[str] = None
+        self.current_power_remaining = 0
+
+    def get_power_countdown_snapshot(self) -> PowerCountdownSnapshot:
+        """返回当前电源倒计时的 HTTP 初始快照。"""
+
+        active = bool(self.power_task is not None and not self.power_task.done())
+        return PowerCountdownSnapshot(
+            active=active,
+            operation=self.current_power_operation if active else None,
+            remaining=self.current_power_remaining if active else 0,
+        )
 
     async def set_Sleep(self, if_allow_sleep: bool) -> None:
         """
@@ -231,26 +247,31 @@ class _SystemHandler:
 
                 await self.kill_emulator_processes()
                 logger.info("执行关机操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/s", "/t", "0"])
 
             elif mode == "ShutdownForce":
                 logger.info("执行强制关机操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
 
             elif mode == "Reboot":
 
                 await self.kill_emulator_processes()
                 logger.info("执行重启操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/r", "/t", "0"])
 
             elif mode == "Hibernate":
 
                 logger.info("执行休眠操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/h"])
 
             elif mode == "Sleep":
 
                 logger.info("执行睡眠操作")
+                await self._request_frontend_close()
                 subprocess.run(
                     ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
                 )
@@ -259,15 +280,14 @@ class _SystemHandler:
 
                 logger.info("执行退出主程序操作")
                 if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
+                    await self._request_frontend_close()
                 Config.server.should_exit = True
 
             elif mode == "Logoff":
 
                 await self.kill_emulator_processes()
                 logger.info("执行注销此账户操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/l"])
 
         elif sys.platform.startswith("linux"):
@@ -279,36 +299,61 @@ class _SystemHandler:
             elif mode == "Shutdown":
 
                 logger.info("执行关机操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "-h", "now"])
 
             elif mode == "Reboot":
 
                 logger.info("执行重启操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "-r", "now"])
 
             elif mode == "Hibernate":
 
                 logger.info("执行休眠操作")
+                await self._request_frontend_close()
                 subprocess.run(["systemctl", "hibernate"])
 
             elif mode == "Sleep":
 
                 logger.info("执行睡眠操作")
+                await self._request_frontend_close()
                 subprocess.run(["systemctl", "suspend"])
 
             elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
                 if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
+                    await self._request_frontend_close()
                 Config.server.should_exit = True
 
             elif mode == "Logoff":
 
                 logger.info("执行注销此账户操作")
+                await self._request_frontend_close()
                 subprocess.run(["loginctl", "terminate-user", getpass.getuser()])
+
+    async def _request_frontend_close(self) -> None:
+        """请求前端退出，并等待主会话断开后才允许执行系统动作。"""
+
+        sent = await Publisher.send(
+            id=protocol.ID_MAIN, type=protocol.FRONTEND_CLOSE_REQUESTED
+        )
+        if not sent:
+            # 当前没有前端会话，本身已满足“前端关闭”前置条件。
+            logger.info("当前无前端主连接，继续执行系统电源操作")
+            return
+
+        disconnected = await MainConnection.wait_until_disconnected(
+            timeout=self.frontend_close_timeout
+        )
+        if not disconnected:
+            raise TimeoutError(
+                "前端未在规定时间内完成关闭，已取消系统电源操作"
+            )
+
+        # 主连接断开是 renderer 退出的可观测边界；给 Electron 窗口销毁留出短暂调度时间。
+        await asyncio.sleep(0.2)
 
     async def _power_task(
         self,
@@ -323,32 +368,71 @@ class _SystemHandler:
             "Logoff",
         ],
     ) -> None:
-        """电源任务"""
+        """电源任务：逐秒推送倒计时状态，归零后执行电源操作"""
 
-        await asyncio.sleep(self.countdown)
-        await self.set_power(power_sign)
+        self.current_power_operation = power_sign
+        try:
+            for remaining in range(self.countdown, 0, -1):
+                self.current_power_remaining = remaining
+                await Publisher.send(
+                    id=protocol.ID_MAIN,
+                    type=protocol.POWER_COUNTDOWN_UPDATED,
+                    data=WSPowerCountdownData(
+                        operation=power_sign, remaining=remaining
+                    ),
+                )
+                await asyncio.sleep(1)
+            await self.set_power(power_sign)
+        except asyncio.CancelledError:
+            await self._publish_power_cancelled(asyncio.current_task())
+            raise
+        except Exception:
+            await self._publish_power_cancelled(asyncio.current_task())
+            raise
+        finally:
+            self.current_power_operation = None
+            self.current_power_remaining = 0
 
     async def start_power_task(self):
         """开始电源任务"""
 
         if self.power_task is None or self.power_task.done():
-            self.power_task = asyncio.create_task(self._power_task(Config.power_sign))
+            power_sign = Config.power_sign
+            self._power_cancelled_event_task = None
+            power_task = asyncio.create_task(self._power_task(power_sign))
+            self.power_task = power_task
             logger.info(
-                f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"
+                f"电源任务已启动, {self.countdown}秒后执行: {power_sign}"
             )
             Config.power_sign = "NoAction"
         else:
             logger.warning("已有电源任务在运行, 请勿重复启动")
 
+    async def _publish_power_cancelled(
+        self, power_task: Optional[asyncio.Task]
+    ) -> None:
+        """按电源任务身份幂等发布取消事件。"""
+
+        if power_task is not None and self._power_cancelled_event_task is power_task:
+            return
+        self._power_cancelled_event_task = power_task
+        await Publisher.send(
+            id=protocol.ID_MAIN, type=protocol.POWER_COUNTDOWN_CANCELLED
+        )
+
     async def cancel_power_task(self):
         """取消电源任务"""
 
-        if self.power_task is not None and not self.power_task.done():
-            self.power_task.cancel()
+        power_task = self.power_task
+        if power_task is not None and not power_task.done():
+            power_task.cancel()
             try:
-                await self.power_task
+                await power_task
             except asyncio.CancelledError:
                 logger.info("电源任务已取消")
+            self.current_power_operation = None
+            self.current_power_remaining = 0
+            await self._publish_power_cancelled(power_task)
         else:
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")
