@@ -246,6 +246,49 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertFalse(manager.state_dir.exists())
             self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
 
+    # ---- 问题 1：运行编排让外壳自行「连接设备 → 跑队列」 ----
+
+    def test_runtime_config_uses_startup_software_and_script(self) -> None:
+        asyncio.run(self._test_runtime_config_uses_startup_software_and_script())
+
+    async def _test_runtime_config_uses_startup_software_and_script(self) -> None:
+        """BeforeTask 必须写成 StartupSoftwareAndScript；SoftwarePath 恒为空串。
+
+        实测（D:/MAS/tmp/m9a-test）：BeforeTask="None" 时 --autostart 触发的
+        op=StartTask 在设备选中前即被拒（「未选择连接目标」）；改为
+        StartupSoftwareAndScript 后相同参数进入 op=ExecuteTaskQueue 自行连接。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            instance_path = root / "config" / "instances" / "default.json"
+            # 用户实例里残留了一个非空的启动软件路径——绝不能透传给外壳，
+            # 否则外壳会重复启动模拟器（模拟器归 MAS 的 EmulatorManager 管）。
+            stale_base = json.loads(instance_path.read_text(encoding="utf-8"))
+            stale_base["SoftwarePath"] = "C:/leidian/LDPlayer9/dnplayer.exe"
+            stale_base["BeforeTask"] = "None"
+            stale_base["AfterTask"] = "None"
+            instance_path.write_text(json.dumps(stale_base), encoding="utf-8")
+
+            manager, runtime, _ = await self._make_manager(root)
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                manager._write_runtime_config()
+                # 必须在 final_task 恢复备份之前读取本轮写入的运行配置。
+                written = json.loads(
+                    manager.instance_path.read_text(encoding="utf-8")
+                )
+                await manager.final_task()
+
+            self.assertEqual(written["BeforeTask"], "StartupSoftwareAndScript")
+            self.assertEqual(written["SoftwarePath"], "")
+            # AfterTask 保持 "None"：本层集中管理外壳/模拟器生命周期，不采用
+            # M9A 的 CloseEmulatorAndMFA（会与日志判定、模拟器归属产生竞态）。
+            self.assertEqual(written["AfterTask"], "None")
+            self.assertEqual(written["InstanceName"], "MAS")
+
     def test_non_mfa_is_explicitly_unsupported(self) -> None:
         asyncio.run(self._test_non_mfa_is_explicitly_unsupported())
 

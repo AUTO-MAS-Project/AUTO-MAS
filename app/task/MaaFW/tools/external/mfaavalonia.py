@@ -64,6 +64,11 @@ class InstanceOrchestration:
     instance_name: str = "MAS"
     before_task: str = "None"
     after_task: str = "None"
+    # 「启动软件」路径。BeforeTask=StartupSoftwareAndScript 时外壳会在跑队列前
+    # 启动此路径；空串表示不启动（外壳日志：「已跳过启动程序，因为 SoftwarePath
+    # 为空」）。MAS 侧模拟器由 EmulatorManager 负责，绝不让外壳重复启动，故运行
+    # 编排恒为空串。取值来源：reference 实例配置样本中 M9A 侧同样为空串。
+    software_path: str = ""
     auto_connect_after_refresh: bool = False
     auto_detect_on_connection_failed: bool = False
     allow_adb_hard_restart: bool = False
@@ -77,6 +82,7 @@ class InstanceOrchestration:
             "InstanceName": self.instance_name,
             "BeforeTask": self.before_task,
             "AfterTask": self.after_task,
+            "SoftwarePath": self.software_path,
             "AutoConnectAfterRefresh": self.auto_connect_after_refresh,
             "AutoDetectOnConnectionFailed": self.auto_detect_on_connection_failed,
             "AllowAdbHardRestart": self.allow_adb_hard_restart,
@@ -174,7 +180,7 @@ def build_instance_config(
         resource_name: 选中的 resource 名，原样写入 Resource。省略则不动 base。
         selected_tasks: 选中的任务子集 → TaskItems。None 表示不动 base 里的 TaskItems。
         base: 已存在的实例配置，作为模板读入并在其副本上覆盖。
-        orchestration: B 类运行编排字段。给了就整体覆盖这 9 个键；
+        orchestration: B 类运行编排字段。给了就整体覆盖这 10 个键；
             为 None 时只补齐 base 缺失的编排键，不覆盖 base 已有值。
 
     Returns:

@@ -781,7 +781,21 @@ class MaaFWManager(TaskExecuteBase):
             resource_name=self.resource_name,
             selected_tasks=self.task_selections,
             base=base,
-            orchestration=InstanceOrchestration(instance_name="MAS"),
+            # 「摘取+适配」自 M9A AutoProxy.build_config（AutoProxy.py:983-986）：
+            # BeforeTask=StartupSoftwareAndScript 让外壳自行完成「连接设备 → 跑队列」。
+            # 实测（D:/MAS/tmp/m9a-test）：BeforeTask="None" 时 --autostart 触发的
+            # op=StartTask 在设备未选中前即被拒（「未选择连接目标」，device=<none>）；
+            # 改为 StartupSoftwareAndScript 后同样参数进入 op=ExecuteTaskQueue，
+            # 由外壳自行连接。SoftwarePath 恒为空串——模拟器归 MAS 的 EmulatorManager
+            # 管，不让外壳重复启动（外壳日志：「已跳过启动程序，因为 SoftwarePath 为空」）。
+            # AfterTask 仍用 "None"（默认）：本层集中管理外壳/模拟器生命周期，
+            # 让外壳自关会与 _wait_for_terminal 的日志判定、_teardown_* 的模拟器
+            # 归属产生竞态与冲突，故不采用 M9A 的 CloseEmulatorAndMFA。
+            orchestration=InstanceOrchestration(
+                instance_name="MAS",
+                before_task="StartupSoftwareAndScript",
+                software_path="",
+            ),
         )
 
         self.instances_dir.mkdir(parents=True, exist_ok=True)
