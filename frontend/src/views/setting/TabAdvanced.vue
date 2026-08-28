@@ -76,12 +76,18 @@ const exportDataBackup = async () => {
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
-          <a-button type="primary" :loading="exportingDataBackup" @click="exportDataBackup">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出数据备份
-          </a-button>
+          <div class="backup-action-row">
+            <a-button type="primary" :loading="exportingDataBackup" @click="exportDataBackup">
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              导出数据备份
+            </a-button>
+            <span class="backup-description">
+              当 MAS
+              遇到无法恢复的问题时，可先导出此备份。保存后即可放心重装软件，重要数据不会因重装而丢失。
+            </span>
+          </div>
         </a-col>
       </a-row>
     </div>
@@ -132,3 +138,20 @@ const exportDataBackup = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.backup-action-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.backup-description {
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  flex: 1 1 360px;
+  min-width: 240px;
+}
+</style>
