@@ -93,13 +93,24 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   docsActiveKey.value = key
   docsOpen.value = true
 }
+
+// 标题栏支持点击折叠/展开，默认展开；鼠标悬停标题时提示
+const collapsed = ref(false)
+const toggleCollapsed = () => {
+  collapsed.value = !collapsed.value
+}
 </script>
 
 <template>
-  <div class="push-log-config">
+  <div class="push-log-config" :class="{ collapsed }">
     <div class="push-config-header">
       <h3>
-        推送配置
+        <a-tooltip :title="collapsed ? '点击以展开规则编辑区' : '点击以折叠规则编辑区'">
+          <span class="push-config-title-text" @click="toggleCollapsed">
+            推送配置
+            <DownOutlined class="push-config-title-arrow" :class="{ collapsed }" />
+          </span>
+        </a-tooltip>
         <a-tooltip
           title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，日志单行按规则顺序取首个命中的规则匹配提取，统一推送。"
         >
@@ -124,7 +135,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
       </div>
     </div>
 
-    <div class="push-config-body">
+    <div v-show="!collapsed" class="push-config-body">
       <div v-if="!enabled" class="push-config-disabled-tip">推送配置已停用，规则不会参与采集。</div>
 
       <draggable
@@ -216,6 +227,32 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
+}
+
+.push-config-title-text {
+  cursor: pointer;
+  color: inherit;
+  transition: color 0.2s ease;
+}
+
+.push-config-title-text:hover {
+  color: var(--ant-color-primary);
+}
+
+.push-config-title-arrow {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  vertical-align: middle;
+  transition: transform 0.2s ease;
+}
+
+.push-config-title-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
+.push-log-config.collapsed .push-config-header {
+  margin-bottom: 24px;
 }
 
 .push-config-actions {
