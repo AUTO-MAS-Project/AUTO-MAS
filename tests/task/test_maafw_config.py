@@ -5,8 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from app.api.scripts import USER_BOOK
 from app.core.config import AppConfig
 from app.models.config import GlobalConfig, MaaFWConfig, MaaFWUserConfig
+from app.models.schema import MaaFWConfig as MaaFWConfigDTO
+from app.models.schema import MaaFWUserConfig as MaaFWUserConfigDTO
+from app.models.schema import ScriptUpdateIn, UserIndexItem, UserUpdateIn
 
 
 def _item_count(config) -> int:
@@ -152,6 +156,82 @@ class MaaFWConfigTest(unittest.TestCase):
             self.assertEqual(
                 json.loads(restored_script.get("Selection", "Tasks")), ["启动游戏"]
             )
+
+
+class MaaFWSchemaDTOTest(unittest.TestCase):
+    """MaaFW schema DTO 必须覆盖运行时配置的全部分组，否则用户页读写丢字段。"""
+
+    def test_user_book_registers_maafw(self) -> None:
+        self.assertIs(USER_BOOK["MaaFWConfig"], MaaFWUserConfigDTO)
+
+    def test_user_index_item_accepts_maafw(self) -> None:
+        item = UserIndexItem(uid="u", type="MaaFWUserConfig")
+        self.assertEqual(item.type, "MaaFWUserConfig")
+
+    def test_user_config_dto_round_trip_keeps_every_group(self) -> None:
+        raw = asyncio.run(MaaFWUserConfig().toDict(if_decrypt=False))
+        dto = MaaFWUserConfigDTO.model_validate(raw)
+        dumped = dto.model_dump(exclude_none=True)
+        self.assertEqual(
+            set(dumped),
+            {"Info", "Task", "Device", "Data", "Notify"},
+        )
+        self.assertIn("TaskSnapshot", dumped["Task"])
+        self.assertIn("Account", dumped["Info"])
+
+    def test_script_config_dto_round_trip_keeps_every_group(self) -> None:
+        raw = asyncio.run(MaaFWConfig().toDict(if_decrypt=False))
+        dto = MaaFWConfigDTO.model_validate(raw)
+        dumped = dto.model_dump(exclude_none=True)
+        self.assertLessEqual(
+            {
+                "Info",
+                "Emulator",
+                "Device",
+                "Game",
+                "Update",
+                "Managed",
+                "ManagedRuntime",
+                "ManagedRemote",
+                "Run",
+                "Selection",
+            },
+            set(dumped),
+        )
+        self.assertEqual(dumped["Game"]["LaunchMode"], "AttachOnly")
+        self.assertIn("Id", dumped["Emulator"])
+
+    def test_user_update_in_preserves_task_snapshot(self) -> None:
+        """回归：用户页只提交 Task.* 时，Union 必须解析到 MaaFWUserConfig。"""
+
+        snapshot = json.dumps({"taskOrder": ["启动游戏"]}, ensure_ascii=False)
+        parsed = UserUpdateIn(
+            scriptId="s",
+            userId="u",
+            data={"Task": {"SelectedPreset": "日常", "TaskSnapshot": snapshot}},
+        )
+        self.assertIsInstance(parsed.data, MaaFWUserConfigDTO)
+        self.assertEqual(
+            parsed.data.model_dump(exclude_unset=True),
+            {"Task": {"SelectedPreset": "日常", "TaskSnapshot": snapshot}},
+        )
+
+    def test_script_update_in_preserves_game_and_device(self) -> None:
+        parsed = ScriptUpdateIn(
+            scriptId="s",
+            data={
+                "Game": {"LaunchMode": "LauncherExe", "LaunchPath": "C:/g.exe"},
+                "Emulator": {"Id": "abc", "Index": "0"},
+            },
+        )
+        self.assertIsInstance(parsed.data, MaaFWConfigDTO)
+        self.assertEqual(
+            parsed.data.model_dump(exclude_unset=True),
+            {
+                "Game": {"LaunchMode": "LauncherExe", "LaunchPath": "C:/g.exe"},
+                "Emulator": {"Id": "abc", "Index": "0"},
+            },
+        )
 
 
 if __name__ == "__main__":

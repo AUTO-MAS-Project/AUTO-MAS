@@ -139,6 +139,7 @@ USER_BOOK = {
     "SrcConfig": SrcUserConfig,
     "MaaEndConfig": MaaEndUserConfig,
     "M9AConfig": M9AUserConfig,
+    "MaaFWConfig": MaaFWUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
     "OkNteConfig": OkNteUserConfig,
