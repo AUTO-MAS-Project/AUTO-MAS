@@ -404,10 +404,16 @@ class MaaFWManager(TaskExecuteBase):
             None,
         )
         if controller_type == "Adb":
+            # 必须校验 MAS 实际会写入的那个实例文件。MFAAvalonia 的实例文件按实例 ID
+            # 命名（MaaKes 恰好叫 default，M9A 那份是随机 ID），此前这里硬编码
+            # default.json，与 _write_runtime_config 的写入目标不一致：对只有
+            # <随机id>.json 的项目会误拒，反之也可能误放行。
             try:
                 instance_base = _read_json_object(
-                    project_root / "config" / "instances" / "default.json",
-                    label="MaaFW default 实例配置",
+                    _resolve_active_instance_path(
+                        project_root / "config" / "instances", project_root
+                    ),
+                    label="MaaFW 活动实例配置",
                 )
             except RuntimeError as exc:
                 return f"MaaFW 实例配置无法读取：{exc}"

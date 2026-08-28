@@ -1072,6 +1072,50 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         return stack
 
 
+class MaaFWAdbCheckUsesActiveInstanceTest(unittest.TestCase):
+    """启动前 Adb 设备校验必须读 MAS 实际写入的那个实例文件。
+
+    此前该处硬编码 default.json，与 _write_runtime_config 的写入目标不一致：
+    对只有 <随机id>.json 的项目（M9A 即如此）会误拒；反之 default.json 有设备
+    而活动实例没有时，也可能误放行。
+    """
+
+    def test_device_check_reads_active_instance_not_default(self) -> None:
+        from app.task.MaaFW.manager import (
+            _instance_has_adb_device,
+            _read_json_object,
+            _resolve_active_instance_path,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            instances = root / "config" / "instances"
+            instances.mkdir(parents=True)
+            # 活动实例带设备标识；default.json 故意留空
+            (instances / "adbe33bf.json").write_text(
+                json.dumps({"AdbDevice": {"AdbSerial": "emulator-5554"}}),
+                encoding="utf-8",
+            )
+            (instances / "default.json").write_text(
+                json.dumps({"AdbDevice": None}), encoding="utf-8"
+            )
+            (root / "appsettings.json").write_text(
+                json.dumps({"Instances.LastActive": "adbe33bf"}), encoding="utf-8"
+            )
+
+            resolved = _resolve_active_instance_path(instances, root)
+            self.assertEqual(resolved.name, "adbe33bf.json")
+            self.assertTrue(
+                _instance_has_adb_device(_read_json_object(resolved, label="t"))
+            )
+            # 读错文件就会得到相反结论，用它证明这条断言不是恒真
+            self.assertFalse(
+                _instance_has_adb_device(
+                    _read_json_object(instances / "default.json", label="t")
+                )
+            )
+
+
 class MaaFWActiveInstancePathTest(unittest.TestCase):
     """_resolve_active_instance_path：按 appsettings.json 定位活动实例，缺则回退。"""
 
