@@ -120,6 +120,12 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportDataBackup: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
 
   // 获取模块化日志器（使用主进程配置）

@@ -21,8 +21,15 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
+from datetime import datetime
+
 from fastapi import APIRouter, Body
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
+
 from app.core import Config
+from app.services.data_backup import create_data_backup
 from app.services import Notify
 from app.models.schema import (
     SettingGetOut,
@@ -43,9 +50,50 @@ from app.models.schema import (
     PatternDebugResultItem,
 )
 from app.models.config import Webhook as WebhookConfig
-from app.utils import debug_pattern
+from app.utils import debug_pattern, get_logger
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
+logger = get_logger("全局设置")
+backup_lock = asyncio.Lock()
+
+
+@router.get(
+    "/backup",
+    tags=["Get"],
+    summary="导出数据备份",
+    response_model=None,
+    status_code=200,
+)
+async def backup_data() -> FileResponse | JSONResponse:
+    """导出数据、配置与历史记录。"""
+
+    if backup_lock.locked():
+        return JSONResponse(
+            status_code=409,
+            content={"code": 409, "status": "error", "message": "数据备份正在生成"},
+        )
+
+    async with backup_lock:
+        try:
+            backup_path = await asyncio.to_thread(create_data_backup)
+        except Exception as error:
+            logger.exception(f"生成数据备份失败: {error}")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "code": 500,
+                    "status": "error",
+                    "message": "生成数据备份失败",
+                },
+            )
+
+    filename = f"AUTO-MAS-backup-{datetime.now():%Y-%m-%d_%H-%M-%S}.zip"
+    return FileResponse(
+        backup_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(backup_path.unlink, missing_ok=True),
+    )
 
 
 @router.post(

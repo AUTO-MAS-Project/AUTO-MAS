@@ -11,6 +11,7 @@ const { openDevTools } = defineProps<{
 
 const logger = window.electronAPI.getLogger('日志管理')
 const exportingLogs = ref(false)
+const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
 const exportLogsZip = async () => {
@@ -39,9 +40,52 @@ const exportLogsZip = async () => {
     exportingLogs.value = false
   }
 }
+
+const exportDataBackup = async () => {
+  exportingDataBackup.value = true
+  try {
+    const result = await window.electronAPI?.exportDataBackup?.()
+    if (!result) {
+      message.error('备份功能未响应，请检查程序')
+      logger.error('导出数据备份失败: 未收到响应')
+      return
+    }
+    if (result.success) {
+      message.success(result.message || '数据备份导出成功')
+      logger.info(`数据备份导出成功: ${result.zipPath || '路径未知'}`)
+      if (result.zipPath) await window.electronAPI?.showItemInFolder?.(result.zipPath)
+    } else if (result.error !== '用户取消') {
+      const errorMsg = result.error || '数据备份导出失败'
+      logger.error(`导出数据备份失败: ${errorMsg}`)
+      message.error(errorMsg)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`导出数据备份失败: ${errorMsg}`)
+    message.error(`导出数据备份异常: ${errorMsg}`)
+  } finally {
+    exportingDataBackup.value = false
+  }
+}
 </script>
 <template>
   <div class="tab-content">
+    <div class="form-section">
+      <div class="section-header">
+        <h3>数据备份</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="24">
+          <a-button type="primary" :loading="exportingDataBackup" @click="exportDataBackup">
+            <template #icon>
+              <DownloadOutlined />
+            </template>
+            导出数据备份
+          </a-button>
+        </a-col>
+      </a-row>
+    </div>
+
     <div class="form-section">
       <div class="section-header">
         <h3>MAS 本体日志导出</h3>
