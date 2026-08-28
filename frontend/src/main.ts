@@ -47,10 +47,16 @@ if (
 
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
+import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
 // 正常路由：执行完整初始化
 // 配置dayjs中文本地化
 dayjs.locale('zh-cn')
+
+// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
 if (window.electronAPI?.getApiEndpoint) {

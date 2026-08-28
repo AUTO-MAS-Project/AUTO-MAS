@@ -1,0 +1,31 @@
+import {
+  bootstrapResidentResources,
+  registerResidentResource,
+} from '@/services/websocket/residentResources'
+import {
+  bootstrapTaskRuntimeState,
+  disposeTaskRuntimeState,
+} from '@/composables/useTaskRuntimeState'
+import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
+
+let registered = false
+
+/**
+ * 在首个主 WebSocket 连接前注册并启动所有应用级常驻业务订阅。
+ *
+ * 这是组合根：业务模块间不互相依赖，应用生命周期只依赖通用资源注册表。
+ */
+export function bootstrapRealtimeResidents(): void {
+  if (!registered) {
+    registerResidentResource('task-runtime', {
+      bootstrap: bootstrapTaskRuntimeState,
+      dispose: disposeTaskRuntimeState,
+    })
+    registerResidentResource('system-notices', {
+      bootstrap: bootstrapSystemNotices,
+      dispose: disposeSystemNotices,
+    })
+    registered = true
+  }
+  bootstrapResidentResources()
+}
