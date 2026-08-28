@@ -759,8 +759,9 @@ onUnmounted(() => {
   align-items: center;
   min-height: 500px;
   padding: 60px 20px;
-  background: linear-gradient(135deg, var(--ant-color-primary-bg), transparent);
-  border-radius: 16px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
   margin: 20px 0;
 }
 
