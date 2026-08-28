@@ -21,12 +21,17 @@
 #   Contact: DLmaster_361@163.com
 
 
-import time
 import asyncio
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+import os
+from contextlib import suppress
+from typing import Optional
+
+from fastapi import APIRouter, Request, WebSocket
 from pydantic import BaseModel, Field
 
-from app.core import Config, Broadcast, TaskManager
+from app.core import Config, TaskManager
+from app.core.lifecycle import ShutdownCoordinator
+from app.core.ws import MainConnection, Publisher, protocol
 from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
@@ -34,6 +39,13 @@ from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
+
+
+class WebSocketMetaOut(BaseModel):
+    """前端协商主 WebSocket 链接时使用的元信息。"""
+
+    devMode: bool = Field(description="后端当前是否处于开发模式")
+    wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
 
 
 class BackendHealthOut(BaseModel):
@@ -60,54 +72,77 @@ async def get_health(request: Request) -> BackendHealthOut:
     )
 
 
+def is_backend_dev_mode() -> bool:
+    """判断后端是否处于开发模式。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+@router.get(
+    "/ws_meta",
+    summary="获取主 WebSocket 元信息",
+    response_model=WebSocketMetaOut,
+    status_code=200,
+)
+async def get_ws_meta() -> WebSocketMetaOut:
+    """返回前端建立主 WebSocket 连接需要的元信息。"""
+
+    return WebSocketMetaOut(
+        devMode=is_backend_dev_mode(),
+        wsPath="/api/core/ws",
+    )
+
+
+# 主连接建立后触发启动时调度队列
+MainConnection.on_connect(TaskManager.start_startup_queue)
+
+
 @router.websocket("/ws")
 async def connect_websocket(websocket: WebSocket):
+    """主 WebSocket 端点，接入后整体交给 MainConnection 管理。"""
 
-    if Config.websocket is not None:
-        await websocket.close(code=1000, reason="已有连接")
+    await MainConnection.serve(websocket)
+
+
+# 关闭流程任务由模块持有，重复 /close 请求不重复触发
+_shutdown_task: Optional[asyncio.Task] = None
+
+
+async def _shutdown_backend() -> None:
+    """后端正常关闭收尾：完成完整清理后再通知前端可退出，最后置退出标志。"""
+
+    # 开发模式：后端保持存活以复用（定时器等服务不拆除），
+    # 只做轻量任务清理后即通知前端可退出
+    if is_backend_dev_mode():
+        try:
+            await TaskManager.stop_task("ALL")
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
+        except Exception as error:
+            logger.error(
+                "开发模式轻量清理失败，取消发送退出信号: "
+                f"{type(error).__name__}: {error}",
+                exc_info=True,
+            )
+            return
+        await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
+        logger.warning("后端开发模式下忽略退出请求，仅完成任务清理")
         return
 
-    await websocket.accept()
-    Config.websocket = websocket
-    last_pong = time.monotonic()
-    last_ping = time.monotonic()
-    data = {}
-
-    asyncio.create_task(TaskManager.start_startup_queue())
+    # 执行完整 teardown（任务/定时器/遥测等），失败则不发送完成信号，
+    # 避免前端在清理未完成时就认为可以退出
     try:
-        while True:
+        await ShutdownCoordinator.run_teardown()
+    except Exception as e:
+        logger.error(f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True)
+        return
 
-            try:
+    # 清理完成后通过主 WS 通知前端可以退出
+    await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
 
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
-                if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
-                    last_pong = time.monotonic()
-                elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
-                    await websocket.send_json(
-                        WebSocketMessage(
-                            id="Main", type="Signal", data={"Pong": "无描述"}
-                        ).model_dump()
-                    )
-                else:
-                    await Broadcast.put(data)
-
-            except asyncio.TimeoutError:
-
-                if last_pong < last_ping:
-                    await websocket.close(code=1000, reason="Ping超时")
-                    break
-                await websocket.send_json(
-                    WebSocketMessage(
-                        id="Main", type="Signal", data={"Ping": "无描述"}
-                    ).model_dump()
-                )
-                last_ping = time.monotonic()
-    except (WebSocketDisconnect, RuntimeError) as e:
-        logger.warning(f"主 WebSocket 通信失败: {type(e).__name__}: {e}")
-    finally:
-        if Config.websocket is websocket:
-            Config.websocket = None
-    logger.warning("主 WebSocket 已断开，等待前端重新连接")
+    if Config.server is not None:
+        Config.server.should_exit = True
 
 
 @ws_command("core.close")
@@ -118,14 +153,21 @@ async def connect_websocket(websocket: WebSocket):
     status_code=200,
 )
 async def close() -> OutBase:
-    """关闭后端程序"""
+    """关闭后端程序：启动清理流程，完成后经主 WS 发送 backend.shutdown.ready"""
 
-    try:
-        if Config.websocket is not None:
-            await Config.websocket.close(code=1000, reason="正常关闭")
-        await System.set_power("KillSelf", from_frontend=True)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    global _shutdown_task
+
+    if _shutdown_task is not None and not _shutdown_task.done():
+        return OutBase(message="关闭流程已在进行中")
+
+    _shutdown_task = asyncio.create_task(_shutdown_backend())
+
+    def _on_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(f"关闭流程异常: {type(exc).__name__}: {exc}")
+
+    _shutdown_task.add_done_callback(_on_done)
     return OutBase()

@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
 from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
 TPlanInfo = TypeVar("TPlanInfo")
@@ -2281,6 +2281,207 @@ class TaskCreateIn(DispatchIn):
 
 class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
+
+
+class WSEnvelope(BaseModel):
+    """主 WebSocket 统一消息信封, 前后端均按 id + type 路由"""
+
+    id: str = Field(
+        ...,
+        description="路由ID, 标识任务、请求或业务会话, 如 Main、TaskManager、任务UUID",
+    )
+    type: str = Field(
+        ...,
+        description="消息类别, 点分小写命名, 如 task.info.updated、backend.shutdown.ready",
+    )
+    data: Dict[str, JsonValue] = Field(
+        default_factory=dict, description="消息数据, 关键消息使用对应的 WS*Data 模型构造"
+    )
+
+    @field_validator("id", "type")
+    @classmethod
+    def validate_route_field(cls, value: str) -> str:
+        """路由字段必须为非空字符串，并统一去除首尾空白。"""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("WebSocket 路由 id/type 不能为空")
+        return normalized
+
+
+class WSTaskNoticeData(BaseModel):
+    """任务提示消息数据 (type=task.notice)"""
+
+    level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    message: str = Field(..., description="提示内容")
+
+
+class WSTaskUserInfoData(BaseModel):
+    """任务快照中的用户状态。"""
+
+    user_id: str = Field(..., description="用户 ID")
+    name: str = Field(..., description="用户名称")
+    status: str = Field(..., description="用户执行状态")
+
+
+class WSTaskScriptInfoData(BaseModel):
+    """任务快照中的脚本状态。"""
+
+    script_id: str = Field(..., description="脚本 ID")
+    name: str = Field(..., description="脚本名称")
+    status: str = Field(..., description="脚本执行状态")
+    userList: List[WSTaskUserInfoData] = Field(
+        default_factory=list, description="脚本下的用户状态"
+    )
+
+
+class WSTaskInfoUpdatedData(BaseModel):
+    """任务信息全量快照 (type=task.info.updated)。"""
+
+    task_info: List[WSTaskScriptInfoData] = Field(
+        default_factory=list, description="任务脚本与用户状态"
+    )
+
+
+class WSTaskLogUpdatedData(BaseModel):
+    """任务当前日志 (type=task.log.updated)。"""
+
+    log: str = Field(default="", description="当前脚本日志")
+
+
+class WSTaskScriptIdentityData(BaseModel):
+    """任务关联的脚本静态标识。"""
+
+    scriptId: str = Field(..., description="脚本 ID")
+    scriptType: str = Field(..., description="脚本类型键")
+
+
+class TaskRuntimeSnapshotItem(BaseModel):
+    """一个运行中任务的 HTTP 初始快照。"""
+
+    taskId: str = Field(..., description="任务 ID")
+    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
+        ..., description="任务模式"
+    )
+    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
+    stopping: bool = Field(default=False, description="任务是否正在停止")
+    scripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="任务关联的脚本静态标识"
+    )
+    task_info: List[WSTaskScriptInfoData] = Field(
+        default_factory=list, description="任务脚本与用户状态"
+    )
+    log: str = Field(default="", description="当前脚本日志")
+
+
+class TaskRuntimeSnapshot(BaseModel):
+    """任务运行与定时队列 HTTP 初始快照。"""
+
+    tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
+    scheduledScripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="已启用定时队列关联的脚本静态标识"
+    )
+
+
+class WSTaskCompletedData(BaseModel):
+    """任务完成消息数据 (type=task.completed)"""
+
+    result: str = Field(..., description="任务结果描述")
+    outcome: Literal["success", "error", "cancelled"] = Field(
+        ..., description="机器可读的任务结果"
+    )
+    error: Optional[str] = Field(default=None, description="任务错误信息")
+    task_info: List[WSTaskScriptInfoData] = Field(
+        ..., description="任务信息全量快照"
+    )
+
+
+class WSTaskCreatedData(BaseModel):
+    """新任务创建通知数据 (id=TaskManager, type=task.created)"""
+
+    taskId: str = Field(..., description="新任务ID")
+    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
+        ..., description="任务模式"
+    )
+    scripts: List[WSTaskScriptIdentityData] = Field(
+        default_factory=list, description="任务关联的脚本静态标识"
+    )
+    queueId: Optional[str] = Field(default=None, description="所属调度队列ID")
+    taskName: Optional[str] = Field(default=None, description="任务名称")
+    taskType: Optional[str] = Field(default=None, description="任务类型")
+
+
+class WSPowerCountdownData(BaseModel):
+    """电源倒计时更新数据 (id=Main, type=power.countdown.updated)"""
+
+    operation: str = Field(..., description="待执行的电源操作")
+    remaining: int = Field(..., description="剩余秒数")
+
+
+class PowerCountdownSnapshot(BaseModel):
+    """当前电源倒计时 HTTP 初始快照。"""
+
+    active: bool = Field(default=False, description="是否正在倒计时")
+    operation: Optional[str] = Field(default=None, description="待执行电源操作")
+    remaining: int = Field(default=0, ge=0, description="剩余秒数")
+
+
+class WSPowerSignData(BaseModel):
+    """电源标志更新数据 (id=Main, type=power.sign.updated)"""
+
+    signal: str = Field(..., description="电源操作信号")
+
+
+class WSGameSignResultData(BaseModel):
+    """游戏签到结果广播数据 (id=GameSign, type=gamesign.result.updated)
+
+    result 为 JSON 序列化后的签到结果合并数据, 与 GET 快照接口返回一致。
+    """
+
+    result: str = Field(..., description="JSON 序列化的签到结果数据")
+
+
+class WSUpdateProgressData(BaseModel):
+    """更新下载进度数据 (id=Update, type=update.progress)"""
+
+    downloaded_size: int = Field(..., description="已下载字节数")
+    file_size: int = Field(..., description="文件总字节数")
+    speed: float = Field(..., description="下载速度 (B/s)")
+    source: str = Field(..., description="下载源")
+
+
+class WSUpdateCompletedData(BaseModel):
+    """更新下载完成数据 (id=Update, type=update.completed)。"""
+
+    file: str = Field(..., description="已下载更新包路径")
+
+
+class WSUpdateFailedData(BaseModel):
+    """更新下载失败数据 (id=Update, type=update.failed)。"""
+
+    message: str = Field(..., description="失败原因")
+
+
+class UpdateDownloadSnapshot(BaseModel):
+    """更新下载 HTTP 初始快照。"""
+
+    status: Literal[
+        "idle",
+        "downloading",
+        "switchingSource",
+        "completed",
+        "failed",
+        "cancelled",
+    ] = Field(default="idle")
+    version: Optional[str] = Field(default=None, description="当前下载版本")
+    source: Optional[str] = Field(default=None, description="当前下载源")
+    downloaded_size: int = Field(default=0, ge=0)
+    file_size: int = Field(default=0, ge=0)
+    speed: float = Field(default=0, ge=0)
+    file: Optional[str] = Field(default=None, description="完成后的更新包路径")
+    message: Optional[str] = Field(default=None, description="失败或状态说明")
 
 
 class WebSocketMessage(BaseModel):
