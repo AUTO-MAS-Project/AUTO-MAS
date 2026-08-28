@@ -66,3 +66,37 @@ def test_ocr_tool_imports_without_pywin32() -> None:
 
     assert "win32gui" not in sys.modules
     assert "win32con" not in sys.modules
+
+
+def _class_members(path: Path, class_name: str) -> set[str]:
+    """静态解析类的公开成员（方法与类属性）。"""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            members: set[str] = set()
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if not item.name.startswith("_"):
+                        members.add(item.name)
+                elif isinstance(item, ast.AnnAssign) and isinstance(
+                    item.target, ast.Name
+                ):
+                    members.add(item.target.id)
+                elif isinstance(item, ast.Assign):
+                    for target in item.targets:
+                        if isinstance(target, ast.Name):
+                            members.add(target.id)
+            return members
+    raise AssertionError(f"{path} 中未找到类 {class_name}")
+
+
+def test_process_platforms_expose_identical_members() -> None:
+    """进程平台实现两侧成员必须一致，否则调用方在另一平台撞 AttributeError。"""
+
+    root = Path(__file__).resolve().parents[2] / "app" / "utils" / "platform"
+    common = _class_members(
+        root / "common" / "process_platform.py", "CommonProcessPlatform"
+    )
+    windows = _class_members(root / "windows" / "process.py", "WindowsProcessPlatform")
+    assert common == windows

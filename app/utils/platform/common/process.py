@@ -65,17 +65,14 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 def is_process_running(process_name: str) -> bool:
     """检查指定进程名是否正在运行且存在可见窗口"""
 
-    try:
-        window_service = window
-    except UnsupportedPlatformError:
-        return False
-
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             if proc.info.get("name") == process_name:
+                # 平台不支持窗口能力时 get_window_handles 返回空列表
                 for hwnd in get_window_handles(proc.pid):
-                    if window_service.is_visible(hwnd):
-                        return True
+                    with suppress(UnsupportedPlatformError):
+                        if window.is_visible(hwnd):
+                            return True
     return False
 
 

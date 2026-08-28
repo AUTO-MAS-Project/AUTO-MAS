@@ -29,7 +29,8 @@ from typing import Literal, Optional
 
 from app.services.platform.power import power
 from app.services.platform.startup import startup
-from app.utils import ProcessRunner, get_logger
+from app.utils import get_logger
+from app.utils.platform.process import platform_process
 from app.utils.platform import IS_WINDOWS
 
 
@@ -258,26 +259,17 @@ class _SystemHandler:
             kill_tree (bool): 是否同时中止子进程树。
 
         Returns:
-            bool: taskkill 成功执行时返回 True。
+            bool: 进程成功终止时返回 True。
         """
 
         logger.info(f"开始中止进程 PID: {pid}")
-        args = ["taskkill", "/F"]
-        if kill_tree:
-            args.append("/T")
-        args.extend(["/PID", str(pid)])
-        result = await ProcessRunner.run_process(
-            *args,
-        )
-        if result.returncode != 0:
+        succeeded, reason = await platform_process.kill_process(pid, kill_tree)
+        if not succeeded:
             if not psutil.pid_exists(pid):
                 logger.info(f"进程已自行退出 PID: {pid}")
                 return True
 
-            output = result.stderr.strip() or result.stdout.strip() or "无错误信息"
-            logger.warning(
-                f"进程中止失败 PID: {pid}, 返回码: {result.returncode}, 原因: {output}"
-            )
+            logger.warning(f"进程中止失败 PID: {pid}, {reason}")
             return False
 
         logger.success(f"进程已中止 PID: {pid}")
