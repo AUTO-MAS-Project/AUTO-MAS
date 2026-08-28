@@ -1,10 +1,11 @@
 import asyncio
 import json
+import re
 import tempfile
 import uuid
 import unittest
 from contextlib import ExitStack
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,12 +37,61 @@ class _RuntimeConfig:
         self.messages = []
         # 仅供启动准备用到的 Function.* 开关（如 IfSilence），默认全部为假。
         self.function_flags: dict[tuple[str, str], object] = {}
+        # 历史记录根目录；_make_manager 会指到测试临时目录内，随之自动清理。
+        self.history_path = Path(tempfile.gettempdir()) / "maafw-test-history"
 
     async def send_websocket_message(self, **message):
         self.messages.append(message)
 
     def get(self, group, name):
         return self.function_flags.get((group, name), False)
+
+    # ---- 历史记录基础设施：与 app/core/config.py 中同名实现保持一致 ----
+
+    def build_history_log_path(
+        self, *, script_name: str, user_name: str, log_time: datetime
+    ) -> Path:
+        safe_script_name = re.sub(r'[<>:"/\\|?*]', "_", str(script_name or "").strip())
+        safe_script_name = safe_script_name.rstrip(" .") or "空白"
+        time_suffix = f"-{log_time.strftime('%H-%M-%S')}.log"
+        safe_script_name = safe_script_name[: 255 - len(time_suffix)]
+        return (
+            self.history_path
+            / log_time.strftime("%Y-%m-%d")
+            / user_name
+            / f"{safe_script_name}{time_suffix}"
+        )
+
+    async def save_general_log(self, log_path: Path, logs: list, general_result: str):
+        data = {"general_result": general_result}
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+    async def search_history(self, mode: str, start_date: date, end_date: date) -> dict:
+        history_dict: dict[str, dict[str, list[Path]]] = {}
+        if not self.history_path.exists():
+            return history_dict
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue
+            try:
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if not (start_date <= folder_date <= end_date):
+                continue
+            date_name = folder_date.strftime("%Y-%m-%d")
+            bucket = history_dict.setdefault(date_name, {})
+            for user_folder in date_folder.iterdir():
+                if not user_folder.is_dir():
+                    continue
+                bucket.setdefault(user_folder.stem, []).extend(
+                    user_folder.glob("*.json")
+                )
+        return history_dict
 
 
 class _FakeEmulator:
@@ -288,6 +338,104 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             # M9A 的 CloseEmulatorAndMFA（会与日志判定、模拟器归属产生竞态）。
             self.assertEqual(written["AfterTask"], "None")
             self.assertEqual(written["InstanceName"], "MAS")
+
+    # ---- 问题 2：运行收尾写入历史记录 ----
+
+    def test_run_writes_searchable_history_record(self) -> None:
+        asyncio.run(self._test_run_writes_searchable_history_record())
+
+    async def _test_run_writes_searchable_history_record(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
+                "2026-08-27 18:00:01.000 任务已全部完成！\n"
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            today = datetime.now(tz=UTC4).date()
+            found = await runtime.search_history(
+                "DAILY", today - timedelta(days=1), today + timedelta(days=1)
+            )
+            jsons = [
+                path
+                for buckets in found.values()
+                for paths in buckets.values()
+                for path in paths
+            ]
+            self.assertEqual(len(jsons), 1, found)
+            self.assertIn("用户A", str(jsons[0].parent))
+            payload = json.loads(jsons[0].read_text(encoding="utf-8"))
+            self.assertEqual(payload["general_result"], "Success!")
+            self.assertTrue(jsons[0].with_suffix(".log").is_file())
+
+    def test_history_is_written_once_per_user_with_status(self) -> None:
+        asyncio.run(self._test_history_is_written_once_per_user_with_status())
+
+    async def _test_history_is_written_once_per_user_with_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "甲", "tasks": ["启动游戏"]},
+                    {"Name": "乙", "tasks": ["启动游戏"]},
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
+                "2026-08-27 18:00:01.000 任务已全部完成！\n"
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+                # final_task 幂等：再调一次不得产生重复历史文件。
+                await manager.final_task()
+
+            today = datetime.now(tz=UTC4).date()
+            found = await runtime.search_history(
+                "DAILY", today - timedelta(days=1), today + timedelta(days=1)
+            )
+            users = {
+                user: len(paths)
+                for buckets in found.values()
+                for user, paths in buckets.items()
+            }
+            self.assertEqual(users, {"甲": 1, "乙": 1})
+
+    def test_failed_run_history_records_failure_status(self) -> None:
+        asyncio.run(self._test_failed_run_history_records_failure_status())
+
+    async def _test_failed_run_history_records_failure_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 19:00:00.000 [WRN] [op=ExecuteTaskQueue] "
+                "控制器初始化结果为空\n"
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            today = datetime.now(tz=UTC4).date()
+            found = await runtime.search_history(
+                "DAILY", today - timedelta(days=1), today + timedelta(days=1)
+            )
+            payloads = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for buckets in found.values()
+                for paths in buckets.values()
+                for path in paths
+            ]
+            self.assertEqual(len(payloads), 1)
+            self.assertIn("控制器初始化失败", payloads[0]["general_result"])
 
     def test_non_mfa_is_explicitly_unsupported(self) -> None:
         asyncio.run(self._test_non_mfa_is_explicitly_unsupported())
@@ -1727,6 +1875,8 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             await user_cfg.update(user_update)
         runtime = runtime or _RuntimeConfig(script_uid, script_config)
         runtime.ScriptConfig[script_uid] = script_config
+        # 历史记录写进测试项目的临时目录内，随 TemporaryDirectory 自动清理。
+        runtime.history_path = root.parent / "history"
         task_info = TaskInfo(
             mode="AutoProxy",
             task_id="task-id",

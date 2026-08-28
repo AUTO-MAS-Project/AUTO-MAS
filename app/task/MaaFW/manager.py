@@ -318,6 +318,9 @@ class MaaFWManager(TaskExecuteBase):
         self.last_log_text = ""
         self.last_log_at: datetime | None = None
 
+        # 历史记录只写一次（final_task 幂等、可能被多路径调用）。
+        self.history_written = False
+
     async def check(self) -> str:
         """校验 MaaFW 配置、外壳、选择项和可运行文件。"""
 
@@ -1614,6 +1617,8 @@ class MaaFWManager(TaskExecuteBase):
             if user.status in ("等待", "运行"):
                 user.status = "异常"
 
+        await self._write_history_records()
+
         error_users = [
             user
             for user in self.script_info.user_list
@@ -1627,6 +1632,54 @@ class MaaFWManager(TaskExecuteBase):
             self.script_info.status = "完成"
         else:
             self.script_info.status = "异常"
+
+    async def _write_history_records(self) -> None:
+        """把每个用户的运行日志写入 MAS 历史记录目录，供「历史记录」页检索。
+
+        「摘取+适配」自 M9A ``AutoProxy.final_task``（AutoProxy.py:765-789）：
+        沿用其路径构成（``Config.build_history_log_path`` 取 脚本名 / 用户名 /
+        本地时区→UTC4 的开始时间）、「正常运行中」收尾串归一、逐条 ``log_record``
+        写入的时机与内容。适配点：
+
+        - M9A 的 ``AutoProxy`` 每用户一实例、``final_task`` 只处理当前用户；本层是
+          单 manager 跑完全部用户，故遍历 ``script_info.user_list`` 逐用户逐条写。
+        - M9A 用 ``Config.save_maa_log``（明日方舟专用：理智 / 公招 / 掉落解析）；
+          MaaFW 是引擎无关的通用 MaaFW GUI，改用 ``Config.save_general_log``
+          （与 General / OkNte / Okww 一致），只落 ``{"general_result": <状态>}``。
+        - 统计合并 / 推送通知未接：本层尚无通知基础设施，属独立能力，本次只保证
+          「运行可被历史记录检索」。
+        """
+
+        if self.history_written:
+            return
+        self.history_written = True
+
+        local_tz = datetime.now().astimezone().tzinfo
+        for user in self.script_info.user_list:
+            for start_time, log_item in sorted(
+                user.log_record.items(), key=lambda item: item[0]
+            ):
+                try:
+                    status = log_item.status
+                    if status == "MaaFW 正常运行中":
+                        status = "任务被用户手动中止"
+                    content = list(log_item.content)
+                    if not content:
+                        content = ["未捕获到任何日志内容"]
+                        status = "未捕获到日志"
+                    log_time = start_time.replace(tzinfo=local_tz).astimezone(UTC4)
+                    log_path = Config.build_history_log_path(
+                        script_name=self.script_info.name,
+                        user_name=user.name,
+                        log_time=log_time,
+                    )
+                    await Config.save_general_log(
+                        log_path, content, status or "未知结果"
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.opt(exception=True).warning(
+                        f"MaaFW 写入历史记录失败（用户 {user.name}）：{exc}"
+                    )
 
     async def on_crash(self, e: Exception) -> None:
         """异常处理必须自保护，不能阻断配置恢复。"""
