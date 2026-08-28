@@ -186,13 +186,20 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         "2026-08-27 18:00:01.000 任务已全部完成！\n"
     )
 
-    def test_success_writes_config_and_starts_bare_exe(self) -> None:
-        asyncio.run(self._test_success_writes_config_and_starts_bare_exe())
+    def test_success_autostarts_the_active_instance(self) -> None:
+        asyncio.run(self._test_success_autostarts_the_active_instance())
 
-    async def _test_success_writes_config_and_starts_bare_exe(self) -> None:
+    async def _test_success_autostarts_the_active_instance(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "project"
             self._make_project(root)
+            instances = root / "config" / "instances"
+            (instances / "adbe33bf.json").write_bytes(
+                (instances / "default.json").read_bytes()
+            )
+            (root / "appsettings.json").write_text(
+                json.dumps({"Instances.LastActive": "adbe33bf"}), encoding="utf-8"
+            )
             before = self._snapshot(root / "config")
             manager, runtime, script_uid = await self._make_manager(root)
             # 真实成功运行里选中任务名必然在日志中出现过（具体格式未知，只保证子串在）
@@ -209,7 +216,20 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 await manager.final_task()
 
             process = _FakeProcessManager.instances[0]
-            self.assertEqual(process.open_calls, [((root / "MFAAvalonia.exe",), {})])
+            self.assertEqual(
+                process.open_calls,
+                [
+                    (
+                        (
+                            root / "MFAAvalonia.exe",
+                            "--autostart",
+                            "--instance",
+                            "adbe33bf",
+                        ),
+                        {},
+                    )
+                ],
+            )
             self.assertEqual(manager.process_pid, 4312)
             self.assertEqual(process.kill_calls, 1)
             self.assertEqual(_FakeLogMonitor.instances[0].stop_calls, 1)
