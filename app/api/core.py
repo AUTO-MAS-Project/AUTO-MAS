@@ -73,10 +73,14 @@ async def get_health(request: Request) -> BackendHealthOut:
 
 
 def is_backend_dev_mode() -> bool:
-    """判断后端是否处于开发模式。"""
+    """判断后端是否处于开发模式（后端由开发者独立管理，前端不得强杀）。
 
-    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    dev 分支的 AUTO_MAS_DEV 标记“由前端拉起”（跳过自行提权），生产环境同样为 1，
+    不能作为开发模式依据；以 main.py 启动时归一化的 AUTO_MAS_ENV 为准。
+    """
+
+    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
+    return raw in {"dev", "development"}
 
 
 @router.get(
