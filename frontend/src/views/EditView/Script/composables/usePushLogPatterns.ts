@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 
 export type PushLogPatternType = 'split' | 'regex' | 'multiline'
@@ -259,16 +259,27 @@ export interface UsePushLogPatternsOptions {
 
 export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
   const { patternsJson, onChange } = options
-  const patterns = ref<PushLogPattern[]>([defaultSplitPattern()])
+  // 默认不展示任何规则卡片，首次点击「添加规则」后才出现，避免未开启推送采集时看到空卡片
+  const patterns = ref<PushLogPattern[]>([])
 
   const syncFromJson = () => {
     const parsed = parsePushLogPatterns(patternsJson.value || '')
-    patterns.value = parsed.length > 0 ? parsed : [defaultSplitPattern()]
+    patterns.value = parsed
+  }
+
+  // 标记本次 patternsJson 回写来自本地 save，watcher 需跳过以防已添加的空规则被立即移除
+  let localEcho = false
+  const emitJson = (json: string) => {
+    localEcho = true
+    onChange?.(json)
+    nextTick(() => {
+      localEcho = false
+    })
   }
 
   /**
    * 保存当前规则到 json。结构性操作（新增/删除/排序）时传入 { warn: false }，
-   * 避免新建空规则或删空占位规则在用户尚未编辑时立即弹出「缺必填字段」的提示；
+   * 避免新建空规则或删空规则在用户尚未编辑时立即弹出「缺必填字段」的提示；
    * 仅在实际字段编辑时对缺必填字段的启用规则给出可见提示。
    */
   const save = (options: { warn?: boolean } = {}) => {
@@ -286,10 +297,17 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
         )
       }
     }
-    onChange?.(json)
+    emitJson(json)
   }
 
-  watch(patternsJson, syncFromJson, { immediate: true })
+  watch(
+    patternsJson,
+    () => {
+      if (localEcho) return
+      syncFromJson()
+    },
+    { immediate: true }
+  )
 
   const addPattern = (type: PushLogPatternType) => {
     patterns.value.push(createPattern(type))
@@ -298,10 +316,6 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
 
   const removePattern = (idx: number) => {
     patterns.value.splice(idx, 1)
-    // 删除后若为空，保留一个空 split 规则作为占位，避免用户困惑
-    if (patterns.value.length === 0) {
-      patterns.value.push(defaultSplitPattern())
-    }
     save({ warn: false })
   }
 
