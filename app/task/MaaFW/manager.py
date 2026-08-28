@@ -798,8 +798,12 @@ class MaaFWManager(TaskExecuteBase):
         logger.info(f"MaaFW 运行配置已写入：{self.instance_path}")
 
     async def _run_external(self) -> None:
-        if self.exe_path is None or self.log_path is None:
-            raise RuntimeError("MaaFW 外壳路径未初始化")
+        if (
+            self.exe_path is None
+            or self.instance_path is None
+            or self.log_path is None
+        ):
+            raise RuntimeError("MaaFW 外壳路径、实例或日志路径未初始化")
         self.process_manager = ProcessManager()
         self.log_monitor = LogMonitor((1, 24), _LOG_TIME_FORMAT, self.check_log)
         self.terminal_event.clear()
@@ -808,8 +812,13 @@ class MaaFWManager(TaskExecuteBase):
         self.last_log_at = datetime.now()
         self.log_start_time = datetime.now()
 
-        # MFAAvalonia 约定从 instances/default.json 读取运行任务，不传命令行参数。
-        await self.process_manager.open_process(self.exe_path)
+        # MFAAvalonia 需显式请求自动运行，任务队列仍从 MAS 写入的活动实例读取。
+        await self.process_manager.open_process(
+            self.exe_path,
+            "--autostart",
+            "--instance",
+            self.instance_path.stem,
+        )
         self.process_started = True
         self.process_pid = self.process_manager.main_pid
         logger.info(f"MFAAvalonia 外壳已启动，PID: {self.process_pid}")
