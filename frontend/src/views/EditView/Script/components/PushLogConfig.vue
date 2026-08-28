@@ -69,9 +69,9 @@ const onRuleUpdate = (idx: number, value: PushLogPattern) => {
   onPatternFieldChange()
 }
 
-// 拖拽排序
+// 拖拽排序（结构性操作，不做缺必填字段提示）
 const onDragEnd = () => {
-  save()
+  save({ warn: false })
 }
 
 // 调试弹窗
@@ -194,17 +194,28 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
 }
 
 .push-config-header h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--ant-color-text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+}
+
+.push-config-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
 }
 
 .push-config-actions {

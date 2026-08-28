@@ -266,18 +266,25 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
     patterns.value = parsed.length > 0 ? parsed : [defaultSplitPattern()]
   }
 
-  const save = () => {
+  /**
+   * 保存当前规则到 json。结构性操作（新增/删除/排序）时传入 { warn: false }，
+   * 避免新建空规则或删空占位规则在用户尚未编辑时立即弹出「缺必填字段」的提示；
+   * 仅在实际字段编辑时对缺必填字段的启用规则给出可见提示。
+   */
+  const save = (options: { warn?: boolean } = {}) => {
     const json = serializePushLogPatterns(patterns.value)
-    // 启用中的规则缺少必填字段（后端编译时会跳过），保存配置与运行采集不一致，
-    // 这里给出可见提示而非静默失效
-    const dropped = patterns.value
-      .map((p, i) => ({ p, i }))
-      .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
-      .map(({ p, i }) => ruleDisplayName(p, i))
-    if (dropped.length > 0) {
-      message.warning(
-        `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`
-      )
+    if (options.warn !== false) {
+      // 启用中的规则缺少必填字段（后端编译时会跳过），保存配置与运行采集不一致，
+      // 这里给出可见提示而非静默失效
+      const dropped = patterns.value
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
+        .map(({ p, i }) => ruleDisplayName(p, i))
+      if (dropped.length > 0) {
+        message.warning(
+          `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`
+        )
+      }
     }
     onChange?.(json)
   }
@@ -286,7 +293,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
 
   const addPattern = (type: PushLogPatternType) => {
     patterns.value.push(createPattern(type))
-    save()
+    save({ warn: false })
   }
 
   const removePattern = (idx: number) => {
@@ -295,14 +302,14 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
     if (patterns.value.length === 0) {
       patterns.value.push(defaultSplitPattern())
     }
-    save()
+    save({ warn: false })
   }
 
   const updatePatternType = (idx: number, newType: PushLogPatternType) => {
     const old = patterns.value[idx]
     if (!old || old.type === newType) return
     patterns.value[idx] = migratePatternOnTypeChange(old, newType)
-    save()
+    save({ warn: false })
   }
 
   const onPatternFieldChange = () => {
@@ -311,7 +318,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
 
   const reorderPatterns = (newOrder: PushLogPattern[]) => {
     patterns.value = newOrder
-    save()
+    save({ warn: false })
   }
 
   const activePatternCount = computed(() => patterns.value.filter(p => p.enabled !== false).length)
