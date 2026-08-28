@@ -251,6 +251,57 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source_config["asset_pattern"], "*win*.zip")
         self.assertEqual(source_config["mirror_cdk"], "secret-cdk")
 
+    async def test_check_injects_shell_hint_for_mfaavalonia_project(self):
+        captured = {}
+
+        async def _fake_discover(interface, **kwargs):
+            captured.update(kwargs)
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("MFAAvalonia.dll", "appsettings.json", "interface.json"):
+                (root / name).write_text("", encoding="utf-8")
+            script_uid, config = await self._make_script(
+                root, update={"Source": "GitHub", "GitHubRepo": "owner/repo"}
+            )
+            runtime = _FakeRuntime(script_uid, config)
+            with patch.object(scripts_module, "Config", runtime), patch.object(
+                scripts_module, "load_interface_model", return_value=_FakeInterface()
+            ), patch.object(
+                scripts_module, "discover_maafw_project_update", _fake_discover
+            ):
+                out = await update_maafw_project(
+                    MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
+                )
+        self.assertEqual(out.code, 200)
+        self.assertEqual(
+            captured["source_config"].get("project_shell_hint"), "MFAAvalonia"
+        )
+
+    async def test_check_omits_shell_hint_for_unrecognised_project(self):
+        captured = {}
+
+        async def _fake_discover(interface, **kwargs):
+            captured.update(kwargs)
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script_uid, config = await self._make_script(
+                Path(tmp), update={"Source": "GitHub", "GitHubRepo": "owner/repo"}
+            )
+            runtime = _FakeRuntime(script_uid, config)
+            with patch.object(scripts_module, "Config", runtime), patch.object(
+                scripts_module, "load_interface_model", return_value=_FakeInterface()
+            ), patch.object(
+                scripts_module, "discover_maafw_project_update", _fake_discover
+            ):
+                out = await update_maafw_project(
+                    MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
+                )
+        self.assertEqual(out.code, 200)
+        self.assertNotIn("project_shell_hint", captured["source_config"])
+
     async def test_apply_forwards_update_fields_and_maps_result(self):
         captured = {}
 

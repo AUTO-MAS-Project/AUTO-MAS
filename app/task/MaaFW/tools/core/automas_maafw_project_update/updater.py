@@ -2397,30 +2397,6 @@ def _select_github_release_asset(
         return None, f"GitHub asset pattern is ambiguous: {names}"
 
     narrowed = matches
-    shell_token = re.sub(r"[^a-z0-9]+", "", project_shell_hint.casefold())
-    shell_aliases = {
-        "mfaavalonia": ("mfaavalonia", "mfavalonia", "mfaa"),
-        "mxu": ("mxu",),
-        "cfa": ("cfa",),
-        "mfw": ("mfw",),
-    }.get(shell_token, (shell_token,) if shell_token else ())
-    if shell_aliases:
-        shell_patterns = [
-            re.compile(
-                rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])",
-                re.IGNORECASE,
-            )
-            for token in shell_aliases
-        ]
-        shell_matches = [
-            item
-            for item in narrowed
-            if any(pattern.search(item[0]) for pattern in shell_patterns)
-        ]
-        if shell_matches:
-            narrowed = shell_matches
-            if len(narrowed) == 1:
-                return narrowed[0][1], ""
 
     project_token = re.sub(r"[^a-z0-9]+", "", project_name.casefold())
     if project_token:
@@ -2451,6 +2427,37 @@ def _select_github_release_asset(
             narrowed = arch_matches
         if len(narrowed) == 1:
             return narrowed[0][1], ""
+
+    # Last-resort disambiguation: several assets can survive the project and
+    # platform narrowing because the release ships one package per UI shell
+    # family (e.g. M9A publishes ``*-MFAA.zip`` and ``*-MXU.zip`` for the same
+    # version).  Only apply this once the more specific criteria above could
+    # not settle on a single asset, so a stale shell hint never overrides an
+    # otherwise unambiguous match.
+    shell_token = re.sub(r"[^a-z0-9]+", "", project_shell_hint.casefold())
+    shell_aliases = {
+        "mfaavalonia": ("mfaavalonia", "mfavalonia", "mfaa"),
+        "mxu": ("mxu",),
+        "cfa": ("cfa",),
+        "mfw": ("mfw",),
+    }.get(shell_token, (shell_token,) if shell_token else ())
+    if shell_aliases:
+        shell_patterns = [
+            re.compile(
+                rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])",
+                re.IGNORECASE,
+            )
+            for token in shell_aliases
+        ]
+        shell_matches = [
+            item
+            for item in narrowed
+            if any(pattern.search(item[0]) for pattern in shell_patterns)
+        ]
+        if shell_matches:
+            narrowed = shell_matches
+            if len(narrowed) == 1:
+                return narrowed[0][1], ""
 
     names = ", ".join(name for name, _ in narrowed[:5])
     return None, f"GitHub release package selection is ambiguous: {names}"

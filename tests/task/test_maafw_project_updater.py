@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import app.core  # noqa: F401  (initialise app before importing task modules)
@@ -10,8 +12,10 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     MaaFWProjectUpdateDiscovery,
     MaaFWProjectUpdateError,
     _normalise_package_source,
+    _select_github_release_asset,
     discover_maafw_project_update,
 )
+from app.task.MaaFW.tools.external.shell import ShellFamily
 
 
 class _FakeInterface:
@@ -78,6 +82,79 @@ class RecycledAssetSelectionTest(unittest.TestCase):
     def test_no_zip_returns_none(self):
         assets = [{"name": "a.txt", "browser_download_url": "https://x/a.txt"}]
         self.assertIsNone(pu._select_github_asset(assets, "Demo"))
+
+
+class ShellFamilyAssetDisambiguationTest(unittest.TestCase):
+    """同版本按 UI 外壳分包（M9A 的 MFAA / MXU zip）时按外壳家族消歧。"""
+
+    def _release(self):
+        return {
+            "assets": [
+                {
+                    "name": "M9A-win-x86_64-v4.7.0-MFAA.zip",
+                    "browser_download_url": "https://x/M9A-MFAA.zip",
+                },
+                {
+                    "name": "M9A-win-x86_64-v4.7.0-MXU.zip",
+                    "browser_download_url": "https://x/M9A-MXU.zip",
+                },
+            ]
+        }
+
+    def _select(self, shell_hint: str):
+        return _select_github_release_asset(
+            self._release(),
+            r"\.zip$",
+            project_name="M9A",
+            project_shell_hint=shell_hint,
+            prefer_windows_x64=True,
+        )
+
+    def test_mfaavalonia_family_selects_mfaa_package(self):
+        url, reason = self._select(ShellFamily.MFAAVALONIA.value)
+        self.assertEqual(url, "https://x/M9A-MFAA.zip")
+        self.assertEqual(reason, "")
+
+    def test_mxu_family_selects_mxu_package(self):
+        url, reason = self._select(ShellFamily.MXU.value)
+        self.assertEqual(url, "https://x/M9A-MXU.zip")
+        self.assertEqual(reason, "")
+
+    def test_unknown_family_stays_ambiguous(self):
+        url, reason = self._select(ShellFamily.UNKNOWN.value)
+        self.assertIsNone(url)
+        self.assertIn("ambiguous", reason)
+        self.assertIn("MFAA.zip", reason)
+        self.assertIn("MXU.zip", reason)
+
+    def test_absent_hint_stays_ambiguous(self):
+        url, reason = self._select("")
+        self.assertIsNone(url)
+        self.assertIn("ambiguous", reason)
+
+    def test_hint_does_not_override_unique_project_match(self):
+        release = {
+            "assets": [
+                {
+                    "name": "M9A-win-x86_64-v4.7.0-MFAA.zip",
+                    "browser_download_url": "https://x/m9a.zip",
+                },
+                {
+                    "name": "MaaYY-win-x86_64-v4.7.0-MXU.zip",
+                    "browser_download_url": "https://x/other.zip",
+                },
+            ]
+        }
+        # 项目名已唯一确定，即便外壳提示指向另一个包也不改变结果。
+        url, reason = _select_github_release_asset(
+            release,
+            r"\.zip$",
+            project_name="M9A",
+            project_shell_hint=ShellFamily.MXU.value,
+            prefer_windows_x64=True,
+        )
+        self.assertEqual(url, "https://x/m9a.zip")
+        self.assertEqual(reason, "")
 
 
 class ProviderSelectionTest(unittest.TestCase):
@@ -169,6 +246,27 @@ class DiscoveryRoutingTest(unittest.IsolatedAsyncioTestCase):
             source_config={"package_source": "mirrorchyan"},
         )
         self.assertIsNone(result)
+
+
+class ApplyPathShellHintInjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_update_if_needed_injects_shell_hint_from_project_root(self):
+        captured = {}
+
+        async def _fake_discover(interface_model, **kwargs):
+            captured.update(kwargs)
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("MFAAvalonia.dll", "appsettings.json", "interface.json"):
+                (root / name).write_text("", encoding="utf-8")
+            with patch.object(pu, "_core_discover_update", _fake_discover):
+                await pu.update_maafw_project_if_needed(
+                    root, _FakeInterface(), source="GitHub", github_repo="owner/repo"
+                )
+        self.assertEqual(
+            captured["source_config"].get("project_shell_hint"), "MFAAvalonia"
+        )
 
 
 if __name__ == "__main__":

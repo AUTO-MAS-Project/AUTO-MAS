@@ -41,6 +41,7 @@ from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.security import sanitize_log_message
 
 from .core.automas_maafw_interface.models import MaaFWInterface
+from .external import ShellFamily, detect_shell_family
 
 
 logger = get_logger("MaaFW 项目更新")
@@ -971,6 +972,14 @@ async def update_maafw_project_if_needed(
         github_tag=github_tag,
         github_asset_pattern=github_asset_pattern,
     )
+
+    # GitHub 发行版常按 UI 外壳分包（M9A 同版本同时发 MFAA / MXU zip）。
+    # 选包实现需要 project_shell_hint 才能在项目名/平台收窄后按外壳消歧；
+    # 与 API 检查路径保持一致，按项目根目录识别外壳家族补上。
+    if not source_config.get("project_shell_hint"):
+        shell_family = await asyncio.to_thread(detect_shell_family, root)
+        if shell_family is not ShellFamily.UNKNOWN:
+            source_config["project_shell_hint"] = shell_family.value
 
     discovery: MaaFWProjectUpdateDiscovery | None = None
     try:
