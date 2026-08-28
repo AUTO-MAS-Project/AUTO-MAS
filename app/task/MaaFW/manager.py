@@ -137,6 +137,43 @@ def _instance_has_adb_device(instance_config: dict[str, Any]) -> bool:
     return False
 
 
+def _resolve_active_instance_path(instances_dir: Path, project_root: Path) -> Path:
+    """定位 MFAAvalonia 当前活动实例文件。
+
+    MFAAvalonia 的实例文件按实例 ID 命名，活动实例记在项目根
+    ``appsettings.json`` 的 ``Instances.LastActive``（.NET 平铺键，也兼容
+    ``Instances`` 嵌套对象）。MaaKes 恰好叫 ``default``，M9A 那份是随机 ID。
+    读不到活动实例、键值非法、或对应文件不存在时，回退到 ``default.json``。
+    """
+
+    default_path = instances_dir / "default.json"
+
+    settings_path = project_root / "appsettings.json"
+    if not settings_path.is_file():
+        return default_path
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return default_path
+    if not isinstance(settings, dict):
+        return default_path
+
+    last_active = settings.get("Instances.LastActive")
+    if last_active is None:
+        nested = settings.get("Instances")
+        if isinstance(nested, dict):
+            last_active = nested.get("LastActive")
+    if not isinstance(last_active, str) or not last_active.strip():
+        return default_path
+
+    name = last_active.strip()
+    candidate = instances_dir / f"{name}.json"
+    # 拒绝越界文件名（含分隔符或 ..），只接受 instances_dir 下的直接子文件。
+    if candidate.parent != instances_dir or candidate.name != f"{name}.json":
+        return default_path
+    return candidate if candidate.is_file() else default_path
+
+
 def _load_json_dict(value: Any) -> dict[str, Any]:
     """把 ConfigBase 中的 JSON 字符串或裸 dict 收敛成 dict。"""
 
@@ -392,7 +429,9 @@ class MaaFWManager(TaskExecuteBase):
         self.project_root = project_root
         self.config_dir = config_dir
         self.instances_dir = config_dir / "instances"
-        self.instance_path = self.instances_dir / "default.json"
+        self.instance_path = _resolve_active_instance_path(
+            self.instances_dir, project_root
+        )
         self.config_json_path = config_dir / "config.json"
         self.exe_path = exe_path
         self.interface_model = interface_model
@@ -667,7 +706,9 @@ class MaaFWManager(TaskExecuteBase):
         # 多用户逐个写入：base 始终取本轮备份里的原始实例配置，避免上一个用户
         # 写入的 controller / TaskItems 漏进下一个用户。设备标识等 C 类字段仍随
         # base 透传。
-        backup_instance = self.backup_path / "instances" / "default.json"
+        backup_instance = (
+            self.backup_path / "instances" / self.instance_path.name
+        )
         base_path = backup_instance if backup_instance.is_file() else self.instance_path
         base = _read_json_object(base_path, label="MaaFW default 实例配置")
         instance_config = build_instance_config(

@@ -1072,5 +1072,151 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         return stack
 
 
+class MaaFWActiveInstancePathTest(unittest.TestCase):
+    """_resolve_active_instance_path：按 appsettings.json 定位活动实例，缺则回退。"""
+
+    def _project(self, tmp: Path, *, appsettings=None, instance_names=("default",)):
+        instances = tmp / "config" / "instances"
+        instances.mkdir(parents=True)
+        for name in instance_names:
+            (instances / f"{name}.json").write_text("{}", encoding="utf-8")
+        if appsettings is not None:
+            (tmp / "appsettings.json").write_text(
+                appsettings
+                if isinstance(appsettings, str)
+                else json.dumps(appsettings),
+                encoding="utf-8",
+            )
+        return instances
+
+    def test_missing_appsettings_falls_back_to_default(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(root, appsettings=None)
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "default.json",
+            )
+
+    def test_empty_appsettings_falls_back_to_default(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(root, appsettings={})
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "default.json",
+            )
+
+    def test_flat_last_active_points_to_id_named_instance(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(
+                root,
+                appsettings={"Instances.LastActive": "adbe33bf"},
+                instance_names=("adbe33bf",),
+            )
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "adbe33bf.json",
+            )
+
+    def test_nested_instances_object_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(
+                root,
+                appsettings={"Instances": {"LastActive": "abc123"}},
+                instance_names=("abc123",),
+            )
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "abc123.json",
+            )
+
+    def test_last_active_without_matching_file_falls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(
+                root, appsettings={"Instances.LastActive": "ghost"}
+            )
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "default.json",
+            )
+
+    def test_malformed_appsettings_falls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(root, appsettings="{not json")
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "default.json",
+            )
+
+    def test_last_active_with_path_separator_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            instances = self._project(
+                root, appsettings={"Instances.LastActive": "../../evil"}
+            )
+            self.assertEqual(
+                manager_module._resolve_active_instance_path(instances, root),
+                instances / "default.json",
+            )
+
+
+class MaaFWCheckInstanceLocationTest(unittest.TestCase):
+    """check() 把 self.instance_path 定位到活动实例，而非硬编码 default.json。"""
+
+    async def _run_check(self, root: Path):
+        manager, runtime, _ = await MaaFWExternalManagerTest()._make_manager(root)
+        with (
+            patch.object(manager_module, "Config", runtime),
+            patch.object(
+                manager_module, "detect_shell_family", return_value=ShellFamily.MFAAVALONIA
+            ),
+            patch.object(
+                manager_module, "load_interface_model", return_value=_interface()
+            ),
+        ):
+            result = await manager.check()
+        return manager, result
+
+    def test_locates_id_named_active_instance(self) -> None:
+        async def scenario() -> None:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir) / "project"
+                MaaFWExternalManagerTest._make_project(root)
+                instances = root / "config" / "instances"
+                # 活动实例按 ID 命名；default.json 仍在（携带设备标识，供受保护的
+                # 启动前 Adb 校验读取），但运行配置必须写到活动实例。
+                (instances / "adbe33bf.json").write_text(
+                    (instances / "default.json").read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                )
+                (root / "appsettings.json").write_text(
+                    json.dumps({"Instances.LastActive": "adbe33bf"}), encoding="utf-8"
+                )
+                manager, result = await self._run_check(root)
+                self.assertEqual(result, "Pass")
+                self.assertEqual(manager.instance_path, instances / "adbe33bf.json")
+
+        asyncio.run(scenario())
+
+    def test_falls_back_to_default_when_appsettings_is_empty(self) -> None:
+        async def scenario() -> None:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir) / "project"
+                MaaFWExternalManagerTest._make_project(root)
+                manager, result = await self._run_check(root)
+                self.assertEqual(result, "Pass")
+                self.assertEqual(
+                    manager.instance_path,
+                    root / "config" / "instances" / "default.json",
+                )
+
+        asyncio.run(scenario())
+
+
 if __name__ == "__main__":
     unittest.main()
