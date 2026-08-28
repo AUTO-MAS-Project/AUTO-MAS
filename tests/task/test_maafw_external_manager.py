@@ -12,6 +12,7 @@ import app.core
 
 from app.core.task_manager import TaskInfo
 from app.models.config import MaaFWConfig, MaaFWUserConfig
+from app.models.emulator import DeviceInfo, DeviceStatus
 from app.models.task import ScriptItem
 from app.utils.constants import UTC4
 from app.task.MaaFW import manager as manager_module
@@ -31,6 +32,7 @@ _ORIGINAL_ASYNCIO_SLEEP = asyncio.sleep
 class _RuntimeConfig:
     def __init__(self, script_uid, script_config):
         self.ScriptConfig = {script_uid: script_config}
+        self.EmulatorConfig = {}
         self.messages = []
         # 仅供启动准备用到的 Function.* 开关（如 IfSilence），默认全部为假。
         self.function_flags: dict[tuple[str, str], object] = {}
@@ -45,6 +47,7 @@ class _RuntimeConfig:
 class _FakeEmulator:
     instances: list = []
     open_should_raise = False
+    ld_devices: dict = {}
 
     def __init__(self, emulator_id):
         self.emulator_id = emulator_id
@@ -57,8 +60,6 @@ class _FakeEmulator:
         self.open_calls.append(index)
         if self.__class__.open_should_raise:
             raise RuntimeError("模拟器起不来")
-        from app.models.emulator import DeviceInfo, DeviceStatus
-
         return DeviceInfo(
             title="fake", status=DeviceStatus.ONLINE, adb_address="127.0.0.1:16384"
         )
@@ -68,6 +69,24 @@ class _FakeEmulator:
 
     async def setVisible(self, index, is_visible):
         self.set_visible_calls.append((index, is_visible))
+
+    async def get_device_info(self, index):
+        return self.__class__.ld_devices
+
+
+class _FakeEmulatorConfig:
+    def __init__(self, emulator_type: str, path: str):
+        self.values = {("Info", "Type"): emulator_type, ("Info", "Path"): path}
+
+    def get(self, group, name):
+        return self.values[(group, name)]
+
+
+class _FakeLdDevice:
+    def __init__(self, *, title: str, idx: int, pid: int):
+        self.title = title
+        self.idx = idx
+        self.pid = pid
 
 
 class _FakeEmulatorManager:
@@ -160,6 +179,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         _FakeSystem.kill_success = True
         _FakeEmulator.instances = []
         _FakeEmulator.open_should_raise = False
+        _FakeEmulator.ld_devices = {}
 
     _SUCCESS_LOG = (
         "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
@@ -580,6 +600,33 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 "未配置模拟器设备", runtime.messages[0]["data"]["Error"]
             )
 
+    def test_unconfigured_stale_absolute_adb_path_is_rejected(self) -> None:
+        asyncio.run(self._test_unconfigured_stale_absolute_adb_path_is_rejected())
+
+    async def _test_unconfigured_stale_absolute_adb_path_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            instance_path = root / "config" / "instances" / "default.json"
+            instance = json.loads(instance_path.read_text(encoding="utf-8"))
+            missing_adb = root / "removed-ldplayer" / "adb.exe"
+            instance["AdbDevice"]["AdbPath"] = missing_adb.as_posix()
+            instance_path.write_text(json.dumps(instance), encoding="utf-8")
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(root)
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertIn("ADB 程序不存在", manager.check_result)
+            self.assertIn("请在 MAS 中选择当前模拟器", manager.check_result)
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(_FakeEmulator.instances, [])
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+
     def test_empty_task_selection_is_rejected(self) -> None:
         asyncio.run(self._test_empty_task_selection_is_rejected())
 
@@ -965,7 +1012,15 @@ class MaaFWExternalManagerTest(unittest.TestCase):
 
     # ---- 运行前启动准备：Adb 起模拟器 / Win32 起 PC 游戏 ----
 
-    async def _configure_emulator(self, script_config, *, index: str = "0") -> str:
+    async def _configure_emulator(
+        self,
+        script_config,
+        *,
+        runtime=None,
+        index: str = "0",
+        emulator_type: str = "mumu",
+        path: str = "C:/MuMuPlayer-12.0/shell/MuMuManager.exe",
+    ) -> str:
         """给脚本配置写入一个通过校验的模拟器 Id/Index，返回该 Id。"""
 
         emu_uid = uuid.uuid4()
@@ -974,6 +1029,8 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         await script_config.update(
             {"Emulator": {"Id": str(emu_uid), "Index": index}}
         )
+        if runtime is not None:
+            runtime.EmulatorConfig[emu_uid] = _FakeEmulatorConfig(emulator_type, path)
         self.assertEqual(script_config.get("Emulator", "Id"), str(emu_uid))
         return str(emu_uid)
 
@@ -985,9 +1042,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             root = Path(temp_dir) / "project"
             self._make_project(root)
             manager, runtime, _ = await self._make_manager(root)
-            await self._configure_emulator(runtime.ScriptConfig[
-                next(iter(runtime.ScriptConfig))
-            ])
+            await self._configure_emulator(
+                runtime.ScriptConfig[next(iter(runtime.ScriptConfig))], runtime=runtime
+            )
             _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
             with self._patched_runtime(runtime, manager, self._no_sleep):
                 await manager.main_task()
@@ -1000,6 +1057,143 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertEqual(manager.script_info.user_list[0].status, "完成")
             # 收尾关闭模拟器
             self.assertEqual(_FakeEmulator.instances[0].close_calls, ["0"])
+
+    def test_mumu_device_config_overrides_stale_instance_base(self) -> None:
+        asyncio.run(self._test_mumu_device_config_overrides_stale_instance_base())
+
+    async def _test_mumu_device_config_overrides_stale_instance_base(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            instance_path = root / "config" / "instances" / "default.json"
+            stale_base = json.loads(instance_path.read_text(encoding="utf-8"))
+            stale_base["AdbDevice"]["AdbPath"] = "C:/leidian/LDPlayer9/adb.exe"
+            instance_path.write_text(json.dumps(stale_base), encoding="utf-8")
+
+            manager, runtime, script_uid = await self._make_manager(root)
+            await self._configure_emulator(
+                runtime.ScriptConfig[script_uid],
+                runtime=runtime,
+                index="3",
+                emulator_type="mumu",
+                path="C:/Netease/MuMuPlayer-12.0/shell/MuMuManager.exe",
+            )
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                self.assertIsNone(await manager._prepare_emulator())
+                manager._write_runtime_config()
+                written = json.loads(manager.instance_path.read_text(encoding="utf-8"))
+                await manager.final_task()
+
+            device = written["AdbDevice"]
+            self.assertEqual(device["Name"], "MuMu模拟器")
+            self.assertEqual(
+                device["AdbPath"], "C:/Netease/MuMuPlayer-12.0/shell/adb.exe"
+            )
+            self.assertEqual(device["AdbSerial"], "127.0.0.1:16384")
+            self.assertEqual(
+                json.loads(device["Config"]),
+                {
+                    "extras": {
+                        "mumu": {
+                            "enable": True,
+                            "index": 3,
+                            "path": "C:/Netease/MuMuPlayer-12.0",
+                        }
+                    }
+                },
+            )
+
+    def test_ldplayer_device_config_uses_registered_emulator(self) -> None:
+        asyncio.run(self._test_ldplayer_device_config_uses_registered_emulator())
+
+    async def _test_ldplayer_device_config_uses_registered_emulator(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            emulator_id = await self._configure_emulator(
+                runtime.ScriptConfig[script_uid],
+                runtime=runtime,
+                index="2",
+                emulator_type="ldplayer",
+                path="C:/leidian/LDPlayer14/ldconsole.exe",
+            )
+            fake_emulator = _FakeEmulator(emulator_id)
+            _FakeEmulator.ld_devices = {
+                "2": _FakeLdDevice(title="雷电14", idx=2, pid=2468)
+            }
+
+            with patch.object(manager_module, "Config", runtime):
+                device = await manager._build_adb_device_config(
+                    DeviceInfo(
+                        title="fake",
+                        status=DeviceStatus.ONLINE,
+                        adb_address="emulator-5558",
+                    ),
+                    emulator_id,
+                    "2",
+                    fake_emulator,
+                )
+
+            self.assertIsNotNone(device)
+            self.assertEqual(device["Name"], "雷电14")
+            self.assertEqual(device["AdbPath"], "C:/leidian/LDPlayer14/adb.exe")
+            self.assertEqual(device["AdbSerial"], "emulator-5558")
+            self.assertEqual(
+                json.loads(device["Config"]),
+                {
+                    "extras": {
+                        "ld": {
+                            "enable": True,
+                            "index": 2,
+                            "path": "C:/leidian/LDPlayer14",
+                            "pid": 2468,
+                        }
+                    }
+                },
+            )
+
+    def test_unconfigured_emulator_preserves_instance_adb_device(self) -> None:
+        asyncio.run(self._test_unconfigured_emulator_preserves_instance_adb_device())
+
+    async def _test_unconfigured_emulator_preserves_instance_adb_device(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                manager._write_runtime_config()
+                written = json.loads(manager.instance_path.read_text(encoding="utf-8"))
+                await manager.final_task()
+
+            self.assertEqual(written["AdbDevice"], self._DEFAULT_INSTANCE["AdbDevice"])
+
+    def test_device_build_failure_preserves_instance_adb_device(self) -> None:
+        asyncio.run(self._test_device_build_failure_preserves_instance_adb_device())
+
+    async def _test_device_build_failure_preserves_instance_adb_device(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            # 选择值有效且模拟器能启动，但运行时模拟器配置缺失，强制 builder 回退。
+            await self._configure_emulator(runtime.ScriptConfig[script_uid])
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                self.assertIsNone(await manager._prepare_emulator())
+                manager._write_runtime_config()
+                written = json.loads(manager.instance_path.read_text(encoding="utf-8"))
+                await manager.final_task()
+
+            self.assertEqual(written["AdbDevice"], self._DEFAULT_INSTANCE["AdbDevice"])
 
     def test_unconfigured_emulator_never_touches_emulator_manager(self) -> None:
         asyncio.run(self._test_unconfigured_emulator_never_touches_emulator_manager())
@@ -1032,7 +1226,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self._make_project(root)
             before = self._snapshot(root / "config")
             manager, runtime, script_uid = await self._make_manager(root)
-            await self._configure_emulator(runtime.ScriptConfig[script_uid])
+            await self._configure_emulator(
+                runtime.ScriptConfig[script_uid], runtime=runtime
+            )
             _FakeEmulator.open_should_raise = True
             with self._patched_runtime(runtime, manager, self._no_sleep):
                 await manager.main_task()
