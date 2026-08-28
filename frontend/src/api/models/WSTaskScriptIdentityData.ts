@@ -3,16 +3,16 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 发送消息请求
+ * 任务关联的脚本静态标识。
  */
-export type WSClientSendIn = {
+export type WSTaskScriptIdentityData = {
     /**
-     * 客户端名称
+     * 脚本 ID
      */
-    name: string;
+    scriptId: string;
     /**
-     * 要发送的 JSON 消息
+     * 脚本类型键
      */
-    message: Record<string, any>;
+    scriptType: string;
 };
 

@@ -26,12 +26,6 @@ const devRoutes = import.meta.env.DEV
         meta: { title: 'OCR测试' },
       },
       {
-        path: '/WSdev',
-        name: 'WSdev',
-        component: () => import('../views/WSdev.vue'),
-        meta: { title: 'WSdev' },
-      },
-      {
         path: '/OverlayMaskDev',
         name: 'OverlayMaskDev',
         component: () => import('../views/OverlayMaskDev.vue'),

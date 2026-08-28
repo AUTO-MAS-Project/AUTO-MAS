@@ -72,7 +72,7 @@ export type GeneralConfig_Script = {
      */
     PushLogEnabled?: (boolean | null);
     /**
-     * 推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})
+     * 推送日志高级模式匹配(JSON 数组，每项为 PushLogPattern 对象：type 为 split/regex/multiline，按类型使用对应字段)
      */
     PushLogPatterns?: (string | null);
 };
