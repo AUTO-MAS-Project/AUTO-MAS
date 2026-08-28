@@ -234,8 +234,6 @@ class ProcessManager:
         except (ValueError, OSError):
             # 管道读端在子进程退出后被关闭, 属正常终止; 忽略无效句柄冲突
             pass
-        except Exception:
-            pass
 
     async def open_protocol(
         self, protocol_url: str, target_process: ProcessInfo

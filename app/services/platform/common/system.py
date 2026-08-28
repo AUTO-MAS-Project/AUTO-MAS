@@ -34,14 +34,6 @@ from app.utils.platform.process import platform_process
 from app.utils.platform import IS_WINDOWS
 
 
-def __getattr__(name: str) -> object:
-    """延迟导入 Config，避免 app.services 初始化期间触发 app.core 循环导入。"""
-    if name == "Config":
-        from app.core import Config
-
-        return Config
-    raise AttributeError(name)
-
 logger = get_logger("系统服务")
 
 

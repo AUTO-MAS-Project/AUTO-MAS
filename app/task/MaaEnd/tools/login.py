@@ -36,11 +36,13 @@ from typing import Any
 
 import cv2
 import numpy as np
-import pyautogui
 
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
+    # pyautogui 在无图形会话(如无 DISPLAY 的 Linux)导入即失败，
+    # 且下方使用它的函数均为 Windows 专属路径，随 win32 一并惰性导入
+    import pyautogui
     import win32api
     import win32con
     import win32gui
