@@ -1041,6 +1041,68 @@ ipcMain.handle('maaend:exportIssueReport', async () => {
   }
 })
 
+ipcMain.handle('data:backup', async () => {
+  let partialPath: string | undefined
+
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: '窗口未初始化' }
+    }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出数据备份',
+      defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+
+    const zipPath = result.filePath
+    partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
+    const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
+      method: 'GET',
+    })
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+      )
+    }
+    if (!response.body) {
+      throw new Error('后端未返回备份文件内容')
+    }
+
+    const file = await fs.promises.open(partialPath, 'wx')
+    try {
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        await file.write(chunk)
+      }
+    } finally {
+      await file.close()
+    }
+
+    await fs.promises.rename(partialPath, zipPath)
+    partialPath = undefined
+    logger.info(`数据备份已导出: ${zipPath}`)
+
+    return {
+      success: true,
+      message: '数据备份导出成功',
+      zipPath,
+    }
+  } catch (error) {
+    if (partialPath) {
+      await fs.promises.unlink(partialPath).catch(() => undefined)
+    }
+
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`导出数据备份失败: ${errorMsg}`)
+    return { success: false, error: errorMsg }
+  }
+})
+
 ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: string) => {
   try {
     const appRoot = getAppRoot()
