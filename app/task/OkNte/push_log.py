@@ -101,8 +101,9 @@ def oknte_resolve(
             except ValueError:
                 pass
         else:
-            # 兜底：裸文本视为开始标记，默认成功
-            _mark("✅ 成功", text)
+            # 仅接受显式状态标记；未知文本不纳入报告，避免把意外的提取结果
+            # 误判为成功（当前规则均输出显式标记，命中此处说明规则输出异常）
+            continue
 
     result = [
         (LogType.NORMAL, f"{states[node][1]}: {node}")
