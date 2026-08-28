@@ -1,14 +1,36 @@
 <template>
-  <a-modal v-model:open="visible" title="系统公告" :width="800" :footer="null" :closable="false" :mask-closable="false"
-    class="notice-modal">
+  <a-modal
+    v-model:open="visible"
+    title="系统公告"
+    :width="800"
+    :footer="null"
+    :closable="false"
+    :mask-closable="false"
+    class="notice-modal"
+  >
     <div v-if="notices.length > 0" class="notice-container">
       <!-- 公告标签页 - 竖直布局 -->
-      <a-tabs v-model:active-key="activeNoticeKey" tab-position="left" class="notice-tabs"
-        :tab-bar-style="{ width: '200px' }">
-        <a-tab-pane v-for="(content, title) in noticeData" :key="title" :tab="title" class="notice-tab-pane">
+      <a-tabs
+        v-model:active-key="activeNoticeKey"
+        tab-position="left"
+        class="notice-tabs"
+        :tab-bar-style="{ width: '200px' }"
+      >
+        <a-tab-pane
+          v-for="(content, title) in noticeData"
+          :key="title"
+          :tab="title"
+          class="notice-tab-pane"
+        >
           <div class="notice-content">
-            <div ref="markdownContentRef" class="markdown-content" @click="handleLinkClick"
-              v-html="renderMarkdown(content)"></div>
+            <!-- eslint-disable vue/no-v-html 公告内容来自 MAS 后端 markdown，属可信内容 -->
+            <div
+              ref="markdownContentRef"
+              class="markdown-content"
+              @click="handleLinkClick"
+              v-html="renderMarkdown(content)"
+            ></div>
+            <!-- eslint-enable vue/no-v-html -->
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -20,7 +42,12 @@
         </div>
 
         <div class="notice-actions">
-          <a-button type="primary" :loading="confirming" class="confirm-button" @click="confirmNotices">
+          <a-button
+            type="primary"
+            :loading="confirming"
+            class="confirm-button"
+            @click="confirmNotices"
+          >
             我知道了
           </a-button>
         </div>

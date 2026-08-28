@@ -372,14 +372,8 @@
                             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
                             :key="index"
                             :title="tag.text"
-                            :class="[
-                              'info-tag',
-                              { 'clickable-tag': tag.text === '人工排查未通过' },
-                            ]"
+                            :class="['info-tag']"
                             :color="tag.color"
-                            @click="
-                              tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined
-                            "
                           >
                             {{ tag.text }}
                           </a-tag>
@@ -607,8 +601,6 @@ interface Emits {
 
   (e: 'toggleUserStatus', user: User): void
 
-  (e: 'passCheckUser', user: User): void
-
   (e: 'scriptsReordered', scripts: Script[]): void
 }
 
@@ -759,18 +751,6 @@ const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
   return type
-}
-
-const handlePassCheck = (user: User) => {
-  Modal.confirm({
-    title: '确认操作',
-    content: `确定要将用户 ${user.Info.Name} 标记为「已通过人工排查」吗？`,
-    okText: '确定',
-    cancelText: '取消',
-    onOk: () => {
-      emit('passCheckUser', user)
-    },
-  })
 }
 
 const truncateText = (text: string, maxLength: number = 10): string => {
@@ -970,10 +950,6 @@ const getM9AOnceStatusTags = (script: Script, user: User) => {
   const queue = parseM9ATaskQueue((user as any).Task?.Queue)
   const data = (user as any).Data || {}
   const tags: Array<{ text: string; color: string }> = []
-
-  if (data.IfPassCheck === false) {
-    return tags
-  }
 
   if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
     const completed = data.LastPsychubeDate === getM9ATodayString()

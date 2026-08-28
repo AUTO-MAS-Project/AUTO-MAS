@@ -1,27 +1,31 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
-  ReloadOutlined,
   SwapOutlined,
   QrcodeOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
-import QRCode from 'qrcode'
 import draggable from 'vuedraggable'
-import type {
-  CancelablePromise,
-  GameSignAccountGroupConfig,
-  OutBase,
-  QrCheckOut,
-  QrCreateOut,
-  ToolsConfig_GameSign,
-} from '@/api'
+import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import { handleExternalLink } from '@/utils/openExternal'
+import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
+import { useQrLogin } from './useQrLogin'
+import {
+  buildUserTagsMap,
+  getSignDetailAlias,
+  getSignDetailClass,
+  getSignStatusText,
+  getTagClass,
+  getTagText,
+  parseSignResult,
+  type AccountGroup,
+  type PlatformTag,
+} from './gameSignDisplay'
 
 const {
   config,
@@ -58,14 +62,7 @@ interface AccountInstance {
 
 const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
   useGameSignAccountApi()
-const {
-  listAccounts,
-  reorderAccounts,
-  manualSign,
-  createMiyousheQr,
-  checkMiyousheQr,
-  saveMiyousheQr,
-} = useGameSignApi()
+const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
@@ -317,441 +314,39 @@ const handleSklandLogin = async () => {
 }
 
 // ==================== 米游社扫码登录 ====================
+// 会话状态机在 useQrLogin，弹窗在 QrLoginModal，这里只提供「存到哪个账号」
+// 和存完之后的本地同步。沿用原来的变量名，模板不用改。
 
-const qrModalVisible = ref(false)
-const qrLoading = ref(false)
-const qrStatus = ref<
-  'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'expired' | 'error'
->('idle')
-const qrCodeDataUrl = ref('')
-const qrStatusText = ref('')
-const qrTicket = ref('')
-const qrDevice = ref('')
-const qrPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
-const qrPollInFlight = ref(false)
-let qrSessionId = 0
-let qrAbortController: AbortController | null = null
-let qrCloseTimer: ReturnType<typeof setTimeout> | null = null
-
-type QrApiResponse = QrCreateOut & QrCheckOut & OutBase
-
-const QR_RESPONSE_INVALID_MESSAGE = '二维码状态响应无效，请刷新后重试'
-const isQrExpiredMessage = (messageText: string) =>
-  /二维码|qr|expired|invalid|nonetype.*get|object has no attribute.*get/i.test(messageText)
-
-const stopQrPoll = () => {
-  if (qrPollTimer.value) {
-    clearInterval(qrPollTimer.value)
-    qrPollTimer.value = null
-  }
-}
-
-const clearQrCloseTimer = () => {
-  if (qrCloseTimer) {
-    clearTimeout(qrCloseTimer)
-    qrCloseTimer = null
-  }
-}
-
-const isCurrentQrSession = (sessionId: number) => sessionId === qrSessionId && qrModalVisible.value
-
-const invalidateQrSession = () => {
-  qrSessionId += 1
-  stopQrPoll()
-  clearQrCloseTimer()
-  qrAbortController?.abort()
-  qrAbortController = null
-  qrPollInFlight.value = false
-  return qrSessionId
-}
-
-const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
-
-const abortableQrRequest = async <T,>(
-  request: CancelablePromise<T>,
-  signal?: AbortSignal
-): Promise<T> => {
-  let aborted = signal?.aborted ?? false
-  const handleAbort = () => {
-    aborted = true
-    request.cancel()
-  }
-  signal?.addEventListener('abort', handleAbort, { once: true })
-  if (aborted) request.cancel()
-
-  try {
-    return await request
-  } catch (error) {
-    if (aborted) {
-      const abortError = new Error('Request aborted')
-      abortError.name = 'AbortError'
-      throw abortError
+const {
+  visible: qrModalVisible,
+  loading: qrLoading,
+  status: qrStatus,
+  statusText: qrStatusText,
+  qrCodeDataUrl,
+  start: startQrLogin,
+  cancel: closeQrModal,
+} = useQrLogin({
+  getAccountId: () => editingAccount.value?.uid,
+  onSaved: async (accountId, cookiesStr, isStillCurrent) => {
+    if (editingAccount.value?.uid === accountId) {
+      editingAccount.value.MiyousheToken = cookiesStr
     }
-    throw error
-  } finally {
-    signal?.removeEventListener('abort', handleAbort)
-  }
-}
-
-const qrFetch = async (
-  path: string,
-  body?: Record<string, string>,
-  signal?: AbortSignal
-): Promise<QrApiResponse> => {
-  let response: QrApiResponse
-  if (path === '/create') {
-    response = await abortableQrRequest(createMiyousheQr(), signal)
-  } else if (path === '/check') {
-    response = await abortableQrRequest(
-      checkMiyousheQr(body?.ticket || '', body?.device || ''),
-      signal
-    )
-  } else if (path === '/save') {
-    response = await abortableQrRequest(
-      saveMiyousheQr(body?.account_uid || '', body?.cookie || ''),
-      signal
-    )
-  } else {
-    throw new Error('未知二维码请求')
-  }
-  if (!response || typeof response !== 'object' || Array.isArray(response)) {
-    throw new Error(QR_RESPONSE_INVALID_MESSAGE)
-  }
-  // 二维码 URL、ticket、设备标识和 Cookie 都是登录凭据，禁止写入前端日志。
-  const logData = {
-    ...response,
-    ticket: undefined,
-    qr_url: undefined,
-    device: undefined,
-    cookies_str: undefined,
-  }
-  logger.debug(`[QR ${path}] ${JSON.stringify(logData)}`)
-  // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
-  return response
-}
-
-const markQrExpired = (messageText = '二维码已过期，请刷新后重新扫码') => {
-  stopQrPoll()
-  qrStatus.value = 'expired'
-  qrStatusText.value = messageText
-  qrCodeDataUrl.value = ''
-}
-
-const startQrLogin = async () => {
-  const sessionId = invalidateQrSession()
-  qrAbortController = new AbortController()
-  const { signal } = qrAbortController
-  qrLoading.value = true
-  qrStatus.value = 'loading'
-  qrStatusText.value = '正在生成二维码...'
-  qrCodeDataUrl.value = ''
-  qrTicket.value = ''
-  qrDevice.value = ''
-  qrModalVisible.value = true
-
-  try {
-    const data = await qrFetch('/create', undefined, signal)
-    if (!isCurrentQrSession(sessionId)) return
-    if (data.code === 500 || data.status === 'error') {
-      qrStatus.value = 'error'
-      qrStatusText.value = data.message || '创建二维码失败'
-      return
+    await loadAccounts()
+    if (!isStillCurrent()) return
+    if (onRefreshConfig) {
+      await onRefreshConfig()
     }
-    if (!data.qr_url || !data.ticket || !data.device) {
-      throw new Error('创建二维码失败：服务端响应缺少登录信息')
-    }
-    qrCodeDataUrl.value = await QRCode.toDataURL(data.qr_url, {
-      width: 240,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-    })
-    if (!isCurrentQrSession(sessionId)) return
-    qrTicket.value = data.ticket
-    qrDevice.value = data.device
-    qrStatus.value = 'waiting'
-    qrStatusText.value = '请使用米游社 APP 扫描二维码'
-    qrPollTimer.value = setInterval(() => {
-      void pollQrStatus(sessionId)
-    }, 2000)
-  } catch (e) {
-    if (!isCurrentQrSession(sessionId) || isQrAbortError(e)) return
-    qrStatus.value = 'error'
-    qrStatusText.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    if (isCurrentQrSession(sessionId)) {
-      qrLoading.value = false
-    }
-  }
-}
-
-const pollQrStatus = async (sessionId: number) => {
-  if (
-    !isCurrentQrSession(sessionId) ||
-    qrPollInFlight.value ||
-    !qrTicket.value ||
-    !qrDevice.value
-  ) {
-    return
-  }
-  const ticket = qrTicket.value
-  const device = qrDevice.value
-  const signal = qrAbortController?.signal
-  if (!signal) return
-  qrPollInFlight.value = true
-  try {
-    const data = await qrFetch('/check', { ticket, device }, signal)
-    if (!isCurrentQrSession(sessionId)) return
-
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
-      markQrExpired('二维码已失效或服务端返回空响应，请刷新后重试')
-      return
-    }
-
-    const responseMessage = typeof data.message === 'string' ? data.message : ''
-
-    // 后端错误响应（code=500 或 status=error）
-    if (data.code === 500 || data.status === 'error') {
-      if (isQrExpiredMessage(responseMessage)) {
-        markQrExpired(responseMessage)
-      } else {
-        stopQrPoll()
-        qrStatus.value = 'error'
-        qrStatusText.value = responseMessage || '查询状态失败'
-      }
-      return
-    }
-
-    if (data.status === 'Scanned') {
-      qrStatus.value = 'scanned'
-      qrStatusText.value = '已扫码，等待确认...'
-    } else if (data.status === 'Confirmed') {
-      stopQrPoll()
-      await handleQrConfirmed(data.cookies_str || '', sessionId, signal)
-    } else if (data.status === 'Canceled') {
-      stopQrPoll()
-      qrStatus.value = 'error'
-      qrStatusText.value = responseMessage || '登录已取消'
-    } else if (data.status === 'Expired') {
-      markQrExpired(responseMessage || '二维码已过期，请刷新后重新扫码')
-    } else if (data.status === 'Error') {
-      if (isQrExpiredMessage(responseMessage)) {
-        markQrExpired(responseMessage)
-      } else {
-        stopQrPoll()
-        qrStatus.value = 'error'
-        qrStatusText.value = responseMessage || '查询状态失败'
-      }
-    }
-    // status === 'Init' 时不更新 UI，继续轮询
-  } catch (e) {
-    if (!isCurrentQrSession(sessionId) || isQrAbortError(e)) return
-    const errorMessage = e instanceof Error ? e.message : String(e)
-    if (isQrExpiredMessage(errorMessage) || errorMessage === QR_RESPONSE_INVALID_MESSAGE) {
-      markQrExpired('二维码已失效或服务端返回无效状态，请刷新后重试')
-    } else {
-      // 短暂网络错误不停止轮询，但记录日志便于调试。
-      logger.warn(`[QR poll] 轮询异常: ${errorMessage}`)
-    }
-  } finally {
-    if (isCurrentQrSession(sessionId)) {
-      qrPollInFlight.value = false
-    }
-  }
-}
-
-const handleQrConfirmed = async (cookiesStr: string, sessionId: number, signal: AbortSignal) => {
-  if (!isCurrentQrSession(sessionId)) return
-  if (!cookiesStr) {
-    qrStatus.value = 'error'
-    qrStatusText.value = '扫码确认成功但未获取到有效认证 Cookie，请重新生成二维码'
-    return
-  }
-
-  // Passport 模式：cookies 直接从响应头获取，无需 exchange
-  const accountId = editingAccount.value?.uid
-  if (accountId) {
-    qrStatus.value = 'exchanging'
-    qrStatusText.value = '正在保存登录凭据...'
-    try {
-      const saveResponse = await qrFetch(
-        '/save',
-        {
-          account_uid: accountId,
-          cookie: cookiesStr,
-        },
-        signal
-      )
-      if (!isCurrentQrSession(sessionId)) return
-      if (saveResponse.code !== 200 || saveResponse.status === 'error') {
-        throw new Error(saveResponse.message || '保存 Token 失败')
-      }
-      if (editingAccount.value?.uid === accountId) {
-        editingAccount.value.MiyousheToken = cookiesStr
-      }
-      await loadAccounts()
-      if (!isCurrentQrSession(sessionId)) return
-      if (onRefreshConfig) {
-        await onRefreshConfig()
-      }
-      if (!isCurrentQrSession(sessionId)) return
-    } catch (error) {
-      if (!isCurrentQrSession(sessionId) || isQrAbortError(error)) return
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`扫码保存 Token 失败: ${errorMsg}`)
-      message.error('扫码成功，但保存 Token 失败')
-      qrStatus.value = 'error'
-      qrStatusText.value = '扫码成功，但保存 Token 失败'
-      return
-    }
-  }
-  qrStatus.value = 'done'
-  qrStatusText.value = '登录成功！Token 已自动填入'
-  message.success('米游社扫码登录成功')
-  // 延迟关闭弹窗，让用户看到成功提示
-  clearQrCloseTimer()
-  qrCloseTimer = setTimeout(() => {
-    qrCloseTimer = null
-    if (isCurrentQrSession(sessionId)) closeQrModal()
-  }, 1200)
-}
-
-const closeQrModal = () => {
-  invalidateQrSession()
-  qrModalVisible.value = false
-  qrLoading.value = false
-  qrStatus.value = 'idle'
-  qrCodeDataUrl.value = ''
-  qrStatusText.value = ''
-  qrTicket.value = ''
-  qrDevice.value = ''
-}
-
-onBeforeUnmount(() => {
-  invalidateQrSession()
+  },
+  logger,
 })
 
 // ==================== 签到结果解析（按用户绑定） ====================
+// 解析与聚合逻辑都在 gameSignDisplay.ts，这里只负责接上响应式
 
-interface GameItem {
-  account?: string
-  game: string
-  status: string
-  reward: string
-  reason: string
-}
+const signResult = computed(() => parseSignResult(config.Result))
 
-interface AccountGroup {
-  account_alias: string
-  account_uid: string
-  games: GameItem[]
-}
-
-interface PlatformResult {
-  [platform: string]: AccountGroup[]
-}
-
-const signResult = computed<PlatformResult>(() => {
-  try {
-    const resultStr = config.Result
-    if (!resultStr || resultStr === '{}' || resultStr === '-') return {}
-    return JSON.parse(resultStr)
-  } catch {
-    return {}
-  }
-})
-
-// 标签云状态类型
-type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'risk' | 'unconfigured'
-
-// 平台标签数据结构
-interface PlatformTag {
-  platform: string
-  status: TagStatus
-  games: GameItem[]
-  groups: AccountGroup[]
-  signedCount: number
-  totalCount: number
-  failedCount: number
-  riskCount: number
-}
-
-// 将每个用户的社区标签预计算为响应式 Map
-// 使用 computed 确保当 signResult 或 accounts 变化时自动重新计算
-const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
-  const result = signResult.value
-  const map = new Map<string, PlatformTag[]>()
-
-  for (const account of accounts.value) {
-    const tags: PlatformTag[] = []
-    const taygedoCredential = (() => {
-      const raw = account.TaygedoToken?.trim()
-      if (!raw) return { taygedo: false, cloud: false }
-      try {
-        const parsed = JSON.parse(raw) as Record<string, unknown>
-        return {
-          taygedo: Boolean(parsed.refreshToken || parsed.accessToken),
-          cloud: Boolean(parsed.cloudToken && parsed.cloudUserId),
-        }
-      } catch {
-        return { taygedo: true, cloud: false }
-      }
-    })()
-    for (const platform of ['米游社', '森空岛', '库街区', '塔吉多', '云异环']) {
-      const hasToken =
-        (platform === '米游社' && !!account.MiyousheToken) ||
-        (platform === '库街区' && !!account.KuroToken) ||
-        (platform === '森空岛' && !!account.SklandToken) ||
-        (platform === '塔吉多' && taygedoCredential.taygedo) ||
-        (platform === '云异环' && taygedoCredential.cloud)
-      if (!hasToken) continue
-
-      const platformData = result[platform]
-      const games: GameItem[] = []
-      const groups: AccountGroup[] = []
-      if (platformData) {
-        for (const group of platformData) {
-          if (group.account_uid === account.uid) {
-            games.push(...group.games)
-            groups.push(group)
-          }
-        }
-      }
-
-      const totalCount = games.length
-      const signedCount = games.filter(g => g.status === '成功' || g.status === '已签到').length
-      const failedCount = games.filter(g => g.status === '失败').length
-      const riskCount = games.filter(g => g.status === '风控').length
-
-      let status: TagStatus
-      if (totalCount === 0) {
-        status = 'unsigned'
-      } else if (riskCount > 0) {
-        status = 'risk'
-      } else if (failedCount > 0) {
-        status = 'failed'
-      } else if (signedCount === totalCount) {
-        status = 'signed'
-      } else if (signedCount > 0) {
-        status = 'partial'
-      } else {
-        status = 'unsigned'
-      }
-
-      tags.push({
-        platform,
-        status,
-        games,
-        groups,
-        signedCount,
-        totalCount,
-        failedCount,
-        riskCount,
-      })
-    }
-    map.set(account.uid, tags)
-  }
-  return map
-})
+// 预计算每个用户的社区标签，signResult 或 accounts 变化时自动重算
+const userTagsMap = computed(() => buildUserTagsMap(accounts.value, signResult.value))
 
 // 获取某用户的所有社区标签（响应式版本）
 const getUserPlatformTagsReactive = (account: AccountInstance): PlatformTag[] => {
@@ -767,35 +362,6 @@ const getAccountGroupsForPlatformReactive = (
   const tag = tags.find(t => t.platform === platform)
   return tag?.groups || []
 }
-
-const getSignDetailAlias = (group: AccountGroup, game: GameItem): string => {
-  const account = game.account?.trim() || ''
-  const alias = account.split('/', 1)[0]?.trim()
-  if (alias && alias !== '未知' && alias !== '未知用户') return alias
-  return group.account_alias?.trim() || '未知用户'
-}
-
-const getSignStatusText = (status: string): string => {
-  if (status === '成功' || status === '已签到') return '已签'
-  if (status === '风控') return '风控'
-  if (status === '失败') return '失败'
-  return '未签'
-}
-
-const getSignDetailClass = (status: string): string => {
-  if (status === '成功' || status === '已签到') return 'tt-signed'
-  if (status === '风控') return 'tt-risk'
-  if (status === '失败') return 'tt-failed'
-  return 'tt-unsigned'
-}
-
-// 标签文字 — 尚无结果时只显示社区名，执行后显示成功数/总数
-const getTagText = (tag: PlatformTag) => {
-  return tag.totalCount > 0 ? `${tag.platform}${tag.signedCount}/${tag.totalCount}` : tag.platform
-}
-
-// 标签 CSS 类
-const getTagClass = (status: TagStatus) => `tag-${status}`
 
 // ==================== 通用变更处理 ====================
 
@@ -1274,62 +840,15 @@ onMounted(() => {
     </a-modal>
 
     <!-- 扫码登录弹窗 -->
-    <a-modal
-      v-model:open="qrModalVisible"
-      title="米游社扫码登录"
-      :footer="null"
-      :width="360"
+    <QrLoginModal
+      :open="qrModalVisible"
+      :status="qrStatus"
+      :status-text="qrStatusText"
+      :qr-code-data-url="qrCodeDataUrl"
+      :loading="qrLoading"
       @cancel="closeQrModal"
-    >
-      <div class="qr-login-container">
-        <!-- 二维码 -->
-        <div
-          v-if="qrCodeDataUrl && qrStatus !== 'error' && qrStatus !== 'expired'"
-          class="qr-code-wrapper"
-        >
-          <img :src="qrCodeDataUrl" alt="扫码登录" class="qr-code-img" />
-        </div>
-
-        <!-- 加载中 -->
-        <div v-if="qrStatus === 'loading'" class="qr-status">
-          <a-spin />
-          <span style="margin-left: 8px">{{ qrStatusText }}</span>
-        </div>
-
-        <!-- 状态提示 -->
-        <div v-if="qrStatus !== 'loading'" class="qr-status">
-          <span v-if="qrStatus === 'waiting'" class="qr-status-primary">
-            ⏳ {{ qrStatusText }}
-          </span>
-          <span v-else-if="qrStatus === 'scanned'" class="qr-status-warning">
-            📱 {{ qrStatusText }}
-          </span>
-          <span v-else-if="qrStatus === 'exchanging'" class="qr-status-primary">
-            ⚙️ {{ qrStatusText }}
-          </span>
-          <span v-else-if="qrStatus === 'done'" class="qr-status-success">
-            ✅ {{ qrStatusText }}
-          </span>
-          <span v-else-if="qrStatus === 'expired'" class="qr-status-error">
-            ⚠️ {{ qrStatusText }}
-          </span>
-          <span v-else-if="qrStatus === 'error'" class="qr-status-error">
-            ❌ {{ qrStatusText }}
-          </span>
-        </div>
-
-        <div v-if="qrStatus === 'waiting' || qrStatus === 'scanned'" class="qr-hint">
-          打开米游社 APP → 左上角扫码 → 扫描上方二维码
-        </div>
-
-        <div v-if="qrStatus === 'expired' || qrStatus === 'error'" class="qr-actions">
-          <a-button type="primary" size="small" :loading="qrLoading" @click="startQrLogin">
-            <template #icon><ReloadOutlined /></template>
-            重新生成二维码
-          </a-button>
-        </div>
-      </div>
-    </a-modal>
+      @retry="startQrLogin"
+    />
   </div>
 </template>
 
@@ -1620,7 +1139,7 @@ onMounted(() => {
 .tag-signed {
   background: #f6ffed;
   border-color: #b7eb8f;
-  color: #52c41a;
+  color: var(--ant-color-success);
 }
 
 /* 灰色：有 Token 但暂无签到数据 */
@@ -1704,7 +1223,7 @@ onMounted(() => {
   white-space: nowrap;
 }
 .tt-signed {
-  color: #52c41a;
+  color: var(--ant-color-success);
 }
 .tt-unsigned {
   color: #d4b106;
@@ -1811,49 +1330,6 @@ onMounted(() => {
 .community-divider {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
-}
-
-/* ==================== 扫码登录弹窗 ==================== */
-.qr-login-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px 0;
-}
-.qr-code-wrapper {
-  margin-bottom: 16px;
-}
-.qr-code-img {
-  width: 240px;
-  height: 240px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-.qr-status {
-  text-align: center;
-  font-size: 14px;
-  margin-bottom: 12px;
-  min-height: 24px;
-}
-.qr-status-primary {
-  color: var(--ant-color-primary);
-}
-.qr-status-warning {
-  color: var(--ant-color-warning);
-}
-.qr-status-success {
-  color: var(--ant-color-success);
-}
-.qr-status-error {
-  color: var(--ant-color-error);
-}
-.qr-hint {
-  text-align: center;
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-}
-.qr-actions {
-  margin-top: 4px;
 }
 
 /* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */

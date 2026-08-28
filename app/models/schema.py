@@ -418,7 +418,7 @@ class TimeSet(BaseModel):
 class QueueConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="队列名称")
     TimeEnabled: Optional[bool] = Field(default=None, description="是否启用定时")
-    StartUpEnabled: Optional[bool] = Field(default=None, description="是否启动时运行")
+    StartUpMode: Optional[Literal["Never", "Always", "DailyFirst"]] = Field(default=None, description="启动时运行模式")
     AfterAccomplish: Optional[
         Literal[
             "NoAction",
@@ -525,13 +525,10 @@ class MaaUserConfig_Info(BaseModel):
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
     Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
-    IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
-    SklandToken: Optional[str] = Field(default=None, description="SklandToken")
     Tag: Optional[str] = Field(default=None, description="状态标签列表")
 
 
 class MaaUserConfig_Data(BaseModel):
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过人工排查")
     AnnihilationCompletedWeek: Optional[str] = Field(
         default=None, description="剿灭达到周上限时的 ISO 周"
     )
@@ -720,6 +717,11 @@ class OkwwUserConfig_Data(GeneralUserConfig_Data):
 class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
     """OK-WW 用户通知（复用通用字段）"""
 
+    PushLogEnabled: Optional[bool] = Field(
+        default=None,
+        description="任务报告中是否推送该用户的节点详情（log_box 采集的关键节点）",
+    )
+
 
 class OkwwUserConfig(BaseModel):
     Info: Optional[OkwwUserConfig_Info] = Field(default=None, description="用户信息")
@@ -889,6 +891,13 @@ class GeneralConfig_Script(BaseModel):
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+    PushLogEnabled: Optional[bool] = Field(
+        default=None, description="推送日志采集启用开关"
+    )
+    PushLogPatterns: Optional[str] = Field(
+        default=None,
+        description='推送日志高级模式匹配(JSON 数组，每项为 PushLogPattern 对象：type 为 split/regex/multiline，按类型使用对应字段)',
+    )
 
 
 class GeneralConfig_Game(BaseModel):
@@ -943,6 +952,12 @@ class OkwwConfig_Game(BaseModel):
     Path: Optional[str] = Field(default=None, description="游戏启动器路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None, description="任务开始前是否由 MAS 检查并接管更新鸣潮"
+    )
+    UpdateFullSyncLimit: Optional[int] = Field(
+        default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
+    )
 
 
 class OkwwConfig_Run(GeneralConfig_Run):
@@ -1046,8 +1061,6 @@ class MaaEndUserConfig_Info(BaseModel):
     )
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
-    IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
-    SklandToken: Optional[str] = Field(default=None, description="SklandToken")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
 
@@ -1119,8 +1132,6 @@ class MaaEndUserConfig_Data(BaseModel):
     LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
         default=None, description="上次代理状态"
     )
-    LastSklandDate: Optional[str] = Field(default=None, description="上次森空岛签到日期")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
 
 class MaaEndUserConfig(BaseModel):
@@ -1319,7 +1330,6 @@ class SrcUserConfig_Stage(BaseModel):
 class SrcUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
 
 class SrcUserConfig_Notify(BaseModel):
@@ -1435,7 +1445,6 @@ class HSRUserConfig_Info(BaseModel):
 class HSRUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
     # 历战余响
     EchoOfWarCompletedThisWeek: Optional[bool] = Field(
         default=None, description="本周是否已完成历战余响"
@@ -1750,7 +1759,6 @@ class M9AUserConfig_Data(BaseModel):
     LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
     LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
 
 class M9AUserConfig_Notify(BaseModel):
@@ -2388,7 +2396,7 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
         ..., description="任务模式"
     )
     resumeFromScriptId: str | None = Field(
@@ -2587,3 +2595,67 @@ class WSCommandsOut(OutBase):
     """可用命令列表响应"""
 
     data: Optional[Dict[str, Any]] = Field(default=None, description="命令列表")
+
+
+# ============== 日志模式调试相关模型 ==============
+
+
+class PushLogPattern(BaseModel):
+    """推送日志采集模式配置（split/regex/multiline 三种模式按 type 区分，各模式使用对应字段）"""
+
+    type: Literal["split", "regex", "multiline"] = Field(..., description="匹配类型")
+    name: Optional[str] = Field(default=None, description="规则标题（供分享站展示/说明）")
+    enabled: Optional[bool] = Field(
+        default=None, description="单条规则启用/停用开关：停用时保留配置但不参与采集"
+    )
+    logType: Optional[str] = Field(default=None, description="日志类型：普通/失败")
+    match: Optional[str] = Field(default=None, description="split 模式的匹配关键字")
+    head: Optional[str] = Field(default=None, description="split 模式的首部关键字")
+    headInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含首部关键字"
+    )
+    tail: Optional[str] = Field(default=None, description="split 模式的尾部关键字")
+    tailInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含尾部关键字"
+    )
+    extract: Optional[str] = Field(
+        default=None, description="regex 模式的提取正则（split/regex 通用）"
+    )
+    start: Optional[str] = Field(
+        default=None, description="multiline 模式的起始行正则"
+    )
+    end: Optional[str] = Field(default=None, description="multiline 模式的结束行正则")
+    maxLines: Optional[int] = Field(
+        default=None, description="multiline 模式的最大跨行数"
+    )
+
+
+class PatternDebugIn(BaseModel):
+    """日志模式调试请求"""
+
+    pattern: PushLogPattern = Field(..., description="待调试的推送日志模式配置")
+    logText: str = Field(default="", description="待调试的多行日志文本")
+
+
+class PatternDebugResultItem(BaseModel):
+    """单行/单窗口调试结果"""
+
+    idx: int = Field(..., description="行号或窗口序号")
+    hit: bool = Field(..., description="是否命中")
+    extracted: str = Field(default="", description="提取后的文本")
+    line: str = Field(default="", description="原始日志行（多行模式为空）")
+    error: Optional[str] = Field(default=None, description="该行/窗口的错误信息")
+
+
+class PatternDebugOut(OutBase):
+    """日志模式调试响应"""
+
+    configError: Optional[str] = Field(
+        default=None, description="配置级错误（正则/表达式语法错误等）"
+    )
+    isMultiline: bool = Field(
+        default=False, description="是否为多行聚合模式"
+    )
+    results: List[PatternDebugResultItem] = Field(
+        default_factory=list, description="逐行/逐窗口调试结果"
+    )

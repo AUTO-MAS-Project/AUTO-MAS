@@ -14,10 +14,13 @@ export interface BettergiCustomGroupRow {
 export interface BettergiCustomGroupOptions {
   /** 所在脚本，用于从 BetterGI 现有配置读取自定义组 */
   scriptId: string
-  /** 父组件表单的 OneDragon 区块（CustomGroups / IfUseCustomGroups），本 composable 直接读写 */
-  oneDragon: { CustomGroups: string | any[]; IfUseCustomGroups: boolean }
+  /** 父组件表单 OneDragon 区块的读取器——须是 getter，父组件在 loadUser 时会整体替换
+   *  formData.OneDragon，若传静态引用则本 composable 一直读写失效的旧对象，开关不再生效 */
+  oneDragon: () => { CustomGroups: string | any[]; IfUseCustomGroups: boolean }
   /** 一条龙配置名（Task.OneDragonConfigName），决定从 BetterGI 哪份配置读取自定义组 */
   configName: () => string
+  /** 用户独立配置（Info.IfUseMasConfig）：为 true 时改读 MAS 槽位「MAS独立配置」而非同名实配 */
+  masConfig: () => boolean
   /** 是否处于「脚本直控配置」之外（可编辑）。为 true 时允许交互 */
   editable: () => boolean
   /** 保存某字段到后端（形如 'OneDragon.CustomGroups'） */
@@ -31,11 +34,19 @@ export interface BettergiCustomGroupOptions {
  * 又经 `saveField` 落库；首次开启总开关且表格为空时，从 BetterGI 现有配置自动加载。
  */
 export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
-  const { scriptId, oneDragon, configName, editable, saveField } = options
+  const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } =
+    options
+  const oneDragon = () => getOneDragon()
 
   const table = ref<BettergiCustomGroupRow[]>([])
   const selectedKeys = ref<string[]>([])
-  const modal = reactive({ open: false, name: '', saving: false })
+  const modal = reactive({
+    open: false,
+    name: '',
+    saving: false,
+    // 「添加配置组」弹窗的下拉候选项：BGI 现有的自定义配置组名（已入表的排除）
+    addOptions: [] as Array<{ value: string; label: string }>,
+  })
 
   const columns: TableColumnsType = [
     { title: '配置组名称', dataIndex: 'name', key: 'name' },
@@ -65,7 +76,7 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   }
 
   const syncFromForm = () => {
-    table.value = parseList(oneDragon.CustomGroups)
+    table.value = parseList(oneDragon().CustomGroups)
   }
 
   const mergeRows = (rows: BettergiCustomGroupRow[]) => {
@@ -76,31 +87,45 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     table.value = Array.from(existing.values())
   }
 
-  const loadFromBettergi = async () => {
+  const fetchBettergiGroups = async (): Promise<BettergiCustomGroupRow[]> => {
     try {
       const resp =
         await BettergiService.getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
           scriptId,
-          configName()
+          configName(),
+          masConfig()
         )
-      if (resp.code === 200 && Array.isArray(resp.data)) {
-        mergeRows(resp.data)
-      }
+      return resp.code === 200 && Array.isArray(resp.data) ? resp.data : []
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
+      return []
     }
+  }
+
+  const loadFromBettergi = async () => {
+    mergeRows(await fetchBettergiGroups())
+  }
+
+  /** 拉取「添加配置组」下拉候选：BGI 现有自定义组名，剔除已入表的 */
+  const refreshAddOptions = async () => {
+    const existing = new Set(table.value.map(r => r.name))
+    const groups = await fetchBettergiGroups()
+    modal.addOptions = groups
+      .filter(g => !existing.has(g.name))
+      .map(g => ({ value: g.name, label: g.name }))
   }
 
   const persist = () => {
     const str = JSON.stringify(table.value)
-    oneDragon.CustomGroups = str
+    oneDragon().CustomGroups = str
     void saveField('OneDragon.CustomGroups', str)
   }
 
   const toggleMaster = () => {
     if (!editable()) return
-    const next = !oneDragon.IfUseCustomGroups
-    oneDragon.IfUseCustomGroups = next
+    const cur = oneDragon()
+    const next = !cur.IfUseCustomGroups
+    cur.IfUseCustomGroups = next
     void saveField('OneDragon.IfUseCustomGroups', next)
     // 首次开启且表格为空时，从 BetterGI 自动加载现有自定义组
     if (next && table.value.length === 0) {
@@ -108,8 +133,10 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     }
   }
 
-  const openAdd = () => {
+  const openAdd = async () => {
     modal.name = ''
+    // 每次打开都刷新候选，保证已新增/删除的组名在下拉里即时反映
+    await refreshAddOptions()
     modal.open = true
   }
 

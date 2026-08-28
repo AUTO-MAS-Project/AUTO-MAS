@@ -194,7 +194,6 @@
     @save-maa-end-config="handleSaveMaaEndConfig"
     @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
-    @pass-check-user="handlePassCheckUser"
   />
 
   <ScriptCreateDialog
@@ -606,11 +605,13 @@
                     </div>
                   </div>
 
+                  <!-- eslint-disable vue/no-v-html 模板描述来自 MAS 后端 markdown，属可信内容 -->
                   <div
                     class="template-description"
                     @click="handleTemplateDescriptionClick"
                     v-html="parseMarkdown(template.description)"
                   ></div>
+                  <!-- eslint-enable vue/no-v-html -->
                 </div>
               </div>
             </template>
@@ -1652,34 +1653,6 @@ const handleToggleUserStatus = async (user: User) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
     message.error(`更新用户状态失败: ${errorMsg}`)
-  }
-}
-
-const handlePassCheckUser = async (user: User) => {
-  try {
-    // 找到该用户对应的脚本
-    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
-    if (!script) {
-      message.error('找不到对应的脚本')
-      return
-    }
-
-    // 调用 updateUser API，更新 Data.IfPassCheck 为 true
-    const result = await updateUser(script.id, user.id, {
-      Data: {
-        IfPassCheck: true,
-      },
-    })
-
-    if (result) {
-      message.success('已标记为「通过人工排查」')
-      // 刷新脚本配置
-      await loadScripts()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`更新人工排查状态失败: ${errorMsg}`)
-    message.error(`更新人工排查状态失败: ${errorMsg}`)
   }
 }
 </script>

@@ -152,6 +152,10 @@
             {% endif %}
             <p class="result-label">用户代理情况</p>
             <div class="result-box">{{ result }}</div>
+            {% if push_log %}
+            <p class="result-label">任务进程信息</p>
+            <div class="result-box">{{ push_log }}</div>
+            {% endif %}
         </div>
 
         <p class="signature">AUTO-MAS 敬上</p>

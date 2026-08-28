@@ -188,8 +188,6 @@ export function useScriptApi() {
                   Stage_2: any
                   Stage_3: any
                   Stage_Remain: any
-                  IfSkland: any
-                  SklandToken: any
                 }
                 Task: {
                   IfStartUp: any
@@ -213,8 +211,6 @@ export function useScriptApi() {
                 }
                 Data: {
                   LastProxyDate: any
-                  LastSklandDate: any
-                  IfPassCheck: any
                   ProxyTimes: any
                 }
               }
@@ -347,14 +343,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Stage_Remain !== undefined
                             ? maaUserData.Info.Stage_Remain
                             : '-',
-                        IfSkland:
-                          maaUserData.Info?.IfSkland !== undefined
-                            ? maaUserData.Info.IfSkland
-                            : false,
-                        SklandToken:
-                          maaUserData.Info?.SklandToken !== undefined
-                            ? maaUserData.Info.SklandToken
-                            : '',
                         Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
@@ -444,14 +432,6 @@ export function useScriptApi() {
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
                             : '',
-                        LastSklandDate:
-                          maaUserData.Data?.LastSklandDate !== undefined
-                            ? maaUserData.Data.LastSklandDate
-                            : '',
-                        IfPassCheck:
-                          maaUserData.Data?.IfPassCheck !== undefined
-                            ? maaUserData.Data.IfPassCheck
-                            : false,
                         ProxyTimes:
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
@@ -560,10 +540,6 @@ export function useScriptApi() {
                           srcUserData.Data?.ProxyTimes !== undefined
                             ? srcUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          srcUserData.Data?.IfPassCheck !== undefined
-                            ? srcUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {
@@ -687,14 +663,6 @@ export function useScriptApi() {
                           maaEndUserData.Info?.RemainedDay !== undefined
                             ? maaEndUserData.Info.RemainedDay
                             : -1,
-                        IfSkland:
-                          maaEndUserData.Info?.IfSkland !== undefined
-                            ? maaEndUserData.Info.IfSkland
-                            : false,
-                        SklandToken:
-                          maaEndUserData.Info?.SklandToken !== undefined
-                            ? maaEndUserData.Info.SklandToken
-                            : '',
                         Notes:
                           maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
                         Tag:
@@ -829,18 +797,10 @@ export function useScriptApi() {
                           maaEndUserData.Data?.LastProxyDate !== undefined
                             ? maaEndUserData.Data.LastProxyDate
                             : '',
-                        LastSklandDate:
-                          maaEndUserData.Data?.LastSklandDate !== undefined
-                            ? maaEndUserData.Data.LastSklandDate
-                            : '',
                         ProxyTimes:
                           maaEndUserData.Data?.ProxyTimes !== undefined
                             ? maaEndUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          maaEndUserData.Data?.IfPassCheck !== undefined
-                            ? maaEndUserData.Data.IfPassCheck
-                            : false,
                         LastProxyStatus:
                           maaEndUserData.Data?.LastProxyStatus !== undefined
                             ? maaEndUserData.Data.LastProxyStatus
@@ -939,10 +899,6 @@ export function useScriptApi() {
                           m9aUserData.Data?.ProxyTimes !== undefined
                             ? m9aUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          m9aUserData.Data?.IfPassCheck !== undefined
-                            ? m9aUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (
@@ -1161,10 +1117,109 @@ export function useScriptApi() {
                           hsrUserData.Data?.ProxyTimes !== undefined
                             ? hsrUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          hsrUserData.Data?.IfPassCheck !== undefined
-                            ? hsrUserData.Data.IfPassCheck
+                      },
+                    }
+                  } else if (userIndex.type === 'BetterGIUserConfig' && userData) {
+                    const bettergiUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: bettergiUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          bettergiUserData.Info?.Name !== undefined
+                            ? bettergiUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          bettergiUserData.Info?.Status !== undefined
+                            ? bettergiUserData.Info.Status
+                            : true,
+                        Id: bettergiUserData.Info?.Id !== undefined ? bettergiUserData.Info.Id : '',
+                        Password:
+                          bettergiUserData.Info?.Password !== undefined
+                            ? bettergiUserData.Info.Password
+                            : '',
+                        RemainedDay:
+                          bettergiUserData.Info?.RemainedDay !== undefined
+                            ? bettergiUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          bettergiUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.IfScriptBeforeTask
                             : false,
+                        ScriptBeforeTask:
+                          bettergiUserData.Info?.ScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          bettergiUserData.Info?.IfScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          bettergiUserData.Info?.ScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          bettergiUserData.Info?.Notes !== undefined
+                            ? bettergiUserData.Info.Notes
+                            : '',
+                        Tag:
+                          bettergiUserData.Info?.Tag !== undefined
+                            ? bettergiUserData.Info.Tag
+                            : null,
+                      },
+                      Task: {
+                        OneDragonConfigName:
+                          bettergiUserData.Task?.OneDragonConfigName !== undefined
+                            ? bettergiUserData.Task.OneDragonConfigName
+                            : '',
+                      },
+                      Notify: {
+                        Enabled:
+                          bettergiUserData.Notify?.Enabled !== undefined
+                            ? bettergiUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          bettergiUserData.Notify?.IfSendStatistic !== undefined
+                            ? bettergiUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          bettergiUserData.Notify?.IfSendMail !== undefined
+                            ? bettergiUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          bettergiUserData.Notify?.ToAddress !== undefined
+                            ? bettergiUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          bettergiUserData.Notify?.IfServerChan !== undefined
+                            ? bettergiUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          bettergiUserData.Notify?.ServerChanKey !== undefined
+                            ? bettergiUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          bettergiUserData.Notify?.CustomWebhooks !== undefined
+                            ? bettergiUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          bettergiUserData.Data?.LastProxyDate !== undefined
+                            ? bettergiUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          bettergiUserData.Data?.ProxyTimes !== undefined
+                            ? bettergiUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          bettergiUserData.Data?.LastProxyStatus !== undefined
+                            ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                        LastOneDragonConfig:
+                          bettergiUserData.Data?.LastOneDragonConfig !== undefined
+                            ? bettergiUserData.Data.LastOneDragonConfig
+                            : '',
                       },
                     }
                   } else if (userIndex.type === 'BetterGIUserConfig' && userData) {

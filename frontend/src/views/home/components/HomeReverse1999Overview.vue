@@ -75,7 +75,9 @@
         <div class="version-info-time">
           <ClockCircleOutlined class="version-info-time-icon" />
           <span class="version-info-time-label">版本时间：</span>
-          <span class="version-info-time-value">{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span>
+          <span class="version-info-time-value"
+            >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
+          >
         </div>
       </div>
 
@@ -133,7 +135,9 @@ const activeActivities = computed(() => {
 
 const versionCover = computed(() => {
   if (failedVersionCover.value) return ''
-  return props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
+  return (
+    props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
+  )
 })
 
 const remainingCountdownStyle = computed<CSSProperties>(() => ({
@@ -210,7 +214,11 @@ const formatTime = (value: string) =>
   border: 1px solid transparent;
   border-radius: 10px;
   background:
-    radial-gradient(ellipse at 78% 20%, color-mix(in srgb, var(--r1999-accent) 14%, transparent), transparent 55%),
+    radial-gradient(
+      ellipse at 78% 20%,
+      color-mix(in srgb, var(--r1999-accent) 14%, transparent),
+      transparent 55%
+    ),
     radial-gradient(ellipse at 90% 85%, rgba(64, 128, 255, 0.18), transparent 60%),
     linear-gradient(135deg, #0b1220 0%, #101a2e 55%, #0e1a2b 100%);
 }
@@ -432,7 +440,6 @@ const formatTime = (value: string) =>
 
   .version-info {
     flex-direction: column;
-    align-items: flex-start;
     gap: 16px;
   }
 

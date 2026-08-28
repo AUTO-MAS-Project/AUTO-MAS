@@ -13,7 +13,7 @@
             :disabled="disabled"
             size="large"
             @change="onTaskChange"
-            @dropdownVisibleChange="onDropdownVisibleChange"
+            @dropdown-visible-change="onDropdownVisibleChange"
           />
           <a-select
             v-if="status !== '运行'"
@@ -57,7 +57,7 @@
             allow-clear
             size="large"
             @change="onResumeScriptChange"
-            @dropdownVisibleChange="onResumeDropdownVisibleChange"
+            @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"

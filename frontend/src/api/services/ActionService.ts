@@ -8,6 +8,8 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
+import type { PatternDebugIn } from '../models/PatternDebugIn';
+import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
@@ -196,6 +198,29 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/test_notify',
+        });
+    }
+    /**
+     * 调试日志模式
+     * 调试单条日志模式配置，返回逐行/逐窗口匹配结果
+     *
+     * 前端调试弹窗调用此接口，由后端统一执行模式匹配，
+     * 确保调试结果与实际推送日志采集逻辑完全一致。
+     * @param requestBody
+     * @returns PatternDebugOut Successful Response
+     * @throws ApiError
+     */
+    public static debugPatternApiApiSettingDebugPatternPost(
+        requestBody: PatternDebugIn,
+    ): CancelablePromise<PatternDebugOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/debug_pattern',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

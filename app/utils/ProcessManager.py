@@ -21,6 +21,7 @@
 
 
 import os
+import time
 import psutil
 import subprocess
 import asyncio
@@ -306,7 +307,31 @@ class ProcessManager:
         if target_process is not None:
 
             await self.search_process(
-                target_process, datetime.now() + timedelta(seconds=60)
+                target_process,
+                datetime.now() + timedelta(seconds=60),
+                min_create_time=time.time(),
+            )
+
+    @staticmethod
+    def _open_process_elevated(
+        program: Path | str, args: tuple[str, ...], cwd: Path | None
+    ) -> None:
+        """以管理员权限启动进程（触发 UAC），ShellExecute 成功时返回码大于 32。"""
+
+        parameters = subprocess.list2cmdline(list(args)) if args else None
+        working_directory = str(cwd) if cwd is not None else None
+
+        ret = win32api.ShellExecute(
+            None,
+            "runas",
+            str(program),
+            parameters,
+            working_directory,
+            win32con.SW_SHOWNORMAL,
+        )
+        if ret <= 32:
+            raise RuntimeError(
+                f"以管理员权限启动进程失败: {program} (ShellExecute 返回 {ret})"
             )
 
     @staticmethod
@@ -370,18 +395,37 @@ class ProcessManager:
             raise RuntimeError(f"无法启动协议 {protocol_url}: {e}")
 
         await self.search_process(
-            target_process, datetime.now() + timedelta(seconds=60)
+            target_process,
+            datetime.now() + timedelta(seconds=60),
+            min_create_time=time.time(),
         )
 
     async def search_process(
-        self, target_process: ProcessInfo, search_end_time: datetime
+        self,
+        target_process: ProcessInfo,
+        search_end_time: datetime,
+        min_create_time: float | None = None,
     ) -> None:
-        """查找目标进程"""
+        """查找目标进程
+
+        Args:
+            target_process: 期望目标进程信息
+            search_end_time: 搜索截止时间
+            min_create_time: 进程创建时间下限（epoch 秒），早于该时刻创建的同名进程视为
+                启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
+        """
 
         while datetime.now() < search_end_time:
-            for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
+            for proc in psutil.process_iter(
+                ["pid", "name", "exe", "cmdline", "create_time"]
+            ):
                 try:
                     if match_process(proc, target_process):
+                        if (
+                            min_create_time is not None
+                            and proc.create_time() < min_create_time - 2
+                        ):
+                            continue
                         self.target_process = proc
                         return
                 except (psutil.NoSuchProcess, psutil.AccessDenied):

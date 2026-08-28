@@ -9,6 +9,37 @@ const SchedulerView = () => import('../views/scheduler/index.vue')
 
 let needInitLanding = true
 
+// 调试页仅在开发环境注册。import.meta.env.DEV 是编译期常量，
+// 生产构建时整个数组会被判定为死代码，这几个页面不会进入产物。
+const devRoutes = import.meta.env.DEV
+  ? [
+      {
+        path: '/TestRouter',
+        name: 'TestRouter',
+        component: () => import('../views/TestRouter.vue'),
+        meta: { title: '测试路由' },
+      },
+      {
+        path: '/OCRdev',
+        name: 'OCRdev',
+        component: () => import('../views/OCRdev.vue'),
+        meta: { title: 'OCR测试' },
+      },
+      {
+        path: '/WSdev',
+        name: 'WSdev',
+        component: () => import('../views/WSdev.vue'),
+        meta: { title: 'WSdev' },
+      },
+      {
+        path: '/OverlayMaskDev',
+        name: 'OverlayMaskDev',
+        component: () => import('../views/OverlayMaskDev.vue'),
+        meta: { title: '遮罩彩蛋测试' },
+      },
+    ]
+  : []
+
 const routes = [
   {
     path: '/',
@@ -221,30 +252,7 @@ const routes = [
       keepAlive: true, // 启用 keep-alive，保持组件存活
     },
   },
-  {
-    path: '/TestRouter',
-    name: 'TestRouter',
-    component: () => import('../views/TestRouter.vue'),
-    meta: { title: '测试路由' },
-  },
-  {
-    path: '/OCRdev',
-    name: 'OCRdev',
-    component: () => import('../views/OCRdev.vue'),
-    meta: { title: 'OCR测试' },
-  },
-  {
-    path: '/WSdev',
-    name: 'WSdev',
-    component: () => import('../views/WSdev.vue'),
-    meta: { title: 'WSdev' },
-  },
-  {
-    path: '/OverlayMaskDev',
-    name: 'OverlayMaskDev',
-    component: () => import('../views/OverlayMaskDev.vue'),
-    meta: { title: '遮罩彩蛋测试' },
-  },
+  ...devRoutes,
   {
     path: '/history',
     name: 'History',

@@ -18,8 +18,31 @@
       </div>
 
       <a-space size="middle">
+        <a-tooltip
+          v-if="!showBettergiConfigMask && !pageLoading && formData.Info.IfUseMasConfig"
+          placement="bottom"
+        >
+          <template #title>
+            <span style="white-space: normal">
+              独立配置模式：将打开 BetterGI，请在「一条龙」页面编辑「MAS独立配置」，保存退出后自动回读到该用户。
+            </span>
+          </template>
+          <a-button
+            type="primary"
+            ghost
+            size="large"
+            :loading="bettergiConfigLoading"
+            :disabled="pageLoading || !userId"
+            @click="handleBettergiConfig"
+          >
+            <template #icon>
+              <SettingOutlined />
+            </template>
+            配置 BetterGI
+          </a-button>
+        </a-tooltip>
         <a-button
-          v-if="!showBettergiConfigMask"
+          v-else-if="!showBettergiConfigMask"
           type="primary"
           ghost
           size="large"
@@ -284,25 +307,85 @@
               </h3>
             </div>
 
+            <a-alert
+              v-if="!formData.Info.IfUseMasConfig"
+              type="warning"
+              show-icon
+              class="mode-guide-alert"
+            >
+              <template #message>
+                <span class="mode-guide-message">
+                  当前为「脚本直控配置」，任务配置项不可编辑。请切换到「用户独立配置」，以在本页为该
+                  用户配置独立的一条龙任务。
+                </span>
+              </template>
+              <template #action>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :loading="configModeSaving"
+                  @click="handleConfigModeChange(true)"
+                >
+                  切换到用户独立配置
+                </a-button>
+              </template>
+            </a-alert>
+
+            <a-alert
+              v-if="formData.Info.IfUseMasConfig"
+              type="info"
+              show-icon
+              class="mode-guide-alert config-flow-hint"
+            >
+              <template #message>
+                <span class="config-flow-title">如何使用「用户独立配置」</span>
+              </template>
+              <template #description>
+                <p class="config-flow-desc config-flow-p">
+                  该用户的一条龙已走独立配置：MAS 会以「MAS独立配置」这条龙槽位启动。想调整
+                  具体任务，点击右上角「配置 BetterGI」打开 BGI，在其「一条龙」页面选择并编辑名为
+                  <b>「MAS独立配置」</b> 的配置，保存退出后 MAS 会自动回读到该用户。
+                  请不要修改你原有的一龙实配（如「默认配置」）——独立配置读取的是「MAS独立配置」
+                  槽位，同名实配不会被读取、也不受这里编辑影响。
+                </p>
+                <p class="config-flow-desc config-flow-p">
+                  下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍
+                  自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、
+                  自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。
+                </p>
+              </template>
+            </a-alert>
+
             <a-row :gutter="24">
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
+                      <span class="required-mark">*</span>
                       一条龙名称
                       <a-tooltip
-                        title="对应 BetterGI 一条龙页面中已保存的一条龙配置名称，留空则使用「默认配置」"
+                        title="必填。对应 BetterGI 一条龙页面中已保存/将保存的一条龙配置名称，默认为「默认配置」"
                       >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input
+                  <a-select
                     v-model:value="formData.Task.OneDragonConfigName"
-                    placeholder="请输入一条龙的配置名称（留空使用「默认配置」）"
+                    :options="oneDragonConfigOptions"
+                    placeholder="请选择一条龙配置名称"
                     size="large"
+                    show-search
+                    option-filter-prop="label"
                     class="modern-input"
-                    @blur="saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)"
+                    @dropdown-visible-change="
+                      (open: boolean) => {
+                        if (open) void loadOneDragonConfigs()
+                      }
+                    "
+                    @change="
+                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
+                    "
                   />
                 </a-form-item>
               </a-col>
@@ -390,6 +473,10 @@
               </a-col>
             </a-row>
 
+            <p class="config-group-hint">
+                胶囊是「任务配置组」开关：勾选的任务才会执行，未勾选的不执行。
+              </p>
+
             <div class="config-group-grid">
               <div
                 v-for="option in oneDragonGroupOptions"
@@ -410,7 +497,24 @@
 
             <div class="custom-groups-section">
               <div class="custom-groups-header">
-                <h3>自定义配置组</h3>
+                <h3>
+                  自定义配置组
+                  <a-tooltip placement="top">
+                    <template #title>
+                      <div style="max-width: 320px; white-space: normal">
+                        来源：BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组（在
+                        BetterGI 一条龙界面添加），不是下方的「任务配置组」开关。
+                        <br /><br />
+                        用法（本表只是一个开关）：一条龙里存在但本表未列出的配置组
+                        <b>默认执行</b>；已加入本表的组按行的开关执行——开启则执行、关闭则不执行。
+                        <br /><br />
+                        「添加配置组」从 BetterGI 现有配置（独立配置模式下读取「MAS独立配置」槽位）
+                        选取要纳入控制的组；未入表的组仍保留在一条龙里，不会因本表而丢失。
+                      </div>
+                    </template>
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </h3>
                 <div class="custom-groups-toggle">
                   <span class="custom-groups-toggle-label">启用</span>
                   <div
@@ -425,6 +529,11 @@
                   </div>
                 </div>
               </div>
+
+              <p class="section-desc custom-groups-desc">
+                来源是 BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组；本表只是一个开关——
+                一条龙里有但表里没有的组默认执行，入表的组按行的开关执行（开启执行、关闭不执行）。
+              </p>
 
               <div
                 v-if="formData.OneDragon.IfUseCustomGroups && formData.Info.IfUseMasConfig"
@@ -478,10 +587,14 @@
             @ok="confirmAddCustomGroup"
             @cancel="customGroupModal.open = false"
           >
-            <a-input
+            <a-select
               v-model:value="customGroupModal.name"
-              placeholder="请输入配置组名称（添加后默认启用）"
-              @press-enter="confirmAddCustomGroup"
+              :options="customGroupModal.addOptions"
+              placeholder="选择 BGI 现有的配置组（添加后默认启用）"
+              show-search
+              allow-clear
+              style="width: 100%"
+              option-filter-prop="label"
             />
           </a-modal>
         </a-form>
@@ -647,7 +760,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     IfUseMasConfig: true,
   },
   Task: {
-    OneDragonConfigName: '',
+    OneDragonConfigName: '默认配置',
   },
   Switch: {
     Resource: '官服',
@@ -733,6 +846,22 @@ const toggleGroup = (value: string) => {
   void saveField('OneDragon.Groups', groups)
 }
 
+// 一条龙配置名下拉选项（{RootPath}/User/OneDragon/*.json，默认配置置顶），由后端实时读取
+const oneDragonConfigOptions = ref<{ label: string; value: string }[]>([])
+const loadOneDragonConfigs = async () => {
+  try {
+    const resp =
+      await BettergiService.getBettergiOneDragonConfigsApiApiScriptsBettergiOneDragonConfigsGet(
+        scriptId
+      )
+    oneDragonConfigOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
 // 自动战斗策略下拉选项（「根据队伍自动选择」+ {RootPath}/User/AutoFight/*.txt），由后端实时读取
 const strategyOptions = ref<{ label: string; value: string }[]>([])
 const loadStrategyOptions = async () => {
@@ -763,8 +892,9 @@ const {
   toggleEnabled: toggleCustomGroupEnabled,
 } = useBettergiCustomGroups({
   scriptId,
-  oneDragon: formData.OneDragon,
+  oneDragon: () => formData.OneDragon,
   configName: () => formData.Task.OneDragonConfigName,
+  masConfig: () => formData.Info.IfUseMasConfig,
   editable: () => formData.Info.IfUseMasConfig,
   saveField,
 })
@@ -859,6 +989,10 @@ const loadUser = async () => {
       OneDragon: { ...getDefaultUserData().OneDragon, ...(userData.OneDragon || {}) },
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
     })
+    // 一条龙名称为必填：历史空值归一为「默认配置」
+    if (!formData.Task.OneDragonConfigName) {
+      formData.Task.OneDragonConfigName = '默认配置'
+    }
     await nextTick()
     formData.userName = formData.Info.Name || ''
 
@@ -882,6 +1016,7 @@ onMounted(async () => {
     await loadUser()
   }
   await loadStrategyOptions()
+  await loadOneDragonConfigs()
 })
 
 onUnmounted(() => {
@@ -961,6 +1096,11 @@ onUnmounted(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
+}
+
+.required-mark {
+  color: var(--ant-color-error);
+  margin-right: 4px;
 }
 
 .modern-select {
@@ -1044,6 +1184,45 @@ onUnmounted(() => {
 
 .config-group-item-capsule.active .config-group-item-dot {
   left: 25px;
+}
+
+.config-group-hint {
+  margin: 0 0 12px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.config-flow-p {
+  margin: 0;
+}
+
+.config-flow-p + .config-flow-p {
+  margin-top: 8px;
+}
+
+.mode-guide-alert {
+  margin-bottom: 20px;
+}
+
+.mode-guide-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-flow-title {
+  font-weight: 600;
+}
+
+.config-flow-desc {
+  line-height: 1.7;
+  color: var(--ant-color-text);
+}
+
+.custom-groups-desc {
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .custom-groups-section {

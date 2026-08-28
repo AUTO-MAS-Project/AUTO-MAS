@@ -25,22 +25,8 @@
     </div>
   </teleport>
 
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle" wrap>
+  <ScriptEditHeader script-type="MaaEnd" @cancel="handleCancel">
+    <template #extra-actions>
       <a-button
         type="primary"
         size="large"
@@ -53,14 +39,8 @@
         </template>
         {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
       </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </ScriptEditHeader>
 
   <div class="script-edit-content">
     <a-card title="MaaEnd 脚本配置" :loading="pageLoading" class="config-card">
@@ -112,7 +92,6 @@
                   v-model:value="formData.name"
                   placeholder="请输入脚本名称"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
                 />
               </a-form-item>
@@ -235,7 +214,6 @@
                   v-model:value="maaEndConfig.Game.Arguments"
                   placeholder="请输入启动参数"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                 />
               </a-form-item>
@@ -310,7 +288,6 @@
                   v-if="showManualEmulatorIndexInput"
                   v-model:value="maaEndConfig.Game.EmulatorIndex"
                   size="large"
-                  class="modern-input"
                   placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
                 />
@@ -443,12 +420,8 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -815,43 +788,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
 .script-edit-content {
   flex: 1;
 }
@@ -903,25 +839,6 @@ onBeforeUnmount(() => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -934,11 +851,6 @@ onBeforeUnmount(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
 }
 
 .path-input-group {
@@ -1011,12 +923,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

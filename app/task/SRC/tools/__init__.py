@@ -24,5 +24,52 @@
 from .login import login
 from .notify import push_notification
 from .poor_yaml import poor_yaml_read, poor_yaml_write
+from .config import (
+    has_committed_src_user_config_transaction,
+    is_src_config_available,
+    read_src_installation_id,
+    read_src_config_snapshot_state,
+    recover_interrupted_src_config_swap,
+    recover_src_user_config,
+    save_src_user_config,
+    promote_src_config_update,
+    stage_src_config_update,
+    SrcConfigSnapshotState,
+    validate_src_installation,
+    write_src_config_snapshot_state,
+)
+from .process import (
+    kill_src_processes,
+    kill_src_webui_process,
+    read_src_process_state,
+    read_src_webui_port,
+    SrcProcessState,
+    validate_src_cleanup_paths,
+    write_src_process_state,
+)
 
-__all__ = ["login", "push_notification", "poor_yaml_read", "poor_yaml_write"]
+__all__ = [
+    "kill_src_processes",
+    "kill_src_webui_process",
+    "read_src_process_state",
+    "read_src_webui_port",
+    "SrcProcessState",
+    "validate_src_cleanup_paths",
+    "write_src_process_state",
+    "login",
+    "push_notification",
+    "poor_yaml_read",
+    "poor_yaml_write",
+    "has_committed_src_user_config_transaction",
+    "is_src_config_available",
+    "read_src_installation_id",
+    "read_src_config_snapshot_state",
+    "recover_interrupted_src_config_swap",
+    "recover_src_user_config",
+    "save_src_user_config",
+    "promote_src_config_update",
+    "stage_src_config_update",
+    "SrcConfigSnapshotState",
+    "validate_src_installation",
+    "write_src_config_snapshot_state",
+]

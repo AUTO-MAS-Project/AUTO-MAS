@@ -55,11 +55,43 @@ _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 
 # 空配置名的显式兜底配置名
 _DEFAULT_CONFIG_NAME = "默认配置"
+# MAS 运行时专属槽位配置名：开启「用户独立配置」时，把 per-user 配置落地到这个独立文件并据此启动，
+# 绝不覆盖 BGI 同名的用户实配（{RootPath}/User/OneDragon/{用户所选名}.json 全程零接触）。
+# 该槽位由 MAS 独占、运行后删除；名称避免与常见用户配置名冲突。
+_MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
 _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
+
+# BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗字段的只有
+# 秘境（PartyName）与首领讨伐（AutoBossTeamName/AutoBossStrategyName）；地脉花/幽境危战
+# 则由 BetterGI 在 OneDragonTaskItem 里直接从全局 AutoLeyLineOutcropConfig /
+# AutoStygianOnslaughtConfig 段读取队伍与策略（无一条龙专用字段），秘境策略走全局
+# AutoFightConfig。故通用战斗队伍/策略需另补写以下 camelCase 叶子路径（tuple 表示嵌套）：
+#   队伍:   autoLeyLineOutcropConfig.Team（地脉花）,
+#           autoStygianOnslaughtConfig.fightTeamName（幽境危战）
+#   策略:   autoFightConfig.strategyName（秘境）,
+#           autoLeyLineOutcropConfig.fightConfig.strategyName（地脉花）,
+#           autoStygianOnslaughtConfig.strategyName（幽境危战）
+_BGI_CONFIG_REL_PATH = Path("User") / "config.json"
+
+# 通用战斗队伍落到的叶子路径
+_GLOBAL_TEAM_LEAVES = (
+    ("autoLeyLineOutcropConfig", "Team"),
+    ("autoStygianOnslaughtConfig", "fightTeamName"),
+)
+
+# 通用战斗策略落到的叶子路径
+_GLOBAL_STRATEGY_LEAVES = (
+    ("autoFightConfig", "strategyName"),
+    ("autoLeyLineOutcropConfig", "fightConfig", "strategyName"),
+    ("autoStygianOnslaughtConfig", "strategyName"),
+)
+
+# 全部待补写叶子路径：apply 用分组，快照/还原用全集
+_ALL_GLOBAL_LEAVES = _GLOBAL_TEAM_LEAVES + _GLOBAL_STRATEGY_LEAVES
 
 
 def list_auto_boss_strategies(root: Path) -> list[str]:
@@ -77,9 +109,44 @@ def list_auto_boss_strategies(root: Path) -> list[str]:
     return options
 
 
+def list_one_dragon_configs(root: Path) -> list[str]:
+    """列出可选一条龙配置名：{RootPath}/User/OneDragon/*.json 的文件名。
+
+    排除 MAS 运行时槽位「MAS独立配置」；始终把「默认配置」置顶（空名/首选的兜底）。
+    实时扫描以反映 BGI 侧手工新增/删除的配置。
+    """
+    names: list[str] = []
+    dragon_dir = root / _ONE_DRAGON_REL_DIR
+    if dragon_dir.is_dir():
+        for p in sorted(dragon_dir.glob("*.json"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name != _MAS_ONE_DRAGON_SLOT_NAME and name not in names:
+                names.append(name)
+    names = [name for name in names if name != _DEFAULT_CONFIG_NAME]
+    return [_DEFAULT_CONFIG_NAME] + names
+
+
 def resolve_config_name(name: str) -> str:
     """解析一条龙配置名，空值显式兜底为「默认配置」。"""
     return (name or "").strip() or _DEFAULT_CONFIG_NAME
+
+
+def launch_slot_name() -> str:
+    """MAS 运行时专属槽位配置名（开启「用户独立配置」时据此启动一条龙）。"""
+    return _MAS_ONE_DRAGON_SLOT_NAME
+
+
+def one_dragon_slot_path(root: Path) -> Path:
+    """MAS 运行时槽位配置文件的绝对路径（``{RootPath}/User/OneDragon/MAS独立配置.json``）。"""
+    return one_dragon_path(root, _MAS_ONE_DRAGON_SLOT_NAME)
+
+
+def remove_one_dragon_slot(root: Path) -> bool:
+    """删除 MAS 运行时槽位配置（幂等）。返回是否确实存在并删除了。"""
+    path = one_dragon_slot_path(root)
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return existed
 
 
 def parse_custom_groups(raw: Any) -> list[dict[str, Any]]:
@@ -206,10 +273,18 @@ def write_user_one_dragon(
     custom_groups: list[dict[str, Any]] | None = None,
     manage_custom_groups: bool = False,
 ) -> None:
-    """把组开关与队伍/策略设置应用到一条龙配置，写入 BetterGI 并缓存 per-user 副本。
+    """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
     种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
-    三个非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）。
+    关键：物化结果写入 MAS 专属槽位 ``{RootPath}/User/OneDragon/MAS独立配置.json``（据此启动，
+    运行后由 ``remove_one_dragon_slot`` 删除），而 **不写入用户所选名的 BGI 实配**——BGI 同名
+    配置全程零接触，不会被覆盖成用户独立配置的样子。per-user 缓存仍以用户所选名 key。
+
+    非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）；
+    其中「战斗队伍/战斗策略」会落到秘境 ``PartyName`` 与首领讨伐的
+    ``AutoBossTeamName`` / ``AutoBossStrategyName``（秘境策略仍走全局
+    ``autoFightConfig``）；地脉花/幽境危战/以及秘境策略另外经
+    ``apply_global_battle_team`` / ``apply_global_battle_strategy`` 补写全局 config.json。
     ``manage_custom_groups`` 开启时按 ``custom_groups``（name→enabled）管理自定义组，
     否则自定义组原样保留（由 BetterGI 内部决定）。
     """
@@ -217,7 +292,9 @@ def write_user_one_dragon(
     user_path = per_user_one_dragon_path(script_id, user_id, config_name)
 
     config = read_file(user_path)
-    if not isinstance(config, dict):
+    if not config or not isinstance(config, dict):
+        # 缓存缺失/为空时（read_file 对不存在返回 {}）回退到 BGI 实配：否则种子退化为
+        # 仅 8 个内置组的空模板，用户现有自定义配置组会整体丢失、重启后落到一条龙末尾。
         config = load_one_dragon(root, config_name)
     if not config:
         config = load_seed_template()
@@ -229,10 +306,153 @@ def write_user_one_dragon(
         config["DailyRewardPartyName"] = daily_reward_party_name
     if party_name:
         config["PartyName"] = party_name
+        # 一条龙自动首领讨伐从 AutoBossTeamName 取队伍（OneDragonTaskItem.cs）
+        config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         config["AutoBossStrategyName"] = auto_boss_strategy_name
-    write_one_dragon(root, config_name, config)
+    write_one_dragon(root, _MAS_ONE_DRAGON_SLOT_NAME, config)
     write_file(user_path, config)
+
+
+def _global_config_path(root: Path) -> Path:
+    """BetterGI 全局主配置 config.json 的绝对路径。"""
+    return root / _BGI_CONFIG_REL_PATH
+
+
+def _set_leaf(config: dict, leaf: tuple[str, ...], value: str) -> bool:
+    """沿叶子路径向下补建字典并赋 ``value``；值未变返回 False（避免无谓触写）。"""
+    cur = config
+    for key in leaf[:-1]:
+        nxt = cur.get(key)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[key] = nxt
+        cur = nxt
+    key = leaf[-1]
+    if cur.get(key) == value:
+        return False
+    cur[key] = value
+    return True
+
+
+def _apply_leaves(root: Path, leaves, value: str) -> None:
+    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段；空值不写。"""
+    value = (value or "").strip()
+    if not value:
+        return
+    config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        config = {}
+    changed = False
+    for leaf in leaves:
+        changed |= _set_leaf(config, leaf, value)
+    if changed:
+        write_file(_global_config_path(root), config)
+
+
+def apply_global_battle_team(root: Path, party_name: str) -> None:
+    """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
+
+    首领讨伐走一条龙 ``AutoBossTeamName``（见 ``write_user_one_dragon``）；地脉花/幽境危战
+    由 BGI 直读全局段，故在此补写。保留同段其余字段；空值不覆盖。
+    """
+    _apply_leaves(root, _GLOBAL_TEAM_LEAVES, party_name)
+
+
+def apply_global_battle_strategy(root: Path, strategy_name: str) -> None:
+    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战读取。
+
+    首领讨伐走一条龙 ``AutoBossStrategyName``（见 ``write_user_one_dragon``）；其余三项
+    由 BGI 直读全局段。保留同段其余字段；空值不覆盖。
+    """
+    _apply_leaves(root, _GLOBAL_STRATEGY_LEAVES, strategy_name)
+
+
+def _restore_leaf(config: dict, leaf: tuple[str, ...], existed: bool, value) -> bool:
+    """还原单个叶子：原存在则回写原值，原缺失则删除；返回是否实际改写。"""
+    parent = config
+    for key in leaf[:-1]:
+        nxt = parent.get(key) if isinstance(parent, dict) else None
+        if not isinstance(nxt, dict):
+            return False  # 父链已不存在（本次并未补写该叶子），无需还原
+        parent = nxt
+    if not isinstance(parent, dict):
+        return False
+    key = leaf[-1]
+    if existed:
+        if parent.get(key) != value:
+            parent[key] = value
+            return True
+        return False
+    if key in parent:
+        del parent[key]
+        return True
+    return False
+
+
+def _prune_empty_ancestors(config: dict, leaf: tuple[str, ...]) -> None:
+    """沿 leaf 前缀（不含叶子本身）从深到浅删除沿途变空的字典。"""
+    prefix = list(leaf[:-1])
+    while prefix:
+        cur = config
+        broken = False
+        for key in prefix[:-1]:
+            nxt = cur.get(key) if isinstance(cur, dict) else None
+            if not isinstance(nxt, dict):
+                broken = True
+                break
+            cur = nxt
+        if broken:
+            return
+        last = prefix[-1]
+        grand = cur.get(last) if isinstance(cur, dict) else None
+        if isinstance(grand, dict) and not grand:
+            del cur[last]
+            prefix.pop()
+        else:
+            return
+
+
+def snapshot_global_battle_config(root: Path) -> dict[tuple[str, ...], tuple[bool, Any]]:
+    """快照 config.json 本次可能改写的队伍/策略叶子路径，供结束还原。
+
+    键为叶子路径元组，值为 ``(该叶子原本是否存在, 原值)``。
+    """
+    config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        config = {}
+    snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
+    for leaf in _ALL_GLOBAL_LEAVES:
+        cur: Any = config
+        present = True
+        for key in leaf:
+            if not isinstance(cur, dict) or key not in cur:
+                present = False
+                break
+            cur = cur[key]
+        snap[leaf] = (present, cur if present else None)
+    return snap
+
+
+def restore_global_battle_config(root: Path, snapshot: dict[tuple[str, ...], tuple[bool, Any]]) -> None:
+    """把 config.json 的队伍/策略叶子路径还原为快照状态，消除单次运行残留。
+
+    原本缺失则删除（沿路径清理变空字典），原本存在则回写原值；只改写本次动过的键。
+    """
+    if not snapshot:
+        return
+    config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        return
+    changed = False
+    for leaf in _ALL_GLOBAL_LEAVES:
+        existed, value = snapshot.get(leaf, (False, None))
+        if _restore_leaf(config, leaf, existed, value):
+            changed = True
+    if changed:
+        for leaf in _ALL_GLOBAL_LEAVES:
+            _prune_empty_ancestors(config, leaf)
+        write_file(_global_config_path(root), config)
 
 
 def snapshot_user_one_dragon(
@@ -240,10 +460,17 @@ def snapshot_user_one_dragon(
     script_id: str,
     user_id: str,
     config_name: str,
+    read_name: str | None = None,
 ) -> None:
-    """回读 BetterGI 现有一条龙配置为 per-user 副本（捕获 GUI 中改的设置）。"""
+    """回读 BetterGI 现有一条龙配置为 per-user 副本（捕获 GUI 中改的设置）。
+
+    ``read_name`` 指定实际读取的配置名：独立模式下用户编辑的是 MAS 槽位「MAS独立配置」，
+    而 per-user 缓存 key 仍是用户所选名 ``config_name``，故读取源与缓存 key 解耦。
+    缺省 ``read_name=None`` 时与 ``config_name`` 相同（直控/旧行为）。
+    """
     config_name = resolve_config_name(config_name)
-    config = load_one_dragon(root, config_name)
+    source_name = resolve_config_name(read_name or config_name)
+    config = load_one_dragon(root, source_name)
     if config:
         write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
 

@@ -30,16 +30,39 @@ export class BettergiService {
         });
     }
     /**
+     * 获取 BetterGI 一条龙配置名列表
+     * 返回 BetterGI 可选一条龙配置名：{RootPath}/User/OneDragon/*.json 文件名（默认配置置顶）。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiOneDragonConfigsApiApiScriptsBettergiOneDragonConfigsGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/one-dragon/configs',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      * @param scriptId
      * @param configName
+     * @param useMasConfig 用户独立配置开启时改读 MAS 运行时槽位「MAS独立配置」
      * @returns BetterGICustomGroupsOut Successful Response
      * @throws ApiError
      */
     public static getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
         scriptId: string,
         configName?: (string | null),
+        useMasConfig?: boolean,
     ): CancelablePromise<BetterGICustomGroupsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -47,6 +70,7 @@ export class BettergiService {
             query: {
                 'scriptId': scriptId,
                 'configName': configName,
+                'useMasConfig': useMasConfig,
             },
             errors: {
                 422: `Validation Error`,

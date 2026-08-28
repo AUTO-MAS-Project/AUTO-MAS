@@ -12,6 +12,7 @@ import { configureSentry } from '@/utils/sentry'
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
+import '@/styles/formSection.css'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 

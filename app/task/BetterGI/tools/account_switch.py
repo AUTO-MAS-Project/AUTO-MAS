@@ -29,12 +29,17 @@ MAS 内置冻结副本：MAS 只写订阅清单并开启「命令行运行前自
 - 自动更新: ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 三个开关（两个自动更新开关 +
   ``selectedChannelName = "CNB"`` 固定仓库渠道为 BetterGI 官方 cnb.cool 镜像，无需境外源）
 - 检出目标: ``{RootPath}/User/JsScript/SwitchAccountMultipleMode``
+- 误删恢复/初次使用: 脚本本地缺失时删除中央仓库副本
+  ``{RootPath}/Repos/bettergi-scripts-list``，BGI 下次启动完整重建并重新检出已订阅脚本。
+  因为 ``OnDeleteScript`` 只删脚本目录、不取消订阅，BGI 每次更新都会对已订阅脚本无条件
+  重检出，即便仓库「已是最新」也会把误删后的目录补回来。
 
 账号密码来源：MAS 用户配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
 下拉列表模式下由 MAS 负责把完整手机号/邮箱转换为游戏下拉列表显示的打码形式。
 """
 
 from pathlib import Path
+import shutil
 from typing import Any
 
 from app.utils import get_logger
@@ -61,6 +66,11 @@ _SCRIPT_FOLDER_NAME = "SwitchAccountMultipleMode"
 #   仓库目录: {RootPath}/Repos/bettergi-scripts-list（真实 git 克隆）
 #   订阅清单: {RootPath}/User/Subscriptions/bettergi-scripts-list.json = ["js/..."]
 _REPO_FOLDER_NAME = "bettergi-scripts-list"
+
+# BetterGI 中央脚本仓库本地副本: {RootPath}/Repos/bettergi-scripts-list（桌面元数据缓存）。
+# 用户误删脚本 / 初次使用脚本缺失时，删掉它可在 BGI 下次启动触发完整重建，从而把
+# 检出的脚本连同缺失的切换账号脚本一起拉回来。
+_REPO_REL_DIR = Path("Repos") / _REPO_FOLDER_NAME
 _SUBSCRIPTION_REL_DIR = Path("User") / "Subscriptions"
 # BetterGI 主配置: {RootPath}/User/config.json，ScriptConfig 段开启自动更新
 _BGI_CONFIG_REL_PATH = Path("User") / "config.json"
@@ -197,11 +207,19 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
 
 
 def ensure_switch_subscription(root_path: Path) -> bool:
-    """确保脚本仓库订阅了切换账号脚本并开启自动更新，交由 BetterGI 拉取/更新。
+    """确保切换账号脚本被订阅，缺失时强制重建，返回脚本本地是否已就绪。
 
-    替代旧的「内置冻结副本 + deploy_switch_script」。覆盖式写入订阅清单与开关，
-    保留用户已有订阅项与其余配置；BGI 会在下次命令行启动时先更新仓库脚本、再执行
-    ``--startGroups`` 配置组（顺序由 BetterGI ``StartGameTask`` 保证）。
+    BGI 会在下次命令行启动时先更新仓库脚本、再执行 ``--startGroups`` 配置组
+    （顺序由 BetterGI ``StartGameTask`` 保证），故这里只需保证订阅就绪即可，
+    删除/初次使用两种情况都会被 BGI 自动重新检出：
+
+    - 覆盖式写入订阅清单（``js/SwitchAccountMultipleMode``）并开启自动更新，
+      保留用户已有订阅项与其余配置。BGI 更新逻辑对每个已订阅路径无条件重检出，
+      即使仓库「已是最新」也会补回被误删的脚本目录。
+    - 若切换账号脚本当前本地缺失（用户误删、或初次使用从未检出），删除本地中央
+      仓库副本 ``Repos/bettergi-scripts-list``，强制 BGI 下次启动完整重建仓库并
+      重检出全部已订阅脚本，确定性地把缺失的切号脚本拉回来，避免依赖 BGI 磁盘
+      缓存快捷路径导致一直不补位。
 
     Returns:
         切换账号脚本当前是否已存在于本地（帮助日志判断是已就绪还是将现拉取）。
@@ -209,6 +227,12 @@ def ensure_switch_subscription(root_path: Path) -> bool:
     try:
         _ensure_script_subscription(root_path)
         _ensure_auto_update_on_cli(root_path)
+        if not switch_script_dir(root_path).is_dir():
+            # 脚本缺失（用户误删/初次使用）：清掉本地仓库，逼 BGI 下次启动整体重建
+            repo_dir = root_path / _REPO_REL_DIR
+            if repo_dir.is_dir():
+                shutil.rmtree(repo_dir, ignore_errors=True)
+                logger.info(f"切换账号脚本缺失，已清理本地脚本仓库强制重建: {repo_dir}")
     except Exception as e:
         logger.opt(exception=True).warning(f"切换账号脚本仓库订阅设置失败: {e}")
         raise

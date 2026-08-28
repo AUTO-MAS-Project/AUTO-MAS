@@ -26,5 +26,13 @@ export type OkwwConfig_Game = {
      * 游戏等待启动时间
      */
     WaitTime?: (number | null);
+    /**
+     * 任务开始前是否由 MAS 检查并接管更新鸣潮
+     */
+    IfAutoUpdate?: (boolean | null);
+    /**
+     * 整文件同步体积上限（GB），超过则中止并提示手动处理
+     */
+    UpdateFullSyncLimit?: (number | null);
 };
 
