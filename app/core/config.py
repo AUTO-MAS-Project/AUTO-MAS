@@ -34,7 +34,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Union, Dict, Any, List
+from typing import Literal, Optional, Dict, Any, List
 import uuid
 import json
 
@@ -236,7 +236,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.4.0"
+    VERSION = "v5.5.0-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -352,17 +352,25 @@ class AppConfig(GlobalConfig):
         )
         self._game_sign_result_date = today
 
-        # 将旧 MAA/MaaEnd 用户侧的森空岛凭据迁移到统一签到工具账号。
-        # 先恢复快照，迁移时清理凭据变更账号才不会误清其它账号结果。
-        await self._sync_legacy_skland_accounts()
-
         from app.services import System
         from app.services.telemetry import set_telemetry_enabled
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
-        asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
+        # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
+        self_start_task = asyncio.create_task(
+            System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        )
+        self.temp_task.append(self_start_task)
+
+        def _self_start_done(t: asyncio.Task) -> None:
+            if t in self.temp_task:
+                self.temp_task.remove(t)
+            if not t.cancelled() and t.exception() is not None:
+                logger.warning(f"设置开机自启动失败: {t.exception()}")
+
+        self_start_task.add_done_callback(_self_start_done)
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
         set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
@@ -839,10 +847,7 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        script_config = self.ScriptConfig[uid]
-        for group, items in data.items():
-            for name, value in items.items():
-                await script_config.set(group, name, value)
+        await self.ScriptConfig[uid].update(data)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -1169,234 +1174,6 @@ class AppConfig(GlobalConfig):
         logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
         return target_config_dir
 
-    @staticmethod
-    def _safe_config_get(
-        config: Any, group: str, name: str, default: Any = None
-    ) -> Any:
-        """读取旧用户字段，兼容历史配置和测试替身缺少字段的情况。"""
-
-        try:
-            return config.get(group, name)
-        except (KeyError, TypeError, AttributeError):
-            return default
-
-    def _find_game_sign_account_by_skland_token(
-        self, token: str
-    ) -> tuple[Any | None, Any | None]:
-        """查找持有指定森空岛 Token 的工具账号。"""
-
-        def token_identity(value: Any) -> str:
-            raw_value = str(value or "").strip()
-            if not raw_value:
-                return ""
-            try:
-                payload = json.loads(raw_value)
-            except (TypeError, json.JSONDecodeError):
-                return raw_value
-            if not isinstance(payload, dict):
-                return raw_value
-            data = payload.get("data")
-            if isinstance(data, dict) and data.get("content"):
-                return str(data["content"]).strip()
-            return str(
-                payload.get("oauthToken")
-                or payload.get("oauth_token")
-                or payload.get("accessToken")
-                or payload.get("access_token")
-                or payload.get("token")
-                or raw_value
-            ).strip()
-
-        token_value = token_identity(token)
-        accounts = getattr(getattr(self, "ToolsConfig", None), "GameSign_Accounts", None)
-        if not token_value or accounts is None:
-            return None, None
-
-        try:
-            account_items = accounts.items()
-        except AttributeError:
-            return None, None
-
-        for account_uid, account in account_items:
-            candidate_token = token_identity(
-                self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
-            )
-            if candidate_token and candidate_token == token_value:
-                return account_uid, account
-        return None, None
-
-    def _legacy_skland_token_state(self, token: str) -> tuple[bool, bool | None]:
-        """返回旧用户是否仍引用 Token，以及共享账号的有效启用状态。"""
-
-        token_value = str(token or "").strip()
-        if not token_value:
-            return False, None
-
-        script_configs = getattr(self, "ScriptConfig", None)
-        if script_configs is None:
-            return False, None
-
-        references: list[bool] = []
-        try:
-            script_values = script_configs.values()
-        except AttributeError:
-            return False, None
-
-        for script_config in script_values:
-            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
-                continue
-            for user_config in script_config.UserData.values():
-                user_token = str(
-                    self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
-                ).strip()
-                if user_token == token_value:
-                    references.append(
-                        bool(
-                            self._safe_config_get(
-                                user_config, "Info", "IfSkland", False
-                            )
-                        )
-                    )
-
-        return bool(references), any(references)
-
-    async def _sync_legacy_skland_user(
-        self,
-        *,
-        user_config: Any,
-        user_id: str,
-        old_token: str | None = None,
-        token: str | None = None,
-        enabled: bool | None = None,
-        name: str | None = None,
-    ) -> None:
-        """同步单个 MAA/MaaEnd 用户到游戏签到工具账号。"""
-
-        tools_config = getattr(self, "ToolsConfig", None)
-        accounts = getattr(tools_config, "GameSign_Accounts", None)
-        if accounts is None:
-            return
-
-        old_token_value = str(old_token or "").strip()
-        new_token = (
-            str(token).strip()
-            if token is not None
-            else str(
-                self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
-            ).strip()
-        )
-        if not old_token and not new_token:
-            return
-
-        old_token_shared, _ = self._legacy_skland_token_state(old_token_value)
-        old_account_uid, old_account = self._find_game_sign_account_by_skland_token(
-            old_token_value
-        )
-        new_account_uid, new_account = self._find_game_sign_account_by_skland_token(
-            new_token
-        )
-
-        # 清空旧用户 Token 时只清空对应工具账号凭据，不删除可能包含其它社区凭据的账号。
-        if not new_token:
-            account_uid, account = old_account_uid, old_account
-            token_still_used, _ = self._legacy_skland_token_state(old_token_value)
-            if account is not None and not token_still_used:
-                await account.set("GameSignAccount", "SklandToken", "")
-                await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-                if account_uid is not None:
-                    self._clear_game_sign_account_results(str(account_uid))
-            return
-
-        # 新 Token 已有账号时直接复用，避免生成重复凭据并重复签到。
-        account_uid, account = new_account_uid, new_account
-        if account is not None:
-            if (
-                old_account is not None
-                and old_account_uid != account_uid
-                and not old_token_shared
-            ):
-                await old_account.set("GameSignAccount", "SklandToken", "")
-                await old_account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-                if old_account_uid is not None:
-                    self._clear_game_sign_account_results(str(old_account_uid))
-        elif old_account is not None and not old_token_shared:
-            account_uid, account = old_account_uid, old_account
-        else:
-            account_uid, account = await accounts.add(GameSignAccountGroup)
-
-        current_name = str(
-            name
-            if name is not None
-            else self._safe_config_get(user_config, "Info", "Name", "") or ""
-        ).strip()
-        account_name = current_name or f"用户 {str(user_id)[-8:]}"
-
-        _, shared_enabled = self._legacy_skland_token_state(new_token)
-        if shared_enabled is not None:
-            enabled_value = shared_enabled
-        elif enabled is None:
-            existing_enabled = self._safe_config_get(
-                account, "GameSignAccount", "Enabled", True
-            )
-            enabled_value = bool(existing_enabled)
-        else:
-            enabled_value = bool(enabled)
-
-        account_token = str(
-            self._safe_config_get(account, "GameSignAccount", "SklandToken", "") or ""
-        ).strip()
-        # 旧用户只保存 OAuth Token；匹配到工具账号时保留其已刷新的完整凭据。
-        target_token = account_token if new_account is account else new_token
-        credential_changed = account_token != target_token
-        await account.set("GameSignAccount", "Name", account_name)
-        await account.set("GameSignAccount", "Enabled", enabled_value)
-        await account.set("GameSignAccount", "SklandToken", target_token)
-        if credential_changed:
-            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-            if account_uid is not None:
-                self._clear_game_sign_account_results(str(account_uid))
-
-    async def _sync_legacy_skland_sign_date(
-        self, *, token: str, sign_date: str
-    ) -> None:
-        """回写旧 MAA/MaaEnd 用户的森空岛签到日期，保持旧用户列表状态一致。"""
-
-        token_value = str(token or "").strip()
-        if not token_value:
-            return
-
-        for script_config in self.ScriptConfig.values():
-            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
-                continue
-            for user_config in script_config.UserData.values():
-                if (
-                    str(
-                        self._safe_config_get(user_config, "Info", "SklandToken", "")
-                        or ""
-                    ).strip()
-                    == token_value
-                    and self._safe_config_get(user_config, "Info", "IfSkland", False)
-                    and self._safe_config_get(user_config, "Data", "LastSklandDate", "")
-                    != sign_date
-                ):
-                    await user_config.set("Data", "LastSklandDate", sign_date)
-
-    async def _sync_legacy_skland_accounts(self) -> None:
-        """启动时迁移已有 MAA/MaaEnd 森空岛用户，避免旧配置失去签到能力。"""
-
-        for script_config in self.ScriptConfig.values():
-            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
-                continue
-            for user_uid, user_config in script_config.UserData.items():
-                await self._sync_legacy_skland_user(
-                    user_config=user_config,
-                    user_id=str(user_uid),
-                    enabled=bool(
-                        self._safe_config_get(user_config, "Info", "IfSkland", False)
-                    ),
-                    name=self._safe_config_get(user_config, "Info", "Name", ""),
-                )
-
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
@@ -1409,49 +1186,7 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # A replaced Skland credential must be allowed to sign again today.
-        reset_skland_date = isinstance(script_config, (MaaConfig, MaaEndConfig))
-        skland_token_changed = False
-        legacy_skland_info = data.get("Info", {}) if reset_skland_date else {}
-        legacy_old_token = ""
-        if reset_skland_date:
-            legacy_old_token = str(
-                AppConfig._safe_config_get(user_config, "Info", "SklandToken", "") or ""
-            )
-        if reset_skland_date:
-            info_data = data.get("Info", {})
-            if isinstance(info_data, dict) and "SklandToken" in info_data:
-                skland_token_changed = (
-                    user_config.get("Info", "SklandToken") != info_data["SklandToken"]
-                )
-
-        for group, items in data.items():
-            for name, value in items.items():
-                await user_config.set(group, name, value)
-
-        if skland_token_changed:
-            await user_config.set("Data", "LastSklandDate", "2000-01-01")
-
-        if reset_skland_date and isinstance(legacy_skland_info, dict):
-            if any(
-                key in legacy_skland_info for key in ("SklandToken", "IfSkland", "Name")
-            ):
-                await self._sync_legacy_skland_user(
-                    user_config=user_config,
-                    user_id=user_id,
-                    old_token=legacy_old_token,
-                    token=(
-                        str(legacy_skland_info.get("SklandToken") or "")
-                        if "SklandToken" in legacy_skland_info
-                        else None
-                    ),
-                    enabled=(
-                        bool(legacy_skland_info["IfSkland"])
-                        if "IfSkland" in legacy_skland_info
-                        else None
-                    ),
-                    name=legacy_skland_info.get("Name"),
-                )
+        await user_config.update(data)
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
@@ -1484,27 +1219,8 @@ class AppConfig(GlobalConfig):
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
-        legacy_token = ""
-        if isinstance(script_config, (MaaConfig, MaaEndConfig)):
-            legacy_token = str(
-                self._safe_config_get(
-                    script_config.UserData[user_uid], "Info", "SklandToken", ""
-                )
-                or ""
-            ).strip()
 
         await script_config.UserData.remove(user_uid)
-        if legacy_token:
-            token_still_used, _ = self._legacy_skland_token_state(legacy_token)
-            if not token_still_used:
-                account_uid, account = self._find_game_sign_account_by_skland_token(
-                    legacy_token
-                )
-                if account is not None:
-                    await account.set("GameSignAccount", "SklandToken", "")
-                    await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-                    if account_uid is not None:
-                        self._clear_game_sign_account_results(str(account_uid))
         if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
             shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
@@ -1639,9 +1355,7 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.PlanConfig[plan_uid].set(group, name, value)
+        await self.PlanConfig[plan_uid].update(data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
@@ -1710,9 +1424,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新模拟器配置: {emulator_id}")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.EmulatorConfig[emulator_uid].set(group, name, value)
+        await self.EmulatorConfig[emulator_uid].update(data)
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
@@ -1785,9 +1497,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.QueueConfig[queue_uid].set(group, name, value)
+        await self.QueueConfig[queue_uid].update(data)
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
@@ -1840,13 +1550,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .TimeSet[time_set_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].TimeSet[time_set_uid].update(data)
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
@@ -1909,13 +1613,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .QueueItem[queue_item_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
@@ -1991,9 +1689,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新工具设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.ToolsConfig.set(group, name, value)
+        await self.ToolsConfig.update(data)
 
         logger.success("工具设置更新成功")
 
@@ -2114,9 +1810,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新全局设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.set(group, name, value)
+        await self.update(data)
 
         logger.success("全局设置更新成功")
 

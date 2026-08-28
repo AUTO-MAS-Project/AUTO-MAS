@@ -23,6 +23,7 @@ from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
 from app.models.config import GeneralUserConfig
+from app.tools.push_log import append_push_log
 
 logger = get_logger("通用通知工具")
 
@@ -48,6 +49,8 @@ async def push_notification(
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
+        # 追加任务进程推送日志（若配置了推送日志匹配并采集到内容）
+        message_text = append_push_log(message_text, message.get("push_log"))
 
         # 生成HTML通知内容
         template = Config.notify_env.get_template("general_result.html")

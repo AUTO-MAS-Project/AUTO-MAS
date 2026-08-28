@@ -538,7 +538,6 @@ onDeactivated(() => {
 
   .overview-panel-container,
   .log-panel-container {
-    flex: 1;
     width: 100%;
   }
 

@@ -80,7 +80,7 @@
 import { computed } from 'vue'
 import { CheckCircleOutlined, InfoCircleOutlined, LockOutlined } from '@ant-design/icons-vue'
 import type { HSREngine } from '@/composables/useHSRPluginApi'
-import type { HSRUserConfigData } from '@/views/HSRUserEdit/types'
+import type { HSRUserConfigData } from './types'
 
 const props = defineProps<{
   availableEngines: HSREngine[]
@@ -115,25 +115,17 @@ const source = (engine: HSREngine) =>
 
 .section-header {
   margin-bottom: 12px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  margin: 0;
   font-size: 18px;
-  font-weight: 700;
 }
 
 .section-header h3::before {
-  width: 4px;
   height: 20px;
-  border-radius: 2px;
   background: var(--ant-color-primary);
-  content: '';
 }
 
 .direct-alert {

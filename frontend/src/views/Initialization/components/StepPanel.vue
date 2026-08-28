@@ -14,34 +14,51 @@
       <!-- 详细信息展示区域 -->
       <div class="detail-info-container">
         <!-- 环境检查信息（Python/Pip/Git） -->
-        <div v-if="checkInfo && (checkInfo.exeExists !== undefined || checkInfo.canRun !== undefined)"
-          class="info-section">
+        <div
+          v-if="checkInfo && (checkInfo.exeExists !== undefined || checkInfo.canRun !== undefined)"
+          class="info-section"
+        >
           <div class="info-title">环境检查</div>
           <div class="info-items">
-            <a-tag v-if="checkInfo.exeExists !== undefined" :color="checkInfo.exeExists ? 'green' : 'orange'">
+            <a-tag
+              v-if="checkInfo.exeExists !== undefined"
+              :color="checkInfo.exeExists ? 'green' : 'orange'"
+            >
               可执行文件: {{ checkInfo.exeExists ? '存在' : '不存在' }}
             </a-tag>
-            <a-tag v-if="checkInfo.canRun !== undefined" :color="checkInfo.canRun ? 'green' : 'orange'">
+            <a-tag
+              v-if="checkInfo.canRun !== undefined"
+              :color="checkInfo.canRun ? 'green' : 'orange'"
+            >
               运行状态: {{ checkInfo.canRun ? '正常' : '异常' }}
             </a-tag>
-            <a-tag v-if="checkInfo.version" color="blue">
-              版本: {{ checkInfo.version }}
-            </a-tag>
+            <a-tag v-if="checkInfo.version" color="blue"> 版本: {{ checkInfo.version }} </a-tag>
           </div>
         </div>
 
         <!-- 仓库检查信息 -->
-        <div v-if="checkInfo && (checkInfo.exists !== undefined || checkInfo.isGitRepo !== undefined)"
-          class="info-section">
+        <div
+          v-if="checkInfo && (checkInfo.exists !== undefined || checkInfo.isGitRepo !== undefined)"
+          class="info-section"
+        >
           <div class="info-title">仓库检查</div>
           <div class="info-items">
-            <a-tag v-if="checkInfo.exists !== undefined" :color="checkInfo.exists ? 'green' : 'orange'">
+            <a-tag
+              v-if="checkInfo.exists !== undefined"
+              :color="checkInfo.exists ? 'green' : 'orange'"
+            >
               本地仓库: {{ checkInfo.exists ? '存在' : '不存在' }}
             </a-tag>
-            <a-tag v-if="checkInfo.isGitRepo !== undefined" :color="checkInfo.isGitRepo ? 'green' : 'orange'">
+            <a-tag
+              v-if="checkInfo.isGitRepo !== undefined"
+              :color="checkInfo.isGitRepo ? 'green' : 'orange'"
+            >
               Git仓库: {{ checkInfo.isGitRepo ? '是' : '否' }}
             </a-tag>
-            <a-tag v-if="checkInfo.isHealthy !== undefined" :color="checkInfo.isHealthy ? 'green' : 'orange'">
+            <a-tag
+              v-if="checkInfo.isHealthy !== undefined"
+              :color="checkInfo.isHealthy ? 'green' : 'orange'"
+            >
               健康状态: {{ checkInfo.isHealthy ? '健康' : '异常' }}
             </a-tag>
             <a-tag v-if="checkInfo.currentBranch" color="blue">
@@ -51,15 +68,25 @@
         </div>
 
         <!-- 依赖检查信息 -->
-        <div v-if="checkInfo && (checkInfo.requirementsExists !== undefined || checkInfo.needsInstall !== undefined)"
-          class="info-section">
+        <div
+          v-if="
+            checkInfo &&
+            (checkInfo.requirementsExists !== undefined || checkInfo.needsInstall !== undefined)
+          "
+          class="info-section"
+        >
           <div class="info-title">依赖检查</div>
           <div class="info-items">
-            <a-tag v-if="checkInfo.requirementsExists !== undefined"
-              :color="checkInfo.requirementsExists ? 'green' : 'orange'">
+            <a-tag
+              v-if="checkInfo.requirementsExists !== undefined"
+              :color="checkInfo.requirementsExists ? 'green' : 'orange'"
+            >
               requirements.txt: {{ checkInfo.requirementsExists ? '存在' : '不存在' }}
             </a-tag>
-            <a-tag v-if="checkInfo.needsInstall !== undefined" :color="checkInfo.needsInstall ? 'orange' : 'green'">
+            <a-tag
+              v-if="checkInfo.needsInstall !== undefined"
+              :color="checkInfo.needsInstall ? 'orange' : 'green'"
+            >
               需要安装: {{ checkInfo.needsInstall ? '是' : '否' }}
             </a-tag>
           </div>
@@ -69,9 +96,7 @@
         <div v-if="currentMirror || mirrorProgress" class="info-section">
           <div class="info-title">镜像源信息</div>
           <div class="info-items">
-            <a-tag v-if="currentMirror" color="blue">
-              当前镜像源: {{ currentMirror }}
-            </a-tag>
+            <a-tag v-if="currentMirror" color="blue"> 当前镜像源: {{ currentMirror }} </a-tag>
             <a-tag v-if="mirrorProgress" color="purple">
               尝试进度: {{ mirrorProgress.current }}/{{ mirrorProgress.total }}
             </a-tag>
@@ -82,12 +107,8 @@
         <div v-if="downloadSpeed || downloadSize" class="info-section">
           <div class="info-title">下载信息</div>
           <div class="info-items">
-            <a-tag v-if="downloadSpeed" color="green">
-              下载速度: {{ downloadSpeed }}
-            </a-tag>
-            <a-tag v-if="downloadSize" color="cyan">
-              已下载: {{ downloadSize }}
-            </a-tag>
+            <a-tag v-if="downloadSpeed" color="green"> 下载速度: {{ downloadSpeed }} </a-tag>
+            <a-tag v-if="downloadSize" color="cyan"> 已下载: {{ downloadSize }} </a-tag>
           </div>
         </div>
 
@@ -131,7 +152,13 @@
 
     <!-- 失败状态 - 显示镜像源选择 -->
     <div v-else-if="status === 'failed' && showMirrorSelection" class="failed-state">
-      <a-alert type="error" :message="`${title}失败`" :description="message" show-icon style="margin-bottom: 20px" />
+      <a-alert
+        type="error"
+        :message="`${title}失败`"
+        :description="message"
+        show-icon
+        style="margin-bottom: 20px"
+      />
 
       <!-- 镜像源选择 -->
       <div class="mirror-selection">
@@ -139,13 +166,18 @@
 
         <!-- 镜像源 -->
         <div v-if="mirrorMirrors.length > 0" class="mirror-section">
-          <div class="section-header">
+          <div class="step-section-header">
             <h4>镜像源</h4>
             <a-tag color="green">推荐使用</a-tag>
           </div>
           <div class="mirror-grid">
-            <div v-for="mirror in mirrorMirrors" :key="mirror.key" class="mirror-card"
-              :class="{ active: selectedMirror === mirror.key }" @click="$emit('update:selected-mirror', mirror.key)">
+            <div
+              v-for="mirror in mirrorMirrors"
+              :key="mirror.key"
+              class="mirror-card"
+              :class="{ active: selectedMirror === mirror.key }"
+              @click="$emit('update:selected-mirror', mirror.key)"
+            >
               <div class="mirror-header">
                 <div class="mirror-title">
                   <h4>{{ mirror.name }}</h4>
@@ -159,13 +191,18 @@
 
         <!-- 官方源 -->
         <div v-if="officialMirrors.length > 0" class="mirror-section">
-          <div class="section-header">
+          <div class="step-section-header">
             <h4>官方源</h4>
             <a-tag color="orange">中国大陆连通性不佳</a-tag>
           </div>
           <div class="mirror-grid">
-            <div v-for="mirror in officialMirrors" :key="mirror.key" class="mirror-card"
-              :class="{ active: selectedMirror === mirror.key }" @click="$emit('update:selected-mirror', mirror.key)">
+            <div
+              v-for="mirror in officialMirrors"
+              :key="mirror.key"
+              class="mirror-card"
+              :class="{ active: selectedMirror === mirror.key }"
+              @click="$emit('update:selected-mirror', mirror.key)"
+            >
               <div class="mirror-header">
                 <div class="mirror-title">
                   <h4>{{ mirror.name }}</h4>
@@ -185,9 +222,7 @@
               使用选中的镜像源重试
             </a-button>
           </a-space>
-          <div class="countdown-text" v-if="countdown > 0">
-            {{ countdown }} 秒后自动重试
-          </div>
+          <div v-if="countdown > 0" class="countdown-text">{{ countdown }} 秒后自动重试</div>
         </div>
       </div>
     </div>
@@ -274,7 +309,7 @@ const props = withDefaults(defineProps<Props>(), {
   deployProgress: undefined,
   operationDesc: '',
   checkInfo: undefined,
-  mirrorProgress: undefined
+  mirrorProgress: undefined,
 })
 
 defineEmits<{
@@ -284,7 +319,9 @@ defineEmits<{
 }>()
 
 const mirrorMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) => m.type === 'mirror'))
-const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) => m.type === 'official'))
+const officialMirrors = computed(() =>
+  props.mirrors.filter((m: MirrorConfig) => m.type === 'official')
+)
 </script>
 
 <style scoped>
@@ -394,14 +431,14 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   }
 }
 
-.section-header {
+.step-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
 }
 
-.section-header h4 {
+.step-section-header h4 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;

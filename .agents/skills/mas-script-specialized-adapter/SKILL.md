@@ -55,6 +55,14 @@ description: >-
 
 **不要机械要求所有类型拥有相同文件**——先确认架构契约，再补真实调用链。
 
+- 配置与 schema：`app/models/config.py`、`app/models/schema.py`
+- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
+- 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
+- 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink；报告聚合与追加复用通用工具 `app/tools/push_log.py`（`build_push_log_text` / `append_push_log`），专项不要自行拼接实现。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogEnabled`）
+- 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
+- Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
+- 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
+
 ## 审查方法
 
 1. 从 `ScriptType`、任务注册、UI 入口**反查全部调用者**。
@@ -62,7 +70,7 @@ description: >-
 3. 自动发现、手动选择、后端 `check()` 三条路径判定：同一资源必须用**同一组哨兵文件**。
 4. 配置会话的启动、WebSocket 状态、停止、超时、卸载、异常六条路径：确保任务结束、进程退出、锁释放、配置写回。
 5. `final_task` / `on_crash` 的原子配置恢复、用户状态落盘、独立进程清理。
-6. 按 `tests/AGENTS.md` 跑最小专项测试；非必要不新增测试，**测试缺口写进结果，不编造验证结果**。
+6. 按 `tests/AGENTS.md` 本地编写并运行最小专项测试验证改动；提交时功能/bug 边界测试不提交，**测试缺口写进结果，不编造验证结果**。
 7. 反查产品边界：没重复实现脚本已有能力，没把 MAS 补位伪装成脚本原生字段，没为"字段齐全"加无价值入口。
 
 ## 配置来源模式：按专项确认，不存在统一三态

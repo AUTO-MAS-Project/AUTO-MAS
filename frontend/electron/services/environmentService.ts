@@ -108,14 +108,17 @@ abstract class BaseEnvironmentInstaller {
   /**
    * 环境安装三步走
    */
-  async install(onProgress?: InstallProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
+  async install(
+    onProgress?: InstallProgressCallback,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       // 第一步：环境检查
       onProgress?.({
         stage: 'check',
         progress: 0,
         message: '正在检查环境...',
-        details: {}
+        details: {},
       })
       const checkResult = await this.checkEnvironment()
 
@@ -125,8 +128,8 @@ abstract class BaseEnvironmentInstaller {
         progress: 50,
         message: '环境检查完成',
         details: {
-          checkInfo: checkResult
-        }
+          checkInfo: checkResult,
+        },
       })
 
       if (checkResult.exeExists && checkResult.canRun) {
@@ -136,8 +139,8 @@ abstract class BaseEnvironmentInstaller {
           progress: 100,
           message: '环境已就绪',
           details: {
-            checkInfo: checkResult
-          }
+            checkInfo: checkResult,
+          },
         })
         return { success: true }
       }
@@ -149,17 +152,17 @@ abstract class BaseEnvironmentInstaller {
         stage: 'download',
         progress: 0,
         message: '正在下载安装包...',
-        details: {}
+        details: {},
       })
-      const downloadResult = await this.downloadPackage((progress) => {
+      const downloadResult = await this.downloadPackage(progress => {
         onProgress?.({
           stage: 'download',
           progress: progress.progress,
           message: `下载中... ${progress.progress.toFixed(1)}%`,
           details: {
             downloadSpeed: progress.speed,
-            downloadSize: progress.downloadedSize
-          }
+            downloadSize: progress.downloadedSize,
+          },
         })
       }, selectedMirror)
 
@@ -172,14 +175,14 @@ abstract class BaseEnvironmentInstaller {
         stage: 'install',
         progress: 0,
         message: '正在安装环境...',
-        details: {}
+        details: {},
       })
       const installResult = await this.installEnvironment((progress, message, details) => {
         onProgress?.({
           stage: 'install',
           progress,
           message,
-          details: details || {}
+          details: details || {},
         })
       }, selectedMirror)
 
@@ -188,7 +191,7 @@ abstract class BaseEnvironmentInstaller {
           stage: 'install',
           progress: 100,
           message: '安装完成',
-          details: {}
+          details: {},
         })
       }
 
@@ -208,7 +211,10 @@ abstract class BaseEnvironmentInstaller {
   /**
    * 下载安装包（抽象方法）
    */
-  protected abstract downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }>
+  protected abstract downloadPackage(
+    onProgress?: ProgressCallback,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }>
 
   /**
    * 安装环境（抽象方法）
@@ -258,14 +264,14 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
       const proc = spawn(this.pythonExe, ['-V'], { stdio: 'pipe' })
 
       let output = ''
-      proc.stdout?.on('data', (data) => {
+      proc.stdout?.on('data', data => {
         output += data.toString()
       })
-      proc.stderr?.on('data', (data) => {
+      proc.stderr?.on('data', data => {
         output += data.toString()
       })
 
-      proc.on('close', (code) => {
+      proc.on('close', code => {
         if (code === 0) {
           resolve(output.trim())
         } else {
@@ -277,7 +283,10 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
     })
   }
 
-  protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
+  protected async downloadPackage(
+    onProgress?: ProgressCallback,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 下载 Python 安装包 ===')
 
     const mirrors = this.mirrorService.getMirrors('python')
@@ -296,7 +305,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
 
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
-      const result = await this.downloader.download(mirror.url, tempZipPath, (progress) => {
+      const result = await this.downloader.download(mirror.url, tempZipPath, progress => {
         // 检查是否是当前活跃的操作
         if (operationId !== this.currentOperationId) {
           // 这是一个过期的进度回调，忽略它
@@ -308,18 +317,23 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
           progress: progress.progress,
           speed: progress.speed,
           downloadedSize: progress.downloadedSize,
-          totalSize: progress.totalSize
+          totalSize: progress.totalSize,
         })
         onOpProgress({
           progress: progress.progress,
-          description: `下载中... ${progress.progress.toFixed(1)}%`
+          description: `下载中... ${progress.progress.toFixed(1)}%`,
         })
       })
 
       return result
     }
 
-    const result = await this.rotationService.execute(mirrors, downloadOperation, undefined, selectedMirror)
+    const result = await this.rotationService.execute(
+      mirrors,
+      downloadOperation,
+      undefined,
+      selectedMirror
+    )
 
     if (!result.success) {
       return { success: false, error: result.error }
@@ -331,7 +345,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
 
   protected async installEnvironment(
     onProgress?: (progress: number, message: string, details?: any) => void,
-    selectedMirror?: string
+    _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Python 环境 ===')
 
@@ -418,14 +432,14 @@ export class PipInstaller extends BaseEnvironmentInstaller {
       const proc = spawn(this.pythonExe, ['-m', 'pip', '--version'], { stdio: 'pipe' })
 
       let output = ''
-      proc.stdout?.on('data', (data) => {
+      proc.stdout?.on('data', data => {
         output += data.toString()
       })
-      proc.stderr?.on('data', (data) => {
+      proc.stderr?.on('data', data => {
         output += data.toString()
       })
 
-      proc.on('close', (code) => {
+      proc.on('close', code => {
         if (code === 0) {
           resolve(output.trim())
         } else {
@@ -437,7 +451,10 @@ export class PipInstaller extends BaseEnvironmentInstaller {
     })
   }
 
-  protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
+  protected async downloadPackage(
+    onProgress?: ProgressCallback,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 下载 get-pip.py ===')
 
     const mirrors = this.mirrorService.getMirrors('get_pip')
@@ -450,7 +467,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
 
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
-      const result = await this.downloader.download(mirror.url, getPipPath, (progress) => {
+      const result = await this.downloader.download(mirror.url, getPipPath, progress => {
         // 检查是否是当前活跃的操作
         if (operationId !== this.currentOperationId) {
           return
@@ -461,18 +478,23 @@ export class PipInstaller extends BaseEnvironmentInstaller {
           progress: progress.progress,
           speed: progress.speed,
           downloadedSize: progress.downloadedSize,
-          totalSize: progress.totalSize
+          totalSize: progress.totalSize,
         })
         onOpProgress({
           progress: progress.progress,
-          description: `下载中... ${progress.progress.toFixed(1)}%`
+          description: `下载中... ${progress.progress.toFixed(1)}%`,
         })
       })
 
       return result
     }
 
-    const result = await this.rotationService.execute(mirrors, downloadOperation, undefined, selectedMirror)
+    const result = await this.rotationService.execute(
+      mirrors,
+      downloadOperation,
+      undefined,
+      selectedMirror
+    )
 
     if (!result.success) {
       return { success: false, error: result.error }
@@ -500,18 +522,16 @@ export class PipInstaller extends BaseEnvironmentInstaller {
         await new Promise<void>((resolve, reject) => {
           const hostname = new URL(mirror.url).hostname
 
-          const proc = spawn(this.pythonExe, [
-            getPipPath,
-            '-i',
-            mirror.url,
-            '--trusted-host',
-            hostname
-          ], {
-            cwd: this.pythonPath,
-            stdio: 'pipe'
-          })
+          const proc = spawn(
+            this.pythonExe,
+            [getPipPath, '-i', mirror.url, '--trusted-host', hostname],
+            {
+              cwd: this.pythonPath,
+              stdio: 'pipe',
+            }
+          )
 
-          proc.stdout?.on('data', (data) => {
+          proc.stdout?.on('data', data => {
             const output = data.toString().trim()
             logger.info(`pip 安装输出: ${output}`)
 
@@ -523,11 +543,11 @@ export class PipInstaller extends BaseEnvironmentInstaller {
             }
           })
 
-          proc.stderr?.on('data', (data) => {
+          proc.stderr?.on('data', data => {
             logger.error(`pip 安装错误: ${data.toString().trim()}`)
           })
 
-          proc.on('close', (code) => {
+          proc.on('close', code => {
             if (code === 0) {
               logger.info('Pip 安装成功')
               onOpProgress({ progress: 100, description: 'Pip 安装完成' })
@@ -548,19 +568,24 @@ export class PipInstaller extends BaseEnvironmentInstaller {
     }
 
     // 使用镜像源轮替执行安装
-    const result = await this.rotationService.execute(mirrors, installOperation, (rotationProgress) => {
-      const totalProgress = rotationProgress.operationProgress.progress
-      const message = rotationProgress.operationProgress.description
-      const details = {
-        currentMirror: rotationProgress.currentMirror.name,
-        mirrorProgress: {
-          current: rotationProgress.mirrorIndex + 1,
-          total: rotationProgress.totalMirrors
-        },
-        operationDesc: rotationProgress.operationProgress.description
-      }
-      onProgress?.(totalProgress, message, details)
-    }, selectedMirror)
+    const result = await this.rotationService.execute(
+      mirrors,
+      installOperation,
+      rotationProgress => {
+        const totalProgress = rotationProgress.operationProgress.progress
+        const message = rotationProgress.operationProgress.description
+        const details = {
+          currentMirror: rotationProgress.currentMirror.name,
+          mirrorProgress: {
+            current: rotationProgress.mirrorIndex + 1,
+            total: rotationProgress.totalMirrors,
+          },
+          operationDesc: rotationProgress.operationProgress.description,
+        }
+        onProgress?.(totalProgress, message, details)
+      },
+      selectedMirror
+    )
 
     if (!result.success) {
       return { success: false, error: result.error }
@@ -616,14 +641,14 @@ export class GitInstaller extends BaseEnvironmentInstaller {
       const proc = spawn(this.gitExe, ['-v'], { stdio: 'pipe' })
 
       let output = ''
-      proc.stdout?.on('data', (data) => {
+      proc.stdout?.on('data', data => {
         output += data.toString()
       })
-      proc.stderr?.on('data', (data) => {
+      proc.stderr?.on('data', data => {
         output += data.toString()
       })
 
-      proc.on('close', (code) => {
+      proc.on('close', code => {
         if (code === 0) {
           resolve(output.trim())
         } else {
@@ -635,7 +660,10 @@ export class GitInstaller extends BaseEnvironmentInstaller {
     })
   }
 
-  protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
+  protected async downloadPackage(
+    onProgress?: ProgressCallback,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 下载 Git 安装包 ===')
 
     const mirrors = this.mirrorService.getMirrors('git')
@@ -654,7 +682,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
 
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
-      const result = await this.downloader.download(mirror.url, tempZipPath, (progress) => {
+      const result = await this.downloader.download(mirror.url, tempZipPath, progress => {
         // 检查是否是当前活跃的操作
         if (operationId !== this.currentOperationId) {
           return
@@ -665,18 +693,23 @@ export class GitInstaller extends BaseEnvironmentInstaller {
           progress: progress.progress,
           speed: progress.speed,
           downloadedSize: progress.downloadedSize,
-          totalSize: progress.totalSize
+          totalSize: progress.totalSize,
         })
         onOpProgress({
           progress: progress.progress,
-          description: `下载中... ${progress.progress.toFixed(1)}%`
+          description: `下载中... ${progress.progress.toFixed(1)}%`,
         })
       })
 
       return result
     }
 
-    const result = await this.rotationService.execute(mirrors, downloadOperation, undefined, selectedMirror)
+    const result = await this.rotationService.execute(
+      mirrors,
+      downloadOperation,
+      undefined,
+      selectedMirror
+    )
 
     if (!result.success) {
       return { success: false, error: result.error }
@@ -688,7 +721,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
 
   protected async installEnvironment(
     onProgress?: (progress: number, message: string, details?: any) => void,
-    selectedMirror?: string
+    _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Git 环境 ===')
 
@@ -746,7 +779,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
         fs.renameSync(sourcePath, targetPath)
 
         // 更新进度
-        const itemProgress = 60 + Math.floor((i + 1) / totalItems * 20)
+        const itemProgress = 60 + Math.floor(((i + 1) / totalItems) * 20)
         onProgress?.(itemProgress, `移动文件 ${i + 1}/${totalItems}...`)
       }
 

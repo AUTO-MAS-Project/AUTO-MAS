@@ -56,8 +56,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)" />
+                <a-input
+                  v-model:value="formData.name"
+                  placeholder="请输入脚本名称"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -71,8 +76,13 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.path" placeholder="请选择MAA.exe所在的文件夹" size="large" class="path-input"
-                    readonly />
+                  <a-input
+                    v-model:value="formData.path"
+                    placeholder="请选择MAA.exe所在的文件夹"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectMAAPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -101,9 +111,18 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Emulator.Id" size="large" placeholder="请选择模拟器"
-                  :loading="emulatorLoading" @change="handleEmulatorSelectChange">
-                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-model:value="maaConfig.Emulator.Id"
+                  size="large"
+                  placeholder="请选择模拟器"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorSelectChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -113,7 +132,12 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                    :title="
+                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                        ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
+                        : '选择模拟器的具体实例'
+                    "
+                  >
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
@@ -121,14 +145,33 @@
                   </a-tooltip>
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
-                <a-input v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && maaConfig.Emulator.Id"
-                  v-model:value="maaConfig.Emulator.Index" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
-                  class="modern-input" @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)" />
+                <a-input
+                  v-if="
+                    emulatorDeviceOptions.length === 0 &&
+                    !emulatorDeviceLoading &&
+                    maaConfig.Emulator.Id
+                  "
+                  v-model:value="maaConfig.Emulator.Index"
+                  size="large"
+                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  class="modern-input"
+                  @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)"
+                />
                 <!-- 正常情况下显示下拉框 -->
-                <a-select v-else v-model:value="maaConfig.Emulator.Index" size="large" placeholder="请先选择模拟器"
-                  :loading="emulatorDeviceLoading" :disabled="!maaConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)">
-                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-else
+                  v-model:value="maaConfig.Emulator.Index"
+                  size="large"
+                  placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!maaConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -153,8 +196,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large"
-                  @change="handleChange('Run', 'TaskTransitionMethod', $event)">
+                <a-select
+                  v-model:value="maaConfig.Run.TaskTransitionMethod"
+                  size="large"
+                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                >
                   <a-select-option value="ExitEmulator">重启模拟器</a-select-option>
                   <a-select-option value="ExitGame">重启明日方舟</a-select-option>
                   <a-select-option value="NoAction">直接切换账号</a-select-option>
@@ -164,16 +210,24 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                  <a-tooltip
+                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
+                  >
                     <span class="form-label">
                       用户单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="maaConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)" />
+                <a-input-number
+                  v-model:value="maaConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -188,9 +242,21 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="maaConfig.Run.AnnihilationTimeLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'AnnihilationTimeLimit', maaConfig.Run.AnnihilationTimeLimit)" />
+                <a-input-number
+                  v-model:value="maaConfig.Run.AnnihilationTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="
+                    handleChange(
+                      'Run',
+                      'AnnihilationTimeLimit',
+                      maaConfig.Run.AnnihilationTimeLimit
+                    )
+                  "
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -203,9 +269,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="maaConfig.Run.RoutineTimeLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RoutineTimeLimit', maaConfig.Run.RoutineTimeLimit)" />
+                <a-input-number
+                  v-model:value="maaConfig.Run.RoutineTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RoutineTimeLimit', maaConfig.Run.RoutineTimeLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -218,14 +290,19 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="maaConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)" />
+                <a-input-number
+                  v-model:value="maaConfig.Run.RunTimesLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
         </div>
-
         <div class="form-section">
           <div class="section-header">
             <h3>游戏更新</h3>
@@ -234,51 +311,78 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，启动 MAA 前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时 MAA 无法通过强制更新界面，只会一直卡到超时">
+                  <a-tooltip
+                    title="开启后，启动 MAA 前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时 MAA 无法通过强制更新界面，只会一直卡到超时"
+                  >
                     <span class="form-label">
                       启动前检查游戏更新
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="maaConfig.Run.IfCheckGameUpdate"
-                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)" />
+                <a-select
+                  v-model:value="maaConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅官服可用，安装包约 2 GB，请确保磁盘空间充足">
+                  <a-tooltip
+                    title="开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅官服可用，安装包约 2 GB，请确保磁盘空间充足"
+                  >
                     <span class="form-label">
                       自动安装游戏安装包（仅官服）
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="maaConfig.Run.IfAutoInstallGameApk"
+                <a-select
+                  v-model:value="maaConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
                   :disabled="!maaConfig.Run.IfCheckGameUpdate"
-                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)" />
+                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="下载安装游戏安装包的超时限制。检测到有待下载的游戏资源热更新时，本次代理的超时限制也会放宽到该值，避免把正常更新误判为卡死">
+                  <a-tooltip
+                    title="下载安装游戏安装包的超时限制。检测到有待下载的游戏资源热更新时，本次代理的超时限制也会放宽到该值，避免把正常更新误判为卡死"
+                  >
                     <span class="form-label">
                       游戏更新超时限制（分钟）
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="maaConfig.Run.GameUpdateTimeLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
+                <a-input-number
+                  v-model:value="maaConfig.Run.GameUpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
                   :disabled="!maaConfig.Run.IfCheckGameUpdate"
-                  @blur="handleChange('Run', 'GameUpdateTimeLimit', maaConfig.Run.GameUpdateTimeLimit)" />
+                  @blur="
+                    handleChange('Run', 'GameUpdateTimeLimit', maaConfig.Run.GameUpdateTimeLimit)
+                  "
+                />
               </a-form-item>
             </a-col>
           </a-row>
         </div>
-
       </a-form>
     </a-card>
   </div>
@@ -404,8 +508,8 @@ const refreshScript = async () => {
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -502,8 +606,8 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     const updateData = {
       Emulator: {
         Id: emulatorId,
-        Index: ''
-      }
+        Index: '',
+      },
     }
     const success = await updateScript(scriptId, updateData)
     if (success) {

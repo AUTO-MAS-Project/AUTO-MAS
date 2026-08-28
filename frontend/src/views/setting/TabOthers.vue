@@ -63,7 +63,6 @@ const copyAllInfo = async () => {
     document.body.removeChild(textArea)
   }
 }
-
 </script>
 <template>
   <div class="tab-content">
@@ -74,7 +73,8 @@ const copyAllInfo = async () => {
           <template #icon>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path
-                d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" />
+                d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+              />
             </svg>
           </template>
           检查更新
@@ -89,8 +89,12 @@ const copyAllInfo = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Update?.IfAutoUpdate" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)">
+            <a-select
+              :value="settings.Update?.IfAutoUpdate"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
+            >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -104,20 +108,32 @@ const copyAllInfo = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Update?.Source" :options="updateSourceOptions" size="large" style="width: 100%"
-              @change="(value: any) => handleSettingChange('Update', 'Source', value)" />
+            <a-select
+              :value="settings.Update?.Source"
+              :options="updateSourceOptions"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Source', value)"
+            />
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">更新渠道</span>
-              <a-tooltip title="稳定版：BUG 较少，无法第一时间体验新功能；公测版：包含最新功能，但可能存在较多 BUG">
+              <a-tooltip
+                title="稳定版：BUG 较少，无法第一时间体验新功能；公测版：包含最新功能，但可能存在较多 BUG"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Update?.Channel" :options="updateChannelOptions" size="large" style="width: 100%"
-              @change="(value: any) => handleSettingChange('Update', 'Channel', value)" />
+            <a-select
+              :value="settings.Update?.Channel"
+              :options="updateChannelOptions"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Channel', value)"
+            />
           </div>
         </a-col>
       </a-row>
@@ -126,12 +142,18 @@ const copyAllInfo = async () => {
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">网络代理地址</span>
-              <a-tooltip title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效">
+              <a-tooltip
+                title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input :value="settings.Update?.ProxyAddress" placeholder="请输入网络代理地址" size="large"
-              @blur="(e: any) => handleSettingChange('Update', 'ProxyAddress', e.target.value)" />
+            <a-input
+              :value="settings.Update?.ProxyAddress"
+              placeholder="请输入网络代理地址"
+              size="large"
+              @blur="(e: any) => handleSettingChange('Update', 'ProxyAddress', e.target.value)"
+            />
           </div>
         </a-col>
         <a-col :span="12">
@@ -142,18 +164,26 @@ const copyAllInfo = async () => {
                 <template #title>
                   <div>
                     Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往
-                    <a href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting" class="tooltip-link"
-                      @click="handleExternalLink">Mirror酱官网</a>
+                    <a
+                      href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
+                      class="tooltip-link"
+                      @click="handleExternalLink"
+                      >Mirror酱官网</a
+                    >
                     获取
                   </div>
                 </template>
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input-password :value="settings.Update?.MirrorChyanCDK"
-              :disabled="settings.Update?.Source !== 'MirrorChyan'" placeholder="使用Mirror源时请输入Mirror酱CDK"
-              :visibility-toggle="true" size="large"
-              @blur="(e: any) => handleSettingChange('Update', 'MirrorChyanCDK', e.target.value)" />
+            <a-input-password
+              :value="settings.Update?.MirrorChyanCDK"
+              :disabled="settings.Update?.Source !== 'MirrorChyan'"
+              placeholder="使用Mirror源时请输入Mirror酱CDK"
+              :visibility-toggle="true"
+              size="large"
+              @blur="(e: any) => handleSettingChange('Update', 'MirrorChyanCDK', e.target.value)"
+            />
           </div>
         </a-col>
       </a-row>
@@ -172,7 +202,9 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>软件官网</h4>
               <p>查看最新版本和功能介绍</p>
-              <a href="https://auto-mas.top" class="link-button" @click="handleExternalLink">访问官网</a>
+              <a href="https://auto-mas.top" class="link-button" @click="handleExternalLink"
+                >访问官网</a
+              >
             </div>
           </div>
         </div>
@@ -184,8 +216,12 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>GitHub仓库</h4>
               <p>查看源代码、提交issue和捐赠</p>
-              <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" class="link-button"
-                @click="handleExternalLink">访问仓库</a>
+              <a
+                href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
+                class="link-button"
+                @click="handleExternalLink"
+                >访问仓库</a
+              >
             </div>
           </div>
         </div>
@@ -197,7 +233,9 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>用户QQ群</h4>
               <p>加入社区，获取帮助和交流</p>
-              <a :href="MAS_QQ_GROUP_URL" class="link-button" @click="handleExternalLink">加入群聊</a>
+              <a :href="MAS_QQ_GROUP_URL" class="link-button" @click="handleExternalLink"
+                >加入群聊</a
+              >
             </div>
           </div>
         </div>

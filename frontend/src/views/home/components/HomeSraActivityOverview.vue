@@ -280,7 +280,11 @@ const formatTime = (value: string) =>
   border: 1px solid transparent;
   border-radius: 10px;
   background:
-    radial-gradient(ellipse at 78% 20%, color-mix(in srgb, var(--sra-accent) 14%, transparent), transparent 55%),
+    radial-gradient(
+      ellipse at 78% 20%,
+      color-mix(in srgb, var(--sra-accent) 14%, transparent),
+      transparent 55%
+    ),
     radial-gradient(ellipse at 90% 85%, rgba(64, 128, 255, 0.18), transparent 60%),
     linear-gradient(135deg, #0b1220 0%, #101a2e 55%, #0e1a2b 100%);
 }
@@ -689,7 +693,6 @@ const formatTime = (value: string) =>
 
   .version-info {
     flex-direction: column;
-    align-items: flex-start;
     gap: 16px;
   }
 

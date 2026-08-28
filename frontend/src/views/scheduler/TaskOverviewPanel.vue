@@ -1,6 +1,6 @@
 <template>
   <div class="overview-panel">
-    <div class="section-header">
+    <div class="scheduler-panel-header">
       <h3>任务总览</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
@@ -78,7 +78,6 @@ const getScriptStats = (scripts: Script[]) => {
 
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
-
   if (message.type === 'Update') {
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
@@ -126,7 +125,7 @@ defineExpose({
   overflow: hidden;
 }
 
-.section-header {
+.scheduler-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -136,7 +135,7 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.section-header h3 {
+.scheduler-panel-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
@@ -179,7 +178,7 @@ defineExpose({
     border-radius: 8px;
   }
 
-  .section-header {
+  .scheduler-panel-header {
     padding: 12px;
   }
 }

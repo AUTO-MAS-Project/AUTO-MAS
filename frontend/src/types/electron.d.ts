@@ -97,6 +97,14 @@ export interface ElectronAPI {
 
   // 托盘设置
   updateTraySettings: (uiSettings: any) => Promise<boolean>
+  updateTrayConfig: (trayItems: any) => Promise<boolean>
+  onTrayActionRequest: (
+    callback: (request: {
+      action: 'quit' | 'restart' | 'startTask'
+      taskId?: string
+      label?: string
+    }) => void
+  ) => () => void
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
@@ -107,6 +115,12 @@ export interface ElectronAPI {
     error?: string
   }>
   exportMaaEndIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportDataBackup: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string
@@ -243,5 +257,11 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    /** 调试用:由 WebSocketMessageListener 挂载的消息弹窗触发接口 */
+    __debugShowQuestion?: (questionData: Record<string, unknown>) => Promise<void>
+    /** 调试用:调度中心调试信息输出 */
+    debugScheduler?: () => void
+    /** 调试用:WebSocket 连接测试 */
+    testWebSocketConnection?: () => Promise<void>
   }
 }

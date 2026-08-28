@@ -50,7 +50,7 @@ defineProps<{
 .closing-spinner {
   font-size: 32px;
   margin-bottom: 16px;
-  color: #1890ff;
+  color: var(--ant-color-primary);
   animation: spin 1s linear infinite;
 }
 
