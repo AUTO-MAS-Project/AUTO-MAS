@@ -12,12 +12,7 @@
           配置完成后，点击“保存配置”结束本次会话。
         </p>
         <div class="mask-actions">
-          <a-button
-            v-if="maaEndWebsocketId"
-            type="primary"
-            size="large"
-            @click="handleSaveMaaEndConfig"
-          >
+          <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
             保存配置
           </a-button>
         </div>
@@ -418,6 +413,11 @@ import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -442,8 +442,8 @@ const isSaving = ref(false)
 const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
-const maaEndSubscriptionId = ref<string | null>(null)
-const maaEndWebsocketId = ref<string | null>(null)
+const maaEndSubscriptionIds = ref<string[]>([])
+const maaEndTaskId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 
 const formData = reactive({
@@ -690,11 +690,11 @@ const selectGamePath = async () => {
 }
 
 const cleanupConfigSession = () => {
-  if (maaEndSubscriptionId.value) {
-    unsubscribe(maaEndSubscriptionId.value)
-    maaEndSubscriptionId.value = null
+  for (const subscriptionId of maaEndSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  maaEndWebsocketId.value = null
+  maaEndSubscriptionIds.value = []
+  maaEndTaskId.value = null
   showMaaEndConfigMask.value = false
   if (maaEndConfigTimeout) {
     window.clearTimeout(maaEndConfigTimeout)
@@ -716,25 +716,20 @@ const handleMaaEndConfig = async () => {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
     }
 
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`MaaEnd 配置异常: ${data.message}`)
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         cleanupConfigSession()
-        return
-      }
+      }),
+    ]
 
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupConfigSession()
-      }
-    })
-
-    maaEndSubscriptionId.value = subscriptionId
-    maaEndWebsocketId.value = response.taskId
+    maaEndSubscriptionIds.value = subscriptionIds
+    maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
     message.success('已启动脚本级 MaaEnd 配置')
 
@@ -754,11 +749,11 @@ const handleMaaEndConfig = async () => {
 
 const handleSaveMaaEndConfig = async () => {
   try {
-    if (!maaEndWebsocketId.value) {
+    if (!maaEndTaskId.value) {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }

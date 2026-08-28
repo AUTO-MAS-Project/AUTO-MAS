@@ -14,12 +14,7 @@
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button
-              v-if="srcWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveSRCConfig"
-            >
+            <a-button v-if="srcTaskId" type="primary" size="large" @click="handleSaveSRCConfig">
               保存配置
             </a-button>
           </div>
@@ -93,6 +88,12 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 
@@ -119,8 +120,8 @@ const isSaving = ref(false) // 标记是否正在保存
 // SRC配置相关状态
 const srcConfigLoading = ref(false)
 const showSrcConfigMask = ref(false)
-const srcSubscriptionId = ref<string | null>(null)
-const srcWebsocketId = ref<string | null>(null)
+const srcSubscriptionIds = ref<string[]>([])
+const srcTaskId = ref<string | null>(null)
 let srcConfigTimeout: number | null = null
 
 // 路由参数
@@ -326,10 +327,12 @@ const handleSRCConfig = async () => {
     srcConfigLoading.value = true
 
     // 如果已有连接，先断开
-    if (srcSubscriptionId.value) {
-      unsubscribe(srcSubscriptionId.value)
-      srcSubscriptionId.value = null
-      srcWebsocketId.value = null
+    if (srcSubscriptionIds.value.length > 0) {
+      for (const subscriptionId of srcSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
+      }
+      srcSubscriptionIds.value = []
+      srcTaskId.value = null
       showSrcConfigMask.value = false
       if (srcConfigTimeout) {
         window.clearTimeout(srcConfigTimeout)
@@ -347,69 +350,54 @@ const handleSRCConfig = async () => {
       const wsId = response.taskId
 
       // 订阅 websocket
-      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} SRC配置错误:${wsMessage.data}`
-          )
-          message.error(`SRC配置连接失败: ${wsMessage.data}`)
-          unsubscribe(subscriptionId)
-          srcSubscriptionId.value = null
-          srcWebsocketId.value = null
-          showSrcConfigMask.value = false
-          if (srcConfigTimeout) {
-            window.clearTimeout(srcConfigTimeout)
-            srcConfigTimeout = null
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            logger.error(
+              `用户 ${formData.Info?.Name || formData.userName} SRC配置异常:${data.message}`
+            )
+            message.error(`SRC配置失败: ${data.message}`)
           }
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} SRC配置异常:${wsMessage.data.Error}`
-          )
-          message.error(`SRC配置失败: ${wsMessage.data.Error}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
+        }),
+        // 处理任务结束消息
+        subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.Info?.Name || formData.userName} SRC配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
+          const result = data.result
           if (result && !result.includes('异常') && !result.includes('错误')) {
             message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
-          srcSubscriptionId.value = null
-          srcWebsocketId.value = null
+          for (const subscriptionId of srcSubscriptionIds.value) {
+            unsubscribe(subscriptionId)
+          }
+          srcSubscriptionIds.value = []
+          srcTaskId.value = null
           showSrcConfigMask.value = false
           if (srcConfigTimeout) {
             window.clearTimeout(srcConfigTimeout)
             srcConfigTimeout = null
           }
-        }
-      })
+        }),
+      ]
 
-      srcSubscriptionId.value = subscriptionId
-      srcWebsocketId.value = wsId
+      srcSubscriptionIds.value = subscriptionIds
+      srcTaskId.value = wsId
       showSrcConfigMask.value = true
       message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的SRC设置`)
 
       // 设置 30 分钟超时自动断开
       srcConfigTimeout = window.setTimeout(
         () => {
-          if (srcSubscriptionId.value) {
-            unsubscribe(srcSubscriptionId.value)
-            srcSubscriptionId.value = null
-            srcWebsocketId.value = null
+          if (srcSubscriptionIds.value.length > 0) {
+            for (const subscriptionId of srcSubscriptionIds.value) {
+              unsubscribe(subscriptionId)
+            }
+            srcSubscriptionIds.value = []
+            srcTaskId.value = null
             showSrcConfigMask.value = false
             message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
           }
@@ -432,19 +420,19 @@ const handleSRCConfig = async () => {
 // 保存SRC配置
 const handleSaveSRCConfig = async () => {
   try {
-    const websocketId = srcWebsocketId.value
-    if (!websocketId) {
+    const taskId = srcTaskId.value
+    if (!taskId) {
       message.error('未找到活动的配置会话')
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response && response.code === 200) {
-      if (srcSubscriptionId.value) {
-        unsubscribe(srcSubscriptionId.value)
-        srcSubscriptionId.value = null
+      for (const subscriptionId of srcSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
       }
-      srcWebsocketId.value = null
+      srcSubscriptionIds.value = []
+      srcTaskId.value = null
       showSrcConfigMask.value = false
       if (srcConfigTimeout) {
         window.clearTimeout(srcConfigTimeout)

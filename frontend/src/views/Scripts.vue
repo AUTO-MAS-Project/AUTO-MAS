@@ -628,6 +628,12 @@ import {
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
@@ -704,9 +710,7 @@ const scriptEditPathMap: Record<ScriptType, string> = {
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
 
 // WebSocket连接管理
-const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
-  new Map()
-) // scriptId -> { subscriptionId, websocketId }
+const activeConnections = ref<Map<string, { subscriptionIds: string[]; taskId: string }>>(new Map()) // scriptId -> { subscriptionIds, taskId }
 
 // 解析模板描述的markdown
 const parseMarkdown = (text: string) => {
@@ -1169,56 +1173,39 @@ const handleStartMAAConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        // 处理错误消息
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`MAA配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showMAAConfigMask.value = false
-          currentConfigScript.value = null
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`MAA配置失败: ${errorMsg}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            const errorMsg = data.message
+            logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+            message.error(`MAA配置失败: ${errorMsg}`)
+          }
+        }),
+        // 处理任务结束消息
+        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
+          const result = data.result
           if (result && !result.includes('异常') && !result.includes('错误')) {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
+          for (const subscriptionId of subscriptionIds) {
+            unsubscribe(subscriptionId)
+          }
           activeConnections.value.delete(script.id)
           showMAAConfigMask.value = false
           currentConfigScript.value = null
-        }
-      })
+        }),
+      ]
 
-      // 记录连接和subscriptionId
+      // 记录连接和subscriptionIds
       activeConnections.value.set(script.id, {
-        subscriptionId,
-        websocketId: response.taskId,
+        subscriptionIds,
+        taskId: response.taskId,
       })
       message.success(`已启动 ${script.name} 的MAA配置`)
 
@@ -1228,7 +1215,9 @@ const handleStartMAAConfig = async (script: Script) => {
           if (activeConnections.value.has(script.id)) {
             const connection = activeConnections.value.get(script.id)
             if (connection) {
-              unsubscribe(connection.subscriptionId)
+              for (const subscriptionId of connection.subscriptionIds) {
+                unsubscribe(subscriptionId)
+              }
             }
             activeConnections.value.delete(script.id)
             // 超时时隐藏遮罩
@@ -1259,12 +1248,14 @@ const handleSaveMAAConfig = async (script: Script) => {
 
     // 调用停止配置任务API
     const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
+      taskId: connection.taskId,
     })
 
     if (response.code === 200) {
       // 取消订阅
-      unsubscribe(connection.subscriptionId)
+      for (const subscriptionId of connection.subscriptionIds) {
+        unsubscribe(subscriptionId)
+      }
       activeConnections.value.delete(script.id)
 
       // 隐藏遮罩
@@ -1303,56 +1294,39 @@ const handleStartSRCConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        // 处理错误消息
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`SRC配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showSRCConfigMask.value = false
-          currentConfigScript.value = null
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`SRC配置失败: ${errorMsg}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            const errorMsg = data.message
+            logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+            message.error(`SRC配置失败: ${errorMsg}`)
+          }
+        }),
+        // 处理任务结束消息
+        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
+          const result = data.result
           if (result && !result.includes('异常') && !result.includes('错误')) {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
+          for (const subscriptionId of subscriptionIds) {
+            unsubscribe(subscriptionId)
+          }
           activeConnections.value.delete(script.id)
           showSRCConfigMask.value = false
           currentConfigScript.value = null
-        }
-      })
+        }),
+      ]
 
-      // 记录连接和subscriptionId
+      // 记录连接和subscriptionIds
       activeConnections.value.set(script.id, {
-        subscriptionId,
-        websocketId: response.taskId,
+        subscriptionIds,
+        taskId: response.taskId,
       })
       message.success(`已启动 ${script.name} 的SRC配置`)
 
@@ -1362,7 +1336,9 @@ const handleStartSRCConfig = async (script: Script) => {
           if (activeConnections.value.has(script.id)) {
             const connection = activeConnections.value.get(script.id)
             if (connection) {
-              unsubscribe(connection.subscriptionId)
+              for (const subscriptionId of connection.subscriptionIds) {
+                unsubscribe(subscriptionId)
+              }
             }
             activeConnections.value.delete(script.id)
             // 超时时隐藏遮罩
@@ -1393,12 +1369,14 @@ const handleSaveSRCConfig = async (script: Script) => {
 
     // 调用停止配置任务API
     const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
+      taskId: connection.taskId,
     })
 
     if (response.code === 200) {
       // 取消订阅
-      unsubscribe(connection.subscriptionId)
+      for (const subscriptionId of connection.subscriptionIds) {
+        unsubscribe(subscriptionId)
+      }
       activeConnections.value.delete(script.id)
 
       // 隐藏遮罩
@@ -1418,10 +1396,14 @@ const handleSaveSRCConfig = async (script: Script) => {
 
 const clearConfigSession = (
   targetId: string,
-  subscriptionId: string | undefined,
+  subscriptionIds: string[] | undefined,
   clearState: () => void
 ) => {
-  if (subscriptionId) unsubscribe(subscriptionId)
+  if (subscriptionIds) {
+    for (const subscriptionId of subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
+  }
   activeConnections.value.delete(targetId)
   clearState()
 }
@@ -1447,30 +1429,28 @@ const startConfigSession = async (
 
   setActiveState()
   let sessionEnded = false
-  let subscriptionId = ''
-  subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-    if (wsMessage.type === 'error') {
+  const subscriptionIds: string[] = []
+  subscriptionIds.push(
+    subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+      const data = wsMessage.data as unknown as WSTaskNoticeData
+      if (data.level === 'error') {
+        message.error(`${label} 配置失败: ${data.message}`)
+      }
+    }),
+    subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
       sessionEnded = true
-      message.error(`${label} 配置连接失败: ${String(wsMessage.data)}`)
-      clearConfigSession(targetId, subscriptionId, clearState)
-      return
-    }
-    if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-      message.error(`${label} 配置失败: ${String(wsMessage.data.Error)}`)
-      return
-    }
-    if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-      sessionEnded = true
-      clearConfigSession(targetId, subscriptionId, clearState)
-    }
-  })
+      clearConfigSession(targetId, subscriptionIds, clearState)
+    })
+  )
   if (sessionEnded) {
-    unsubscribe(subscriptionId)
+    for (const subscriptionId of subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
     return false
   }
   activeConnections.value.set(targetId, {
-    subscriptionId,
-    websocketId: response.taskId,
+    subscriptionIds,
+    taskId: response.taskId,
   })
   return true
 }
@@ -1482,12 +1462,12 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
     return false
   }
   const response = await Service.stopTaskApiDispatchStopPost({
-    taskId: connection.websocketId,
+    taskId: connection.taskId,
   })
   if (response.code !== 200) {
     throw new Error(response.message || `保存 ${label} 配置失败`)
   }
-  clearConfigSession(targetId, connection.subscriptionId, clearState)
+  clearConfigSession(targetId, connection.subscriptionIds, clearState)
   return true
 }
 
@@ -1526,7 +1506,7 @@ const handleStartMaaEndConfig = async (script: Script, user: User | null = null)
       () => {
         const connection = activeConnections.value.get(targetId)
         if (!connection) return
-        clearConfigSession(targetId, connection.subscriptionId, clearState)
+        clearConfigSession(targetId, connection.subscriptionIds, clearState)
         message.info(
           user
             ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`

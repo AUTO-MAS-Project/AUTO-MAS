@@ -5,6 +5,11 @@ import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_GAMESIGN_RESULT_UPDATED,
+  WS_ID_GAME_SIGN,
+  type WSGameSignResultData,
+} from '@/services/websocket/types'
 import TabGameSign from './TabGameSign.vue'
 
 defineOptions({ name: 'GameSignPage' })
@@ -169,10 +174,13 @@ useEventListener(document, 'visibilitychange', () => {
 })
 
 onMounted(async () => {
-  gameSignSubscriptionId = subscribe({ id: 'GameSign', type: 'Update' }, message => {
-    const data = message.data as { Result?: unknown } | undefined
-    syncGameSignResult(data?.Result)
-  })
+  gameSignSubscriptionId = subscribe(
+    { id: WS_ID_GAME_SIGN, type: WS_GAMESIGN_RESULT_UPDATED },
+    wsMessage => {
+      const data = wsMessage.data as unknown as WSGameSignResultData
+      syncGameSignResult(data.result)
+    }
+  )
   await loadTools()
   startStatusPolling()
 })

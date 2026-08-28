@@ -45,8 +45,6 @@ if (
   OpenAPI.BASE = 'http://127.0.0.1:36163'
 }
 
-// 导入WebSocket消息监听组件
-import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
@@ -100,9 +98,6 @@ const bootstrap = async () => {
 
   // 挂载应用
   app.mount('#app')
-
-  // 注册WebSocket消息监听组件
-  app.component('WebSocketMessageListener', WebSocketMessageListener)
 
   logger.info('前端应用初始化完成')
 }

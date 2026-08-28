@@ -1,4 +1,8 @@
 import {
+  bootstrapUpdateDownloadSubscriptions,
+  disposeUpdateDownloadSubscriptions,
+} from '@/composables/useUpdateDownload'
+import {
   bootstrapResidentResources,
   registerResidentResource,
 } from '@/services/websocket/residentResources'
@@ -6,6 +10,10 @@ import {
   bootstrapTaskRuntimeState,
   disposeTaskRuntimeState,
 } from '@/composables/useTaskRuntimeState'
+import {
+  bootstrapSchedulerSubscriptions,
+  disposeSchedulerSubscriptions,
+} from '@/views/scheduler/useSchedulerLogic'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
 
 let registered = false
@@ -20,6 +28,14 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('task-runtime', {
       bootstrap: bootstrapTaskRuntimeState,
       dispose: disposeTaskRuntimeState,
+    })
+    registerResidentResource('scheduler', {
+      bootstrap: bootstrapSchedulerSubscriptions,
+      dispose: disposeSchedulerSubscriptions,
+    })
+    registerResidentResource('update-download', {
+      bootstrap: bootstrapUpdateDownloadSubscriptions,
+      dispose: disposeUpdateDownloadSubscriptions,
     })
     registerResidentResource('system-notices', {
       bootstrap: bootstrapSystemNotices,
