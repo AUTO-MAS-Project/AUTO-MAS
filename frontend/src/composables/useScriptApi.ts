@@ -1020,6 +1020,27 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (String(userIndex.type) === 'MaaFWUserConfig' && userData) {
+                    const maafwUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                        Status: maafwUserData.Info?.Status ?? true,
+                        RemainedDay: maafwUserData.Info?.RemainedDay ?? -1,
+                        Notes: maafwUserData.Info?.Notes ?? '',
+                        Tag: maafwUserData.Info?.Tag ?? null,
+                      },
+                      Task: maafwUserData.Task ?? {},
+                      Notify: maafwUserData.Notify ?? {},
+                      Data: {
+                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '',
+                        ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
+                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? false,
+                        LastSklandDate: '',
+                      },
+                    } as any
                   } else if (userIndex.type === 'HSRUserConfig' && userData) {
                     const hsrUserData = userData as any
                     return {
