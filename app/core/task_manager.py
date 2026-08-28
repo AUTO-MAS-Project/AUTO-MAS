@@ -39,13 +39,9 @@ from .config import (
     HSRConfig,
 )
 
-def __getattr__(name: str) -> object:
-    """延迟导入 System，避免 app.services 初始化期间的循环导入。"""
-    if name == "System":
-        from app.services import System
-        return System
-    raise AttributeError(name)
-
+# 延迟加载 System，避免 app.services 初始化期间触发循环导入；
+# 绑定为模块级 LazyProxy（真实对象引用），函数体裸名 System 才能经
+# LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
 from app.models.task import (
     ScriptItem,
     TaskExecuteBase,
@@ -53,19 +49,11 @@ from app.models.task import (
     TaskTriggerSource,
     UserItem,
 )
-from app.utils import get_logger
-from app.task import (
-    MaaManager,
-    SrcManager,
-    GeneralManager,
-    MaaEndManager,
-    M9AManager,
-    OkwwManager,
-    OkNteManager,
-    HSRManager,
-)
+from app.utils import LazyProxy, get_logger
+import app.task as task
 from app.utils.constants import POWER_SIGN_MAP
 
+System = LazyProxy("app.services", "System")
 
 logger = get_logger("业务调度")
 
@@ -317,11 +305,11 @@ class Task(TaskExecuteBase):
                 logger.info(f"任务开始: {current_script_uid}")
 
                 if isinstance(script_config, MaaConfig):
-                    task_item = MaaManager(script_item)
+                    task_item = task.MaaManager(script_item)
                 elif isinstance(script_config, SrcConfig):
                     if src_root_path is None:
                         raise RuntimeError("SRC 路径占用未初始化")
-                    task_item = SrcManager(
+                    task_item = task.SrcManager(
                         script_item,
                         reserved_src_root_path=src_root_path,
                         reserve_src_root=lambda root_path,
@@ -333,17 +321,17 @@ class Task(TaskExecuteBase):
                         ),
                     )
                 elif isinstance(script_config, GeneralConfig):
-                    task_item = GeneralManager(script_item)
+                    task_item = task.GeneralManager(script_item)
                 elif isinstance(script_config, OkwwConfig):
-                    task_item = OkwwManager(script_item)
+                    task_item = task.OkwwManager(script_item)
                 elif isinstance(script_config, OkNteConfig):
-                    task_item = OkNteManager(script_item)
+                    task_item = task.OkNteManager(script_item)
                 elif isinstance(script_config, MaaEndConfig):
-                    task_item = MaaEndManager(script_item)
+                    task_item = task.MaaEndManager(script_item)
                 elif isinstance(script_config, M9AConfig):
-                    task_item = M9AManager(script_item)
+                    task_item = task.M9AManager(script_item)
                 elif isinstance(script_config, HSRConfig):
-                    task_item = HSRManager(script_item)
+                    task_item = task.HSRManager(script_item)
                 else:
                     logger.error(
                         f"不支持的脚本类型: {type(script_config).__name__}"
