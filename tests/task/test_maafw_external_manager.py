@@ -110,8 +110,11 @@ class _FakeEmulator:
         self.open_calls.append(index)
         if self.__class__.open_should_raise:
             raise RuntimeError("模拟器起不来")
+        # title 取 MuMu 实例真实标题风格；MuMu AdbDevice.Name 由它派生。
         return DeviceInfo(
-            title="fake", status=DeviceStatus.ONLINE, adb_address="127.0.0.1:16384"
+            title="MuMu安卓设备",
+            status=DeviceStatus.ONLINE,
+            adb_address="127.0.0.1:16384",
         )
 
     async def close(self, index):
@@ -1302,7 +1305,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertEqual(written["Connect.Address"], "127.0.0.1:16384")
 
             device = written["AdbDevice"]
-            self.assertEqual(device["Name"], "MuMu模拟器")
+            # Name 取 MuMu 实例真实标题（_FakeEmulator.open 返回 "MuMu安卓设备"），
+            # 与 _build_ldplayer_config 一致，不再硬编码 "MuMu模拟器"。
+            self.assertEqual(device["Name"], "MuMu安卓设备")
             self.assertEqual(
                 device["AdbPath"], "C:/Netease/MuMuPlayer-12.0/shell/adb.exe"
             )
@@ -1370,6 +1375,123 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 },
             )
 
+    _MUMU_PATH = Path("C:/Netease/MuMuPlayer-12.0/shell/MuMuManager.exe")
+
+    def test_mumu_device_config_name_uses_emulator_title(self) -> None:
+        asyncio.run(self._test_mumu_device_config_name_uses_emulator_title())
+
+    async def _test_mumu_device_config_name_uses_emulator_title(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, _, _ = await self._make_manager(root)
+
+            device = manager._build_mumu_config(
+                DeviceInfo(
+                    title="MuMu安卓设备-1",
+                    status=DeviceStatus.ONLINE,
+                    adb_address="127.0.0.1:16416",
+                ),
+                self._MUMU_PATH,
+                "1",
+            )
+
+            # Name 取实例真实标题，而非硬编码 "MuMu模拟器"。
+            self.assertEqual(device["Name"], "MuMu安卓设备-1")
+            self.assertEqual(device["AdbSerial"], "127.0.0.1:16416")
+
+    def test_mumu_device_config_name_falls_back_to_adb_address_when_title_blank(
+        self,
+    ) -> None:
+        asyncio.run(
+            self._test_mumu_device_config_name_falls_back_to_adb_address_when_title_blank()
+        )
+
+    async def _test_mumu_device_config_name_falls_back_to_adb_address_when_title_blank(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, _, _ = await self._make_manager(root)
+
+            device = manager._build_mumu_config(
+                DeviceInfo(
+                    title="   ",
+                    status=DeviceStatus.ONLINE,
+                    adb_address="127.0.0.1:16384",
+                ),
+                self._MUMU_PATH,
+                "0",
+            )
+
+            # 标题为空白时不退回硬编码 "MuMu模拟器"（与雷电分支不一致），改用 ADB 地址兜底。
+            self.assertEqual(device["Name"], "127.0.0.1:16384")
+
+    def test_mumu_device_config_name_falls_back_to_indexed_name_when_address_unknown(
+        self,
+    ) -> None:
+        asyncio.run(
+            self._test_mumu_device_config_name_falls_back_to_indexed_name_when_address_unknown()
+        )
+
+    async def _test_mumu_device_config_name_falls_back_to_indexed_name_when_address_unknown(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, _, _ = await self._make_manager(root)
+
+            device = manager._build_mumu_config(
+                DeviceInfo(
+                    title="",
+                    status=DeviceStatus.ONLINE,
+                    adb_address="Unknown",
+                ),
+                self._MUMU_PATH,
+                "3",
+            )
+
+            # 标题与地址都拿不到时，退到带多开号的名字（仍不等于裸 "MuMu模拟器"）。
+            self.assertEqual(device["Name"], "MuMu模拟器-3")
+
+    def test_ldplayer_device_config_name_ignores_emulator_info_title(self) -> None:
+        asyncio.run(self._test_ldplayer_device_config_name_ignores_emulator_info_title())
+
+    async def _test_ldplayer_device_config_name_ignores_emulator_info_title(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            emulator_id = await self._configure_emulator(
+                runtime.ScriptConfig[script_uid],
+                runtime=runtime,
+                index="2",
+                emulator_type="ldplayer",
+                path="C:/leidian/LDPlayer14/ldconsole.exe",
+            )
+            fake_emulator = _FakeEmulator(emulator_id)
+            _FakeEmulator.ld_devices = {
+                "2": _FakeLdDevice(title="雷电模拟器-2", idx=2, pid=999)
+            }
+
+            with patch.object(manager_module, "Config", runtime):
+                device = await manager._build_adb_device_config(
+                    # 传入一个与雷电真实标题不同的 emulator_info.title，
+                    # 雷电分支必须仍取 ld_player_device.title，回归保护。
+                    DeviceInfo(
+                        title="MuMu安卓设备",
+                        status=DeviceStatus.ONLINE,
+                        adb_address="emulator-5558",
+                    ),
+                    emulator_id,
+                    "2",
+                    fake_emulator,
+                )
+
+            self.assertEqual(device["Name"], "雷电模拟器-2")
+
     def test_unconfigured_emulator_preserves_instance_adb_device(self) -> None:
         asyncio.run(self._test_unconfigured_emulator_preserves_instance_adb_device())
 
@@ -1412,7 +1534,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 self.assertIsNone(await manager._prepare_emulator())
                 # 模拟器管理器拿不到地址时会返回哨兵值 "Unknown"（见 utils/emulator）。
                 manager.emulator_info = DeviceInfo(
-                    title="fake",
+                    title="MuMu安卓设备",
                     status=DeviceStatus.ONLINE,
                     adb_address="Unknown",
                 )
@@ -1421,8 +1543,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 await manager.final_task()
 
             self.assertNotIn("Connect.Address", written)
-            # 设备本身仍按 MAS 登记生成，只是不写连接目标。
-            self.assertEqual(written["AdbDevice"]["Name"], "MuMu模拟器")
+            # 设备本身仍按 MAS 登记生成（AdbDevice 在 _prepare_emulator 期间已按
+            # _FakeEmulator.open 的真实标题构建），只是不写连接目标。
+            self.assertEqual(written["AdbDevice"]["Name"], "MuMu安卓设备")
 
     def test_device_build_failure_preserves_instance_adb_device(self) -> None:
         asyncio.run(self._test_device_build_failure_preserves_instance_adb_device())

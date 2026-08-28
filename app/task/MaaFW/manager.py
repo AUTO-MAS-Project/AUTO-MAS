@@ -1395,13 +1395,35 @@ class MaaFWManager(TaskExecuteBase):
         emulator_path: Path,
         emulator_index: str,
     ) -> dict[str, Any]:
-        """构建 MuMu 模拟器 AdbDevice。整体回收自 M9A 专项。"""
+        """构建 MuMu 模拟器 AdbDevice。摘取+适配自 M9A 专项。
+
+        Name 取 ``emulator_info.title``（MuMu 实例真实标题，来自
+        ``app/utils/emulator/mumu.py`` ``getInfo``：``name = value["name"]``，
+        由 ``MuMuManager.exe info`` 返回），把 MuMu 路径对齐到
+        ``_build_ldplayer_config`` 用 ``ld_player_device.title`` 的做法——一致性
+        改进：MAS 本就握有真实名字，没有理由在 MuMu 分支硬编码
+        ``"MuMu模拟器"``。外壳写入 ``instances/*.json`` 的设备指纹里 Name 段随之
+        变为真实标题；这不改变外壳按 Name/Index/Address/Port 多项匹配的语义，
+        也不单独承担「外壳连不上设备」的修复。
+        """
 
         logger.info("构建 MuMu 模拟器 AdbDevice 配置")
 
         shell_dir = emulator_path.parent
         emulator_root = shell_dir.parent
         adb_path = shell_dir / "adb.exe"
+
+        # MuMuManager 正常必然返回实例名；title 为空/缺失属异常兜底。
+        # 不退回硬编码 "MuMu模拟器"——它与雷电分支不一致且丢失实例信息；改用
+        # ADB 地址兜底（与另一种枚举名 "127.0.0.1:16384-MuMuPlayer12 …" 同形），
+        # 地址不可用时再退到带多开号的名字，并明确告警。
+        name = (emulator_info.title or "").strip()
+        if not name:
+            if emulator_info.adb_address and emulator_info.adb_address != "Unknown":
+                name = emulator_info.adb_address
+            else:
+                name = f"MuMu模拟器-{emulator_index}"
+            logger.warning(f"MuMu 实例标题为空，AdbDevice.Name 兜底为 {name}")
 
         mumu_extras = {
             "enable": True,
@@ -1414,7 +1436,7 @@ class MaaFWManager(TaskExecuteBase):
         )
 
         return {
-            "Name": "MuMu模拟器",
+            "Name": name,
             "AdbPath": str(adb_path).replace("\\", "/"),
             "AdbSerial": emulator_info.adb_address,
             "ScreencapMethods": 64,
