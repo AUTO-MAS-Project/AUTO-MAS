@@ -8,7 +8,7 @@
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="../../../assets/AUTO-MAS.ico" alt="MaaFW" class="breadcrumb-logo" />
-            编辑 MaaFW 脚本
+            {{ projectDisplayName }} 项目配置
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -25,128 +25,69 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card title="MaaFW 脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="`${projectDisplayName} 项目配置`" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="geekblue" class="type-tag"> MaaFW（外部运行）</a-tag>
       </template>
 
-      <a-form layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header"><h3>基本信息</h3></div>
-          <a-row :gutter="24">
-            <a-col :xs="24" :lg="8">
-              <a-form-item label="脚本名称">
-                <a-input
-                  v-model:value="maafwConfig.Info.Name"
-                  placeholder="请输入脚本名称"
-                  size="large"
-                  @blur="handleChange('Info', 'Name', maafwConfig.Info.Name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="16">
-              <a-form-item label="MaaFW 项目目录（需包含 interface.json）">
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maafwConfig.Info.Path"
-                    placeholder="请选择 MaaFW 项目根目录"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectProjectPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    选择文件夹
-                  </a-button>
-                  <a-button
-                    v-if="maafwConfig.Info.Path"
-                    size="large"
-                    class="path-button path-refresh-button"
-                    :loading="previewLoading"
-                    @click="runPreview"
-                  >
-                    重新读取
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-          </a-row>
+      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <BasicInfoSection
+          :maafw-config="maafwConfig"
+          :form-data="formData"
+          :rules="rules"
+          :preview-data="previewData"
+          :interface-loading="previewLoading"
+          :preview-project-title="previewProjectTitle"
+          :interface-stats="interfaceStats"
+          @change="handleChange"
+          @select-path="selectMaaFWPath"
+          @preview-interface="handlePreviewInterface"
+        />
 
-          <a-alert
-            v-if="previewError"
-            type="error"
-            show-icon
-            :message="previewError"
-            style="margin-top: 4px"
-          />
-          <a-alert
-            v-else-if="previewProject"
-            type="success"
-            show-icon
-            :message="`已读取项目 ${previewProject}：控制器 ${controllerOptions.length} · 资源 ${resourceOptions.length} · 可选任务 ${taskOptions.length}`"
-            style="margin-top: 4px"
-          />
-        </div>
+        <ControlConfigSection
+          :maafw-config="maafwConfig"
+          :preview-data="previewData"
+          :interface-loading="previewLoading"
+          :emulator-loading="emulatorLoading"
+          :emulator-options-ready="emulatorOptionsReady"
+          :emulator-device-loading="emulatorDeviceLoading"
+          :emulator-options="emulatorOptions"
+          :emulator-device-options="emulatorDeviceOptions"
+          :emulator-type-by-id="emulatorTypeById"
+          :controller-options="controllerOptions"
+          :effective-controller-name="effectiveControllerName"
+          :effective-controller-type="effectiveControllerType"
+          :is-adb-controller="isAdbController"
+          :is-desktop-controller="isDesktopController"
+          :resource-options="resourceOptions"
+          :unsupported-controller-options="unsupportedControllerOptions"
+          :unsupported-controller-message="unsupportedControllerMessage"
+          :adb-control-strategy-message="adbControlStrategyMessage"
+          :adb-control-strategy-items="adbControlStrategyItems"
+          :selected-emulator-label="selectedEmulatorLabel"
+          :interface-dependent-disabled="interfaceDependentDisabled"
+          @change="handleChange"
+          @controller-change="handleControllerChange"
+          @resource-change="handleResourceChange"
+          @emulator-select-change="handleEmulatorSelectChange"
+          @select-launch-path="selectLaunchPath"
+        />
 
-        <!-- 运行选择 -->
-        <div class="form-section">
-          <div class="section-header"><h3>运行选择</h3></div>
-          <a-spin :spinning="previewLoading">
-            <a-row :gutter="24">
-              <a-col :xs="24" :lg="12">
-                <a-form-item label="控制器（单选）">
-                  <a-select
-                    v-model:value="selectedController"
-                    size="large"
-                    placeholder="请先读取项目目录再选择控制器"
-                    :disabled="!controllerOptions.length"
-                    allow-clear
-                    @change="handleControllerChange"
-                  >
-                    <a-select-option
-                      v-for="item in controllerOptions"
-                      :key="item.name"
-                      :value="item.name"
-                    >
-                      {{ item.label || item.name }}（{{ item.type }}）
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :lg="12">
-                <a-form-item label="资源（单选）">
-                  <a-select
-                    v-model:value="selectedResource"
-                    size="large"
-                    placeholder="请先读取项目目录再选择资源"
-                    :disabled="!resourceOptions.length"
-                    allow-clear
-                    @change="handleResourceChange"
-                  >
-                    <a-select-option
-                      v-for="item in resourceOptions"
-                      :key="item.name"
-                      :value="item.name"
-                    >
-                      {{ item.label || item.name }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-alert
-              type="info"
-              show-icon
-              message="任务队列已下沉到用户层：请在「用户管理 → 编辑用户」中为每个用户排任务与预设。"
-              style="margin-top: -4px"
-            />
-          </a-spin>
-        </div>
+        <UpdateSettingsSection
+          :maafw-config="maafwConfig"
+          :preview-data="previewData"
+          :is-auto-update-disabled="isAutoUpdateDisabled"
+          :update-checking="updateChecking"
+          :update-applying="updateApplying"
+          :update-error="updateError"
+          :update-result="updateResult"
+          :update-source-options="updateSourceOptions"
+          :update-channel-options="updateChannelOptions"
+          @change="handleChange"
+          @check-update="runUpdateCheck"
+          @apply-update="runUpdateApply"
+        />
 
-        <!-- 运行配置（回收自 fdde4d51） -->
         <RunConfigSection
           :maafw-config="maafwConfig"
           :daily-once-tasks="dailyOnceTasks"
@@ -157,134 +98,6 @@
           @change="handleChange"
           @period-task-change="handlePeriodTaskChange"
         />
-
-        <!-- 项目更新 -->
-        <div class="form-section">
-          <div class="section-header"><h3>项目更新</h3></div>
-          <a-row :gutter="24">
-            <a-col :xs="24" :lg="8">
-              <a-form-item label="更新源（留空跟随全局）">
-                <a-select
-                  v-model:value="maafwConfig.Update.Source"
-                  size="large"
-                  @change="() => handleChange('Update', 'Source', maafwConfig.Update.Source)"
-                >
-                  <a-select-option value="">跟随全局</a-select-option>
-                  <a-select-option value="MirrorChyan">MirrorChyan</a-select-option>
-                  <a-select-option value="GitHub">GitHub</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="8">
-              <a-form-item label="更新渠道（留空跟随全局）">
-                <a-select
-                  v-model:value="maafwConfig.Update.Channel"
-                  size="large"
-                  @change="() => handleChange('Update', 'Channel', maafwConfig.Update.Channel)"
-                >
-                  <a-select-option value="">跟随全局</a-select-option>
-                  <a-select-option value="stable">stable</a-select-option>
-                  <a-select-option value="beta">beta</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="8">
-              <a-form-item label="运行前自动更新">
-                <a-switch
-                  v-model:checked="maafwConfig.Update.IfAutoUpdate"
-                  @change="
-                    () => handleChange('Update', 'IfAutoUpdate', maafwConfig.Update.IfAutoUpdate)
-                  "
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :xs="24" :lg="12">
-              <a-form-item label="Mirror 酱 CDK（留空用全局）">
-                <a-input-password
-                  v-model:value="maafwConfig.Update.MirrorChyanCDK"
-                  size="large"
-                  autocomplete="off"
-                  placeholder="留空时使用全局项目更新 CDK"
-                  @blur="
-                    handleChange('Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)
-                  "
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="12">
-              <a-form-item label="GitHub 仓库覆盖（owner/repo，留空用 interface）">
-                <a-input
-                  v-model:value="maafwConfig.Update.GitHubRepo"
-                  size="large"
-                  placeholder="例如 MaaXYZ/MaaProject"
-                  @blur="handleChange('Update', 'GitHubRepo', maafwConfig.Update.GitHubRepo)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :xs="24" :lg="12">
-              <a-form-item label="GitHub Release Tag 覆盖">
-                <a-input
-                  v-model:value="maafwConfig.Update.GitHubTag"
-                  size="large"
-                  placeholder="留空时按 MirrorChyan 选定版本解析"
-                  @blur="handleChange('Update', 'GitHubTag', maafwConfig.Update.GitHubTag)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="12">
-              <a-form-item label="GitHub 资源文件名匹配（fnmatch）">
-                <a-input
-                  v-model:value="maafwConfig.Update.GitHubAssetPattern"
-                  size="large"
-                  placeholder="例如 *win*x64*.zip"
-                  @blur="
-                    handleChange(
-                      'Update',
-                      'GitHubAssetPattern',
-                      maafwConfig.Update.GitHubAssetPattern
-                    )
-                  "
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-space>
-            <a-button :loading="updateChecking" @click="runUpdateCheck">检查更新</a-button>
-            <a-button
-              v-if="updateResult && updateResult.installable"
-              type="primary"
-              :loading="updateApplying"
-              @click="runUpdateApply"
-            >
-              执行更新
-            </a-button>
-          </a-space>
-
-          <a-alert
-            v-if="updateError"
-            type="error"
-            show-icon
-            :message="updateError"
-            style="margin-top: 12px"
-          />
-          <a-alert
-            v-else-if="updateResult"
-            :type="updateResultType"
-            show-icon
-            :message="updateResult.message"
-            style="margin-top: 12px"
-          />
-        </div>
-
-        <a-typography-text type="secondary">
-          运行引擎：外部运行（MFAAvalonia
-          外壳）。设备标识需先在外壳侧连接一次模拟器后由项目自带配置提供，MAS 暂不写入设备字段。
-        </a-typography-text>
       </a-form>
     </a-card>
   </div>
@@ -293,12 +106,26 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
-import type { MaaFWControllerInfo, MaaFWResourceInfo, MaaFWTaskInfo } from '@/api'
-import type { MaaFWScriptConfig } from '@/types/script'
+import {
+  getDefaultMaaFWScriptConfig,
+  updateChannelOptions,
+  updateSourceOptions,
+  useMaaFWControlConfig,
+} from '@/composables/useMaaFWScriptConfig'
+import type {
+  MaaFWInterfacePreviewData,
+  MaaFWScriptConfig,
+  MaaFWTaskInfo,
+  ScriptType,
+} from '@/types/script'
+import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
+import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
+import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
@@ -323,53 +150,114 @@ const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
+const formRef = ref<FormInstance>()
 const previewLoading = ref(false)
-const previewError = ref('')
-const previewProject = ref('')
-
-const controllerOptions = ref<MaaFWControllerInfo[]>([])
-const resourceOptions = ref<MaaFWResourceInfo[]>([])
-const taskOptions = ref<MaaFWTaskInfo[]>([])
-
-const selectedController = ref<string | undefined>(undefined)
-const selectedResource = ref<string | undefined>(undefined)
+const previewData = ref<MaaFWInterfacePreviewData | null>(null)
 
 const dailyOnceTasks = ref<string[]>([])
 const weeklyOnceTasks = ref<string[]>([])
 const monthlyOnceTasks = ref<string[]>([])
 
-// RunConfigSection 逐字节回收自 fdde4d51，其 prop 类型为 MaaFWScriptConfig；
-// 本简版脚本页只维护 Info.* / Run.*，其余分组在加载时从后端整份合并进来。
-const maafwConfig = reactive({
-  Info: { Name: '', ProjectLabel: '', Path: '', Controller: '', Resource: '' },
-  Run: {
-    Engine: 'external',
-    ProxyTimesLimit: 0,
-    RunTimesLimit: 1,
-    RunTimeLimit: 30,
-    DailyOnceTasks: '[ ]',
-    WeeklyOnceTasks: '[ ]',
-    MonthlyOnceTasks: '[ ]',
-  },
-  Update: {
-    IfAutoUpdate: true,
-    Source: '',
-    Channel: '',
-    MirrorChyanCDK: '',
-    GitHubRepo: '',
-    GitHubTag: '',
-    GitHubAssetPattern: '',
-  },
-}) as unknown as MaaFWScriptConfig
+const maafwConfig = reactive<MaaFWScriptConfig>(getDefaultMaaFWScriptConfig())
 
-const periodTaskOptions = computed(() =>
-  taskOptions.value.map(task => ({
-    label: task.label ? `${task.label}（${task.name}）` : task.name,
-    value: task.name,
-  }))
+const formData = reactive<{ type: ScriptType; name: string; path: string }>({
+  type: 'MaaFW',
+  name: '',
+  path: '',
+})
+
+const rules = {
+  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
+  path: [
+    {
+      validator: () =>
+        maafwConfig.Info.Path
+          ? Promise.resolve()
+          : Promise.reject(new Error('请选择 MaaFramework 项目实际目录并读取 interface')),
+      trigger: 'blur',
+    },
+  ],
+}
+
+const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
+  if (isInitializing.value || isSaving.value) return
+  isSaving.value = true
+  try {
+    const success = await updateScript(scriptId, { [category]: { [key]: value } })
+    if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
+  } catch (error) {
+    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const {
+  emulatorLoading,
+  emulatorOptionsReady,
+  emulatorDeviceLoading,
+  emulatorOptions,
+  emulatorDeviceOptions,
+  emulatorTypeById,
+  controllerOptions,
+  unsupportedControllerOptions,
+  unsupportedControllerMessage,
+  effectiveControllerName,
+  effectiveControllerType,
+  isAdbController,
+  isDesktopController,
+  resourceOptions,
+  interfaceDependentDisabled,
+  selectedEmulatorLabel,
+  adbControlStrategyMessage,
+  adbControlStrategyItems,
+  handleControllerChange,
+  handleResourceChange,
+  handleEmulatorSelectChange,
+  syncControllerResourceSelection,
+  loadEmulatorOptions,
+  loadEmulatorDeviceOptions,
+  selectLaunchPath,
+} = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
+
+const isAutoUpdateDisabled = computed(() =>
+  Boolean(previewData.value && !previewData.value.project.version)
 )
 
-const interfaceDependentDisabled = computed(() => previewLoading.value || !taskOptions.value.length)
+const previewProjectTitle = computed(() => {
+  if (!previewData.value) return '-'
+  const project = previewData.value.project
+  return project.title || project.label || project.name
+})
+
+const projectDisplayName = computed(() => {
+  const candidates = [
+    previewData.value ? previewProjectTitle.value : '',
+    maafwConfig.Info.ProjectLabel,
+    maafwConfig.Info.Name,
+  ]
+  return (
+    candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MaaFramework'
+  )
+})
+
+const interfaceStats = computed(() => [
+  { label: '任务', value: previewData.value?.tasks.length ?? 0 },
+  { label: '预设', value: previewData.value?.presets.length ?? 0 },
+  { label: '控制器', value: previewData.value?.controllers.length ?? 0 },
+  { label: '资源', value: previewData.value?.resources.length ?? 0 },
+  { label: '导入', value: previewData.value?.importCount ?? 0 },
+  { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
+])
+
+const periodTaskOptions = computed(() =>
+  (previewData.value?.tasks || [])
+    .filter(task => !isPretaskTask(task))
+    .map(task => ({
+      label: task.label ? `${task.label}（${task.name}）` : task.name,
+      value: task.name,
+    }))
+)
 
 // ConfigBase 把周期任务列表以 JSON 字符串保存、读回也是字符串；
 // 兼容后端某天直接返回数组的情况，统一收敛成字符串数组。
@@ -397,31 +285,6 @@ const periodTaskRef = (key: PeriodKey): typeof dailyOnceTasks =>
       ? weeklyOnceTasks
       : monthlyOnceTasks
 
-const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, { [category]: { [key]: value } })
-    if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-  } catch (error) {
-    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    isSaving.value = false
-  }
-}
-
-const handleControllerChange = (value: string | undefined) => {
-  selectedController.value = value || undefined
-  maafwConfig.Info.Controller = value || ''
-  void handleChange('Info', 'Controller', value || '')
-}
-
-const handleResourceChange = (value: string | undefined) => {
-  selectedResource.value = value || undefined
-  maafwConfig.Info.Resource = value || ''
-  void handleChange('Info', 'Resource', value || '')
-}
-
 const handlePeriodTaskChange = async (key: PeriodKey, values: string[]) => {
   const normalized = Array.from(new Set(values.filter(Boolean)))
   periodTaskRef(key).value = normalized
@@ -430,7 +293,7 @@ const handlePeriodTaskChange = async (key: PeriodKey, values: string[]) => {
 }
 
 const prunePeriodTaskSelections = async () => {
-  const available = new Set(taskOptions.value.map(task => task.name))
+  const available = new Set((previewData.value?.tasks || []).map(task => task.name))
   for (const key of PERIOD_KEYS) {
     const current = periodTaskRef(key).value
     const next = current.filter(name => available.has(name))
@@ -440,59 +303,53 @@ const prunePeriodTaskSelections = async () => {
   }
 }
 
-const clearPreviewOptions = () => {
-  previewProject.value = ''
-  controllerOptions.value = []
-  resourceOptions.value = []
-  taskOptions.value = []
+const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined) => {
+  const defaults = getDefaultMaaFWScriptConfig()
+  ;(Object.keys(defaults) as Array<keyof MaaFWScriptConfig>).forEach(section => {
+    Object.assign(
+      maafwConfig[section] as Record<string, unknown>,
+      defaults[section] as Record<string, unknown>,
+      (config?.[section] as Record<string, unknown>) ?? {}
+    )
+  })
+  formData.name = maafwConfig.Info.Name || ''
+  formData.path = maafwConfig.Info.Path || ''
+  dailyOnceTasks.value = parseTaskNameList(maafwConfig.Run.DailyOnceTasks)
+  weeklyOnceTasks.value = parseTaskNameList(maafwConfig.Run.WeeklyOnceTasks)
+  monthlyOnceTasks.value = parseTaskNameList(maafwConfig.Run.MonthlyOnceTasks)
 }
 
 const runPreview = async () => {
   const path = maafwConfig.Info.Path.trim()
   if (!path) {
-    previewError.value = ''
-    clearPreviewOptions()
+    previewData.value = null
     return
   }
   previewLoading.value = true
-  previewError.value = ''
   try {
     const response = await previewMaaFWInterface(path)
-    if (!response) {
-      previewError.value = '预览 MaaFW interface 失败，请检查后端服务与项目目录'
-      clearPreviewOptions()
+    if (!response || response.code !== 200 || !response.data) {
+      previewData.value = null
+      message.error(response?.message || 'MaaFW interface 预览失败，请检查后端服务与项目目录')
       return
     }
-    if (response.code !== 200 || !response.data) {
-      previewError.value = response.message || 'MaaFW interface 预览失败'
-      clearPreviewOptions()
-      return
-    }
-    const data = response.data
-    controllerOptions.value = data.controllers ?? []
-    resourceOptions.value = data.resources ?? []
-    taskOptions.value = (data.tasks ?? []).filter(task => !isPretaskTask(task))
-    previewProject.value = data.project?.label || data.project?.name || path
-
-    // 预览结果变化后，剔除已不存在的历史选择，避免提交后端未定义项
-    const controllerNames = new Set(controllerOptions.value.map(item => item.name))
-    const resourceNames = new Set(resourceOptions.value.map(item => item.name))
-    if (selectedController.value && !controllerNames.has(selectedController.value)) {
-      handleControllerChange(undefined)
-    }
-    if (selectedResource.value && !resourceNames.has(selectedResource.value)) {
-      handleResourceChange(undefined)
-    }
+    previewData.value = response.data as MaaFWInterfacePreviewData
+    await syncControllerResourceSelection(true)
     await prunePeriodTaskSelections()
   } catch (error) {
-    previewError.value = error instanceof Error ? error.message : String(error)
-    clearPreviewOptions()
+    previewData.value = null
+    message.error(error instanceof Error ? error.message : String(error))
   } finally {
     previewLoading.value = false
   }
 }
 
-const selectProjectPath = async () => {
+const handlePreviewInterface = async () => {
+  await runPreview()
+  if (previewData.value) message.success(`已读取 ${previewProjectTitle.value}`)
+}
+
+const selectMaaFWPath = async () => {
   try {
     if (!window.electronAPI) {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
@@ -501,6 +358,7 @@ const selectProjectPath = async () => {
     const path = await window.electronAPI.selectFolder()
     if (!path) return
     maafwConfig.Info.Path = path
+    formData.path = path
     await handleChange('Info', 'Path', path)
     await runPreview()
   } catch (error) {
@@ -513,12 +371,6 @@ const updateChecking = ref(false)
 const updateApplying = ref(false)
 const updateError = ref('')
 const updateResult = ref<MaaFWUpdateResult | null>(null)
-
-const updateResultType = computed<'success' | 'warning' | 'info'>(() => {
-  if (!updateResult.value) return 'info'
-  if (updateResult.value.updated || !updateResult.value.updateAvailable) return 'success'
-  return 'warning'
-})
 
 const runUpdateCheck = async () => {
   updateChecking.value = true
@@ -555,29 +407,21 @@ const handleCancel = () => {
 onMounted(async () => {
   pageLoading.value = true
   try {
-    const scriptDetail = await getScript(scriptId)
+    const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])
     if (!scriptDetail) {
       message.error('脚本不存在或加载失败')
       router.push('/scripts')
       return
     }
-    const config = scriptDetail.config as MaaFWScriptConfig
-    const updateDefaults = { ...maafwConfig.Update }
-    Object.assign(maafwConfig, config)
-    // 后端未返回 Update 段时回落到默认值，保证更新区块表单始终可绑定
-    maafwConfig.Update = { ...updateDefaults, ...(config.Update ?? {}) }
-    maafwConfig.Info.Name = config.Info?.Name ?? scriptDetail.name ?? '新 MaaFW 脚本'
-    maafwConfig.Info.Path = config.Info?.Path ?? ''
-    maafwConfig.Info.Controller = config.Info?.Controller ?? ''
-    maafwConfig.Info.Resource = config.Info?.Resource ?? ''
+    applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
+    if (!maafwConfig.Info.Name) {
+      maafwConfig.Info.Name = scriptDetail.name ?? '新 MaaFW 脚本'
+      formData.name = maafwConfig.Info.Name
+    }
 
-    selectedController.value = maafwConfig.Info.Controller || undefined
-    selectedResource.value = maafwConfig.Info.Resource || undefined
-
-    dailyOnceTasks.value = parseTaskNameList(config.Run?.DailyOnceTasks)
-    weeklyOnceTasks.value = parseTaskNameList(config.Run?.WeeklyOnceTasks)
-    monthlyOnceTasks.value = parseTaskNameList(config.Run?.MonthlyOnceTasks)
-
+    if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
+      await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
+    }
     if (maafwConfig.Info.Path) {
       await runPreview()
     }
@@ -654,81 +498,8 @@ onMounted(async () => {
   max-width: none;
 }
 
-.form-section {
+.config-form :deep(.ant-form-item) {
   margin-bottom: 20px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
-.path-input-group :deep(.path-input.ant-input) {
-  flex: 1;
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-bg-container);
-}
-
-.path-input-group :deep(.path-input.ant-input:focus) {
-  box-shadow: none;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
-  transform: none;
 }
 
 .cancel-button {
