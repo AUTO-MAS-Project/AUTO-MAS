@@ -8,6 +8,10 @@ import pytest
 from app.services.platform.power import power
 from app.utils.platform import IS_WINDOWS, window
 from app.utils.platform.common.errors import UnsupportedPlatformError
+from app.utils.platform.common.process import (
+    get_main_window_handle,
+    get_window_handles,
+)
 from app.utils.platform.process import platform_process
 
 
@@ -100,3 +104,11 @@ def test_process_platforms_expose_identical_members() -> None:
     )
     windows = _class_members(root / "windows" / "process.py", "WindowsProcessPlatform")
     assert common == windows
+
+
+@pytest.mark.skipif(IS_WINDOWS, reason="仅验证非 Windows 的窗口能力降级")
+def test_window_lookup_helpers_fall_back_instead_of_raising() -> None:
+    """查找型窗口辅助函数在缺少窗口能力时返回空值，不得向调用方抛异常。"""
+
+    assert get_window_handles(1) == []
+    assert get_main_window_handle(1) is None

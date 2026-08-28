@@ -93,13 +93,13 @@ def get_main_window_handle(
     """获取指定进程的主窗口句柄
 
     优先按标题或类名定位, 若未命中则回退到 PID 下最合适的顶层窗口。
+    平台不支持窗口能力时返回 None。
     """
 
     try:
-        window_service = window
+        return window.get_main_window_handle(pid, window_title, window_class_name)
     except UnsupportedPlatformError:
         return None
-    return window_service.get_main_window_handle(pid, window_title, window_class_name)
 
 
 class ProcessManager:
