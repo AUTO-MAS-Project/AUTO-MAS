@@ -22,7 +22,12 @@ export function useBettergiGuiSession() {
   const showBettergiConfigMask = ref(false)
   const stoppingBettergiConfig = ref(false)
 
+  // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
+  const SESSION_TIMEOUT_MS = 30 * 60 * 1000
+  const SESSION_WARNING_ADVANCE_MS = 30 * 1000
+
   let bettergiConfigTimeout: number | null = null
+  let bettergiConfigWarningTimeout: number | null = null
 
   const clearSession = () => {
     if (bettergiSubscriptionId.value) {
@@ -34,6 +39,10 @@ export function useBettergiGuiSession() {
     if (bettergiConfigTimeout) {
       window.clearTimeout(bettergiConfigTimeout)
       bettergiConfigTimeout = null
+    }
+    if (bettergiConfigWarningTimeout) {
+      window.clearTimeout(bettergiConfigWarningTimeout)
+      bettergiConfigWarningTimeout = null
     }
   }
 
@@ -93,7 +102,10 @@ export function useBettergiGuiSession() {
       })
       bettergiSubscriptionId.value = subscriptionId
       message.success('已打开 BetterGI 设置')
-      bettergiConfigTimeout = window.setTimeout(saveSession, 30 * 60 * 1000)
+      bettergiConfigWarningTimeout = window.setTimeout(() => {
+        message.warning('BetterGI 设置会话即将超时，30 秒后自动保存')
+      }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
+      bettergiConfigTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : '启动 BetterGI 设置失败')

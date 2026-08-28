@@ -718,7 +718,6 @@ const scriptName = ref('BetterGI脚本')
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
-const isSaving = ref(false)
 const configModeSaving = ref(false)
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
@@ -806,30 +805,46 @@ const createUserImmediately = async (): Promise<boolean> => {
   return true
 }
 
-const saveField = async (key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value || !userId.value) return
+// 保存串行化队列：以 promise 链取代布尔 isSaving 互斥。布尔守卫会在「上一次保存尚未返回」时
+// 丢弃紧随其后的保存（自定义配置组连续勾选/删除即可触发），造成前后端状态失步；队列则逐条按序
+// 写回，不再丢保存。
+let saveChain: Promise<boolean> = Promise.resolve(true)
 
-  isSaving.value = true
-  try {
-    const parts = key.split('.')
-    const patch: Record<string, any> = {}
-    let current = patch
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
+const saveField = (key: string, value: unknown): Promise<boolean> => {
+  if (isInitializing.value || !userId.value) return Promise.resolve(false)
 
-    if (key === 'Info.Name') {
-      formData.userName = String(value || '')
-    }
-
-    await updateUser(scriptId, userId.value, patch)
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    isSaving.value = false
+  const parts = key.split('.')
+  const patch: Record<string, any> = {}
+  let current = patch
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    current[parts[i]] = {}
+    current = current[parts[i]]
   }
+  current[parts[parts.length - 1]] = value
+
+  if (key === 'Info.Name') {
+    formData.userName = String(value || '')
+  }
+
+  const persist = async (): Promise<boolean> => {
+    try {
+      const ok = await updateUser(scriptId, userId.value, patch)
+      if (!ok) {
+        // updateUser 内部已对多数失败分支弹过 message.error，此处兜底记录并向上返回失败，
+        // 不再静默吞掉；调用方（如自定义配置组 persist）可据此决定是否回滚。
+        logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
+      }
+      return ok
+    } catch (e) {
+      // 仅 updateUser 自身未捕获的意外异常会走到这里
+      logger.error(e instanceof Error ? e.message : String(e))
+      return false
+    }
+  }
+
+  const run = saveChain.then(persist, persist)
+  saveChain = run
+  return run
 }
 
 const toggleGroup = (value: string) => {

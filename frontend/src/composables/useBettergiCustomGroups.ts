@@ -23,8 +23,8 @@ export interface BettergiCustomGroupOptions {
   masConfig: () => boolean
   /** 是否处于「脚本直控配置」之外（可编辑）。为 true 时允许交互 */
   editable: () => boolean
-  /** 保存某字段到后端（形如 'OneDragon.CustomGroups'） */
-  saveField: (key: string, value: unknown) => Promise<void>
+  /** 保存某字段到后端（形如 'OneDragon.CustomGroups'），返回是否保存成功 */
+  saveField: (key: string, value: unknown) => Promise<boolean>
 }
 
 /**

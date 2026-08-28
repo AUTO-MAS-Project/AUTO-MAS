@@ -522,6 +522,9 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"切换账号准备失败: {e}")
             await self._push_dispatch_log(f"切换账号准备失败: {e}")
+            # write_switch_group 可能已写入明文凭据后抛异常，失败路径同样脱敏，避免明文残留磁盘
+            with suppress(Exception):
+                account_switch.scrub_switch_group(self.script_root_path)
             return False
 
         # 更新情况：BGI 启动时先更新仓库脚本、再执行配置组；本地已有脚本则本次是增量检查。
@@ -555,6 +558,8 @@ class AutoProxyTask(TaskExecuteBase):
         #   成功: 配置组 "MAS切换账号" 执行结束
         #   失败: 执行配置组任务时失败 / 任务启动失败 / 任务执行异常 / [FTL] / [ERR]
         switch_group_done = f'配置组 "{account_switch._GROUP_NAME}" 执行结束'
+        # 单组 --startGroups 场景下 [ERR] 即该配置组执行失败（无后续组可续跑），与一条龙判定中
+        # [ERR] 是「任务级可恢复、跳过继续跑」的语义不同，故此处按失败处理。
         switch_group_fail = (
             "执行配置组任务时失败",
             "任务启动失败",
@@ -633,8 +638,8 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log("切换账号完成")
             logger.success(f"用户 {self.cur_user_item.name} 切换账号完成")
         else:
-            await self._push_dispatch_log("切换账号失败或超时，继续执行一条龙")
-            logger.warning(f"用户 {self.cur_user_item.name} 切换账号失败或超时")
+            await self._push_dispatch_log("切换账号失败或超时，已中止任务")
+            logger.warning(f"用户 {self.cur_user_item.name} 切换账号失败或超时，已中止任务")
         return switch_result["success"]
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:

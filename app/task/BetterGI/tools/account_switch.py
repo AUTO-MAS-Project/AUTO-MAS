@@ -45,6 +45,8 @@ from typing import Any
 from app.utils import get_logger
 from app.utils.io import read_file, write_file
 
+from .one_dragon import _GLOBAL_CONFIG_LOCK
+
 logger = get_logger("BetterGI 切换账号")
 
 # 生成并执行的配置组名称（同时作为文件名与 --startGroups 的组名）
@@ -186,20 +188,21 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
       这里显式钉死，避免切号脚本又从 GitHub 下载。
     """
     config_path = root_path / _BGI_CONFIG_REL_PATH
-    config = read_file(config_path)
-    if not isinstance(config, dict):
-        config = {}
-    # 统一写到 camelCase 键（BetterGI JsonOptions 以 CamelCase 读写，PascalCase 键读取时会被忽略）
-    script_cfg = config.get("scriptConfig")
-    if not isinstance(script_cfg, dict):
-        legacy = config.get("ScriptConfig")  # 兼容历史 PascalCase 键，合并后弃用
-        script_cfg = legacy if isinstance(legacy, dict) else {}
-    script_cfg["autoUpdateBeforeCommandLineRun"] = True
-    script_cfg["autoUpdateSubscribedScripts"] = True
-    script_cfg["selectedChannelName"] = "CNB"
-    config.pop("ScriptConfig", None)
-    config["scriptConfig"] = script_cfg
-    write_file(config_path, config)
+    with _GLOBAL_CONFIG_LOCK:
+        config = read_file(config_path)
+        if not isinstance(config, dict):
+            config = {}
+        # 统一写到 camelCase 键（BetterGI JsonOptions 以 CamelCase 读写，PascalCase 键读取时会被忽略）
+        script_cfg = config.get("scriptConfig")
+        if not isinstance(script_cfg, dict):
+            legacy = config.get("ScriptConfig")  # 兼容历史 PascalCase 键，合并后弃用
+            script_cfg = legacy if isinstance(legacy, dict) else {}
+        script_cfg["autoUpdateBeforeCommandLineRun"] = True
+        script_cfg["autoUpdateSubscribedScripts"] = True
+        script_cfg["selectedChannelName"] = "CNB"
+        config.pop("ScriptConfig", None)
+        config["scriptConfig"] = script_cfg
+        write_file(config_path, config)
     logger.info(
         f"已开启 BetterGI 脚本仓库自动更新并把渠道固定为 CNB(cnb.cool): {config_path}"
     )

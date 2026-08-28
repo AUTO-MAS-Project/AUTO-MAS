@@ -28,23 +28,22 @@ MAS 只管理 8 个内置配置组（按组名对其 enabled 置 true/false，�
 """
 
 import json
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
+from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
 from app.utils.io import read_file, write_file
 
-# 8 个内置一条龙配置组（与 app/models/config.py 的 _BGI_BUILTIN_ONE_DRAGON_GROUPS 同步）
-_BUILTIN_ONE_DRAGON_GROUPS = [
-    "领取邮件",
-    "合成树脂",
-    "自动地脉花",
-    "自动秘境",
-    "自动首领讨伐",
-    "自动幽境危战",
-    "领取每日奖励",
-    "领取尘歌壶奖励",
-]
+# 8 个内置一条龙配置组：单一来源为 app/models/config.py 的 _BGI_BUILTIN_ONE_DRAGON_GROUPS，
+# 此处仅别名引用，避免双份硬编码随版本漂移。
+_BUILTIN_ONE_DRAGON_GROUPS = _BGI_BUILTIN_ONE_DRAGON_GROUPS
+
+# 全局主配置 config.json 的读-改-写串行化锁。atomic_write 只保证单次写原子，
+# 读-改-写整体仍可能交错丢失更新（切号的 _ensure_auto_update_on_cli 与一条龙的
+# apply_global_battle_* / snapshot / restore 都读写同一文件），故加锁串行化。
+_GLOBAL_CONFIG_LOCK = threading.Lock()
 
 # 一条龙配置目录（从 RootPath 派生）
 _ONE_DRAGON_REL_DIR = Path("User") / "OneDragon"
@@ -340,14 +339,15 @@ def _apply_leaves(root: Path, leaves, value: str) -> None:
     value = (value or "").strip()
     if not value:
         return
-    config = read_file(_global_config_path(root))
-    if not isinstance(config, dict):
-        config = {}
-    changed = False
-    for leaf in leaves:
-        changed |= _set_leaf(config, leaf, value)
-    if changed:
-        write_file(_global_config_path(root), config)
+    with _GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            config = {}
+        changed = False
+        for leaf in leaves:
+            changed |= _set_leaf(config, leaf, value)
+        if changed:
+            write_file(_global_config_path(root), config)
 
 
 def apply_global_battle_team(root: Path, party_name: str) -> None:
@@ -418,20 +418,21 @@ def snapshot_global_battle_config(root: Path) -> dict[tuple[str, ...], tuple[boo
 
     键为叶子路径元组，值为 ``(该叶子原本是否存在, 原值)``。
     """
-    config = read_file(_global_config_path(root))
-    if not isinstance(config, dict):
-        config = {}
-    snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
-    for leaf in _ALL_GLOBAL_LEAVES:
-        cur: Any = config
-        present = True
-        for key in leaf:
-            if not isinstance(cur, dict) or key not in cur:
-                present = False
-                break
-            cur = cur[key]
-        snap[leaf] = (present, cur if present else None)
-    return snap
+    with _GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            config = {}
+        snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
+        for leaf in _ALL_GLOBAL_LEAVES:
+            cur: Any = config
+            present = True
+            for key in leaf:
+                if not isinstance(cur, dict) or key not in cur:
+                    present = False
+                    break
+                cur = cur[key]
+            snap[leaf] = (present, cur if present else None)
+        return snap
 
 
 def restore_global_battle_config(root: Path, snapshot: dict[tuple[str, ...], tuple[bool, Any]]) -> None:
@@ -441,18 +442,19 @@ def restore_global_battle_config(root: Path, snapshot: dict[tuple[str, ...], tup
     """
     if not snapshot:
         return
-    config = read_file(_global_config_path(root))
-    if not isinstance(config, dict):
-        return
-    changed = False
-    for leaf in _ALL_GLOBAL_LEAVES:
-        existed, value = snapshot.get(leaf, (False, None))
-        if _restore_leaf(config, leaf, existed, value):
-            changed = True
-    if changed:
+    with _GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            return
+        changed = False
         for leaf in _ALL_GLOBAL_LEAVES:
-            _prune_empty_ancestors(config, leaf)
-        write_file(_global_config_path(root), config)
+            existed, value = snapshot.get(leaf, (False, None))
+            if _restore_leaf(config, leaf, existed, value):
+                changed = True
+        if changed:
+            for leaf in _ALL_GLOBAL_LEAVES:
+                _prune_empty_ancestors(config, leaf)
+            write_file(_global_config_path(root), config)
 
 
 def snapshot_user_one_dragon(
@@ -490,8 +492,8 @@ def apply_groups(
     - ``manage_customs=False``（总开关关）：自定义组一律原样保留其 UUID、启用状态与
       相对顺序，启用与否由 BetterGI 内部配置决定。
     - ``manage_customs=True``（总开关开）：按 ``custom_groups``（[{"name","enabled"}]）
-      覆盖自定义组启用状态：入表组按表状态、未入表（但 BetterGI 文件里存在）组默认开、
-      入表且启用但配置缺失时补建。
+      覆盖自定义组启用状态：入表组按表状态、未入表（但 BetterGI 文件里存在）组保持原
+      启用状态、入表且启用但配置缺失时补建。
 
     应用到当前运行的配置（``Name`` 指向哪个就写哪个），不局限于某一份命名。
 
@@ -540,8 +542,12 @@ def apply_groups(
             new_defs[uid] = name
             new_order.append(uid)
             if manage_customs:
-                # 入表按表状态；未入表默认开
-                new_enabled[uid] = bool(custom_enabled.get(name, True))
+                # 入表按表状态；未入表保持 BetterGI 原启用状态，避免误开用户已关闭的组
+                new_enabled[uid] = (
+                    custom_enabled[name]
+                    if name in custom_enabled
+                    else bool(old_enabled.get(uid, True))
+                )
             else:
                 new_enabled[uid] = bool(old_enabled.get(uid, True))
 
@@ -555,7 +561,11 @@ def apply_groups(
             new_defs[uid] = name
             new_order.append(uid)
             if manage_customs:
-                new_enabled[uid] = bool(custom_enabled.get(name, True))
+                new_enabled[uid] = (
+                    custom_enabled[name]
+                    if name in custom_enabled
+                    else bool(old_enabled.get(uid, True))
+                )
             else:
                 new_enabled[uid] = bool(old_enabled.get(uid, True))
 
