@@ -44,11 +44,13 @@ from app.utils.LogPatternExtractor import (
 )
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
+from app.log_box import log_box
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,
     ensure_oknte_daily_routine_configs,
 )
+from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
 
 logger = get_logger("OK-NTE 自动代理")
@@ -221,6 +223,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
+        # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
+        self.log_collect = None
 
     async def _reset_daily_proxy_count(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -329,6 +333,20 @@ class AutoProxyTask(TaskExecuteBase):
             logger.warning(
                 "OK-NTE ErrorLog 去掉过宽容词后为空，已回退为内置默认失败关键词"
             )
+
+        # ── log_box：节点日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
+        # 受用户级「是否采集节点详情」开关控制：关闭时不创建（不读日志、不匹配、
+        # 不处理），该用户 push_log 保持为空，报告聚合时自然不含其节点详情。
+        # ok-nte 日志文本已是中文，无需前置翻译；open() 记录起始偏移，只采会话内新增。
+        if self.cur_user_config.get("Notify", "PushLogEnabled"):
+            self.log_collect = log_box.get_collect(
+                paths=[self._resolve_log_path()],
+                sink=self._append_push_log,
+                start_from_end=True,
+            )
+            self.log_collect.open()
+            for rule in OKNTE_PUSH_RULES:
+                self.log_collect.collect(*rule)
 
         # 当前用户配置
 
@@ -454,6 +472,10 @@ class AutoProxyTask(TaskExecuteBase):
         prev = self.script_info.log
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
+
+    def _append_push_log(self, log_type: str, text: str) -> None:
+        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+        self.cur_user_item.push_log.append((log_type, text))
 
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
@@ -748,6 +770,15 @@ class AutoProxyTask(TaskExecuteBase):
                 else self._mas_should_close_game_on_retry()
             )
             await self.kill_managed_process(kill_game=kill_game)
+
+        # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
+        # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
+        # 开关关闭（未创建）时 log_collect 为 None，一并在此兜底
+        try:
+            if self.log_collect is not None:
+                self.log_collect.close(oknte_resolve)
+        except Exception:
+            logger.opt(exception=True).warning("OK-NTE log_box 收尾推送失败（oknte_resolve）")
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         user_logs_list = []

@@ -164,6 +164,30 @@
               </a-col>
             </a-row>
 
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      是否采集节点详情
+                      <a-tooltip
+                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Notify.PushLogEnabled"
+                    size="large"
+                    class="modern-select"
+                    :options="quickConfigOptions"
+                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
             <a-form-item>
               <template #label>
                 <span class="form-label">
@@ -374,6 +398,10 @@ let oknteConfigTimeout: number | null = null
 const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
+const quickConfigOptions = [
+  { label: '启用', value: true },
+  { label: '关闭', value: false },
+]
 
 const oknteTaskOptions = [
   { label: '1 - LauncherTask（启动游戏）', value: 1 },
@@ -430,6 +458,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
+    PushLogEnabled: true,
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

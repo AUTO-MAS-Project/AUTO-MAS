@@ -3,7 +3,8 @@
     "version_info": {
         "v5.5.0-beta.2": {
             "新增功能": [
-                "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)"
+                "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
+                "OK-NTE专项 将运行日志关键节点注入任务报告，支持用户级节点详情开关并展示日常子任务状态与剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
