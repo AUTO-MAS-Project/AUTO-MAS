@@ -303,6 +303,86 @@
             </a-col>
           </a-row>
         </div>
+        <div class="form-section">
+          <div class="section-header">
+            <h3>游戏更新</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="开启后，启动 MAA 前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时 MAA 无法通过强制更新界面，只会一直卡到超时"
+                  >
+                    <span class="form-label">
+                      启动前检查游戏更新
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="maaConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅官服可用，安装包约 2 GB，请确保磁盘空间充足"
+                  >
+                    <span class="form-label">
+                      自动安装游戏安装包（仅官服）
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="maaConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!maaConfig.Run.IfCheckGameUpdate"
+                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="下载安装游戏安装包的超时限制。检测到有待下载的游戏资源热更新时，本次代理的超时限制也会放宽到该值，避免把正常更新误判为卡死"
+                  >
+                    <span class="form-label">
+                      游戏更新超时限制（分钟）
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="maaConfig.Run.GameUpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  :disabled="!maaConfig.Run.IfCheckGameUpdate"
+                  @blur="
+                    handleChange('Run', 'GameUpdateTimeLimit', maaConfig.Run.GameUpdateTimeLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </a-form>
     </a-card>
   </div>
@@ -365,6 +445,9 @@ const maaConfig = reactive<MAAScriptConfig>({
     RunTimesLimit: 3,
     AnnihilationTimeLimit: 40,
     RoutineTimeLimit: 10,
+    IfCheckGameUpdate: false,
+    IfAutoInstallGameApk: false,
+    GameUpdateTimeLimit: 60,
   },
   Emulator: {
     Id: '',

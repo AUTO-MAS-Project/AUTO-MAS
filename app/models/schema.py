@@ -517,6 +517,9 @@ class MaaUserConfig_Data(BaseModel):
     AnnihilationCompletedWeek: Optional[str] = Field(
         default=None, description="剿灭达到周上限时的 ISO 周"
     )
+    LastResVersion: Optional[str] = Field(
+        default=None, description="上次成功代理时服务端的游戏资源版本"
+    )
 
 
 class MaaUserConfig_Task(BaseModel):
@@ -597,6 +600,15 @@ class MaaConfig_Run(BaseModel):
         default=None, description="剿灭超时限制"
     )
     RoutineTimeLimit: Optional[int] = Field(default=None, description="日常超时限制")
+    IfCheckGameUpdate: Optional[bool] = Field(
+        default=None, description="启动 MAA 前检查游戏更新"
+    )
+    IfAutoInstallGameApk: Optional[bool] = Field(
+        default=None, description="自动下载并安装游戏安装包（仅官服）"
+    )
+    GameUpdateTimeLimit: Optional[int] = Field(
+        default=None, description="游戏更新超时限制"
+    )
 
 
 class MaaConfig(BaseModel):

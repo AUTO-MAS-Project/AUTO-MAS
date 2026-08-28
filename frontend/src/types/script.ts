@@ -35,6 +35,9 @@ export interface MAAScriptConfig {
     RunTimesLimit: number
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
+    IfCheckGameUpdate: boolean
+    IfAutoInstallGameApk: boolean
+    GameUpdateTimeLimit: number
   }
   Emulator: {
     Id: string
