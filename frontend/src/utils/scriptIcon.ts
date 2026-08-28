@@ -1,5 +1,6 @@
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
+import maafwIcon from '@/assets/maafw.png'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
@@ -7,9 +8,6 @@ import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
-
-// 当前分支未随附独立的 MaaFW 图标资源，沿用宿主主图标（与 ScriptTable 一致）。
-const maafwIcon = generalIcon
 
 const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
   MAA: maaIcon,

@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/AUTO-MAS.ico" alt="MaaFW" class="breadcrumb-logo" />
+            <img src="../../../assets/maafw.png" alt="MaaFW" class="breadcrumb-logo" />
             {{ projectDisplayName }} 项目配置
           </div>
         </a-breadcrumb-item>

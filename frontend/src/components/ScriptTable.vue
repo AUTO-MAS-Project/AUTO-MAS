@@ -67,7 +67,7 @@
                   />
                   <img
                     v-else-if="script.type === 'MaaFW'"
-                    src="@/assets/AUTO-MAS.ico"
+                    src="@/assets/maafw.png"
                     alt="MaaFW"
                     class="script-logo"
                   />
