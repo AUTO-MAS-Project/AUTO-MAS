@@ -16,13 +16,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
+from app.core import Config, EmulatorManager
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaFWConfig, MaaFWUserConfig
+from app.models.emulator import DeviceBase
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
 from app.utils.constants import UTC4
 from app.task.MaaFW.tools.config_write_guard import atomic_write_maafw_config
+from app.task.MaaFW.tools.controller.game_lifecycle import (
+    MaaFWGameLaunchSpec,
+    MaaFWOwnedGameProcess,
+    close_owned_game,
+    find_client_process,
+    launch_game,
+    resolve_game_launch_spec,
+    snapshot_matching_processes,
+    validate_game_launch_spec,
+)
 from app.task.MaaFW.tools.core.automas_maafw_interface import load_interface_model
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     is_pretask_task_name,
@@ -280,6 +291,13 @@ class MaaFWManager(TaskExecuteBase):
         self.process_started = False
         self.process_pid: int | None = None
         self.monitor_started = False
+
+        # 运行前启动准备（Adb 起模拟器 / Win32 起 PC 游戏）跨用户复用的句柄与状态。
+        self.emulator_manager: DeviceBase | None = None
+        self.emulator_opened = False
+        self.emulator_index: str = ""
+        self.game_launch_spec: MaaFWGameLaunchSpec | None = None
+        self.game_owned_process: MaaFWOwnedGameProcess | None = None
 
         # 用户层运行：任务队列属于用户，遍历真实用户而非单个虚拟用户。
         self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
@@ -1121,6 +1139,132 @@ class MaaFWManager(TaskExecuteBase):
         if self.process_started and self.exe_path is not None:
             with suppress(Exception):
                 await System.kill_process(self.exe_path)
+        await self._teardown_launch_preparation()
+
+    # ---- 运行前启动准备：按控制器类型起模拟器 / PC 游戏 ----
+
+    def _controller_type(self, controller_name: str | None) -> str | None:
+        """从 interface 取该 controller 的类型（Adb / Win32 / ...）。"""
+
+        if self.interface_model is None or not controller_name:
+            return None
+        return next(
+            (
+                item.type
+                for item in self.interface_model.controller
+                if item.name == controller_name
+            ),
+            None,
+        )
+
+    async def _prepare_launch_for_user(self, controller_name: str | None) -> str | None:
+        """启动外壳之前的启动准备。
+
+        返回 ``None`` 表示已就绪、可进外壳；返回字符串表示失败原因，调用点据此把
+        用户标记为异常并跳过外壳启动（绝不落到 controller_failed）。
+
+        - ``Adb``   → 起脚本级模拟器（``EmulatorManager.open``），摘自 M9A 专项
+        - ``Win32`` → ``resolve_game_launch_spec`` → ``validate_game_launch_spec``
+          → ``launch_game``，复用已迁入的 ``game_lifecycle``
+        - 其他控制器类型 → 不做启动准备，直接进外壳（保持现有行为）
+        """
+
+        controller_type = self._controller_type(controller_name)
+        if controller_type == "Adb":
+            return await self._prepare_emulator()
+        if controller_type == "Win32":
+            return await self._prepare_desktop_game()
+        return None
+
+    async def _prepare_emulator(self) -> str | None:
+        """Adb 控制器：起脚本级模拟器。摘自 M9A ``AutoProxy.py`` 并适配本层。"""
+
+        if self.script_config is None:
+            return "MaaFW 脚本配置未加载"
+        emulator_id = str(self.script_config.get("Emulator", "Id") or "").strip()
+        emulator_index = str(self.script_config.get("Emulator", "Index") or "").strip()
+        if emulator_id in ("", "-") or emulator_index in ("", "-"):
+            # 未配置 MAS 模拟器。check() 中受保护的启动前 Adb 设备校验已确认活动
+            # 实例带有设备标识（AdbDevice / Connect.Address）——缺标识的情况早在
+            # check() 就被明确拒绝。这里是「用户自行在外壳侧连接、自行管理模拟器」
+            # 的既有放行场景：不是静默跳过，显式记录后沿用实例已有连接。
+            logger.info(
+                "MaaFW 未配置 MAS 模拟器，跳过自动启动，沿用活动实例已有的设备连接"
+            )
+            return None
+
+        try:
+            if self.emulator_manager is None:
+                self.emulator_manager = await EmulatorManager.get_emulator_instance(
+                    emulator_id
+                )
+            self.script_info.log = "正在启动模拟器"
+            await self.emulator_manager.open(emulator_index)
+            self.emulator_opened = True
+            self.emulator_index = emulator_index
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MaaFW 模拟器启动失败：{exc}")
+            with suppress(Exception):
+                if self.emulator_manager is not None:
+                    await self.emulator_manager.close(emulator_index)
+            self.emulator_opened = False
+            return f"模拟器启动失败：{exc}"
+
+        if Config.get("Function", "IfSilence"):
+            with suppress(Exception):
+                await self.emulator_manager.setVisible(emulator_index, False)
+        return None
+
+    async def _prepare_desktop_game(self) -> str | None:
+        """Win32 控制器：按 ``Game.LaunchMode`` 起 PC 游戏，复用 ``game_lifecycle``。"""
+
+        if self.script_config is None:
+            return "MaaFW 脚本配置未加载"
+        try:
+            spec = resolve_game_launch_spec(self.script_config)
+            validate_game_launch_spec(spec)
+        except (TypeError, ValueError) as exc:
+            return f"PC 游戏启动配置无效：{exc}"
+        self.game_launch_spec = spec
+
+        if spec.mode == "AttachOnly":
+            # AttachOnly 不启动进程，但客户端必须已在运行，否则外壳照样连不上窗口
+            # → 又一次控制器初始化失败。摘自 mfwa AutoProxy 的 AttachOnly 分支。
+            existing = await asyncio.to_thread(find_client_process, spec)
+            if existing is None:
+                return "PC 游戏 AttachOnly 模式未匹配到已运行的客户端进程，请先启动游戏"
+            return None
+
+        try:
+            preexisting = await asyncio.to_thread(snapshot_matching_processes, spec)
+            self.game_owned_process = await launch_game(spec, preexisting=preexisting)
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MaaFW PC 游戏启动失败：{exc}")
+            return f"PC 游戏启动失败：{exc}"
+        return None
+
+    async def _teardown_launch_preparation(self) -> None:
+        """收尾：关闭本层启动准备起来的模拟器 / PC 游戏。幂等，可多路径调用。"""
+
+        if self.emulator_opened and self.emulator_manager is not None:
+            try:
+                await self.emulator_manager.close(self.emulator_index)
+            except Exception as exc:  # noqa: BLE001
+                logger.opt(exception=True).warning(f"MaaFW 关闭模拟器失败：{exc}")
+            finally:
+                self.emulator_opened = False
+
+        if self.game_owned_process is not None:
+            spec = self.game_launch_spec
+            if spec is None:
+                with suppress(Exception):
+                    spec = resolve_game_launch_spec(self.script_config)
+            # 只关 MAS 可证明拥有的进程：close_owned_game 内部按 PID/create_time
+            # 身份核对，拒绝 preexisting 与 URL 启动。
+            if spec is not None and spec.close_on_finish:
+                with suppress(Exception):
+                    await asyncio.to_thread(close_owned_game, self.game_owned_process)
+            self.game_owned_process = None
 
     async def _run_user(self, index: int, uid: uuid.UUID) -> None:
         """执行单个用户：解析范围 → 周期过滤 → 写配置 → 起外壳 → 判终态。"""
@@ -1163,6 +1307,17 @@ class MaaFWManager(TaskExecuteBase):
         self.task_selections = [TaskSelection(name=name) for name in runnable]
 
         await self._mark_run_started()
+
+        # 启动外壳之前先做启动准备：Adb 起模拟器 / Win32 起 PC 游戏。失败则记明确的
+        # 用户级状态并跳过外壳，绝不让它走到 controller_failed。
+        launch_error = await self._prepare_launch_for_user(controller_name)
+        if launch_error is not None:
+            self._mark_terminal("launch_failed", f"MaaFW {launch_error}")
+            self.user_terminal[str(uid)] = self.terminal_kind
+            with suppress(Exception):
+                await self.current_user_config.set("Data", "LastProxyStatus", "失败")
+            return
+
         self._write_runtime_config()
         logger.info(f"开始代理用户 {user_name}（{uid}）")
         await self._run_external()
@@ -1241,6 +1396,10 @@ class MaaFWManager(TaskExecuteBase):
         except Exception as exc:  # noqa: BLE001
             self.cleanup_error = str(exc)
             logger.opt(exception=True).warning(f"MaaFW 收尾清理异常：{exc}")
+
+        # 外壳已由 _cleanup 结束；再关闭本层启动准备起来的模拟器 / PC 游戏
+        # （顺序与 M9A 一致：先停外壳，后关模拟器）。所有路径都会经过 final_task。
+        await self._teardown_launch_preparation()
 
         await self._persist_user_config()
 

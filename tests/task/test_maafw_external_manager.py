@@ -32,9 +32,48 @@ class _RuntimeConfig:
     def __init__(self, script_uid, script_config):
         self.ScriptConfig = {script_uid: script_config}
         self.messages = []
+        # 仅供启动准备用到的 Function.* 开关（如 IfSilence），默认全部为假。
+        self.function_flags: dict[tuple[str, str], object] = {}
 
     async def send_websocket_message(self, **message):
         self.messages.append(message)
+
+    def get(self, group, name):
+        return self.function_flags.get((group, name), False)
+
+
+class _FakeEmulator:
+    instances: list = []
+    open_should_raise = False
+
+    def __init__(self, emulator_id):
+        self.emulator_id = emulator_id
+        self.open_calls: list = []
+        self.close_calls: list = []
+        self.set_visible_calls: list = []
+        self.__class__.instances.append(self)
+
+    async def open(self, index, package_name=""):
+        self.open_calls.append(index)
+        if self.__class__.open_should_raise:
+            raise RuntimeError("模拟器起不来")
+        from app.models.emulator import DeviceInfo, DeviceStatus
+
+        return DeviceInfo(
+            title="fake", status=DeviceStatus.ONLINE, adb_address="127.0.0.1:16384"
+        )
+
+    async def close(self, index):
+        self.close_calls.append(index)
+
+    async def setVisible(self, index, is_visible):
+        self.set_visible_calls.append((index, is_visible))
+
+
+class _FakeEmulatorManager:
+    @staticmethod
+    async def get_emulator_instance(emulator_id):
+        return _FakeEmulator(emulator_id)
 
 
 class _FakeProcessManager:
@@ -119,6 +158,8 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         _FakeLogMonitor.pending_callback_lines = []
         _FakeSystem.events = []
         _FakeSystem.kill_success = True
+        _FakeEmulator.instances = []
+        _FakeEmulator.open_should_raise = False
 
     _SUCCESS_LOG = (
         "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
@@ -922,6 +963,367 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             )
             self.assertEqual(manager.script_info.user_list[0].status, "完成")
 
+    # ---- 运行前启动准备：Adb 起模拟器 / Win32 起 PC 游戏 ----
+
+    async def _configure_emulator(self, script_config, *, index: str = "0") -> str:
+        """给脚本配置写入一个通过校验的模拟器 Id/Index，返回该 Id。"""
+
+        emu_uid = uuid.uuid4()
+        MaaFWConfig.related_config["EmulatorConfig"] = {emu_uid: object()}
+        self.addCleanup(MaaFWConfig.related_config.pop, "EmulatorConfig", None)
+        await script_config.update(
+            {"Emulator": {"Id": str(emu_uid), "Index": index}}
+        )
+        self.assertEqual(script_config.get("Emulator", "Id"), str(emu_uid))
+        return str(emu_uid)
+
+    def test_configured_emulator_is_started_before_shell(self) -> None:
+        asyncio.run(self._test_configured_emulator_is_started_before_shell())
+
+    async def _test_configured_emulator_is_started_before_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            await self._configure_emulator(runtime.ScriptConfig[
+                next(iter(runtime.ScriptConfig))
+            ])
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(len(_FakeEmulator.instances), 1)
+            self.assertEqual(_FakeEmulator.instances[0].open_calls, ["0"])
+            # 外壳确实起了，且模拟器在其之前就绪
+            self.assertEqual(len(_FakeProcessManager.instances), 1)
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+            # 收尾关闭模拟器
+            self.assertEqual(_FakeEmulator.instances[0].close_calls, ["0"])
+
+    def test_unconfigured_emulator_never_touches_emulator_manager(self) -> None:
+        asyncio.run(self._test_unconfigured_emulator_never_touches_emulator_manager())
+
+    async def _test_unconfigured_emulator_never_touches_emulator_manager(self) -> None:
+        # 未配置 MAS 模拟器 → 沿用活动实例已有设备标识，不与 EmulatorManager 交互。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(_FakeEmulator.instances, [])
+            self.assertFalse(manager.emulator_opened)
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+
+    def test_emulator_launch_failure_skips_shell_and_restores_config(self) -> None:
+        asyncio.run(
+            self._test_emulator_launch_failure_skips_shell_and_restores_config()
+        )
+
+    async def _test_emulator_launch_failure_skips_shell_and_restores_config(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(root)
+            await self._configure_emulator(runtime.ScriptConfig[script_uid])
+            _FakeEmulator.open_should_raise = True
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "launch_failed")
+            self.assertIn(
+                "模拟器启动失败",
+                manager.script_info.user_list[0]
+                .log_record[
+                    next(iter(manager.script_info.user_list[0].log_record))
+                ]
+                .status,
+            )
+            self.assertEqual(manager.script_info.user_list[0].status, "异常")
+            self.assertEqual(manager.script_info.status, "异常")
+            # 启动准备失败：外壳与日志监控绝不创建
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(_FakeLogMonitor.instances, [])
+            # 失败路径同样清理模拟器、还原项目配置、解锁
+            self.assertEqual(_FakeEmulator.instances[0].close_calls, ["0"])
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+
+    def test_emulator_started_once_per_user_and_closed_between_users(self) -> None:
+        asyncio.run(
+            self._test_emulator_started_once_per_user_and_closed_between_users()
+        )
+
+    async def _test_emulator_started_once_per_user_and_closed_between_users(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "甲", "tasks": ["启动游戏"]},
+                    {"Name": "乙", "tasks": ["启动游戏"]},
+                ],
+            )
+            await self._configure_emulator(runtime.ScriptConfig[script_uid])
+            _FakeLogMonitor.pending_callback_lines = [
+                [self._SUCCESS_LOG],
+                [self._SUCCESS_LOG],
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(
+                [u.status for u in manager.script_info.user_list], ["完成", "完成"]
+            )
+            # 复用同一个 EmulatorManager 实例；每个用户各 open 一次，用户间 close。
+            self.assertEqual(len(_FakeEmulator.instances), 1)
+            self.assertEqual(_FakeEmulator.instances[0].open_calls, ["0", "0"])
+            self.assertEqual(_FakeEmulator.instances[0].close_calls, ["0", "0"])
+
+    def test_silent_mode_hides_emulator(self) -> None:
+        asyncio.run(self._test_silent_mode_hides_emulator())
+
+    async def _test_silent_mode_hides_emulator(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            await self._configure_emulator(runtime.ScriptConfig[script_uid])
+            runtime.function_flags[("Function", "IfSilence")] = True
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(
+                _FakeEmulator.instances[0].set_visible_calls, [("0", False)]
+            )
+
+    @staticmethod
+    def _win32_interface() -> MaaFWInterface:
+        return MaaFWInterface(
+            interface_version=2,
+            name="test-project",
+            controller=[MaaFWController(name="安卓端", type="Win32")],
+            resource=[MaaFWResource(name="简中")],
+            task=[MaaFWTask(name="启动游戏", entry="StartUp")],
+        )
+
+    def _patch_game_lifecycle(self, *, owned, attach_found=True):
+        stack = ExitStack()
+        launched: list = []
+        closed: list = []
+
+        async def fake_launch(spec, *, preexisting=None):
+            launched.append((spec, preexisting))
+            return owned
+
+        # 外壳的实例配置映射（tools/external，受保护）目前只支持 Adb controller，
+        # Win32 会 fail-closed。这里把写实例配置置空，专注验证启动准备与收尾；
+        # Win32→外壳的完整链路受外部映射限制，见报告。
+        stack.enter_context(
+            patch.object(manager_module.MaaFWManager, "_write_runtime_config", lambda self: None)
+        )
+        stack.enter_context(
+            patch.object(manager_module, "launch_game", side_effect=fake_launch)
+        )
+        stack.enter_context(
+            patch.object(
+                manager_module, "snapshot_matching_processes", return_value=set()
+            )
+        )
+        stack.enter_context(
+            patch.object(
+                manager_module,
+                "close_owned_game",
+                side_effect=lambda proc: closed.append(proc),
+            )
+        )
+        stack.enter_context(
+            patch.object(
+                manager_module,
+                "find_client_process",
+                return_value=object() if attach_found else None,
+            )
+        )
+        return stack, launched, closed
+
+    def test_win32_game_launched_before_shell_and_closed_on_finish(self) -> None:
+        asyncio.run(
+            self._test_win32_game_launched_before_shell_and_closed_on_finish()
+        )
+
+    async def _test_win32_game_launched_before_shell_and_closed_on_finish(
+        self,
+    ) -> None:
+        from app.task.MaaFW.tools.controller.game_lifecycle import (
+            MaaFWOwnedGameProcess,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            game_exe = Path(temp_dir) / "game.exe"
+            game_exe.write_bytes(b"exe")
+            manager, runtime, script_uid = await self._make_manager(root)
+            await runtime.ScriptConfig[script_uid].update(
+                {
+                    "Game": {
+                        "LaunchMode": "DirectExe",
+                        "LaunchPath": str(game_exe),
+                        "CloseOnFinish": True,
+                    }
+                }
+            )
+            owned = MaaFWOwnedGameProcess(pid=4321, create_time=1.0)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            game_stack, launched, closed = self._patch_game_lifecycle(owned=owned)
+            with game_stack, self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=self._win32_interface()
+            ):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(len(launched), 1)
+            self.assertEqual(launched[0][0].mode, "DirectExe")
+            self.assertEqual(len(_FakeProcessManager.instances), 1)
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+            self.assertEqual(closed, [owned])
+
+    def test_win32_game_not_closed_when_close_on_finish_false(self) -> None:
+        asyncio.run(
+            self._test_win32_game_not_closed_when_close_on_finish_false()
+        )
+
+    async def _test_win32_game_not_closed_when_close_on_finish_false(self) -> None:
+        from app.task.MaaFW.tools.controller.game_lifecycle import (
+            MaaFWOwnedGameProcess,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            game_exe = Path(temp_dir) / "game.exe"
+            game_exe.write_bytes(b"exe")
+            manager, runtime, script_uid = await self._make_manager(root)
+            await runtime.ScriptConfig[script_uid].update(
+                {
+                    "Game": {
+                        "LaunchMode": "DirectExe",
+                        "LaunchPath": str(game_exe),
+                        "CloseOnFinish": False,
+                    }
+                }
+            )
+            owned = MaaFWOwnedGameProcess(pid=4321, create_time=1.0)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            game_stack, launched, closed = self._patch_game_lifecycle(owned=owned)
+            with game_stack, self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=self._win32_interface()
+            ):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(len(launched), 1)
+            self.assertEqual(closed, [])
+            self.assertEqual(manager.script_info.user_list[0].status, "完成")
+
+    def test_win32_invalid_game_config_skips_shell(self) -> None:
+        asyncio.run(self._test_win32_invalid_game_config_skips_shell())
+
+    async def _test_win32_invalid_game_config_skips_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(root)
+            # DirectExe 但 LaunchPath 指向不存在的文件 → validate 抛错
+            await runtime.ScriptConfig[script_uid].update(
+                {"Game": {"LaunchMode": "DirectExe", "LaunchPath": "Z:/nope.exe"}}
+            )
+            with self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=self._win32_interface()
+            ):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "launch_failed")
+            self.assertIn(
+                "PC 游戏启动配置无效",
+                manager.script_info.user_list[0]
+                .log_record[
+                    next(iter(manager.script_info.user_list[0].log_record))
+                ]
+                .status,
+            )
+            self.assertEqual(manager.script_info.user_list[0].status, "异常")
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+
+    def test_win32_attach_only_requires_running_client(self) -> None:
+        asyncio.run(self._test_win32_attach_only_requires_running_client())
+
+    async def _test_win32_attach_only_requires_running_client(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            await runtime.ScriptConfig[script_uid].update(
+                {
+                    "Game": {
+                        "LaunchMode": "AttachOnly",
+                        "ProcessName": "game.exe",
+                    }
+                }
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            # 客户端未运行 → 启动准备失败，不进外壳
+            miss_stack, _, _ = self._patch_game_lifecycle(
+                owned=None, attach_found=False
+            )
+            with miss_stack, self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=self._win32_interface()
+            ):
+                await manager.main_task()
+                await manager.final_task()
+            self.assertEqual(manager.terminal_kind, "launch_failed")
+            self.assertEqual(_FakeProcessManager.instances, [])
+
+            # 客户端已在运行 → AttachOnly 放行，正常进外壳
+            _FakeProcessManager.instances = []
+            _FakeLogMonitor.instances = []
+            manager2, runtime2, script_uid2 = await self._make_manager(root)
+            await runtime2.ScriptConfig[script_uid2].update(
+                {"Game": {"LaunchMode": "AttachOnly", "ProcessName": "game.exe"}}
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            hit_stack, launched, closed = self._patch_game_lifecycle(
+                owned=None, attach_found=True
+            )
+            with hit_stack, self._patched_runtime(
+                runtime2, manager2, self._no_sleep, interface=self._win32_interface()
+            ):
+                await manager2.main_task()
+                await manager2.final_task()
+            self.assertEqual(manager2.script_info.user_list[0].status, "完成")
+            self.assertEqual(launched, [])  # AttachOnly 从不启动进程
+            self.assertEqual(closed, [])  # 也从不关闭非自己启动的进程
+
     async def _make_manager(
         self,
         root: Path,
@@ -1053,6 +1455,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 "System",
                 _FakeSystem,
             )
+        )
+        stack.enter_context(
+            patch.object(manager_module, "EmulatorManager", _FakeEmulatorManager)
         )
         stack.enter_context(
             patch.object(
