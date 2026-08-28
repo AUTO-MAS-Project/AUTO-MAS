@@ -210,6 +210,25 @@ class _FakeSystem:
         return cls.kill_success
 
 
+class _FakeNotify:
+    plyer_calls: list = []
+
+    @classmethod
+    async def push_plyer(cls, title: str, message: str, ticker: str, t: int) -> None:
+        cls.plyer_calls.append((title, message, ticker, t))
+
+
+class _FakeReportPush:
+    calls: list = []
+    should_raise = False
+
+    @classmethod
+    async def push(cls, mode: str, title: str, message: dict) -> None:
+        cls.calls.append((mode, title, message))
+        if cls.should_raise:
+            raise RuntimeError("fake push failed")
+
+
 def _interface() -> MaaFWInterface:
     return MaaFWInterface(
         interface_version=2,
@@ -233,6 +252,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         _FakeEmulator.instances = []
         _FakeEmulator.open_should_raise = False
         _FakeEmulator.ld_devices = {}
+        _FakeNotify.plyer_calls = []
+        _FakeReportPush.calls = []
+        _FakeReportPush.should_raise = False
 
     _SUCCESS_LOG = (
         "2026-08-27 18:00:00.000 [INF] [inst=MAS/default] 启动游戏\n"
@@ -449,6 +471,93 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             ]
             self.assertEqual(len(payloads), 1)
             self.assertIn("控制器初始化失败", payloads[0]["general_result"])
+
+    # ---- 问题 3：运行收尾推送任务报告 ----
+
+    def test_final_task_pushes_run_report_once(self) -> None:
+        asyncio.run(self._test_final_task_pushes_run_report_once())
+
+    async def _test_final_task_pushes_run_report_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+                # final_task 可能被多路径重复调用，报告必须幂等。
+                await manager.final_task()
+
+            self.assertEqual(len(_FakeReportPush.calls), 1)
+            mode, title, message = _FakeReportPush.calls[0]
+            self.assertEqual(mode, "代理结果")
+            self.assertIn("测试 MaaFW", title)
+            self.assertIn("自动代理任务报告", title)
+            self.assertEqual(message["completed_count"], 1)
+            self.assertEqual(message["uncompleted_count"], 0)
+            self.assertIn("用户A", message["result"])
+            self.assertEqual(len(_FakeNotify.plyer_calls), 1)
+            self.assertIn("已完成！", _FakeNotify.plyer_calls[0][0])
+
+    def test_failed_run_report_counts_uncompleted(self) -> None:
+        asyncio.run(self._test_failed_run_report_counts_uncompleted())
+
+    async def _test_failed_run_report_counts_uncompleted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                "2026-08-27 19:00:00.000 [WRN] [op=ExecuteTaskQueue] "
+                "控制器初始化结果为空\n"
+            ]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(len(_FakeReportPush.calls), 1)
+            _, _, message = _FakeReportPush.calls[0]
+            self.assertEqual(message["completed_count"], 0)
+            self.assertEqual(message["uncompleted_count"], 1)
+
+    def test_no_report_before_check_passes(self) -> None:
+        asyncio.run(self._test_no_report_before_check_passes())
+
+    async def _test_no_report_before_check_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            # 取消或崩溃可在 check 通过前触发 final_task；此时无可报告内容。
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.final_task()
+
+            self.assertEqual(_FakeReportPush.calls, [])
+            self.assertEqual(_FakeNotify.plyer_calls, [])
+
+    def test_report_failure_does_not_break_final_task(self) -> None:
+        asyncio.run(self._test_report_failure_does_not_break_final_task())
+
+    async def _test_report_failure_does_not_break_final_task(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, script_uid = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            _FakeReportPush.should_raise = True
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.script_info.status, "完成")
+            self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
+            self.assertTrue(
+                any(
+                    "推送 MaaFW 任务报告失败" in str(m.get("data", {}))
+                    for m in runtime.messages
+                )
+            )
 
     def test_non_mfa_is_explicitly_unsupported(self) -> None:
         asyncio.run(self._test_non_mfa_is_explicitly_unsupported())
@@ -2084,6 +2193,10 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 "System",
                 _FakeSystem,
             )
+        )
+        stack.enter_context(patch.object(manager_module, "Notify", _FakeNotify))
+        stack.enter_context(
+            patch.object(manager_module, "push_notification", _FakeReportPush.push)
         )
         stack.enter_context(
             patch.object(manager_module, "EmulatorManager", _FakeEmulatorManager)

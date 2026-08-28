@@ -21,8 +21,8 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.services import System
-from app.utils.constants import UTC4
+from app.services import Notify, System
+from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.task.MaaFW.tools.config_write_guard import atomic_write_maafw_config
 from app.task.MaaFW.tools.controller.game_lifecycle import (
     MaaFWGameLaunchSpec,
@@ -47,6 +47,7 @@ from app.task.MaaFW.tools.external import (
     detect_shell_family,
     resolve_controller_code,
 )
+from app.task.MaaFW.tools.notify import push_notification
 from app.utils import LogMonitor, ProcessManager, get_logger
 
 
@@ -318,8 +319,9 @@ class MaaFWManager(TaskExecuteBase):
         self.last_log_text = ""
         self.last_log_at: datetime | None = None
 
-        # 历史记录只写一次（final_task 幂等、可能被多路径调用）。
+        # 历史记录与任务报告各只写/发一次（final_task 幂等、可能被多路径调用）。
         self.history_written = False
+        self.report_pushed = False
 
     async def check(self) -> str:
         """校验 MaaFW 配置、外壳、选择项和可运行文件。"""
@@ -1659,6 +1661,66 @@ class MaaFWManager(TaskExecuteBase):
             self.script_info.status = "完成"
         else:
             self.script_info.status = "异常"
+
+        await self._push_run_report()
+
+    async def _push_run_report(self) -> None:
+        """按全局通知配置推送脚本级任务报告。
+
+        「摘取+适配」自 general ``manager.py`` ``final_task`` 的报告块：沿用其
+        标题构成、完成/未完成计数与桌面提醒 + 渠道推送的组合。适配点：
+
+        - general 在 check 失败时提前 return 不发报告；本层 ``final_task``
+          无提前返回，故在此处按 ``check_result`` 与空用户列表自行跳过。
+        - MaaFW 无游戏签到摘要与推送日志采集，报告只含计数与用户结果串；
+          用户级「统计信息」与统计合并未接线（属独立能力）。
+        - 整体自保护：报告失败只告警与上报 websocket，不得中断收尾链路。
+        """
+
+        if self.report_pushed:
+            return
+        self.report_pushed = True
+
+        if self.check_result != "Pass" or not self.script_info.user_list:
+            return
+
+        completed = [
+            user
+            for user in self.script_info.user_list
+            if user.status in ("完成", "跳过")
+        ]
+        uncompleted_count = len(self.script_info.user_list) - len(completed)
+        title = (
+            f"{datetime.now().strftime('%m-%d')} | "
+            f"{self.script_info.name or '空白'}的"
+            f"{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+        )
+        begin_time = self.begin_time or datetime.now()
+        message = {
+            "title": title,
+            "script_name": self.script_info.name or "空白",
+            "start_time": begin_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "completed_count": len(completed),
+            "uncompleted_count": uncompleted_count,
+            "result": self.script_info.result,
+        }
+        try:
+            await Notify.push_plyer(
+                title.replace("报告", "已完成！"),
+                f"已完成用户数: {len(completed)}, 未完成用户数: {uncompleted_count}",
+                f"已完成用户数: {len(completed)}, 未完成用户数: {uncompleted_count}",
+                10,
+            )
+            await push_notification("代理结果", title, message)
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"推送 MaaFW 任务报告失败：{exc}")
+            with suppress(Exception):
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送 MaaFW 任务报告失败：{exc}"},
+                )
 
     async def _write_history_records(self) -> None:
         """把每个用户的运行日志写入 MAS 历史记录目录，供「历史记录」页检索。
