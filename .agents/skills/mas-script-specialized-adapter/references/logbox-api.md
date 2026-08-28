@@ -237,6 +237,16 @@ push_log 落进 `cur_user_item.push_log`（`list[(log_type, text)]`）后，后�
   正文，**默认以单个换行分隔**；专项（如 `tools/notify.py`）按默认调用即可，无需
   传 `separator`，push_log 为空时原样返回正文。
 
+> ⚠️ **报告注入是两个端点，缺一不可**：仅采集（log_box→`cur_user_item.push_log`）
+> 不会让节点出现在报告里，还必须同时接通「聚合」与「追加」两端：
+> 1. `manager.final_task` 算 `has_uncompleted` 并 `build_push_log_text(...)` 写入
+>    `message["push_log"]`；
+> 2. `tools/notify.py` 的「代理结果/结果」分支 `append_push_log(message_text,
+>    message.get("push_log"))` 追加到正文。
+> 漏接任一 → 报告里只有总体状态、看不到任何节点。
+> 完成专项后自检：任务报告应能实际看到节点行；若整体结果有、节点缺失，优先复查
+> 这两端是否都接了，而不是怀疑采集规则。
+
 ```python
 # manager.final_task：聚合后放入通知消息
 has_uncompleted = len(error_user) + len(wait_user) > 0
