@@ -45,6 +45,7 @@ from app.task.MaaFW.tools.external import (
     TaskSelection,
     build_instance_config,
     detect_shell_family,
+    resolve_controller_code,
 )
 from app.utils import LogMonitor, ProcessManager, get_logger
 
@@ -441,6 +442,21 @@ class MaaFWManager(TaskExecuteBase):
                     "实例配置缺少 AdbDevice / Connect.Address，"
                     "请先在外壳侧连接一次模拟器"
                 )
+        elif controller_type and resolve_controller_code(controller_type) is None:
+            # 向映射层求证，而非在此硬编码「只支持 Adb」：CONTROLLER_TYPE_CODES 是
+            # CurrentController 枚举的单一真源（当前只登记 Adb=2，已在 M9A / MaaKes /
+            # Maa_bbb 三个项目交叉确认；Win32 等取值在 reference 的全部实例样本中都
+            # 不存在，映射层按设计 fail-closed 而非猜测）。日后有人补上某个类型的枚举，
+            # 这条拒绝会自动失效，无需改动两处。
+            #
+            # 提前拒绝的意义：否则 _prepare_launch_for_user 会先把游戏／模拟器起起来，
+            # 随后 _write_runtime_config 抛 UnknownControllerTypeError——结果正确但白
+            # 起一次进程。这里在加锁与备份之前就明确告知用户。
+            return (
+                f"MaaFW 外部运行暂不支持 {controller_type} 控制器："
+                "该类型的 CurrentController 取值尚未确认，"
+                "请改用 Adb 控制器，或在外壳侧手动运行"
+            )
 
         exe_path = self._resolve_executable(project_root)
         if isinstance(exe_path, str):

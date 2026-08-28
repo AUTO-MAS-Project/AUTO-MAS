@@ -1112,6 +1112,43 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 _FakeEmulator.instances[0].set_visible_calls, [("0", False)]
             )
 
+    def test_unsupported_controller_type_is_rejected_early(self) -> None:
+        asyncio.run(self._test_unsupported_controller_type_is_rejected_early())
+
+    async def _test_unsupported_controller_type_is_rejected_early(self) -> None:
+        """映射层未登记该 controller 枚举时，check() 必须在起进程之前就拒绝。
+
+        否则 _prepare_launch_for_user 会先把游戏／模拟器起起来，随后
+        _write_runtime_config 才抛 UnknownControllerTypeError——白起一次进程。
+        本用例不给 resolve_controller_code 打桩，走真实的映射层登记表。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, script_uid = await self._make_manager(root)
+
+            with self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=self._win32_interface()
+            ):
+                result = await manager.check()
+
+            self.assertIn("暂不支持", result)
+            self.assertIn("Win32", result)
+            # 未起任何进程、未动项目配置、未留状态目录
+            self.assertEqual(_FakeProcessManager.instances, [])
+            self.assertEqual(self._snapshot(root / "config"), before)
+            self.assertFalse(manager.state_dir.exists())
+
+    def test_registered_controller_type_is_not_rejected(self) -> None:
+        """守护上一条不是恒真：Adb 已登记，不得被这条拒绝误伤。"""
+
+        from app.task.MaaFW.tools.external import resolve_controller_code
+
+        self.assertEqual(resolve_controller_code("Adb"), 2)
+        self.assertIsNone(resolve_controller_code("Win32"))
+
     @staticmethod
     def _win32_interface() -> MaaFWInterface:
         return MaaFWInterface(
@@ -1131,9 +1168,17 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             launched.append((spec, preexisting))
             return owned
 
-        # 外壳的实例配置映射（tools/external，受保护）目前只支持 Adb controller，
-        # Win32 会 fail-closed。这里把写实例配置置空，专注验证启动准备与收尾；
-        # Win32→外壳的完整链路受外部映射限制，见报告。
+        # 外壳的实例配置映射（tools/external，受保护）目前只登记 Adb 的
+        # CurrentController 枚举，Win32 取值在 reference 的全部实例样本中都不存在，
+        # 映射层按设计 fail-closed。check() 因此会提前拒绝 Win32（见
+        # test_unsupported_controller_type_is_rejected_early）。
+        #
+        # 本组用例要验的是「启动准备与收尾」本身，故显式声明「假设该枚举日后被确认」：
+        # 给 resolve_controller_code 打桩返回一个占位值，并把写实例配置置空。
+        # 这是声明前提，不是绕过判断——拒绝行为另有专门用例守护。
+        stack.enter_context(
+            patch.object(manager_module, "resolve_controller_code", lambda t: 2)
+        )
         stack.enter_context(
             patch.object(manager_module.MaaFWManager, "_write_runtime_config", lambda self: None)
         )
@@ -1254,7 +1299,10 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             await runtime.ScriptConfig[script_uid].update(
                 {"Game": {"LaunchMode": "DirectExe", "LaunchPath": "Z:/nope.exe"}}
             )
-            with self._patched_runtime(
+            # 同上：声明「假设 Win32 枚举日后被确认」，专注验证启动准备的失败路径。
+            with patch.object(
+                manager_module, "resolve_controller_code", lambda t: 2
+            ), self._patched_runtime(
                 runtime, manager, self._no_sleep, interface=self._win32_interface()
             ):
                 await manager.main_task()
