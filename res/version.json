@@ -8,7 +8,8 @@
                 "日志采集 支持将运行节点推送至任务报告 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "调度队列 支持每日首次启动时运行队列 by [@luo-luo-o](https://github.com/luo-luo-o)",
                 "界面设置 支持自定义托盘菜单及任务控制命令 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "界面设置 支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "界面设置 支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败"
             ],
             "程序优化": [
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
