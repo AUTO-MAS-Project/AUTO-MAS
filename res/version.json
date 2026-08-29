@@ -11,7 +11,8 @@
             ],
             "开发流程": [],
             "修复BUG": [
-                "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题"
             ]
         },
         "v5.5.0-beta.1": {
