@@ -29,6 +29,7 @@ import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandle
 
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
@@ -1034,6 +1035,30 @@ ipcMain.handle('maaend:exportIssueReport', async () => {
     return createMaaEndIssueReport(getAppRoot(), result.filePath)
   } catch (error) {
     logger.error('导出 MaaEnd 问题包失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
+ipcMain.handle('okww:exportIssueReport', async () => {
+  try {
+    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出 OK-WW 问题包',
+      defaultPath: `OK-WW-logs-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+
+    return createOkwwIssueReport(getAppRoot(), result.filePath)
+  } catch (error) {
+    logger.error('导出 OK-WW 问题包失败:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),

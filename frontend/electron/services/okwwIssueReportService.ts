@@ -5,30 +5,31 @@ import AdmZip = require('adm-zip')
 import { getLogger } from './logger'
 import {
   CollectorState,
+  addDiagnosticFile,
   addDirectory,
-  addEntry,
   addLatestMasHistoryLog,
-  addSanitizedJsonFile,
-  addSkippedEntry,
   isRecord,
   readJson,
   resolveDataRoots,
 } from './issueReportCore'
 
-const logger = getLogger('MaaEnd问题包')
+const logger = getLogger('OK-WW问题包')
 
-interface MaaEndInstallation {
+// 与 app/task/Okww/AutoProxy.py 的 _OKWW_REL_LOG_FILE 保持同步
+const OKWW_REL_LOG_FILE = 'data/apps/ok-ww/working/logs/ok-script.log'
+
+interface OkwwInstallation {
   label: string
   rootPath: string
 }
 
-interface MaaEndConfigRecord {
+interface ScriptConfigRecord {
   instances?: Array<{ uid?: string; type?: string }>
   [key: string]: unknown
 }
 
-function discoverMaaEndInstallations(dataRoots: string[]): MaaEndInstallation[] {
-  const installations: MaaEndInstallation[] = []
+function discoverOkwwInstallations(dataRoots: string[]): OkwwInstallation[] {
+  const installations: OkwwInstallation[] = []
   const seenPaths = new Set<string>()
 
   for (const dataRoot of dataRoots) {
@@ -37,9 +38,9 @@ function discoverMaaEndInstallations(dataRoots: string[]): MaaEndInstallation[] 
       continue
     }
 
-    const records = config as MaaEndConfigRecord
+    const records = config as ScriptConfigRecord
     for (const instance of records.instances || []) {
-      if (instance?.type !== 'MaaEndConfig' || !instance.uid) {
+      if (instance?.type !== 'Okww' || !instance.uid) {
         continue
       }
 
@@ -59,7 +60,7 @@ function discoverMaaEndInstallations(dataRoots: string[]): MaaEndInstallation[] 
 
       seenPaths.add(pathKey)
       installations.push({
-        label: `maaend-${installations.length + 1}`,
+        label: `okww-${installations.length + 1}`,
         rootPath: normalizedPath,
       })
     }
@@ -68,18 +69,45 @@ function discoverMaaEndInstallations(dataRoots: string[]): MaaEndInstallation[] 
   return installations
 }
 
-export interface MaaEndIssueReportResult {
+function addLatestOkwwScriptLog(
+  state: CollectorState,
+  installations: OkwwInstallation[]
+): void {
+  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
+
+  for (const installation of installations) {
+    const logPath = path.join(installation.rootPath, ...OKWW_REL_LOG_FILE.split('/'))
+    try {
+      const mtimeMs = fs.statSync(logPath).mtimeMs
+      if (!latest || mtimeMs > latest.mtimeMs) {
+        latest = {
+          sourcePath: logPath,
+          archivePath: `okww/${installation.label}/ok-script.log`,
+          mtimeMs,
+        }
+      }
+    } catch (error) {
+      logger.debug(`读取 ok-script.log 失败: ${logPath}, ${String(error)}`)
+    }
+  }
+
+  if (latest) {
+    addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+  }
+}
+
+export interface OkwwIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string
   error?: string
 }
 
-export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEndIssueReportResult {
+export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIssueReportResult {
   const zip = new AdmZip()
   const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
   const dataRoots = resolveDataRoots(appRoot)
-  const installations = discoverMaaEndInstallations(dataRoots)
+  const installations = discoverOkwwInstallations(dataRoots)
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
@@ -96,35 +124,19 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
     addDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
   }
 
-  for (const installation of installations) {
-    addDirectory(
-      state,
-      path.join(installation.rootPath, 'debug'),
-      `maaend/${installation.label}/debug`
-    )
-    addDirectory(
-      state,
-      path.join(installation.rootPath, 'on_error'),
-      `maaend/${installation.label}/on_error`
-    )
-    addSanitizedJsonFile(
-      state,
-      path.join(installation.rootPath, 'config', 'mxu-MaaEnd.json'),
-      `maaend/${installation.label}/config/mxu-MaaEnd.json`
-    )
-  }
+  addLatestOkwwScriptLog(state, installations)
 
   try {
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })
     zip.writeZip(zipPath)
-    logger.info(`MaaEnd 问题包已导出: ${zipPath}`)
+    logger.info(`OK-WW 问题包已导出: ${zipPath}`)
     return {
       success: true,
-      message: `MaaEnd 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
+      message: `OK-WW 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
       zipPath,
     }
   } catch (error) {
-    logger.error(`MaaEnd 问题包导出失败: ${String(error)}`)
+    logger.error(`OK-WW 问题包导出失败: ${String(error)}`)
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),

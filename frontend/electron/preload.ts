@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
   exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
+  exportOkwwIssueReport: () => ipcRenderer.invoke('okww:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
