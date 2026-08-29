@@ -67,6 +67,7 @@
   },
   "dependencies": {
     "@inspira-ui/plugins": "^0.0.2",
+    "@sentry/electron": "7.16.0",
     "@sentry/vue": "10.67.0",
     "adm-zip": "^0.5.16",
     "axios": "1.15.2",

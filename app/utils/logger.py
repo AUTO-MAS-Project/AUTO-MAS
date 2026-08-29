@@ -21,6 +21,14 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
+
+# Sentry 的 Loguru 集成会自行 ``logger.add(...)`` 且不传 diagnose，
+# 该 sink 会吃下 Loguru 的全局默认值并把局部变量值渲染进日志正文随事件外发。
+# 本文件是后端唯一导入 Loguru 的位置，在导入前收紧默认值即可覆盖该 sink；
+# 下方本项目自有的 sink 均显式传入 diagnose=False，不受影响。
+os.environ.setdefault("LOGURU_DIAGNOSE", "NO")
+
 from loguru import logger as _logger
 import sys
 from pathlib import Path

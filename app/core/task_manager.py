@@ -23,6 +23,7 @@
 import uuid
 import asyncio
 import os
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Literal
@@ -237,6 +238,45 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
+        from app.services.telemetry import (
+            observe_span,
+            record_count,
+            record_distribution,
+        )
+
+        attributes = {
+            "mode": self.task_info.mode,
+            "trigger": self.task_info.trigger_source,
+        }
+        started_at = time.perf_counter()
+        outcome = "success"
+
+        try:
+            with observe_span(
+                name="AUTO-MAS task",
+                op="auto_mas.task.run",
+                attributes=attributes,
+                force_transaction=True,
+            ):
+                await self._run_main_task()
+                outcome = self._exit_result
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            metric_attributes = {**attributes, "outcome": outcome}
+            record_count("auto_mas.task.runs", attributes=metric_attributes)
+            record_distribution(
+                "auto_mas.task.duration",
+                (time.perf_counter() - started_at) * 1000,
+                unit="millisecond",
+                attributes=metric_attributes,
+            )
+
+    async def _run_main_task(self):
 
         # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
         if self.task_info.mode == "AutoProxy":

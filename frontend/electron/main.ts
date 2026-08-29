@@ -35,6 +35,7 @@ import {
 
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { configureMainSentry, recordMainStartup, setMainTelemetryEnabled } from './services/sentry'
 import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
@@ -284,6 +285,8 @@ function saveConfig(config: AppConfig) {
     logger.error('保存配置失败')
   }
 }
+
+configureMainSentry(loadConfig().Function?.IfEnableTelemetry !== false)
 
 // 创建托盘
 function createTray() {
@@ -939,6 +942,8 @@ function createWindow() {
 
   // 等待窗口准备完成后再初始化托盘和处理启动配置
   win.webContents.once('did-finish-load', () => {
+    recordMainStartup()
+
     // 重新加载配置以确保获取最新配置
     const currentConfig = loadConfig()
 
@@ -1639,6 +1644,7 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
 
     // 保存到前端配置文件
     saveConfig(currentConfig)
+    setMainTelemetryEnabled(currentConfig.Function?.IfEnableTelemetry !== false)
 
     // 更新托盘状态
     updateTrayVisibility(currentConfig)
