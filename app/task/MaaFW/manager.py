@@ -62,6 +62,13 @@ logger = get_logger("MaaFW 外部调度器")
 _LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 _COMPLETION_MARKERS = ("任务已全部完成！", "All tasks completed")
 _ABANDON_MARKER = "已放弃本次任务"
+# 外壳判定本次运行失败后发出的终止串，与完成串是同一个 Monitor 组件的孪生输出
+# （两者都带 [src=Monitor][op=MonitorLog]）。2026-08-29 真机首次命中：启动游戏
+# 跑了 15 分 38 秒后失败，外壳停掉整个队列并输出本串，而此前 MAS 不认它，只能
+# 干等到 RunTimeLimit 超时——用户看到的现象是「外壳已经停了，MAS 还卡着」。
+# 判别性：14 份真实日志里共出现 3 次，**全部**带 op=MonitorLog；今天那次运行
+# 是「1 次失败串、0 次完成串」，两者互斥。
+_FAILURE_MARKERS = ("任务运行失败！",)
 _STATE_DIR_NAME = "MaaFWExternal"
 
 # 项目根 appsettings.json 中描述实例集合与活动实例的键（.NET 平铺写法）。
@@ -92,6 +99,10 @@ _CONTROLLER_FAILURE_MARKERS = (
 _TERMINAL_PRIORITY = {
     "controller_failed": 3,
     "tasks_missing": 3,
+    # 外壳自己判定的失败，与前两者同级：都表示「选中的任务并没有真正跑成」。
+    # 必须压过 success——同一次运行里若失败串之后又冒出排空串，不得翻成成功
+    # （沿用本层既有取舍：宁可误报失败也不误报成功）。
+    "failed": 3,
     "success": 2,
 }
 
@@ -1054,6 +1065,8 @@ class MaaFWManager(TaskExecuteBase):
                 await asyncio.sleep(0)
                 if self._contains_controller_failure(self.last_log_text):
                     self._mark_controller_failure()
+                elif self._contains_failure(self.last_log_text):
+                    self._mark_terminal("failed", "MaaFW 外壳判定任务运行失败")
                 elif self._contains_completion(self.last_log_text):
                     self._mark_completion(self.last_log_text)
                 elif _ABANDON_MARKER in self.last_log_text:
@@ -1073,6 +1086,16 @@ class MaaFWManager(TaskExecuteBase):
     @staticmethod
     def _contains_completion(text: str) -> bool:
         return any(marker in text for marker in _COMPLETION_MARKERS)
+
+    @staticmethod
+    def _contains_failure(text: str) -> bool:
+        """外壳判定本次运行失败并停掉队列。
+
+        与完成串同源（都由 MFA 的 Monitor 组件在 op=MonitorLog 下发出），
+        语义却相反：完成串是「队列排空」，本串是「跑失败了，不再往下跑」。
+        """
+
+        return any(marker in text for marker in _FAILURE_MARKERS)
 
     @staticmethod
     def _contains_controller_failure(text: str) -> bool:
@@ -1153,6 +1176,8 @@ class MaaFWManager(TaskExecuteBase):
         # 任务是否露过面」这道关，都通过才判成功。其次完成串优先于放弃串。
         if self._contains_controller_failure(log_text):
             self._mark_controller_failure()
+        elif self._contains_failure(log_text):
+            self._mark_terminal("failed", "MaaFW 外壳判定任务运行失败")
         elif self._contains_completion(log_text):
             self._mark_completion(log_text)
         elif _ABANDON_MARKER in log_text:

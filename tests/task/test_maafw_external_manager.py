@@ -568,6 +568,70 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 )
             )
 
+    # ---- 问题 9：外壳判定失败必须立刻收口，不能干等超时 ----
+
+    # 逐字取自 D:\MAS\tmp\m9a-test\logs\log-20260829.log 的真机运行：
+    # 启动游戏 跑了 15 分 38 秒后失败，外壳停掉整个队列并输出本行。
+    _FAILURE_LOG = (
+        "[2026-08-29 16:14:08.000][INF] [cfg=Default][inst=MAS/default]"
+        "[src=Monitor][op=MonitorLog] 开始任务：启动游戏\n"
+        "[2026-08-29 16:29:47.660][INF] [cfg=Default][inst=MAS/default]"
+        "[src=Monitor][op=MonitorLog] 任务运行失败！\n"
+    )
+
+    def test_shell_failure_marker_ends_the_run(self) -> None:
+        asyncio.run(self._test_shell_failure_marker_ends_the_run())
+
+    async def _test_shell_failure_marker_ends_the_run(self) -> None:
+        """外壳输出「任务运行失败！」后 MAS 必须立即收口。
+
+        真机 2026-08-29：此前 MAS 不认这个串，外壳已经停了、MAS 还在等，
+        只能干耗到 RunTimeLimit 超时。用户看到的现象是「卡住不动」。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._FAILURE_LOG]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "failed")
+            self.assertEqual(manager.script_info.user_list[0].status, "异常")
+            self.assertEqual(manager.script_info.status, "异常")
+            record = next(iter(manager.script_info.user_list[0].log_record.values()))
+            self.assertIn("外壳判定任务运行失败", record.status)
+
+    def test_shell_failure_is_not_overridden_by_completion(self) -> None:
+        asyncio.run(self._test_shell_failure_is_not_overridden_by_completion())
+
+    async def _test_shell_failure_is_not_overridden_by_completion(self) -> None:
+        """失败串之后再冒出排空串，也不得翻成成功。
+
+        排空串语义是「没有待办了」，失败串是「跑失败了」——沿用本层既有取舍：
+        宁可误报失败也不误报成功。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [
+                self._FAILURE_LOG
+                + "[2026-08-29 16:29:48.000][INF] [src=Monitor][op=MonitorLog] "
+                "任务已全部完成！\n"
+            ]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "failed")
+            self.assertNotEqual(manager.script_info.status, "完成")
+
     # ---- 问题 8：appsettings.json 的实例指针必须还原 ----
 
     def test_appsettings_instance_pointers_are_restored(self) -> None:
