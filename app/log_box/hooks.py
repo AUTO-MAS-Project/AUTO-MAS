@@ -71,26 +71,35 @@ class LogHook:
 def compile_hook(config: dict) -> Optional[LogHook]:
     """按类型编译单条钩子配置
 
+    规则来自可被手工编辑或分享导入的配置 JSON，字段类型不受前端约束，因此
+    类型不符（如数字、对象）的字段一律按无效规则跳过，而不是让运行期抛异常。
+
     Args:
         config: 形如 ``{"type":"drop|replace","match":...,"replace":...}`` 的配置字典
 
     Returns:
-        编译后的钩子；类型未知、匹配正则为空/非法、替换文本引用了不存在的
-        捕获组，或 enabled 为 false 时返回 None
+        编译后的钩子；类型未知、字段类型不符、匹配正则为空/非法、替换文本
+        引用了不存在的捕获组，或 enabled 为 false 时返回 None
     """
     # 单条规则停用开关：显式为 false 时跳过编译，保留配置但不生效
     if config.get("enabled", True) is False:
         return None
-    hook_type = (config.get("type") or "").lower()
-    if hook_type not in SUPPORTED_HOOK_TYPES:
+    hook_type = config.get("type")
+    if not isinstance(hook_type, str) or hook_type.lower() not in SUPPORTED_HOOK_TYPES:
+        return None
+    hook_type = hook_type.lower()
+    match = config.get("match")
+    if not isinstance(match, str):
         return None
     # 匹配正则留空则该规则不生效，避免误开启后匹配所有行造成全量丢弃
-    match_re = compile_regex((config.get("match") or "").strip())
+    match_re = compile_regex(match.strip())
     if match_re is None:
         return None
     if hook_type == HOOK_TYPE_DROP:
         return LogHook(type=HOOK_TYPE_DROP, match=match_re)
     replace = config.get("replace") or ""
+    if not isinstance(replace, str):
+        return None
     try:
         # 提前暴露「引用不存在的捕获组」等替换模板错误，避免逐行改写时抛异常
         match_re.sub(replace, "")
@@ -123,7 +132,11 @@ def load_hooks(hooks_json: str) -> list[LogHook]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        hook = compile_hook(item)
+        # 单条规则编译失败时静默跳过，保证其余规则仍可生效（与 load_patterns 一致）
+        try:
+            hook = compile_hook(item)
+        except Exception:
+            hook = None
         if hook is not None:
             compiled.append(hook)
     return compiled
@@ -172,11 +185,15 @@ def validate_hook(config: dict) -> Optional[str]:
     与 compile_hook 配合使用：compile_hook 返回 None 时无法区分原因，
     本函数给出可展示的具体错误。
     """
-    hook_type = (config.get("type") or "").lower()
-    if hook_type not in SUPPORTED_HOOK_TYPES:
+    hook_type = config.get("type")
+    if not isinstance(hook_type, str) or hook_type.lower() not in SUPPORTED_HOOK_TYPES:
         return f"未知钩子类型: {hook_type}"
+    hook_type = hook_type.lower()
 
-    match_str = (config.get("match") or "").strip()
+    match = config.get("match")
+    if not isinstance(match, str):
+        return "匹配正则必须为字符串"
+    match_str = match.strip()
     if not match_str:
         return "匹配正则为空，该规则不生效"
     match_re = compile_regex(match_str)
@@ -184,8 +201,11 @@ def validate_hook(config: dict) -> Optional[str]:
         return f"匹配正则语法错误: {match_str}"
 
     if hook_type == HOOK_TYPE_REPLACE:
+        replace = config.get("replace") or ""
+        if not isinstance(replace, str):
+            return "替换文本必须为字符串"
         try:
-            match_re.sub(config.get("replace") or "", "")
+            match_re.sub(replace, "")
         except re.error as e:
             return f"替换文本语法错误: {e}"
     return None

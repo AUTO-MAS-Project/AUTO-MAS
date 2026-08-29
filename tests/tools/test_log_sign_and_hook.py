@@ -112,6 +112,21 @@ def test_compile_hook_rejects_unknown_type_and_empty_match():
     assert compile_hook({"type": "drop", "match": "   "}) is None
 
 
+def test_non_string_fields_are_skipped_instead_of_raising():
+    """规则 JSON 可被手工编辑或分享导入，字段类型不符时按无效规则跳过
+
+    否则 AutoProxy.prepare 编译钩子时就会抛异常，导致整个任务无法启动。
+    """
+    assert load_hooks('[{"type":"replace","match":"a","replace":123}]') == []
+    assert load_hooks('[{"type":"drop","match":123}]') == []
+    assert load_hooks('[{"type":123,"match":"a"}]') == []
+    assert load_hooks('[{"type":"drop","match":{"a":1}}]') == []
+    # 非法条目不影响同一份配置中的其余规则
+    hooks = load_hooks('[{"type":"drop","match":123},{"type":"drop","match":"progress"}]')
+    assert len(hooks) == 1
+    assert apply_hooks("progress 50%\n", hooks) is None
+
+
 def test_make_line_hook_returns_none_without_usable_rules():
     """无可用规则时返回 None，调用方据此保持与未启用钩子完全一致的行为"""
 
@@ -129,6 +144,11 @@ def test_validate_hook_reports_user_facing_errors():
     assert validate_hook({"type": "drop", "match": ""}) == "匹配正则为空，该规则不生效"
     assert "匹配正则语法错误" in (validate_hook({"type": "drop", "match": "[a"}) or "")
     assert "未知钩子类型" in (validate_hook({"type": "x", "match": "a"}) or "")
+    assert validate_hook({"type": "drop", "match": 123}) == "匹配正则必须为字符串"
+    assert (
+        validate_hook({"type": "replace", "match": "a", "replace": 123})
+        == "替换文本必须为字符串"
+    )
     assert "替换文本语法错误" in (
         validate_hook({"type": "replace", "match": "a", "replace": r"\1"}) or ""
     )
