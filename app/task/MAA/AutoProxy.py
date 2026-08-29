@@ -144,6 +144,12 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     return False
 
 
+def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
+    """继承 MAA 原生配置，并以基础任务覆盖 MAS 托管字段。"""
+
+    return {**deepcopy(source_task), **deepcopy(managed_task)}
+
+
 def _build_depot_maintain_task(
     plans_json: str,
     source_task: dict | None = None,
@@ -151,7 +157,9 @@ def _build_depot_maintain_task(
     """生成 MAA 库存保持任务配置。"""
 
     source_task = source_task or {}
-    source_plans = source_task.get("PlanList", [])
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
     plans = []
     for plan in json.loads(plans_json):
         if (
@@ -177,6 +185,10 @@ def _build_depot_maintain_task(
             plans.append(
                 {
                     **deepcopy(source_plan),
+                    "UseMedicine": False,
+                    "MedicineCount": 0,
+                    "UseStone": False,
+                    "StoneCount": 0,
                     "Stage": plan["Stage"],
                     "DropId": plan["DropId"],
                     "DropCount": plan["DropCount"],
@@ -234,8 +246,15 @@ def _build_activity_priority_fight(
             "IsStageManually": True,
             "UseOptionalStage": False,
             "UseWeeklySchedule": False,
+            "EnableTargetDrop": False,
+            "DropId": "",
+            "DropCount": 0,
+            "IsInventoryTarget": False,
+            "EnableTimesLimit": False,
             "UseMedicine": medicine_numb > 0,
             "MedicineCount": medicine_numb,
+            "UseExpiringMedicine": False,
+            "UseExpireMedicineForActivity": False,
         }
     )
     return activity_fight
@@ -605,8 +624,6 @@ class AutoProxyTask(TaskExecuteBase):
                 source_task=task_set["DepotMaintain"],
             )
 
-        fight_source = deepcopy(task_set["Fight"])
-
         # 关闭所有定时
         for i in range(1, 9):
             global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
@@ -710,30 +727,18 @@ class AutoProxyTask(TaskExecuteBase):
                 for stage_key in MAA_STAGE_KEY
             }
 
+        fight_source = deepcopy(task_set["Fight"])
+
         # 理智作战相关配置项
         if self.mode == "Annihilation":
             # 关卡配置
-            task_set["Fight"] = {
-                **MAA_ANNIHILATION_FIGHT_BASE,
-                **fight_source,
-            }
+            task_set["Fight"] = _merge_fight_task(
+                fight_source, MAA_ANNIHILATION_FIGHT_BASE
+            )
             task_set["Fight"]["UseMedicine"] = bool(
                 plan_data.get("MedicineNumb", 0) != 0
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
-            task_set["Fight"]["Name"] = "剿灭作战"
-            task_set["Fight"]["IsEnable"] = True
-            task_set["Fight"]["TaskType"] = "Fight"
-            task_set["Fight"]["StagePlan"] = ["Annihilation"]
-            task_set["Fight"]["IsStageManually"] = False
-            task_set["Fight"]["UseOptionalStage"] = False
-            task_set["Fight"]["UseWeeklySchedule"] = False
-            task_set["Fight"]["UseCustomAnnihilation"] = True
-            task_set["Fight"]["EnableTargetDrop"] = False
-            task_set["Fight"]["DropId"] = ""
-            task_set["Fight"]["DropCount"] = 0
-            task_set["Fight"]["IsInventoryTarget"] = False
-            task_set["Fight"]["EnableTimesLimit"] = False
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
                 "Info", "Annihilation"
             )
@@ -763,6 +768,7 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_config.get("Info", "Mode") == "简洁":
                 task_set["Fight"]["EnableTimesLimit"] = False
                 task_set["Fight"]["EnableTargetDrop"] = False
+                fight_source = deepcopy(task_set["Fight"])
 
             # 基建配置
             if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
@@ -843,10 +849,9 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.task_dict["Fight"]
                 and plan_data.get("Stage_Remain", "-") != "-"
             ):
-                remain_fight = {
-                    **MAA_REMAIN_FIGHT_BASE,
-                    **fight_source,
-                }
+                remain_fight = _merge_fight_task(
+                    fight_source, MAA_REMAIN_FIGHT_BASE
+                )
                 remain_fight["StagePlan"] = [
                     (
                         ""
@@ -854,14 +859,7 @@ class AutoProxyTask(TaskExecuteBase):
                         else plan_data.get("Stage_Remain", "-")
                     )
                 ]
-                remain_fight["Name"] = "剩余理智"
-                remain_fight["IsEnable"] = True
-                remain_fight["TaskType"] = "Fight"
-                remain_fight["UseMedicine"] = False
-                remain_fight["MedicineCount"] = 0
-                remain_fight["IsStageManually"] = True
-                remain_fight["UseOptionalStage"] = False
-                remain_fight["UseWeeklySchedule"] = False
+                remain_fight["Series"] = int(plan_data.get("SeriesNumb", "0"))
                 task_queue.append(remain_fight)
 
         (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
