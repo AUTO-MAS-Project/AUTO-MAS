@@ -44,9 +44,23 @@ Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
 
+# Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 字符）、
+# 正文落在 szInfo（256 字符）。plyer 直接把字符串塞进 ctypes 定长数组，超长会抛
+# ValueError，且各留一位给结尾空字符，因此推送前先截断。
+PLYER_TITLE_LIMIT = 63
+PLYER_MESSAGE_LIMIT = 255
+
+
+def clip_notify_text(text: str, limit: int) -> str:
+    """按 Windows 通知字段上限截断文本，超出部分以省略号收尾。"""
+
+    if len(text) <= limit:
+        return text
+
+    return f"{text[: limit - 1]}…"
+
 
 class Notification:
-
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
         推送系统通知
@@ -71,8 +85,8 @@ class Notification:
         if notification.notify is not None:
             await asyncio.to_thread(
                 notification.notify,
-                title=title,
-                message=message,
+                title=clip_notify_text(title, PLYER_TITLE_LIMIT),
+                message=clip_notify_text(message, PLYER_MESSAGE_LIMIT),
                 app_name="AUTO-MAS",
                 app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
                 timeout=t,
@@ -221,7 +235,6 @@ class Notification:
 
         # 替换模板变量
         try:
-
             # 准备模板变量
             template_vars = {
                 "title": title,
