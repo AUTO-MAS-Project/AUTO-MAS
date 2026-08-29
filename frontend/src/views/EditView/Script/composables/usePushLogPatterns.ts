@@ -303,7 +303,14 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
   watch(
     patternsJson,
     () => {
+      // 本次回写来自本地 save 同步写回的 v-model（nextTick 内），跳过防止刚添加的空规则被立即移除
       if (localEcho) return
+      // 异步保存后父组件 refreshScript 会回写后端序列化结果：若该值与当前本地规则的序列化结果
+      // 等价（空/待编辑规则会被 serialize 暂时剔除），说明仅是本地 save 的回显而非外部改动，
+      // 应保留本地尚未落盘的空规则卡片，避免刚添加的空规则被异步刷新清掉
+      if ((patternsJson.value || '') === serializePushLogPatterns(patterns.value)) {
+        return
+      }
       syncFromJson()
     },
     { immediate: true }
