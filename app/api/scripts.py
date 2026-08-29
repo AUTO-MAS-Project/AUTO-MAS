@@ -26,12 +26,27 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from app.core import Config
 from app.models.config import HSRConfig as RuntimeHSRConfig
+from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
+from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+    MaaFWInterfaceLoadError,
+    load_interface_model_cached,
+)
+from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
+    build_interface_preview_data,
+)
+from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+    MaaFWProjectUpdateError,
+    discover_maafw_project_update,
+)
+from app.task.MaaFW.tools.external import ShellFamily, detect_shell_family
+from app.task.MaaFW.tools.project_updater import update_maafw_project_if_needed
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -80,11 +95,54 @@ def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
+def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
+    """Resolve a MaaFW script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeMaaFWConfig):
+        raise TypeError("脚本配置类型错误, 不是 MFW 类型")
+    return script_config
+
+
+def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
+    """按脚本级 Update.* 组装更新实现所需的 source_config。
+
+    键名与 ``project_updater._compat_source_config`` 一致；留空字段代表
+    「继承全局」，此处照原样透传，由更新实现层决定回退。
+
+    额外注入 ``project_shell_hint``：GitHub 发行版常按 UI 外壳分包
+    （如 M9A 同版本同时发 ``*-MFAA.zip`` 与 ``*-MXU.zip``），选包实现
+    在项目名/平台收窄后需要外壳家族才能消歧。``fdde4d51`` 经服务层
+    ``MaaFWProjectUpdateService.discover_update`` 注入该提示，当前 API
+    直连 ``discover_maafw_project_update``，故在此按项目根目录识别。
+    """
+
+    source = str(script_config.get("Update", "Source") or "").strip()
+    config = {
+        "source": source,
+        "package_source": source,
+        "mirror_cdk": str(script_config.get("Update", "MirrorChyanCDK") or "").strip(),
+        "channel": str(script_config.get("Update", "Channel") or "").strip(),
+        "repo": str(script_config.get("Update", "GitHubRepo") or "").strip(),
+        "tag": str(script_config.get("Update", "GitHubTag") or "").strip(),
+        "asset_pattern": str(
+            script_config.get("Update", "GitHubAssetPattern") or ""
+        ).strip(),
+    }
+    project_path = str(script_config.get("Info", "Path") or "").strip()
+    if project_path:
+        shell_family = detect_shell_family(project_path)
+        if shell_family is not ShellFamily.UNKNOWN:
+            config["project_shell_hint"] = shell_family.value
+    return config
+
+
 SCRIPT_BOOK = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
     "MaaEndConfig": MaaEndConfig,
     "M9AConfig": M9AConfig,
+    "MaaFWConfig": MaaFWConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
     "OkNteConfig": OkNteConfig,
@@ -95,6 +153,7 @@ USER_BOOK = {
     "SrcConfig": SrcUserConfig,
     "MaaEndConfig": MaaEndUserConfig,
     "M9AConfig": M9AUserConfig,
+    "MaaFWConfig": MaaFWUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
     "OkNteConfig": OkNteUserConfig,
@@ -619,6 +678,183 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/maafw/preview",
+    tags=["MaaFW"],
+    summary="预览 MFW interface",
+    response_model=MaaFWInterfacePreviewOut,
+    status_code=200,
+)
+async def preview_maafw_interface(
+    payload: MaaFWInterfacePreviewIn = Body(...),
+) -> MaaFWInterfacePreviewOut:
+    """读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。"""
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        preview = await asyncio.to_thread(
+            build_interface_preview_data,
+            root_path,
+            interface,
+        )
+        data = MaaFWInterfacePreviewData.model_validate(
+            preview.model_dump(mode="json")
+        )
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWInterfacePreviewOut(
+            code=400,
+            status="error",
+            message=str(exc),
+            data=None,
+        )
+    except Exception as exc:
+        return MaaFWInterfacePreviewOut(
+            code=500,
+            status="error",
+            message=f"MFW interface 预览失败: {exc}",
+            data=None,
+        )
+
+    return MaaFWInterfacePreviewOut(
+        message=f"已读取 MFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
+        data=data,
+    )
+
+
+@router.post(
+    "/maafw/update",
+    tags=["MaaFW"],
+    summary="检查或执行 MFW 项目更新",
+    response_model=MaaFWProjectUpdateOut,
+    status_code=200,
+)
+async def update_maafw_project(
+    payload: MaaFWProjectUpdateIn = Body(...),
+) -> MaaFWProjectUpdateOut:
+    """按脚本 ``Update.*`` 配置检查或应用 MaaFW 项目目录更新。
+
+    ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
+    ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
+    """
+
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+
+    project_value = str(script_config.get("Info", "Path") or "").strip()
+    if not project_value:
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message="请先设置 MFW 项目路径"
+        )
+    root_path = Path(project_value).resolve()
+    if not root_path.is_dir():
+        return MaaFWProjectUpdateOut(
+            code=400,
+            status="error",
+            message="MFW 项目路径不是有效目录，请检查 Info.Path",
+        )
+
+    try:
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message=f"MFW interface 读取失败: {exc}"
+        )
+    except Exception as exc:
+        return MaaFWProjectUpdateOut(
+            code=500, status="error", message=f"MFW interface 读取失败: {exc}"
+        )
+
+    current_version = str(interface.version or "")
+    source_config = _maafw_update_source_config(script_config)
+    proxy = Config.proxy
+
+    if payload.action == "check":
+        try:
+            discovery = await discover_maafw_project_update(
+                interface,
+                current_version=current_version,
+                source_config=source_config,
+                proxy=proxy,
+            )
+        except MaaFWProjectUpdateError as exc:
+            return MaaFWProjectUpdateOut(
+                code=400, status="error", message=f"MFW 更新检查失败: {exc}"
+            )
+        except Exception as exc:
+            return MaaFWProjectUpdateOut(
+                code=500, status="error", message=f"MFW 更新检查失败: {exc}"
+            )
+
+        if discovery is None:
+            return MaaFWProjectUpdateOut(
+                message=f"MFW 项目已是最新版本: {current_version or '未知'}",
+                data=MaaFWProjectUpdateData(
+                    checked=True, currentVersion=current_version
+                ),
+            )
+
+        candidate_source = (
+            discovery.candidate.source
+            if discovery.candidate is not None
+            else discovery.source
+        )
+        message = f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+        if not discovery.installable and discovery.unavailable_reason:
+            message = f"{message}（暂无可安装更新包: {discovery.unavailable_reason}）"
+        return MaaFWProjectUpdateOut(
+            message=message,
+            data=MaaFWProjectUpdateData(
+                checked=True,
+                updateAvailable=True,
+                installable=discovery.installable,
+                currentVersion=current_version,
+                latestVersion=discovery.version,
+                source=candidate_source,
+            ),
+        )
+
+    logs: list[str] = []
+    try:
+        result = await update_maafw_project_if_needed(
+            root_path,
+            interface,
+            source=source_config["source"],
+            mirror_cdk=source_config["mirror_cdk"],
+            channel=source_config["channel"],
+            github_repo=source_config["repo"],
+            github_tag=source_config["tag"],
+            github_asset_pattern=source_config["asset_pattern"],
+            proxy=proxy,
+            send_log=logs.append,
+        )
+    except MaaFWProjectUpdateError as exc:
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message=f"MFW 项目更新失败: {exc}"
+        )
+    except Exception as exc:
+        return MaaFWProjectUpdateOut(
+            code=500, status="error", message=f"MFW 项目更新失败: {exc}"
+        )
+
+    return MaaFWProjectUpdateOut(
+        message=result.message or "MFW 项目更新完成",
+        data=MaaFWProjectUpdateData(
+            checked=result.checked,
+            updated=result.updated,
+            updateAvailable=result.update_available,
+            installable=result.installable,
+            currentVersion=result.current_version,
+            latestVersion=result.latest_version,
+            source=result.source,
+        ),
+    )
+
+
+@router.post(
     "/m9a/tasks/available",
     tags=["M9A"],
     summary="获取 M9A 可用任务列表（排除 standalone 任务）",
@@ -1025,3 +1261,78 @@ async def batch_update_oknte_configs(
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
         }
+
+
+_MAAFW_IMAGE_SUFFIXES = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".svg",
+    ".webp",
+}
+"""允许外发的图片后缀。
+
+白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，等于把「读任意目录下的
+文件」的能力暴露出去了，只能靠「必须在 root 内」+「必须是图片」两道闸门把它收窄
+成「读项目内的图片」。放开成任意后缀就变成了任意文件读取。
+"""
+
+
+def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
+    """把 (项目根, 项目内相对路径) 解析成一个可安全外发的图片绝对路径。"""
+
+    root_path = Path(root).resolve()
+    if not root_path.is_dir():
+        raise ValueError("MFW 项目目录不存在")
+
+    normalized_asset_path = asset_path.replace("\\", "/").strip()
+    relative_path = Path(normalized_asset_path)
+    if (
+        not normalized_asset_path
+        or relative_path.is_absolute()
+        or ".." in relative_path.parts
+    ):
+        raise ValueError("MFW 资源路径非法")
+
+    file_path = (root_path / relative_path).resolve()
+    # 逐段比对而不是比字符串前缀：符号链接与 ..（上面已挡）之外，
+    # 大小写与短路径名的差异也会让前缀比较判错。
+    if root_path not in file_path.parents:
+        raise ValueError("MFW 资源路径越界")
+    if file_path.suffix.casefold() not in _MAAFW_IMAGE_SUFFIXES:
+        raise ValueError("仅支持 MFW 图片资源")
+    if not file_path.is_file():
+        raise FileNotFoundError("MFW 图片资源不存在")
+    return file_path
+
+
+@router.get(
+    "/maafw/asset",
+    tags=["MaaFW"],
+    summary="读取 MFW 项目内的图片资源",
+    response_class=FileResponse,
+)
+async def get_maafw_asset(
+    root: str = Query(..., description="MFW 项目根目录"),
+    path: str = Query(..., description="项目根目录内的相对图片路径"),
+) -> FileResponse:
+    """把 MFW 项目目录内的图片按需读给前端。
+
+    任务说明（interface 的 ``doc`` / ``description``）是 markdown，里面的图片写的是
+    **项目内相对路径**，浏览器没法直接读本地文件，必须由后端转一手。
+
+    前端侧对应 ``buildMaaFWAssetUrl``：它已经拦掉了绝对路径、UNC、上跳与远程 URL，
+    但那只是省一次往返，安全边界在这里 —— 请求可以绕过前端直接打过来。
+    """
+
+    try:
+        file_path = _maafw_asset_file_path(root, path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FileResponse(file_path)

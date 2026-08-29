@@ -41,6 +41,8 @@ _LAZY_EXPORTS = {
     "ProcessInfo": (".ProcessManager", "ProcessInfo"),
     "ProcessResult": (".ProcessManager", "ProcessResult"),
     "is_process_running": (".ProcessManager", "is_process_running"),
+    "activate_window_by_pid": (".ProcessManager", "activate_window_by_pid"),
+    "has_visible_window": (".ProcessManager", "has_visible_window"),
     "RegexMatcher": (".LogPatternExtractor", "RegexMatcher"),
     "MultiLineAggregator": (".LogPatternExtractor", "MultiLineAggregator"),
     "compile_regex": (".LogPatternExtractor", "compile_regex"),

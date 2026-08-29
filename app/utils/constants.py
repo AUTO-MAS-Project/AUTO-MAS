@@ -41,6 +41,7 @@ TYPE_BOOK = {
     "OkNteConfig": "OK-NTE",
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
+    "MaaFWConfig": "MFW",
     "HSRConfig": "HSR",
 }
 """配置类型映射表"""

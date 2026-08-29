@@ -43,6 +43,7 @@ from app.models.config import (
     MaaConfig,
     SrcConfig,
     M9AConfig,
+    MaaFWConfig,
     MaaEndConfig,
     OkwwConfig,
     OkNteConfig,
@@ -55,6 +56,7 @@ from app.models.config import (
     MaaUserConfig,
     SrcUserConfig,
     M9AUserConfig,
+    MaaFWUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
     OkwwUserConfig,
@@ -728,7 +730,15 @@ class AppConfig(GlobalConfig):
     async def add_script(
         self,
         script: Literal[
-            "MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"
+            "MAA",
+            "SRC",
+            "General",
+            "MaaEnd",
+            "M9A",
+            "MaaFW",
+            "Okww",
+            "OkNte",
+            "HSR",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -738,6 +748,7 @@ class AppConfig(GlobalConfig):
         | GeneralConfig
         | MaaEndConfig
         | M9AConfig
+        | MaaFWConfig
         | OkwwConfig
         | OkNteConfig
         | HSRConfig,
@@ -1040,6 +1051,7 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
+        | MaaFWUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig,
@@ -1075,6 +1087,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, MaaFWConfig):
+            uid, config = await script_config.UserData.add(MaaFWUserConfig)
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         else:

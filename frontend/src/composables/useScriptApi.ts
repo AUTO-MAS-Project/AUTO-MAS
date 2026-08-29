@@ -5,15 +5,18 @@ import {
   type MaaConfig,
   type MaaEndConfig,
   type M9AConfig,
+  type MaaFWConfig,
   type OkwwConfig,
   type OkNteConfig,
   type SrcConfig,
   type HSRConfig,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
+  type MaaFWInterfacePreviewOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
+  MaaFwService,
   Service,
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
@@ -29,6 +32,7 @@ type ScriptListConfig =
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
+  | MaaFWConfig
   | HSRConfig
 
 type HSRStageEngine = 'M7A' | 'SRA'
@@ -38,6 +42,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   SRC: ScriptCreateIn.type.SRC,
   MaaEnd: ScriptCreateIn.type.MAA_END,
   M9A: ScriptCreateIn.type.M9A,
+  MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
@@ -51,6 +56,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
   M9AConfig: 'M9A',
+  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
 }
 
@@ -1014,6 +1020,27 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (String(userIndex.type) === 'MaaFWUserConfig' && userData) {
+                    const maafwUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                        Status: maafwUserData.Info?.Status ?? true,
+                        RemainedDay: maafwUserData.Info?.RemainedDay ?? -1,
+                        Notes: maafwUserData.Info?.Notes ?? '',
+                        Tag: maafwUserData.Info?.Tag ?? null,
+                      },
+                      Task: maafwUserData.Task ?? {},
+                      Notify: maafwUserData.Notify ?? {},
+                      Data: {
+                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '',
+                        ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
+                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? false,
+                        LastSklandDate: '',
+                      },
+                    } as any
                   } else if (userIndex.type === 'HSRUserConfig' && userData) {
                     const hsrUserData = userData as any
                     return {
@@ -1218,6 +1245,17 @@ export function useScriptApi() {
     }
   }
 
+  // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
+  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+    try {
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
+      return null
+    }
+  }
+
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
@@ -1340,6 +1378,7 @@ export function useScriptApi() {
     getScript,
     getHsrStageOptions,
     getMaaEndOptions,
+    previewMaaFWInterface,
     deleteScript,
     updateScript,
     reorderScript,
