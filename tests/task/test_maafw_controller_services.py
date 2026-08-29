@@ -7,8 +7,10 @@
 所有匹配用例都注入构造好的窗口列表。
 """
 
-import sys
+import ast
+import inspect
 import unittest
+from pathlib import Path
 
 import app.core  # noqa: F401  # 初始化宿主配置
 
@@ -34,10 +36,34 @@ def win32_controller(class_regex=None, window_regex=None, name="Win32") -> dict:
 
 
 class ControllerPackageImportTest(unittest.TestCase):
-    def test_importing_the_packages_does_not_pull_in_maa(self) -> None:
-        # `list_windows` 内部才 import maa.toolkit，导入包不得触发 DLL 加载
-        self.assertNotIn("maa", sys.modules)
-        self.assertNotIn("maa.toolkit", sys.modules)
+    def test_maa_toolkit_import_stays_inside_list_windows(self) -> None:
+        """导入本包不得触发 maa DLL 加载。
+
+        用静态检查而非 `sys.modules` 断言：`app/core/maa_manager.py` 是上游基线
+        既有的原生集成，全量跑时会合法地把 maa 载入进程。
+        """
+
+        source = Path(
+            inspect.getfile(MaaFWWin32ControllerService)
+        ).read_text(encoding="utf-8")
+        module = ast.parse(source)
+        top_level_imports = [
+            node
+            for node in module.body
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+        ]
+        for node in top_level_imports:
+            names = (
+                [alias.name for alias in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module or ""]
+            )
+            for name in names:
+                self.assertFalse(
+                    name == "maa" or name.startswith("maa."),
+                    "maa 不得在模块级导入: " + name,
+                )
+        self.assertIn("from maa.toolkit import Toolkit", source)
 
     def test_provider_definitions_are_stable(self) -> None:
         self.assertEqual(
