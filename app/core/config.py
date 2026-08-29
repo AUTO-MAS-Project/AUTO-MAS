@@ -30,7 +30,6 @@ import uvicorn
 import sqlite3
 import truststore
 from pathlib import Path
-from fastapi import WebSocket, WebSocketDisconnect
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
@@ -68,7 +67,7 @@ from app.models.config import (
     EmulatorConfig,
     GameSignAccountGroup,
 )
-from app.models.schema import PlanComboxConsumer, WebSocketMessage
+from app.models.schema import PlanComboxConsumer
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -268,7 +267,6 @@ class AppConfig(GlobalConfig):
         )
 
         self.server: Optional[uvicorn.Server] = None
-        self.websocket: Optional[WebSocket] = None
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -688,35 +686,6 @@ class AppConfig(GlobalConfig):
             cur.close()
             db.close()
             logger.success("数据文件版本更新完成")
-
-    async def send_json(self, data: dict) -> None:
-        """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(data)
-
-    async def send_websocket_message(
-        self,
-        id: str,
-        type: Literal["Update", "Message", "Info", "Signal"],
-        data: Dict[str, Any],
-    ) -> None:
-        """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            websocket = Config.websocket
-            try:
-                await websocket.send_json(
-                    WebSocketMessage(id=id, type=type, data=data).model_dump()
-                )
-            except (RuntimeError, WebSocketDisconnect) as e:
-                if Config.websocket is websocket:
-                    Config.websocket = None
-                logger.warning(
-                    f"WebSocket 已断开，消息未发送: {e.__class__.__name__}: {e}"
-                )
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
@@ -1680,10 +1649,15 @@ class AppConfig(GlobalConfig):
         )
 
         try:
-            await self.send_websocket_message(
-                id="GameSign",
-                type="Update",
-                data={"Result": json.dumps(result, ensure_ascii=False)},
+            from app.core.ws import Publisher, protocol
+            from app.models.schema import WSGameSignResultData
+
+            await Publisher.send(
+                id=protocol.ID_GAME_SIGN,
+                type=protocol.GAMESIGN_RESULT_UPDATED,
+                data=WSGameSignResultData(
+                    result=json.dumps(result, ensure_ascii=False)
+                ),
             )
         except Exception as e:
             logger.warning(f"广播游戏签到结果失败: {e}")

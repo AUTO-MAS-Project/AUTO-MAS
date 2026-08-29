@@ -517,8 +517,9 @@ onMounted(() => {
   align-items: center;
   min-height: 500px;
   padding: 60px 20px;
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.02), rgba(24, 144, 255, 0.01));
-  border-radius: 16px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
   margin: 20px 0;
 }
 
@@ -541,7 +542,7 @@ onMounted(() => {
   left: -20px;
   right: -20px;
   bottom: -20px;
-  background: radial-gradient(circle, rgba(24, 144, 255, 0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--ant-color-primary-bg) 0%, transparent 70%);
   border-radius: 50%;
   animation: pulse 3s ease-in-out infinite;
 }

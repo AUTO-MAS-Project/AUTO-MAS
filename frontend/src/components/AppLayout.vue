@@ -51,7 +51,6 @@
 
 <script lang="ts" setup>
 import {
-  ApiOutlined,
   BugOutlined,
   CalendarOutlined,
   CarryOutOutlined,
@@ -80,14 +79,11 @@ const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 // 工具：生成菜单项
 const icon = (Comp: any) => () => h(Comp)
 
-// 判断是否为开发环境
-const isDevelopment = computed(() => {
-  return (
-    process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
-    window.location.hostname === 'localhost'
-  )
-})
+// 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
+// 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
+// 生产环境走 loadFile（file:// 协议，hostname 为空）不会命中，但用 vite preview
+// 预览生产构建时会命中，导致菜单显示了实际不存在的路由。
+const isDevelopment = computed(() => import.meta.env.DEV)
 
 const mainMenuItems = [
   { key: '/home', label: '主页', icon: icon(HomeOutlined) },
@@ -102,7 +98,6 @@ const mainMenuItems = [
 const devMenuItems = [
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
-  { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
   { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
   ...(import.meta.env.DEV
     ? [{ key: '/update-download-dev', label: '更新下载测试', icon: icon(BugOutlined) }]

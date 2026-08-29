@@ -12,6 +12,7 @@ import { configureSentry } from '@/utils/sentry'
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
+import '@/styles/formSection.css'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 
@@ -44,12 +45,16 @@ if (
   OpenAPI.BASE = 'http://127.0.0.1:36163'
 }
 
-// 导入WebSocket消息监听组件
-import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
+import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
 // 正常路由：执行完整初始化
 // 配置dayjs中文本地化
 dayjs.locale('zh-cn')
+
+// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
 if (window.electronAPI?.getApiEndpoint) {
@@ -93,9 +98,6 @@ const bootstrap = async () => {
 
   // 挂载应用
   app.mount('#app')
-
-  // 注册WebSocket消息监听组件
-  app.component('WebSocketMessageListener', WebSocketMessageListener)
 
   logger.info('前端应用初始化完成')
 }

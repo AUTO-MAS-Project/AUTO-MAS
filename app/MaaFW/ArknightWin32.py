@@ -40,6 +40,8 @@ from maa.custom_action import CustomAction
 
 
 from app.core import Config, MaaFWManager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.utils import get_logger, busy_wait
 
 logger = get_logger("明日方舟PC工具")
@@ -146,10 +148,12 @@ class _ArknightWin32Toolkit:
             logger.success("已连接到明日方舟")
         except Exception as e:
             logger.error(f"连接明日方舟失败: {e}")
-            await Config.send_websocket_message(
-                id="ArknightsPCToolkit",
-                type="Info",
-                data={"error": f"无法连接明日方舟: {str(e)}"},
+            await Publisher.send(
+                id=protocol.ID_ARKNIGHTS_PC_TOOLKIT,
+                type=protocol.TOOLKIT_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error", message=f"无法连接明日方舟: {str(e)}"
+                ),
             )
 
     def on_key_release(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:

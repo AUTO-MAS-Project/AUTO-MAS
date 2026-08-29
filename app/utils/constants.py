@@ -128,6 +128,19 @@ ARKNIGHTS_PACKAGE_NAME = {
 }
 """明日方舟包名映射表"""
 
+ARKNIGHTS_VERSION_API_SERVER = {
+    "Official": "official",
+    "Bilibili": "b",
+}
+"""明日方舟版本接口服务器标识映射表
+
+仅收录已实测可用的服务器；外服与台服未找到稳定的公开版本接口，
+不在此表中的服务器会跳过客户端版本检查。
+"""
+
+ARKNIGHTS_OFFICIAL_APK_URL = "https://ak.hypergryph.com/downloads/android_lastest"
+"""明日方舟官服安卓包下载入口（302 跳转至启动器再跳至 CDN 实际包地址）"""
+
 MAA_TASK_TRANSITION_METHOD_BOOK = {
     "NoAction": "8",
     "ExitGame": "9",

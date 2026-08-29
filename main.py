@@ -190,8 +190,11 @@ def main():
 
                 # 初始化 Koishi 系统客户端（如果已启用）
                 if Config.get("Notify", "IfKoishiSupport"):
+                    from app.api.ws_command import execute_ws_command
                     from app.utils.websocket import ws_client_manager
 
+                    # 出站客户端不再反射导入 API，命令执行器需显式注入
+                    ws_client_manager.set_command_executor(execute_ws_command)
                     await ws_client_manager.init_system_client_koishi()
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
@@ -219,23 +222,46 @@ def main():
         app.state.background_error = None
         background_task = asyncio.create_task(initialize_background_services())
 
-        try:
-            yield
-        finally:
-            # 停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
+        async def shutdown_services() -> None:
+            """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
+
+            from app.core.ws import Dispatcher, MainConnection
+            from app.runtime_tasks import RuntimeTasks
+            from app.services import Matomo, System, Updater
+
+            # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
 
-            await TaskManager.stop_task("ALL")
+            # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
+            await MainConnection.begin_shutdown()
+            await Dispatcher.shutdown()
+            await MainConnection.cancel_hook_tasks()
+
+            # 取消待执行的电源操作（无任务在跑属正常）
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
 
             await MainTimer.stop()
-
-            from app.services import Matomo
-
+            await TaskManager.stop_task("ALL")
+            # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
+            await Updater.cancel_download(notify=False)
+            await RuntimeTasks.shutdown()
             await Matomo.close()
+            logger.info("AUTO-MAS 后端服务清理完成")
 
+        from app.core.lifecycle import ShutdownCoordinator
+
+        ShutdownCoordinator.set_teardown(shutdown_services)
+        try:
+            yield
+        finally:
+            # 覆盖 taskkill 等未经 /close 的退出路径；已由 /close 执行过则跳过
+            await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
 
     from fastapi.middleware.cors import CORSMiddleware
@@ -252,7 +278,6 @@ def main():
         setting_router,
         update_router,
         ocr_router,
-        ws_debug_router,
         qr_login_router,
     )
 
@@ -283,7 +308,6 @@ def main():
     app.include_router(setting_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
-    app.include_router(ws_debug_router)
 
     # 可选补丁：米游社扫码登录
     if qr_login_router is not None:
@@ -301,8 +325,15 @@ def main():
     )
 
     async def run_server():
+        # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
-            app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+            app,
+            host="0.0.0.0",
+            port=36163,
+            log_level="info",
+            log_config=None,
+            ws_ping_interval=20.0,
+            ws_ping_timeout=20.0,
         )
         server = uvicorn.Server(config)
 

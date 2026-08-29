@@ -202,11 +202,11 @@ p {
 }
 
 .result p.success {
-  color: #52c41a;
+  color: var(--ant-color-success);
 }
 
 .result p.cancel {
-  color: #ff4d4f;
+  color: var(--ant-color-error);
 }
 
 /* 深色模式支持（跟随应用主题 html.dark） */

@@ -693,7 +693,6 @@ const formatTime = (value: string) =>
 
   .version-info {
     flex-direction: column;
-    align-items: flex-start;
     gap: 16px;
   }
 

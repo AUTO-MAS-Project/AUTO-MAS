@@ -23,7 +23,6 @@
 
 from importlib import import_module
 
-from .broadcast import Broadcast
 from .config import Config
 
 _LAZY_EXPORTS = {
@@ -42,8 +41,8 @@ def __getattr__(name: str):
     globals()[name] = value
     return value
 
+
 __all__ = [
-    "Broadcast",
     "Config",
     "MainTimer",
     "TaskManager",

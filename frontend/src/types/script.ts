@@ -35,6 +35,9 @@ export interface MAAScriptConfig {
     RunTimesLimit: number
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
+    IfCheckGameUpdate: boolean
+    IfAutoInstallGameApk: boolean
+    GameUpdateTimeLimit: number
   }
   Emulator: {
     Id: string
@@ -84,10 +87,14 @@ export interface GeneralScriptConfig {
     LogTimeEnd: number
     LogTimeStart: number
     LogTimeFormat: string
+    LogHookEnabled: boolean
+    LogHookRules: string
     PushLogEnabled: boolean
     PushLogPatterns: string
     ScriptPath: string
     SuccessLog: string
+    SuccessLogMode: string
+    ErrorLogMode: string
     UpdateConfigMode: string
   }
   SubConfigsInfo: {

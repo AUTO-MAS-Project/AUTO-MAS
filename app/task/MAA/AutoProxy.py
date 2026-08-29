@@ -30,6 +30,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
@@ -48,7 +50,12 @@ from app.utils.constants import (
     MAA_RUN_MOOD_BOOK,
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
-from .tools import push_notification, agree_bilibili, update_maa
+from .tools import (
+    push_notification,
+    agree_bilibili,
+    update_maa,
+    ensure_game_updated,
+)
 from app.task.general.tools import execute_script_task
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -136,7 +143,11 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     return False
 
 
-def _build_depot_maintain_task(plans_json: str) -> dict:
+def _build_depot_maintain_task(
+    plans_json: str,
+    skip_during_activity: bool = False,
+    skip_during_resource_collection: bool = False,
+) -> dict:
     """生成 MAA 库存保持任务配置。"""
 
     plans = []
@@ -170,8 +181,8 @@ def _build_depot_maintain_task(plans_json: str) -> dict:
         "TaskType": "DepotMaintain",
         "UpdateDepot": True,
         "IsStageManually": False,
-        "SkipDuringActivity": False,
-        "SkipDuringResourceCollection": False,
+        "SkipDuringActivity": skip_during_activity,
+        "SkipDuringResourceCollection": skip_during_resource_collection,
         "UseAutoSeries": True,
         "PlanList": plans,
     }
@@ -287,6 +298,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
+        self.if_game_hot_update = False
+        self.pending_res_version = ""
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -327,12 +340,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -392,10 +406,13 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"启动模拟器时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"启动模拟器时出现异常: {e}",
+                        ),
                     )
                     self.cur_user_log.content = [
                         "模拟器启动失败, MAA 未实际运行, 无日志记录"
@@ -425,6 +442,12 @@ class AutoProxyTask(TaskExecuteBase):
                     except Exception as e:
                         logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
+                # 需要用户手动更新游戏时重试无意义，直接结束本模式的重试
+                if self.script_config.get(
+                    "Run", "IfCheckGameUpdate"
+                ) and not await self.handle_game_update(emulator_info):
+                    break
+
                 await self.set_maa(emulator_info)
 
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
@@ -443,6 +466,12 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_info.log = (
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
                     )
+                    if self.pending_res_version:
+                        # 代理成功说明资源热更新已走完，记录版本供下次比对
+                        await self.cur_user_config.set(
+                            "Data", "LastResVersion", self.pending_res_version
+                        )
+                        self.if_game_hot_update = False
                 else:
                     logger.warning(
                         f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
@@ -568,7 +597,13 @@ class AutoProxyTask(TaskExecuteBase):
 
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
-                self.cur_user_config.get("Task", "DepotMaintainPlans")
+                self.cur_user_config.get("Task", "DepotMaintainPlans"),
+                skip_during_activity=task_set["DepotMaintain"].get(
+                    "SkipDuringActivity", False
+                ),
+                skip_during_resource_collection=task_set["DepotMaintain"].get(
+                    "SkipDuringResourceCollection", False
+                ),
             )
 
         # 关闭所有定时
@@ -753,12 +788,13 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
                     )
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={
-                            "Warning": f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件"
-                        },
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="warning",
+                            message=f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件",
+                        ),
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
             else:
@@ -813,6 +849,78 @@ class AutoProxyTask(TaskExecuteBase):
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
 
         logger.success(f"MAA运行参数配置完成: {self.mode}")
+
+    async def handle_game_update(self, emulator_info: DeviceInfo) -> bool:
+        """启动 MAA 前接管游戏更新。
+
+        Returns:
+            bool: 是否可以继续本次代理；``False`` 表示需要用户手动更新游戏。
+        """
+
+        self.script_info.log = "正在检查游戏更新"
+
+        async def report(text: str) -> None:
+            self.script_info.log = text
+
+        try:
+            result = await ensure_game_updated(
+                adb_path=self.emulator_manager.get_adb_path(),
+                adb_address=emulator_info.adb_address,
+                server=self.cur_user_config.get("Info", "Server"),
+                package_name=ARKNIGHTS_PACKAGE_NAME[
+                    self.cur_user_config.get("Info", "Server")
+                ],
+                apk_dir=Path.cwd() / "data/GameApk",
+                if_auto_install=self.script_config.get("Run", "IfAutoInstallGameApk"),
+                time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
+                progress=report,
+            )
+        except Exception as e:
+            # 检查本身异常不应阻断代理，交回 MAA 原有流程判定
+            logger.opt(exception=True).warning(f"游戏更新检查异常: {e}")
+            return True
+
+        logger.info(f"游戏更新检查结果: {result.status} - {result.message}")
+
+        # 服务端资源版本与上次成功代理时不一致，说明本次开始唤醒会触发资源热更新
+        if result.resource_version:
+            self.pending_res_version = result.resource_version
+            self.if_game_hot_update = (
+                result.resource_version
+                != self.cur_user_config.get("Data", "LastResVersion")
+            )
+            if self.if_game_hot_update:
+                logger.info(
+                    f"检测到待下载的游戏资源热更新: {result.resource_version}，"
+                    f"本次超时限制放宽至 {self.script_config.get('Run', 'GameUpdateTimeLimit')} 分钟"
+                )
+
+        if result.status != "NeedManualUpdate":
+            return True
+
+        self.cur_user_log.content = [result.message]
+        self.cur_user_log.status = "游戏需要手动更新"
+        self.script_info.log = result.message
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=result.message),
+        )
+        try:
+            await self.emulator_manager.close(
+                self.script_config.get("Emulator", "Index")
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+
+        await Notify.push_plyer(
+            "游戏需要手动更新！",
+            result.message,
+            f"{self.cur_user_item.name}的游戏需要手动更新",
+            3,
+        )
+        return False
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -882,7 +990,15 @@ class AutoProxyTask(TaskExecuteBase):
         ):
             self.cur_user_log.status = "MAA 在完成任务前退出"
         elif datetime.now() - latest_time > timedelta(
-            minutes=self.script_config.get("Run", f"{self.mode}TimeLimit")
+            minutes=(
+                # 本次开始唤醒会触发资源热更新时放宽超时，避免把正常更新误判为卡死
+                max(
+                    self.script_config.get("Run", f"{self.mode}TimeLimit"),
+                    self.script_config.get("Run", "GameUpdateTimeLimit"),
+                )
+                if self.if_game_hot_update
+                else self.script_config.get("Run", f"{self.mode}TimeLimit")
+            )
         ):
             self.cur_user_log.status = "MAA 进程超时"
         else:
@@ -957,10 +1073,10 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送统计通知时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"推送统计通知时出现异常: {e}"),
                 )
 
         # 六星通知独立处理，避免单个通知异常阻断掉落统计。
@@ -974,10 +1090,10 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送六星通知时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"推送六星通知时出现异常: {e}"),
                 )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
@@ -1025,8 +1141,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )
