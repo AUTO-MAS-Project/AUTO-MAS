@@ -29,6 +29,7 @@ from app.task.MaaFW.tools.controller.game_lifecycle import (
     MaaFWOwnedGameProcess,
     close_owned_game,
     find_client_process,
+    wait_for_client,
     launch_game,
     resolve_game_launch_spec,
     snapshot_matching_processes,
@@ -65,6 +66,7 @@ from app.utils import (
     ProcessRunner,
     activate_window_by_pid,
     get_logger,
+    has_visible_window,
 )
 
 
@@ -92,6 +94,7 @@ _MXU_INSTANCE_NAME = "MAS"
 # 起进程后等外壳把日志文件建出来的上界与探测节奏。
 _SHELL_LOG_WAIT_SECONDS = 30
 _SHELL_LOG_PROBE_INTERVAL_SECONDS = 1.0
+_GAME_READY_PROBE_INTERVAL_SECONDS = 1.0
 
 # 交接给外壳前等 adb 真正可用的上界与探测节奏。模拟器管理器只保证
 # ldconsole/MuMuManager 报 ONLINE，Android 的 adbd 可能还要十几秒才服务。
@@ -2236,7 +2239,60 @@ class MaaFWManager(TaskExecuteBase):
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MaaFW PC 游戏启动失败：{exc}")
             return f"PC 游戏启动失败：{exc}"
+        await self._await_game_ready(spec)
         return None
+
+    async def _await_game_ready(self, spec: MaaFWGameLaunchSpec) -> None:
+        """按「等待时间」等实际游戏进程/窗口出现，再放外壳进场。
+
+        UI 对这个字段的承诺原文就是「启动目标后等待实际游戏进程/窗口出现的时间」，
+        但此前 ``wait_time`` 只被解析进 spec，没有任何调用点 —— 起完 exe 立刻就去
+        起外壳了。进程创建远早于窗口出现，Endfield 这类游戏中间隔着几十秒；外壳
+        先到，Win32 控制器就拿不到游戏窗口。
+
+        启动器模式还要多一步：MAS 起的是启动器，真正要等的是它拉起来的游戏本体。
+        顺手把身份记进 ``client_identity`` —— 窗口置前和结束收尾都按它来，此前这
+        个字段从没被赋过值，启动器模式下游戏本体既不会被置前也不会被关闭。
+
+        等不到**不判死**：外壳自身也有重试，用户也可能就是想把等待交给外壳。
+        """
+
+        if spec.mode in {"AttachOnly", "URL"} or spec.wait_time <= 0:
+            return
+        owned = self.game_owned_process
+        if owned is None:
+            return
+
+        started = datetime.now()
+        pid = owned.pid
+        if spec.mode == "LauncherExe":
+            client = await asyncio.to_thread(
+                wait_for_client, spec, spec.wait_time, preexisting=owned.preexisting
+            )
+            if client is None:
+                logger.warning(
+                    f"MaaFW 等待游戏本体进程超时（{spec.wait_time}s），继续起外壳"
+                )
+                return
+            with suppress(Exception):
+                owned.client_identity = (client.pid, client.create_time())
+            pid = client.pid
+            logger.info(f"MaaFW 已定位游戏本体进程：pid={pid}")
+
+        # 与日志等待同理，按次数计而不是墙钟 deadline：测试里 asyncio.sleep 被打成
+        # 空转，墙钟写法会变成真的忙等满 wait_time 秒。
+        elapsed = (datetime.now() - started).total_seconds()
+        remaining = max(0.0, spec.wait_time - elapsed)
+        attempts = max(1, int(remaining / _GAME_READY_PROBE_INTERVAL_SECONDS))
+        for attempt in range(attempts):
+            if has_visible_window(pid):
+                logger.info(f"MaaFW PC 游戏窗口已就绪：pid={pid}")
+                return
+            if attempt + 1 < attempts:
+                await asyncio.sleep(_GAME_READY_PROBE_INTERVAL_SECONDS)
+        logger.warning(
+            f"MaaFW 等待 PC 游戏窗口超时（{spec.wait_time}s），继续起外壳"
+        )
 
     async def _teardown_launch_preparation(self) -> None:
         """收尾：关闭本层启动准备起来的模拟器 / PC 游戏。幂等，可多路径调用。"""

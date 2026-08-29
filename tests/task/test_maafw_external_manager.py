@@ -2423,6 +2423,17 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 return_value=SimpleNamespace(pid=4321) if attach_found else None,
             )
         )
+        # 就绪等待的两个扫描边界：真跑会枚举全系统进程/窗口，测试里直接给结论。
+        stack.enter_context(
+            patch.object(
+                manager_module,
+                "wait_for_client",
+                return_value=SimpleNamespace(pid=4321, create_time=lambda: 1.0),
+            )
+        )
+        stack.enter_context(
+            patch.object(manager_module, "has_visible_window", return_value=True)
+        )
         return stack, launched, closed
 
     def test_win32_game_launched_before_shell_and_closed_on_finish(self) -> None:
