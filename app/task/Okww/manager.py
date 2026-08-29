@@ -36,7 +36,7 @@ from app.tools.game_sign_notify import (
 )
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
-from app.tools.push_log import build_push_log_text
+from app.tools.push_log import build_user_result_text
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -359,19 +359,20 @@ class OkwwManager(TaskExecuteBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                task_result = append_task_game_sign_summary(
-                    self.task_info, self.script_info.result
-                )
-                has_game_sign_summary = task_result != self.script_info.result
-                # 聚合各用户采集的推送日志：每条节点独占一行，不附加用户名。
+                # 按用户交错组装「用户结果行 + 该用户节点详情」：
+                # 多账号任务时各用户节点归属清晰，不再全部平铺。
                 # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
-                # 为空，此处按既有逻辑自动跳过，无需再按用户过滤
+                # 为空，自然只有结果行。
                 has_uncompleted = len(error_user) + len(wait_user) > 0
-                push_log_text = build_push_log_text(
+                user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
+                task_result = append_task_game_sign_summary(
+                    self.task_info, user_result_text
+                )
+                has_game_sign_summary = task_result != user_result_text
                 result = {
                     "title": f"{task_mode}任务报告",
                     "script_name": self.script_info.name or "空白",
@@ -381,7 +382,7 @@ class OkwwManager(TaskExecuteBase):
                     "uncompleted_count": len(error_user) + len(wait_user),
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
-                    "push_log": push_log_text,
+                    "push_log": "",  # 节点已并入 result，不再单独推送
                 }
 
                 await Notify.push_plyer(
