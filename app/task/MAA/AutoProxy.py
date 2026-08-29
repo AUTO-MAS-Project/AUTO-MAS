@@ -138,7 +138,11 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     return False
 
 
-def _build_depot_maintain_task(plans_json: str) -> dict:
+def _build_depot_maintain_task(
+    plans_json: str,
+    skip_during_activity: bool = False,
+    skip_during_resource_collection: bool = False,
+) -> dict:
     """生成 MAA 库存保持任务配置。"""
 
     plans = []
@@ -172,8 +176,8 @@ def _build_depot_maintain_task(plans_json: str) -> dict:
         "TaskType": "DepotMaintain",
         "UpdateDepot": True,
         "IsStageManually": False,
-        "SkipDuringActivity": False,
-        "SkipDuringResourceCollection": False,
+        "SkipDuringActivity": skip_during_activity,
+        "SkipDuringResourceCollection": skip_during_resource_collection,
         "UseAutoSeries": True,
         "PlanList": plans,
     }
@@ -626,7 +630,13 @@ class AutoProxyTask(TaskExecuteBase):
 
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
-                self.cur_user_config.get("Task", "DepotMaintainPlans")
+                self.cur_user_config.get("Task", "DepotMaintainPlans"),
+                skip_during_activity=task_set["DepotMaintain"].get(
+                    "SkipDuringActivity", False
+                ),
+                skip_during_resource_collection=task_set["DepotMaintain"].get(
+                    "SkipDuringResourceCollection", False
+                ),
             )
 
         # 关闭所有定时
