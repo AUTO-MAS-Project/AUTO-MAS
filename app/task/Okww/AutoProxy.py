@@ -564,7 +564,7 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.script_config.get("Game", "Enabled")
                 and self.game_manager is not None
             ):
-                account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+                account_id = (self.cur_user_config.get("Info", "Id") or "").strip()
                 if not account_id:
                     await self._push_dispatch_log(
                         "未配置账号，跳过账号切换"
@@ -574,8 +574,18 @@ class AutoProxyTask(TaskExecuteBase):
                         await self._push_dispatch_log(
                             "正在强制切换鸣潮登录账号..."
                         )
+                        # 账号切换在后台线程内同步执行，on_log 契约是同步回调；
+                        # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
+                        # 调度回事件循环，否则进度不会推送到调度台且产生未等待协程告警。
+                        switch_loop = asyncio.get_running_loop()
+
+                        def _push_switch_log(line: str) -> None:
+                            asyncio.run_coroutine_threadsafe(
+                                self._push_dispatch_log(line), switch_loop
+                            )
+
                         await async_switch_account(
-                            account_id, on_log=self._push_dispatch_log
+                            account_id, on_log=_push_switch_log
                         )
                         await self._push_dispatch_log(
                             f"鸣潮账号切换成功：****{account_id[-4:]}"

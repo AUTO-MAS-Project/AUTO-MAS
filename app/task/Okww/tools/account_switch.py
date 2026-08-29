@@ -356,6 +356,7 @@ def _post_logout(hwnd: int, on_log: Callable[[str], None]) -> None:
             return
         time.sleep(1)
     on_log("等待登录输入框超时（30s 未识别到「登录」）")
+    raise RuntimeError("等待登录输入框超时（30s 未识别到「登录」）")
 
 
 def _logout_from_menu(hwnd: int, on_log: Callable[[str], None]) -> None:
@@ -433,15 +434,27 @@ def _detect_current_account(hwnd: int) -> str | None:
 
 
 def _expand_account_dropdown(hwnd: int) -> None:
-    """点击账号选择框直至下拉列表展开（出现多个掩码账号）。"""
+    """点击账号选择框直至下拉列表展开（出现多个掩码账号）。
+
+    若始终识别不到任何掩码账号，说明无法确认账号选择器已打开（OCR 失败或
+    登录界面布局变化）；继续登录可能落在错误账号上，按失败抛出而非静默返回。
+    """
+    found_masked = False
     for _ in range(3):
         items = _read_texts(hwnd, _LOGIN_ROI)
         masked = [box for text, box in items if _MASKED_ACCOUNT.search(text)]
         if len(masked) >= 2:
             return
         if not masked:
-            return
+            # 可能为 OCR 瞬时失败，等待后重试
+            time.sleep(1)
+            continue
+        found_masked = True
         _click_box(hwnd, masked[0], after_sleep=1)
+    if not found_masked:
+        raise RuntimeError(
+            "未识别到任何掩码账号，无法确认账号选择器已打开，请人工检查登录界面"
+        )
 
 
 def _click_masked_account(hwnd: int, pattern: re.Pattern[str]) -> bool:
@@ -491,9 +504,8 @@ def _select_and_login(
             on_log(f"账号显示不匹配，重试（{attempt}/{max_retries}）")
             time.sleep(1)
         else:
-            on_log(
-                f"账号选择失败，已重试 {max_retries} 次，继续尝试登录"
-            )
+            on_log(f"账号选择失败，已重试 {max_retries} 次")
+            raise RuntimeError(f"账号选择失败，已重试 {max_retries} 次")
     time.sleep(4)
     items = _read_texts(hwnd, _LOGIN_ROI)
     login_box = _find_text(items, ("登录",))
