@@ -37,6 +37,7 @@ from typing import Literal, Optional, Dict, Any, List
 import uuid
 import json
 
+from app.utils.platform import IS_WINDOWS
 from app.models.config import (
     GeneralConfig,
     MaaConfig,
@@ -998,8 +999,11 @@ class AppConfig(GlobalConfig):
                         Path(config["Info"]["RootPath"])
                     )
                 )
-            if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
-                Path(os.environ["APPDATA"])
+            if (
+                IS_WINDOWS
+                and Path(config["Script"][path]).is_relative_to(
+                    Path(os.environ["APPDATA"])
+                )
             ):
                 config["Script"][path] = (
                     f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"

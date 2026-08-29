@@ -24,8 +24,8 @@ import json
 from datetime import datetime
 from typing import Literal
 
+from app.utils.platform import IS_WINDOWS
 from app.services import Matomo
-from app.MaaFW import ArknightWin32Toolkit
 from app.utils.constants import UTC8
 from app.utils import get_logger
 from .config import Config
@@ -130,7 +130,12 @@ class _MainTimer:
 
             await self.timed_start()
 
-            if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+            if (
+                IS_WINDOWS
+                and Config.ToolsConfig.get("ArknightsPC", "Enabled")
+            ):
+                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+
                 await ArknightWin32Toolkit.scheduled_task()
 
             await asyncio.sleep(1)

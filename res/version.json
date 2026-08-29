@@ -5,7 +5,9 @@
             "新增功能": [
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
-            "程序优化": [],
+            "程序优化": [
+                "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化"
+            ],
             "开发流程": [],
             "修复BUG": [
                 "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)"
