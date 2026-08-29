@@ -30,6 +30,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
@@ -338,12 +340,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -403,10 +406,13 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"启动模拟器时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"启动模拟器时出现异常: {e}",
+                        ),
                     )
                     self.cur_user_log.content = [
                         "模拟器启动失败, MAA 未实际运行, 无日志记录"
@@ -782,12 +788,13 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
                     )
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={
-                            "Warning": f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件"
-                        },
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="warning",
+                            message=f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件",
+                        ),
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
             else:
@@ -895,10 +902,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.status = "游戏需要手动更新"
         self.script_info.log = result.message
 
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": result.message},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=result.message),
         )
         try:
             await self.emulator_manager.close(
@@ -1066,10 +1073,10 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送统计通知时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"推送统计通知时出现异常: {e}"),
                 )
 
         # 六星通知独立处理，避免单个通知异常阻断掉落统计。
@@ -1083,10 +1090,10 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送六星通知时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"推送六星通知时出现异常: {e}"),
                 )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
@@ -1134,8 +1141,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )

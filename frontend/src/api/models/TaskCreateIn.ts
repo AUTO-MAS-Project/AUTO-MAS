@@ -22,7 +22,6 @@ export namespace TaskCreateIn {
      */
     export enum mode {
         AUTO_PROXY = 'AutoProxy',
-        MANUAL_REVIEW = 'ManualReview',
         SCRIPT_CONFIG = 'ScriptConfig',
         UPDATE = 'Update',
     }

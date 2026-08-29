@@ -104,14 +104,6 @@ export type MaaUserConfig_Info = {
      */
     Stage_Remain?: (string | null);
     /**
-     * 是否启用森空岛签到
-     */
-    IfSkland?: (boolean | null);
-    /**
-     * SklandToken
-     */
-    SklandToken?: (string | null);
-    /**
      * 状态标签列表
      */
     Tag?: (string | null);

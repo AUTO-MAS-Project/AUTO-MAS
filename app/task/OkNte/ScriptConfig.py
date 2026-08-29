@@ -22,6 +22,8 @@ from contextlib import suppress
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.task import ScriptItem, TaskExecuteBase
@@ -153,10 +155,10 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"OK-NTE GUI 配置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_oknte_process()
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-NTE GUI 配置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"OK-NTE GUI 配置任务出现异常: {e}"),
         )
 
     async def _kill_oknte_process(self) -> None:
