@@ -2,7 +2,9 @@
     "version": "v5.5.0-beta.2",
     "version_info": {
         "v5.5.0-beta.2": {
-            "新增功能": [],
+            "新增功能": [
+                "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)"
+            ],
             "程序优化": [],
             "开发流程": [],
             "修复BUG": [
