@@ -76,13 +76,31 @@ class _LoadContext:
         self.scan_select_specs: set[tuple[Path, str]] = set()
 
 
+def parse_json_text(text: str) -> Any:
+    """先按严格 JSON 解析，失败再退回 JSON5。
+
+    MaaFW 的配置规格允许 JSON5（注释、尾逗号），但实测绝大多数项目写的是严格
+    JSON —— 而 json5 是纯 Python 的递归下降解析器，比 C 实现的 json 慢三个数量级：
+    MaaEnd 那个 108KB 的 zh_cn.json，json.loads 0.3ms，json5.loads 392ms。整个
+    interface 要合并四十多个文件，差距就是 4.8 秒和零点几秒。
+
+    先试 json、失败再退 json5：JSON5 兼容性一点没丢，常见情况走 C 路径。
+    ``app/utils/io.py`` 的编解码表本来就是这个策略（.json 走 json、.json5 走
+    json5），这里只是把同一条规则补到 core 库里。
+    """
+
+    try:
+        return json.loads(text)
+    except ValueError:
+        return json5.loads(text)
+
+
 def _read_json_dict(path: Path, context: _LoadContext | None = None) -> dict[str, Any]:
     if context is not None:
         context.dependency_paths.add(path.resolve())
 
     try:
-        with path.open("r", encoding="utf-8") as file:
-            data = json5.load(file)
+        data = parse_json_text(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise MaaFWInterfaceLoadError(f"找不到 interface 配置文件: {path}") from exc
     except Exception as exc:

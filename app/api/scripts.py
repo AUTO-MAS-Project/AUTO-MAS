@@ -35,7 +35,7 @@ from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
-    load_interface_model,
+    load_interface_model_cached,
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
     build_interface_preview_data,
@@ -690,7 +690,7 @@ async def preview_maafw_interface(
 
     try:
         root_path = Path(payload.path).resolve()
-        interface = await asyncio.to_thread(load_interface_model, root_path)
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
         preview = await asyncio.to_thread(
             build_interface_preview_data,
             root_path,
@@ -757,7 +757,7 @@ async def update_maafw_project(
         )
 
     try:
-        interface = await asyncio.to_thread(load_interface_model, root_path)
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
     except MaaFWInterfaceLoadError as exc:
         return MaaFWProjectUpdateOut(
             code=400, status="error", message=f"MaaFW interface 读取失败: {exc}"

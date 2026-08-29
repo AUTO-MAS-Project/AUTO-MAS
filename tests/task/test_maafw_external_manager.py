@@ -1314,7 +1314,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self._make_project(root)
             original = self._snapshot(root / "config")
             first, runtime, script_uid = await self._make_manager(root)
-            with patch.object(manager_module, "Config", runtime), patch.object(manager_module, "detect_shell_family", return_value=ShellFamily.MFAAVALONIA), patch.object(manager_module, "load_interface_model", return_value=_interface()):
+            with patch.object(manager_module, "Config", runtime), patch.object(manager_module, "detect_shell_family", return_value=ShellFamily.MFAAVALONIA), patch.object(manager_module, "load_interface_model_cached", return_value=_interface()):
                 self.assertEqual(await first.check(), "Pass")
                 first._backup_project_config()
             (root / "config" / "new-by-crash.json").write_text("{}", encoding="utf-8")
@@ -2753,7 +2753,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         stack.enter_context(
             patch.object(
                 manager_module,
-                "load_interface_model",
+                "load_interface_model_cached",
                 return_value=interface if interface is not None else _interface(),
             )
         )
@@ -2928,7 +2928,7 @@ class MaaFWCheckInstanceLocationTest(unittest.TestCase):
                 manager_module, "detect_shell_family", return_value=ShellFamily.MFAAVALONIA
             ),
             patch.object(
-                manager_module, "load_interface_model", return_value=_interface()
+                manager_module, "load_interface_model_cached", return_value=_interface()
             ),
         ):
             result = await manager.check()

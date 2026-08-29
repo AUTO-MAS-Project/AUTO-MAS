@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-import json5
 from pydantic import BaseModel, Field
 
+from .loader import parse_json_text
 from .models import (
     PRETASK_TASK_ENTRY,
     SUPPORTED_OPTION_TYPES,
@@ -334,8 +334,9 @@ def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, 
         return {}
 
     try:
-        with language_path.open("r", encoding="utf-8") as file:
-            data = json5.load(file)
+        # 走 loader 的 json→json5 快路径：语言文件是 preview 里最贵的一项，
+        # MaaEnd 那份 108KB 的 zh_cn.json 用 json5 要 392ms，用 json 只要 0.3ms。
+        data = parse_json_text(language_path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}

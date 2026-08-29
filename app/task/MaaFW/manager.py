@@ -36,7 +36,7 @@ from app.task.MaaFW.tools.controller.game_lifecycle import (
     validate_game_launch_spec,
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface import (
-    load_interface_model,
+    load_interface_model_cached,
     normalize_task_options_by_task,
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
@@ -449,7 +449,7 @@ class MaaFWManager(TaskExecuteBase):
             )
 
         try:
-            interface_model = load_interface_model(project_root)
+            interface_model = load_interface_model_cached(project_root)
         except Exception as exc:
             return f"MaaFW interface 读取失败：{exc}"
 

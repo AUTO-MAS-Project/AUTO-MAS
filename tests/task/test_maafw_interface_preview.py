@@ -100,7 +100,7 @@ class MaaFWInterfacePreviewTest(unittest.TestCase):
 
     def test_preview_api_maps_unexpected_error_to_safe_envelope(self) -> None:
         with patch(
-            "app.api.scripts.load_interface_model",
+            "app.api.scripts.load_interface_model_cached",
             side_effect=RuntimeError("internal detail"),
         ):
             result = asyncio.run(
