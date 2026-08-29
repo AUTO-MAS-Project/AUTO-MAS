@@ -30,6 +30,7 @@ from .Okww import OkwwManager
 from .OkNte import OkNteManager
 from .HSR import HSRManager
 from .MaaFW.manager import MaaFWManager
+from .MaaFW.embedded_manager import MaaFWEmbeddedManager
 
 __all__ = [
     "MaaManager",
@@ -41,4 +42,5 @@ __all__ = [
     "OkNteManager",
     "HSRManager",
     "MaaFWManager",
+    "MaaFWEmbeddedManager",
 ]

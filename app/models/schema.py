@@ -1853,8 +1853,10 @@ class MaaFWConfig_Update(BaseModel):
 
 
 class MaaFWConfig_Run(BaseModel):
-    Engine: Literal["external"] = Field(
-        default="external", description="MaaFW 运行引擎"
+    Engine: Literal["external", "embedded"] = Field(
+        default="external",
+        description="MaaFW 运行引擎：external 启动项目自己的 UI shell；"
+        "embedded 由 MAS 进程内 runner 直接驱动（实验性，未经真机验证）",
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")

@@ -139,7 +139,7 @@ export type { MaaFWConfig_Info } from './models/MaaFWConfig_Info';
 export type { MaaFWConfig_Managed } from './models/MaaFWConfig_Managed';
 export type { MaaFWConfig_ManagedRemote } from './models/MaaFWConfig_ManagedRemote';
 export type { MaaFWConfig_ManagedRuntime } from './models/MaaFWConfig_ManagedRuntime';
-export type { MaaFWConfig_Run } from './models/MaaFWConfig_Run';
+export { MaaFWConfig_Run } from './models/MaaFWConfig_Run';
 export type { MaaFWConfig_Selection } from './models/MaaFWConfig_Selection';
 export type { MaaFWConfig_Update } from './models/MaaFWConfig_Update';
 export type { MaaFWControlCapabilitiesInfo } from './models/MaaFWControlCapabilitiesInfo';

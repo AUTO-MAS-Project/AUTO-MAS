@@ -4,9 +4,9 @@
 /* eslint-disable */
 export type MaaFWConfig_Run = {
     /**
-     * MaaFW 运行引擎
+     * MaaFW 运行引擎：external 启动项目自己的 UI shell；embedded 由 MAS 进程内 runner 直接驱动（实验性，未经真机验证）
      */
-    Engine?: string;
+    Engine?: MaaFWConfig_Run.Engine;
     /**
      * 代理次数限制
      */
@@ -32,4 +32,13 @@ export type MaaFWConfig_Run = {
      */
     MonthlyOnceTasks?: (string | Array<string> | null);
 };
+export namespace MaaFWConfig_Run {
+    /**
+     * MaaFW 运行引擎：external 启动项目自己的 UI shell；embedded 由 MAS 进程内 runner 直接驱动（实验性，未经真机验证）
+     */
+    export enum Engine {
+        EXTERNAL = 'external',
+        EMBEDDED = 'embedded',
+    }
+}
 

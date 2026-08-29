@@ -2549,9 +2549,14 @@ class MaaFWConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
-        ## 运行引擎，当前仅支持外部运行（manager.py 的启动前校验依赖该值）
+        ## 运行引擎，决定「谁来跑」（三层规划 §5 的两个正交轴之一）：
+        ## external = 第一层，启动项目自己的 UI shell 让它自运行，已真机验证；
+        ## embedded = 第二层，MAS 在自己的 worker 进程内加载项目 DLL 直接驱动。
+        ## 默认保持 external —— embedded 尚未经过真机验证。
+        ## task_manager 按本值分派 MaaFWManager / MaaFWEmbeddedManager，
+        ## 两个 manager 各自的启动前校验也依赖该值。
         self.Run_Engine = ConfigItem(
-            "Run", "Engine", "external", OptionsValidator(["external"])
+            "Run", "Engine", "external", OptionsValidator(["external", "embedded"])
         )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
