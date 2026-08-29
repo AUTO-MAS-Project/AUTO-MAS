@@ -29,7 +29,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig

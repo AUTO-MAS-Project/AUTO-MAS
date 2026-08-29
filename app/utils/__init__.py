@@ -34,7 +34,6 @@ from .security import (
 )
 
 _LAZY_EXPORTS = {
-    "ImageUtils": (".ImageUtils", "ImageUtils"),
     "LogMonitor": (".LogMonitor", "LogMonitor"),
     "strptime": (".LogMonitor", "strptime"),
     "ProcessManager": (".ProcessManager", "ProcessManager"),

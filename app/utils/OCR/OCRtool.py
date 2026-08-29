@@ -10,14 +10,7 @@ from app.utils.platform import window as platform_window
 from app.utils.exception import (
     WindowsNotFoundException,
     WindowsNotFocusException,
-    OCRNotFoundTitleException,
-    ADBFileNotFoundException,
-    ADBCommandFailedException,
-    ADBDeviceNotFoundException,
-    ADBConnectionFailedException,
-    ADBTimeoutException,
-    ADBScreenshotException,
-    ImageProcessException
+    OCRNotFoundTitleException
 )
 
 # OCR入门指南！

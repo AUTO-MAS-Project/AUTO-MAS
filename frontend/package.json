@@ -66,7 +66,6 @@
     }
   },
   "dependencies": {
-    "@inspira-ui/plugins": "^0.0.2",
     "@sentry/electron": "7.16.0",
     "@sentry/vue": "10.67.0",
     "adm-zip": "^0.5.16",
@@ -88,8 +87,6 @@
     "@types/node": "22.17.1",
     "@types/qrcode": "1.5.5",
     "@types/three": "^0",
-    "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/tsconfig": "^0.7.0",
     "@vueuse/core": "^13.9.0",

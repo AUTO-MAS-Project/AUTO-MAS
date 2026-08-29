@@ -37,7 +37,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4,UTC8
+from app.utils.constants import UTC4
 from .tools import push_notification
 from app.task.general.tools import execute_script_task
 from .tools.notify import M9ALogAnalyzer

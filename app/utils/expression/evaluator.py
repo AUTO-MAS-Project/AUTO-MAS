@@ -24,7 +24,6 @@ from .parser import (
     FunctionCall,
     LiteralSegment,
     RegexSegment,
-    Segment,
     parse,
 )
 
