@@ -6,7 +6,12 @@
           <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <span class="breadcrumb-current">用户配置</span>
+          <router-link :to="`/scripts/${scriptId}/edit/maafw`" class="breadcrumb-link">
+            {{ scriptName || 'MaaFramework 项目' }}
+          </router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          <span class="breadcrumb-current">{{ isEdit ? '编辑用户' : '添加用户' }}</span>
         </a-breadcrumb-item>
       </a-breadcrumb>
       <Transition name="save-chip-fade">
@@ -48,6 +53,9 @@ import {
 defineProps<{
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
   saveErrorMessage: string
+  scriptId: string
+  scriptName: string
+  isEdit: boolean
 }>()
 
 const emit = defineEmits<{
@@ -79,6 +87,14 @@ const emit = defineEmits<{
   color: var(--ant-color-text-secondary);
   text-decoration: none;
   white-space: nowrap;
+  /* 脚本名可能很长，中间那级要能收缩，否则会把「返回」按钮挤出可视区 */
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb-link:hover {
+  color: var(--ant-color-primary);
 }
 
 .breadcrumb-current {

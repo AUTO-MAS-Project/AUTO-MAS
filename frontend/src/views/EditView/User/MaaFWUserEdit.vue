@@ -3,6 +3,9 @@
     <MaaFWUserEditHeader
       :save-status="saveStatus"
       :save-error-message="saveErrorMessage"
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
       @cancel="handleCancel"
     />
 
