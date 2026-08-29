@@ -49,7 +49,9 @@ from app.task.MaaFW.tools.external import (
     build_instance_config,
     build_option_entries,
     detect_shell_family,
+    get_shell_log_profile,
     resolve_controller_code,
+    resolve_log_relpath,
 )
 from app.task.MaaFW.tools.notify import push_notification
 from app.utils import LogMonitor, ProcessManager, get_logger
@@ -512,7 +514,9 @@ class MaaFWManager(TaskExecuteBase):
         self.task_selections = []
         self.user_config = user_config
         self.runnable_user_uids = runnable_uids
-        self.log_path = project_root / "logs" / f"log-{datetime.now():%Y%m%d}.log"
+        # check() 阶段的日志路径只用于「路径已初始化」这一前置守卫；真正监控哪个
+        # 文件由 _run_external 按开跑时刻重算（见 _resolve_log_path）。
+        self.log_path = self._resolve_log_path()
         return "Pass"
 
     @staticmethod
@@ -899,6 +903,11 @@ class MaaFWManager(TaskExecuteBase):
             or self.log_path is None
         ):
             raise RuntimeError("MaaFW 外壳路径、实例或日志路径未初始化")
+        # 按「本用户开跑的时刻」重算日志路径：队列跨零点后外壳会写到新的
+        # log-<新日期>.log，而此前整轮沿用 check() 那一次算出的旧文件名，
+        # LogMonitor 只会盯着昨天那个不再增长的文件空转 → last_log_at 冻结 →
+        # RunTimeLimit 分钟后把一次正在正常干活的运行误判成超时并杀掉外壳。
+        self.log_path = self._resolve_log_path()
         self.process_manager = ProcessManager()
         self.log_monitor = LogMonitor((1, 24), _LOG_TIME_FORMAT, self.check_log)
         self.terminal_event.clear()
@@ -1246,6 +1255,70 @@ class MaaFWManager(TaskExecuteBase):
                 json.dumps(records, ensure_ascii=False),
             )
 
+    def _resolve_log_path(self) -> Path | None:
+        """按当前时刻解析外壳日志文件路径。
+
+        走 ``profile.resolve_log_relpath``，让「日志布局」这件事只有画像表一个
+        事实来源；MFAAvalonia 是按日期确定的 ``logs/log-%Y%m%d.log``，
+        MXU 那类需启动后 glob 的外壳返回 ``None``（本层尚未接线）。
+
+        必须**按用户开跑时刻**调用，不能整轮复用 check() 那一次的结果：队列跨零点
+        后外壳写的是新日期的文件。
+        """
+
+        if self.project_root is None:
+            return None
+        profile = get_shell_log_profile(ShellFamily.MFAAVALONIA)
+        if profile is None:
+            return None
+        relpath = resolve_log_relpath(profile, datetime.now())
+        return None if relpath is None else self.project_root / relpath
+
+    async def _mark_user_run_crashed(self, index: int, exc: Exception) -> None:
+        """单个用户运行中途抛异常时，把失败收敛到该用户身上。
+
+        此前用户循环没有任何 try/except：``_write_runtime_config`` 的
+        ``RuntimeError`` / ``ShellMappingError`` / ``PermissionError``、或
+        ``_run_external`` 起进程的 ``OSError`` 一旦逃逸，就会中止**剩余全部用户**
+        并落进 ``on_crash``，未跑过的用户再被 ``final_task`` 从「等待」统一改判
+        「异常」。这与 ``_run_user`` 内已有的三条「单用户失败只跳过该用户」出口
+        自相矛盾，本函数把两者对齐。
+
+        刻意不走 ``_mark_terminal``：未登记的 kind 按优先级 1 处理、无法覆盖已
+        存在的 ``terminal_kind``，异常若发生在终态已定之后会被静默丢弃；而且那
+        一组函数经两轮加固并有变异测试守护，不应为本路径改动。这里直接写用户级
+        状态与 ``LogRecord``，让历史记录与任务报告都能看到这次失败。
+        """
+
+        user_item = (
+            self.script_info.user_list[index]
+            if index < len(self.script_info.user_list)
+            else self.current_user_item
+        )
+        logger.opt(exception=True).warning(
+            f"MaaFW 用户 {getattr(user_item, 'name', '?')} 运行异常，"
+            f"跳过该用户继续后续队列：{exc}"
+        )
+        if user_item is None:
+            return
+
+        user_item.status = "异常"
+        if self.current_log is None:
+            self.current_log = LogRecord()
+            start_time = self.log_start_time or datetime.now()
+            user_item.log_record[start_time] = self.current_log
+        self.current_log.status = f"MaaFW 用户运行异常：{exc}"
+
+        with suppress(Exception):
+            if self.current_user_config is not None:
+                await self.current_user_config.set("Data", "LastProxyStatus", "失败")
+        with suppress(Exception):
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"MaaFW 用户 {user_item.name} 运行异常：{exc}"},
+            )
+
     async def _mark_run_started(self) -> None:
         """写入用户级本次运行的 LastProxyDate / ProxyTimes / LastProxyStatus。"""
 
@@ -1281,8 +1354,17 @@ class MaaFWManager(TaskExecuteBase):
             with suppress(Exception):
                 await self.process_manager.kill()
         if self.process_started and self.exe_path is not None:
-            with suppress(Exception):
-                await System.kill_process(self.exe_path)
+            # 按路径杀是全产品统一约定（MAA / M9A / HSR / General 皆同），也是本层
+            # 唯一的孤儿外壳兜底，行为不改；但返回值此前被整段丢弃，下一个用户可能
+            # 在外壳还没停住的情况下开跑，且无迹可循。这里只补可观测性。
+            try:
+                if not await System.kill_process(self.exe_path):
+                    logger.warning(
+                        f"MaaFW 用户间收尾未能确认外壳已停止：{self.exe_path}，"
+                        "下一个用户可能与残留外壳争用同一份配置"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.opt(exception=True).warning(f"MaaFW 用户间收尾杀进程异常：{exc}")
         await self._teardown_launch_preparation()
 
     # ---- 运行前启动准备：按控制器类型起模拟器 / PC 游戏 ----
@@ -1701,10 +1783,18 @@ class MaaFWManager(TaskExecuteBase):
             user_uids = list(self.runnable_user_uids)
             for index, uid in enumerate(user_uids):
                 self.script_info.current_index = index
-                await self._run_user(index, uid)
-                # 用户间：先结束当前外壳；最后一个用户的收尾交给 _cleanup。
-                if index < len(user_uids) - 1:
-                    await self._teardown_shell_between_users()
+                try:
+                    await self._run_user(index, uid)
+                # 只截 Exception：CancelledError 属 BaseException，必须继续外抛，
+                # 否则基类的取消路径与 _await_cleanup 的收尾保证一起失效。
+                except Exception as exc:  # noqa: BLE001
+                    await self._mark_user_run_crashed(index, exc)
+                finally:
+                    # 用户间：先结束当前外壳；最后一个用户的收尾交给 _cleanup。
+                    # 放在 finally 里，异常路径也不会把上一个用户的外壳 / 模拟器
+                    # 留给下一个用户。
+                    if index < len(user_uids) - 1:
+                        await self._teardown_shell_between_users()
         finally:
             # TaskExecuteBase 在取消路径也会等待 final_task；这里先做一次显式保护。
             await self._await_cleanup()

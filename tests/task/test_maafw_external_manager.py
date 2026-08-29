@@ -154,6 +154,8 @@ class _FakeProcessManager:
     instances = []
     next_running = True
     fail_open = False
+    # 只让第 N 次 open_process 抛错（N 从 0 起），用于「一个用户炸了、队列继续」。
+    fail_open_at_index = None
 
     def __init__(self):
         self.open_calls = []
@@ -166,6 +168,10 @@ class _FakeProcessManager:
         self.open_calls.append((args, kwargs))
         if self.fail_open:
             raise RuntimeError("fake open failed")
+        if self.__class__.fail_open_at_index is not None and (
+            self.__class__.instances.index(self) == self.__class__.fail_open_at_index
+        ):
+            raise RuntimeError("fake open failed for this user")
 
     async def is_running(self):
         return self.running
@@ -246,6 +252,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         _FakeProcessManager.instances = []
         _FakeProcessManager.next_running = True
         _FakeProcessManager.fail_open = False
+        _FakeProcessManager.fail_open_at_index = None
         _FakeLogMonitor.instances = []
         _FakeLogMonitor.callback_lines = None
         _FakeLogMonitor.pending_callback_lines = []
@@ -561,6 +568,144 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 )
             )
 
+    # ---- 问题 7：日志路径必须按开跑时刻重算（跨零点） ----
+
+    def test_log_path_is_recomputed_per_user_run(self) -> None:
+        asyncio.run(self._test_log_path_is_recomputed_per_user_run())
+
+    async def _test_log_path_is_recomputed_per_user_run(self) -> None:
+        """队列跨零点后，后一个用户必须监控新日期的日志文件。
+
+        此前 log_path 在 check() 里按当天日期算死一次、整轮复用：零点后外壳写
+        log-<新日期>.log，而 LogMonitor 还盯着昨天那个不再增长的文件空转，
+        last_log_at 冻结，最终按 RunTimeLimit 误判超时并杀掉正在干活的外壳。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "零点前", "tasks": ["启动游戏"]},
+                    {"Name": "零点后", "tasks": ["启动游戏"]},
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+
+            real_datetime = manager_module.datetime
+            # 调用序：check() 一次、两个用户各一次。前两次仍是 28 日，
+            # 第三次（第二个用户开跑）跨到 29 日。
+            calls = {"n": 0}
+            current = {"day": date(2026, 8, 28)}
+
+            class _Clock(real_datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    stamp = real_datetime.now(tz)
+                    return stamp.replace(
+                        year=current["day"].year,
+                        month=current["day"].month,
+                        day=current["day"].day,
+                    )
+
+            original_resolve = MaaFWManager._resolve_log_path
+
+            def _resolve_and_advance(self):
+                calls["n"] += 1
+                if calls["n"] >= 3:
+                    current["day"] = date(2026, 8, 29)
+                return original_resolve(self)
+
+            with self._patched_runtime(runtime, manager, self._no_sleep), patch.object(
+                manager_module, "datetime", _Clock
+            ), patch.object(MaaFWManager, "_resolve_log_path", _resolve_and_advance):
+                await manager.main_task()
+                await manager.final_task()
+
+            monitored = [str(call[0]) for call in
+                         [inst.start_calls[0] for inst in _FakeLogMonitor.instances]]
+            self.assertEqual(len(monitored), 2)
+            self.assertIn("log-20260828.log", monitored[0])
+            self.assertIn("log-20260829.log", monitored[1])
+
+    # ---- 问题 6：单个用户抛异常不得中止剩余队列 ----
+
+    def test_user_exception_does_not_abort_remaining_users(self) -> None:
+        asyncio.run(self._test_user_exception_does_not_abort_remaining_users())
+
+    async def _test_user_exception_does_not_abort_remaining_users(self) -> None:
+        """第一个用户起进程抛异常，第二个用户仍须照常执行。
+
+        此前用户循环没有 try/except：异常直接穿透 main_task 落进 on_crash，
+        剩余用户一个都不跑，还会被 final_task 从「等待」统一改判「异常」——
+        与 _run_user 内已有的「单用户失败只跳过该用户」三条出口自相矛盾。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            before = self._snapshot(root / "config")
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "先炸的用户", "tasks": ["启动游戏"]},
+                    {"Name": "后续用户", "tasks": ["启动游戏"]},
+                ],
+            )
+            _FakeProcessManager.fail_open_at_index = 0
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            statuses = {u.name: u.status for u in manager.script_info.user_list}
+            self.assertEqual(statuses["先炸的用户"], "异常")
+            self.assertEqual(statuses["后续用户"], "完成")
+            # 第二个用户确实起过自己的外壳。
+            self.assertEqual(len(_FakeProcessManager.instances), 2)
+            # 失败用户留下可检索的日志条目，历史记录与任务报告都看得到这次失败。
+            failed = next(u for u in manager.script_info.user_list if u.name == "先炸的用户")
+            self.assertTrue(failed.log_record)
+            self.assertIn(
+                "用户运行异常",
+                next(iter(failed.log_record.values())).status,
+            )
+            # 整体判异常，且项目配置照常还原。
+            self.assertEqual(manager.script_info.status, "异常")
+            self.assertEqual(self._snapshot(root / "config"), before)
+
+    def test_teardown_runs_even_when_user_raises(self) -> None:
+        asyncio.run(self._test_teardown_runs_even_when_user_raises())
+
+    async def _test_teardown_runs_even_when_user_raises(self) -> None:
+        """异常路径也必须做用户间收尾，不能把上一个用户的外壳留给下一个。
+
+        因此 _teardown_shell_between_users 放在 finally 而不是 except 之后，
+        更不能用裸 continue 跳过它。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "先炸的用户", "tasks": ["启动游戏"]},
+                    {"Name": "后续用户", "tasks": ["启动游戏"]},
+                ],
+            )
+            _FakeProcessManager.fail_open_at_index = 0
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            # 失败用户的外壳进程也被收尾杀掉过（用户间 teardown 生效）。
+            self.assertEqual(_FakeProcessManager.instances[0].kill_calls, 1)
+
     # ---- 问题 4：没排任务的用户不得拖垮整个脚本 ----
 
     def test_user_without_tasks_is_skipped_and_others_still_run(self) -> None:
@@ -855,9 +1000,13 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             manager, runtime, _ = await self._make_manager(root)
             _FakeProcessManager.fail_open = True
             with self._patched_runtime(runtime, manager, self._no_sleep):
-                with self.assertRaises(RuntimeError):
-                    await manager.main_task()
+                # 起进程失败的异常现在被收敛到该用户身上，不再穿透 main_task
+                # 中止整个队列（多用户隔离见
+                # test_user_exception_does_not_abort_remaining_users）。
+                await manager.main_task()
                 await manager.final_task()
+            self.assertEqual(manager.script_info.user_list[0].status, "异常")
+            self.assertEqual(manager.script_info.status, "异常")
             self.assertEqual(self._snapshot(root / "config"), before)
             self.assertEqual(_FakeProcessManager.instances[0].kill_calls, 1)
             self.assertEqual(_FakeLogMonitor.instances[0].stop_calls, 1)
