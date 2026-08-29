@@ -55,7 +55,7 @@ export function useMaaFWUpdateApi() {
     }
 
     if (payload.code !== 200) {
-      throw new Error(payload.message || 'MaaFW 项目更新请求失败')
+      throw new Error(payload.message || 'MFW 项目更新请求失败')
     }
     return { ...EMPTY_DATA, ...(payload.data ?? {}), message: payload.message }
   }

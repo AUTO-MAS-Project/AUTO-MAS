@@ -85,7 +85,7 @@ const routes = [
     path: '/scripts/:id/edit/maafw',
     name: 'MaaFWScriptEdit',
     component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
-    meta: { title: '编辑MaaFW脚本' },
+    meta: { title: '编辑MFW脚本' },
   },
   {
     path: '/scripts/:id/edit/hsr',
@@ -145,7 +145,7 @@ const routes = [
     path: '/scripts/:scriptId/users/add/maafw',
     name: 'MaaFWUserAdd',
     component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
-    meta: { title: '添加 MaaFW 用户' },
+    meta: { title: '添加 MFW 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/hsr',
@@ -175,7 +175,7 @@ const routes = [
     path: '/scripts/:scriptId/users/:userId/edit/maafw',
     name: 'MaaFWUserEdit',
     component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
-    meta: { title: '编辑 MaaFW 用户' },
+    meta: { title: '编辑 MFW 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/hsr',

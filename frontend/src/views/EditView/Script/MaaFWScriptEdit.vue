@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/maafw.png" alt="MaaFW" class="breadcrumb-logo" />
+            <img src="../../../assets/maafw.png" alt="MFW" class="breadcrumb-logo" />
             {{ projectDisplayName }} 项目配置
           </div>
         </a-breadcrumb-item>
@@ -27,7 +27,7 @@
   <div class="script-edit-content">
     <a-card :title="`${projectDisplayName} 项目配置`" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="geekblue" class="type-tag"> MaaFW（外部运行）</a-tag>
+        <a-tag color="geekblue" class="type-tag"> MFW（外部运行）</a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -174,7 +174,7 @@ const rules = {
       validator: () =>
         maafwConfig.Info.Path
           ? Promise.resolve()
-          : Promise.reject(new Error('请选择 MaaFramework 项目实际目录并读取 interface')),
+          : Promise.reject(new Error('请选择 MFW 项目实际目录并读取 interface')),
       trigger: 'blur',
     },
   ],
@@ -238,7 +238,7 @@ const projectDisplayName = computed(() => {
     maafwConfig.Info.Name,
   ]
   return (
-    candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MaaFramework'
+    candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
   )
 })
 

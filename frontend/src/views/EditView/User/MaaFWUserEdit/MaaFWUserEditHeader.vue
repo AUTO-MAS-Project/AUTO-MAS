@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/maafw`" class="breadcrumb-link">
-            {{ scriptName || 'MaaFramework 项目' }}
+            {{ scriptName || 'MFW' }}
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>

@@ -9,7 +9,7 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择 MaaFW Controller，决定使用 ADB、Win32 等控制方式">
+            <a-tooltip title="选择 MFW Controller，决定使用 ADB、Win32 等控制方式">
               <span class="form-label">
                 控制方式
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -39,7 +39,7 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择 MaaFW Resource，留空时自动选择匹配当前控制方式的第一个 Resource">
+            <a-tooltip title="选择 MFW Resource，留空时自动选择匹配当前控制方式的第一个 Resource">
               <span class="form-label">
                 游戏资源
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -75,7 +75,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip title="MaaFW ADB controller 运行时使用该模拟器配置">
+                <a-tooltip title="MFW ADB controller 运行时使用该模拟器配置">
                   <span class="form-label">
                     模拟器
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -104,7 +104,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip title="选择模拟器的具体实例，运行时会传递给 MaaFW ADB controller">
+                <a-tooltip title="选择模拟器的具体实例，运行时会传递给 MFW ADB controller">
                   <span class="form-label">
                     模拟器实例
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -317,7 +317,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip title="用于附加 MaaFW 的实际游戏进程；可与启动目标不同">
+                <a-tooltip title="用于附加 MFW 的实际游戏进程；可与启动目标不同">
                   <span class="form-label">
                     目标进程路径
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />

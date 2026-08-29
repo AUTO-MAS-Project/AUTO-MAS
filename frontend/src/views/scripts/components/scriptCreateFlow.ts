@@ -59,7 +59,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
     value: 'MaaEnd',
     title: 'MaaEnd 脚本',
-    description: 'MaaFramework 专项适配脚本',
+    description: 'MFW 专项适配脚本',
     keywords: ['maaend', 'maaframework'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaEnd,
@@ -74,8 +74,8 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   },
   {
     value: 'MaaFW',
-    title: 'MaaFW 脚本',
-    description: 'MaaFramework 项目外部运行脚本',
+    title: 'MFW 脚本',
+    description: 'MFW 项目外部运行脚本',
     keywords: ['maafw', 'maaframework', 'framework', '外部运行'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaFW,

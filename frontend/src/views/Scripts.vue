@@ -322,7 +322,7 @@
               <img
                 v-else-if="script.type === 'MaaFW'"
                 src="@/assets/maafw.png"
-                alt="MaaFW"
+                alt="MFW"
                 class="type-icon"
               />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
@@ -709,7 +709,7 @@ const scriptTypeDisplayLabelMap: Record<ScriptType, string> = {
   SRC: 'SRC脚本',
   MaaEnd: 'MaaEnd脚本',
   M9A: 'M9A脚本',
-  MaaFW: 'MaaFW脚本',
+  MaaFW: 'MFW脚本',
   HSR: 'HSR脚本',
 }
 

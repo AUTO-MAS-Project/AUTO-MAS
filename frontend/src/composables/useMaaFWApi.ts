@@ -159,14 +159,14 @@ export function useMaaFWApi() {
       })
 
       if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || '读取 MaaFW interface 失败')
+        throw new Error(response.message || '读取 MFW interface 失败')
       }
 
       return normalizePreviewData(response.data as MaaFWInterfacePreviewData)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '读取 MaaFW interface 失败'
+      const errorMsg = err instanceof Error ? err.message : '读取 MFW interface 失败'
       error.value = errorMsg
-      logger.error(`读取 MaaFW interface 失败: ${errorMsg}`)
+      logger.error(`读取 MFW interface 失败: ${errorMsg}`)
       if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }

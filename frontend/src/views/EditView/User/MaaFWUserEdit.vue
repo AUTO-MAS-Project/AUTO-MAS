@@ -21,7 +21,7 @@
               class="title-logo"
               @error="handleProjectIconError"
             />
-            <span>{{ scriptName || 'MaaFramework 项目' }}</span>
+            <span>{{ scriptName || 'MFW' }}</span>
           </div>
         </template>
 
@@ -772,7 +772,7 @@ const loadScriptInfo = async () => {
       return
     }
     if (script.type !== 'MaaFW') {
-      message.error('脚本类型不是 MaaFW')
+      message.error('脚本类型不是 MFW')
       handleCancel()
       return
     }
@@ -860,7 +860,7 @@ const loadUserData = async () => {
 
 const reloadInterface = async (showMessage = true) => {
   if (!scriptPath.value) {
-    if (showMessage) message.warning('请先在脚本页导入 MaaFW 项目')
+    if (showMessage) message.warning('请先在脚本页导入 MFW 项目')
     return
   }
 

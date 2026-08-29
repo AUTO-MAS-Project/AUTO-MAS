@@ -27,7 +27,7 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip title="选择包含 interface.json 的 MaaFramework 项目目录">
+            <a-tooltip title="选择包含 interface.json 的 MFW 项目目录">
               <span class="form-label">
                 本地项目目录
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -37,7 +37,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.path"
-              placeholder="请选择 MaaFramework 项目实际目录"
+              placeholder="请选择 MFW 项目实际目录"
               size="large"
               class="path-input"
               readonly
@@ -95,14 +95,14 @@
         <a-alert
           type="info"
           show-icon
-          message="正在加载 MaaFW 项目接口"
+          message="正在加载 MFW 接口"
           description="请稍候，正在解析 interface.json 中的控制器、资源、任务和选项定义"
         />
       </a-spin>
     </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
-      <h3>选择 MaaFW 项目</h3>
+      <h3>选择 MFW 项目</h3>
       <p>选择包含 interface.json 的项目目录，读取控制器、资源和任务。</p>
       <a-button
         type="primary"
