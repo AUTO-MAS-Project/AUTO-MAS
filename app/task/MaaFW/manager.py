@@ -1162,7 +1162,11 @@ class MaaFWManager(TaskExecuteBase):
             base=base,
             instance_id=default_instance_id(),
         )
-        updated = append_instance(container, entry, set_active=True)
+        # 同名就地替换：MXU 的 --instance 按显示名匹配，重名时取先出现的那个。
+        # 每轮都追加一个叫 MAS 的新实例，只要有残留就会被匹配到旧的。
+        updated = append_instance(
+            container, entry, set_active=True, replace_same_name=True
+        )
         atomic_write_maafw_config(self.mxu_container_path, updated, journal=False)
         self.mxu_instance_id = str(entry.get("id") or "")
         logger.info(
@@ -1283,7 +1287,16 @@ class MaaFWManager(TaskExecuteBase):
         self.last_log_at = datetime.now()
         self.log_start_time = datetime.now()
 
-        await self.process_manager.open_process(*self._build_launch_argv())
+        # 自退型外壳（MXU）的运行日志走进程 stdout，故必须接管这条流。
+        # MXU 的 log_to_stdout 命令注释写得很直白：「将前端 UI 日志转发到后端
+        # stdout，便于终端调试和第三方调度工具读取」—— 它是专门给外部调度器
+        # 准备的通道，比盯文件可靠得多：不受日志改名、启动时 auto-clear 清档、
+        # 两套日志子系统并存的影响，流结束本身还直接就是「跑完了」。
+        stream_stdout = profile.exits_after_run
+        await self.process_manager.open_process(
+            *self._build_launch_argv(),
+            **({"stdout": asyncio.subprocess.PIPE} if stream_stdout else {}),
+        )
         self.process_started = True
         self.process_pid = self.process_manager.main_pid
         logger.info(
@@ -1296,6 +1309,15 @@ class MaaFWManager(TaskExecuteBase):
             return
 
         await self._arrange_windows_after_launch()
+
+        if stream_stdout:
+            process = self.process_manager.main_process
+            if isinstance(process, asyncio.subprocess.Process):
+                await self.log_monitor.start_monitor_process(process, "stdout")
+                self.monitor_started = True
+                await self._wait_for_terminal()
+                return
+            logger.warning("MaaFW 未能接管外壳 stdout，回退到日志文件监控")
 
         if self.log_path is None or not self.log_path.is_file():
             resolved = await self._await_shell_log_path()
@@ -1422,9 +1444,11 @@ class MaaFWManager(TaskExecuteBase):
 
         MFAAvalonia 的 UI 日志打的是任务**显示名**（「开始任务：启动游戏」），
         走受保护的 _selected_tasks_absent_from。
-        MXU 打的是 **entry**（「任务[0]: entry=启动游戏」），而两者常常不同——
-        实测 MaaYYs 只有 10/27、MaaEnd 只有 6/41 的 name 与 entry 相同，
-        照显示名匹配会让每次运行都误判 tasks_missing。
+
+        MXU 两种都会遇到：stdout 上是显示名（「任务开始: CreditShoppingN2」），
+        落盘那份打的是 entry（「任务[0]: entry=CreditShoppingMain」）。两者常常
+        不同——实测 MaaYYs 只有 10/27、MaaEnd 只有 6/41 的 name 与 entry 相同——
+        所以只认一种都会误判，走两者取或的版本。
         """
 
         if self.shell_family is ShellFamily.MXU:
@@ -1432,10 +1456,12 @@ class MaaFWManager(TaskExecuteBase):
         return self._selected_tasks_absent_from(log_text)
 
     def _selected_entries_absent_from(self, log_text: str) -> list[str]:
-        """选中任务里 entry 从未在日志中出现过的那些（MXU 用）。
+        """选中任务里 entry 与显示名**都**没在日志中出现过的那些（MXU 用）。
 
         与显示名版同构：只回答「选中的事有没有被尝试」，不解析逐任务成败。
-        entry 取自 interface；取不到就退回显示名，不静默跳过。
+        两者取或，是因为 MXU 的两个日志来源用的不是同一种标识：stdout 打显示名
+        （`任务开始: X`），落盘那份打 entry（`任务[0]: entry=Y`）。entry 取自
+        interface；取不到就只比显示名，不静默跳过。
         """
 
         entry_index: dict[str, str] = {}
@@ -1862,6 +1888,7 @@ class MaaFWManager(TaskExecuteBase):
                 )
                 if picked is not None:
                     logger.info(f"MaaFW 已定位外壳日志：{picked}")
+                    self._apply_fallback_log_timestamps()
                     return log_dir / picked
             if fallback is not None and fallback.is_file():
                 logger.info(f"MaaFW 已定位外壳日志（兜底）：{fallback.name}")
@@ -1877,11 +1904,13 @@ class MaaFWManager(TaskExecuteBase):
         return None
 
     def _apply_fallback_log_timestamps(self) -> None:
-        """落到兜底日志时，把 LogMonitor 的时间切片换成那份文件的格式。
+        """落到日志文件时，把 LogMonitor 的时间切片换成文件那套格式。
 
-        两份日志出自不同子系统，行首格式不同。不换的话首选格式的切片在兜底
-        文件上一行都解析不出来，``if_log_start`` 永远为假 —— 外壳明明在跑，
-        MAS 却读不到任何一行。
+        自退型外壳的首选来源是进程 stdout，行首是 `[日期 时间.毫秒]`；落盘的那份
+        由另一个子系统写，行首无方括号无毫秒。不换切片的话一行都解析不出来，
+        ``if_log_start`` 永远为假 —— 外壳明明在跑，MAS 却读不到任何一行。
+
+        画像没登记这对字段的家族（MFAAvalonia）是空操作。
         """
 
         profile = self.log_profile

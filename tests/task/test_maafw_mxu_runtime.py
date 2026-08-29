@@ -116,6 +116,100 @@ class MxuRuntimeConfigTest(unittest.TestCase):
         self.assertNotIn("preActions", new)
 
 
+class MxuInstanceUpsertTest(unittest.TestCase):
+    """同名实例必须就地替换，不能越追加越多。
+
+    MXU 的 `--instance` 按**显示名**匹配，重名时取先出现的那个。MAS 每轮都用
+    固定名 MAS 追加实例，只要上一轮的残留还在，外壳匹配到的就是旧那个，跑的是
+    上一轮的任务 —— 2026-08-29 真机实测：MAS 选的是 CreditShoppingN2，外壳却跑了
+    残留实例里的 SellProduct，外壳日志里的实例 id 正是那个残留 id。
+    """
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.root = Path(self._temp.name) / "project"
+        (self.root / "config").mkdir(parents=True)
+        self.container = self.root / "config" / "mxu-Demo.json"
+        # 容器里已经躺着一个上一轮留下的同名实例，任务是旧的。
+        self.original = {
+            "version": "1.0",
+            "instances": [
+                {
+                    "id": "keepme",
+                    "name": "用户配置",
+                    "controllerName": "Android",
+                    "resourceName": "官服3",
+                    "tasks": [{"id": "t1", "taskName": "打开游戏", "enabled": True}],
+                    "savedDevice": {"adbDeviceName": "雷电模拟器-LDPlayer"},
+                },
+                {
+                    "id": "stale-mas",
+                    "name": manager_module._MXU_INSTANCE_NAME,
+                    "controllerName": "Android",
+                    "resourceName": "官服3",
+                    "tasks": [{"id": "t9", "taskName": "寮三十捐材料", "enabled": True}],
+                },
+            ],
+            "settings": {"autoRunOnLaunch": False},
+            "lastActiveInstanceId": "keepme",
+        }
+        self.container.write_text(
+            json.dumps(self.original, ensure_ascii=False), encoding="utf-8"
+        )
+
+        self.manager = MaaFWManager.__new__(MaaFWManager)
+        self.manager.shell_family = ShellFamily.MXU
+        self.manager.interface_model = _interface()
+        self.manager.mxu_container_path = self.container
+        self.manager.project_root = self.root
+        self.manager.backup_path = self.root / "no-backup"
+        self.manager.controller_name = "Android"
+        self.manager.resource_name = "官服3"
+        self.manager.task_selections = [TaskSelection(name="打开游戏")]
+        self.manager.mxu_instance_id = None
+
+    def _written(self) -> dict:
+        return json.loads(self.container.read_text(encoding="utf-8"))
+
+    def test_same_name_instance_is_replaced_not_duplicated(self) -> None:
+        self.manager._write_runtime_config()
+        written = self._written()
+
+        named = [
+            i
+            for i in written["instances"]
+            if i["name"] == manager_module._MXU_INSTANCE_NAME
+        ]
+        # 只能有一个候选，否则 --instance 会匹配到旧的那个。
+        self.assertEqual(len(named), 1)
+        self.assertEqual(len(written["instances"]), 2)
+        self.assertEqual([t["taskName"] for t in named[0]["tasks"]], ["打开游戏"])
+
+    def test_replacement_keeps_the_old_id(self) -> None:
+        # 外壳的 lastActiveInstanceId 与每实例日志都按 id 索引，换 id 会每轮失联。
+        self.manager._write_runtime_config()
+        written = self._written()
+        named = next(
+            i
+            for i in written["instances"]
+            if i["name"] == manager_module._MXU_INSTANCE_NAME
+        )
+        self.assertEqual(named["id"], "stale-mas")
+        self.assertEqual(written["lastActiveInstanceId"], "stale-mas")
+
+    def test_user_instances_are_untouched(self) -> None:
+        self.manager._write_runtime_config()
+        written = self._written()
+        kept = next(i for i in written["instances"] if i["id"] == "keepme")
+        self.assertEqual(kept, self.original["instances"][0])
+
+    def test_repeated_runs_do_not_grow_the_container(self) -> None:
+        for _ in range(3):
+            self.manager._write_runtime_config()
+        self.assertEqual(len(self._written()["instances"]), 2)
+
+
 class MxuLaunchArgvTest(unittest.TestCase):
     """MXU 的自动执行只认命令行。"""
 
@@ -178,7 +272,7 @@ class MxuLogPathTest(unittest.TestCase):
 
         self.manager.log_profile = MXU_LOG_PROFILE
         self.manager.log_monitor = SimpleNamespace(
-            time_start=0, time_end=19, time_format="%Y-%m-%d %H:%M:%S"
+            time_start=1, time_end=24, time_format="%Y-%m-%d %H:%M:%S.%f"
         )
 
     def _await_path(self):
@@ -192,7 +286,7 @@ class MxuLogPathTest(unittest.TestCase):
         ):
             return _asyncio.run(self.manager._await_shell_log_path())
 
-    def test_prefers_the_frontend_log_over_the_backend_one(self) -> None:
+    def test_picks_the_frontend_log_when_stdout_is_unavailable(self) -> None:
         """判据串只出现在前端那份 debug/<日期>-<序号>.log 里。
 
         debug/mxu-tauri.log 是 Rust 后端经 tauri-plugin-log 写的，只有启动、
@@ -216,52 +310,45 @@ class MxuLogPathTest(unittest.TestCase):
         self.assertIsNotNone(resolved)
         # 当日启动序号最大的那份才是本轮的。
         self.assertEqual(resolved.name, f"{today}-2.log")
-        # 走首选路径时不得动切片。
-        self.assertEqual(self.manager.log_monitor.time_start, 0)
-
-    def test_falls_back_to_the_backend_log_and_switches_the_slice(self) -> None:
-        """前端日志还没出现时，至少靠后端那份确认外壳活着。
-
-        两份出自不同子系统，行首格式不同：兜底时切片必须跟着换，否则
-        LogMonitor 一行都解析不出来，整份日志会被当成历史全部丢弃。
-        """
-
-        (self.root / "debug" / "mxu-tauri.log").write_text("x", encoding="utf-8")
-        resolved = self._await_path()
-        self.assertIsNotNone(resolved)
-        self.assertEqual(resolved.name, "mxu-tauri.log")
+        # 落到文件就得换成文件那套切片，否则一行都解析不出来。
         self.assertEqual(
             (
                 self.manager.log_monitor.time_start,
                 self.manager.log_monitor.time_end,
                 self.manager.log_monitor.time_format,
             ),
-            (1, 21, "%Y-%m-%d][%H:%M:%S"),
+            (0, 19, "%Y-%m-%d %H:%M:%S"),
         )
+
+    def test_backend_log_is_never_picked(self) -> None:
+        """mxu-tauri.log 是 Rust 后端日志，一条任务判据串都没有，不能选它。"""
+
+        (self.root / "debug" / "mxu-tauri.log").write_text("x", encoding="utf-8")
+        self.assertIsNone(self._await_path())
 
     def test_returns_none_when_nothing_matches(self) -> None:
         (self.root / "debug" / "2000-01-01-1.log").write_text("x", encoding="utf-8")
         self.assertIsNone(self._await_path())
 
-    def test_both_slices_parse_their_own_files(self) -> None:
-        """首选切片对前端行，兜底切片对后端行，两边不能串。"""
+    def test_stdout_and_file_slices_do_not_cross(self) -> None:
+        """首选切片对 stdout 行，兜底切片对日志文件行，两边不能串。"""
 
         from datetime import datetime
 
         from app.task.MaaFW.tools.external.profile import MXU_LOG_PROFILE
 
-        frontend = "2026-08-29 19:56:31 INFO  [Task] 实例 MAS: 开始执行任务, 数量: 1"
+        stdout_line = "[2026-08-29 20:39:22.123] 任务开始: CreditShoppingN2"
         start, end = MXU_LOG_PROFILE.time_stamp_range
         self.assertEqual(
-            datetime.strptime(frontend[start:end], MXU_LOG_PROFILE.time_format),
-            datetime(2026, 8, 29, 19, 56, 31),
+            datetime.strptime(stdout_line[start:end], MXU_LOG_PROFILE.time_format),
+            datetime(2026, 8, 29, 20, 39, 22, 123000),
         )
 
-        backend = "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] Web server listening"
+        file_line = "2026-08-29 19:56:31 INFO  [Task] 实例 MAS: 开始执行任务, 数量: 1"
         start, end = MXU_LOG_PROFILE.fallback_time_stamp_range
         self.assertEqual(
-            datetime.strptime(backend[start:end], MXU_LOG_PROFILE.fallback_time_format),
-            datetime(2026, 8, 29, 18, 15, 43),
+            datetime.strptime(file_line[start:end], MXU_LOG_PROFILE.fallback_time_format),
+            datetime(2026, 8, 29, 19, 56, 31),
         )
 
 

@@ -85,28 +85,24 @@ class MfaAvaloniaProfileDriftGuardTest(unittest.TestCase):
 class MxuProfileEvidenceTest(unittest.TestCase):
     """MXU 画像必须与静态样本逐行吻合，且明确标注未经真机验证。"""
 
-    def test_fallback_slice_parses_the_backend_log(self) -> None:
-        """兜底那份是 Rust 后端日志（debug/mxu-tauri.log），行首带方括号。"""
+    def test_primary_slice_parses_the_stdout_format(self) -> None:
+        """首选来源是进程 stdout。
 
-        line = (
-            "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] "
-            "Web server listening on http://127.0.0.1:12701"
-        )
-        start, end = MXU_LOG_PROFILE.fallback_time_stamp_range
-        self.assertEqual(
-            datetime.strptime(line[start:end], MXU_LOG_PROFILE.fallback_time_format),
-            datetime(2026, 8, 29, 18, 15, 43),
-        )
-
-    def test_primary_slice_parses_the_frontend_sample_lines(self) -> None:
-        """判据串只出现在前端日志里，首选切片必须对得上它。
-
-        MXU 同时写两份：前端 debug/<日期>-<序号>.log 带 [App]/[Task]/[MAA] 标签，
-        判据串全在这里；Rust 后端 debug/mxu-tauri.log 只有启动那类行。首选必须
-        是前端那份，盯着后端那份会永远等不到任务标记。
+        MXU 的 log_to_stdout 固定按 `println!("[{时间}] {行}")` 打，时间格式
+        `%Y-%m-%d %H:%M:%S.%3f`，故切片 [1:24] 恰好取到完整时间戳。
         """
 
+        line = "[2026-08-29 20:39:22.123] 任务开始: CreditShoppingN2"
         start, end = MXU_LOG_PROFILE.time_stamp_range
+        self.assertEqual(
+            datetime.strptime(line[start:end], MXU_LOG_PROFILE.time_format),
+            datetime(2026, 8, 29, 20, 39, 22, 123000),
+        )
+
+    def test_fallback_slice_parses_the_log_file_format(self) -> None:
+        """接管 stdout 失败时落到日志文件，那份是另一套行首，切片要整体换掉。"""
+
+        start, end = MXU_LOG_PROFILE.fallback_time_stamp_range
         for line, expected in (
             (_MXU_START_LINE, datetime(2026, 7, 4, 10, 25, 44)),
             (_MXU_DRAINED_LINE, datetime(2026, 7, 4, 10, 25, 46)),
@@ -114,31 +110,40 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         ):
             with self.subTest(line=line[:30]):
                 parsed = datetime.strptime(
-                    line[start:end], MXU_LOG_PROFILE.time_format
+                    line[start:end], MXU_LOG_PROFILE.fallback_time_format
                 )
                 self.assertEqual(parsed, expected)
 
-    def test_markers_hit_only_their_sample_lines(self) -> None:
-        lines = (
-            _MXU_START_LINE,
-            _MXU_SUBMIT_LINE,
-            _MXU_DRAINED_LINE,
-            _MXU_STOP_LINE,
-        )
+    def test_stdout_markers_match_the_specialist(self) -> None:
+        """判据串取自 MaaEnd 专项，它读的就是这条 stdout 流且已在生产验证。
 
-        def hits(markers):
-            return [
-                line
-                for line in lines
-                if any(marker in line for marker in markers)
-            ]
+        逐任务三态：开始 / 完成 / 失败。
+        """
 
-        self.assertEqual(hits(MXU_LOG_PROFILE.completion_markers), [_MXU_DRAINED_LINE])
-        self.assertEqual(hits(MXU_LOG_PROFILE.task_start_markers), [_MXU_START_LINE])
-        self.assertEqual(hits(MXU_LOG_PROFILE.stop_markers), [_MXU_STOP_LINE])
+        started = "[2026-08-29 20:39:22.123] 任务开始: CreditShoppingN2"
+        failed = "[2026-08-29 20:41:07.004] 任务失败: CreditShoppingN2"
+        done = "[2026-08-29 20:42:11.900] 任务完成: CreditShoppingN2"
+
+        def hit(markers, line):
+            return any(marker in line for marker in markers)
+
+        self.assertTrue(hit(MXU_LOG_PROFILE.task_start_markers, started))
+        self.assertFalse(hit(MXU_LOG_PROFILE.task_start_markers, done))
+        self.assertTrue(hit(MXU_LOG_PROFILE.failure_markers, failed))
+        self.assertFalse(hit(MXU_LOG_PROFILE.failure_markers, done))
+
+    def test_run_completion_is_not_a_string(self) -> None:
+        """整轮完成靠 stdout 流结束，不靠字符串。
+
+        「任务完成: X」是**单个**任务完成；把它当整轮完成，会在第一个任务结束时
+        就收口，后面的任务全被丢掉。
+        """
+
+        self.assertEqual(MXU_LOG_PROFILE.completion_markers, ())
+        self.assertTrue(MXU_LOG_PROFILE.exits_after_run)
 
     def test_unvalidated_and_fail_closed(self) -> None:
-        # 真机验证前不得被运行链路采信；失败判别串样本中未出现，不猜测。
+        # 真机验证前不得被运行链路采信；未取到样本的判别串一律留空，不猜测。
         self.assertFalse(MXU_LOG_PROFILE.run_validated)
         self.assertEqual(MXU_LOG_PROFILE.controller_failure_markers, ())
         self.assertEqual(MXU_LOG_PROFILE.abandon_markers, ())
@@ -151,11 +156,10 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         写死的一致。
         """
 
+        # 正常路径读 stdout，不预解析任何确定性文件路径。
+        self.assertIsNone(resolve_log_relpath(MXU_LOG_PROFILE, datetime(2026, 8, 28)))
+        # 兜底只 glob 前端那份；mxu-tauri.log 是后端日志，一条判据串都没有。
         self.assertEqual(MXU_LOG_PROFILE.log_glob_dir, "debug")
-        self.assertEqual(
-            resolve_log_relpath(MXU_LOG_PROFILE, datetime(2026, 8, 28)),
-            "debug/mxu-tauri.log",
-        )
         self.assertIsNotNone(MXU_LOG_PROFILE.fallback_time_stamp_range)
         # 两套切片必须不同，相同就说明有一边写错了。
         self.assertNotEqual(

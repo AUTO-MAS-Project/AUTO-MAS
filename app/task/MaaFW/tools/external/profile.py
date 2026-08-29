@@ -122,38 +122,38 @@ MFAAVALONIA_LOG_PROFILE = ShellLogProfile(
 MXU_LOG_PROFILE = ShellLogProfile(
     family=ShellFamily.MXU,
     run_validated=False,
-    # 首选的是**前端**日志（debug/<日期>-<序号>.log），行首形如
-    # `2026-08-29 19:56:31 INFO  [Task] ...`，无方括号、无毫秒。
-    # 判据串全部出自这里，见下方 log_glob_dir 处的说明。
-    time_stamp_range=(0, 19),
-    time_format="%Y-%m-%d %H:%M:%S",
-    completion_markers=("kind: tasks-completed",),
+    # MXU 的运行日志走进程 stdout：前端每条 addLog 都经 log_to_stdout 转发，
+    # Rust 侧固定按 `println!("[{时间}] {行}")` 打，时间格式
+    # `%Y-%m-%d %H:%M:%S.%3f`，故切片 [1:24] 恰好取到 `2026-08-29 20:39:22.123`。
+    time_stamp_range=(1, 24),
+    time_format="%Y-%m-%d %H:%M:%S.%f",
+    # 留空：整轮完成不靠字符串，靠 stdout 流结束（外壳带 -q 跑完自退）。
+    # 「任务完成: X」是**单个**任务完成，拿它当整轮完成会在第一个任务结束时就收口。
+    completion_markers=(),
     abandon_markers=(),
     controller_failure_markers=(),
-    # 留空：MXU 的失败判别串尚无真机样本，不猜测（fail-closed）。MXU 的失败要靠
-    # `-q` 带来的进程退出码与排空串的组合来判，见 manager 的终态分支。
-    failure_markers=(),
-    task_start_markers=(": 开始执行任务, 数量:",),
+    # 以下判据串取自 MaaEnd 专项 AutoProxy.check_log —— 它读的就是这条 stdout 流，
+    # 且已在生产上验证过，不是猜的。
+    failure_markers=("任务失败:",),
+    task_start_markers=("任务开始:",),
     stop_markers=("[task-stop#",),
     # 留空：MXU 的周期性噪音行尚无真机样本，不猜测（fail-closed）。
     idle_noise_markers=(),
     # -q / --quit-after-run：外壳跑完自行退出，进程退出即完成信号。
     exits_after_run=True,
-    # MXU 同时写两份日志，各由不同子系统负责（见 MistEO/MXU src-tauri/src/lib.rs）：
-    #   debug/<日期>-<序号>.log —— **前端**（webview）自己写，带 [App]/[Task]/[MAA]
-    #       标签。本画像的全部判据串都只出现在这里，故它是首选。序号是当日启动
-    #       序号，启动前不可知，只能起进程之后 glob。
-    #   debug/mxu-tauri.log —— Rust 后端经 tauri-plugin-log 写的，只有启动、
-    #       web_server、MaaFramework 加载那类行，**没有任何任务判据串**。
-    #       仅作兜底：拿不到前端日志时，至少还能靠它确认外壳活着。
-    # 顺带一提，同一处配置里 Stdout 目标被 #[cfg(debug_assertions)] 圈住，
-    # 正式构建不往标准流写任何东西 —— 所以这一层不能像 MaaEnd 专项那样监听 stdout。
+    # 正常路径不读文件，只读 stdout；下面两条仅在接管 stdout 失败时兜底。
+    # MXU 落盘的两份日志各由不同子系统负责（MistEO/MXU src-tauri/src/lib.rs）：
+    #   debug/<日期>-<序号>.log —— 前端 webview 自己写，带 [App]/[Task]/[MAA] 标签，
+    #       序号是当日启动序号，启动前不可知，只能起进程之后 glob。它还会在外壳
+    #       启动时被 autoClearLogsOnLaunch 清档，跨轮不可依赖。
+    #   debug/mxu-tauri.log —— Rust 后端经 tauri-plugin-log 写，只有启动那类行。
+    # 只登记前端那份：mxu-tauri.log 是 Rust 后端日志，一条任务判据串都没有，
+    # 留着只会让兜底选错文件。
     log_glob_dir="debug",
-    log_relpath_strftime="debug/mxu-tauri.log",
-    # 兜底那份行首是 `[2026-08-29][19:56:31][INFO][mxu_lib::...]`，切片 [1:21]
-    # 恰好取到 `2026-08-29][19:56:31`，故格式里保留那对括号。
-    fallback_time_stamp_range=(1, 21),
-    fallback_time_format="%Y-%m-%d][%H:%M:%S",
+    # 兜底文件行首是 `2026-08-29 19:56:31 INFO  [Task] ...`，无方括号无毫秒，
+    # 与 stdout 那套不同，落到文件时要整体换掉切片。
+    fallback_time_stamp_range=(0, 19),
+    fallback_time_format="%Y-%m-%d %H:%M:%S",
 )
 
 SHELL_LOG_PROFILES: dict[ShellFamily, ShellLogProfile] = {

@@ -220,16 +220,26 @@ def append_instance(
     instance: Mapping[str, Any],
     *,
     set_active: bool = True,
+    replace_same_name: bool = False,
 ) -> dict[str, Any]:
     """在容器 dict 的深拷贝上追加一个实例条目，并（可选）设为活动项。
 
-    绝不修改或删除已有实例，也不动容器的其它键（``settings`` / ``customAccents``
-    / ``interfaceTaskSnapshot`` 等）。入参 ``container`` 与 ``instance`` 保持原样。
+    绝不修改或删除已有实例（``replace_same_name`` 例外，见下），也不动容器的
+    其它键（``settings`` / ``customAccents`` / ``interfaceTaskSnapshot`` 等）。
+    入参 ``container`` 与 ``instance`` 保持原样。
 
     Args:
         container: 已有的 mxu-*.json 顶层 dict（可能没有 ``instances`` 键）。
         instance: 要追加的实例条目（通常来自 :func:`build_instance_entry`）。
         set_active: 追加后把 ``lastActiveInstanceId`` 指向新实例。
+        replace_same_name: 同名实例就地替换，而不是再追加一个。
+
+            MXU 的 ``--instance`` 是**按显示名**匹配的，重名时它取先出现的那个。
+            调度方每轮都用固定名（如 ``MAS``）追加实例的话，只要上一轮的残留没被
+            清掉，容器里就会出现两个同名实例，外壳匹配到的是**旧那个**，跑的是
+            上一轮的任务——2026-08-29 真机就这样跑成了别的任务，日志里外壳用的
+            实例 id 正是残留那个。开着这个开关，同名实例每轮被就地覆盖，容器不会
+            越长越多，``--instance`` 也永远只有一个候选。
 
     Raises:
         ShellMappingError: 新实例 id 与容器中已有实例冲突，或 ``set_active`` 时缺 id。
@@ -240,13 +250,40 @@ def append_instance(
 
     new_instance = copy.deepcopy(dict(instance))
     new_id = new_instance.get("id")
-    if new_id is not None and any(
-        isinstance(existing, Mapping) and existing.get("id") == new_id
-        for existing in instances
-    ):
+
+    replaced_at = -1
+    if replace_same_name:
+        new_name = new_instance.get("name")
+        if new_name:
+            replaced_at = next(
+                (
+                    index
+                    for index, existing in enumerate(instances)
+                    if isinstance(existing, Mapping) and existing.get("name") == new_name
+                ),
+                -1,
+            )
+
+    conflicting = [
+        existing
+        for index, existing in enumerate(instances)
+        if index != replaced_at
+        and isinstance(existing, Mapping)
+        and existing.get("id") == new_id
+    ]
+    if new_id is not None and conflicting:
         raise ShellMappingError(f"容器中已存在实例 id：{new_id}")
 
-    instances.append(new_instance)
+    if replaced_at >= 0:
+        # 沿用被替换者的 id：外壳的 lastActiveInstanceId、以及它自己缓存的
+        # 每实例运行日志都按 id 索引，换 id 会让这些东西每轮失联。
+        old_id = instances[replaced_at].get("id")
+        if old_id:
+            new_instance["id"] = old_id
+            new_id = old_id
+        instances[replaced_at] = new_instance
+    else:
+        instances.append(new_instance)
     result["instances"] = instances
 
     if set_active:
