@@ -416,7 +416,7 @@ onMounted(async () => {
     }
     applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
     if (!maafwConfig.Info.Name) {
-      maafwConfig.Info.Name = scriptDetail.name ?? '新 MaaFW 脚本'
+      maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
       formData.name = maafwConfig.Info.Name
     }
 

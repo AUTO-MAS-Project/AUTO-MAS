@@ -110,7 +110,7 @@ class MaaFWInterfacePreviewTest(unittest.TestCase):
         self.assertEqual(result.code, 500)
         self.assertEqual(result.status, "error")
         self.assertIsNone(result.data)
-        self.assertIn("MaaFW interface 预览失败", result.message)
+        self.assertIn("MFW interface 预览失败", result.message)
         self.assertIn("internal detail", result.message)
         self.assertNotIn("Traceback", result.message)
 

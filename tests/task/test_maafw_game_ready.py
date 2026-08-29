@@ -45,19 +45,27 @@ class GameReadyWaitTest(unittest.IsolatedAsyncioTestCase):
     async def test_waits_for_the_window_not_just_the_process(self) -> None:
         # 前两轮没窗口，第三轮才有：必须一直等到窗口出现。
         self.visible.side_effect = [False, False, True]
-        await self.manager._await_game_ready(_spec())
+        self.assertTrue(await self.manager._await_game_ready(_spec()))
         self.assertEqual(self.visible.call_count, 3)
         self.assertEqual(self.sleep.await_count, 2)
 
-    async def test_gives_up_after_wait_time_without_failing_the_run(self) -> None:
-        # 等不到不判死：外壳自己也有重试，用户也可能就是想把等待交给外壳。
+    async def test_timeout_is_a_hard_failure(self) -> None:
+        """等不到必须判死，不能放外壳进去空跑。
+
+        本层会摘掉外壳实例的 preActions，而外壳那套「等待窗口就绪」循环恰恰挂在
+        preAction 分支上——摘掉之后外壳直接去连窗口，连不到就一句「未找到窗口 X」
+        放弃、不重试。2026-08-29 真机实测：MAS 超时后照样起了外壳，外壳当场
+        「找到桌面窗口: 0 个」，整轮白跑。
+        """
+
         self.visible.return_value = False
         self.visible.side_effect = None
-        await self.manager._await_game_ready(_spec(wait_time=5))
+        self.assertFalse(await self.manager._await_game_ready(_spec(wait_time=5)))
         self.assertEqual(self.visible.call_count, 5)
 
     async def test_zero_wait_time_skips_the_wait_entirely(self) -> None:
-        await self.manager._await_game_ready(_spec(wait_time=0))
+        # 用户把等待时间设为 0，等于显式放弃这道门槛，不能反过来判死。
+        self.assertTrue(await self.manager._await_game_ready(_spec(wait_time=0)))
         self.visible.assert_not_called()
 
     async def test_attach_only_and_url_never_wait(self) -> None:
@@ -66,7 +74,7 @@ class GameReadyWaitTest(unittest.IsolatedAsyncioTestCase):
         for mode in ("AttachOnly", "URL"):
             with self.subTest(mode=mode):
                 self.visible.reset_mock()
-                await self.manager._await_game_ready(_spec(mode))
+                self.assertTrue(await self.manager._await_game_ready(_spec(mode)))
                 self.visible.assert_not_called()
 
     async def test_launcher_mode_waits_for_the_client_and_records_it(self) -> None:
@@ -78,14 +86,14 @@ class GameReadyWaitTest(unittest.IsolatedAsyncioTestCase):
 
         client = SimpleNamespace(pid=222, create_time=lambda: 2.0)
         with patch.object(manager_module, "wait_for_client", return_value=client):
-            await self.manager._await_game_ready(_spec("LauncherExe"))
+            self.assertTrue(await self.manager._await_game_ready(_spec("LauncherExe")))
         self.assertEqual(self.manager.game_owned_process.client_identity, (222, 2.0))
         # 等的是游戏本体的窗口，不是启动器的。
         self.assertEqual(self.visible.call_args.args[0], 222)
 
-    async def test_launcher_mode_tolerates_a_missing_client(self) -> None:
+    async def test_missing_client_is_also_a_hard_failure(self) -> None:
         with patch.object(manager_module, "wait_for_client", return_value=None):
-            await self.manager._await_game_ready(_spec("LauncherExe"))
+            self.assertFalse(await self.manager._await_game_ready(_spec("LauncherExe")))
         self.assertIsNone(self.manager.game_owned_process.client_identity)
         self.visible.assert_not_called()
 

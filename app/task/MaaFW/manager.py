@@ -70,7 +70,7 @@ from app.utils import (
 )
 
 
-logger = get_logger("MaaFW 外部调度器")
+logger = get_logger("MFW 外部调度器")
 
 _LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 _COMPLETION_MARKERS = ("任务已全部完成！", "All tasks completed")
@@ -154,12 +154,12 @@ def _ensure_no_symlinks(root: Path) -> None:
     """拒绝备份或恢复路径中的符号链接，避免越出项目目录。"""
 
     if root.is_symlink():
-        raise RuntimeError(f"MaaFW 配置路径不能是符号链接：{root}")
+        raise RuntimeError(f"MFW 配置路径不能是符号链接：{root}")
     if not root.is_dir():
         return
     for child in root.rglob("*"):
         if child.is_symlink():
-            raise RuntimeError(f"MaaFW 配置包含符号链接，拒绝运行：{child}")
+            raise RuntimeError(f"MFW 配置包含符号链接，拒绝运行：{child}")
 
 
 def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
@@ -214,7 +214,7 @@ def _warn_if_adb_missing(adb_path: Path, emulator_label: str) -> None:
 
     if not adb_path.is_file():
         logger.warning(
-            f"MaaFW 生成的 {emulator_label} ADB 程序不存在：{adb_path}，"
+            f"MFW 生成的 {emulator_label} ADB 程序不存在：{adb_path}，"
             "外壳可能无法连接设备"
         )
 
@@ -411,31 +411,31 @@ class MaaFWManager(TaskExecuteBase):
         """校验 MaaFW 配置、外壳、选择项和可运行文件。"""
 
         if self.task_info.mode != "AutoProxy":
-            return "MaaFW 当前仅支持外部自动运行模式"
+            return "MFW 当前仅支持外部自动运行模式"
 
         try:
             script_uid = uuid.UUID(self.script_info.script_id)
         except (ValueError, AttributeError, TypeError):
-            return "MaaFW 脚本 ID 无效，请刷新后重试"
+            return "MFW 脚本 ID 无效，请刷新后重试"
 
         try:
             script_config = Config.ScriptConfig[script_uid]
         except (KeyError, ValueError):
-            return "MaaFW 脚本配置不存在，请刷新后重试"
+            return "MFW 脚本配置不存在，请刷新后重试"
 
         if not isinstance(script_config, MaaFWConfig):
-            return "脚本配置类型错误，不是 MaaFW 脚本类型"
+            return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
 
         project_value = str(script_config.get("Info", "Path") or "").strip()
         if not project_value:
-            return "请设置 MaaFW 项目路径"
+            return "请设置 MFW 项目路径"
         project_root = Path(project_value).resolve()
         if not project_root.is_dir():
-            return "请设置包含 interface.json 的 MaaFW 项目目录"
+            return "请设置包含 interface.json 的 MFW 项目目录"
 
         if script_config.get("Run", "Engine") != "external":
-            return "MaaFW 当前仅支持 external 运行引擎"
+            return "MFW 当前仅支持 external 运行引擎"
 
         shell_family = detect_shell_family(project_root)
         log_profile = get_shell_log_profile(shell_family)
@@ -443,7 +443,7 @@ class MaaFWManager(TaskExecuteBase):
             # 未登记的外壳家族：这是**能力边界**而不是故障，文案要让用户看得懂
             # 下一步，不要引导他去导出问题包。
             return (
-                f"这个项目使用 {shell_family.value} 外壳，MaaFW 专项暂不支持。"
+                f"这个项目使用 {shell_family.value} 外壳，MFW 专项暂不支持。"
                 "当前支持 MFAAvalonia（如 M9A、MaaKes）与 MXU（如 MaaEnd、MaaYYs）"
                 "两类外壳的项目。"
             )
@@ -451,7 +451,7 @@ class MaaFWManager(TaskExecuteBase):
         try:
             interface_model = load_interface_model_cached(project_root)
         except Exception as exc:
-            return f"MaaFW interface 读取失败：{exc}"
+            return f"MFW interface 读取失败：{exc}"
 
         # 用户层：controller / resource 走 Info.*（用户级留空回退脚本级），
         # 运行范围走用户 Task.TaskSnapshot；不再从脚本级 Selection.* 读取。
@@ -463,7 +463,7 @@ class MaaFWManager(TaskExecuteBase):
             if cfg.get("Info", "Status") and cfg.get("Info", "RemainedDay") != 0
         ]
         if not runnable_uids:
-            return "MaaFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"
+            return "MFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"
 
         controller_index = {item.name for item in interface_model.controller}
         resource_index = {item.name for item in interface_model.resource}
@@ -478,7 +478,7 @@ class MaaFWManager(TaskExecuteBase):
                 controller_name = self._resolve_controller_name(cfg, script_config)
                 if not controller_name:
                     raise ValueError(
-                        f"用户 {user_name} 未确定 MaaFW controller，"
+                        f"用户 {user_name} 未确定 MFW controller，"
                         "请在脚本编辑页或用户配置中选择"
                     )
                 if controller_name not in controller_index:
@@ -487,7 +487,7 @@ class MaaFWManager(TaskExecuteBase):
                     cfg, script_config, interface_model, controller_name
                 )
                 if not resource_name:
-                    raise ValueError(f"用户 {user_name} 未确定 MaaFW resource")
+                    raise ValueError(f"用户 {user_name} 未确定 MFW resource")
                 if resource_name not in resource_index:
                     raise ValueError(f"interface 未定义 resource：{resource_name}")
                 task_names = self._parse_snapshot_task_selection(
@@ -499,12 +499,12 @@ class MaaFWManager(TaskExecuteBase):
                 if task_names:
                     users_with_tasks += 1
         except (ValueError, ShellMappingError) as exc:
-            return f"MaaFW 选择配置无效：{exc}"
+            return f"MFW 选择配置无效：{exc}"
         except Exception as exc:
-            return f"MaaFW interface 读取失败：{exc}"
+            return f"MFW interface 读取失败：{exc}"
 
         if users_with_tasks == 0:
-            return "MaaFW 没有任何启用用户排入任务，请在用户编辑页配置任务队列"
+            return "MFW 没有任何启用用户排入任务，请在用户编辑页配置任务队列"
 
         # 供下方启动前设备校验使用的代表性 controller / resource：取首个可运行用户。
         first_cfg = user_config[runnable_uids[0]]
@@ -535,13 +535,13 @@ class MaaFWManager(TaskExecuteBase):
                     _resolve_active_instance_path(
                         project_root / "config" / "instances", project_root
                     ),
-                    label="MaaFW 活动实例配置",
+                    label="MFW 活动实例配置",
                 )
             except RuntimeError as exc:
-                return f"MaaFW 实例配置无法读取：{exc}"
+                return f"MFW 实例配置无法读取：{exc}"
             if not _instance_has_adb_device(instance_base):
                 return (
-                    "未配置模拟器设备，MaaFW 无法连接：实例配置缺少 AdbDevice，"
+                    "未配置模拟器设备，MFW 无法连接：实例配置缺少 AdbDevice，"
                     "请先在外壳侧连接一次模拟器"
                 )
             adb_device = instance_base.get("AdbDevice")
@@ -554,7 +554,7 @@ class MaaFWManager(TaskExecuteBase):
                     and not adb_path.is_file()
                 ):
                     return (
-                        f"MaaFW 实例配置中的 ADB 程序不存在：{adb_path_value}。"
+                        f"MFW 实例配置中的 ADB 程序不存在：{adb_path_value}。"
                         "请在 MAS 中选择当前模拟器，或先在外壳侧重新连接设备"
                     )
         elif (
@@ -572,7 +572,7 @@ class MaaFWManager(TaskExecuteBase):
             # 随后 _write_runtime_config 抛 UnknownControllerTypeError——结果正确但白
             # 起一次进程。这里在加锁与备份之前就明确告知用户。
             return (
-                f"MaaFW 外部运行暂不支持 {controller_type} 控制器："
+                f"MFW 外部运行暂不支持 {controller_type} 控制器："
                 "该类型的 CurrentController 取值尚未确认，"
                 "请改用 Adb 控制器，或在外壳侧手动运行"
             )
@@ -583,7 +583,7 @@ class MaaFWManager(TaskExecuteBase):
 
         config_dir = project_root / "config"
         if config_dir.exists() and not config_dir.is_dir():
-            return f"MaaFW config 路径不是目录：{config_dir}"
+            return f"MFW config 路径不是目录：{config_dir}"
 
         self.project_root = project_root
         self.config_dir = config_dir
@@ -597,7 +597,7 @@ class MaaFWManager(TaskExecuteBase):
                 return f"未找到 MXU 容器配置：{config_dir} 下的 mxu-*.json"
             if len(containers) > 1:
                 names = "、".join(path.name for path in containers)
-                return f"MaaFW config 下存在多个 MXU 容器配置，无法消歧：{names}"
+                return f"MFW config 下存在多个 MXU 容器配置，无法消歧：{names}"
             self.mxu_container_path = containers[0]
             self.instances_dir = None
             self.instance_path = None
@@ -656,7 +656,7 @@ class MaaFWManager(TaskExecuteBase):
         """
 
         if self.interface_model is None:
-            raise RuntimeError("MaaFW interface 未加载")
+            raise RuntimeError("MFW interface 未加载")
 
         normalized = normalize_task_options_by_task(
             raw_task_options,
@@ -769,26 +769,26 @@ class MaaFWManager(TaskExecuteBase):
         if len(root_executables) == 1:
             return root_executables[0]
         if not root_executables:
-            return f"{label} 不存在，请检查 MaaFW 项目目录"
-        return f"MaaFW 项目根目录存在多个 exe，无法安全选择 {label}"
+            return f"{label} 不存在，请检查 MFW 项目目录"
+        return f"MFW 项目根目录存在多个 exe，无法安全选择 {label}"
 
     async def prepare(self) -> None:
         """锁定 MAS 配置，恢复残留快照并制作本轮配置备份。"""
 
         if self.script_config is None or self.project_root is None:
-            raise RuntimeError("MaaFW 配置检查尚未通过")
+            raise RuntimeError("MFW 配置检查尚未通过")
 
         script_uid = uuid.UUID(self.script_info.script_id)
         script_config = Config.ScriptConfig[script_uid]
         if not isinstance(script_config, MaaFWConfig):
-            raise TypeError("脚本配置类型错误，不是 MaaFW 脚本类型")
+            raise TypeError("脚本配置类型错误，不是 MFW 脚本类型")
         self.script_config = script_config
         await script_config.lock()
-        logger.success(f"{self.script_info.script_id} 已锁定，MaaFW 配置提取完成")
+        logger.success(f"{self.script_info.script_id} 已锁定，MFW 配置提取完成")
 
         self.begin_time = datetime.now()
         if self.user_config is None:
-            raise RuntimeError("MaaFW 用户配置未加载")
+            raise RuntimeError("MFW 用户配置未加载")
         self.script_info.user_list = [
             UserItem(
                 user_id=str(uid),
@@ -798,7 +798,7 @@ class MaaFWManager(TaskExecuteBase):
             for uid in self.runnable_user_uids
         ]
         logger.info(
-            f"MaaFW 用户列表加载完成，已筛选用户数: {len(self.script_info.user_list)}"
+            f"MFW 用户列表加载完成，已筛选用户数: {len(self.script_info.user_list)}"
         )
         self.script_info.status = "运行"
 
@@ -808,12 +808,12 @@ class MaaFWManager(TaskExecuteBase):
         if self._has_residual_state():
             # 旧外壳可能仍在写 config；必须先按精确 exe 路径结束它，再恢复快照。
             if self.exe_path is None:
-                raise RuntimeError("MaaFW 外壳路径未初始化")
+                raise RuntimeError("MFW 外壳路径未初始化")
             if not await System.kill_process(self.exe_path):
                 raise RuntimeError(
-                    "MaaFW 残留外壳无法确认已结束，已保留备份并拒绝恢复 config"
+                    "MFW 残留外壳无法确认已结束，已保留备份并拒绝恢复 config"
                 )
-            logger.info(f"MaaFW 已结束残留外壳，准备恢复：{self.exe_path}")
+            logger.info(f"MFW 已结束残留外壳，准备恢复：{self.exe_path}")
         # copytree / rmtree / rglob 是同步阻塞调用，项目目录可达数百 MB；直接跑在
         # 事件循环上会卡住整个后端（含 WebSocket 心跳与其他脚本的调度）。
         await asyncio.to_thread(self._recover_residual_backup)
@@ -834,7 +834,7 @@ class MaaFWManager(TaskExecuteBase):
                 user_id=str(
                     uuid.uuid5(uuid.NAMESPACE_URL, f"maafw:{self.script_info.script_id}")
                 ),
-                name=self.script_info.name or "MaaFW 项目",
+                name=self.script_info.name or "MFW 项目",
                 status="等待",
             )
             self.script_info.user_list = [self._fallback_user]
@@ -842,12 +842,12 @@ class MaaFWManager(TaskExecuteBase):
 
     def _backup_project_config(self) -> None:
         if self.project_root is None or self.config_dir is None:
-            raise RuntimeError("MaaFW 项目路径未初始化")
+            raise RuntimeError("MFW 项目路径未初始化")
         self.state_dir.parent.mkdir(parents=True, exist_ok=True)
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         if self.config_dir.exists() and not self.config_dir.is_dir():
-            raise RuntimeError(f"MaaFW config 路径不是目录：{self.config_dir}")
+            raise RuntimeError(f"MFW config 路径不是目录：{self.config_dir}")
         self.config_existed = self.config_dir.exists()
         if self.config_existed:
             _ensure_no_symlinks(self.config_dir)
@@ -880,7 +880,7 @@ class MaaFWManager(TaskExecuteBase):
         atomic_write_maafw_config(self.manifest_path, manifest, journal=False)
         self.backup_published = True
         self.restored = False
-        logger.info(f"MaaFW config 已备份到 MAS 数据目录：{self.backup_path}")
+        logger.info(f"MFW config 已备份到 MAS 数据目录：{self.backup_path}")
 
     def _snapshot_appsettings_instance_keys(self) -> dict[str, Any]:
         """快照项目根 ``appsettings.json`` 里的实例指针键。
@@ -894,9 +894,9 @@ class MaaFWManager(TaskExecuteBase):
             return {}
         path = self.project_root / "appsettings.json"
         try:
-            settings = _read_json_object(path, label="MaaFW appsettings")
+            settings = _read_json_object(path, label="MFW appsettings")
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"MaaFW 读取 appsettings.json 失败，跳过实例指针快照：{exc}")
+            logger.warning(f"MFW 读取 appsettings.json 失败，跳过实例指针快照：{exc}")
             return {}
         return {key: settings[key] for key in _APPSETTINGS_INSTANCE_KEYS if key in settings}
 
@@ -910,9 +910,9 @@ class MaaFWManager(TaskExecuteBase):
             return {}
         path = self.project_root / "interface.json"
         try:
-            data = _read_json_object(path, label="MaaFW interface")
+            data = _read_json_object(path, label="MFW interface")
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"MaaFW 读取 interface.json 失败，跳过更新键快照：{exc}")
+            logger.warning(f"MFW 读取 interface.json 失败，跳过更新键快照：{exc}")
             return {}
         return {key: data[key] for key in _INTERFACE_UPDATE_KEYS if key in data}
 
@@ -940,17 +940,17 @@ class MaaFWManager(TaskExecuteBase):
         if not path.is_file():
             return
         try:
-            data = _read_json_object(path, label="MaaFW interface")
+            data = _read_json_object(path, label="MFW interface")
             removed = [key for key in _INTERFACE_UPDATE_KEYS if key in data]
             if not removed:
                 return
             for key in removed:
                 del data[key]
             atomic_write_maafw_config(path, data, journal=False)
-            logger.info(f"MaaFW 已关闭外壳自动更新：移除 interface.json 的 {removed}")
+            logger.info(f"MFW 已关闭外壳自动更新：移除 interface.json 的 {removed}")
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(
-                f"MaaFW 关闭外壳自动更新失败，本轮可能被外壳更新顶掉：{exc}"
+                f"MFW 关闭外壳自动更新失败，本轮可能被外壳更新顶掉：{exc}"
             )
 
     def _restore_interface_update_keys(self, snapshot: Any) -> None:
@@ -966,7 +966,7 @@ class MaaFWManager(TaskExecuteBase):
         if not path.is_file():
             return
         try:
-            data = _read_json_object(path, label="MaaFW interface")
+            data = _read_json_object(path, label="MFW interface")
             changed = False
             for key in _INTERFACE_UPDATE_KEYS:
                 if key in snapshot:
@@ -978,10 +978,10 @@ class MaaFWManager(TaskExecuteBase):
                     changed = True
             if changed:
                 atomic_write_maafw_config(path, data, journal=False)
-                logger.info("MaaFW 已还原 interface.json 的自动更新键")
+                logger.info("MFW 已还原 interface.json 的自动更新键")
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(
-                f"MaaFW 还原 interface.json 更新键失败：{exc}"
+                f"MFW 还原 interface.json 更新键失败：{exc}"
             )
 
     def _restore_appsettings_instance_keys(self, snapshot: Any) -> None:
@@ -998,7 +998,7 @@ class MaaFWManager(TaskExecuteBase):
         if not path.is_file():
             return
         try:
-            settings = _read_json_object(path, label="MaaFW appsettings")
+            settings = _read_json_object(path, label="MFW appsettings")
             changed = False
             for key in _APPSETTINGS_INSTANCE_KEYS:
                 if key in snapshot:
@@ -1011,54 +1011,54 @@ class MaaFWManager(TaskExecuteBase):
                     changed = True
             if changed:
                 atomic_write_maafw_config(path, settings, journal=False)
-                logger.info("MaaFW 已还原 appsettings.json 的实例指针")
+                logger.info("MFW 已还原 appsettings.json 的实例指针")
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(
-                f"MaaFW 还原 appsettings.json 实例指针失败：{exc}"
+                f"MFW 还原 appsettings.json 实例指针失败：{exc}"
             )
 
     def _has_residual_state(self) -> bool:
         """返回是否存在本模块留下的、需要启动前处理的状态。"""
 
         if self.state_dir.is_symlink():
-            raise RuntimeError("MaaFW 残留备份目录无效，拒绝运行")
+            raise RuntimeError("MFW 残留备份目录无效，拒绝运行")
         if not self.state_dir.exists():
             return False
         if not self.state_dir.is_dir():
-            raise RuntimeError("MaaFW 残留备份目录无效，拒绝运行")
+            raise RuntimeError("MFW 残留备份目录无效，拒绝运行")
         return any(self.state_dir.iterdir())
 
     def _load_backup_manifest(self) -> dict[str, Any]:
         if self.project_root is None:
-            raise RuntimeError("MaaFW 项目路径未初始化")
+            raise RuntimeError("MFW 项目路径未初始化")
         if self.manifest_path.is_symlink() or not self.manifest_path.is_file():
-            raise RuntimeError("MaaFW 残留备份 manifest 缺失或不是普通文件")
-        manifest = _read_json_object(self.manifest_path, label="MaaFW 残留备份 manifest")
+            raise RuntimeError("MFW 残留备份 manifest 缺失或不是普通文件")
+        manifest = _read_json_object(self.manifest_path, label="MFW 残留备份 manifest")
         if manifest.get("version") != 1:
-            raise RuntimeError("MaaFW 残留备份版本不受支持")
+            raise RuntimeError("MFW 残留备份版本不受支持")
         if manifest.get("script_id") != str(self.script_info.script_id):
-            raise RuntimeError("MaaFW 残留备份脚本 ID 不匹配，拒绝恢复")
+            raise RuntimeError("MFW 残留备份脚本 ID 不匹配，拒绝恢复")
         manifest_path = manifest.get("project_path")
         if not isinstance(manifest_path, str) or not Path(manifest_path).is_absolute():
-            raise RuntimeError("MaaFW 残留备份项目路径无效，拒绝恢复")
+            raise RuntimeError("MFW 残留备份项目路径无效，拒绝恢复")
         if Path(manifest_path).resolve() != self.project_root.resolve():
-            raise RuntimeError("MaaFW 残留备份项目路径不匹配，拒绝恢复")
+            raise RuntimeError("MFW 残留备份项目路径不匹配，拒绝恢复")
         if not isinstance(manifest.get("config_exists"), bool):
-            raise RuntimeError("MaaFW 残留备份缺少 config_exists，拒绝恢复")
+            raise RuntimeError("MFW 残留备份缺少 config_exists，拒绝恢复")
         if self.backup_path.is_symlink() or not self.backup_path.is_dir():
-            raise RuntimeError("MaaFW 残留备份 config 不完整，拒绝恢复")
+            raise RuntimeError("MFW 残留备份 config 不完整，拒绝恢复")
         _ensure_no_symlinks(self.backup_path)
         if not manifest["config_exists"] and any(self.backup_path.iterdir()):
-            raise RuntimeError("MaaFW 残留备份标记与 config 内容不一致，拒绝恢复")
+            raise RuntimeError("MFW 残留备份标记与 config 内容不一致，拒绝恢复")
         return manifest
 
     def _recover_residual_backup(self) -> None:
         if self.state_dir.is_symlink():
-            raise RuntimeError("MaaFW 残留备份目录无效，拒绝运行")
+            raise RuntimeError("MFW 残留备份目录无效，拒绝运行")
         if not self.state_dir.exists():
             return
         if not self.state_dir.is_dir():
-            raise RuntimeError("MaaFW 残留备份目录无效，拒绝运行")
+            raise RuntimeError("MFW 残留备份目录无效，拒绝运行")
         entries = list(self.state_dir.iterdir())
         if not entries:
             self.state_dir.rmdir()
@@ -1072,17 +1072,17 @@ class MaaFWManager(TaskExecuteBase):
         ):
             temporary_backup = entries[0]
             if temporary_backup.is_symlink() or not temporary_backup.is_dir():
-                raise RuntimeError("MaaFW 未发布备份 config.tmp 无效，拒绝运行")
+                raise RuntimeError("MFW 未发布备份 config.tmp 无效，拒绝运行")
             _remove_owned_path(temporary_backup)
             self.state_dir.rmdir()
-            logger.info("MaaFW 已清理未发布的 config.tmp 残留")
+            logger.info("MFW 已清理未发布的 config.tmp 残留")
             return
         self._restore_backup_from_state()
-        logger.info("MaaFW 已自动恢复上次未完成任务的残留配置")
+        logger.info("MFW 已自动恢复上次未完成任务的残留配置")
 
     def _restore_backup_from_state(self) -> None:
         if self.config_dir is None:
-            raise RuntimeError("MaaFW config 路径未初始化")
+            raise RuntimeError("MFW config 路径未初始化")
         manifest = self._load_backup_manifest()
         config_existed = manifest["config_exists"]
         temporary_restore = self.config_dir.with_name(self.config_dir.name + ".restore.tmp")
@@ -1091,7 +1091,7 @@ class MaaFWManager(TaskExecuteBase):
         if self.config_dir.is_symlink() or (
             self.config_dir.exists() and not self.config_dir.is_dir()
         ):
-            raise RuntimeError(f"MaaFW config 路径不是安全目录：{self.config_dir}")
+            raise RuntimeError(f"MFW config 路径不是安全目录：{self.config_dir}")
 
         if config_existed:
             shutil.copytree(self.backup_path, temporary_restore)
@@ -1106,7 +1106,7 @@ class MaaFWManager(TaskExecuteBase):
         _remove_owned_path(self.state_dir)
         self.restored = True
         self.backup_published = False
-        logger.info(f"MaaFW config 已恢复：{self.config_dir}")
+        logger.info(f"MFW config 已恢复：{self.config_dir}")
 
     def _write_runtime_config(self) -> None:
         """把本轮运行范围写进外壳能识别的配置，按外壳家族分派。"""
@@ -1136,13 +1136,13 @@ class MaaFWManager(TaskExecuteBase):
             or self.controller_name is None
             or self.resource_name is None
         ):
-            raise RuntimeError("MaaFW MXU 运行配置路径或选择未初始化")
+            raise RuntimeError("MFW MXU 运行配置路径或选择未初始化")
 
         backup_container = self.backup_path / self.mxu_container_path.name
         source = (
             backup_container if backup_container.is_file() else self.mxu_container_path
         )
-        container = _read_json_object(source, label="MaaFW MXU 容器配置")
+        container = _read_json_object(source, label="MFW MXU 容器配置")
 
         base = None
         active_id = container.get("lastActiveInstanceId")
@@ -1164,15 +1164,19 @@ class MaaFWManager(TaskExecuteBase):
         )
         # 同名就地替换：MXU 的 --instance 按显示名匹配，重名时取先出现的那个。
         # 每轮都追加一个叫 MAS 的新实例，只要有残留就会被匹配到旧的。
+        before = len(container.get("instances", []) or [])
         updated = append_instance(
             container, entry, set_active=True, replace_same_name=True
         )
         atomic_write_maafw_config(self.mxu_container_path, updated, journal=False)
-        self.mxu_instance_id = str(entry.get("id") or "")
+        # 同名替换会沿用被替换者的 id，所以要读**写回去的那份**，不能读 entry；
+        # 读 entry 会把日志里的实例 id 报成一个根本没落盘的值。
+        self.mxu_instance_id = str(updated.get("lastActiveInstanceId") or "")
+        after = len(updated.get("instances", []) or [])
+        action = "已替换同名实例" if after == before else "已追加"
         logger.info(
-            f"MaaFW MXU 运行配置已追加：{self.mxu_container_path.name}"
-            f"（实例 {self.mxu_instance_id}，原有 "
-            f"{len(container.get('instances', []) or [])} 个保持不变）"
+            f"MFW MXU 运行配置{action}：{self.mxu_container_path.name}"
+            f"（实例 {self.mxu_instance_id}，容器内共 {after} 个）"
         )
 
     def _write_mfaavalonia_runtime_config(self) -> None:
@@ -1184,7 +1188,7 @@ class MaaFWManager(TaskExecuteBase):
             or self.controller_name is None
             or self.resource_name is None
         ):
-            raise RuntimeError("MaaFW 运行配置路径或选择未初始化")
+            raise RuntimeError("MFW 运行配置路径或选择未初始化")
 
         # 多用户逐个写入：base 始终取本轮备份里的原始实例配置，避免上一个用户
         # 写入的 controller / TaskItems 漏进下一个用户。登记了 MAS 模拟器时覆盖
@@ -1193,10 +1197,10 @@ class MaaFWManager(TaskExecuteBase):
             self.backup_path / "instances" / self.instance_path.name
         )
         base_path = backup_instance if backup_instance.is_file() else self.instance_path
-        base = _read_json_object(base_path, label="MaaFW default 实例配置")
+        base = _read_json_object(base_path, label="MFW default 实例配置")
         if self.generated_adb_device is not None:
             base["AdbDevice"] = self.generated_adb_device
-            logger.info("MaaFW 已按 MAS 模拟器配置覆盖 AdbDevice")
+            logger.info("MFW 已按 MAS 模拟器配置覆盖 AdbDevice")
         # 归因更正（2026-08-29 静态审计）：本键在参考包的六份真实实例样本中都不存在，
         # 三份 MFAAvalonia.Core.dll 里也搜不到该字面量——「外壳的连接目标取自
         # Connect.Address」这一说法证据不足。当初加它是为了修「未选择连接目标」，
@@ -1208,7 +1212,7 @@ class MaaFWManager(TaskExecuteBase):
         # 否则 MAS 自己写的残留键会骗过 MAS 自己的启动前守卫。
         if self.emulator_info is not None and self.emulator_info.adb_address != "Unknown":
             base["Connect.Address"] = self.emulator_info.adb_address
-            logger.info(f"MaaFW 已写入连接目标：{self.emulator_info.adb_address}")
+            logger.info(f"MFW 已写入连接目标：{self.emulator_info.adb_address}")
 
         instance_config = build_instance_config(
             self.interface_model,
@@ -1236,11 +1240,11 @@ class MaaFWManager(TaskExecuteBase):
         self.instances_dir.mkdir(parents=True, exist_ok=True)
         for json_file in self.instances_dir.glob("*.json"):
             if json_file.is_symlink() or not json_file.is_file():
-                raise RuntimeError(f"MaaFW instances 条目不是普通文件：{json_file}")
+                raise RuntimeError(f"MFW instances 条目不是普通文件：{json_file}")
             json_file.unlink()
         atomic_write_maafw_config(self.instance_path, instance_config, journal=False)
 
-        shell_config = _read_json_object(self.config_json_path, label="MaaFW config.json")
+        shell_config = _read_json_object(self.config_json_path, label="MFW config.json")
         shell_config.update(
             {
                 # 静默：不让外壳窗口抢焦点。
@@ -1263,12 +1267,12 @@ class MaaFWManager(TaskExecuteBase):
             }
         )
         atomic_write_maafw_config(self.config_json_path, shell_config, journal=False)
-        logger.info(f"MaaFW 运行配置已写入：{self.instance_path}")
+        logger.info(f"MFW 运行配置已写入：{self.instance_path}")
 
     async def _run_external(self) -> None:
         profile = self.log_profile
         if self.exe_path is None or profile is None:
-            raise RuntimeError("MaaFW 外壳路径或日志画像未初始化")
+            raise RuntimeError("MFW 外壳路径或日志画像未初始化")
 
         # 按「本用户开跑的时刻」重算日志路径：队列跨零点后外壳会写到新的
         # log-<新日期>.log，而此前整轮沿用 check() 那一次算出的旧文件名，
@@ -1305,7 +1309,7 @@ class MaaFWManager(TaskExecuteBase):
 
         await asyncio.sleep(5)
         if not await self.process_manager.is_running():
-            self._mark_terminal("exit", "MaaFW 进程已异常退出")
+            self._mark_terminal("exit", "MFW 进程已异常退出")
             return
 
         await self._arrange_windows_after_launch()
@@ -1317,7 +1321,7 @@ class MaaFWManager(TaskExecuteBase):
                 self.monitor_started = True
                 await self._wait_for_terminal()
                 return
-            logger.warning("MaaFW 未能接管外壳 stdout，回退到日志文件监控")
+            logger.warning("MFW 未能接管外壳 stdout，回退到日志文件监控")
 
         if self.log_path is None or not self.log_path.is_file():
             resolved = await self._await_shell_log_path()
@@ -1326,7 +1330,7 @@ class MaaFWManager(TaskExecuteBase):
         if self.log_path is None:
             # 拿不到日志不再直接判死：外壳已经在跑，且 MXU 带 -q 时进程退出本身
             # 就是完成信号。降级为「只靠进程状态判终态」，把日志当增益而非前提。
-            logger.warning("MaaFW 未能定位外壳日志，改为仅按进程状态判定终态")
+            logger.warning("MFW 未能定位外壳日志，改为仅按进程状态判定终态")
             await self._wait_for_terminal()
             return
 
@@ -1336,7 +1340,7 @@ class MaaFWManager(TaskExecuteBase):
 
     async def _wait_for_terminal(self) -> None:
         if self.process_manager is None:
-            raise RuntimeError("MaaFW 进程管理器未初始化")
+            raise RuntimeError("MFW 进程管理器未初始化")
         runtime_limit = self._runtime_limit_seconds()
         while not self.terminal_event.is_set():
             if not await self.process_manager.is_running():
@@ -1361,16 +1365,16 @@ class MaaFWManager(TaskExecuteBase):
                     m in self.last_log_text
                     for m in self._profile_markers("abandon_markers")
                 ):
-                    self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
+                    self._mark_terminal("abandoned", f"MFW {_ABANDON_MARKER}")
                 else:
-                    self._mark_terminal("exit", "MaaFW 进程已异常退出")
+                    self._mark_terminal("exit", "MFW 进程已异常退出")
                 break
 
             if runtime_limit <= 0 or (
                 self.last_log_at is not None
                 and (datetime.now() - self.last_log_at).total_seconds() >= runtime_limit
             ):
-                self._mark_terminal("timeout", "MaaFW 进程超时")
+                self._mark_terminal("timeout", "MFW 进程超时")
                 break
             await asyncio.sleep(1)
 
@@ -1410,7 +1414,7 @@ class MaaFWManager(TaskExecuteBase):
     def _mark_controller_failure(self) -> None:
         self._mark_terminal(
             "controller_failed",
-            "MaaFW 控制器初始化失败，任务未实际执行",
+            "MFW 控制器初始化失败，任务未实际执行",
         )
 
     def _mark_completion(self, log_text: str, *, evidence: str = "输出完成串") -> None:
@@ -1429,13 +1433,13 @@ class MaaFWManager(TaskExecuteBase):
         if absent:
             self._mark_terminal(
                 "tasks_missing",
-                f"MaaFW {evidence}，但选中任务未出现：{'、'.join(absent)}",
+                f"MFW {evidence}，但选中任务未出现：{'、'.join(absent)}",
             )
         elif self._contains_failure(log_text):
             # 队列跑到了排空，但中途有任务失败（ContinueRunningWhenError=True 时
             # 外壳会跳过失败任务继续跑）。选中任务都露过面，只是没全成——
             # 这不是成功。
-            self._mark_terminal("failed", "MaaFW 队列已跑完，但其中有任务失败")
+            self._mark_terminal("failed", "MFW 队列已跑完，但其中有任务失败")
         else:
             self._mark_terminal("success", "Success!")
 
@@ -1532,9 +1536,9 @@ class MaaFWManager(TaskExecuteBase):
         elif self._contains_completion(log_text):
             self._mark_completion(log_text)
         elif any(m in log_text for m in self._profile_markers("abandon_markers")):
-            self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
+            self._mark_terminal("abandoned", f"MFW {_ABANDON_MARKER}")
         elif self.terminal_kind is None:
-            self.current_log.status = "MaaFW 正常运行中"
+            self.current_log.status = "MFW 正常运行中"
 
     @staticmethod
     def _has_substantive_progress(previous: str, current: str) -> bool:
@@ -1577,7 +1581,7 @@ class MaaFWManager(TaskExecuteBase):
         self.current_log.status = log_status
         current_user.status = "完成" if self.terminal_kind == "success" else "异常"
         self.terminal_event.set()
-        logger.info(f"MaaFW 任务终态：{self.terminal_kind} ({log_status})")
+        logger.info(f"MFW 任务终态：{self.terminal_kind} ({log_status})")
 
     async def _cleanup(self) -> None:
         """幂等清理：停 monitor、杀进程、恢复项目配置、解锁 MAS 配置。"""
@@ -1591,7 +1595,7 @@ class MaaFWManager(TaskExecuteBase):
                 await self.log_monitor.stop()
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"停止日志监控失败：{exc}")
-                logger.opt(exception=True).warning(f"停止 MaaFW 日志监控失败：{exc}")
+                logger.opt(exception=True).warning(f"停止 MFW 日志监控失败：{exc}")
             self.monitor_started = False
 
         if self.process_manager is not None:
@@ -1599,7 +1603,7 @@ class MaaFWManager(TaskExecuteBase):
                 await self.process_manager.kill()
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"结束进程管理器失败：{exc}")
-                logger.opt(exception=True).warning(f"结束 MaaFW 进程失败：{exc}")
+                logger.opt(exception=True).warning(f"结束 MFW 进程失败：{exc}")
 
         needs_restore = not self.restored and (
             self.backup_published or self.manifest_path.exists()
@@ -1619,18 +1623,18 @@ class MaaFWManager(TaskExecuteBase):
             try:
                 await asyncio.to_thread(self._restore_backup_from_state)
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"恢复 MaaFW 配置失败：{exc}")
-                logger.opt(exception=True).warning(f"恢复 MaaFW 配置失败：{exc}")
+                errors.append(f"恢复 MFW 配置失败：{exc}")
+                logger.opt(exception=True).warning(f"恢复 MFW 配置失败：{exc}")
         elif needs_restore:
-            errors.append("外壳仍可能运行；为避免并发写入，已保留 MaaFW 配置备份")
+            errors.append("外壳仍可能运行；为避免并发写入，已保留 MFW 配置备份")
 
         script_config = self.script_config
         if script_config is not None and script_config.is_locked:
             try:
                 await script_config.unlock()
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"解锁 MaaFW 配置失败：{exc}")
-                logger.opt(exception=True).warning(f"解锁 MaaFW 配置失败：{exc}")
+                errors.append(f"解锁 MFW 配置失败：{exc}")
+                logger.opt(exception=True).warning(f"解锁 MFW 配置失败：{exc}")
 
         self.cleanup_error = "；".join(errors) if errors else None
         self.cleanup_done = not errors and self.restored
@@ -1781,7 +1785,7 @@ class MaaFWManager(TaskExecuteBase):
         """
 
         if self.exe_path is None:
-            raise RuntimeError("MaaFW 外壳可执行文件未初始化")
+            raise RuntimeError("MFW 外壳可执行文件未初始化")
         if self.shell_family is ShellFamily.MXU:
             return [
                 self.exe_path,
@@ -1791,7 +1795,7 @@ class MaaFWManager(TaskExecuteBase):
                 "-q",
             ]
         if self.instance_path is None:
-            raise RuntimeError("MaaFW 活动实例未初始化")
+            raise RuntimeError("MFW 活动实例未初始化")
         return [self.exe_path, "--instance", self.instance_path.stem]
 
     async def _arrange_windows_after_launch(self) -> None:
@@ -1808,24 +1812,24 @@ class MaaFWManager(TaskExecuteBase):
         with suppress(Exception):
             if Config.get("Function", "IfSilence") and self.process_manager is not None:
                 if await self.process_manager.minimize_window():
-                    logger.info("MaaFW 静默模式：已收起外壳窗口")
+                    logger.info("MFW 静默模式：已收起外壳窗口")
 
         if self.game_launch_spec is None:
             return
         try:
             pid = self._resolve_game_pid()
             if pid is None:
-                logger.warning("MaaFW 未能定位 PC 游戏进程，跳过窗口置前")
+                logger.warning("MFW 未能定位 PC 游戏进程，跳过窗口置前")
                 return
             # 不下沉到工作线程：AttachThreadInput 是按调用线程生效的，
             # 与 ProcessManager.activate_window 保持同一线程语义（MaaEnd
             # 专项就是这么用的）。EnumWindows 只遍历顶层窗口，毫秒级。
             if activate_window_by_pid(pid):
-                logger.info(f"MaaFW 已将 PC 游戏窗口置前：pid={pid}")
+                logger.info(f"MFW 已将 PC 游戏窗口置前：pid={pid}")
             else:
-                logger.warning(f"MaaFW 置前 PC 游戏窗口失败：pid={pid}")
+                logger.warning(f"MFW 置前 PC 游戏窗口失败：pid={pid}")
         except Exception as exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"MaaFW 整理窗口时出错：{exc}")
+            logger.opt(exception=True).warning(f"MFW 整理窗口时出错：{exc}")
 
     def _resolve_game_pid(self) -> int | None:
         """取「实际游戏」进程 pid。
@@ -1887,18 +1891,18 @@ class MaaFWManager(TaskExecuteBase):
                     [path.name for path in log_dir.glob("*.log")], today
                 )
                 if picked is not None:
-                    logger.info(f"MaaFW 已定位外壳日志：{picked}")
+                    logger.info(f"MFW 已定位外壳日志：{picked}")
                     self._apply_fallback_log_timestamps()
                     return log_dir / picked
             if fallback is not None and fallback.is_file():
-                logger.info(f"MaaFW 已定位外壳日志（兜底）：{fallback.name}")
+                logger.info(f"MFW 已定位外壳日志（兜底）：{fallback.name}")
                 self._apply_fallback_log_timestamps()
                 return fallback
             if attempt + 1 < attempts:
                 await asyncio.sleep(_SHELL_LOG_PROBE_INTERVAL_SECONDS)
 
         logger.warning(
-            f"MaaFW 等待外壳日志超时（{_SHELL_LOG_WAIT_SECONDS}s）："
+            f"MFW 等待外壳日志超时（{_SHELL_LOG_WAIT_SECONDS}s）："
             f"{log_dir if log_dir is not None else fallback}"
         )
         return None
@@ -1964,7 +1968,7 @@ class MaaFWManager(TaskExecuteBase):
             else self.current_user_item
         )
         logger.opt(exception=True).warning(
-            f"MaaFW 用户 {getattr(user_item, 'name', '?')} 运行异常，"
+            f"MFW 用户 {getattr(user_item, 'name', '?')} 运行异常，"
             f"跳过该用户继续后续队列：{exc}"
         )
         if user_item is None:
@@ -1975,7 +1979,7 @@ class MaaFWManager(TaskExecuteBase):
             self.current_log = LogRecord()
             start_time = self.log_start_time or datetime.now()
             user_item.log_record[start_time] = self.current_log
-        self.current_log.status = f"MaaFW 用户运行异常：{exc}"
+        self.current_log.status = f"MFW 用户运行异常：{exc}"
 
         with suppress(Exception):
             if self.current_user_config is not None:
@@ -1984,7 +1988,7 @@ class MaaFWManager(TaskExecuteBase):
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
-                data={"Error": f"MaaFW 用户 {user_item.name} 运行异常：{exc}"},
+                data={"Error": f"MFW 用户 {user_item.name} 运行异常：{exc}"},
             )
 
     async def _mark_run_started(self) -> None:
@@ -2028,11 +2032,11 @@ class MaaFWManager(TaskExecuteBase):
             try:
                 if not await System.kill_process(self.exe_path):
                     logger.warning(
-                        f"MaaFW 用户间收尾未能确认外壳已停止：{self.exe_path}，"
+                        f"MFW 用户间收尾未能确认外壳已停止：{self.exe_path}，"
                         "下一个用户可能与残留外壳争用同一份配置"
                     )
             except Exception as exc:  # noqa: BLE001
-                logger.opt(exception=True).warning(f"MaaFW 用户间收尾杀进程异常：{exc}")
+                logger.opt(exception=True).warning(f"MFW 用户间收尾杀进程异常：{exc}")
         await self._teardown_launch_preparation()
 
     # ---- 运行前启动准备：按控制器类型起模拟器 / PC 游戏 ----
@@ -2088,7 +2092,7 @@ class MaaFWManager(TaskExecuteBase):
         """Adb 控制器：起脚本级模拟器。摘自 M9A ``AutoProxy.py`` 并适配本层。"""
 
         if self.script_config is None:
-            return "MaaFW 脚本配置未加载"
+            return "MFW 脚本配置未加载"
         emulator_selection = self._get_emulator_selection(self.script_config)
         if emulator_selection is None:
             # 未配置 MAS 模拟器。check() 中受保护的启动前 Adb 设备校验已确认活动
@@ -2096,7 +2100,7 @@ class MaaFWManager(TaskExecuteBase):
             # check() 就被明确拒绝。这里是「用户自行在外壳侧连接、自行管理模拟器」
             # 的既有放行场景：不是静默跳过，显式记录后沿用实例已有连接。
             logger.info(
-                "MaaFW 未配置 MAS 模拟器，跳过自动启动，沿用活动实例已有的设备连接"
+                "MFW 未配置 MAS 模拟器，跳过自动启动，沿用活动实例已有的设备连接"
             )
             self.emulator_info = None
             self.generated_adb_device = None
@@ -2120,7 +2124,7 @@ class MaaFWManager(TaskExecuteBase):
             )
             await self._wait_for_adb_ready(self.generated_adb_device)
         except Exception as exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"MaaFW 模拟器启动失败：{exc}")
+            logger.opt(exception=True).warning(f"MFW 模拟器启动失败：{exc}")
             with suppress(Exception):
                 if self.emulator_manager is not None:
                     await self.emulator_manager.close(emulator_index)
@@ -2175,16 +2179,16 @@ class MaaFWManager(TaskExecuteBase):
                     if_merge_std=True,
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning(f"MaaFW adb 就绪探测不可用，跳过等待：{exc}")
+                logger.warning(f"MFW adb 就绪探测不可用，跳过等待：{exc}")
                 return
             if result.returncode == 0 and "maafw-ready" in (result.stdout or ""):
                 if attempt > 1:
-                    logger.info(f"MaaFW adb 已就绪（第 {attempt} 次探测）：{serial}")
+                    logger.info(f"MFW adb 已就绪（第 {attempt} 次探测）：{serial}")
                 return
             await asyncio.sleep(_ADB_READY_PROBE_INTERVAL_SECONDS)
 
         logger.warning(
-            f"MaaFW 等待 adb 就绪超时（{_ADB_READY_TIMEOUT_SECONDS}s）：{serial}，"
+            f"MFW 等待 adb 就绪超时（{_ADB_READY_TIMEOUT_SECONDS}s）：{serial}，"
             "仍继续启动外壳；若外壳报控制器初始化失败，多半是模拟器尚未完全启动"
         )
 
@@ -2223,14 +2227,14 @@ class MaaFWManager(TaskExecuteBase):
             # `emulator_selection is None` 门在外面——即这条路上设备字段全程无人校验，
             # 必须让用户看得见。
             logger.warning(
-                f"MaaFW 无法按模拟器类型 {emulator_type!r} 生成设备配置，"
+                f"MFW 无法按模拟器类型 {emulator_type!r} 生成设备配置，"
                 "改为沿用实例原有的 AdbDevice；若外壳侧从未连接过设备，"
                 "本次运行会在控制器初始化阶段失败"
             )
             return None
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(
-                f"MaaFW 构建 AdbDevice 配置出错，改为沿用实例原有设备字段："
+                f"MFW 构建 AdbDevice 配置出错，改为沿用实例原有设备字段："
                 f"{exc}；该路径不经 check() 的设备校验"
             )
             return None
@@ -2346,7 +2350,7 @@ class MaaFWManager(TaskExecuteBase):
         """Win32 控制器：按 ``Game.LaunchMode`` 起 PC 游戏，复用 ``game_lifecycle``。"""
 
         if self.script_config is None:
-            return "MaaFW 脚本配置未加载"
+            return "MFW 脚本配置未加载"
         try:
             spec = resolve_game_launch_spec(self.script_config)
             validate_game_launch_spec(spec)
@@ -2367,31 +2371,42 @@ class MaaFWManager(TaskExecuteBase):
             preexisting = await asyncio.to_thread(snapshot_matching_processes, spec)
             self.game_owned_process = await launch_game(spec, preexisting=preexisting)
         except Exception as exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"MaaFW PC 游戏启动失败：{exc}")
+            logger.opt(exception=True).warning(f"MFW PC 游戏启动失败：{exc}")
             return f"PC 游戏启动失败：{exc}"
-        await self._await_game_ready(spec)
+        if not await self._await_game_ready(spec):
+            return (
+                f"PC 游戏窗口在 {spec.wait_time}s 内没有出现，外壳无法连接到游戏。"
+                "请调大「等待时间」，或先手动把游戏开到能操作再跑"
+            )
         return None
 
-    async def _await_game_ready(self, spec: MaaFWGameLaunchSpec) -> None:
+    async def _await_game_ready(self, spec: MaaFWGameLaunchSpec) -> bool:
         """按「等待时间」等实际游戏进程/窗口出现，再放外壳进场。
 
         UI 对这个字段的承诺原文就是「启动目标后等待实际游戏进程/窗口出现的时间」，
         但此前 ``wait_time`` 只被解析进 spec，没有任何调用点 —— 起完 exe 立刻就去
-        起外壳了。进程创建远早于窗口出现，Endfield 这类游戏中间隔着几十秒；外壳
-        先到，Win32 控制器就拿不到游戏窗口。
+        起外壳了。进程创建远早于窗口出现，Endfield 这类游戏中间隔着几十秒。
+
+        **等不到必须判死。** 这条等待是硬门槛，不是尽力而为：本层会摘掉外壳实例的
+        ``preActions``（防止外壳重复启动游戏），而外壳那套「等待窗口就绪」循环恰恰
+        挂在 preAction 分支上——摘掉之后外壳会直接去连窗口，连不到就一句
+        「未找到窗口 X」放弃，不重试。等窗口这件事已经整个落到本层头上，这里放行
+        等于让外壳空跑一轮（2026-08-29 真机实测就是这样白跑的）。
 
         启动器模式还要多一步：MAS 起的是启动器，真正要等的是它拉起来的游戏本体。
         顺手把身份记进 ``client_identity`` —— 窗口置前和结束收尾都按它来，此前这
         个字段从没被赋过值，启动器模式下游戏本体既不会被置前也不会被关闭。
 
-        等不到**不判死**：外壳自身也有重试，用户也可能就是想把等待交给外壳。
+        Returns:
+            窗口是否已就绪。``AttachOnly`` / ``URL`` / 等待时间为 0 时视为就绪
+            （用户显式放弃了这道门槛）。
         """
 
         if spec.mode in {"AttachOnly", "URL"} or spec.wait_time <= 0:
-            return
+            return True
         owned = self.game_owned_process
         if owned is None:
-            return
+            return True
 
         started = datetime.now()
         pid = owned.pid
@@ -2400,14 +2415,12 @@ class MaaFWManager(TaskExecuteBase):
                 wait_for_client, spec, spec.wait_time, preexisting=owned.preexisting
             )
             if client is None:
-                logger.warning(
-                    f"MaaFW 等待游戏本体进程超时（{spec.wait_time}s），继续起外壳"
-                )
-                return
+                logger.warning(f"MFW 等待游戏本体进程超时（{spec.wait_time}s）")
+                return False
             with suppress(Exception):
                 owned.client_identity = (client.pid, client.create_time())
             pid = client.pid
-            logger.info(f"MaaFW 已定位游戏本体进程：pid={pid}")
+            logger.info(f"MFW 已定位游戏本体进程：pid={pid}")
 
         # 与日志等待同理，按次数计而不是墙钟 deadline：测试里 asyncio.sleep 被打成
         # 空转，墙钟写法会变成真的忙等满 wait_time 秒。
@@ -2416,13 +2429,12 @@ class MaaFWManager(TaskExecuteBase):
         attempts = max(1, int(remaining / _GAME_READY_PROBE_INTERVAL_SECONDS))
         for attempt in range(attempts):
             if has_visible_window(pid):
-                logger.info(f"MaaFW PC 游戏窗口已就绪：pid={pid}")
-                return
+                logger.info(f"MFW PC 游戏窗口已就绪：pid={pid}")
+                return True
             if attempt + 1 < attempts:
                 await asyncio.sleep(_GAME_READY_PROBE_INTERVAL_SECONDS)
-        logger.warning(
-            f"MaaFW 等待 PC 游戏窗口超时（{spec.wait_time}s），继续起外壳"
-        )
+        logger.warning(f"MFW 等待 PC 游戏窗口超时（{spec.wait_time}s）：pid={pid}")
+        return False
 
     async def _teardown_launch_preparation(self) -> None:
         """收尾：关闭本层启动准备起来的模拟器 / PC 游戏。幂等，可多路径调用。"""
@@ -2431,7 +2443,7 @@ class MaaFWManager(TaskExecuteBase):
             try:
                 await self.emulator_manager.close(self.emulator_index)
             except Exception as exc:  # noqa: BLE001
-                logger.opt(exception=True).warning(f"MaaFW 关闭模拟器失败：{exc}")
+                logger.opt(exception=True).warning(f"MFW 关闭模拟器失败：{exc}")
             finally:
                 self.emulator_opened = False
                 self.emulator_info = None
@@ -2454,7 +2466,7 @@ class MaaFWManager(TaskExecuteBase):
         """执行单个用户：解析范围 → 周期过滤 → 写配置 → 起外壳 → 判终态。"""
 
         if self.user_config is None or self.interface_model is None:
-            raise RuntimeError("MaaFW 运行前置状态未初始化")
+            raise RuntimeError("MFW 运行前置状态未初始化")
 
         self.current_user_uid = uid
         self.current_user_config = self.user_config[uid]
@@ -2507,7 +2519,7 @@ class MaaFWManager(TaskExecuteBase):
         # 用户级状态并跳过外壳，绝不让它走到 controller_failed。
         launch_error = await self._prepare_launch_for_user(controller_name)
         if launch_error is not None:
-            self._mark_terminal("launch_failed", f"MaaFW {launch_error}")
+            self._mark_terminal("launch_failed", f"MFW {launch_error}")
             self.user_terminal[str(uid)] = self.terminal_kind
             with suppress(Exception):
                 await self.current_user_config.set("Data", "LastProxyStatus", "失败")
@@ -2552,7 +2564,7 @@ class MaaFWManager(TaskExecuteBase):
             if callable(save):
                 await save()
         except Exception as exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"MaaFW 用户配置回写失败：{exc}")
+            logger.opt(exception=True).warning(f"MFW 用户配置回写失败：{exc}")
 
     async def main_task(self) -> None:
         """执行一轮 MaaFW 外部任务；所有运行期状态都在 finally 清理。"""
@@ -2598,7 +2610,7 @@ class MaaFWManager(TaskExecuteBase):
             await self._await_cleanup()
         except Exception as exc:  # noqa: BLE001
             self.cleanup_error = str(exc)
-            logger.opt(exception=True).warning(f"MaaFW 收尾清理异常：{exc}")
+            logger.opt(exception=True).warning(f"MFW 收尾清理异常：{exc}")
 
         # 外壳已由 _cleanup 结束；再关闭本层启动准备起来的模拟器 / PC 游戏
         # （顺序与 M9A 一致：先停外壳，后关模拟器）。所有路径都会经过 final_task。
@@ -2678,12 +2690,12 @@ class MaaFWManager(TaskExecuteBase):
             )
             await push_notification("代理结果", title, message)
         except Exception as exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"推送 MaaFW 任务报告失败：{exc}")
+            logger.opt(exception=True).warning(f"推送 MFW 任务报告失败：{exc}")
             with suppress(Exception):
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
-                    data={"Error": f"推送 MaaFW 任务报告失败：{exc}"},
+                    data={"Error": f"推送 MFW 任务报告失败：{exc}"},
                 )
 
     async def _write_history_records(self) -> None:
@@ -2714,7 +2726,7 @@ class MaaFWManager(TaskExecuteBase):
             ):
                 try:
                     status = log_item.status
-                    if status == "MaaFW 正常运行中":
+                    if status == "MFW 正常运行中":
                         status = "任务被用户手动中止"
                     content = list(log_item.content)
                     if not content:
@@ -2731,7 +2743,7 @@ class MaaFWManager(TaskExecuteBase):
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.opt(exception=True).warning(
-                        f"MaaFW 写入历史记录失败（用户 {user.name}）：{exc}"
+                        f"MFW 写入历史记录失败（用户 {user.name}）：{exc}"
                     )
 
     async def on_crash(self, e: Exception) -> None:
@@ -2746,19 +2758,19 @@ class MaaFWManager(TaskExecuteBase):
                 self.current_log = LogRecord()
                 start_time = self.log_start_time or datetime.now()
                 crash_user.log_record[start_time] = self.current_log
-            self.current_log.status = f"MaaFW 运行异常：{e}"
-            logger.opt(exception=True).warning(f"MaaFW 外部任务出现异常：{e}")
+            self.current_log.status = f"MFW 运行异常：{e}"
+            logger.opt(exception=True).warning(f"MFW 外部任务出现异常：{e}")
             try:
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
-                    data={"Error": f"MaaFW 外部任务出现异常：{e}"},
+                    data={"Error": f"MFW 外部任务出现异常：{e}"},
                 )
             except Exception as notify_exc:  # noqa: BLE001
-                logger.warning(f"发送 MaaFW 异常通知失败：{notify_exc}")
+                logger.warning(f"发送 MFW 异常通知失败：{notify_exc}")
             await self._await_cleanup()
         except Exception as cleanup_exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"MaaFW 异常处理失败：{cleanup_exc}")
+            logger.opt(exception=True).warning(f"MFW 异常处理失败：{cleanup_exc}")
 
 
 __all__ = ["MaaFWManager"]

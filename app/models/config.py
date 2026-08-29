@@ -2378,7 +2378,7 @@ class MaaFWConfig(ConfigBase):
 
         ## Info ------------------------------------------------------------
         ## MaaFW 脚本名称
-        self.Info_Name = ConfigItem("Info", "Name", "新 MaaFW 脚本")
+        self.Info_Name = ConfigItem("Info", "Name", "新 MFW 脚本")
         ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
         self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
         ## MaaFW 项目根目录，应包含 interface.json

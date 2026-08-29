@@ -99,7 +99,7 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeMaaFWConfig):
-        raise TypeError("脚本配置类型错误, 不是 MaaFW 类型")
+        raise TypeError("脚本配置类型错误, 不是 MFW 类型")
     return script_config
 
 
@@ -679,7 +679,7 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
 @router.post(
     "/maafw/preview",
     tags=["MaaFW"],
-    summary="预览 MaaFW interface",
+    summary="预览 MFW interface",
     response_model=MaaFWInterfacePreviewOut,
     status_code=200,
 )
@@ -710,12 +710,12 @@ async def preview_maafw_interface(
         return MaaFWInterfacePreviewOut(
             code=500,
             status="error",
-            message=f"MaaFW interface 预览失败: {exc}",
+            message=f"MFW interface 预览失败: {exc}",
             data=None,
         )
 
     return MaaFWInterfacePreviewOut(
-        message=f"已读取 MaaFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
+        message=f"已读取 MFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
         data=data,
     )
 
@@ -723,7 +723,7 @@ async def preview_maafw_interface(
 @router.post(
     "/maafw/update",
     tags=["MaaFW"],
-    summary="检查或执行 MaaFW 项目更新",
+    summary="检查或执行 MFW 项目更新",
     response_model=MaaFWProjectUpdateOut,
     status_code=200,
 )
@@ -740,31 +740,31 @@ async def update_maafw_project(
         script_config = _maafw_script_config(payload.scriptId)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWProjectUpdateOut(
-            code=400, status="error", message=f"MaaFW 脚本无效: {exc}"
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
 
     project_value = str(script_config.get("Info", "Path") or "").strip()
     if not project_value:
         return MaaFWProjectUpdateOut(
-            code=400, status="error", message="请先设置 MaaFW 项目路径"
+            code=400, status="error", message="请先设置 MFW 项目路径"
         )
     root_path = Path(project_value).resolve()
     if not root_path.is_dir():
         return MaaFWProjectUpdateOut(
             code=400,
             status="error",
-            message="MaaFW 项目路径不是有效目录，请检查 Info.Path",
+            message="MFW 项目路径不是有效目录，请检查 Info.Path",
         )
 
     try:
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)
     except MaaFWInterfaceLoadError as exc:
         return MaaFWProjectUpdateOut(
-            code=400, status="error", message=f"MaaFW interface 读取失败: {exc}"
+            code=400, status="error", message=f"MFW interface 读取失败: {exc}"
         )
     except Exception as exc:
         return MaaFWProjectUpdateOut(
-            code=500, status="error", message=f"MaaFW interface 读取失败: {exc}"
+            code=500, status="error", message=f"MFW interface 读取失败: {exc}"
         )
 
     current_version = str(interface.version or "")
@@ -781,16 +781,16 @@ async def update_maafw_project(
             )
         except MaaFWProjectUpdateError as exc:
             return MaaFWProjectUpdateOut(
-                code=400, status="error", message=f"MaaFW 更新检查失败: {exc}"
+                code=400, status="error", message=f"MFW 更新检查失败: {exc}"
             )
         except Exception as exc:
             return MaaFWProjectUpdateOut(
-                code=500, status="error", message=f"MaaFW 更新检查失败: {exc}"
+                code=500, status="error", message=f"MFW 更新检查失败: {exc}"
             )
 
         if discovery is None:
             return MaaFWProjectUpdateOut(
-                message=f"MaaFW 项目已是最新版本: {current_version or '未知'}",
+                message=f"MFW 项目已是最新版本: {current_version or '未知'}",
                 data=MaaFWProjectUpdateData(
                     checked=True, currentVersion=current_version
                 ),
@@ -801,7 +801,7 @@ async def update_maafw_project(
             if discovery.candidate is not None
             else discovery.source
         )
-        message = f"发现 MaaFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+        message = f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
         if not discovery.installable and discovery.unavailable_reason:
             message = f"{message}（暂无可安装更新包: {discovery.unavailable_reason}）"
         return MaaFWProjectUpdateOut(
@@ -832,15 +832,15 @@ async def update_maafw_project(
         )
     except MaaFWProjectUpdateError as exc:
         return MaaFWProjectUpdateOut(
-            code=400, status="error", message=f"MaaFW 项目更新失败: {exc}"
+            code=400, status="error", message=f"MFW 项目更新失败: {exc}"
         )
     except Exception as exc:
         return MaaFWProjectUpdateOut(
-            code=500, status="error", message=f"MaaFW 项目更新失败: {exc}"
+            code=500, status="error", message=f"MFW 项目更新失败: {exc}"
         )
 
     return MaaFWProjectUpdateOut(
-        message=result.message or "MaaFW 项目更新完成",
+        message=result.message or "MFW 项目更新完成",
         data=MaaFWProjectUpdateData(
             checked=result.checked,
             updated=result.updated,

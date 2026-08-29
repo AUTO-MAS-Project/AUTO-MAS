@@ -564,7 +564,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertFalse(runtime.ScriptConfig[script_uid].is_locked)
             self.assertTrue(
                 any(
-                    "推送 MaaFW 任务报告失败" in str(m.get("data", {}))
+                    "推送 MFW 任务报告失败" in str(m.get("data", {}))
                     for m in runtime.messages
                 )
             )
@@ -1423,7 +1423,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             self.assertTrue(crash_marker.exists())
             self.assertTrue(second.manifest_path.is_file())
             self.assertTrue(second.backup_path.is_dir())
-            self.assertIn("已保留 MaaFW 配置备份", second.cleanup_error or "")
+            self.assertIn("已保留 MFW 配置备份", second.cleanup_error or "")
 
     def test_missing_device_identifier_is_rejected_before_launch(self) -> None:
         asyncio.run(self._test_missing_device_identifier_is_rejected_before_launch())
@@ -1717,7 +1717,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             await runtime.ScriptConfig[script_uid].update({"Info": {"Controller": ""}})
             with self._patched_runtime(runtime, manager, self._no_sleep):
                 result = await manager.check()
-            self.assertIn("未确定 MaaFW controller", result)
+            self.assertIn("未确定 MFW controller", result)
 
     def test_user_failure_does_not_abort_the_queue(self) -> None:
         asyncio.run(self._test_user_failure_does_not_abort_the_queue())

@@ -52,7 +52,7 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 MaaFWProjectUpdateIn(scriptId=str(uuid.uuid4()), action="check")
             )
         self.assertEqual(out.code, 400)
-        self.assertIn("MaaFW 脚本无效", out.message)
+        self.assertIn("MFW 脚本无效", out.message)
 
     async def test_rejects_cross_type_script(self):
         script_uid = uuid.uuid4()
@@ -62,7 +62,7 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
             )
         self.assertEqual(out.code, 400)
-        self.assertIn("不是 MaaFW 类型", out.message)
+        self.assertIn("不是 MFW 类型", out.message)
 
     async def test_rejects_missing_project_path(self):
         script_uid = uuid.uuid4()
@@ -121,7 +121,7 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
                 )
         self.assertEqual(out.code, 400)
-        self.assertEqual(out.message, "MaaFW 更新检查失败: CDK 无效")
+        self.assertEqual(out.message, "MFW 更新检查失败: CDK 无效")
 
     async def test_apply_provider_error_surfaces_clean_message(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -138,7 +138,7 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="apply")
                 )
         self.assertEqual(out.code, 400)
-        self.assertEqual(out.message, "MaaFW 项目更新失败: 下载失败")
+        self.assertEqual(out.message, "MFW 项目更新失败: 下载失败")
 
     # ---- check: version comparison result mapping ------------------------
 
@@ -315,7 +315,7 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 source="mirrorchyan",
                 update_available=True,
                 installable=True,
-                message="MaaFW 项目更新完成: 2.0.0",
+                message="MFW 项目更新完成: 2.0.0",
             )
 
         with tempfile.TemporaryDirectory() as tmp:

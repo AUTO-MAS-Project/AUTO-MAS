@@ -22,7 +22,7 @@ class MaaFWConfigTest(unittest.TestCase):
         asyncio.run(self._assert_add_script_and_round_trip())
 
     def test_recycled_model_inventory(self) -> None:
-        """回收后的 MaaFW 配置模型字段分组与数量。"""
+        """回收后的 MFW 配置模型字段分组与数量。"""
 
         script = MaaFWConfig()
         script_groups = {
@@ -104,14 +104,14 @@ class MaaFWConfigTest(unittest.TestCase):
                 script_uid, script = await manager.add_script("MaaFW")
 
                 self.assertIsInstance(script, MaaFWConfig)
-                self.assertEqual(script.get("Info", "Name"), "新 MaaFW 脚本")
+                self.assertEqual(script.get("Info", "Name"), "新 MFW 脚本")
                 self.assertEqual(script.get("Run", "Engine"), "external")
                 self.assertEqual(script.get("Run", "RunTimeLimit"), 30)
 
                 await script.update(
                     {
                         "Info": {
-                            "Name": "本地 MaaFW 项目",
+                            "Name": "本地 MFW 项目",
                             "Path": str(project_root),
                         },
                         "Game": {"LaunchMode": "DirectExe"},
@@ -136,7 +136,7 @@ class MaaFWConfigTest(unittest.TestCase):
             restored_script = restored.ScriptConfig[script_uid]
 
             self.assertIsInstance(restored_script, MaaFWConfig)
-            self.assertEqual(restored_script.get("Info", "Name"), "本地 MaaFW 项目")
+            self.assertEqual(restored_script.get("Info", "Name"), "本地 MFW 项目")
             self.assertEqual(
                 Path(restored_script.get("Info", "Path")), project_root
             )
@@ -159,7 +159,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
 
 class MaaFWSchemaDTOTest(unittest.TestCase):
-    """MaaFW schema DTO 必须覆盖运行时配置的全部分组，否则用户页读写丢字段。"""
+    """MFW schema DTO 必须覆盖运行时配置的全部分组，否则用户页读写丢字段。"""
 
     def test_user_book_registers_maafw(self) -> None:
         self.assertIs(USER_BOOK["MaaFWConfig"], MaaFWUserConfigDTO)
