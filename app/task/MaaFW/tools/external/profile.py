@@ -132,10 +132,19 @@ MXU_LOG_PROFILE = ShellLogProfile(
     completion_markers=(),
     abandon_markers=(),
     controller_failure_markers=(),
-    # 以下判据串取自 MaaEnd 专项 AutoProxy.check_log —— 它读的就是这条 stdout 流，
-    # 且已在生产上验证过，不是猜的。
-    failure_markers=("任务失败:",),
-    task_start_markers=("任务开始:",),
+    # 判据串跟着外壳的**界面语言**走：MXU 的 taskStarting/taskSucceeded/taskFailed
+    # 是 i18n 条目，中文界面打「任务失败: X」，英文界面打「Task failed: X」。
+    # 中文那套取自 MaaEnd 专项 AutoProxy.check_log（生产验证），英文那套取自
+    # 2026-08-29 真机（用户的外壳跑的就是英文界面）。
+    #
+    # 已知缺口：MXU 还支持 zh_tw / ja_jp / ko_kr，那三套 i18n 是懒加载分包，
+    # 无法从安装包里静态取出，故未登记。在那三种界面语言下，单个任务失败不会把
+    # 本轮从 success 降级为 failed —— 宁可漏判也不猜串（fail-closed 的反面代价
+    # 在这里是可接受的：整轮终态仍由 stdout 流结束把关，不会假成功地提前收口）。
+    # 逐任务「露没露面」不受此影响，它走的是别名表（build_task_alias_index），
+    # 五种语言全覆盖。
+    failure_markers=("任务失败:", "Task failed:"),
+    task_start_markers=("任务开始:", "Task started:"),
     stop_markers=("[task-stop#",),
     # 留空：MXU 的周期性噪音行尚无真机样本，不猜测（fail-closed）。
     idle_noise_markers=(),

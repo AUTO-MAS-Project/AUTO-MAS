@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .preview import build_task_alias_index
 from .loader import (
     MaaFWInterfaceLoadError,
     load_interface_model,
@@ -43,6 +44,7 @@ __all__ = [
     "build_interface_preset_snapshot",
     "load_interface_model",
     "load_interface_model_cached",
+    "build_task_alias_index",
     "normalize_snapshot",
     "normalize_task_config",
     "normalize_task_execution_payload",

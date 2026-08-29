@@ -342,6 +342,62 @@ def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, 
         return {}
 
 
+def build_task_alias_index(
+    root_path: str | Path,
+    interface: MaaFWInterface,
+) -> dict[str, tuple[str, ...]]:
+    """任务名 → 它可能在外壳日志里出现的**全部写法**。
+
+    外壳按自己的界面语言打任务名：中文界面是「任务开始: 信用点购物」，英文界面
+    是「Task started: 🛍️ Credit Shopping」，而 interface 里存的是 name
+    （``CreditShoppingN2``）与 entry（``CreditShoppingMain``）—— 三者互不相同。
+    只认其中一种，换个语言就会把跑成功的运行误判成「选中任务未出现」。
+
+    这里把 name、entry、以及 ``interface.languages`` 里**每一种**语言下解析出的
+    label 全都收进来，判断时任一命中即算露面。MAS 手上就有全部语言文件，不必去
+    猜外壳当前用的是哪一种。
+
+    Returns:
+        ``{任务名: (可能的写法, ...)}``，写法已去重且剔除空串。
+    """
+
+    root = Path(root_path).resolve()
+    mappings: list[dict[str, Any]] = []
+    for relative in (interface.languages or {}).values():
+        if not isinstance(relative, str) or not relative.strip():
+            continue
+        language_path = _resolve_project_path(root, relative)
+        if language_path is None or not language_path.is_file():
+            continue
+        try:
+            data = parse_json_text(language_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 —— 语言文件坏了不该影响判定，少一种写法而已
+            continue
+        if isinstance(data, dict):
+            mappings.append(data)
+
+    index: dict[str, tuple[str, ...]] = {}
+    for task in interface.task:
+        aliases: list[str] = []
+        for candidate in (task.name, task.entry):
+            if isinstance(candidate, str) and candidate.strip():
+                aliases.append(candidate.strip())
+        raw_label = task.label
+        if isinstance(raw_label, str) and raw_label.strip():
+            if not raw_label.startswith("$"):
+                aliases.append(raw_label.strip())
+            for mapping in mappings:
+                translated = _lookup_i18n_text(raw_label, mapping)
+                if isinstance(translated, str) and translated.strip():
+                    aliases.append(translated.strip())
+        deduped: list[str] = []
+        for alias in aliases:
+            if alias not in deduped:
+                deduped.append(alias)
+        index[task.name] = tuple(deduped)
+    return index
+
+
 def _resolve_i18n_value(value: Any, mapping: dict[str, Any]) -> Any:
     if isinstance(value, dict):
         return {key: _resolve_i18n_value(item, mapping) for key, item in value.items()}

@@ -235,26 +235,62 @@ class MxuLaunchArgvTest(unittest.TestCase):
 
 
 class MxuSelectedTaskProbeTest(unittest.TestCase):
-    """MXU 按 entry 判「选中任务露过面」，不按显示名。"""
+    """任务的**任何一种写法**命中即算露过面。
+
+    外壳按自己的界面语言打任务名，落盘的调试行又打 entry，而 MAS 手里存的是
+    interface 里的 name —— 四者互不相同。只认一种，换个界面语言就会把跑成功的
+    运行误判成「选中任务未出现」（2026-08-29 真机实测，外壳跑的是英文界面：
+    `Task started: 🛍️ Credit Shopping`）。
+    """
 
     def setUp(self) -> None:
         self.manager = MaaFWManager.__new__(MaaFWManager)
         self.manager.shell_family = ShellFamily.MXU
         self.manager.interface_model = _interface()
+        self.manager.project_root = Path("C:/proj")
         self.manager.task_selections = [TaskSelection(name="打开游戏")]
+        self.manager._alias_index = {}
+        self.manager._alias_index_token = None
+        self._patch = patch.object(
+            manager_module,
+            "build_task_alias_index",
+            return_value={"打开游戏": ("打开游戏", "启动游戏", "🎮 Open Game")},
+        )
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
 
     def test_entry_in_log_counts_as_present(self) -> None:
         log = "2026-07-04 10:25:44 DEBUG [MAA]   任务[0]: entry=启动游戏\n"
         self.assertEqual(self.manager._selected_tasks_absent(log), [])
 
-    def test_absent_when_neither_entry_nor_name_appears(self) -> None:
-        log = "2026-07-04 10:25:44 INFO  [Task] 实例 MAS: 开始执行任务, 数量: 1\n"
+    def test_localized_label_counts_as_present(self) -> None:
+        # 外壳跑英文界面时日志里只有这一种写法，name 和 entry 都不出现。
+        log = "[2026-08-29 21:30:30.345] Task started: 🎮 Open Game\n"
+        self.assertEqual(self.manager._selected_tasks_absent(log), [])
+
+    def test_absent_when_no_alias_appears(self) -> None:
+        log = "[2026-08-29 21:30:30.345] Task started: Credit Shopping\n"
         self.assertEqual(self.manager._selected_tasks_absent(log), ["打开游戏"])
 
     def test_display_name_also_accepted(self) -> None:
-        # 有些项目 name 与 entry 相同，或外壳另打了显示名，两者命中其一即算露面。
         log = "任务：打开游戏\n"
         self.assertEqual(self.manager._selected_tasks_absent(log), [])
+
+    def test_falls_back_to_the_name_when_aliases_cannot_be_built(self) -> None:
+        # 语言文件缺失 / interface 读不到时不能静默放行，退回只比任务名。
+        self._patch.stop()
+        try:
+            with patch.object(
+                manager_module, "build_task_alias_index", side_effect=OSError("boom")
+            ):
+                self.manager._alias_index_token = None
+                self.assertEqual(self.manager._selected_tasks_absent("任务：打开游戏"), [])
+                self.manager._alias_index_token = None
+                self.assertEqual(
+                    self.manager._selected_tasks_absent("Task started: x"), ["打开游戏"]
+                )
+        finally:
+            self._patch.start()
 
 
 class MxuLogPathTest(unittest.TestCase):

@@ -36,6 +36,7 @@ from app.task.MaaFW.tools.controller.game_lifecycle import (
     validate_game_launch_spec,
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface import (
+    build_task_alias_index,
     load_interface_model_cached,
     normalize_task_options_by_task,
 )
@@ -352,6 +353,9 @@ class MaaFWManager(TaskExecuteBase):
         self.controller_name: str | None = None
         self.resource_name: str | None = None
         self.task_selections: list[TaskSelection] = []
+        # 任务名 → 全部可能写法（含各语言 label），见 _task_alias_index。
+        self._alias_index: dict[str, tuple[str, ...]] = {}
+        self._alias_index_token: tuple[str, int] | None = None
 
         self.state_dir = Path.cwd() / "data" / str(script_info.script_id) / _STATE_DIR_NAME
         self.temp_path = self.state_dir
@@ -1460,28 +1464,52 @@ class MaaFWManager(TaskExecuteBase):
         return self._selected_tasks_absent_from(log_text)
 
     def _selected_entries_absent_from(self, log_text: str) -> list[str]:
-        """选中任务里 entry 与显示名**都**没在日志中出现过的那些（MXU 用）。
+        """选中任务的**任何一种写法**都没在日志里出现过的那些（MXU 用）。
 
         与显示名版同构：只回答「选中的事有没有被尝试」，不解析逐任务成败。
-        两者取或，是因为 MXU 的两个日志来源用的不是同一种标识：stdout 打显示名
-        （`任务开始: X`），落盘那份打 entry（`任务[0]: entry=Y`）。entry 取自
-        interface；取不到就只比显示名，不静默跳过。
+
+        为什么要收集多种写法：外壳按自己的界面语言打任务名。中文界面是
+        「任务开始: 信用点购物」，英文界面是「Task started: 🛍️ Credit Shopping」，
+        落盘的调试行又打 entry（`任务[0]: entry=CreditShoppingMain`），而 MAS 手里
+        存的是 name（`CreditShoppingN2`）—— 四者互不相同。只认一种，换个界面语言
+        就会把跑成功的运行误判成「选中任务未出现」（2026-08-29 真机实测，外壳跑
+        的是英文界面）。
+
+        别名表由本层从 interface 与**全部**语言文件算出，不必猜外壳当前用哪种语言。
+        算不出别名（无 interface / 语言文件缺失）时退回只比任务名，不静默跳过。
         """
 
-        entry_index: dict[str, str] = {}
-        if self.interface_model is not None:
-            for task in self.interface_model.task:
-                entry_index.setdefault(task.name, task.entry)
-
+        aliases = self._task_alias_index()
         absent: list[str] = []
         for selection in self.task_selections:
             name = selection.name.strip() if isinstance(selection.name, str) else ""
             if not name:
                 continue
-            probe = entry_index.get(name) or name
-            if probe not in log_text and name not in log_text:
+            probes = aliases.get(name) or (name,)
+            if not any(probe in log_text for probe in probes):
                 absent.append(name)
         return absent
+
+    def _task_alias_index(self) -> dict[str, tuple[str, ...]]:
+        """任务名 → 全部可能写法，按项目缓存一次。
+
+        要读全部语言文件，比逐次现算便宜；interface 换了（换项目/重载）就重建。
+        失败一律退回空表，由调用方按「只比任务名」处理。
+        """
+
+        if self.interface_model is None or self.project_root is None:
+            return {}
+        token = (str(self.project_root), id(self.interface_model))
+        if self._alias_index_token != token:
+            try:
+                self._alias_index = build_task_alias_index(
+                    self.project_root, self.interface_model
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"MFW 任务别名表构建失败，退回按任务名匹配：{exc}")
+                self._alias_index = {}
+            self._alias_index_token = token
+        return self._alias_index
 
     def _selected_tasks_absent_from(self, log_text: str) -> list[str]:
         """选中任务名里在整份日志中从未以子串形式出现过的那些。

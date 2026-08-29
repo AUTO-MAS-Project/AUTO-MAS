@@ -132,6 +132,15 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         self.assertTrue(hit(MXU_LOG_PROFILE.failure_markers, failed))
         self.assertFalse(hit(MXU_LOG_PROFILE.failure_markers, done))
 
+        # 英文界面（2026-08-29 真机就是这套）必须同样命中。
+        en_started = "[2026-08-29 21:30:30.345] Task started: 🛍 Credit Shopping"
+        en_failed = "[2026-08-29 21:45:23.855] Task failed: 🌿 Environment Monitoring"
+        en_done = "[2026-08-29 21:32:40.422] Task completed: 🛍 Credit Shopping"
+        self.assertTrue(hit(MXU_LOG_PROFILE.task_start_markers, en_started))
+        self.assertTrue(hit(MXU_LOG_PROFILE.failure_markers, en_failed))
+        self.assertFalse(hit(MXU_LOG_PROFILE.failure_markers, en_done))
+        self.assertFalse(hit(MXU_LOG_PROFILE.task_start_markers, en_done))
+
     def test_run_completion_is_not_a_string(self) -> None:
         """整轮完成靠 stdout 流结束，不靠字符串。
 
