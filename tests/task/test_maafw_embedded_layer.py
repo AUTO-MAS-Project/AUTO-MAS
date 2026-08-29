@@ -4,6 +4,7 @@
 不实例化 `Tasker`/`Controller`、不起子进程、不做全进程枚举。
 """
 
+import ast
 import asyncio
 import importlib
 import json
@@ -61,6 +62,34 @@ EMBEDDED_DIR = (
 )
 
 
+def plugin_framework_imports(path: Path) -> list[str]:
+    """返回该文件真正 import 的插件宿主层模块名。
+
+    用 AST 而不是原文扫描：docstring 里为了说明"为什么不搬"会提到
+    `app.plugins`，原文扫描会把说明本身当成违规。
+    """
+
+    found: list[str] = []
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.extend(
+                alias.name
+                for alias in node.names
+                if alias.name.split(".")[0] in {"auto_mas_core"}
+                or alias.name.startswith("app.plugins")
+            )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.startswith("app.plugins") or module.split(".")[0] == "auto_mas_core":
+                found.append(module)
+        elif isinstance(node, ast.Attribute) and node.attr == "get_service":
+            found.append("ctx.get_service")
+        elif isinstance(node, ast.Name) and node.id == "PluginHttpRequest":
+            found.append("PluginHttpRequest")
+    return found
+
+
 class EmbeddedLayerImportTest(unittest.TestCase):
     def test_pure_modules_import_without_maa(self) -> None:
         base = "app.task.MaaFW.tools.embedded"
@@ -91,15 +120,8 @@ class EmbeddedLayerImportTest(unittest.TestCase):
 
     def test_no_plugin_framework_coupling_remains(self) -> None:
         for path in sorted(EMBEDDED_DIR.glob("*.py")):
-            source = path.read_text(encoding="utf-8")
             with self.subTest(module=path.name):
-                for marker in (
-                    "app.plugins",
-                    "auto_mas_core",
-                    "PluginHttpRequest",
-                    "ctx.get_service",
-                ):
-                    self.assertNotIn(marker, source, marker)
+                self.assertEqual(plugin_framework_imports(path), [])
 
     def test_worker_module_path_points_into_the_tree(self) -> None:
         source = (EMBEDDED_DIR / "runner_task.py").read_text(encoding="utf-8")
