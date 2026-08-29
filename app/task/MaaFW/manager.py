@@ -1294,7 +1294,7 @@ class MaaFWManager(TaskExecuteBase):
             base=base,
             # 「摘取+适配」自 M9A AutoProxy.build_config（AutoProxy.py:983-986）：
             # BeforeTask=StartupSoftwareAndScript 让外壳自行完成「连接设备 → 跑队列」。
-            # 实测（D:/MAS/tmp/m9a-test）：BeforeTask="None" 时 --autostart 触发的
+            # M9A 真机实测：BeforeTask="None" 时 --autostart 触发的
             # op=StartTask 在设备未选中前即被拒（「未选择连接目标」，device=<none>）；
             # 改为 StartupSoftwareAndScript 后同样参数进入 op=ExecuteTaskQueue，
             # 由外壳自行连接。SoftwarePath 恒为空串——模拟器归 MAS 的 EmulatorManager
