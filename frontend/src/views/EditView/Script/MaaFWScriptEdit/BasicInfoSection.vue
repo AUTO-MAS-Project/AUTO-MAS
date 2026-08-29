@@ -54,10 +54,8 @@
               </template>
               选择本地目录
             </a-button>
-          </a-input-group>
-          <div class="path-secondary-actions">
             <a-button
-              size="middle"
+              size="large"
               class="path-button"
               :loading="interfaceLoading"
               :disabled="!maafwConfig.Info.Path || updateApplying"
@@ -68,7 +66,7 @@
               </template>
               读取 interface
             </a-button>
-          </div>
+          </a-input-group>
         </a-form-item>
       </a-col>
     </a-row>
@@ -202,6 +200,9 @@ const emit = defineEmits<{
 
 .path-input {
   flex: 1;
+  /* flex 子项默认 min-width:auto，窄屏下会被内容撑住不肯让位，
+     把两个按钮挤出圆角容器；显式归零才能正常收缩。 */
+  min-width: 0;
   border: none !important;
   border-radius: 0 !important;
 }
@@ -211,27 +212,15 @@ const emit = defineEmits<{
 }
 
 .path-button {
+  /* 两个按钮共用一套样式：各自带左分隔线，与输入框拼成一条完整控件。 */
+  flex: 0 0 auto;
+  white-space: nowrap;
   border: none;
   border-left: 1px solid var(--ant-color-border-secondary);
   border-radius: 0;
   background: var(--ant-color-primary-bg);
   color: var(--ant-color-primary);
   font-weight: 600;
-}
-
-.path-secondary-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.path-secondary-actions .path-button {
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font-weight: 500;
 }
 
 .interface-summary {
@@ -338,14 +327,6 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 768px) {
-  .path-secondary-actions {
-    flex-direction: column;
-  }
-
-  .path-secondary-actions .ant-btn {
-    width: 100%;
-  }
-
   .interface-stat-grid {
     grid-template-columns: repeat(3, 1fr);
   }
