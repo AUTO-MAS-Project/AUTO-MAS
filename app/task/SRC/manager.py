@@ -28,6 +28,8 @@ from datetime import datetime
 from typing import Callable
 
 from app.core import Config, EmulatorManager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
@@ -758,10 +760,10 @@ class SrcManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -927,10 +929,13 @@ class SrcManager(TaskExecuteBase):
         logger.opt(exception=True).warning(f"{operation}时出现异常: {error}")
         try:
             await asyncio.wait_for(
-                Config.send_websocket_message(
+                Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"{operation}时出现异常: {error}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"{operation}时出现异常: {error}",
+                    ),
                 ),
                 timeout=_WEBSOCKET_REPORT_TIMEOUT_SECONDS,
             )
@@ -945,10 +950,10 @@ class SrcManager(TaskExecuteBase):
         logger.opt(exception=True).warning(f"SRC任务出现异常: {e}")
         try:
             await asyncio.wait_for(
-                Config.send_websocket_message(
+                Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"SRC任务出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"SRC任务出现异常: {e}"),
                 ),
                 timeout=_WEBSOCKET_REPORT_TIMEOUT_SECONDS,
             )

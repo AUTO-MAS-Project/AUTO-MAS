@@ -21,6 +21,8 @@ from contextlib import suppress
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.config import OkwwConfig
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services.wuthering_waves import check_wuthering_waves_update
@@ -99,8 +101,8 @@ class WuwaUpdateTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"鸣潮更新任务出现异常: {e}")
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"鸣潮更新失败: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"鸣潮更新失败: {e}"),
             )

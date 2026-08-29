@@ -23,6 +23,8 @@ import asyncio
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
@@ -258,10 +260,10 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         try:
             await asyncio.wait_for(
-                Config.send_websocket_message(
+                Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"脚本设置任务出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
                 ),
                 timeout=5,
             )

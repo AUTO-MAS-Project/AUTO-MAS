@@ -54,7 +54,7 @@ async def add_queue() -> QueueCreateOut:
     return QueueCreateOut(queueId=str(uid), data=data)
 
 
-@ws_command("queue.get")
+@ws_command("queue.get", params=QueueGetIn)
 @router.post(
     "/get",
     tags=["Get"],

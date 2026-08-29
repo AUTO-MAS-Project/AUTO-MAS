@@ -51,7 +51,6 @@
 
 <script lang="ts" setup>
 import {
-  ApiOutlined,
   BugOutlined,
   CalendarOutlined,
   CarryOutOutlined,
@@ -99,7 +98,6 @@ const mainMenuItems = [
 const devMenuItems = [
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
-  { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
   { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
   ...(import.meta.env.DEV
     ? [{ key: '/update-download-dev', label: '更新下载测试', icon: icon(BugOutlined) }]

@@ -26,6 +26,8 @@ from pathlib import Path
 from datetime import datetime
 
 from app.core import Config, EmulatorManager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
@@ -247,10 +249,10 @@ class GeneralManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -361,10 +363,10 @@ class GeneralManager(TaskExecuteBase):
                     mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"推送代理结果时出现异常: {e}"),
                 )
 
         self.script_info.status = "完成"
@@ -380,8 +382,8 @@ class GeneralManager(TaskExecuteBase):
             logger.opt(exception=True).warning(
                 f"恢复脚本直控配置失败: {restore_error}"
             )
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"通用脚本任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"通用脚本任务出现异常: {e}"),
         )
