@@ -591,11 +591,22 @@ class MaaFWManager(TaskExecuteBase):
         selections: list[TaskSelection] = []
         for name in task_names:
             task = task_index.get(name)
-            entries = (
-                build_option_entries(self.interface_model, task, normalized.get(name))
-                if task is not None
-                else []
-            )
+            if task is None:
+                selections.append(TaskSelection(name=name))
+                continue
+            # 只写用户**真正设过**的选项。normalize 会把 interface 声明的默认值一并
+            # 填进来，若照单全写就会改变既有行为：M9A 实测下「心相观测」会多出
+            # selected_cases: []、「使用兑换码」会把 interface 的占位串 "占位" 当成
+            # 兑换码写进实例配置——用户根本没碰过这两项。
+            # 用户没设的选项退回 {"name": …, "index": 0}，与本次修复前逐字节一致。
+            raw_for_task = raw_task_options.get(name)
+            touched = set(raw_for_task) if isinstance(raw_for_task, dict) else set()
+            values = {
+                key: value
+                for key, value in (normalized.get(name) or {}).items()
+                if key in touched
+            }
+            entries = build_option_entries(self.interface_model, task, values)
             selections.append(
                 TaskSelection(name=name, options=entries if entries else None)
             )
@@ -1128,8 +1139,14 @@ class MaaFWManager(TaskExecuteBase):
         self.current_log.content = lines
         self.script_info.log = log_text
         if log_text != self.last_log_text:
+            # 空闲时钟只认「有实质新增」，不认外壳的周期性自娱自乐行。
+            # upstream issue #388：MFA 的内存清理会让 UI 日志持续滚动，此前任何
+            # 一行新日志都会重置空闲时钟，RunTimeLimit 超时因而形同虚设。
+            # 只改这一处：展示（script_info.log）与终态判定（下方受保护分支）
+            # 仍吃完整 log_text，两路互不污染。
+            if self._has_substantive_progress(self.last_log_text, log_text):
+                self.last_log_at = datetime.now()
             self.last_log_text = log_text
-            self.last_log_at = datetime.now()
 
         # 控制器初始化失败压过完成串：外壳排空队列时照样输出完成串，但选中的任务
         # 从未执行，此时判成功是假成功。完成串本身还要过 _mark_completion 里「选中
@@ -1142,6 +1159,30 @@ class MaaFWManager(TaskExecuteBase):
             self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
         elif self.terminal_kind is None:
             self.current_log.status = "MaaFW 正常运行中"
+
+    @staticmethod
+    def _has_substantive_progress(previous: str, current: str) -> bool:
+        """本次新增的日志里，是否有不属于外壳周期性噪音的行。
+
+        噪音串取自画像表的 ``idle_noise_markers``（MFAAvalonia 已按真实 M9A 日志
+        登记内存清理与热键 IPC 两类；MXU 无真机样本，留空即退化为「任何新增都算
+        实质进展」，与本次修复前的行为一致）。
+
+        日志文件被轮转或截断时（新内容不以旧内容为前缀）无法可靠取增量，
+        一律按有实质进展处理——宁可少判一次超时，也不要把正在干活的运行杀掉。
+        """
+
+        profile = get_shell_log_profile(ShellFamily.MFAAVALONIA)
+        markers = profile.idle_noise_markers if profile is not None else ()
+        if not markers:
+            return True
+        if not current.startswith(previous):
+            return True
+        added = current[len(previous):]
+        return any(
+            line.strip() and not any(marker in line for marker in markers)
+            for line in added.splitlines()
+        )
 
     def _mark_terminal(self, kind: str, log_status: str) -> None:
         # 按优先级收口：controller_failed > success > 其余。同级或更低不覆盖已有终态，

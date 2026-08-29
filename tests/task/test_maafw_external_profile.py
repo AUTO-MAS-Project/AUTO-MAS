@@ -4,6 +4,7 @@ from datetime import datetime
 import app.core  # noqa: F401
 
 from app.task.MaaFW import manager as manager_module
+from app.task.MaaFW.manager import MaaFWManager
 from app.task.MaaFW.tools.external.profile import (
     MFAAVALONIA_LOG_PROFILE,
     MXU_LOG_PROFILE,
@@ -124,6 +125,45 @@ class MxuProfileEvidenceTest(unittest.TestCase):
             resolve_log_relpath(MXU_LOG_PROFILE, datetime(2026, 8, 28))
         )
         self.assertEqual(MXU_LOG_PROFILE.log_glob_dir, "debug")
+
+
+class IdleClockNoiseFilterTest(unittest.TestCase):
+    """空闲时钟只认实质新增（upstream issue #388）。
+
+    噪音行逐字取自真实 M9A UI 日志：MFA 的内存清理与热键 IPC 会稳定滚动，
+    实测 log-20260517.log 里有整段 1 小时 51 分只有这两类行的窗口 ——
+    此前任何一行新日志都会重置空闲时钟，RunTimeLimit 超时因而形同虚设。
+    """
+
+    _NOISE_A = "[2026-05-17 17:02:11.001] [INF] [内存管理]释放了 128 MB（12%)\n"
+    _NOISE_B = "[2026-05-17 17:03:11.002] [INF] 热键 IPC 客户端已连接\n"
+    _REAL = "[2026-05-17 17:04:11.003] [INF] 更新任务完成：名称=更新资源\n"
+
+    def test_noise_only_growth_is_not_progress(self) -> None:
+        previous = self._REAL
+        current = previous + self._NOISE_A + self._NOISE_B
+        self.assertFalse(
+            MaaFWManager._has_substantive_progress(previous, current)
+        )
+
+    def test_real_line_among_noise_counts_as_progress(self) -> None:
+        previous = self._REAL
+        current = previous + self._NOISE_A + self._REAL
+        self.assertTrue(MaaFWManager._has_substantive_progress(previous, current))
+
+    def test_rotation_or_truncation_counts_as_progress(self) -> None:
+        # 新内容不以旧内容为前缀 → 取不到可靠增量，宁可少判一次超时。
+        self.assertTrue(
+            MaaFWManager._has_substantive_progress(self._REAL, self._NOISE_A)
+        )
+
+    def test_registered_markers_come_from_the_profile(self) -> None:
+        self.assertEqual(
+            MFAAVALONIA_LOG_PROFILE.idle_noise_markers,
+            ("[内存管理]", "热键 IPC 客户端已连接"),
+        )
+        # MXU 无真机样本，留空 → 退化成「任何新增都算进展」，与修复前一致。
+        self.assertEqual(MXU_LOG_PROFILE.idle_noise_markers, ())
 
 
 class PickLatestMxuLogTest(unittest.TestCase):

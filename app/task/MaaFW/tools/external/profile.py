@@ -65,6 +65,9 @@ class ShellLogProfile:
     controller_failure_markers: tuple[str, ...]
     task_start_markers: tuple[str, ...]
     stop_markers: tuple[str, ...]
+    # 外壳的周期性自娱自乐行：只要日志里还在滚这类行，就不能算「框架在干活」。
+    # 空闲超时判定必须把它们排除，否则永远不会触发（upstream issue #388）。
+    idle_noise_markers: tuple[str, ...] = ()
     log_relpath_strftime: str | None = None
     log_glob_dir: str | None = None
 
@@ -88,6 +91,9 @@ MFAAVALONIA_LOG_PROFILE = ShellLogProfile(
     controller_failure_markers=("初始化控制器失败", "控制器初始化结果为空"),
     task_start_markers=(),
     stop_markers=(),
+    # 取自真实 M9A 日志：MFA 的内存清理与热键 IPC 会稳定滚动。实测 log-20260517.log
+    # 里有整段 1 小时 51 分只有这两类行的窗口——空闲超时在那段里完全被顶住。
+    idle_noise_markers=("[内存管理]", "热键 IPC 客户端已连接"),
     log_relpath_strftime="logs/log-%Y%m%d.log",
 )
 
@@ -107,6 +113,8 @@ MXU_LOG_PROFILE = ShellLogProfile(
     controller_failure_markers=(),
     task_start_markers=(": 开始执行任务, 数量:",),
     stop_markers=("[task-stop#",),
+    # 留空：MXU 的周期性噪音行尚无真机样本，不猜测（fail-closed）。
+    idle_noise_markers=(),
     log_glob_dir="debug",
 )
 

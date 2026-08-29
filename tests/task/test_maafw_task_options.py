@@ -12,6 +12,7 @@ from app.task.MaaFW.tools.external.mfaavalonia import (
     build_option_entries,
     build_task_items,
 )
+from app.task.MaaFW.manager import MaaFWManager
 from app.task.MaaFW.tools.external.models import TaskSelection
 
 
@@ -138,6 +139,75 @@ class BuildOptionEntriesTest(unittest.TestCase):
             ],
         )
         self.assertEqual(items[0]["option"][0], {"name": "好梦井", "index": 1})
+
+
+class BuildTaskSelectionsRealPathTest(unittest.TestCase):
+    """走真实路径（normalize_task_options_by_task → build_option_entries）。
+
+    BuildOptionEntriesTest 只在单元层直接喂 None / {}，**绕开了 normalize**；
+    而运行期永远经过 normalize，它会把 interface 声明的默认值一并填进来。
+    真机 M9A 实测：照单全写会让「心相观测」多出 selected_cases: []、
+    「使用兑换码」把 interface 的占位串当兑换码写进实例配置——用户根本没碰过。
+    因此 manager 侧只写用户真正设过的选项，其余退回 index 0。
+    """
+
+    def setUp(self) -> None:
+        self.interface = MaaFWInterface(
+            interface_version=2,
+            name="opt-real",
+            controller=[{"name": "安卓端", "type": "Adb"}],
+            resource=[{"name": "简中"}],
+            task=[
+                MaaFWTask(
+                    name="兑换",
+                    entry="Redeem",
+                    option=["兑换码", "勾选项"],
+                )
+            ],
+            option={
+                # input 型：normalize 会补出 {"兑换码": "占位"} 这样的默认值
+                "兑换码": MaaFWOption(
+                    type="input",
+                    inputs=[{"name": "兑换码", "default": "占位"}],
+                ),
+                # checkbox 型：normalize 会补出 [] 或默认勾选集
+                "勾选项": MaaFWOption(
+                    type="checkbox",
+                    cases=[MaaFWOptionCase(name="甲"), MaaFWOptionCase(name="乙")],
+                ),
+            },
+        )
+        self.manager = MaaFWManager.__new__(MaaFWManager)
+        self.manager.interface_model = self.interface
+
+    def _build(self, raw_options):
+        return self.manager._build_task_selections(
+            ["兑换"], raw_options, controller_name="安卓端", resource_name="简中"
+        )
+
+    def test_untouched_options_stay_at_legacy_index_zero(self) -> None:
+        selections = self._build({})
+        self.assertEqual(
+            list(selections[0].options),
+            [{"name": "兑换码", "index": 0}, {"name": "勾选项", "index": 0}],
+        )
+
+    def test_user_set_value_is_written_through(self) -> None:
+        selections = self._build({"兑换": {"兑换码": {"兑换码": "REAL-CODE"}}})
+        entries = list(selections[0].options)
+        self.assertEqual(
+            entries[0],
+            {"name": "兑换码", "index": 0, "data": {"兑换码": "REAL-CODE"}},
+        )
+        # 同一任务里没被碰过的另一项仍退回 index 0。
+        self.assertEqual(entries[1], {"name": "勾选项", "index": 0})
+
+    def test_user_set_checkbox_is_written_through(self) -> None:
+        selections = self._build({"兑换": {"勾选项": ["乙"]}})
+        entries = list(selections[0].options)
+        self.assertEqual(
+            entries[1], {"name": "勾选项", "index": 0, "selected_cases": ["乙"]}
+        )
 
 
 if __name__ == "__main__":
