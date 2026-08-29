@@ -21,12 +21,26 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .config import Config
-from .emulator_manager import EmulatorManager
-from .task_manager import TaskManager
-from .maa_manager import MaaFWManager
+from importlib import import_module
 
-from .timer import MainTimer
+from .config import Config
+
+_LAZY_EXPORTS = {
+    "EmulatorManager": (".emulator_manager", "EmulatorManager"),
+    "TaskManager": (".task_manager", "TaskManager"),
+    "MaaFWManager": (".maa_manager", "MaaFWManager"),
+    "MainTimer": (".timer", "MainTimer"),
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attribute_name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "Config",
