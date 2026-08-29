@@ -12,16 +12,21 @@ class ProcessResult:
     returncode: int
 
 
+# 在导入时求值一次: locale.getpreferredencoding() 每次调用都会做一轮
+# 进程级 setlocale 往返, 而本函数位于日志逐行解码与 ADB 轮询热路径
+ENCODINGS = tuple(
+    e
+    for e in dict.fromkeys(
+        ["utf-8", "utf-8-sig", locale.getpreferredencoding(), "gbk", "gb18030"]
+    )
+    if e
+)
+
+
 def decode_bytes(data: bytes | None) -> str:
     if not data:
         return ""
-    for encoding in (
-        "utf-8",
-        "utf-8-sig",
-        locale.getpreferredencoding(),
-        "gbk",
-        "gb18030",
-    ):
+    for encoding in ENCODINGS:
         try:
             return data.decode(encoding, errors="strict")
         except (UnicodeDecodeError, LookupError):

@@ -8,14 +8,16 @@ from app.utils.platform.common.process_runner import ProcessRunner
 
 
 class WindowsStartupManager:
-    task_name = "AUTO-MAS_AutoStart"
+    supported = True
+
+    _task_name = "AUTO-MAS_AutoStart"
 
     async def set_enabled(self, enabled: bool) -> None:
         if enabled:
             await self._create_task()
         elif await self.is_enabled():
             result = await ProcessRunner.run_process(
-                "schtasks", "/delete", "/tn", self.task_name, "/f"
+                "schtasks", "/delete", "/tn", self._task_name, "/f"
             )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr or result.stdout)
@@ -81,7 +83,7 @@ class WindowsStartupManager:
                 "schtasks",
                 "/create",
                 "/tn",
-                self.task_name,
+                self._task_name,
                 "/xml",
                 xml_file,
                 "/f",
@@ -94,6 +96,6 @@ class WindowsStartupManager:
 
     async def is_enabled(self) -> bool:
         result = await ProcessRunner.run_process(
-            "schtasks", "/query", "/tn", self.task_name
+            "schtasks", "/query", "/tn", self._task_name
         )
         return result.returncode == 0

@@ -2,6 +2,7 @@ from app.utils.platform.common.errors import UnsupportedPlatformError
 
 
 class CommonPowerController:
+    supported = False
     supported_actions = frozenset()
 
     async def execute(self, action: str) -> None:

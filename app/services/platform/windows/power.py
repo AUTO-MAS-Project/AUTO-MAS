@@ -3,6 +3,7 @@ import subprocess
 
 
 class WindowsPowerController:
+    supported = True
     supported_actions = frozenset(
         {"Shutdown", "ShutdownForce", "Reboot", "Hibernate", "Sleep", "Logoff"}
     )

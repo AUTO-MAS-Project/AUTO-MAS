@@ -1,9 +1,7 @@
 # ocr_tool.py
 import cv2
-import pyautogui
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
-from mss import mss
 import subprocess
 from pathlib import Path
 
@@ -553,6 +551,10 @@ class OCRTool:
         Returns:
             Image.Image: 截取的 Pillow 图像对象。
         """
+        # mss / pyautogui 需要图形会话, 仅 PC 桌面路径使用, 因此惰性导入;
+        # ADB 截图路径不受影响
+        from mss import mss
+
         left, top, width, height = region
 
         # MSS 使用 (left, top, right, bottom) 格式的 monitor 字典
@@ -575,6 +577,8 @@ class OCRTool:
             logger.error(f"MSS 截图失败: {e}，尝试使用 pyautogui 作为备用方案")
             # 备用方案：使用 pyautogui（可能在副屏上失败，但至少有个降级方案）
             try:
+                import pyautogui
+
                 return pyautogui.screenshot(region=(left, top, width, height))
             except Exception as fallback_error:
                 logger.error(f"pyautogui 备用截图也失败: {fallback_error}")
@@ -856,6 +860,8 @@ class OCRTool:
                     screen_x, screen_y = cls._location_calculator(position[0], position[1])
 
                     # 执行点击
+                    import pyautogui
+
                     pyautogui.click(screen_x, screen_y)
                     logger.info(f"成功点击图像 {image_path} 的位置: ({screen_x}, {screen_y})")
                     return True
@@ -929,6 +935,8 @@ class OCRTool:
                         screen_x, screen_y = cls._location_calculator(center_x, center_y)
 
                         # 执行点击
+                        import pyautogui
+
                         pyautogui.click(screen_x, screen_y)
                         logger.info(f"成功点击文字 '{text}' 的位置: ({screen_x}, {screen_y})")
                         return True

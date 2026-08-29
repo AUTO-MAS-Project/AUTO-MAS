@@ -31,7 +31,6 @@ from .platform.power import power
 from .platform.startup import startup
 from app.utils import get_logger
 from app.utils.platform.process import platform_process
-from app.utils.platform import IS_WINDOWS
 
 
 logger = get_logger("系统服务")
@@ -62,16 +61,21 @@ class _SystemHandler:
             是否允许系统休眠
         """
 
-        if IS_WINDOWS:
-            await power.set_sleep_prevention(if_allow_sleep)
+        if not power.supported:
+            # 该方法绑定在配置项上, 启动流程会无条件调用, 因此记录后跳过而非抛出
+            logger.info(f"当前平台不支持阻止休眠, 跳过设置(目标值: {if_allow_sleep})")
+            return
+        await power.set_sleep_prevention(if_allow_sleep)
 
     async def set_SelfStart(self, if_self_start: bool) -> None:
         """设置程序开机自启。"""
 
-        if (
-            os.getenv("AUTO_MAS_ENV") == "development"
-            or not IS_WINDOWS
-        ):
+        # 开发环境不管理需要提权的开机自启任务计划
+        if os.getenv("AUTO_MAS_ENV") == "development":
+            return
+        if not startup.supported:
+            # 同上, 启动流程会无条件调用, 记录后跳过
+            logger.info(f"当前平台不支持开机自启, 跳过设置(目标值: {if_self_start})")
             return
         await startup.set_enabled(if_self_start)
 
@@ -180,25 +184,13 @@ class _SystemHandler:
         logger.success("模拟器进程清除完成")
 
     async def is_startup(self) -> bool:
-        """判断程序是否已经开机自启"""
+        """判断程序是否已经开机自启。
 
-        if not IS_WINDOWS:
-            return False
+        平台不支持开机自启时抛出 UnsupportedPlatformError, 不与「未开启」
+        共用 False; 调用方需在 API 边界转换为用户可见的错误。
+        """
+
         return await startup.is_enabled()
-
-    # async def get_window_info(self) -> list:
-    #     """获取当前前台窗口信息"""
-
-    #     def callback(hwnd, window_info):
-    #         if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
-    #             _, pid = win32process.GetWindowThreadProcessId(hwnd)
-    #             process = psutil.Process(pid)
-    #             window_info.append((win32gui.GetWindowText(hwnd), process.exe()))
-    #         return True
-
-    #     window_info = []
-    #     win32gui.EnumWindows(callback, window_info)
-    #     return window_info
 
     async def kill_process(
         self, path: Path | str, *, kill_tree: bool = True

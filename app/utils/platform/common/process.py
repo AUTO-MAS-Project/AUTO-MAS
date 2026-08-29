@@ -68,11 +68,10 @@ def is_process_running(process_name: str) -> bool:
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             if proc.info.get("name") == process_name:
-                # 平台不支持窗口能力时 get_window_handles 返回空列表
+                # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
-                    with suppress(UnsupportedPlatformError):
-                        if window.is_visible(hwnd):
-                            return True
+                    if window.is_visible(hwnd):
+                        return True
     return False
 
 
