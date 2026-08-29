@@ -14,7 +14,7 @@
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)",
-                "重构 WebSocket 通信子系统，统一前后端实时消息协议并收紧连接与关闭流程"
+                "重构 WebSocket 通信子系统，统一前后端实时消息协议并收紧连接与关闭流程 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "开发流程": [
                 "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
