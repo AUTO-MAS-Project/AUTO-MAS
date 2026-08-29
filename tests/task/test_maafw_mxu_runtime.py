@@ -81,6 +81,7 @@ class MxuRuntimeConfigTest(unittest.TestCase):
         self.manager.resource_name = "官服3"
         self.manager.task_selections = [TaskSelection(name="打开游戏")]
         self.manager.mxu_instance_id = None
+        self.manager.emulator_info = None
 
     def _written(self) -> dict:
         return json.loads(self.container.read_text(encoding="utf-8"))
@@ -114,6 +115,48 @@ class MxuRuntimeConfigTest(unittest.TestCase):
         # preActions 必须清掉：那是外壳自己的「起程序」钩子，继承下来外壳会
         # 重复启动游戏，与 MFAAvalonia 路径靠 SoftwarePath="" 防的是同一类问题。
         self.assertNotIn("preActions", new)
+
+
+class MxuSavedDeviceTest(unittest.TestCase):
+    """MXU 的设备匹配是地址优先、名字兜底，本层必须写地址。
+
+    MistEO/MXU src/utils/controller.ts 的 findMatchingAdbDevice 注释原文：
+    「ADB 地址优先，兼容旧配置按名称匹配」。只继承老配置里的 adbDeviceName，
+    外壳一换版本改了命名就再也匹配不上 —— 2026-08-29 真机实测：外壳扫到
+    `ldplayer-LDPlayer`，继承来的是 `雷电模拟器-LDPlayer`，「未找到设备」。
+    """
+
+    def setUp(self) -> None:
+        self.manager = MaaFWManager.__new__(MaaFWManager)
+        self.manager.emulator_info = SimpleNamespace(adb_address="emulator-5554")
+
+    def test_writes_the_address_and_keeps_the_name(self) -> None:
+        base = {"savedDevice": {"adbDeviceName": "雷电模拟器-LDPlayer"}}
+        self.manager._apply_mxu_saved_device(base)
+        self.assertEqual(base["savedDevice"]["adbDeviceAddress"], "emulator-5554")
+        # 名字保留：地址匹配不到时它还能兜底，用户在外壳里看到的也还是熟悉的名字。
+        self.assertEqual(base["savedDevice"]["adbDeviceName"], "雷电模拟器-LDPlayer")
+
+    def test_creates_saved_device_when_absent(self) -> None:
+        base = {}
+        self.manager._apply_mxu_saved_device(base)
+        self.assertEqual(base["savedDevice"], {"adbDeviceAddress": "emulator-5554"})
+
+    def test_does_not_touch_other_base_fields(self) -> None:
+        base = {"id": "keep", "tasks": [{"taskName": "x"}], "savedDevice": {"a": 1}}
+        self.manager._apply_mxu_saved_device(base)
+        self.assertEqual(base["id"], "keep")
+        self.assertEqual(base["tasks"], [{"taskName": "x"}])
+        self.assertEqual(base["savedDevice"]["a"], 1)
+
+    def test_no_emulator_leaves_base_untouched(self) -> None:
+        # Win32 / PlayCover 等没有 adb 地址的控制方式原样跳过。
+        for info in (None, SimpleNamespace(adb_address=""), SimpleNamespace(adb_address="Unknown")):
+            with self.subTest(info=info):
+                self.manager.emulator_info = info
+                base = {"savedDevice": {"adbDeviceName": "x"}}
+                self.manager._apply_mxu_saved_device(base)
+                self.assertNotIn("adbDeviceAddress", base["savedDevice"])
 
 
 class MxuInstanceUpsertTest(unittest.TestCase):
@@ -168,6 +211,7 @@ class MxuInstanceUpsertTest(unittest.TestCase):
         self.manager.resource_name = "官服3"
         self.manager.task_selections = [TaskSelection(name="打开游戏")]
         self.manager.mxu_instance_id = None
+        self.manager.emulator_info = None
 
     def _written(self) -> dict:
         return json.loads(self.container.read_text(encoding="utf-8"))

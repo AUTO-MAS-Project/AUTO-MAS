@@ -1159,6 +1159,7 @@ class MaaFWManager(TaskExecuteBase):
                 break
         if base is not None:
             base.pop("preActions", None)
+            self._apply_mxu_saved_device(base)
 
         entry = build_instance_entry(
             self.interface_model,
@@ -1185,6 +1186,34 @@ class MaaFWManager(TaskExecuteBase):
             f"MFW MXU 运行配置{action}：{self.mxu_container_path.name}"
             f"（实例 {self.mxu_instance_id}，容器内共 {after} 个）"
         )
+
+    def _apply_mxu_saved_device(self, base: dict[str, Any]) -> None:
+        """把本层实际起的模拟器地址写进 MXU 实例的 savedDevice。
+
+        MXU 的设备匹配是**地址优先、名字兜底**（MistEO/MXU src/utils/controller.ts
+        的 findMatchingAdbDevice：注释原文「ADB 地址优先，兼容旧配置按名称匹配」）。
+        此前本层只是从活动实例继承整个 savedDevice，而老配置里往往只有
+        ``adbDeviceName``；一旦外壳换版本改了设备命名，那个名字就再也匹配不上——
+        2026-08-29 真机实测：外壳扫到 `ldplayer-LDPlayer`，继承来的名字是
+        `雷电模拟器-LDPlayer`，于是「未找到设备」，自动运行直接失败。
+
+        本层是模拟器的实际启动方，adb 地址是手上最硬的事实，写进去即可绕开命名
+        差异。名字保持继承不动：地址匹配不到时它还能当兜底，且用户在外壳 UI 里
+        看到的仍是自己熟悉的名字。
+
+        Adb 之外的控制方式（Win32 / PlayCover 等）没有 adb 地址，原样跳过。
+        """
+
+        info = self.emulator_info
+        if info is None or not info.adb_address or info.adb_address == "Unknown":
+            return
+        saved = base.get("savedDevice")
+        saved = dict(saved) if isinstance(saved, dict) else {}
+        if saved.get("adbDeviceAddress") == info.adb_address:
+            return
+        saved["adbDeviceAddress"] = info.adb_address
+        base["savedDevice"] = saved
+        logger.info(f"MFW 已写入 MXU 连接目标：{info.adb_address}")
 
     def _write_mfaavalonia_runtime_config(self) -> None:
         if (
