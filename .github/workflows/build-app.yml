@@ -345,11 +345,16 @@ jobs:
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          REPOSITORY: ${{ github.repository }}
         run: |
+          if (-not $env:SENTRY_AUTH_TOKEN -or -not $env:SENTRY_ORG -or -not $env:SENTRY_PROJECT) {
+            Write-Warning '缺少 Sentry 配置，跳过部署登记。'
+            exit 0
+          }
           $releaseVersion = "auto-mas@$env:VERSION_TAG"
           $encodedOrg = [Uri]::EscapeDataString($env:SENTRY_ORG)
           $encodedRelease = [Uri]::EscapeDataString($releaseVersion)
-          $releaseUrl = "https://github.com/${{ github.repository }}/releases/tag/$env:VERSION_TAG"
+          $releaseUrl = "https://github.com/$env:REPOSITORY/releases/tag/$env:VERSION_TAG"
           $payload = @{
             environment = 'production'
             name = "GitHub Release $env:VERSION_TAG"
@@ -359,12 +364,17 @@ jobs:
           $headers = @{
             Authorization = "Bearer $env:SENTRY_AUTH_TOKEN"
           }
-          Invoke-RestMethod `
-            -Method Post `
-            -Uri "https://sentry.io/api/0/organizations/$encodedOrg/releases/$encodedRelease/deploys/" `
-            -Headers $headers `
-            -ContentType 'application/json' `
-            -Body $payload
+          # 登记部署失败不应影响已经发布的 Release。
+          try {
+            Invoke-RestMethod `
+              -Method Post `
+              -Uri "https://sentry.io/api/0/organizations/$encodedOrg/releases/$encodedRelease/deploys/" `
+              -Headers $headers `
+              -ContentType 'application/json' `
+              -Body $payload | Out-Null
+          } catch {
+            Write-Warning "登记 Sentry 部署失败，不影响发布：$($_.Exception.Message)"
+          }
         shell: pwsh
 
   cnb:
