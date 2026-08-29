@@ -177,10 +177,13 @@ def apply_package_transaction(
                 for source in plan.files.values()
                 if source.is_file()
             )
+            # 只要 backup_size：expanded_size 在上面 _safe_extract_zip 时就已经
+            # 真实落到 state 卷上了，这里再加一遍等于要求两倍空间，会在空间刚好
+            # 够用时报出虚假的 INSUFFICIENT_DISK。
             _check_disk_space(
                 state_dir,
                 root,
-                state_required=expanded_size + backup_size,
+                state_required=backup_size,
                 project_required=payload_size,
             )
             store.update(
@@ -258,10 +261,14 @@ def apply_package_transaction(
                 "schemaVersion": 1,
                 "version": plan.target_version or target_version or "",
                 "projectFingerprint": after,
+                # 不登记字节码：它会被解释器重写，登记了只会让下一次
+                # _verify_owned_files 判定「受管文件被本地改写」而永久拒装。
+                # 旧 manifest 里已有的 .pyc 条目也借这次重写自然清出。
                 "files": {
                     relative: _sha256_file(_project_target(root, relative))
                     for relative in sorted(set(plan.files) | (set(old_manifest.get("files", {})) - stale))
                     if _project_target(root, relative).is_file()
+                    and not _is_bytecode_artifact(relative)
                 },
             }
             _write_json(manifest_path, manifest)
@@ -484,12 +491,28 @@ def _validate_plan_base(
             raise UpdateApplyError(f"delta file hash mismatch: {relative}")
 
 
+def _is_bytecode_artifact(relative: str) -> bool:
+    """相对路径是否为 Python 字节码产物。
+
+    这类文件由解释器在**导入时**自行写出/重写：全量包里自带的 .pyc 一旦解压到
+    新路径，首次 import 就会因源码 mtime 与嵌入路径变化被重写。若把它们纳入
+    受管文件校验，装过一次并跑过一次之后，_verify_owned_files 就会认定「受管文件
+    被本地改写」而**永久拒绝后续所有更新**——这正是全局 fail-closed 的代价。
+    """
+
+    normalized = relative.replace("\\", "/")
+    return normalized.endswith(".pyc") or "__pycache__/" in f"{normalized}/"
+
+
 def _verify_owned_files(project_path: Path, manifest: Mapping[str, Any]) -> None:
     files = manifest.get("files")
     if not isinstance(files, Mapping):
         return
     for raw_path, raw_hash in files.items():
         relative = safe_relative_path(str(raw_path))
+        if _is_bytecode_artifact(relative):
+            # 字节码由解释器重写，不构成「用户改动了受管文件」。
+            continue
         target = _project_target(project_path, relative)
         if not target.exists():
             continue

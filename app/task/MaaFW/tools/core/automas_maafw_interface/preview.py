@@ -37,7 +37,13 @@ def _maafw_emulator_extras_runtime_available() -> bool:
 
     定位运行环境真实安装的 ``maa`` 包并检查 ``MaaAdbControlUnit.dll`` 是否存在。
     用 ``importlib.util.find_spec`` 定位包目录——它只查找 spec、不执行 ``maa/__init__``
-    也不加载原生绑定，因此不会把 maa 载入主进程，满足导入边界约束。非 Windows 不可用。
+    也不加载原生绑定，因此**本函数自身**不触发 maa 导入。非 Windows 不可用。
+
+    注意不要据此推断「maa 未被载入主进程」：``app/core/maa_manager.py`` 在模块级
+    ``from maa.tasker import Tasker`` 并在导入时实例化单例，而 ``app.core`` 是全应用
+    公共入口，进程里实际早已完成原生初始化。那是上游基线既有的第二层原生集成，
+    与本层无关，也不要顺手去改它。
+    
     """
 
     if os.name != "nt":

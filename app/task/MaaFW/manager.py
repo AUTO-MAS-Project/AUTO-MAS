@@ -345,6 +345,11 @@ class MaaFWManager(TaskExecuteBase):
         self.last_log_text = ""
         self.last_log_at: datetime | None = None
 
+        # LogRecord 的变化不触发任何前端通知（UserItem.__setattr__ 只监听
+        # user_id / name / status）。这是事实而非缺陷：它在 _write_history_records
+        # 落历史盘、在 _push_run_report 计数两处被真正读取，不是死字段。
+        # **绝不要给 LogRecord 加 __setattr__ 通知钩子**——_mark_terminal 与 on_crash
+        # 都会写 current_log.status，加钩子等于给受保护函数引入广播副作用。
         # 历史记录与任务报告各只写/发一次（final_task 幂等、可能被多路径调用）。
         self.history_written = False
         self.report_pushed = False
