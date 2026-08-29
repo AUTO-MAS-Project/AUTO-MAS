@@ -19,6 +19,7 @@
                 "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "修复BUG": [
+                "MAA专项 修复库存保持任务覆盖活动期间及资源收集期间跳过配置的问题",
                 "SRC专项 修复任务结束后的进程与配置清理问题 by [@Craun718](https://github.com/Craun718)",
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
