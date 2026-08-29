@@ -118,43 +118,79 @@ class MxuRuntimeConfigTest(unittest.TestCase):
 
 
 class MxuSavedDeviceTest(unittest.TestCase):
-    """MXU 的设备匹配是地址优先、名字兜底，本层必须写地址。
+    """MXU 按 MaaFramework 枚举出的设备名连设备，本层必须把这个名字写对。
 
-    MistEO/MXU src/utils/controller.ts 的 findMatchingAdbDevice 注释原文：
-    「ADB 地址优先，兼容旧配置按名称匹配」。只继承老配置里的 adbDeviceName，
-    外壳一换版本改了命名就再也匹配不上 —— 2026-08-29 真机实测：外壳扫到
-    `ldplayer-LDPlayer`，继承来的是 `雷电模拟器-LDPlayer`，「未找到设备」。
+    MaaYYs v3.14.8 内置的外壳没有 adbDeviceAddress 字段，只按名字匹配::
+
+        savedDevice.adbDeviceName
+          ? findAdbDevices().find(d => d.name === savedDevice.adbDeviceName)
+          : findAdbDevices()[0]
+
+    2026-08-29 真机实测两种翻车方式：继承来的过期名字 `雷电模拟器-LDPlayer` 对不上
+    外壳扫到的 `ldplayer-LDPlayer`，直接「未找到设备」；把名字清掉又退化成「自动选
+    第一个」，本层起的是雷电 emulator-5554，外壳连上了 MuMu。名字只能靠
+    MaaFramework 自己的枚举解析（_resolve_maafw_device → MaaFWManager.convert_adb）。
     """
 
     def setUp(self) -> None:
         self.manager = MaaFWManager.__new__(MaaFWManager)
         self.manager.emulator_info = SimpleNamespace(adb_address="emulator-5554")
+        self.manager.maafw_device = SimpleNamespace(
+            name="ldplayer-LDPlayer", address="127.0.0.1:5555"
+        )
 
-    def test_writes_the_address_and_drops_the_stale_name(self) -> None:
-        """名字必须清掉，留着就是硬失败。
+    def test_writes_the_resolved_name_and_address(self) -> None:
+        """解析到设备就整体替换 savedDevice，不留继承键。
 
-        旧版外壳没有 adbDeviceAddress，只按名字匹配且命中唯一才连；而外壳里的
-        设备名由 MaaFramework 枚举生成（ldplayer-LDPlayer），本层不加载 MaaFW DLL，
-        复现不了也不猜。清掉后旧版外壳退化成「自动选第一个设备」，而本层刚把目标
-        模拟器起起来；新版外壳则靠地址精确匹配。
+        名字给旧版外壳用，地址给新版外壳用（findMatchingAdbDevice 地址优先、
+        名字兜底），两个值取自同一条 AdbDevice，不会互相打架。
         """
 
         base = {"savedDevice": {"adbDeviceName": "雷电模拟器-LDPlayer"}}
         self.manager._apply_mxu_saved_device(base)
-        self.assertEqual(base["savedDevice"]["adbDeviceAddress"], "emulator-5554")
-        self.assertNotIn("adbDeviceName", base["savedDevice"])
+        self.assertEqual(
+            base["savedDevice"],
+            {"adbDeviceName": "ldplayer-LDPlayer", "adbDeviceAddress": "127.0.0.1:5555"},
+        )
+
+    def test_resolved_name_drops_inherited_device_identities(self) -> None:
+        """windowName / playcoverAddress 等同样参与匹配，继承过来会认错目标。"""
+
+        base = {
+            "savedDevice": {
+                "adbDeviceName": "雷电模拟器-LDPlayer",
+                "windowName": "旧窗口",
+                "playcoverAddress": "1.2.3.4",
+            }
+        }
+        self.manager._apply_mxu_saved_device(base)
+        self.assertNotIn("windowName", base["savedDevice"])
+        self.assertNotIn("playcoverAddress", base["savedDevice"])
 
     def test_creates_saved_device_when_absent(self) -> None:
         base = {}
         self.manager._apply_mxu_saved_device(base)
-        self.assertEqual(base["savedDevice"], {"adbDeviceAddress": "emulator-5554"})
+        self.assertEqual(base["savedDevice"]["adbDeviceName"], "ldplayer-LDPlayer")
 
     def test_does_not_touch_other_base_fields(self) -> None:
-        base = {"id": "keep", "tasks": [{"taskName": "x"}], "savedDevice": {"a": 1}}
+        base = {"id": "keep", "tasks": [{"taskName": "x"}]}
         self.manager._apply_mxu_saved_device(base)
         self.assertEqual(base["id"], "keep")
         self.assertEqual(base["tasks"], [{"taskName": "x"}])
-        # savedDevice 里除设备标识外的键原样保留。
+
+    def test_falls_back_to_address_when_unresolved(self) -> None:
+        """枚举不到就只写地址，并清掉继承的名字。
+
+        留着过期名字是硬失败；清掉至少还剩「自动选第一个」，新版外壳仍按地址精确
+        匹配。这条路径必然在多模拟器下有连错的风险，所以代码里是 warning。
+        """
+
+        self.manager.maafw_device = None
+        base = {"savedDevice": {"adbDeviceName": "雷电模拟器-LDPlayer", "a": 1}}
+        self.manager._apply_mxu_saved_device(base)
+        self.assertEqual(base["savedDevice"]["adbDeviceAddress"], "emulator-5554")
+        self.assertNotIn("adbDeviceName", base["savedDevice"])
+        # 降级路径是就地打补丁，与设备无关的键原样保留。
         self.assertEqual(base["savedDevice"]["a"], 1)
 
     def test_no_emulator_leaves_base_untouched(self) -> None:
@@ -164,7 +200,72 @@ class MxuSavedDeviceTest(unittest.TestCase):
                 self.manager.emulator_info = info
                 base = {"savedDevice": {"adbDeviceName": "x"}}
                 self.manager._apply_mxu_saved_device(base)
-                self.assertNotIn("adbDeviceAddress", base["savedDevice"])
+                self.assertEqual(base["savedDevice"], {"adbDeviceName": "x"})
+
+
+class ResolveMaafwDeviceTest(unittest.IsolatedAsyncioTestCase):
+    """设备名只能问 MaaFramework 自己，别的地方都拿不到。
+
+    外壳日志里的 `ldplayer-LDPlayer` / `MuMu安卓设备-MuMuPlayer v5+` 是
+    MaaFramework 枚举出来的，前缀既不是 MAS 的模拟器类型串也不是实例标题，猜不出来。
+    现成的换算是 MaaFWManager.convert_adb：按端口号把 MAS 的 DeviceInfo 对到
+    Toolkit.find_adb_devices() 的结果上，MaaEnd 专项写 savedDevice 用的就是它。
+    """
+
+    def setUp(self) -> None:
+        self.manager = MaaFWManager.__new__(MaaFWManager)
+        self.manager.shell_family = ShellFamily.MXU
+        self.manager.emulator_info = SimpleNamespace(adb_address="emulator-5554")
+        self.manager.maafw_device = "留下的脏值"
+
+    async def _run_with(self, convert) -> None:
+        import app.core as app_core
+
+        with patch.object(app_core.MaaFWManager, "convert_adb", convert):
+            await self.manager._resolve_maafw_device()
+
+    async def test_stores_the_device_from_convert_adb(self) -> None:
+        device = SimpleNamespace(name="ldplayer-LDPlayer", address="127.0.0.1:5555")
+        seen = []
+
+        async def convert(info):
+            seen.append(info)
+            return device
+
+        await self._run_with(convert)
+        self.assertIs(self.manager.maafw_device, device)
+        # 传进去的必须是本层刚起的那台模拟器，convert_adb 靠它的端口号对表。
+        self.assertEqual(seen[0].adb_address, "emulator-5554")
+
+    async def test_failure_is_not_fatal(self) -> None:
+        """枚举不到不抛：由 _apply_mxu_saved_device 决定降级，这里只清干净。"""
+
+        async def convert(info):
+            raise RuntimeError("无法找到指定设备")
+
+        await self._run_with(convert)
+        self.assertIsNone(self.manager.maafw_device)
+
+    async def test_skips_other_shell_families(self) -> None:
+        """只有 MXU 按名字连设备，别的家族不必付一次全量枚举的时间。"""
+
+        async def convert(info):
+            raise AssertionError("不该枚举")
+
+        self.manager.shell_family = ShellFamily.MFAAVALONIA
+        await self._run_with(convert)
+        self.assertIsNone(self.manager.maafw_device)
+
+    async def test_skips_when_no_adb_address(self) -> None:
+        async def convert(info):
+            raise AssertionError("不该枚举")
+
+        for info in (None, SimpleNamespace(adb_address=""), SimpleNamespace(adb_address="Unknown")):
+            with self.subTest(info=info):
+                self.manager.emulator_info = info
+                self.manager.maafw_device = "留下的脏值"
+                await self._run_with(convert)
+                self.assertIsNone(self.manager.maafw_device)
 
 
 class MxuInstanceUpsertTest(unittest.TestCase):

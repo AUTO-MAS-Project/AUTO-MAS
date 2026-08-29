@@ -380,6 +380,9 @@ class MaaFWManager(TaskExecuteBase):
         # 运行前启动准备（Adb 起模拟器 / Win32 起 PC 游戏）跨用户复用的句柄与状态。
         self.emulator_manager: DeviceBase | None = None
         self.emulator_info: DeviceInfo | None = None
+        # MaaFramework 枚举出来的本轮设备（maa.toolkit.AdbDevice）。MXU 外壳按
+        # MaaFW 的设备名匹配，本层拿不到就只能让外壳瞎猜，见 _resolve_maafw_device。
+        self.maafw_device: Any | None = None
         self.generated_adb_device: dict[str, Any] | None = None
         self.emulator_opened = False
         self.emulator_index: str = ""
@@ -1188,32 +1191,30 @@ class MaaFWManager(TaskExecuteBase):
         )
 
     def _apply_mxu_saved_device(self, base: dict[str, Any]) -> None:
-        """把本层实际起的模拟器地址写进 MXU 实例的 savedDevice。
+        """把本轮实际起的设备写进 MXU 实例的 ``savedDevice``。
 
-        MXU 的设备匹配是**地址优先、名字兜底**（MistEO/MXU src/utils/controller.ts
-        的 findMatchingAdbDevice：注释原文「ADB 地址优先，兼容旧配置按名称匹配」）。
-        此前本层只是从活动实例继承整个 savedDevice，而老配置里往往只有
-        ``adbDeviceName``；一旦外壳换版本改了设备命名，那个名字就再也匹配不上——
-        2026-08-29 真机实测：外壳扫到 `ldplayer-LDPlayer`，继承来的名字是
-        `雷电模拟器-LDPlayer`，于是「未找到设备」，自动运行直接失败。
+        此前本层只是从活动实例整个继承 ``savedDevice``，而老配置里往往只有一个
+        过期的 ``adbDeviceName``：2026-08-29 真机实测，外壳扫到的是
+        ``ldplayer-LDPlayer``，继承来的名字却是 ``雷电模拟器-LDPlayer``，于是
+        「未找到设备」，自动运行直接失败。
 
-        本层是模拟器的实际启动方，adb 地址是手上最硬的事实，写进去即可绕开命名
-        差异 —— 但只对新版外壳有效。**继承来的名字必须一并清掉**，理由见下。
+        名字必须写对，不能省。MaaYYs v3.14.8 内置的那版外壳没有
+        ``adbDeviceAddress`` 字段，只按名字匹配，且逻辑是硬的::
 
-        旧版外壳（如 MaaYYs v3.14.8 内置的那版）根本没有 ``adbDeviceAddress``
-        这个字段，只按名字匹配，且逻辑是硬的：
+            savedDevice.adbDeviceName
+              ? findAdbDevices().find(d => d.name === savedDevice.adbDeviceName)
+              : findAdbDevices()[0]          // 有几个设备就自动选第一个
 
-            F?.adbDeviceName
-              ? (按名字过滤，命中唯一才连)
-              : (设备数 > 0 就自动选第一个)
+        所以名字缺席时外壳会自动选中枚举出的第一个设备 —— 装了多个模拟器就必然
+        选错（实测本层起的是雷电 ``emulator-5554``，外壳自动连上了 MuMu）。而
+        MaaFramework 枚举的是**已安装**的模拟器，关掉别的也不管用。
 
-        而外壳日志里的设备名（``ldplayer-LDPlayer``、``MuMu安卓设备-MuMuPlayer v5+``）
-        是 **MaaFramework 枚举出来的**，前缀不是本层用的类型串，本层又刻意不加载
-        MaaFW DLL，复现不了也不能猜。留着一个过期名字的结果是硬失败；清掉则退化成
-        「自动选第一个设备」，而本层刚刚亲手把目标模拟器起了起来。
+        名字由 ``_resolve_maafw_device`` 用 MaaFramework 自己的枚举解析（见那里）。
+        地址一并写上：新版外壳的 ``findMatchingAdbDevice`` 是地址优先、名字兜底，
+        写两个在新旧外壳上都精确。两个值都取自同一条 ``AdbDevice``，不会互相打架。
 
-        取舍写明：同时有多个模拟器在跑时，旧版外壳可能选错那个。这比「必然失败」
-        好，但不是没有代价 —— 新版外壳靠地址精确匹配，不受影响。
+        解析不到时退回只写地址，并**清掉继承来的名字** —— 留着一个过期名字是硬
+        失败，清掉至少还剩「自动选第一个」这条路，且新版外壳仍能按地址精确匹配。
 
         Adb 之外的控制方式（Win32 / PlayCover 等）没有 adb 地址，原样跳过。
         """
@@ -1221,17 +1222,33 @@ class MaaFWManager(TaskExecuteBase):
         info = self.emulator_info
         if info is None or not info.adb_address or info.adb_address == "Unknown":
             return
+
+        device = self.maafw_device
+        if device is not None:
+            # 与 MaaEnd 专项一致：整体替换，不继承旧键。savedDevice 里的
+            # windowName / wlrSocketPath / playcoverAddress 同样参与匹配，
+            # 继承过来只会让外壳在别的控制方式上认错目标。
+            base["savedDevice"] = {
+                "adbDeviceName": device.name,
+                "adbDeviceAddress": device.address,
+            }
+            logger.info(
+                f"MFW 已写入 MXU 连接目标：{device.name}（{device.address}）"
+            )
+            return
+
         saved = base.get("savedDevice")
         saved = dict(saved) if isinstance(saved, dict) else {}
         stale_name = saved.pop("adbDeviceName", None)
         saved["adbDeviceAddress"] = info.adb_address
         base["savedDevice"] = saved
-        logger.info(f"MFW 已写入 MXU 连接目标：{info.adb_address}")
+        logger.warning(
+            f"MFW 未解析出 MaaFramework 设备名，仅写入地址 {info.adb_address}："
+            "旧版外壳只按名字匹配，装有多个模拟器时可能连错"
+        )
         if stale_name:
             logger.info(
-                f"MFW 已清除继承的 MXU 设备名 {stale_name!r}："
-                "旧版外壳只按名字匹配，而这个名字由 MaaFramework 枚举生成、"
-                "本层无从复现；清掉后外壳会自动选用当前设备"
+                f"MFW 已清除继承的 MXU 设备名 {stale_name!r}：过期名字会让外壳直接报「未找到设备」"
             )
 
     def _write_mfaavalonia_runtime_config(self) -> None:
@@ -2213,6 +2230,7 @@ class MaaFWManager(TaskExecuteBase):
                 "MFW 未配置 MAS 模拟器，跳过自动启动，沿用活动实例已有的设备连接"
             )
             self.emulator_info = None
+            self.maafw_device = None
             self.generated_adb_device = None
             return None
         emulator_id, emulator_index = emulator_selection
@@ -2233,6 +2251,7 @@ class MaaFWManager(TaskExecuteBase):
                 self.emulator_manager,
             )
             await self._wait_for_adb_ready(self.generated_adb_device)
+            await self._resolve_maafw_device()
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MFW 模拟器启动失败：{exc}")
             with suppress(Exception):
@@ -2240,6 +2259,7 @@ class MaaFWManager(TaskExecuteBase):
                     await self.emulator_manager.close(emulator_index)
             self.emulator_opened = False
             self.emulator_info = None
+            self.maafw_device = None
             self.generated_adb_device = None
             return f"模拟器启动失败：{exc}"
 
@@ -2247,6 +2267,48 @@ class MaaFWManager(TaskExecuteBase):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
         return None
+
+    async def _resolve_maafw_device(self) -> None:
+        """用 MaaFramework 自己的枚举，把本轮模拟器解析成一条 ``AdbDevice``。
+
+        MXU 外壳连设备时比的是 **MaaFramework 枚举出来的设备名**（``ldplayer-LDPlayer``、
+        ``MuMu安卓设备-MuMuPlayer v5+``），不是本层的模拟器类型串，也不是 adb 地址。
+        本层手上只有地址，两者之间的换算是现成的：``MaaFWManager.convert_adb``
+        按端口号把 MAS 的 ``DeviceInfo`` 对到 ``Toolkit.find_adb_devices()`` 的结果上
+        （``127.0.0.1:5555`` 与 ``emulator-5554`` 归一到同一个端口）。MaaEnd 专项
+        (``MaaEnd/AutoProxy.py``) 写 ``savedDevice`` 用的就是这条路径，本层照用。
+
+        放在 ``_wait_for_adb_ready`` 之后：枚举要求设备已经在线，早了扫不到。
+        只有 MXU 家族需要这个名字，别的家族不必为此付一次全量枚举的时间。
+
+        这不违反本层「不加载项目 DLL」的约束：枚举 adb 设备用的是 MAS 自带的
+        MaaFramework 绑定（M9A、MaaEnd 专项一直在用），碰的是设备而不是项目的
+        resource/agent。
+
+        拿不到不是致命错误：清空 ``maafw_device``，由 ``_apply_mxu_saved_device``
+        决定降级行为并把原因写进日志。
+        """
+
+        self.maafw_device = None
+        if self.shell_family is not ShellFamily.MXU:
+            return
+        info = self.emulator_info
+        if info is None or not info.adb_address or info.adb_address == "Unknown":
+            return
+
+        from app.core import MaaFWManager
+
+        try:
+            self.maafw_device = await MaaFWManager.convert_adb(info)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"MFW 未能把模拟器 {info.adb_address} 解析成 MaaFramework 设备：{exc}"
+            )
+            return
+        logger.info(
+            f"MFW 已解析 MaaFramework 设备：{self.maafw_device.name}"
+            f"（{self.maafw_device.address}）"
+        )
 
     async def _wait_for_adb_ready(self, adb_device: dict[str, Any] | None) -> None:
         """等到 adb 真的能跑 shell 再把控制权交给外壳。
