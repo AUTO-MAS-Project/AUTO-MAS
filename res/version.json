@@ -2,6 +2,12 @@
     "version": "v5.5.0-beta.2",
     "version_info": {
         "v5.5.0-beta.2": {
+            "新增功能": [],
+            "程序优化": [],
+            "开发流程": [],
+            "修复BUG": []
+        },
+        "v5.5.0-beta.1": {
             "新增功能": [
                 "MAA专项 支持启动前检查并更新明日方舟客户端 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "OK-WW专项 支持启动前自动更新鸣潮客户端 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -13,14 +19,12 @@
             "程序优化": [
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)",
-                "重构 WebSocket 通信子系统，统一前后端实时消息协议并收紧连接与关闭流程 by [@qiyinxi](https://github.com/qiyinxi)"
+                "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)"
             ],
             "开发流程": [
                 "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "修复BUG": [
-                "MAA专项 修复库存保持任务覆盖活动期间及资源收集期间跳过配置的问题",
                 "SRC专项 修复任务结束后的进程与配置清理问题 by [@Craun718](https://github.com/Craun718)",
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
