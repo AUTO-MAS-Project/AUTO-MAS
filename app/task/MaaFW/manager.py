@@ -1002,9 +1002,23 @@ class MaaFWManager(TaskExecuteBase):
         shell_config = _read_json_object(self.config_json_path, label="MaaFW config.json")
         shell_config.update(
             {
+                # 静默：不让外壳窗口抢焦点。
                 "AutoMinimize": True,
                 "AutoHide": True,
                 "ShouldMinimizeToTray": True,
+                # 关掉外壳自己的更新：更新归 MAS 控制（本层已有
+                # POST /api/scripts/maafw/update），外壳同时更新会与之抢同一批文件，
+                # 还会把运行时间拖长、失败时污染判定——2026-08-29 真机日志里就有
+                # 「获取资源包下载信息失败：来源=Mirror」直接抛异常那一段。
+                # 键名取自靶子真实 config.json：EnableCheckVersion 对应「自动检测
+                # 更新」、EnableAutoUpdateResource 对应「自动更新资源」，
+                # EnableAutoUpdateMFA 是外壳自更新（样本里已为 False，仍显式压住）。
+                # 无需显式恢复：整个 config/ 目录在收尾时按备份还原，比 M9A 专项
+                # 的 _set_m9a_auto_update(True) 更准——后者会把用户原本关着的开关
+                # 无条件打开。
+                "EnableCheckVersion": False,
+                "EnableAutoUpdateResource": False,
+                "EnableAutoUpdateMFA": False,
             }
         )
         atomic_write_maafw_config(self.config_json_path, shell_config, journal=False)

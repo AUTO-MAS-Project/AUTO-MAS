@@ -568,6 +568,51 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 )
             )
 
+    # ---- 问题 10：外壳自己的更新必须关掉，更新归 MAS 控制 ----
+
+    def test_shell_self_update_is_disabled_and_restored(self) -> None:
+        asyncio.run(self._test_shell_self_update_is_disabled_and_restored())
+
+    async def _test_shell_self_update_is_disabled_and_restored(self) -> None:
+        """运行期压住外壳自更新，收尾按备份还原用户原值。
+
+        键名取自靶子真实 config.json。外壳同时更新会与 MAS 的更新端点抢同一批
+        文件，且失败时污染判定（真机日志里有「获取资源包下载信息失败：来源=
+        Mirror」抛异常那一段）。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            config_json = root / "config" / "config.json"
+            original = {
+                "EnableCheckVersion": True,
+                "EnableAutoUpdateResource": True,
+                "EnableAutoUpdateMFA": False,
+                "DownloadCDK": "user-cdk",
+            }
+            config_json.write_text(json.dumps(original), encoding="utf-8")
+
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                manager._write_runtime_config()
+                written = json.loads(config_json.read_text(encoding="utf-8"))
+                await manager.final_task()
+
+            # 运行期：三个更新开关全部压住。
+            self.assertFalse(written["EnableCheckVersion"])
+            self.assertFalse(written["EnableAutoUpdateResource"])
+            self.assertFalse(written["EnableAutoUpdateMFA"])
+            # 与更新无关的键原样保留。
+            self.assertEqual(written["DownloadCDK"], "user-cdk")
+            # 收尾：整个 config/ 按备份还原，用户原值回来了。
+            restored = json.loads(config_json.read_text(encoding="utf-8"))
+            self.assertEqual(restored, original)
+
     # ---- 问题 9：外壳判定失败必须立刻收口，不能干等超时 ----
 
     # 逐字取自 D:\MAS\tmp\m9a-test\logs\log-20260829.log 的真机运行：
