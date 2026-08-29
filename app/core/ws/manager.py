@@ -179,7 +179,7 @@ class _MainConnectionManager:
     async def cancel_hook_tasks(self) -> None:
         """取消并等待所有在途连接建立回调任务。
 
-        关闭流程中在插件 teardown 前调用，确保 start_startup_queue 等回调
+        关闭流程中在业务 teardown 前调用，确保 start_startup_queue 等回调
         不会与后端清理并发执行。
         """
         await self.begin_shutdown()

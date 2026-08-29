@@ -224,7 +224,7 @@ def main():
 
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
-            from app.services import Matomo, System
+            from app.services import Matomo, System, Updater
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -246,6 +246,7 @@ def main():
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()
+            await Updater.cancel_download(notify=False)
             await RuntimeTasks.shutdown()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")

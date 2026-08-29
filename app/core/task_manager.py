@@ -760,16 +760,22 @@ class _TaskManager:
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
                     logger.info(f"启动时需要运行的队列：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "启动时代理",
-                        },
-                        trigger_source="startup_task",
-                    )
+                    # 单个队列创建失败（脚本被锁/已在运行）不中断其余启动队列；
+                    # 失败时不写 LastStartupTime，下次启动仍可重试。
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "启动时代理",
+                            },
+                            trigger_source="startup_task",
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
+                        continue
                     await queue.set("Data", "LastStartupTime", curday)
 
                 elif StartUpMode == "DailyFirst":
@@ -781,16 +787,20 @@ class _TaskManager:
                         continue
 
                     logger.info(f"启动时需要运行的队列：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "启动时代理",
-                        },
-                        trigger_source="startup_task",
-                    )
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "启动时代理",
+                            },
+                            trigger_source="startup_task",
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
+                        continue
                     await queue.set("Data", "LastStartupTime", curday)
                 
         finally:

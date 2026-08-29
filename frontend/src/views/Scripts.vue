@@ -604,7 +604,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -770,6 +770,17 @@ watch(filteredTemplates, filtered => {
 onMounted(() => {
   loadScripts()
   loadCurrentPlan()
+})
+
+// 离开页面时释放全部配置会话订阅；清空 map 同时使 30 分钟超时回调的
+// has() 守卫失效，不会在其他页面弹出提示。
+onUnmounted(() => {
+  for (const connection of activeConnections.value.values()) {
+    for (const subscriptionId of connection.subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
+  }
+  activeConnections.value.clear()
 })
 
 const loadScripts = async () => {

@@ -34,7 +34,7 @@ Teardown = Callable[[], Awaitable[None]]
 class _ShutdownCoordinator:
     """后端关闭协调器。
 
-    完整的非 WS teardown（停止任务、插件、定时器、遥测等）只执行一次，
+    完整的非 WS teardown（停止任务、定时器、遥测等）只执行一次，
     供 `/close` 关闭流程与 uvicorn lifespan 收尾共用：
     - `/close` 先跑完整 teardown，成功后才向前端发 backend.shutdown.ready，
       再置 `should_exit`，避免前端在清理途中触发强制关闭。

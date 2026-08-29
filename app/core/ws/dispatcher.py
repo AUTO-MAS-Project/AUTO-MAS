@@ -109,7 +109,7 @@ class _WSDispatcher:
     async def shutdown(self) -> None:
         """停止接收新消息，并取消、等待所有在途处理器任务。
 
-        供关闭 teardown 在插件清理前调用，保证清理期间不再有
+        供关闭 teardown 在业务清理前调用，保证清理期间不再有
         入站消息触发的处理器与其并发执行。
         """
         self._closed = True
