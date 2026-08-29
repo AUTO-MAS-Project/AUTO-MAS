@@ -7,7 +7,7 @@ import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
-import { configureSentry } from '@/utils/sentry'
+import { configureSentry, recordRendererStartup } from '@/utils/sentry'
 
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
@@ -18,6 +18,7 @@ import 'dayjs/locale/zh-cn'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8
+const rendererStartedAt = performance.now()
 
 // 静态 message 默认从窗口顶部 8px 开始，会覆盖无边框窗口的标题栏。
 message.config({ top: `${TITLE_BAR_HEIGHT + MESSAGE_TOP_GAP}px` })
@@ -98,6 +99,7 @@ const bootstrap = async () => {
 
   // 挂载应用
   app.mount('#app')
+  recordRendererStartup(performance.now() - rendererStartedAt)
 
   logger.info('前端应用初始化完成')
 }

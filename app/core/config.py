@@ -37,6 +37,7 @@ from typing import Literal, Optional, Dict, Any, List
 import uuid
 import json
 
+from app.utils.platform import IS_WINDOWS
 from app.models.config import (
     GeneralConfig,
     MaaConfig,
@@ -235,7 +236,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.1"
+    VERSION = "v5.5.0-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -998,8 +999,11 @@ class AppConfig(GlobalConfig):
                         Path(config["Info"]["RootPath"])
                     )
                 )
-            if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
-                Path(os.environ["APPDATA"])
+            if (
+                IS_WINDOWS
+                and Path(config["Script"][path]).is_relative_to(
+                    Path(os.environ["APPDATA"])
+                )
             ):
                 config["Script"][path] = (
                     f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"

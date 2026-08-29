@@ -440,6 +440,12 @@
             </a-col>
           </a-row>
 
+          <LogHookConfig
+            v-model:enabled="generalConfig.Script.LogHookEnabled"
+            v-model:rules="generalConfig.Script.LogHookRules"
+            @change="(group, key, value) => handleChange(group, key, value)"
+          />
+
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -455,11 +461,27 @@
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.SuccessLog"
-                  placeholder="请输入脚本成功日志，以「 | 」进行分割"
+                  :placeholder="successLogPlaceholder"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)"
-                />
+                >
+                  <template #addonBefore>
+                    <a-tooltip :title="LOG_SIGN_MODE_TIP">
+                      <a-select
+                        v-model:value="generalConfig.Script.SuccessLogMode"
+                        class="log-sign-mode-select"
+                        @change="handleChange('Script', 'SuccessLogMode', $event)"
+                      >
+                        <a-select-option value="Split">关键字</a-select-option>
+                        <a-select-option value="Regex">正则</a-select-option>
+                      </a-select>
+                    </a-tooltip>
+                  </template>
+                </a-input>
+                <div v-if="successLogRegexError" class="log-sign-regex-error">
+                  {{ successLogRegexError }}
+                </div>
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -474,11 +496,27 @@
                 </template>
                 <a-input
                   v-model:value="formData.errorLog"
-                  placeholder="请输入脚本失败日志，以「 | 」进行分割"
+                  :placeholder="errorLogPlaceholder"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Script', 'ErrorLog', formData.errorLog)"
-                />
+                >
+                  <template #addonBefore>
+                    <a-tooltip :title="LOG_SIGN_MODE_TIP">
+                      <a-select
+                        v-model:value="generalConfig.Script.ErrorLogMode"
+                        class="log-sign-mode-select"
+                        @change="handleChange('Script', 'ErrorLogMode', $event)"
+                      >
+                        <a-select-option value="Split">关键字</a-select-option>
+                        <a-select-option value="Regex">正则</a-select-option>
+                      </a-select>
+                    </a-tooltip>
+                  </template>
+                </a-input>
+                <div v-if="errorLogRegexError" class="log-sign-regex-error">
+                  {{ errorLogRegexError }}
+                </div>
               </a-form-item>
             </a-col>
           </a-row>
@@ -913,7 +951,9 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
+import LogHookConfig from './components/LogHookConfig.vue'
 import PushLogConfig from './components/PushLogConfig.vue'
+import { validateRegexPattern } from './logRegex'
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
@@ -1298,8 +1338,12 @@ const generalConfig = reactive<GeneralScriptConfig>({
     LogTimeEnd: 1,
     LogTimeStart: 1,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S',
+    LogHookEnabled: false,
+    LogHookRules: '',
     ScriptPath: '.',
     SuccessLog: '',
+    SuccessLogMode: 'Split',
+    ErrorLogMode: 'Split',
     PushLogEnabled: false,
     PushLogPatterns: '',
     UpdateConfigMode: 'Never',
@@ -1354,6 +1398,35 @@ const logTimeFormatPreview = computed(() => {
 const hasFractionalSecondToken = computed(() => {
   const format = formData.logTimeFormat || ''
   return /(^|[^%])%f/.test(format)
+})
+
+// ==================== 成功/失败标志匹配模式 ====================
+const LOG_SIGN_MODE_TIP =
+  '关键字：以「 | 」分隔多个关键字，任一子串命中即匹配；正则：整条配置按 Python 正则匹配'
+
+const successLogPlaceholder = computed(() =>
+  generalConfig.Script.SuccessLogMode === 'Regex'
+    ? '请输入脚本成功日志正则，例如：任务.*执行完成'
+    : '请输入脚本成功日志，以「 | 」进行分割'
+)
+
+const errorLogPlaceholder = computed(() =>
+  generalConfig.Script.ErrorLogMode === 'Regex'
+    ? '请输入脚本失败日志正则，例如：(连接失败|运行超时)'
+    : '请输入脚本失败日志，以「 | 」进行分割'
+)
+
+// 正则模式下给出编辑期语法提示；后端仍是唯一判据，非法正则只是永不命中
+const successLogRegexError = computed(() => {
+  if (generalConfig.Script.SuccessLogMode !== 'Regex') return null
+  const error = validateRegexPattern(generalConfig.Script.SuccessLog)
+  return error ? `正则语法错误：${error}` : null
+})
+
+const errorLogRegexError = computed(() => {
+  if (generalConfig.Script.ErrorLogMode !== 'Regex') return null
+  const error = validateRegexPattern(generalConfig.Script.ErrorLog)
+  return error ? `正则语法错误：${error}` : null
 })
 
 // 模拟器相关状态
@@ -2465,5 +2538,16 @@ html.dark .modern-number-input :deep(.ant-input-number-focused) {
   border-radius: 6px;
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
+}
+
+.log-sign-mode-select {
+  width: 88px;
+}
+
+.log-sign-regex-error {
+  margin-top: 6px;
+  color: var(--ant-color-error);
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

@@ -48,6 +48,8 @@ _LAZY_EXPORTS = {
     "apply_patterns": (".LogPatternExtractor", "apply_patterns"),
     "flush_patterns": (".LogPatternExtractor", "flush_patterns"),
     "debug_pattern": (".LogPatternExtractor", "debug_pattern"),
+    "LogSignMatcher": (".LogPatternExtractor", "LogSignMatcher"),
+    "compile_log_signs": (".LogPatternExtractor", "compile_log_signs"),
     "MumuManager": (".emulator", "MumuManager"),
     "LDManager": (".emulator", "LDManager"),
     "search_all_emulators": (".emulator", "search_all_emulators"),
