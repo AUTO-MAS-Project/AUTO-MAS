@@ -40,13 +40,14 @@
                 <div class="task-row-summary">{{ taskSummary(task) }}</div>
               </div>
               <div class="task-row-actions">
-                <a-switch
-                  :checked="Boolean(taskSwitch[task.key])"
-                  :disabled="saving"
-                  size="small"
-                  @click.stop
-                  @change="emit('taskToggle', task.key, Boolean($event))"
-                />
+                <span @click.stop>
+                  <a-switch
+                    :checked="Boolean(taskSwitch[task.key])"
+                    :disabled="saving"
+                    size="small"
+                    @change="emit('taskToggle', task.key, Boolean($event))"
+                  />
+                </span>
                 <a-tag :color="engineColor(mappedEngine(task))">
                   {{ engineLabel(mappedEngine(task)) }}
                 </a-tag>
