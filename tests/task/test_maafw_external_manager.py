@@ -2522,6 +2522,25 @@ class MaaFWAdbCheckUsesActiveInstanceTest(unittest.TestCase):
                 )
             )
 
+    def test_guard_rejects_mas_written_connect_address(self) -> None:
+        """MAS 自己写的 Connect.Address 不得骗过 MAS 自己的启动前守卫。
+
+        该键在参考包的真实实例样本里都不存在，是 MAS 写进去的；此前它被当作合法
+        设备标识，于是用户从未在外壳侧连过设备时，第二次运行会被上一轮的残留键
+        放行，直到控制器初始化失败才暴露。守卫要的是「用户真的连过一次」的证据。
+        """
+
+        from app.task.MaaFW.manager import _instance_has_adb_device
+
+        self.assertFalse(_instance_has_adb_device({"Connect.Address": "127.0.0.1:16384"}))
+        self.assertFalse(
+            _instance_has_adb_device({"Connect": {"Address": "127.0.0.1:16384"}})
+        )
+        self.assertTrue(
+            _instance_has_adb_device({"AdbDevice": {"AdbSerial": "emulator-5554"}})
+        )
+        self.assertFalse(_instance_has_adb_device({"AdbDevice": {"AdbSerial": "  "}}))
+
 
 class MaaFWActiveInstancePathTest(unittest.TestCase):
     """_resolve_active_instance_path：按 appsettings.json 定位活动实例，缺则回退。"""

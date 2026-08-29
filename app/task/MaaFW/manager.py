@@ -129,10 +129,14 @@ def _instance_has_adb_device(instance_config: dict[str, Any]) -> bool:
     """实例配置是否携带非空的 ADB 设备标识。
 
     设备连接字段属 C 类，由现有实例配置透传、映射层不生成（见 tools/external/
-    mfaavalonia.py）。本函数只判断标识存在且非空，不校验其内部结构。已知两种写法：
-    顶层 ``AdbDevice``（字符串，或含非空 ``AdbSerial`` 的对象），或 ``Connect.Address``
-    （点号平铺键，或 ``Connect`` 嵌套对象的 ``Address``）。缺少成功运行样本，不臆造
-    更多字段。
+    mfaavalonia.py）。本函数只判断标识存在且非空，不校验其内部结构。判据只认
+    顶层 ``AdbDevice``（字符串，或含非空 ``AdbSerial`` 的对象）。
+
+    **刻意不认 ``Connect.Address``**：该键在参考包的全部真实实例样本里都不存在，
+    是 MAS 自己写进去的（见 ``_write_runtime_config``）。把它纳入判据会让 MAS 上一轮
+    留下的残留键骗过 MAS 自己这道启动前守卫——用户明明没在外壳侧连过设备，
+    第二次运行却能放行，直到控制器初始化失败才暴露。守卫要看的是「用户真的连过
+    一次设备」的证据，只有 ``AdbDevice`` 是。
     """
 
     adb_device = instance_config.get("AdbDevice")
@@ -143,17 +147,23 @@ def _instance_has_adb_device(instance_config: dict[str, Any]) -> bool:
         if isinstance(serial, str) and serial.strip():
             return True
 
-    flat_address = instance_config.get("Connect.Address")
-    if isinstance(flat_address, str) and flat_address.strip():
-        return True
-
-    connect = instance_config.get("Connect")
-    if isinstance(connect, dict):
-        address = connect.get("Address")
-        if isinstance(address, str) and address.strip():
-            return True
-
     return False
+
+
+def _warn_if_adb_missing(adb_path: Path, emulator_label: str) -> None:
+    """生成的 ADB 路径不存在时告警。
+
+    check() 里的 ADB 存在性校验只覆盖「透传实例原有设备配置」那条路；MAS 按登记
+    模拟器**生成**设备配置时是另一条路，此前生成什么就写什么、从不校验，路径失效时
+    要等外壳控制器初始化失败才暴露。这里只告警不拒绝：模拟器可能尚未安装完成或
+    路径大小写差异，直接拒绝会误伤既有可用配置。
+    """
+
+    if not adb_path.is_file():
+        logger.warning(
+            f"MaaFW 生成的 {emulator_label} ADB 程序不存在：{adb_path}，"
+            "外壳可能无法连接设备"
+        )
 
 
 def _resolve_active_instance_path(instances_dir: Path, project_root: Path) -> Path:
@@ -458,8 +468,7 @@ class MaaFWManager(TaskExecuteBase):
                 return f"MaaFW 实例配置无法读取：{exc}"
             if not _instance_has_adb_device(instance_base):
                 return (
-                    "未配置模拟器设备，MaaFW 无法连接："
-                    "实例配置缺少 AdbDevice / Connect.Address，"
+                    "未配置模拟器设备，MaaFW 无法连接：实例配置缺少 AdbDevice，"
                     "请先在外壳侧连接一次模拟器"
                 )
             adb_device = instance_base.get("AdbDevice")
@@ -849,8 +858,15 @@ class MaaFWManager(TaskExecuteBase):
         if self.generated_adb_device is not None:
             base["AdbDevice"] = self.generated_adb_device
             logger.info("MaaFW 已按 MAS 模拟器配置覆盖 AdbDevice")
-        # 外壳的「连接目标」取自 Connect.Address，只写 AdbDevice 时它仍是未选中
-        # （日志表现为 device=<none>，启动被拒）。与 M9A / MAA / SRC 同一约定。
+        # 归因更正（2026-08-29 静态审计）：本键在参考包的六份真实实例样本中都不存在，
+        # 三份 MFAAvalonia.Core.dll 里也搜不到该字面量——「外壳的连接目标取自
+        # Connect.Address」这一说法证据不足。当初加它是为了修「未选择连接目标」，
+        # 但同一轮实测证明真正生效的是 BeforeTask=StartupSoftwareAndScript（见
+        # 上方运行编排注释），本键很可能自始至终对外壳惰性。
+        # 暂不删除：静态审计无法排除外壳在运行期以字符串拼接读取该键，删除属改变
+        # 已验证通过的运行路径。待一次「只写 AdbDevice、不写本键」的真机对照后再定。
+        # 已同步收紧的是 _instance_has_adb_device——它不再把本键当作设备标识，
+        # 否则 MAS 自己写的残留键会骗过 MAS 自己的启动前守卫。
         if self.emulator_info is not None and self.emulator_info.adb_address != "Unknown":
             base["Connect.Address"] = self.emulator_info.adb_address
             logger.info(f"MaaFW 已写入连接目标：{self.emulator_info.adb_address}")
@@ -1424,7 +1440,7 @@ class MaaFWManager(TaskExecuteBase):
         emulator_selection = self._get_emulator_selection(self.script_config)
         if emulator_selection is None:
             # 未配置 MAS 模拟器。check() 中受保护的启动前 Adb 设备校验已确认活动
-            # 实例带有设备标识（AdbDevice / Connect.Address）——缺标识的情况早在
+            # 实例带有设备标识（AdbDevice）——缺标识的情况早在
             # check() 就被明确拒绝。这里是「用户自行在外壳侧连接、自行管理模拟器」
             # 的既有放行场景：不是静默跳过，显式记录后沿用实例已有连接。
             logger.info(
@@ -1494,10 +1510,22 @@ class MaaFWManager(TaskExecuteBase):
                     emulator_path,
                     emulator_index,
                 )
-            logger.info(f"不支持的模拟器类型: {emulator_type}，使用实例原配置")
+            # 注意这不是罕见分支：EmulatorConfig 的默认类型是 general，而 MaaFW 的
+            # 模拟器下拉不按类型过滤，所以「登记了模拟器却生成不出设备配置」是可达的
+            # 常规路径。此时沿用实例原有设备字段，而 check() 的设备有效性校验被
+            # `emulator_selection is None` 门在外面——即这条路上设备字段全程无人校验，
+            # 必须让用户看得见。
+            logger.warning(
+                f"MaaFW 无法按模拟器类型 {emulator_type!r} 生成设备配置，"
+                "改为沿用实例原有的 AdbDevice；若外壳侧从未连接过设备，"
+                "本次运行会在控制器初始化阶段失败"
+            )
             return None
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"构建 AdbDevice 配置时出错，使用实例原配置: {exc}")
+            logger.opt(exception=True).warning(
+                f"MaaFW 构建 AdbDevice 配置出错，改为沿用实例原有设备字段："
+                f"{exc}；该路径不经 check() 的设备校验"
+            )
             return None
 
     async def _build_ldplayer_config(
@@ -1525,6 +1553,7 @@ class MaaFWManager(TaskExecuteBase):
 
         emulator_root = emulator_path.parent
         adb_path = emulator_root / "adb.exe"
+        _warn_if_adb_missing(adb_path, "雷电")
 
         name = ld_player_device.title if ld_player_device else "雷电模拟器-LDPlayer"
         idx = ld_player_device.idx if ld_player_device else int(emulator_index)
@@ -1572,6 +1601,7 @@ class MaaFWManager(TaskExecuteBase):
         shell_dir = emulator_path.parent
         emulator_root = shell_dir.parent
         adb_path = shell_dir / "adb.exe"
+        _warn_if_adb_missing(adb_path, "MuMu")
 
         # MuMuManager 正常必然返回实例名；title 为空/缺失属异常兜底。
         # 不退回硬编码 "MuMu模拟器"——它与雷电分支不一致且丢失实例信息；改用
