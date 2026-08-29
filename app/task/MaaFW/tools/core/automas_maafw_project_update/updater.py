@@ -23,6 +23,7 @@ from packaging import version
 
 from .apply import UpdateApplyError, apply_package_transaction
 from .contracts import artifact_id_for, normalise_sha256, project_fingerprint
+from .apply import has_trusted_update_baseline
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
@@ -351,12 +352,17 @@ async def update_maafw_project_if_needed(
     )
     _report_progress(progress, "checking", message="checking for project updates")
     try:
+        # 没有可信基线就直接要全量包：差量包在 apply 阶段必须能对上
+        # projectFingerprint，而从未经 MAS 更新过的项目根本没有那份 manifest，
+        # 于是「首次更新」必然被拒——这就是自举死锁。探测是只读的，不建目录。
+        prefer_full = not has_trusted_update_baseline(project_path)
         discovery = await discover_maafw_project_update(
             interface_model,
             current_version=current_version,
             source_config=merged_source_config,
             proxy=proxy,
             send_log=send_update_log,
+            prefer_full_package=prefer_full,
         )
     except Exception as exc:
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
@@ -513,6 +519,7 @@ async def discover_maafw_project_update(
     source_config: dict[str, Any] | None = None,
     proxy: httpx.Proxy | None = None,
     send_log: Callable[[str], None] | None = None,
+    prefer_full_package: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
     config = dict(source_config or {})
     package_source = _normalise_package_source(
@@ -546,6 +553,8 @@ async def discover_maafw_project_update(
         mirror_cdk=mirror_cdk,
         channel=str(config.get("channel") or "stable"),
         proxy=proxy,
+        prefer_full=prefer_full_package,
+        send_log=send_update_log,
     )
     if mirror_discovery is None:
         return None
@@ -1017,17 +1026,27 @@ async def _check_mirrorchyan_update(
     mirror_cdk: str,
     channel: str,
     proxy: httpx.Proxy | None,
+    prefer_full: bool = False,
+    send_log: Callable[[str], None] | None = None,
 ) -> MaaFWProjectUpdateDiscovery | None:
+    send_update_log = send_log or (lambda _: None)
     rid = interface_model.mirrorchyan_rid
     if not rid:
         return None
 
     params: dict[str, str] = {
         "user_agent": "AutoMasGui",
-        "current_version": current_version,
         "cdk": mirror_cdk or "",
         "channel": channel or "stable",
     }
+    if prefer_full:
+        # 不带 current_version：MirrorChyan 的 current_version 是差量包的计算基准
+        # （文档标为「推荐」而非必填），不给它就没法算差量，返回的是全量包。
+        # 项目还没有可信基线时必须走这条路——差量包在 _validate_plan_base 里
+        # 对不上 projectFingerprint 会被拒，导致「首次更新永远装不上」。
+        send_update_log("本地无可信更新基线，改为请求全量包")
+    else:
+        params["current_version"] = current_version
     if interface_model.mirrorchyan_multiplatform:
         params["os"] = "win"
         params["arch"] = "x64"

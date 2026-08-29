@@ -29,14 +29,27 @@ MANIFEST_NAME = "resource-manifest.json"
 PROJECT_STATE_DIR_NAME = "maafw_project_state"
 
 
+def _resolve_project_state_dir(project_path: Path, operation_root: Path) -> Path:
+    """纯路径推导：不碰文件系统，供创建路径与只读探测共用。"""
+
+    normalized = str(project_path.resolve(strict=False)).casefold()
+    project_key = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+    state_root = (
+        operation_root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME
+    ).resolve(strict=False)
+    return state_root / project_key
+
+
 def _project_state_dir(
     project_path: Path,
     operation: UpdateOperationStore,
+    *,
+    create: bool = True,
 ) -> Path:
-    normalized = str(project_path.resolve(strict=False)).casefold()
-    project_key = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
-    state_root = (operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME).resolve(strict=False)
-    raw_state_dir = state_root / project_key
+    state_root = (
+        operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME
+    ).resolve(strict=False)
+    raw_state_dir = _resolve_project_state_dir(project_path, operation.root)
     if raw_state_dir.is_symlink():
         raise UpdateApplyError("MaaFW project state path cannot be a symlink")
     state_dir = raw_state_dir.resolve(strict=False)
@@ -44,8 +57,38 @@ def _project_state_dir(
         raise UpdateApplyError("MaaFW project state path escapes host state root")
     if state_dir.is_symlink():
         raise UpdateApplyError("MaaFW project state path cannot be a symlink")
-    state_dir.mkdir(parents=True, exist_ok=True)
+    if create:
+        state_dir.mkdir(parents=True, exist_ok=True)
     return state_dir
+
+
+def has_trusted_update_baseline(
+    project_path: Path,
+    *,
+    operation_root: Path | None = None,
+) -> bool:
+    """项目是否已有可信的更新基线（差量包能据以校验的那个指纹）。
+
+    只读探测，不创建任何目录。返回 False 时调用方应当去要**全量包**：
+    差量包在 ``_validate_plan_base`` 里必须能对上 ``projectFingerprint``，
+    从未经 MAS 更新过的项目没有这份 manifest，差量包一定被拒——那正是
+    「首次更新永远装不上」的自举死锁。
+    """
+
+    try:
+        # 只做路径推导，绝不新建 operation 目录或项目状态目录——探测必须无副作用。
+        state_dir = _resolve_project_state_dir(
+            Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
+        )
+        manifest_path = state_dir / MANIFEST_NAME
+        if not manifest_path.is_file():
+            return False
+        manifest = _load_manifest(manifest_path)
+        return bool(str(manifest.get("projectFingerprint") or "").strip())
+    except Exception:  # noqa: BLE001
+        # 探测失败一律按「没有基线」处理：要全量包最多是多下点数据，
+        # 要差量包却没有基线则是必然失败。
+        return False
 
 
 def _owned_state_path(path: Path, state_dir: Path) -> Path:
