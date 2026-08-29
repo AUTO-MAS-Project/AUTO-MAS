@@ -34,7 +34,10 @@ from app.task.MaaFW.tools.controller.game_lifecycle import (
     snapshot_matching_processes,
     validate_game_launch_spec,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface import load_interface_model
+from app.task.MaaFW.tools.core.automas_maafw_interface import (
+    load_interface_model,
+    normalize_task_options_by_task,
+)
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     is_pretask_task_name,
 )
@@ -44,6 +47,7 @@ from app.task.MaaFW.tools.external import (
     ShellMappingError,
     TaskSelection,
     build_instance_config,
+    build_option_entries,
     detect_shell_family,
     resolve_controller_code,
 )
@@ -381,6 +385,8 @@ class MaaFWManager(TaskExecuteBase):
         resource_index = {item.name for item in interface_model.resource}
         task_index = {item.name for item in interface_model.task}
 
+        # 至少要有一个用户排了任务；单个用户没排任务只让该用户跳过，不拖垮整脚本。
+        users_with_tasks = 0
         try:
             for uid in runnable_uids:
                 cfg = user_config[uid]
@@ -406,10 +412,15 @@ class MaaFWManager(TaskExecuteBase):
                 unknown_tasks = [name for name in task_names if name not in task_index]
                 if unknown_tasks:
                     raise ValueError(f"interface 未定义 task：{unknown_tasks[0]}")
+                if task_names:
+                    users_with_tasks += 1
         except (ValueError, ShellMappingError) as exc:
             return f"MaaFW 选择配置无效：{exc}"
         except Exception as exc:
             return f"MaaFW interface 读取失败：{exc}"
+
+        if users_with_tasks == 0:
+            return "MaaFW 没有任何启用用户排入任务，请在用户编辑页配置任务队列"
 
         # 供下方启动前设备校验使用的代表性 controller / resource：取首个可运行用户。
         first_cfg = user_config[runnable_uids[0]]
@@ -506,12 +517,72 @@ class MaaFWManager(TaskExecuteBase):
 
     @staticmethod
     def _parse_snapshot_task_selection(value: Any) -> list[str]:
-        """用户 Task.TaskSnapshot → 按序勾选的任务名列表（pretask 已滤除）。"""
+        """用户 Task.TaskSnapshot → 按序勾选的任务名列表（pretask 已滤除）。
 
-        names = _checked_task_names_from_snapshot(_load_json_dict(value))
-        if not names:
-            raise ValueError("task 不能为空")
-        return names
+        空列表是合法结果：新建用户默认 ``Info.Status=True`` 且
+        ``Task.TaskSnapshot="{ }"``，此前在此抛错会让 check() 整体拒绝运行，
+        导致「新建一个用户 → 整个脚本连同已配好的用户一起跑不了」。
+        现改为返回空列表，由调用方按「该用户跳过」处理；只有**全部**可运行用户
+        都没有任务时才在 check() 判失败。
+        """
+
+        return _checked_task_names_from_snapshot(_load_json_dict(value))
+
+    def _build_task_selections(
+        self,
+        task_names: list[str],
+        raw_task_options: dict[str, Any],
+        *,
+        controller_name: str,
+        resource_name: str,
+    ) -> list[TaskSelection]:
+        """把任务名 + 用户选项值组装成运行范围。
+
+        此前只构造 ``TaskSelection(name=...)``，于是映射层走 interface 默认值分支，
+        把用户在任务编辑页选的选项**静默替换成每项的第 0 个 case**。这里补上
+        选项值：先由内核 ``normalize_task_options_by_task`` 按 interface 声明校验、
+        补默认值并按 controller / resource 过滤，再经 ``build_option_entries``
+        转成外壳的 option 条目形状。
+
+        选项为空的任务仍传 ``options=None``，让映射层维持「任务没有选项就不写
+        option 键」的既有行为，避免多出一个空列表。
+        """
+
+        if self.interface_model is None:
+            raise RuntimeError("MaaFW interface 未加载")
+
+        normalized = normalize_task_options_by_task(
+            raw_task_options,
+            task_names,
+            self.interface_model,
+            controller_name=controller_name,
+            resource_name=resource_name,
+        )
+        task_index = {task.name: task for task in self.interface_model.task}
+
+        selections: list[TaskSelection] = []
+        for name in task_names:
+            task = task_index.get(name)
+            entries = (
+                build_option_entries(self.interface_model, task, normalized.get(name))
+                if task is not None
+                else []
+            )
+            selections.append(
+                TaskSelection(name=name, options=entries if entries else None)
+            )
+        return selections
+
+    @staticmethod
+    def _parse_snapshot_task_options(value: Any) -> dict[str, Any]:
+        """用户 Task.TaskSnapshot → 原始 taskOptions（``{任务名: {选项名: 值}}``）。
+
+        取出的是**未归一化**的原始值，交由内核
+        ``normalize_task_options_by_task`` 按 interface 声明校验并补默认值。
+        """
+
+        raw = _load_json_dict(value).get("taskOptions")
+        return raw if isinstance(raw, dict) else {}
 
     @staticmethod
     def _resolve_controller_name(
@@ -1527,9 +1598,15 @@ class MaaFWManager(TaskExecuteBase):
             self.interface_model,
             controller_name,
         )
-        task_names = self._parse_snapshot_task_selection(
-            self.current_user_config.get("Task", "TaskSnapshot")
-        )
+        snapshot = self.current_user_config.get("Task", "TaskSnapshot")
+        task_names = self._parse_snapshot_task_selection(snapshot)
+        if not task_names:
+            # 用户没排任务（新建用户的默认状态）：只跳过该用户，其余用户照常跑。
+            self.current_user_item.status = "跳过"
+            self.script_info.log = f"用户 {user_name} 未配置任务队列，跳过本次运行"
+            logger.info(self.script_info.log)
+            return
+
         runnable, skipped = self._filter_period_once_tasks(task_names)
         if skipped:
             logger.info(f"用户 {user_name} 周期跳过任务：{'、'.join(skipped)}")
@@ -1543,7 +1620,12 @@ class MaaFWManager(TaskExecuteBase):
 
         self.controller_name = controller_name
         self.resource_name = resource_name
-        self.task_selections = [TaskSelection(name=name) for name in runnable]
+        self.task_selections = self._build_task_selections(
+            runnable,
+            self._parse_snapshot_task_options(snapshot),
+            controller_name=controller_name,
+            resource_name=resource_name,
+        )
 
         await self._mark_run_started()
 

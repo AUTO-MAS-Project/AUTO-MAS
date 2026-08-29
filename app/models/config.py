@@ -2405,10 +2405,14 @@ class MaaFWConfig(ConfigBase):
         ## ADB 地址，留空时启动脚本级模拟器获取
         self.Device_AdbAddress = ConfigItem("Device", "AdbAddress", "")
         ## ADB 截图方法，默认优先模拟器增强，失败后回退到 ADB 截图
+        ## 仅第二层（MAS 进程内 runner）适用：第一层由外壳自己创建控制器，运行期按
+        ## M9A 专项的既验证取值写死（ScreencapMethods=64），本项不参与外部运行，
+        ## 接线前不要暴露到前端，否则用户改了不会生效也没有提示
         self.Device_AdbScreencapMethods = ConfigItem(
             "Device", "AdbScreencapMethods", -57, RangeValidator(-999, 999999999999)
         )
         ## ADB 输入方法，默认优先模拟器增强，失败后回退到 MaaTouch / MiniTouch / ADB
+        ## 同上，仅第二层适用；第一层运行期写死 InputMethods=18446744073709551607
         self.Device_AdbInputMethods = ConfigItem(
             "Device", "AdbInputMethods", -1, RangeValidator(-999, 999999999999)
         )

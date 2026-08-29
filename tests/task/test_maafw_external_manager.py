@@ -21,6 +21,8 @@ from app.task.MaaFW.manager import MaaFWManager
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     MaaFWController,
     MaaFWInterface,
+    MaaFWOption,
+    MaaFWOptionCase,
     MaaFWResource,
     MaaFWTask,
 )
@@ -559,6 +561,111 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 )
             )
 
+    # ---- 问题 4：没排任务的用户不得拖垮整个脚本 ----
+
+    def test_user_without_tasks_is_skipped_and_others_still_run(self) -> None:
+        asyncio.run(self._test_user_without_tasks_is_skipped_and_others_still_run())
+
+    async def _test_user_without_tasks_is_skipped_and_others_still_run(self) -> None:
+        """新建用户默认 Status=True 且 TaskSnapshot="{ }"。
+
+        此前 check() 对每个启用用户解析快照、空快照即抛错并整体拒绝运行，
+        于是「刚新建一个用户」会让整个脚本连同已配好的用户一起跑不了。
+        现在该用户按「跳过」处理，其余用户照常执行。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {"Name": "已配置", "tasks": ["启动游戏"]},
+                    {"Name": "新建用户", "tasks": []},
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.main_task()
+                await manager.final_task()
+
+            statuses = {u.name: u.status for u in manager.script_info.user_list}
+            self.assertEqual(statuses["已配置"], "完成")
+            self.assertEqual(statuses["新建用户"], "跳过")
+            self.assertEqual(manager.script_info.status, "完成")
+            # 只有配了任务的那个用户真正起过外壳。
+            self.assertEqual(len(_FakeProcessManager.instances), 1)
+
+    def test_check_fails_only_when_no_user_has_tasks(self) -> None:
+        asyncio.run(self._test_check_fails_only_when_no_user_has_tasks())
+
+    async def _test_check_fails_only_when_no_user_has_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root, users=[{"Name": "空用户", "tasks": []}]
+            )
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                result = await manager.check()
+            self.assertIn("没有任何启用用户排入任务", result)
+
+    # ---- 问题 5：用户选的任务选项必须真的写进外壳配置 ----
+
+    def test_user_task_options_reach_instance_config(self) -> None:
+        asyncio.run(self._test_user_task_options_reach_instance_config())
+
+    async def _test_user_task_options_reach_instance_config(self) -> None:
+        """此前只构造 TaskSelection(name=...)，映射层因而回退到 interface 默认值，
+        把用户选的选项静默换成每项第 0 个 case。现在用户值必须原样抵达实例配置。
+        """
+
+        interface = MaaFWInterface(
+            interface_version=2,
+            name="test-project",
+            controller=[MaaFWController(name="安卓端", type="Adb")],
+            resource=[MaaFWResource(name="简中")],
+            task=[
+                MaaFWTask(name="启动游戏", entry="StartUp", option=["服务器"]),
+            ],
+            option={
+                "服务器": MaaFWOption(
+                    type="select",
+                    cases=[
+                        MaaFWOptionCase(name="官服"),
+                        MaaFWOptionCase(name="B 服"),
+                    ],
+                )
+            },
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(
+                root,
+                users=[
+                    {
+                        "Name": "用户A",
+                        "tasks": ["启动游戏"],
+                        "taskOptions": {"启动游戏": {"服务器": "B 服"}},
+                    }
+                ],
+            )
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+            with self._patched_runtime(
+                runtime, manager, self._no_sleep, interface=interface
+            ):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                await manager._run_user(0, manager.runnable_user_uids[0])
+                # 必须在 final_task 还原备份之前读取本轮写入的实例配置。
+                written = json.loads(manager.instance_path.read_text(encoding="utf-8"))
+                await manager.final_task()
+
+            option = written["TaskItems"][0]["option"]
+            self.assertEqual(option, [{"name": "服务器", "index": 1}])
+
     def test_non_mfa_is_explicitly_unsupported(self) -> None:
         asyncio.run(self._test_non_mfa_is_explicitly_unsupported())
 
@@ -975,7 +1082,11 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 await manager.final_task()
 
             self.assertNotEqual(manager.check_result, "Pass")
-            self.assertIn("不能为空", manager.check_result)
+            # 唯一的启用用户没排任务 → 整脚本无事可做，仍然拒绝。
+            # 文案由「task 不能为空」改为可操作的提示：空快照本身不再是错误，
+            # 只有「全部启用用户都没排任务」才判失败（多用户场景见
+            # test_user_without_tasks_is_skipped_and_others_still_run）。
+            self.assertIn("没有任何启用用户排入任务", manager.check_result)
             self.assertEqual(manager.script_info.status, "异常")
             self.assertEqual(_FakeProcessManager.instances, [])
             self.assertEqual(self._snapshot(root / "config"), before)
@@ -2093,7 +2204,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             snapshot = {
                 "taskOrder": list(spec_tasks),
                 "taskChecked": {name: True for name in spec_tasks},
-                "taskOptions": {},
+                "taskOptions": spec.get("taskOptions", {}),
             }
             user_update = {
                 "Info": {

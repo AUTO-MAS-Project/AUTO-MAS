@@ -11,6 +11,7 @@ from .mfaavalonia import (
     UnknownControllerTypeError,
     build_current_tasks,
     build_instance_config,
+    build_option_entries,
     build_task_items,
     resolve_controller_code,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "build_instance_config",
     "build_instance_entry",
     "build_interface_task_snapshot",
+    "build_option_entries",
     "build_task_entries",
     "build_task_entry",
     "build_task_items",

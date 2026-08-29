@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.task.MaaFW.tools.core.automas_maafw_interface import MaaFWInterface
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWTask
+from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
+    MaaFWTask,
+    MaaFWTaskOptionValue,
+)
 from app.task.MaaFW.tools.external.models import ShellMappingError, TaskSelection
 
 # 兼容旧导入路径：共享输入模型已迁到 external/models.py，这里保留 re-export。
@@ -130,6 +133,65 @@ def build_task_items(
             raise ShellMappingError(f"interface 未定义任务：{selection.name}")
         items.append(_build_task_item(task, selection))
     return items
+
+
+def build_option_entries(
+    interface: MaaFWInterface,
+    task: MaaFWTask,
+    option_values: Mapping[str, MaaFWTaskOptionValue] | None,
+) -> list[dict[str, Any]]:
+    """把「选项名 → 用户选定值」映射成 MFAAvalonia 的 ``option`` 条目列表。
+
+    条目形状取自真实 M9A 实例配置的 51 条 option 实测（2026-08-29）：
+    ``name`` 与 ``index`` **恒存在**，按选项类型再追加 ``selected_cases``
+    （checkbox 型）或 ``data``（自由输入型）。
+
+    与 :func:`_build_task_item` 的 interface 默认值分支相比是严格超集：
+    ``option_values`` 为空时逐条退化成 ``{"name": …, "index": 0}``，
+    与旧行为逐字节一致，因此不会让既有运行结果发生漂移。
+
+    Args:
+        interface: 已解析的 interface 模型，用于按选项名取 ``cases`` 定义。
+        task: 目标任务，``task.option`` 决定输出条目的**顺序与范围**。
+        option_values: 该任务的选项值（通常来自内核
+            ``normalize_task_options_by_task`` 的归一化结果）。``None`` 视为空。
+
+    Returns:
+        与 ``task.option`` 等长的条目列表；``task.option`` 为空时返回空列表。
+
+    Note:
+        嵌套 ``sub_options`` 不生成——扁平的选项值不足以还原递归结构，
+        猜测反而会写出错误配置。这与旧行为一致（旧行为同样不产出）。
+    """
+
+    if not task.option:
+        return []
+
+    values: Mapping[str, MaaFWTaskOptionValue] = option_values or {}
+    entries: list[dict[str, Any]] = []
+    for option_name in task.option:
+        entry: dict[str, Any] = {"name": option_name, "index": 0}
+        value = values.get(option_name)
+        declaration = interface.option.get(option_name)
+
+        if isinstance(value, str):
+            # select 型：值是 case 名，转成它在 cases[] 中的下标。
+            # 找不到就保留 index 0，与无值时的默认行为一致。
+            cases = declaration.cases if declaration is not None else None
+            if cases:
+                for case_index, case in enumerate(cases):
+                    if case.name == value:
+                        entry["index"] = case_index
+                        break
+        elif isinstance(value, list):
+            # checkbox 型：实测形状为 index 与 selected_cases 并存。
+            entry["selected_cases"] = [str(item) for item in value]
+        elif isinstance(value, dict):
+            # 自由输入型：实测形状为 index 与 data 并存。
+            entry["data"] = {str(key): str(item) for key, item in value.items()}
+
+        entries.append(entry)
+    return entries
 
 
 def _build_task_item(task: MaaFWTask, selection: TaskSelection) -> dict[str, Any]:
