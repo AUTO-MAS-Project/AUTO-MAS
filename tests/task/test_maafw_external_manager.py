@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import tempfile
+from types import SimpleNamespace
 import uuid
 import unittest
 from contextlib import ExitStack
@@ -2419,7 +2420,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             patch.object(
                 manager_module,
                 "find_client_process",
-                return_value=object() if attach_found else None,
+                return_value=SimpleNamespace(pid=4321) if attach_found else None,
             )
         )
         return stack, launched, closed

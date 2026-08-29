@@ -85,8 +85,27 @@ class MfaAvaloniaProfileDriftGuardTest(unittest.TestCase):
 class MxuProfileEvidenceTest(unittest.TestCase):
     """MXU 画像必须与静态样本逐行吻合，且明确标注未经真机验证。"""
 
-    def test_timestamp_slice_parses_sample_lines(self) -> None:
+    def test_timestamp_slice_parses_the_current_format(self) -> None:
+        """当前版本（MXU@2.4.1）行首带方括号，2026-08-29 真机采样。"""
+
+        line = (
+            "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] "
+            "Web server listening on http://127.0.0.1:12701"
+        )
         start, end = MXU_LOG_PROFILE.time_stamp_range
+        self.assertEqual(
+            datetime.strptime(line[start:end], MXU_LOG_PROFILE.time_format),
+            datetime(2026, 8, 29, 18, 15, 43),
+        )
+
+    def test_legacy_slice_parses_the_old_sample_lines(self) -> None:
+        """旧命名那份日志是另一套行首，必须由 legacy_* 那对字段负责。
+
+        判据串（开始/完成/停止）在两版之间没变——2026-08-29 从 MaaEnd.exe 的前端
+        包里逐条比对过——所以只有时间切片需要分家。
+        """
+
+        start, end = MXU_LOG_PROFILE.legacy_time_stamp_range
         for line, expected in (
             (_MXU_START_LINE, datetime(2026, 7, 4, 10, 25, 44)),
             (_MXU_DRAINED_LINE, datetime(2026, 7, 4, 10, 25, 46)),
@@ -94,7 +113,7 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         ):
             with self.subTest(line=line[:30]):
                 parsed = datetime.strptime(
-                    line[start:end], MXU_LOG_PROFILE.time_format
+                    line[start:end], MXU_LOG_PROFILE.legacy_time_format
                 )
                 self.assertEqual(parsed, expected)
 
@@ -123,12 +142,25 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         self.assertEqual(MXU_LOG_PROFILE.controller_failure_markers, ())
         self.assertEqual(MXU_LOG_PROFILE.abandon_markers, ())
 
-    def test_log_path_requires_post_launch_resolution(self) -> None:
-        # 当日启动序号启动前不可预知：确定性路径必须返回 None。
-        self.assertIsNone(
-            resolve_log_relpath(MXU_LOG_PROFILE, datetime(2026, 8, 28))
+    def test_both_log_namings_are_declared(self) -> None:
+        """固定名优先、日期序号名回退，两条都要在画像里有据可查。
+
+        固定名不含 strftime 占位符，故 resolve 出来与写死的一致；旧命名的当日
+        序号启动前不可知，只能靠 log_glob_dir 在起进程之后 glob。
+        """
+
+        self.assertEqual(
+            resolve_log_relpath(MXU_LOG_PROFILE, datetime(2026, 8, 28)),
+            "debug/mxu-tauri.log",
         )
         self.assertEqual(MXU_LOG_PROFILE.log_glob_dir, "debug")
+        self.assertIsNotNone(MXU_LOG_PROFILE.legacy_time_stamp_range)
+
+    def test_self_exiting_shell_is_declared(self) -> None:
+        """-q / --quit-after-run：进程干净退出本身就是完成信号。"""
+
+        self.assertTrue(MXU_LOG_PROFILE.exits_after_run)
+        self.assertFalse(MFAAVALONIA_LOG_PROFILE.exits_after_run)
 
 
 class IdleClockNoiseFilterTest(unittest.TestCase):
@@ -210,7 +242,7 @@ class ProfileRegistryTest(unittest.TestCase):
         self.assertIs(get_shell_log_profile(ShellFamily.MXU), MXU_LOG_PROFILE)
         self.assertIsNone(get_shell_log_profile(ShellFamily.UNKNOWN))
 
-    def test_profile_requires_exactly_one_path_shape(self) -> None:
+    def test_profile_requires_at_least_one_path_shape(self) -> None:
         common = dict(
             family=ShellFamily.MXU,
             run_validated=False,
@@ -225,12 +257,14 @@ class ProfileRegistryTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             ShellLogProfile(**common)
-        with self.assertRaises(ValueError):
-            ShellLogProfile(
-                **common,
-                log_relpath_strftime="logs/a.log",
-                log_glob_dir="debug",
-            )
+        # 两条都给是合法的：MXU 就是「固定名优先、日期序号名回退」。
+        both = ShellLogProfile(
+            **common,
+            log_relpath_strftime="logs/a.log",
+            log_glob_dir="debug",
+        )
+        self.assertEqual(both.log_relpath_strftime, "logs/a.log")
+        self.assertEqual(both.log_glob_dir, "debug")
 
 
 if __name__ == "__main__":

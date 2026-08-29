@@ -59,7 +59,13 @@ from app.task.MaaFW.tools.external import (
     resolve_log_relpath,
 )
 from app.task.MaaFW.tools.notify import push_notification
-from app.utils import LogMonitor, ProcessManager, ProcessRunner, get_logger
+from app.utils import (
+    LogMonitor,
+    ProcessManager,
+    ProcessRunner,
+    activate_window_by_pid,
+    get_logger,
+)
 
 
 logger = get_logger("MaaFW 外部调度器")
@@ -83,6 +89,9 @@ _STATE_DIR_NAME = "MaaFWExternal"
 # MAS 在 MXU 容器里追加的实例显示名；外壳的 -i 参数按**显示名**匹配，
 # 两者必须一致。
 _MXU_INSTANCE_NAME = "MAS"
+# 起进程后等外壳把日志文件建出来的上界与探测节奏。
+_SHELL_LOG_WAIT_SECONDS = 30
+_SHELL_LOG_PROBE_INTERVAL_SECONDS = 1.0
 
 # 交接给外壳前等 adb 真正可用的上界与探测节奏。模拟器管理器只保证
 # ldconsole/MuMuManager 报 ONLINE，Android 的 adbd 可能还要十几秒才服务。
@@ -364,6 +373,9 @@ class MaaFWManager(TaskExecuteBase):
         self.emulator_index: str = ""
         self.game_launch_spec: MaaFWGameLaunchSpec | None = None
         self.game_owned_process: MaaFWOwnedGameProcess | None = None
+        # AttachOnly 模式下已在跑的游戏进程 pid：_prepare_desktop_game 扫到后
+        # 记下来，置前时直接用，避免再做一次全进程扫描。
+        self.game_attached_pid: int | None = None
 
         # 用户层运行：任务队列属于用户，遍历真实用户而非单个虚拟用户。
         self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
@@ -1189,10 +1201,18 @@ class MaaFWManager(TaskExecuteBase):
             self._mark_terminal("exit", "MaaFW 进程已异常退出")
             return
 
+        await self._arrange_windows_after_launch()
+
+        if self.log_path is None or not self.log_path.is_file():
+            resolved = await self._await_shell_log_path()
+            if resolved is not None:
+                self.log_path = resolved
         if self.log_path is None:
-            self.log_path = self._resolve_mxu_log_path()
-        if self.log_path is None:
-            raise RuntimeError("MaaFW 未能定位外壳日志文件")
+            # 拿不到日志不再直接判死：外壳已经在跑，且 MXU 带 -q 时进程退出本身
+            # 就是完成信号。降级为「只靠进程状态判终态」，把日志当增益而非前提。
+            logger.warning("MaaFW 未能定位外壳日志，改为仅按进程状态判定终态")
+            await self._wait_for_terminal()
+            return
 
         await self.log_monitor.start_monitor_file(self.log_path, self.log_start_time)
         self.monitor_started = True
@@ -1209,6 +1229,15 @@ class MaaFWManager(TaskExecuteBase):
                 if self._contains_controller_failure(self.last_log_text):
                     self._mark_controller_failure()
                 elif self._contains_completion(self.last_log_text):
+                    self._mark_completion(self.last_log_text)
+                elif (
+                    self.log_profile is not None
+                    and self.log_profile.exits_after_run
+                ):
+                    # MXU 带 -q：跑完自行退出，进程退出**就是**完成信号。
+                    # 不能像 MFAAvalonia 那样判「异常退出」——那个家族的外壳
+                    # 永不自退，退出确实意味着出事；这个家族反过来。
+                    # 仍要过「选中任务是否露过面」这道关，避免空跑被判成功。
                     self._mark_completion(self.last_log_text)
                 elif any(
                     m in self.last_log_text
@@ -1639,28 +1668,126 @@ class MaaFWManager(TaskExecuteBase):
             raise RuntimeError("MaaFW 活动实例未初始化")
         return [self.exe_path, "--instance", self.instance_path.stem]
 
-    def _resolve_mxu_log_path(self) -> Path | None:
-        """外壳起来之后再定位 MXU 当日日志。
+    async def _arrange_windows_after_launch(self) -> None:
+        """外壳起来之后整理窗口：静默则收起外壳，PC 游戏则把游戏顶到前台。
 
-        文件名是 ``debug/YYYY-MM-DD-N.log``，N 为当日启动序号，启动前不可预知；
-        同目录还有引擎 maafw.log、其 .bak 轮转与 agent 日志，必须按文件名筛选
-        （pick_latest_mxu_log 只认 日期-序号 这一种形状）。
+        顺序与 MaaEnd 专项一致（AutoProxy.py:267-278）：起游戏 → 起外壳 →
+        把游戏窗口置前。Win32 控制器是对着窗口截图与操作的，外壳自己的窗口刚
+        弹出来会压在游戏上面；专项就是靠这一步保证被操作的是游戏而不是外壳。
+        模拟器路径不需要——那条链路的可见性由 EmulatorManager.setVisible 管。
+
+        整段自保护：窗口调度失败不影响任务本身，只告警。
+        """
+
+        with suppress(Exception):
+            if Config.get("Function", "IfSilence") and self.process_manager is not None:
+                if await self.process_manager.minimize_window():
+                    logger.info("MaaFW 静默模式：已收起外壳窗口")
+
+        if self.game_launch_spec is None:
+            return
+        try:
+            pid = self._resolve_game_pid()
+            if pid is None:
+                logger.warning("MaaFW 未能定位 PC 游戏进程，跳过窗口置前")
+                return
+            # 不下沉到工作线程：AttachThreadInput 是按调用线程生效的，
+            # 与 ProcessManager.activate_window 保持同一线程语义（MaaEnd
+            # 专项就是这么用的）。EnumWindows 只遍历顶层窗口，毫秒级。
+            if activate_window_by_pid(pid):
+                logger.info(f"MaaFW 已将 PC 游戏窗口置前：pid={pid}")
+            else:
+                logger.warning(f"MaaFW 置前 PC 游戏窗口失败：pid={pid}")
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MaaFW 整理窗口时出错：{exc}")
+
+    def _resolve_game_pid(self) -> int | None:
+        """取「实际游戏」进程 pid。
+
+        启动器模式下 MAS 起的是启动器，真正要置前的是它拉起来的游戏本体，
+        故优先用 client_identity；AttachOnly 模式用 ``_prepare_desktop_game``
+        扫描时记下的 pid。
+
+        刻意**不**在这里再调一次 ``find_client_process``：那是一次全进程枚举
+        （每个进程都要取 exe 路径），启动准备阶段刚做过，重复一遍既慢又没有
+        新信息。拿不到就返回 None，由调用方降级为「不置前」。
+        """
+
+        owned = self.game_owned_process
+        if owned is not None:
+            if owned.client_identity:
+                return int(owned.client_identity[0])
+            if owned.pid:
+                return int(owned.pid)
+        return self.game_attached_pid
+
+    async def _await_shell_log_path(self) -> Path | None:
+        """外壳起来之后再定位日志文件，并等它出现。
+
+        必须**等**而不是一次性探：外壳创建日志需要时间，起进程后立刻去找会扑空，
+        而扑空一次就让整个用户失败（2026-08-29 实测 MaaEnd 就是这样炸的）。
+
+        MXU 有两种命名并存，同一个安装目录里都可能碰到：
+        - 当前版本（MXU@2.4.1）：固定名 ``debug/mxu-tauri.log``
+        - 旧版：``debug/<日期>-<序号>.log``，序号是当日启动序号，启动前不可知
+
+        轮询按**次数**计而不是墙钟 deadline：本仓测试统一把 ``asyncio.sleep`` 打成
+        空转，墙钟写法会让每个用例真的空转满 30 秒（一次改动就把 external_manager
+        那 82 个用例从秒级拖到半小时）。按次数计则在测试里瞬间走完，生产里仍是
+        ``间隔 × 次数`` 的真实等待。
         """
 
         profile = self.log_profile
-        if self.project_root is None or profile is None or not profile.log_glob_dir:
+        if self.project_root is None or profile is None:
             return None
-        log_dir = self.project_root / profile.log_glob_dir
-        if not log_dir.is_dir():
-            return None
-        today = datetime.now().strftime("%Y-%m-%d")
-        names = [path.name for path in log_dir.glob("*.log")]
-        picked = pick_latest_mxu_log(names, today)
-        if picked is None:
-            logger.warning(f"MaaFW 未找到 {today} 的 MXU 日志：{log_dir}")
-            return None
-        logger.info(f"MaaFW 已定位 MXU 日志：{picked}")
-        return log_dir / picked
+
+        preferred: Path | None = None
+        if profile.log_relpath_strftime:
+            preferred = self.project_root / resolve_log_relpath(profile, datetime.now())
+        log_dir = (
+            self.project_root / profile.log_glob_dir if profile.log_glob_dir else None
+        )
+
+        attempts = max(
+            1, int(_SHELL_LOG_WAIT_SECONDS / _SHELL_LOG_PROBE_INTERVAL_SECONDS)
+        )
+        for attempt in range(attempts):
+            if preferred is not None and preferred.is_file():
+                logger.info(f"MaaFW 已定位外壳日志：{preferred.name}")
+                return preferred
+            if log_dir is not None and log_dir.is_dir():
+                today = datetime.now().strftime("%Y-%m-%d")
+                picked = pick_latest_mxu_log(
+                    [path.name for path in log_dir.glob("*.log")], today
+                )
+                if picked is not None:
+                    logger.info(f"MaaFW 已定位外壳日志（旧版命名）：{picked}")
+                    self._apply_legacy_log_timestamps()
+                    return log_dir / picked
+            if attempt + 1 < attempts:
+                await asyncio.sleep(_SHELL_LOG_PROBE_INTERVAL_SECONDS)
+
+        logger.warning(
+            f"MaaFW 等待外壳日志超时（{_SHELL_LOG_WAIT_SECONDS}s）："
+            f"{preferred if preferred is not None else log_dir}"
+        )
+        return None
+
+    def _apply_legacy_log_timestamps(self) -> None:
+        """回退到旧命名日志时，把 LogMonitor 的时间切片换成旧格式那套。
+
+        不换的话，首选格式的切片在旧文件上一行都解析不出来，``if_log_start``
+        永远为假 —— 外壳明明在跑，MAS 却读不到任何一行。
+        """
+
+        profile = self.log_profile
+        if profile is None or self.log_monitor is None:
+            return
+        if profile.legacy_time_stamp_range is None or not profile.legacy_time_format:
+            return
+        self.log_monitor.time_start = profile.legacy_time_stamp_range[0]
+        self.log_monitor.time_end = profile.legacy_time_stamp_range[1]
+        self.log_monitor.time_format = profile.legacy_time_format
 
     def _resolve_log_path(self) -> Path | None:
         """按当前时刻解析外壳日志文件路径。
@@ -2100,6 +2227,7 @@ class MaaFWManager(TaskExecuteBase):
             existing = await asyncio.to_thread(find_client_process, spec)
             if existing is None:
                 return "PC 游戏 AttachOnly 模式未匹配到已运行的客户端进程，请先启动游戏"
+            self.game_attached_pid = existing.pid
             return None
 
         try:
@@ -2134,6 +2262,7 @@ class MaaFWManager(TaskExecuteBase):
                 with suppress(Exception):
                     await asyncio.to_thread(close_owned_game, self.game_owned_process)
             self.game_owned_process = None
+        self.game_attached_pid = None
 
     async def _run_user(self, index: int, uid: uuid.UUID) -> None:
         """执行单个用户：解析范围 → 周期过滤 → 写配置 → 起外壳 → 判终态。"""

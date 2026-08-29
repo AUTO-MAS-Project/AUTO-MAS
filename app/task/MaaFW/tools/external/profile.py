@@ -71,13 +71,25 @@ class ShellLogProfile:
     # 外壳的周期性自娱自乐行：只要日志里还在滚这类行，就不能算「框架在干活」。
     # 空闲超时判定必须把它们排除，否则永远不会触发（upstream issue #388）。
     idle_noise_markers: tuple[str, ...] = ()
+    # 外壳是否会在任务跑完后自行退出（MXU 的 -q / --quit-after-run）。
+    # 为真时「进程干净退出」本身就是完成信号，不必依赖日志里的完成串——
+    # 这对判据尚未确证的家族尤其重要。
+    exits_after_run: bool = False
+    # 首选日志相对路径。允许是不含 % 的固定名（strftime 原样返回）。
     log_relpath_strftime: str | None = None
+    # 备选：按「日期-序号」命名的日志所在目录，首选路径不存在时回退到这里。
     log_glob_dir: str | None = None
+    # 回退到 log_glob_dir 那份日志时改用的时间切片。两种命名往往出自不同
+    # 版本的日志子系统，行首格式并不相同；用首选那套切片去解析回退文件会
+    # 一行都对不上，LogMonitor 的 `entry_time > log_start_time` 门槛于是把
+    # 整份日志当成历史全丢，表现为「外壳在跑但 MAS 一行都没读到」。
+    legacy_time_stamp_range: tuple[int, int] | None = None
+    legacy_time_format: str | None = None
 
     def __post_init__(self) -> None:
-        if bool(self.log_relpath_strftime) == bool(self.log_glob_dir):
+        if not self.log_relpath_strftime and not self.log_glob_dir:
             raise ValueError(
-                "log_relpath_strftime 与 log_glob_dir 必须恰好设置一个"
+                "log_relpath_strftime 与 log_glob_dir 至少要设置一个"
             )
 
 
@@ -110,8 +122,12 @@ MFAAVALONIA_LOG_PROFILE = ShellLogProfile(
 MXU_LOG_PROFILE = ShellLogProfile(
     family=ShellFamily.MXU,
     run_validated=False,
-    time_stamp_range=(0, 19),
-    time_format="%Y-%m-%d %H:%M:%S",
+    # 当前版本（MXU@2.4.1，2026-08-29 真机采样）的行首是方括号包裹的
+    # `[YYYY-MM-DD][HH:MM:SS][LEVEL][module]`，切片 [1:21] 恰好取到
+    # `YYYY-MM-DD][HH:MM:SS`，故格式里保留那对括号。
+    # 旧版那份无方括号的格式见下方 log_relpath_strftime 处的说明。
+    time_stamp_range=(1, 21),
+    time_format="%Y-%m-%d][%H:%M:%S",
     completion_markers=("kind: tasks-completed",),
     abandon_markers=(),
     controller_failure_markers=(),
@@ -122,7 +138,22 @@ MXU_LOG_PROFILE = ShellLogProfile(
     stop_markers=("[task-stop#",),
     # 留空：MXU 的周期性噪音行尚无真机样本，不猜测（fail-closed）。
     idle_noise_markers=(),
+    # -q / --quit-after-run：外壳跑完自行退出，进程退出即完成信号。
+    exits_after_run=True,
+    # 日志子系统在 MXU 2.4.1 搬了家（2026-08-29 真机比对确认）：
+    #   旧版 —— 前端 webview 自己写 debug/<日期>-<序号>.log，行首无方括号，
+    #           `kind: tasks-completed` 这类标记由 `[App]` 打出；
+    #   新版 —— 前端日志经 tauri-plugin-log 转发给 Rust，与 `mxu_lib::*` 后端行
+    #           一起追加进固定名 debug/mxu-tauri.log。
+    # 同一个安装目录里两种文件会并存（旧文件是历史残留），故固定名优先、日期名回退。
+    # mxu-tauri.log 是**追加型**文件，跨轮不清空；靠 LogMonitor 的
+    # `entry_time > log_start_time` 门槛把上一轮的残留行挡在外面 —— 这也是上面那对
+    # 时间切片必须与真机格式严格对齐的原因，切错了整轮日志会被当成历史全部丢弃。
+    log_relpath_strftime="debug/mxu-tauri.log",
     log_glob_dir="debug",
+    # 旧命名那份是无方括号的 `YYYY-MM-DD HH:MM:SS LEVEL [模块] ...`。
+    legacy_time_stamp_range=(0, 19),
+    legacy_time_format="%Y-%m-%d %H:%M:%S",
 )
 
 SHELL_LOG_PROFILES: dict[ShellFamily, ShellLogProfile] = {

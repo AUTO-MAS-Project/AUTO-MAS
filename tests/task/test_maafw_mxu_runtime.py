@@ -1,5 +1,6 @@
 import json
 import tempfile
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -174,11 +175,34 @@ class MxuLogPathTest(unittest.TestCase):
         from app.task.MaaFW.tools.external.profile import MXU_LOG_PROFILE
 
         self.manager.log_profile = MXU_LOG_PROFILE
+        self.manager.log_monitor = SimpleNamespace(
+            time_start=1, time_end=21, time_format="%Y-%m-%d][%H:%M:%S"
+        )
 
-    def test_pre_launch_path_is_unknown(self) -> None:
-        self.assertIsNone(self.manager._resolve_log_path())
+    def _await_path(self):
+        import asyncio as _asyncio
 
-    def test_picks_todays_latest_sequence(self) -> None:
+        async def _no_sleep(_delay):
+            return None
+
+        with patch.object(manager_module.asyncio, "sleep", _no_sleep), patch.object(
+            manager_module, "_SHELL_LOG_WAIT_SECONDS", 0
+        ):
+            return _asyncio.run(self.manager._await_shell_log_path())
+
+    def test_prefers_the_current_fixed_name(self) -> None:
+        """当前版本写固定名 debug/mxu-tauri.log（2026-08-29 真机确认）。"""
+
+        (self.root / "debug" / "mxu-tauri.log").write_text("x", encoding="utf-8")
+        resolved = self._await_path()
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.name, "mxu-tauri.log")
+        # 走首选路径时不得动切片。
+        self.assertEqual(self.manager.log_monitor.time_start, 1)
+
+    def test_falls_back_to_legacy_sequence_name(self) -> None:
+        """旧版外壳写 <日期>-<序号>.log；外壳会就地热更新，两种都要认。"""
+
         from datetime import datetime
 
         today = datetime.now().strftime("%Y-%m-%d")
@@ -189,13 +213,36 @@ class MxuLogPathTest(unittest.TestCase):
             "mxu-agent-0-19728.log",
         ):
             (self.root / "debug" / name).write_text("x", encoding="utf-8")
-        resolved = self.manager._resolve_mxu_log_path()
+        resolved = self._await_path()
         self.assertIsNotNone(resolved)
         self.assertEqual(resolved.name, f"{today}-2.log")
+        # 回退文件是另一套行首格式，切片必须跟着换，否则一行都解析不出来。
+        self.assertEqual(
+            (
+                self.manager.log_monitor.time_start,
+                self.manager.log_monitor.time_end,
+                self.manager.log_monitor.time_format,
+            ),
+            (0, 19, "%Y-%m-%d %H:%M:%S"),
+        )
 
-    def test_returns_none_when_no_log_for_today(self) -> None:
+    def test_returns_none_when_nothing_matches(self) -> None:
         (self.root / "debug" / "2000-01-01-1.log").write_text("x", encoding="utf-8")
-        self.assertIsNone(self.manager._resolve_mxu_log_path())
+        self.assertIsNone(self._await_path())
+
+    def test_timestamp_slice_parses_current_format(self) -> None:
+        """新格式行首带方括号，切片 [1:21] 恰好取到可解析的那段。"""
+
+        from datetime import datetime
+
+        from app.task.MaaFW.tools.external.profile import MXU_LOG_PROFILE
+
+        line = "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] Web server listening"
+        start, end = MXU_LOG_PROFILE.time_stamp_range
+        self.assertEqual(
+            datetime.strptime(line[start:end], MXU_LOG_PROFILE.time_format),
+            datetime(2026, 8, 29, 18, 15, 43),
+        )
 
 
 class UnknownShellRejectionTest(unittest.TestCase):
