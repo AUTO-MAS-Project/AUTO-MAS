@@ -63,6 +63,9 @@ class ShellLogProfile:
     completion_markers: tuple[str, ...]
     abandon_markers: tuple[str, ...]
     controller_failure_markers: tuple[str, ...]
+    # 外壳报告**某个任务**失败的串。不是终止信号——队列停不停取决于实例配置的
+    # 「失败后继续」开关；它只把本轮终态从 success 降为 failed。
+    failure_markers: tuple[str, ...]
     task_start_markers: tuple[str, ...]
     stop_markers: tuple[str, ...]
     # 外壳的周期性自娱自乐行：只要日志里还在滚这类行，就不能算「框架在干活」。
@@ -89,6 +92,7 @@ MFAAVALONIA_LOG_PROFILE = ShellLogProfile(
     completion_markers=("任务已全部完成！", "All tasks completed"),
     abandon_markers=("已放弃本次任务",),
     controller_failure_markers=("初始化控制器失败", "控制器初始化结果为空"),
+    failure_markers=("任务运行失败！",),
     task_start_markers=(),
     stop_markers=(),
     # 取自真实 M9A 日志：MFA 的内存清理与热键 IPC 会稳定滚动。实测 log-20260517.log
@@ -111,6 +115,9 @@ MXU_LOG_PROFILE = ShellLogProfile(
     completion_markers=("kind: tasks-completed",),
     abandon_markers=(),
     controller_failure_markers=(),
+    # 留空：MXU 的失败判别串尚无真机样本，不猜测（fail-closed）。MXU 的失败要靠
+    # `-q` 带来的进程退出码与排空串的组合来判，见 manager 的终态分支。
+    failure_markers=(),
     task_start_markers=(": 开始执行任务, 数量:",),
     stop_markers=("[task-stop#",),
     # 留空：MXU 的周期性噪音行尚无真机样本，不猜测（fail-closed）。

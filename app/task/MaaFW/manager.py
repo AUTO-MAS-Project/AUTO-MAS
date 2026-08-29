@@ -46,10 +46,15 @@ from app.task.MaaFW.tools.external import (
     ShellFamily,
     ShellMappingError,
     TaskSelection,
+    ShellLogProfile,
+    append_instance,
     build_instance_config,
+    build_instance_entry,
     build_option_entries,
+    default_instance_id,
     detect_shell_family,
     get_shell_log_profile,
+    pick_latest_mxu_log,
     resolve_controller_code,
     resolve_log_relpath,
 )
@@ -75,6 +80,9 @@ _ABANDON_MARKER = "已放弃本次任务"
 # 判别性：靶子 14 份真实日志里共出现 3 次，**全部**带 op=MonitorLog。
 _FAILURE_MARKERS = ("任务运行失败！",)
 _STATE_DIR_NAME = "MaaFWExternal"
+# MAS 在 MXU 容器里追加的实例显示名；外壳的 -i 参数按**显示名**匹配，
+# 两者必须一致。
+_MXU_INSTANCE_NAME = "MAS"
 
 # 交接给外壳前等 adb 真正可用的上界与探测节奏。模拟器管理器只保证
 # ldconsole/MuMuManager 报 ONLINE，Android 的 adbd 可能还要十几秒才服务。
@@ -314,6 +322,13 @@ class MaaFWManager(TaskExecuteBase):
         self.config_dir: Path | None = None
         self.instances_dir: Path | None = None
         self.instance_path: Path | None = None
+        # 外壳家族与其日志画像：两者在 check() 里确定，之后所有家族相关分支都读它，
+        # 不再散落模块级常量。
+        self.shell_family: ShellFamily = ShellFamily.UNKNOWN
+        self.log_profile: ShellLogProfile | None = None
+        # MXU：单文件容器 config/mxu-<项目名>.json，MAS 追加自己的实例条目。
+        self.mxu_container_path: Path | None = None
+        self.mxu_instance_id: str | None = None
         self.config_json_path: Path | None = None
         self.exe_path: Path | None = None
         self.log_path: Path | None = None
@@ -406,10 +421,14 @@ class MaaFWManager(TaskExecuteBase):
             return "MaaFW 当前仅支持 external 运行引擎"
 
         shell_family = detect_shell_family(project_root)
-        if shell_family != ShellFamily.MFAAVALONIA:
+        log_profile = get_shell_log_profile(shell_family)
+        if log_profile is None:
+            # 未登记的外壳家族：这是**能力边界**而不是故障，文案要让用户看得懂
+            # 下一步，不要引导他去导出问题包。
             return (
-                f"MaaFW 外壳 {shell_family.value} 暂不支持，"
-                "当前仅支持 MFAAvalonia"
+                f"这个项目使用 {shell_family.value} 外壳，MaaFW 专项暂不支持。"
+                "当前支持 MFAAvalonia（如 M9A、MaaKes）与 MXU（如 MaaEnd、MaaYYs）"
+                "两类外壳的项目。"
             )
 
         try:
@@ -488,7 +507,8 @@ class MaaFWManager(TaskExecuteBase):
             ),
             None,
         )
-        if controller_type == "Adb" and emulator_selection is None:
+        is_mfaavalonia = shell_family is ShellFamily.MFAAVALONIA
+        if is_mfaavalonia and controller_type == "Adb" and emulator_selection is None:
             # 必须校验 MAS 实际会写入的那个实例文件。MFAAvalonia 的实例文件按实例 ID
             # 命名（MaaKes 恰好叫 default，M9A 那份是随机 ID），此前这里硬编码
             # default.json，与 _write_runtime_config 的写入目标不一致：对只有
@@ -520,7 +540,11 @@ class MaaFWManager(TaskExecuteBase):
                         f"MaaFW 实例配置中的 ADB 程序不存在：{adb_path_value}。"
                         "请在 MAS 中选择当前模拟器，或先在外壳侧重新连接设备"
                     )
-        elif controller_type and resolve_controller_code(controller_type) is None:
+        elif (
+            is_mfaavalonia
+            and controller_type
+            and resolve_controller_code(controller_type) is None
+        ):
             # 向映射层求证，而非在此硬编码「只支持 Adb」：CONTROLLER_TYPE_CODES 是
             # CurrentController 枚举的单一真源（当前只登记 Adb=2，已在 M9A / MaaKes /
             # Maa_bbb 三个项目交叉确认；Win32 等取值在 reference 的全部实例样本中都
@@ -536,7 +560,7 @@ class MaaFWManager(TaskExecuteBase):
                 "请改用 Adb 控制器，或在外壳侧手动运行"
             )
 
-        exe_path = self._resolve_executable(project_root)
+        exe_path = self._resolve_executable(project_root, shell_family)
         if isinstance(exe_path, str):
             return exe_path
 
@@ -546,11 +570,28 @@ class MaaFWManager(TaskExecuteBase):
 
         self.project_root = project_root
         self.config_dir = config_dir
-        self.instances_dir = config_dir / "instances"
-        self.instance_path = _resolve_active_instance_path(
-            self.instances_dir, project_root
-        )
-        self.config_json_path = config_dir / "config.json"
+        self.shell_family = shell_family
+        self.log_profile = log_profile
+        if shell_family is ShellFamily.MXU:
+            # MXU 是「单文件容器 + 内嵌 instances[]」，没有 instances/ 目录，
+            # 也没有 MFAAvalonia 那份 config.json。容器文件名含项目名，用 glob 定位。
+            containers = sorted((config_dir).glob("mxu-*.json"))
+            if not containers:
+                return f"未找到 MXU 容器配置：{config_dir} 下的 mxu-*.json"
+            if len(containers) > 1:
+                names = "、".join(path.name for path in containers)
+                return f"MaaFW config 下存在多个 MXU 容器配置，无法消歧：{names}"
+            self.mxu_container_path = containers[0]
+            self.instances_dir = None
+            self.instance_path = None
+            self.config_json_path = None
+        else:
+            self.mxu_container_path = None
+            self.instances_dir = config_dir / "instances"
+            self.instance_path = _resolve_active_instance_path(
+                self.instances_dir, project_root
+            )
+            self.config_json_path = config_dir / "config.json"
         self.exe_path = exe_path
         self.interface_model = interface_model
         self.controller_name = controller_name
@@ -680,21 +721,39 @@ class MaaFWManager(TaskExecuteBase):
         return ""
 
     @staticmethod
-    def _resolve_executable(project_root: Path) -> Path | str:
-        """优先使用根目录 MFAAvalonia.exe，再兼容旧的 project 子目录。"""
+    def _resolve_executable(
+        project_root: Path, family: ShellFamily = ShellFamily.MFAAVALONIA
+    ) -> Path | str:
+        """定位外壳可执行文件。
 
-        preferred = project_root / "MFAAvalonia.exe"
-        if preferred.is_file():
-            return preferred
-        compatibility = project_root / "project" / "MFAAvalonia.exe"
-        if compatibility.is_file():
-            return compatibility
+        MFAAvalonia 优先用根目录同名 exe，再兼容旧的 project 子目录。
+        MXU 的 exe 名**不统一**（MaaYYs 是 mxu.exe、MaaEnd 是 MaaEnd.exe），
+        没有可依赖的固定名，故先试已知名再退回「根目录恰好一个 exe」。
+        两者最后都走同一条唯一性兜底：多个候选时拒绝，绝不猜。
+        """
+
+        if family is ShellFamily.MXU:
+            known = ("mxu.exe", "MaaEnd.exe")
+            label = "MXU 外壳"
+        else:
+            known = ("MFAAvalonia.exe",)
+            label = "MFAAvalonia.exe"
+
+        for name in known:
+            candidate = project_root / name
+            if candidate.is_file():
+                return candidate
+        if family is ShellFamily.MFAAVALONIA:
+            compatibility = project_root / "project" / "MFAAvalonia.exe"
+            if compatibility.is_file():
+                return compatibility
+
         root_executables = [path for path in project_root.glob("*.exe") if path.is_file()]
         if len(root_executables) == 1:
             return root_executables[0]
         if not root_executables:
-            return "MFAAvalonia.exe 不存在，请检查 MaaFW 项目目录"
-        return "MaaFW 项目根目录存在多个 exe，无法安全选择 MFAAvalonia.exe"
+            return f"{label} 不存在，请检查 MaaFW 项目目录"
+        return f"MaaFW 项目根目录存在多个 exe，无法安全选择 {label}"
 
     async def prepare(self) -> None:
         """锁定 MAS 配置，恢复残留快照并制作本轮配置备份。"""
@@ -945,6 +1004,68 @@ class MaaFWManager(TaskExecuteBase):
         logger.info(f"MaaFW config 已恢复：{self.config_dir}")
 
     def _write_runtime_config(self) -> None:
+        """把本轮运行范围写进外壳能识别的配置，按外壳家族分派。"""
+
+        if self.shell_family is ShellFamily.MXU:
+            self._write_mxu_runtime_config()
+            return
+        self._write_mfaavalonia_runtime_config()
+
+    def _write_mxu_runtime_config(self) -> None:
+        """MXU：向单文件容器**追加**一个 MAS 实例，并指向它。
+
+        与 MFAAvalonia 路径的关键差异：绝不删除用户已有实例。容器里同时存着
+        用户的全部配置，删了就没了；append_instance 保证原有条目逐字段不变、
+        其余顶层键零触碰。
+
+        base 取当前活动实例：为的是继承 savedDevice（MXU 的设备是按名存的，
+        不继承就没有连接目标）。但**显式清掉 preActions**——那是外壳自己的
+        「起程序」钩子，继承下来外壳会重复启动游戏/模拟器，与 MFAAvalonia 路径上
+        靠 SoftwarePath="" 防的是同一类问题（本层集中管理生命周期）。
+        """
+
+        if (
+            self.interface_model is None
+            or self.mxu_container_path is None
+            or self.controller_name is None
+            or self.resource_name is None
+        ):
+            raise RuntimeError("MaaFW MXU 运行配置路径或选择未初始化")
+
+        backup_container = self.backup_path / self.mxu_container_path.name
+        source = (
+            backup_container if backup_container.is_file() else self.mxu_container_path
+        )
+        container = _read_json_object(source, label="MaaFW MXU 容器配置")
+
+        base = None
+        active_id = container.get("lastActiveInstanceId")
+        for item in container.get("instances", []) or []:
+            if isinstance(item, dict) and item.get("id") == active_id:
+                base = dict(item)
+                break
+        if base is not None:
+            base.pop("preActions", None)
+
+        entry = build_instance_entry(
+            self.interface_model,
+            controller_name=self.controller_name,
+            resource_name=self.resource_name,
+            selected_tasks=self.task_selections,
+            name=_MXU_INSTANCE_NAME,
+            base=base,
+            instance_id=default_instance_id(),
+        )
+        updated = append_instance(container, entry, set_active=True)
+        atomic_write_maafw_config(self.mxu_container_path, updated, journal=False)
+        self.mxu_instance_id = str(entry.get("id") or "")
+        logger.info(
+            f"MaaFW MXU 运行配置已追加：{self.mxu_container_path.name}"
+            f"（实例 {self.mxu_instance_id}，原有 "
+            f"{len(container.get('instances', []) or [])} 个保持不变）"
+        )
+
+    def _write_mfaavalonia_runtime_config(self) -> None:
         if (
             self.interface_model is None
             or self.instances_dir is None
@@ -1035,45 +1156,43 @@ class MaaFWManager(TaskExecuteBase):
         logger.info(f"MaaFW 运行配置已写入：{self.instance_path}")
 
     async def _run_external(self) -> None:
-        if (
-            self.exe_path is None
-            or self.instance_path is None
-            or self.log_path is None
-        ):
-            raise RuntimeError("MaaFW 外壳路径、实例或日志路径未初始化")
+        profile = self.log_profile
+        if self.exe_path is None or profile is None:
+            raise RuntimeError("MaaFW 外壳路径或日志画像未初始化")
+
         # 按「本用户开跑的时刻」重算日志路径：队列跨零点后外壳会写到新的
         # log-<新日期>.log，而此前整轮沿用 check() 那一次算出的旧文件名，
         # LogMonitor 只会盯着昨天那个不再增长的文件空转 → last_log_at 冻结 →
         # RunTimeLimit 分钟后把一次正在正常干活的运行误判成超时并杀掉外壳。
+        # MXU 的日志文件名带当日启动序号，启动前不可知，故此处可能是 None，
+        # 起进程之后再解析（见下方 _resolve_mxu_log_path）。
         self.log_path = self._resolve_log_path()
         self.process_manager = ProcessManager()
-        self.log_monitor = LogMonitor((1, 24), _LOG_TIME_FORMAT, self.check_log)
+        self.log_monitor = LogMonitor(
+            profile.time_stamp_range, profile.time_format, self.check_log
+        )
         self.terminal_event.clear()
         self.terminal_kind = None
         self.last_log_text = ""
         self.last_log_at = datetime.now()
         self.log_start_time = datetime.now()
 
-        # 只指定活动实例，不传 --autostart：外壳的 --autostart 走
-        # StartCommandLineAutoRun 直接 StartTask()，跳过 TryReadAdbDeviceFromConfig /
-        # WaitSoftware，Config.AdbDevice 永不填充，控制器初始化即报 AdbSerial 为空。
-        # 实测（D:/MAS/tmp/m9a-test，非提权 MuMu）：
-        #   --autostart --instance  → device=<none> → AdbSerial 为空 → 放弃
-        #   --instance（本行）      → 已连接 → 开始任务：启动游戏
-        # 自动运行由实例配置的 BeforeTask=StartupSoftwareAndScript 驱动。
-        await self.process_manager.open_process(
-            self.exe_path,
-            "--instance",
-            self.instance_path.stem,
-        )
+        await self.process_manager.open_process(*self._build_launch_argv())
         self.process_started = True
         self.process_pid = self.process_manager.main_pid
-        logger.info(f"MFAAvalonia 外壳已启动，PID: {self.process_pid}")
+        logger.info(
+            f"{self.shell_family.value} 外壳已启动，PID: {self.process_pid}"
+        )
 
         await asyncio.sleep(5)
         if not await self.process_manager.is_running():
             self._mark_terminal("exit", "MaaFW 进程已异常退出")
             return
+
+        if self.log_path is None:
+            self.log_path = self._resolve_mxu_log_path()
+        if self.log_path is None:
+            raise RuntimeError("MaaFW 未能定位外壳日志文件")
 
         await self.log_monitor.start_monitor_file(self.log_path, self.log_start_time)
         self.monitor_started = True
@@ -1091,7 +1210,10 @@ class MaaFWManager(TaskExecuteBase):
                     self._mark_controller_failure()
                 elif self._contains_completion(self.last_log_text):
                     self._mark_completion(self.last_log_text)
-                elif _ABANDON_MARKER in self.last_log_text:
+                elif any(
+                    m in self.last_log_text
+                    for m in self._profile_markers("abandon_markers")
+                ):
                     self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
                 else:
                     self._mark_terminal("exit", "MaaFW 进程已异常退出")
@@ -1105,25 +1227,38 @@ class MaaFWManager(TaskExecuteBase):
                 break
             await asyncio.sleep(1)
 
-    @staticmethod
-    def _contains_completion(text: str) -> bool:
-        return any(marker in text for marker in _COMPLETION_MARKERS)
+    def _profile_markers(self, field: str) -> tuple[str, ...]:
+        """取当前外壳家族的判据串；画像缺失时退回 MFAAvalonia 的模块常量。"""
 
-    @staticmethod
-    def _contains_failure(text: str) -> bool:
+        profile = self.log_profile
+        if profile is None:
+            return {
+                "completion_markers": _COMPLETION_MARKERS,
+                "abandon_markers": (_ABANDON_MARKER,),
+                "controller_failure_markers": _CONTROLLER_FAILURE_MARKERS,
+                "failure_markers": _FAILURE_MARKERS,
+            }.get(field, ())
+        return tuple(getattr(profile, field, ()) or ())
+
+    def _contains_completion(self, text: str) -> bool:
+        return any(marker in text for marker in self._profile_markers("completion_markers"))
+
+    def _contains_failure(self, text: str) -> bool:
         """外壳判定本次运行失败并停掉队列。
 
         与完成串同源（都由 MFA 的 Monitor 组件在 op=MonitorLog 下发出），
         语义却相反：完成串是「队列排空」，本串是「跑失败了，不再往下跑」。
         """
 
-        return any(marker in text for marker in _FAILURE_MARKERS)
+        return any(marker in text for marker in self._profile_markers("failure_markers"))
 
-    @staticmethod
-    def _contains_controller_failure(text: str) -> bool:
+    def _contains_controller_failure(self, text: str) -> bool:
         """控制器初始化失败——外壳未能真正开始执行选中的任务。"""
 
-        return any(marker in text for marker in _CONTROLLER_FAILURE_MARKERS)
+        return any(
+            marker in text
+            for marker in self._profile_markers("controller_failure_markers")
+        )
 
     def _mark_controller_failure(self) -> None:
         self._mark_terminal(
@@ -1139,7 +1274,7 @@ class MaaFWManager(TaskExecuteBase):
         成功运行的样本，任何日志格式假设都是臆造。
         """
 
-        absent = self._selected_tasks_absent_from(log_text)
+        absent = self._selected_tasks_absent(log_text)
         if absent:
             self._mark_terminal(
                 "tasks_missing",
@@ -1152,6 +1287,42 @@ class MaaFWManager(TaskExecuteBase):
             self._mark_terminal("failed", "MaaFW 队列已跑完，但其中有任务失败")
         else:
             self._mark_terminal("success", "Success!")
+
+    def _selected_tasks_absent(self, log_text: str) -> list[str]:
+        """按外壳家族选择「选中任务是否露过面」的判据。
+
+        MFAAvalonia 的 UI 日志打的是任务**显示名**（「开始任务：启动游戏」），
+        走受保护的 _selected_tasks_absent_from。
+        MXU 打的是 **entry**（「任务[0]: entry=启动游戏」），而两者常常不同——
+        实测 MaaYYs 只有 10/27、MaaEnd 只有 6/41 的 name 与 entry 相同，
+        照显示名匹配会让每次运行都误判 tasks_missing。
+        """
+
+        if self.shell_family is ShellFamily.MXU:
+            return self._selected_entries_absent_from(log_text)
+        return self._selected_tasks_absent_from(log_text)
+
+    def _selected_entries_absent_from(self, log_text: str) -> list[str]:
+        """选中任务里 entry 从未在日志中出现过的那些（MXU 用）。
+
+        与显示名版同构：只回答「选中的事有没有被尝试」，不解析逐任务成败。
+        entry 取自 interface；取不到就退回显示名，不静默跳过。
+        """
+
+        entry_index: dict[str, str] = {}
+        if self.interface_model is not None:
+            for task in self.interface_model.task:
+                entry_index.setdefault(task.name, task.entry)
+
+        absent: list[str] = []
+        for selection in self.task_selections:
+            name = selection.name.strip() if isinstance(selection.name, str) else ""
+            if not name:
+                continue
+            probe = entry_index.get(name) or name
+            if probe not in log_text and name not in log_text:
+                absent.append(name)
+        return absent
 
     def _selected_tasks_absent_from(self, log_text: str) -> list[str]:
         """选中任务名里在整份日志中从未以子串形式出现过的那些。
@@ -1205,7 +1376,7 @@ class MaaFWManager(TaskExecuteBase):
             self._mark_controller_failure()
         elif self._contains_completion(log_text):
             self._mark_completion(log_text)
-        elif _ABANDON_MARKER in log_text:
+        elif any(m in log_text for m in self._profile_markers("abandon_markers")):
             self._mark_terminal("abandoned", f"MaaFW {_ABANDON_MARKER}")
         elif self.terminal_kind is None:
             self.current_log.status = "MaaFW 正常运行中"
@@ -1438,12 +1609,66 @@ class MaaFWManager(TaskExecuteBase):
                 json.dumps(records, ensure_ascii=False),
             )
 
+    def _build_launch_argv(self) -> list[Any]:
+        """按外壳家族拼启动参数。
+
+        MFAAvalonia：只指定活动实例，**不传 --autostart**。实测（m9a-test，
+        非提权 MuMu）该参数走 StartCommandLineAutoRun 直接 StartTask()，跳过
+        TryReadAdbDeviceFromConfig / WaitSoftware，Config.AdbDevice 永不填充，
+        控制器初始化即报 AdbSerial 为空。自动运行由实例配置的
+        BeforeTask=StartupSoftwareAndScript 驱动。
+
+        MXU：反过来，命令行才是可靠入口。外壳内嵌帮助文本与前端判定逻辑显示
+        自动执行的门是 ``(传了 --autostart || settings.autoRunOnLaunch) &&
+        (匹配到的实例 || settings.autoStartInstanceId)``；``-i`` 按**实例显示名**
+        匹配且仅在 ``--autostart`` 下生效，``-q`` 让外壳在任务完成后自行退出——
+        进程退出因此成为本家族最硬的终态信号。
+        """
+
+        if self.exe_path is None:
+            raise RuntimeError("MaaFW 外壳可执行文件未初始化")
+        if self.shell_family is ShellFamily.MXU:
+            return [
+                self.exe_path,
+                "--autostart",
+                "-i",
+                _MXU_INSTANCE_NAME,
+                "-q",
+            ]
+        if self.instance_path is None:
+            raise RuntimeError("MaaFW 活动实例未初始化")
+        return [self.exe_path, "--instance", self.instance_path.stem]
+
+    def _resolve_mxu_log_path(self) -> Path | None:
+        """外壳起来之后再定位 MXU 当日日志。
+
+        文件名是 ``debug/YYYY-MM-DD-N.log``，N 为当日启动序号，启动前不可预知；
+        同目录还有引擎 maafw.log、其 .bak 轮转与 agent 日志，必须按文件名筛选
+        （pick_latest_mxu_log 只认 日期-序号 这一种形状）。
+        """
+
+        profile = self.log_profile
+        if self.project_root is None or profile is None or not profile.log_glob_dir:
+            return None
+        log_dir = self.project_root / profile.log_glob_dir
+        if not log_dir.is_dir():
+            return None
+        today = datetime.now().strftime("%Y-%m-%d")
+        names = [path.name for path in log_dir.glob("*.log")]
+        picked = pick_latest_mxu_log(names, today)
+        if picked is None:
+            logger.warning(f"MaaFW 未找到 {today} 的 MXU 日志：{log_dir}")
+            return None
+        logger.info(f"MaaFW 已定位 MXU 日志：{picked}")
+        return log_dir / picked
+
     def _resolve_log_path(self) -> Path | None:
         """按当前时刻解析外壳日志文件路径。
 
         走 ``profile.resolve_log_relpath``，让「日志布局」这件事只有画像表一个
         事实来源；MFAAvalonia 是按日期确定的 ``logs/log-%Y%m%d.log``，
-        MXU 那类需启动后 glob 的外壳返回 ``None``（本层尚未接线）。
+        MXU 那类需启动后 glob 的外壳返回 ``None``，由 ``_resolve_mxu_log_path``
+        在起进程之后补上。
 
         必须**按用户开跑时刻**调用，不能整轮复用 check() 那一次的结果：队列跨零点
         后外壳写的是新日期的文件。
@@ -1451,7 +1676,7 @@ class MaaFWManager(TaskExecuteBase):
 
         if self.project_root is None:
             return None
-        profile = get_shell_log_profile(ShellFamily.MFAAVALONIA)
+        profile = self.log_profile or get_shell_log_profile(ShellFamily.MFAAVALONIA)
         if profile is None:
             return None
         relpath = resolve_log_relpath(profile, datetime.now())

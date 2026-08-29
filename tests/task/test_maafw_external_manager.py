@@ -1076,17 +1076,22 @@ class MaaFWExternalManagerTest(unittest.TestCase):
             option = written["TaskItems"][0]["option"]
             self.assertEqual(option, [{"name": "服务器", "index": 1}])
 
-    def test_non_mfa_is_explicitly_unsupported(self) -> None:
-        asyncio.run(self._test_non_mfa_is_explicitly_unsupported())
+    def test_unknown_shell_is_explicitly_unsupported(self) -> None:
+        asyncio.run(self._test_unknown_shell_is_explicitly_unsupported())
 
-    async def _test_non_mfa_is_explicitly_unsupported(self) -> None:
+    async def _test_unknown_shell_is_explicitly_unsupported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "project"
             self._make_project(root)
             manager, runtime, _ = await self._make_manager(root)
-            with patch.object(manager_module, "Config", runtime), patch.object(manager_module, "detect_shell_family", return_value=ShellFamily.MXU):
+            with patch.object(manager_module, "Config", runtime), patch.object(
+                manager_module, "detect_shell_family", return_value=ShellFamily.UNKNOWN
+            ):
                 result = await manager.check()
+            # 能力边界而非故障：文案要说清「支持哪些」，不引导用户去导出问题包。
             self.assertIn("暂不支持", result)
+            self.assertIn("MFAAvalonia", result)
+            self.assertIn("MXU", result)
             self.assertIn("MFAAvalonia", result)
             self.assertFalse(runtime.ScriptConfig[next(iter(runtime.ScriptConfig))].is_locked)
 

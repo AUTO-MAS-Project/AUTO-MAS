@@ -49,6 +49,10 @@ class MfaAvaloniaProfileDriftGuardTest(unittest.TestCase):
             MFAAVALONIA_LOG_PROFILE.controller_failure_markers,
             manager_module._CONTROLLER_FAILURE_MARKERS,
         )
+        self.assertEqual(
+            MFAAVALONIA_LOG_PROFILE.failure_markers,
+            manager_module._FAILURE_MARKERS,
+        )
 
     def test_time_format_matches_manager(self) -> None:
         self.assertEqual(
@@ -215,6 +219,7 @@ class ProfileRegistryTest(unittest.TestCase):
             completion_markers=(),
             abandon_markers=(),
             controller_failure_markers=(),
+            failure_markers=(),
             task_start_markers=(),
             stop_markers=(),
         )
