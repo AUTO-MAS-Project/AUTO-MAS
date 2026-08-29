@@ -78,6 +78,12 @@ class InstanceOrchestration:
     allow_adb_restart: bool = False
     use_fingerprint_matching: bool = False
     remember_adb: bool = True
+    # 单个任务失败后是否继续跑队列里剩下的任务。MAS 恒置 True：本层按「一个用户
+    # 一个队列」调度，跑完整个队列再判定这一轮的结果，不该由外壳替 MAS 决定提前
+    # 收摊。置 True 还顺带保证外壳一定会走到「队列排空」那一步并输出完成串——
+    # 否则外壳停在半路不再输出，MAS 只能干等到 RunTimeLimit 超时。
+    # 失败本身不会被吞：日志里的失败串会把本轮终态从 success 降为 failed。
+    continue_running_when_error: bool = True
 
     def as_config_fields(self) -> dict[str, Any]:
         """展开为 MFAAvalonia 实例配置里的顶层键。"""
@@ -92,6 +98,7 @@ class InstanceOrchestration:
             "AllowAdbRestart": self.allow_adb_restart,
             "UseFingerprintMatching": self.use_fingerprint_matching,
             "RememberAdb": self.remember_adb,
+            "ContinueRunningWhenError": self.continue_running_when_error,
         }
 
 

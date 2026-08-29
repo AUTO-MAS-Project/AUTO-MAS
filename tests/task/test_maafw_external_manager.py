@@ -624,39 +624,35 @@ class MaaFWExternalManagerTest(unittest.TestCase):
         "[src=Monitor][op=MonitorLog] 任务运行失败！\n"
     )
 
-    def test_shell_failure_marker_ends_the_run(self) -> None:
-        asyncio.run(self._test_shell_failure_marker_ends_the_run())
+    def test_task_failure_alone_does_not_end_the_run(self) -> None:
+        """单个任务失败**不得**让 MAS 提前收口。
 
-    async def _test_shell_failure_marker_ends_the_run(self) -> None:
-        """外壳输出「任务运行失败！」后 MAS 必须立即收口。
-
-        真机 2026-08-29：此前 MAS 不认这个串，外壳已经停了、MAS 还在等，
-        只能干耗到 RunTimeLimit 超时。用户看到的现象是「卡住不动」。
+        队列会不会因此停下来取决于实例配置的 ContinueRunningWhenError——
+        M9A 在该项为真时会跳过失败任务继续跑后面的。此前把失败串当终止信号，
+        队列还在跑就会被 MAS 判死。
         """
 
+        asyncio.run(self._test_task_failure_alone_does_not_end_the_run())
+
+    async def _test_task_failure_alone_does_not_end_the_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "project"
             self._make_project(root)
             manager, runtime, _ = await self._make_manager(root)
-            _FakeLogMonitor.callback_lines = [self._FAILURE_LOG]
-
             with self._patched_runtime(runtime, manager, self._no_sleep):
-                await manager.main_task()
-                await manager.final_task()
+                manager._ensure_virtual_user()
+                await manager.check_log([self._FAILURE_LOG], datetime.now())
 
-            self.assertEqual(manager.terminal_kind, "failed")
-            self.assertEqual(manager.script_info.user_list[0].status, "异常")
-            self.assertEqual(manager.script_info.status, "异常")
-            record = next(iter(manager.script_info.user_list[0].log_record.values()))
-            self.assertIn("外壳判定任务运行失败", record.status)
+            # 只见失败串、没见排空串 → 不许有终态。
+            self.assertIsNone(manager.terminal_kind)
 
-    def test_shell_failure_is_not_overridden_by_completion(self) -> None:
-        asyncio.run(self._test_shell_failure_is_not_overridden_by_completion())
+    def test_failure_downgrades_completed_queue_to_failed(self) -> None:
+        asyncio.run(self._test_failure_downgrades_completed_queue_to_failed())
 
-    async def _test_shell_failure_is_not_overridden_by_completion(self) -> None:
-        """失败串之后再冒出排空串，也不得翻成成功。
+    async def _test_failure_downgrades_completed_queue_to_failed(self) -> None:
+        """队列跑到排空、但中途有任务失败 → 判 failed 而非 success。
 
-        排空串语义是「没有待办了」，失败串是「跑失败了」——沿用本层既有取舍：
+        选中任务都露过面（不是 tasks_missing），只是没全成。沿用本层取舍：
         宁可误报失败也不误报成功。
         """
 
@@ -675,7 +671,27 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 await manager.final_task()
 
             self.assertEqual(manager.terminal_kind, "failed")
+            self.assertEqual(manager.script_info.user_list[0].status, "异常")
             self.assertNotEqual(manager.script_info.status, "完成")
+
+    def test_clean_queue_still_succeeds(self) -> None:
+        asyncio.run(self._test_clean_queue_still_succeeds())
+
+    async def _test_clean_queue_still_succeeds(self) -> None:
+        """没有失败串时仍判 success——降级逻辑不得误伤正常成功路径。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                await manager.main_task()
+                await manager.final_task()
+
+            self.assertEqual(manager.terminal_kind, "success")
+            self.assertEqual(manager.script_info.status, "完成")
 
     # ---- 问题 8：appsettings.json 的实例指针必须还原 ----
 

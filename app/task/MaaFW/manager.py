@@ -62,12 +62,17 @@ logger = get_logger("MaaFW 外部调度器")
 _LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 _COMPLETION_MARKERS = ("任务已全部完成！", "All tasks completed")
 _ABANDON_MARKER = "已放弃本次任务"
-# 外壳判定本次运行失败后发出的终止串，与完成串是同一个 Monitor 组件的孪生输出
-# （两者都带 [src=Monitor][op=MonitorLog]）。2026-08-29 真机首次命中：启动游戏
-# 跑了 15 分 38 秒后失败，外壳停掉整个队列并输出本串，而此前 MAS 不认它，只能
-# 干等到 RunTimeLimit 超时——用户看到的现象是「外壳已经停了，MAS 还卡着」。
-# 判别性：14 份真实日志里共出现 3 次，**全部**带 op=MonitorLog；今天那次运行
-# 是「1 次失败串、0 次完成串」，两者互斥。
+# 外壳报告**某个任务**失败的串，与完成串是同一个 Monitor 组件的孪生输出
+# （两者都带 [src=Monitor][op=MonitorLog]）。
+#
+# 它**不是终止信号**：队列会不会因此停下来，取决于实例配置的
+# ContinueRunningWhenError——M9A 在该项为真时会跳过失败任务继续跑后面的。
+# 因此本串只用来把本轮终态从 success 降为 failed，绝不用它提前收口，
+# 否则队列还在跑就会被 MAS 判死。
+#
+# MAS 侧恒把 ContinueRunningWhenError 写成 True（见 InstanceOrchestration），
+# 这样外壳一定会走到「队列排空」并输出完成串，判定有稳定的落点。
+# 判别性：靶子 14 份真实日志里共出现 3 次，**全部**带 op=MonitorLog。
 _FAILURE_MARKERS = ("任务运行失败！",)
 _STATE_DIR_NAME = "MaaFWExternal"
 
@@ -99,9 +104,8 @@ _CONTROLLER_FAILURE_MARKERS = (
 _TERMINAL_PRIORITY = {
     "controller_failed": 3,
     "tasks_missing": 3,
-    # 外壳自己判定的失败，与前两者同级：都表示「选中的任务并没有真正跑成」。
-    # 必须压过 success——同一次运行里若失败串之后又冒出排空串，不得翻成成功
-    # （沿用本层既有取舍：宁可误报失败也不误报成功）。
+    # 外壳报告有任务失败。与前两者同级、压过 success：队列排空后若日志里出现过
+    # 失败串，本轮就不是成功（沿用本层取舍——宁可误报失败也不误报成功）。
     "failed": 3,
     "success": 2,
 }
@@ -1079,8 +1083,6 @@ class MaaFWManager(TaskExecuteBase):
                 await asyncio.sleep(0)
                 if self._contains_controller_failure(self.last_log_text):
                     self._mark_controller_failure()
-                elif self._contains_failure(self.last_log_text):
-                    self._mark_terminal("failed", "MaaFW 外壳判定任务运行失败")
                 elif self._contains_completion(self.last_log_text):
                     self._mark_completion(self.last_log_text)
                 elif _ABANDON_MARKER in self.last_log_text:
@@ -1137,6 +1139,11 @@ class MaaFWManager(TaskExecuteBase):
                 "tasks_missing",
                 f"MaaFW 输出完成串，但选中任务未出现：{'、'.join(absent)}",
             )
+        elif self._contains_failure(log_text):
+            # 队列跑到了排空，但中途有任务失败（ContinueRunningWhenError=True 时
+            # 外壳会跳过失败任务继续跑）。选中任务都露过面，只是没全成——
+            # 这不是成功。
+            self._mark_terminal("failed", "MaaFW 队列已跑完，但其中有任务失败")
         else:
             self._mark_terminal("success", "Success!")
 
@@ -1190,8 +1197,6 @@ class MaaFWManager(TaskExecuteBase):
         # 任务是否露过面」这道关，都通过才判成功。其次完成串优先于放弃串。
         if self._contains_controller_failure(log_text):
             self._mark_controller_failure()
-        elif self._contains_failure(log_text):
-            self._mark_terminal("failed", "MaaFW 外壳判定任务运行失败")
         elif self._contains_completion(log_text):
             self._mark_completion(log_text)
         elif _ABANDON_MARKER in log_text:
