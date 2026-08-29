@@ -568,6 +568,84 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 )
             )
 
+    # ---- 问题 11：交接给外壳前必须等 adb 真的能用 ----
+
+    def test_waits_until_adb_shell_works(self) -> None:
+        asyncio.run(self._test_waits_until_adb_shell_works())
+
+    async def _test_waits_until_adb_shell_works(self) -> None:
+        """模拟器报 ONLINE ≠ adb 可用；要探测到 shell 能跑才交接。
+
+        真机 2026-08-29：MAS 交接后 4 秒外壳开连，
+        `adb -s emulator-5554 shell settings get secure android_id`
+        28 毫秒返回退出码 1，外壳两次重试都在同一秒内失败 → controller_failed。
+        """
+
+        calls: list[tuple] = []
+
+        class _Result:
+            def __init__(self, code: int, out: str) -> None:
+                self.returncode = code
+                self.stdout = out
+
+        async def fake_run(exe, *args, **kwargs):
+            calls.append((exe, args))
+            # 前两次模拟「设备还没起来」，第三次才通。
+            if len(calls) < 3:
+                return _Result(1, "device offline")
+            return _Result(0, "maafw-ready")
+
+        manager = MaaFWManager.__new__(MaaFWManager)
+        with patch.object(manager_module.ProcessRunner, "run_process", fake_run), patch.object(
+            manager_module.asyncio, "sleep", self._no_sleep
+        ):
+            await manager._wait_for_adb_ready(
+                {"AdbPath": "C:/leidian/adb.exe", "AdbSerial": "emulator-5554"}
+            )
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0][0], "C:/leidian/adb.exe")
+        self.assertIn("emulator-5554", calls[0][1])
+        self.assertIn("shell", calls[0][1])
+
+    def test_adb_probe_failure_does_not_block_the_run(self) -> None:
+        asyncio.run(self._test_adb_probe_failure_does_not_block_the_run())
+
+    async def _test_adb_probe_failure_does_not_block_the_run(self) -> None:
+        """探测本身不可用时只告警，不拒绝运行。
+
+        探测可能因 adb 路径差异等原因跑不起来，不该挡住原本能跑的运行；
+        真连不上时外壳仍会给出 controller_failed，判定链路不受影响。
+        """
+
+        async def boom(*args, **kwargs):
+            raise OSError("adb not found")
+
+        manager = MaaFWManager.__new__(MaaFWManager)
+        with patch.object(manager_module.ProcessRunner, "run_process", boom):
+            # 不抛异常即为通过。
+            await manager._wait_for_adb_ready(
+                {"AdbPath": "nope.exe", "AdbSerial": "emulator-5554"}
+            )
+
+    def test_adb_probe_skipped_without_generated_device(self) -> None:
+        asyncio.run(self._test_adb_probe_skipped_without_generated_device())
+
+    async def _test_adb_probe_skipped_without_generated_device(self) -> None:
+        """未登记 MAS 模拟器（透传实例原有设备）时不探测。"""
+
+        called = False
+
+        async def fake_run(*args, **kwargs):
+            nonlocal called
+            called = True
+
+        manager = MaaFWManager.__new__(MaaFWManager)
+        with patch.object(manager_module.ProcessRunner, "run_process", fake_run):
+            await manager._wait_for_adb_ready(None)
+            await manager._wait_for_adb_ready({"AdbSerial": "emulator-5554"})
+        self.assertFalse(called)
+
     # ---- 问题 10：外壳自己的更新必须关掉，更新归 MAS 控制 ----
 
     def test_shell_self_update_is_disabled_and_restored(self) -> None:

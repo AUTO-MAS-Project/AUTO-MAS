@@ -12,7 +12,7 @@ import json
 import shutil
 import uuid
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +54,7 @@ from app.task.MaaFW.tools.external import (
     resolve_log_relpath,
 )
 from app.task.MaaFW.tools.notify import push_notification
-from app.utils import LogMonitor, ProcessManager, get_logger
+from app.utils import LogMonitor, ProcessManager, ProcessRunner, get_logger
 
 
 logger = get_logger("MaaFW 外部调度器")
@@ -75,6 +75,12 @@ _ABANDON_MARKER = "已放弃本次任务"
 # 判别性：靶子 14 份真实日志里共出现 3 次，**全部**带 op=MonitorLog。
 _FAILURE_MARKERS = ("任务运行失败！",)
 _STATE_DIR_NAME = "MaaFWExternal"
+
+# 交接给外壳前等 adb 真正可用的上界与探测节奏。模拟器管理器只保证
+# ldconsole/MuMuManager 报 ONLINE，Android 的 adbd 可能还要十几秒才服务。
+_ADB_READY_TIMEOUT_SECONDS = 60
+_ADB_READY_PROBE_INTERVAL_SECONDS = 1.0
+_ADB_READY_PROBE_TIMEOUT_SECONDS = 10
 
 # 项目根 appsettings.json 中描述实例集合与活动实例的键（.NET 平铺写法）。
 # MAS 运行期会删光 instances/*.json 只留自己那个，外壳退出时据此收缩这几项；
@@ -1627,6 +1633,7 @@ class MaaFWManager(TaskExecuteBase):
                 emulator_index,
                 self.emulator_manager,
             )
+            await self._wait_for_adb_ready(self.generated_adb_device)
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MaaFW 模拟器启动失败：{exc}")
             with suppress(Exception):
@@ -1641,6 +1648,60 @@ class MaaFWManager(TaskExecuteBase):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
         return None
+
+    async def _wait_for_adb_ready(self, adb_device: dict[str, Any] | None) -> None:
+        """等到 adb 真的能跑 shell 再把控制权交给外壳。
+
+        模拟器管理器只等到 ldconsole / MuMuManager 报「ONLINE」再 sleep 几秒，
+        而那只说明虚拟机起来了，不代表 Android 的 adbd 已经能服务——启动中的
+        设备在 ``adb devices`` 里是列得出来的（``offline`` 状态），能枚举、不能
+        shell。本层紧接着就裸启动外壳，外壳建控制器时执行
+        ``adb -s <serial> shell settings get secure android_id``，拿到非 0 退出码
+        就直接判连接失败，而且它的「重连」只隔 200 毫秒，等于没等。
+
+        2026-08-29 真机实测：MAS 交接后 4 秒外壳开连，adb shell **28 毫秒**返回
+        退出码 1，两次重试都在同一秒内失败，整轮判 controller_failed。
+
+        因此在交接前自己确认一次。探测失败只告警不拒绝：探测本身可能因 adb 路径
+        差异等原因不可用，不该因此挡住原本能跑的运行——真连不上时外壳仍会给出
+        controller_failed，判定链路不受影响。
+        """
+
+        if not isinstance(adb_device, dict):
+            return
+        adb_path = str(adb_device.get("AdbPath") or "").strip()
+        serial = str(adb_device.get("AdbSerial") or "").strip()
+        if not adb_path or not serial:
+            return
+
+        deadline = datetime.now() + timedelta(seconds=_ADB_READY_TIMEOUT_SECONDS)
+        attempt = 0
+        while datetime.now() < deadline:
+            attempt += 1
+            try:
+                result = await ProcessRunner.run_process(
+                    adb_path,
+                    "-s",
+                    serial,
+                    "shell",
+                    "echo",
+                    "maafw-ready",
+                    timeout=_ADB_READY_PROBE_TIMEOUT_SECONDS,
+                    if_merge_std=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"MaaFW adb 就绪探测不可用，跳过等待：{exc}")
+                return
+            if result.returncode == 0 and "maafw-ready" in (result.stdout or ""):
+                if attempt > 1:
+                    logger.info(f"MaaFW adb 已就绪（第 {attempt} 次探测）：{serial}")
+                return
+            await asyncio.sleep(_ADB_READY_PROBE_INTERVAL_SECONDS)
+
+        logger.warning(
+            f"MaaFW 等待 adb 就绪超时（{_ADB_READY_TIMEOUT_SECONDS}s）：{serial}，"
+            "仍继续启动外壳；若外壳报控制器初始化失败，多半是模拟器尚未完全启动"
+        )
 
     async def _build_adb_device_config(
         self,
