@@ -6,7 +6,8 @@
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
-                "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)"
+                "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
+                "回滚启动时的遮罩"
             ],
             "开发流程": [],
             "修复BUG": [
