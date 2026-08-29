@@ -57,6 +57,15 @@ PRIVATE_DATA_MARKERS = {
 
 PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
 
+# Loguru 会把 traceback 与局部变量渲染进日志正文，其中含形如
+# ``C:\Users\<用户名>\...`` 的本机绝对路径；结构化字段的清洗覆盖不到正文，
+# 需在此按用户目录段单独遮蔽。局部变量以 repr 形式渲染，分隔符会是转义后的
+# ``C:\\Users\\<用户名>``，故分隔符按一个或多个匹配。
+USER_DIR_PATTERN = re.compile(
+    r"((?:[A-Za-z]:)?[\\/]+(?:Users|home)[\\/]+)([^\\/\r\n\"'<>|]+)",
+    re.IGNORECASE,
+)
+
 _sentry_release: str | None = None
 _sentry_dist: str | None = None
 _sentry_started = False
@@ -78,9 +87,7 @@ def _sanitize_path(value: str) -> str:
 
     sanitized = _strip_url_query(value)
     is_windows_path = (
-        len(sanitized) >= 3
-        and sanitized[1] == ":"
-        and sanitized[2] in {"\\", "/"}
+        len(sanitized) >= 3 and sanitized[1] == ":" and sanitized[2] in {"\\", "/"}
     )
     if not sanitized.lower().startswith("file://") and not is_windows_path:
         return sanitized
@@ -127,6 +134,33 @@ def _sanitize_stacktrace(stacktrace: Any) -> None:
             frame.pop("module_metadata", None)
 
 
+def _mask_user_dirs(value: str) -> str:
+    """遮蔽路径中的用户名段，保留路径结构以便定位问题。"""
+
+    return USER_DIR_PATTERN.sub(r"\1<user>", value)
+
+
+def _sanitize_text_fields(event: dict[str, Any]) -> None:
+    """清洗日志正文与异常描述中的本机用户名。"""
+
+    logentry = event.get("logentry")
+    if isinstance(logentry, dict):
+        for field in ("message", "formatted"):
+            text = logentry.get(field)
+            if isinstance(text, str):
+                logentry[field] = _mask_user_dirs(text)
+        params = logentry.get("params")
+        if isinstance(params, list):
+            logentry["params"] = [
+                _mask_user_dirs(param) if isinstance(param, str) else param
+                for param in params
+            ]
+
+    message = event.get("message")
+    if isinstance(message, str):
+        event["message"] = _mask_user_dirs(message)
+
+
 def sanitize_event(
     event: dict[str, Any], hint: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -138,6 +172,8 @@ def sanitize_event(
 
     event.pop("user", None)
     event.pop("extra", None)
+
+    _sanitize_text_fields(event)
 
     request = event.get("request")
     if isinstance(request, dict):
@@ -157,6 +193,8 @@ def sanitize_event(
         for value in values:
             if isinstance(value, dict):
                 _sanitize_stacktrace(value.get("stacktrace"))
+                if isinstance(value.get("value"), str):
+                    value["value"] = _mask_user_dirs(value["value"])
 
     breadcrumbs = event.get("breadcrumbs")
     if isinstance(breadcrumbs, dict) and isinstance(breadcrumbs.get("values"), list):
@@ -199,7 +237,9 @@ def resolve_sentry_dist(source_root: Path) -> str | None:
             git_dir_value = git_dir.read_text(encoding="utf-8").strip()
             if not git_dir_value.startswith("gitdir:"):
                 return None
-            git_dir = (source_root / git_dir_value.removeprefix("gitdir:").strip()).resolve()
+            git_dir = (
+                source_root / git_dir_value.removeprefix("gitdir:").strip()
+            ).resolve()
 
         head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
         if head.startswith("ref:"):
@@ -209,9 +249,9 @@ def resolve_sentry_dist(source_root: Path) -> str | None:
                 revision = ref_path.read_text(encoding="utf-8").strip()
             else:
                 revision = ""
-                for line in (git_dir / "packed-refs").read_text(
-                    encoding="utf-8"
-                ).splitlines():
+                for line in (
+                    (git_dir / "packed-refs").read_text(encoding="utf-8").splitlines()
+                ):
                     if line.endswith(f" {ref_name}"):
                         revision = line.split(" ", 1)[0]
                         break
