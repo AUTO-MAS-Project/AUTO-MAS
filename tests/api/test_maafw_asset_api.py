@@ -4,7 +4,7 @@ from pathlib import Path
 
 import app.core  # noqa: F401
 
-from app.api.maafw import _maafw_asset_file_path
+from app.api.scripts import _maafw_asset_file_path
 
 
 class MaaFWAssetPathTest(unittest.TestCase):
@@ -76,23 +76,31 @@ class MaaFWAssetPathTest(unittest.TestCase):
 class MaaFWAssetRouteTest(unittest.TestCase):
     """路由必须挂在前端写死的那个地址上。
 
-    前端 buildMaaFWAssetUrl 拼的是 `${base}/api/maafw/asset?root=..&path=..`；
+    前端 buildMaaFWAssetUrl 拼的是 `${base}/api/scripts/maafw/asset?root=..&path=..`；
     这条路由此前只存在于前端，后端没有对应实现，于是所有项目内图片一律 404
     （2026-08-29 用户在 M9A 任务说明里看到的就是这个）。
     """
 
     def test_route_is_registered_where_the_frontend_expects(self) -> None:
-        from app.api.maafw import router
+        from app.api.scripts import router
 
         paths = {route.path for route in router.routes}
-        self.assertIn("/api/maafw/asset", paths)
+        self.assertIn("/api/scripts/maafw/asset", paths)
 
     def test_router_is_exported_and_mounted(self) -> None:
+        """端点挂在 scripts 路由上，跟着它一起被 main 挂载。
+
+        不给这一个端点单开模块：`/maafw/preview`、`/maafw/update` 早就在
+        `app/api/scripts.py` 里，另起 `/api/maafw` 会让同一域出现两个命名空间
+        和两个 OpenAPI tag。
+        """
+
         from app import api
 
-        self.assertIn("maafw_router", api.__all__)
+        self.assertIn("scripts_router", api.__all__)
         source = Path("main.py").read_text(encoding="utf-8")
-        self.assertIn("app.include_router(maafw_router)", source)
+        self.assertIn("app.include_router(scripts_router)", source)
+        self.assertNotIn("maafw_router", source)
 
 
 if __name__ == "__main__":

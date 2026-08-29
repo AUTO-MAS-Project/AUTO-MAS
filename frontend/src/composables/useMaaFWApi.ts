@@ -14,8 +14,10 @@ const logger = window.electronAPI.getLogger('MaaFW接口')
 /**
  * 拼接 MaaFW 项目内相对资源（图标、说明图片）的可访问 URL。
  *
- * 当前分支尚未迁移 `/api/maafw/asset` 资源代理端点，因此这里仍按回收版逻辑
- * 生成 URL；调用方对空串或加载失败均有降级处理（`v-if` 或 `@error` 回退）。
+ * 后端端点是 `/api/scripts/maafw/asset`，与 `/maafw/preview`、`/maafw/update`
+ * 同属脚本域。这里先拦掉绝对路径、UNC、上跳与远程 URL，但那只是省一次往返 ——
+ * 安全边界在后端的 `_maafw_asset_file_path`。调用方对空串或加载失败均有降级处理
+ * （`v-if` 或 `@error` 回退）。
  */
 export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) => {
   if (!rawPath || !rootPath) return ''
@@ -34,7 +36,7 @@ export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) =
     root: rootPath,
     path: normalized,
   })
-  return `${baseUrl}/api/maafw/asset?${params.toString()}`
+  return `${baseUrl}/api/scripts/maafw/asset?${params.toString()}`
 }
 
 const normalizeTaskSnapshot = (

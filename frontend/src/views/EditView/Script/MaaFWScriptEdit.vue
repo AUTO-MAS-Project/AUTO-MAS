@@ -237,9 +237,7 @@ const projectDisplayName = computed(() => {
     maafwConfig.Info.ProjectLabel,
     maafwConfig.Info.Name,
   ]
-  return (
-    candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
-  )
+  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
 })
 
 const interfaceStats = computed(() => [
