@@ -60,13 +60,29 @@ export type GeneralConfig_Script = {
      */
     LogTimeFormat?: (string | null);
     /**
+     * 日志处理钩子启用开关
+     */
+    LogHookEnabled?: (boolean | null);
+    /**
+     * 日志处理钩子规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行
+     */
+    LogHookRules?: (string | null);
+    /**
      * 成功时日志
      */
     SuccessLog?: (string | null);
     /**
+     * 成功时日志匹配模式: 关键字子串包含, 正则表达式
+     */
+    SuccessLogMode?: ('Split' | 'Regex' | null);
+    /**
      * 错误时日志
      */
     ErrorLog?: (string | null);
+    /**
+     * 错误时日志匹配模式: 关键字子串包含, 正则表达式
+     */
+    ErrorLogMode?: ('Split' | 'Regex' | null);
     /**
      * 推送日志采集启用开关
      */
