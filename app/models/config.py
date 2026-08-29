@@ -2862,10 +2862,25 @@ class GeneralConfig(ConfigBase):
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
         )
+        ## 日志处理钩子启用开关：关闭时保留规则配置，行为与未配置钩子完全一致
+        self.Script_LogHookEnabled = ConfigItem(
+            "Script", "LogHookEnabled", False, BoolValidator()
+        )
+        ## 日志处理钩子规则（JSON 数组，每项形如 {"type":"drop|replace",...}）；
+        ## 钩子先于任务日志、推送日志采集与成功/失败判定执行，丢弃的行不进入下游
+        self.Script_LogHookRules = ConfigItem("Script", "LogHookRules", "")
         ## 成功日志匹配
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
+        ## 成功日志匹配模式：Split = 「|」分隔关键字子串包含；Regex = 正则表达式
+        self.Script_SuccessLogMode = ConfigItem(
+            "Script", "SuccessLogMode", "Split", OptionsValidator(["Split", "Regex"])
+        )
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+        ## 错误日志匹配模式：Split = 「|」分隔关键字子串包含；Regex = 正则表达式
+        self.Script_ErrorLogMode = ConfigItem(
+            "Script", "ErrorLogMode", "Split", OptionsValidator(["Split", "Regex"])
+        )
         ## 推送日志启用开关：关闭后保留高级正则配置，但不会实际采集推送日志
         self.Script_PushLogEnabled = ConfigItem(
             "Script", "PushLogEnabled", False, BoolValidator()
@@ -3025,11 +3040,17 @@ class OkNteConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem(
             "Script", "SuccessLog", "Successfully Executed Task|任务执行完成"
         )
+        self.Script_SuccessLogMode = ConfigItem(
+            "Script", "SuccessLogMode", "Split", OptionsValidator(["Split", "Regex"])
+        )
         self.Script_ErrorLog = ConfigItem(
             "Script",
             "ErrorLog",
             "connected:False|Resolution Error|Timed out waiting for game process|"
             "Timed out waiting for launcher process",
+        )
+        self.Script_ErrorLogMode = ConfigItem(
+            "Script", "ErrorLogMode", "Split", OptionsValidator(["Split", "Regex"])
         )
 
         ## Game ------------------------------------------------------------

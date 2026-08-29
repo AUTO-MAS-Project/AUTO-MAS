@@ -23,9 +23,13 @@
 import re
 import json
 import shlex
-import win32gui
 import asyncio
-import keyboard
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32gui
+    import keyboard
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any
@@ -127,6 +131,9 @@ class GeneralDeviceManager(DeviceBase):
         return data
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
 
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:

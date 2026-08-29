@@ -48,8 +48,10 @@ from app.utils import (
     load_patterns,
     apply_patterns,
     flush_patterns,
+    compile_log_signs,
 )
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+from app.log_box.hooks import make_line_hook
 from app.log_box.markers import parse_marker
 from app.utils.constants import UTC4
 from .tools import execute_script_task, push_notification
@@ -215,17 +217,25 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_config.get("Script", "LogTimeStart") - 1,
             self.script_config.get("Script", "LogTimeEnd"),
         )
-        self.success_log = (
-            [
-                _.strip()
-                for _ in self.script_config.get("Script", "SuccessLog").split("|")
-            ]
-            if self.script_config.get("Script", "SuccessLog")
-            else []
+        # 成功/失败标志：按显式模式编译，Split 为存量「|」分隔关键字子串包含，
+        # Regex 为整条正则；非法正则视为已配置但永不命中，不中断任务执行
+        self.success_log = compile_log_signs(
+            self.script_config.get("Script", "SuccessLog"),
+            self.script_config.get("Script", "SuccessLogMode"),
         )
-        self.error_log = [
-            _.strip() for _ in self.script_config.get("Script", "ErrorLog").split("|")
-        ]
+        self.error_log = compile_log_signs(
+            self.script_config.get("Script", "ErrorLog"),
+            self.script_config.get("Script", "ErrorLogMode"),
+        )
+        for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
+            if matcher.invalid:
+                logger.warning(f"通用脚本{name}日志正则语法错误，该标志将不会命中")
+        # 日志处理钩子：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
+        self.log_line_hook = (
+            make_line_hook(self.script_config.get("Script", "LogHookRules"))
+            if self.script_config.get("Script", "LogHookEnabled")
+            else None
+        )
         # 推送日志采集：受 PushLogEnabled 总开关控制，关闭时保留配置但不采集；
         # 仅使用高级模式（PushLogPatterns，JSON）进行采集，供任务结束后追加到推送报告
         self.push_log_enabled = bool(
@@ -245,6 +255,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.log_time_range,
             self.script_config.get("Script", "LogTimeFormat"),
             self.check_log,
+            line_hook=self.log_line_hook,
         )
 
         self.run_book = False
@@ -697,38 +708,34 @@ class AutoProxyTask(TaskExecuteBase):
                     )
         self._push_log_processed = len(log_content)
 
-        for success_sign in self.success_log:
-            if success_sign in log:
-                self.cur_user_log.status = "Success!"
-                break
+        # 成功/失败标志按配置模式（子串包含 / 正则）在日志全文中查找
+        if self.success_log.search(log) is not None:
+            self.cur_user_log.status = "Success!"
+        elif datetime.now() - latest_time > timedelta(
+            minutes=self.script_config.get("Run", "RunTimeLimit")
+        ):
+            self.cur_user_log.status = "脚本进程超时"
         else:
-            if datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", "RunTimeLimit")
+            error_sign = self.error_log.search(log)
+            if error_sign is not None:
+                self.cur_user_log.status = f"异常日志: {error_sign}"
+            elif await self.general_process_manager.is_running():
+                self._process_seen = True
+                self.cur_user_log.status = "通用脚本正常运行中"
+            elif not self._process_seen and datetime.now() - self.log_start_time < timedelta(
+                seconds=_PROCESS_START_GRACE_SECONDS
             ):
-                self.cur_user_log.status = "脚本进程超时"
+                # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
+                # 收尾日志触发了回调，不据此判定任务结束
+                self.cur_user_log.status = "通用脚本正常运行中"
+            elif self.success_log.configured:
+                # 配置了成功标记但进程退出时未命中（不能确认成功）
+                self.cur_user_log.status = "脚本在完成任务前退出"
             else:
-                for error_sign in self.error_log:
-                    if error_sign in log:
-                        self.cur_user_log.status = f"异常日志: {error_sign}"
-                        break
-                else:
-                    if await self.general_process_manager.is_running():
-                        self._process_seen = True
-                        self.cur_user_log.status = "通用脚本正常运行中"
-                    elif not self._process_seen and datetime.now() - self.log_start_time < timedelta(
-                        seconds=_PROCESS_START_GRACE_SECONDS
-                    ):
-                        # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
-                        # 收尾日志触发了回调，不据此判定任务结束
-                        self.cur_user_log.status = "通用脚本正常运行中"
-                    elif self.success_log:
-                        # 配置了成功标记但进程退出时未命中（不能确认成功）
-                        self.cur_user_log.status = "脚本在完成任务前退出"
-                    else:
-                        # 未配置成功标记：进程已退出即视为任务完成。快速结束的脚本可能
-                        # 在首次日志回调前就已退出（未被进程轮询观测到），不能仅凭
-                        # _process_seen 判失败，否则会误报「脚本在完成任务前退出」
-                        self.cur_user_log.status = "Success!"
+                # 未配置成功标记：进程已退出即视为任务完成。快速结束的脚本可能
+                # 在首次日志回调前就已退出（未被进程轮询观测到），不能仅凭
+                # _process_seen 判失败，否则会误报「脚本在完成任务前退出」
+                self.cur_user_log.status = "Success!"
 
         logger.debug(f"通用脚本日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "通用脚本正常运行中":

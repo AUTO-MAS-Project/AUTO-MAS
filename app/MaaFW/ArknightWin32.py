@@ -21,7 +21,6 @@
 
 
 import os
-import sys
 import time
 import ctypes
 import psutil
@@ -79,8 +78,7 @@ class _ArknightWin32Toolkit:
         if enabled:
             # 提高进程优先级，启用1ms定时器精度
             self.p.nice(psutil.HIGH_PRIORITY_CLASS)
-            if sys.platform == "win32":
-                ctypes.windll.winmm.timeBeginPeriod(1)
+            ctypes.windll.winmm.timeBeginPeriod(1)
 
             # 启动键盘监听
             self.arknights_hwnd = -1
@@ -91,8 +89,7 @@ class _ArknightWin32Toolkit:
         else:
             # 恢复进程优先级，恢复定时器精度
             self.p.nice(self.original_nice)
-            if sys.platform == "win32":
-                ctypes.windll.winmm.timeEndPeriod(1)
+            ctypes.windll.winmm.timeEndPeriod(1)
 
             # 停止键盘监听
             self.listener.stop()

@@ -58,6 +58,7 @@ class LogMonitor:
         callback: Callable[[list[str], datetime], Awaitable[None]],
         except_logs: list[str] | None = None,
         parse_log: Callable[[list[str]], list[str]] | None = None,
+        line_hook: Callable[[str], str | None] | None = None,
     ):
         self.time_start = time_stamp_range[0]
         self.time_end = time_stamp_range[1]
@@ -65,6 +66,8 @@ class LogMonitor:
         self.callback = callback
         self.except_logs = except_logs or []
         self.parse_log = parse_log
+        # 日志处理钩子：日志行进入日志内容前逐行预处理（改写）或丢弃
+        self.line_hook = line_hook
         self.last_callback_time: datetime = datetime.now()
         self.log_contents: list[str] = []
         self.latest_time = datetime.now()
@@ -134,9 +137,9 @@ class LogMonitor:
                                         )
                                         if entry_time > log_start_time:
                                             if_log_start = True
-                                            log_contents.append(line)
+                                            self.append_line(log_contents, line)
                                 else:
-                                    log_contents.append(line)
+                                    self.append_line(log_contents, line)
 
                 log_stat = log_file_path.stat()
 
@@ -163,10 +166,10 @@ class LogMonitor:
                                 )
                                 if entry_time > log_start_time:
                                     if_log_start = True
-                                    log_contents.append(line)
+                                    self.append_line(log_contents, line)
                                     await self.update_latest_timestamp(line)
                         else:
-                            log_contents.append(line)
+                            self.append_line(log_contents, line)
                             await self.update_latest_timestamp(line)
 
             except (FileNotFoundError, PermissionError) as e:
@@ -210,7 +213,7 @@ class LogMonitor:
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
 
-            self.log_contents.append(line)
+            self.append_line(self.log_contents, line)
             await self.update_latest_timestamp(line)
 
             if process_stream.at_eof():
@@ -236,6 +239,26 @@ class LogMonitor:
                 )
         except Exception as e:
             logger.error(f"回调函数执行失败: {e}")
+
+    def append_line(self, log_contents: list[str], line: str) -> None:
+        """经日志处理钩子后把日志行写入日志内容
+
+        执行顺序：日志起始判定与时间戳活跃度跟踪读取原始行 → 钩子（丢弃/改写）
+        → 日志内容。因此被钩子丢弃的行不会进入任务日志、推送日志采集与成功/
+        失败标志判定，但不影响 latest_time，过滤噪声行不会造成误判超时。
+        未挂钩子时行为与直接 append 完全一致。
+        """
+        if self.line_hook is None:
+            log_contents.append(line)
+            return
+        try:
+            hooked = self.line_hook(line)
+        except Exception as e:
+            logger.warning(f"日志处理钩子执行失败: {e}")
+            log_contents.append(line)
+            return
+        if hooked is not None:
+            log_contents.append(hooked)
 
     async def update_latest_timestamp(self, log: str, if_init: bool = False) -> None:
 
