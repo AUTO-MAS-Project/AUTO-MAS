@@ -120,7 +120,7 @@
         <a-form-item>
           <template #label>
             <a-tooltip
-              title="运行 MFW 任务前先检查项目更新，更新完成后再读取 interface 与加载资源"
+              title="尚未接入运行流程：当前版本开启后运行前也不会自动检查更新，请用右侧的手动更新"
             >
               <span class="form-label">
                 运行前自动更新
