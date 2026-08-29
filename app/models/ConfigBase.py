@@ -81,7 +81,6 @@ class RangeValidator(ValidatorBase):
     def __init__(self, min: int | float, max: int | float):
         self.min = min
         self.max = max
-        self.range = (min, max)
 
     def validate(self, value):
         if not isinstance(value, (int, float)):

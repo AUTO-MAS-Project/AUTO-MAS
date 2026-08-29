@@ -22,7 +22,6 @@
 import asyncio
 from pathlib import Path
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem

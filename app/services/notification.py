@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.models.config import Webhook
-from app.utils import LazyProxy, get_logger, ImageUtils
+from app.utils import LazyProxy, get_logger
 
 logger = get_logger("通知服务")
 
@@ -320,68 +320,6 @@ class Notification:
             )
         else:
             raise Exception(f"HTTP {response.status_code}: {response.text}")
-
-    async def _WebHookPush(self, title, content, webhook_url) -> None:
-        """
-        WebHook 推送通知 (即将弃用)
-
-        :param title: 通知标题
-        :param content: 通知内容
-        :param webhook_url: WebHook地址
-        """
-
-        if not webhook_url:
-            raise ValueError("WebHook 地址不能为空")
-
-        content = f"{title}\n{content}"
-        data = {"msgtype": "text", "text": {"content": content}}
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url=webhook_url, json=data)
-            info = response.json()
-
-        if info["errcode"] == 0:
-            logger.success(f"WebHook 推送通知成功: {title}")
-        else:
-            raise Exception(f"WebHook 推送通知失败: {response.text}")
-
-    async def CompanyWebHookBotPushImage(
-        self, image_path: Path, webhook_url: str
-    ) -> None:
-        """
-        使用企业微信群机器人推送图片通知（等待重新适配）
-
-        :param image_path: 图片文件路径
-        :param webhook_url: 企业微信群机器人的WebHook地址
-        """
-
-        if not webhook_url:
-            raise ValueError("webhook URL 不能为空")
-
-        # 压缩图片
-        ImageUtils.compress_image_if_needed(image_path)
-
-        # 检查图片是否存在
-        if not image_path.exists():
-            raise FileNotFoundError(f"文件未找到: {image_path}")
-
-        # 获取图片base64和md5
-        image_base64 = ImageUtils.get_base64_from_file(str(image_path))
-        image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
-
-        data = {
-            "msgtype": "image",
-            "image": {"base64": image_base64, "md5": image_md5},
-        }
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url=webhook_url, json=data)
-            info = response.json()
-
-        if info.get("errcode") == 0:
-            logger.success(f"企业微信群机器人推送图片成功: {image_path.name}")
-        else:
-            raise Exception(f"企业微信群机器人推送图片失败: {response.text}")
 
     async def send_koishi(
         self,

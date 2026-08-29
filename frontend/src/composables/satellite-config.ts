@@ -7,7 +7,7 @@ export interface SatelliteModule {
 }
 
 const iconModules = import.meta.glob<{ default: string }>(
-  ['@/assets/satellite-icons/*.png', '@/assets/ok-nte.ico', '@/assets/hsr.png'],
+  ['@/assets/*.png', '@/assets/ok-nte.ico'],
   {
     eager: true,
     query: 'url',

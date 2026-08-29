@@ -14,14 +14,7 @@ from app.utils import get_logger
 from app.utils.exception import (
     WindowsNotFoundException,
     WindowsNotFocusException,
-    OCRNotFoundTitleException,
-    ADBFileNotFoundException,
-    ADBCommandFailedException,
-    ADBDeviceNotFoundException,
-    ADBConnectionFailedException,
-    ADBTimeoutException,
-    ADBScreenshotException,
-    ImageProcessException
+    OCRNotFoundTitleException
 )
 
 # OCR入门指南！
