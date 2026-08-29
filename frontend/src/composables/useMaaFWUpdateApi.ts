@@ -4,9 +4,10 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 /**
  * MaaFW 项目更新客户端。
  *
- * 后端 `POST /api/scripts/maafw/update` 尚未纳入生成的 OpenAPI service，
- * 此处参照 `useHSRPluginApi` 直接用 axios + `OpenAPI.BASE` 调用，等 openapi
- * 重新生成后再切换到生成的 `MaaFwService`。
+ * `POST /api/scripts/maafw/update` 已进生成的 `MaaFwService`（2026-08-30 重跑
+ * openapi），但这里仍参照 `useHSRPluginApi` 直接用 axios + `OpenAPI.BASE` 调用：
+ * 下面的错误处理要从 `AxiosError.response.data.message` 里取后端给的文案，而生成的
+ * 客户端抛的是 `ApiError`，直接换会把这条错误路径吃掉。切换要连错误处理一起改。
  */
 export interface MaaFWUpdateResult {
   checked: boolean

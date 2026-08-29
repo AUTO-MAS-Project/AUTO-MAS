@@ -8,8 +8,20 @@ export type MaaFWConfig_Info = {
      */
     Name?: (string | null);
     /**
+     * MaaFW 项目标签
+     */
+    ProjectLabel?: (string | null);
+    /**
      * MaaFW 项目根目录
      */
     Path?: (string | null);
+    /**
+     * MaaFW controller 名称
+     */
+    Controller?: (string | null);
+    /**
+     * MaaFW resource 名称
+     */
+    Resource?: (string | null);
 };
 
