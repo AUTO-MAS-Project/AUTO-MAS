@@ -31,7 +31,7 @@ import subprocess
 from dataclasses import dataclass
 from packaging import version
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from pathlib import Path
 
 from app.core.ws import Publisher, protocol
@@ -68,6 +68,7 @@ class _UpdateHandler:
         self.download_task: Optional[asyncio.Task[None]] = None
         self.is_switching_source: bool = False
         self.remote_version: Optional[str] = None
+        self.current_version: Optional[str] = None
         self.last_check_time: Optional[datetime] = None
         self.update_version_info: Optional[Dict[str, List[str]]] = None
         self.mirror_chyan_download_url: Optional[str] = None
@@ -85,6 +86,7 @@ class _UpdateHandler:
         )
 
     async def _publish_failed(self, message: str) -> None:
+        logger.error(message)
         self._update_download_snapshot(
             status="failed",
             speed=0,
@@ -115,6 +117,11 @@ class _UpdateHandler:
     ) -> bool:
         if self.is_switching_source or self.is_locked:
             return False
+
+        # Mirror 酱的下载地址是一次性的, 不能沿用版本检查缓存里的旧地址
+        if self._get_download_source() == "MirrorChyan":
+            await self._refresh_mirror_download_url()
+
         return self._start_download_task(
             job=self._create_download_job(download_version=target_version)
         )
@@ -289,9 +296,68 @@ class _UpdateHandler:
 
         raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
+    async def _refresh_mirror_download_url(self) -> None:
+        """重新获取 Mirror 酱的一次性下载地址。
+
+        Mirror 酱的下载地址用过或过期即作废, 而版本检查的四小时缓存不会刷新它,
+        因此每次下载开始前都要重新获取。获取失败时清空缓存地址,
+        由 `_get_download_url` 回落到自建下载站。
+        """
+
+        if self.current_version is None:
+            logger.warning("尚未检查过更新, 无法刷新 Mirror 酱下载地址")
+            return None
+
+        try:
+            version_info = await self._request_version_info(self.current_version)
+            download_url = version_info["data"].get("url")
+        except Exception as error:
+            logger.warning(
+                f"刷新 Mirror 酱下载地址失败: {type(error).__name__}: {error}"
+            )
+            self.mirror_chyan_download_url = None
+            return None
+
+        self.mirror_chyan_download_url = download_url
+        if download_url is not None:
+            logger.info("已刷新 Mirror 酱下载地址")
+
+    async def _request_version_info(self, current_version: str) -> Dict[str, Any]:
+        """向 Mirror 酱查询最新版本信息。
+
+        Args:
+            current_version: 本地当前版本号, 用于 Mirror 酱判定增量包。
+
+        Returns:
+            Mirror 酱返回的完整响应体。
+
+        Raises:
+            Exception: Mirror 酱返回业务错误码或无法识别的响应时抛出。
+        """
+
+        # 使用 httpx 异步请求
+        async with httpx.AsyncClient(
+            proxy=Config.proxy, follow_redirects=True
+        ) as client:
+            response = await client.get(
+                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
+            )
+
+        if response.status_code == 200:
+            return response.json()
+
+        result = response.json()
+        if result["code"] in MIRROR_ERROR_INFO:
+            raise Exception(f"获取版本信息时出错: {MIRROR_ERROR_INFO[result['code']]}")
+        raise Exception(
+            "获取版本信息时出错: 意料之外的错误, 请及时联系项目组以获取来自 Mirror 酱的技术支持"
+        )
+
     async def check_update(
         self, current_version: str, if_force: bool = False
     ) -> tuple[bool, str, Dict[str, List[str]]]:
+
+        self.current_version = current_version
 
         if (
             not if_force
@@ -311,27 +377,7 @@ class _UpdateHandler:
 
         logger.info("开始检查更新")
 
-        # 使用 httpx 异步请求
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True
-        ) as client:
-            response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
-            )
-        if response.status_code == 200:
-            version_info = response.json()
-        else:
-            result = response.json()
-
-            if result["code"] != 0:
-                if result["code"] in MIRROR_ERROR_INFO:
-                    raise Exception(
-                        f"获取版本信息时出错: {MIRROR_ERROR_INFO[result['code']]}"
-                    )
-                else:
-                    raise Exception(
-                        "获取版本信息时出错: 意料之外的错误, 请及时联系项目组以获取来自 Mirror 酱的技术支持"
-                    )
+        version_info = await self._request_version_info(current_version)
 
         logger.success("获取版本信息成功")
         self.last_check_time = datetime.now()
@@ -339,8 +385,7 @@ class _UpdateHandler:
         self.remote_version = version_info["data"]["version_name"]
         if self.remote_version is None:
             raise Exception("Mirror 酱未返回版本号, 请稍后重试")
-        if "url" in version_info["data"]:
-            self.mirror_chyan_download_url = version_info["data"]["url"]
+        self.mirror_chyan_download_url = version_info["data"].get("url")
 
         if version.parse(self.remote_version) > version.parse(current_version):
 
