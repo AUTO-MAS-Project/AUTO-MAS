@@ -44,20 +44,37 @@ Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
 
-# Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 字符）、
-# 正文落在 szInfo（256 字符）。plyer 直接把字符串塞进 ctypes 定长数组，超长会抛
-# ValueError，且各留一位给结尾空字符，因此推送前先截断。
+# Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
+# UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
+# 数组，超长会抛 ValueError，且各留一位给结尾空字符，因此推送前先截断。
 PLYER_TITLE_LIMIT = 63
 PLYER_MESSAGE_LIMIT = 255
 
 
 def clip_notify_text(text: str, limit: int) -> str:
-    """按 Windows 通知字段上限截断文本，超出部分以省略号收尾。"""
+    """
+    按 Windows 通知字段上限截断文本，超出部分以省略号收尾
 
-    if len(text) <= limit:
+    ``ctypes.c_wchar`` 数组按 UTF-16 代码单元计数，而 ``len()`` 数的是码位：
+    emoji 等非 BMP 字符占 1 个码位却要 2 个代码单元，按码位截断仍会溢出，因此
+    这里按编码后的代码单元数裁剪。截断点落在代理对中间时，``errors="ignore"``
+    会丢弃残缺的那一半。
+
+    Args:
+        text: 待截断的文本
+        limit: 目标字段可用的 UTF-16 代码单元数（已扣除结尾空字符）
+
+    Returns:
+        str: 编码后不超过 ``limit`` 个 UTF-16 代码单元的文本
+    """
+
+    encoded = text.encode("utf-16-le")
+    if len(encoded) // 2 <= limit:
         return text
 
-    return f"{text[: limit - 1]}…"
+    clipped = encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore")
+
+    return f"{clipped}…"
 
 
 class Notification:
