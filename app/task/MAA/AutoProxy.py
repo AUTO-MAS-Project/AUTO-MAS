@@ -26,6 +26,7 @@ import re
 import uuid
 import asyncio
 import shutil
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -145,11 +146,12 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 def _build_depot_maintain_task(
     plans_json: str,
-    skip_during_activity: bool = False,
-    skip_during_resource_collection: bool = False,
+    source_task: dict | None = None,
 ) -> dict:
     """生成 MAA 库存保持任务配置。"""
 
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList", [])
     plans = []
     for plan in json.loads(plans_json):
         if (
@@ -162,28 +164,37 @@ def _build_depot_maintain_task(
             and not isinstance(plan.get("DropCount"), bool)
             and plan["DropCount"] > 0
         ):
+            source_plan = next(
+                (
+                    item
+                    for item in source_plans
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                {},
+            )
             plans.append(
                 {
+                    **deepcopy(source_plan),
                     "Stage": plan["Stage"],
                     "DropId": plan["DropId"],
                     "DropCount": plan["DropCount"],
-                    "UseMedicine": False,
-                    "MedicineCount": 0,
-                    "UseStone": False,
-                    "StoneCount": 0,
                 }
             )
 
     return {
-        "$type": "DepotMaintainTask",
+        "$type": source_task.get("$type", "DepotMaintainTask"),
         "Name": "库存保持",
         "IsEnable": True,
         "TaskType": "DepotMaintain",
-        "UpdateDepot": True,
-        "IsStageManually": False,
-        "SkipDuringActivity": skip_during_activity,
-        "SkipDuringResourceCollection": skip_during_resource_collection,
-        "UseAutoSeries": True,
+        "UpdateDepot": source_task.get("UpdateDepot", True),
+        "IsStageManually": source_task.get("IsStageManually", False),
+        "SkipDuringActivity": source_task.get("SkipDuringActivity", False),
+        "SkipDuringResourceCollection": source_task.get(
+            "SkipDuringResourceCollection", False
+        ),
+        "UseAutoSeries": source_task.get("UseAutoSeries", True),
         "PlanList": plans,
     }
 
@@ -214,7 +225,7 @@ def _build_activity_priority_fight(
     额度（Task.ActivityMedicineNumb 与计划表 MedicineNumb），互不转移。
     """
 
-    activity_fight = fight_task.copy()
+    activity_fight = deepcopy(fight_task)
     activity_fight.update(
         {
             "Name": "活动关优先",
@@ -223,15 +234,8 @@ def _build_activity_priority_fight(
             "IsStageManually": True,
             "UseOptionalStage": False,
             "UseWeeklySchedule": False,
-            "EnableTargetDrop": False,
-            "DropId": "",
-            "DropCount": 0,
-            "IsInventoryTarget": False,
-            "EnableTimesLimit": False,
             "UseMedicine": medicine_numb > 0,
             "MedicineCount": medicine_numb,
-            "UseExpiringMedicine": False,
-            "UseExpireMedicineForActivity": False,
         }
     )
     return activity_fight
@@ -598,13 +602,10 @@ class AutoProxyTask(TaskExecuteBase):
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
                 self.cur_user_config.get("Task", "DepotMaintainPlans"),
-                skip_during_activity=task_set["DepotMaintain"].get(
-                    "SkipDuringActivity", False
-                ),
-                skip_during_resource_collection=task_set["DepotMaintain"].get(
-                    "SkipDuringResourceCollection", False
-                ),
+                source_task=task_set["DepotMaintain"],
             )
+
+        fight_source = deepcopy(task_set["Fight"])
 
         # 关闭所有定时
         for i in range(1, 9):
@@ -663,12 +664,6 @@ class AutoProxyTask(TaskExecuteBase):
         gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = True
         gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
 
-        # 理智作战强制配置项
-        task_set["Fight"]["IsDrGrandet"] = False
-        task_set["Fight"]["HideSeries"] = False
-        task_set["Fight"]["UseStoneAllowSave"] = False
-        task_set["Fight"]["UseOptionalStage"] = True
-
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
             global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
@@ -718,11 +713,27 @@ class AutoProxyTask(TaskExecuteBase):
         # 理智作战相关配置项
         if self.mode == "Annihilation":
             # 关卡配置
-            task_set["Fight"] = MAA_ANNIHILATION_FIGHT_BASE.copy()
+            task_set["Fight"] = {
+                **MAA_ANNIHILATION_FIGHT_BASE,
+                **fight_source,
+            }
             task_set["Fight"]["UseMedicine"] = bool(
                 plan_data.get("MedicineNumb", 0) != 0
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
+            task_set["Fight"]["Name"] = "剿灭作战"
+            task_set["Fight"]["IsEnable"] = True
+            task_set["Fight"]["TaskType"] = "Fight"
+            task_set["Fight"]["StagePlan"] = ["Annihilation"]
+            task_set["Fight"]["IsStageManually"] = False
+            task_set["Fight"]["UseOptionalStage"] = False
+            task_set["Fight"]["UseWeeklySchedule"] = False
+            task_set["Fight"]["UseCustomAnnihilation"] = True
+            task_set["Fight"]["EnableTargetDrop"] = False
+            task_set["Fight"]["DropId"] = ""
+            task_set["Fight"]["DropCount"] = 0
+            task_set["Fight"]["IsInventoryTarget"] = False
+            task_set["Fight"]["EnableTimesLimit"] = False
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
                 "Info", "Annihilation"
             )
@@ -832,7 +843,10 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.task_dict["Fight"]
                 and plan_data.get("Stage_Remain", "-") != "-"
             ):
-                remain_fight = MAA_REMAIN_FIGHT_BASE.copy()
+                remain_fight = {
+                    **MAA_REMAIN_FIGHT_BASE,
+                    **fight_source,
+                }
                 remain_fight["StagePlan"] = [
                     (
                         ""
@@ -840,6 +854,14 @@ class AutoProxyTask(TaskExecuteBase):
                         else plan_data.get("Stage_Remain", "-")
                     )
                 ]
+                remain_fight["Name"] = "剩余理智"
+                remain_fight["IsEnable"] = True
+                remain_fight["TaskType"] = "Fight"
+                remain_fight["UseMedicine"] = False
+                remain_fight["MedicineCount"] = 0
+                remain_fight["IsStageManually"] = True
+                remain_fight["UseOptionalStage"] = False
+                remain_fight["UseWeeklySchedule"] = False
                 task_queue.append(remain_fight)
 
         (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
