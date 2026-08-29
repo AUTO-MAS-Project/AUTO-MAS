@@ -24,6 +24,8 @@ from __future__ import annotations
 import json
 import json5
 import os
+import shutil
+import stat
 import threading
 import tomllib
 from contextlib import suppress
@@ -53,10 +55,10 @@ _CODECS: dict[str, tuple[Any, Any]] = {
         lambda data: json5.loads(decode_bytes(data)),
     ),
     ".jsonl": (
-        lambda d, encoding: "\n".join(
-            json.dumps(i, ensure_ascii=False) for i in d
-        ).encode(encoding)
-        + b"\n",
+        lambda d, encoding: (
+            "\n".join(json.dumps(i, ensure_ascii=False) for i in d).encode(encoding)
+            + b"\n"
+        ),
         lambda data: [
             json.loads(d) for d in decode_bytes(data).splitlines() if d.strip()
         ],
@@ -78,6 +80,28 @@ _ALIASES: dict[str, str] = {
 
 # 进程内串行锁, 避免并发竞争写
 _WRITE_LOCK = threading.Lock()
+
+
+def force_rmtree(path: Path) -> None:
+    """
+    删除目录树, 遇到只读文件先清除只读位再重试
+
+    ``shutil.rmtree(..., ignore_errors=True)`` 在 Windows 上删不掉只读文件且
+    静默跳过, 残留文件会让随后的 ``copytree`` 覆盖时抛 ``PermissionError``;
+    脚本配置目录里的 ``.git`` 对象正是只读的。清除只读位后仍失败的条目按原
+    ``ignore_errors`` 语义忽略。
+
+    Args:
+        path: 待删除的目录路径
+    """
+
+    def _retry_without_readonly(func: Any, target: Any, _exc: BaseException) -> None:
+        with suppress(OSError):
+            os.chmod(target, stat.S_IWRITE)
+            func(target)
+
+    with suppress(FileNotFoundError):
+        shutil.rmtree(path, onexc=_retry_without_readonly)
 
 
 def atomic_write(path: Path, data: bytes) -> None:

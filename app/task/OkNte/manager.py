@@ -32,6 +32,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.services import Notify
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import force_rmtree
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
     mark_task_game_sign_summary_consumed,
@@ -101,7 +102,9 @@ class OkNteManager(TaskExecuteBase):
                 and self.script_info.user_list[0].name == "暂未加载"
             ):
                 self.script_info.user_list = [
-                    UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+                    UserItem(
+                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+                    )
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
@@ -162,7 +165,7 @@ class OkNteManager(TaskExecuteBase):
                 self.script_config.get("Script", "ConfigPath")
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            shutil.rmtree(self.temp_path, ignore_errors=True)
+            force_rmtree(self.temp_path)
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 self.had_original_script_config = True
@@ -182,28 +185,40 @@ class OkNteManager(TaskExecuteBase):
             and self.script_config
         ):
             return
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}")
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-            else:
-                logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
-                tmp_dst = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
-                )
-                shutil.rmtree(tmp_dst, ignore_errors=True)
-                shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                tmp_dst.rename(self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            if (self.temp_path / "config.temp").exists():
-                logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}")
-                shutil.copy(self.temp_path / "config.temp", self.script_config_path)
-            elif not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-NTE 脚本配置文件: {self.script_config_path}")
-                with suppress(FileNotFoundError):
-                    self.script_config_path.unlink()
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+
+        # 复原属于收尾清理, 失败不应掩盖任务本身的异常, 也不应中断后续解锁与回写
+        try:
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                if not self.had_original_script_config:
+                    logger.info(
+                        f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}"
+                    )
+                    force_rmtree(self.script_config_path)
+                else:
+                    logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
+                    tmp_dst = self.script_config_path.with_name(
+                        self.script_config_path.name + ".tmp"
+                    )
+                    force_rmtree(tmp_dst)
+                    shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
+                    force_rmtree(self.script_config_path)
+                    tmp_dst.rename(self.script_config_path)
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                if (self.temp_path / "config.temp").exists():
+                    logger.info(
+                        f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}"
+                    )
+                    shutil.copy(self.temp_path / "config.temp", self.script_config_path)
+                elif not self.had_original_script_config:
+                    logger.info(
+                        f"清理任务期写入的 OK-NTE 脚本配置文件: {self.script_config_path}"
+                    )
+                    with suppress(FileNotFoundError):
+                        self.script_config_path.unlink()
+        except Exception as e:
+            logger.opt(exception=True).warning(f"复原 OK-NTE 脚本配置失败: {e}")
+        finally:
+            force_rmtree(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -232,7 +247,9 @@ class OkNteManager(TaskExecuteBase):
             sub_check = await method.check()
             if sub_check != "Pass":
                 self.check_result = sub_check
-                current_user = self.script_info.user_list[self.script_info.current_index]
+                current_user = self.script_info.user_list[
+                    self.script_info.current_index
+                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
                 await Publisher.send(
@@ -341,11 +358,11 @@ class OkNteManager(TaskExecuteBase):
 
         try:
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                await script_cfg.UserData.load(
-                    await self.user_config.toDict()
-                )
+                await script_cfg.UserData.load(await self.user_config.toDict())
         except Exception:
-            logger.opt(exception=True).warning("on_crash 写回 UserConfig 失败，放弃本次状态变更")
+            logger.opt(exception=True).warning(
+                "on_crash 写回 UserConfig 失败，放弃本次状态变更"
+            )
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
