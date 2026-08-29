@@ -85,27 +85,28 @@ class MfaAvaloniaProfileDriftGuardTest(unittest.TestCase):
 class MxuProfileEvidenceTest(unittest.TestCase):
     """MXU 画像必须与静态样本逐行吻合，且明确标注未经真机验证。"""
 
-    def test_timestamp_slice_parses_the_current_format(self) -> None:
-        """当前版本（MXU@2.4.1）行首带方括号，2026-08-29 真机采样。"""
+    def test_fallback_slice_parses_the_backend_log(self) -> None:
+        """兜底那份是 Rust 后端日志（debug/mxu-tauri.log），行首带方括号。"""
 
         line = (
             "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] "
             "Web server listening on http://127.0.0.1:12701"
         )
-        start, end = MXU_LOG_PROFILE.time_stamp_range
+        start, end = MXU_LOG_PROFILE.fallback_time_stamp_range
         self.assertEqual(
-            datetime.strptime(line[start:end], MXU_LOG_PROFILE.time_format),
+            datetime.strptime(line[start:end], MXU_LOG_PROFILE.fallback_time_format),
             datetime(2026, 8, 29, 18, 15, 43),
         )
 
-    def test_legacy_slice_parses_the_old_sample_lines(self) -> None:
-        """旧命名那份日志是另一套行首，必须由 legacy_* 那对字段负责。
+    def test_primary_slice_parses_the_frontend_sample_lines(self) -> None:
+        """判据串只出现在前端日志里，首选切片必须对得上它。
 
-        判据串（开始/完成/停止）在两版之间没变——2026-08-29 从 MaaEnd.exe 的前端
-        包里逐条比对过——所以只有时间切片需要分家。
+        MXU 同时写两份：前端 debug/<日期>-<序号>.log 带 [App]/[Task]/[MAA] 标签，
+        判据串全在这里；Rust 后端 debug/mxu-tauri.log 只有启动那类行。首选必须
+        是前端那份，盯着后端那份会永远等不到任务标记。
         """
 
-        start, end = MXU_LOG_PROFILE.legacy_time_stamp_range
+        start, end = MXU_LOG_PROFILE.time_stamp_range
         for line, expected in (
             (_MXU_START_LINE, datetime(2026, 7, 4, 10, 25, 44)),
             (_MXU_DRAINED_LINE, datetime(2026, 7, 4, 10, 25, 46)),
@@ -113,7 +114,7 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         ):
             with self.subTest(line=line[:30]):
                 parsed = datetime.strptime(
-                    line[start:end], MXU_LOG_PROFILE.legacy_time_format
+                    line[start:end], MXU_LOG_PROFILE.time_format
                 )
                 self.assertEqual(parsed, expected)
 
@@ -142,19 +143,25 @@ class MxuProfileEvidenceTest(unittest.TestCase):
         self.assertEqual(MXU_LOG_PROFILE.controller_failure_markers, ())
         self.assertEqual(MXU_LOG_PROFILE.abandon_markers, ())
 
-    def test_both_log_namings_are_declared(self) -> None:
-        """固定名优先、日期序号名回退，两条都要在画像里有据可查。
+    def test_both_log_shapes_are_declared(self) -> None:
+        """两份日志都要在画像里有据可查，且各自带上自己的时间切片。
 
-        固定名不含 strftime 占位符，故 resolve 出来与写死的一致；旧命名的当日
-        序号启动前不可知，只能靠 log_glob_dir 在起进程之后 glob。
+        前端那份的当日启动序号在启动前不可知，只能靠 log_glob_dir 在起进程
+        之后 glob；后端那份是固定名，不含 strftime 占位符，resolve 出来与
+        写死的一致。
         """
 
+        self.assertEqual(MXU_LOG_PROFILE.log_glob_dir, "debug")
         self.assertEqual(
             resolve_log_relpath(MXU_LOG_PROFILE, datetime(2026, 8, 28)),
             "debug/mxu-tauri.log",
         )
-        self.assertEqual(MXU_LOG_PROFILE.log_glob_dir, "debug")
-        self.assertIsNotNone(MXU_LOG_PROFILE.legacy_time_stamp_range)
+        self.assertIsNotNone(MXU_LOG_PROFILE.fallback_time_stamp_range)
+        # 两套切片必须不同，相同就说明有一边写错了。
+        self.assertNotEqual(
+            MXU_LOG_PROFILE.time_stamp_range,
+            MXU_LOG_PROFILE.fallback_time_stamp_range,
+        )
 
     def test_self_exiting_shell_is_declared(self) -> None:
         """-q / --quit-after-run：进程干净退出本身就是完成信号。"""

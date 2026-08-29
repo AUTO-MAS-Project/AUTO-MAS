@@ -178,7 +178,7 @@ class MxuLogPathTest(unittest.TestCase):
 
         self.manager.log_profile = MXU_LOG_PROFILE
         self.manager.log_monitor = SimpleNamespace(
-            time_start=1, time_end=21, time_format="%Y-%m-%d][%H:%M:%S"
+            time_start=0, time_end=19, time_format="%Y-%m-%d %H:%M:%S"
         )
 
     def _await_path(self):
@@ -192,22 +192,19 @@ class MxuLogPathTest(unittest.TestCase):
         ):
             return _asyncio.run(self.manager._await_shell_log_path())
 
-    def test_prefers_the_current_fixed_name(self) -> None:
-        """当前版本写固定名 debug/mxu-tauri.log（2026-08-29 真机确认）。"""
+    def test_prefers_the_frontend_log_over_the_backend_one(self) -> None:
+        """判据串只出现在前端那份 debug/<日期>-<序号>.log 里。
 
-        (self.root / "debug" / "mxu-tauri.log").write_text("x", encoding="utf-8")
-        resolved = self._await_path()
-        self.assertIsNotNone(resolved)
-        self.assertEqual(resolved.name, "mxu-tauri.log")
-        # 走首选路径时不得动切片。
-        self.assertEqual(self.manager.log_monitor.time_start, 1)
-
-    def test_falls_back_to_legacy_sequence_name(self) -> None:
-        """旧版外壳写 <日期>-<序号>.log；外壳会就地热更新，两种都要认。"""
+        debug/mxu-tauri.log 是 Rust 后端经 tauri-plugin-log 写的，只有启动、
+        web_server、MaaFramework 加载那类行 —— 盯着它会永远等不到任务标记。
+        两份文件同时存在时（后端那份是常态，前端启动时的 auto-clear 才会删它）
+        必须选前端那份。
+        """
 
         from datetime import datetime
 
         today = datetime.now().strftime("%Y-%m-%d")
+        (self.root / "debug" / "mxu-tauri.log").write_text("x", encoding="utf-8")
         for name in (
             f"{today}-1.log",
             f"{today}-2.log",
@@ -217,32 +214,53 @@ class MxuLogPathTest(unittest.TestCase):
             (self.root / "debug" / name).write_text("x", encoding="utf-8")
         resolved = self._await_path()
         self.assertIsNotNone(resolved)
+        # 当日启动序号最大的那份才是本轮的。
         self.assertEqual(resolved.name, f"{today}-2.log")
-        # 回退文件是另一套行首格式，切片必须跟着换，否则一行都解析不出来。
+        # 走首选路径时不得动切片。
+        self.assertEqual(self.manager.log_monitor.time_start, 0)
+
+    def test_falls_back_to_the_backend_log_and_switches_the_slice(self) -> None:
+        """前端日志还没出现时，至少靠后端那份确认外壳活着。
+
+        两份出自不同子系统，行首格式不同：兜底时切片必须跟着换，否则
+        LogMonitor 一行都解析不出来，整份日志会被当成历史全部丢弃。
+        """
+
+        (self.root / "debug" / "mxu-tauri.log").write_text("x", encoding="utf-8")
+        resolved = self._await_path()
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.name, "mxu-tauri.log")
         self.assertEqual(
             (
                 self.manager.log_monitor.time_start,
                 self.manager.log_monitor.time_end,
                 self.manager.log_monitor.time_format,
             ),
-            (0, 19, "%Y-%m-%d %H:%M:%S"),
+            (1, 21, "%Y-%m-%d][%H:%M:%S"),
         )
 
     def test_returns_none_when_nothing_matches(self) -> None:
         (self.root / "debug" / "2000-01-01-1.log").write_text("x", encoding="utf-8")
         self.assertIsNone(self._await_path())
 
-    def test_timestamp_slice_parses_current_format(self) -> None:
-        """新格式行首带方括号，切片 [1:21] 恰好取到可解析的那段。"""
+    def test_both_slices_parse_their_own_files(self) -> None:
+        """首选切片对前端行，兜底切片对后端行，两边不能串。"""
 
         from datetime import datetime
 
         from app.task.MaaFW.tools.external.profile import MXU_LOG_PROFILE
 
-        line = "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] Web server listening"
+        frontend = "2026-08-29 19:56:31 INFO  [Task] 实例 MAS: 开始执行任务, 数量: 1"
         start, end = MXU_LOG_PROFILE.time_stamp_range
         self.assertEqual(
-            datetime.strptime(line[start:end], MXU_LOG_PROFILE.time_format),
+            datetime.strptime(frontend[start:end], MXU_LOG_PROFILE.time_format),
+            datetime(2026, 8, 29, 19, 56, 31),
+        )
+
+        backend = "[2026-08-29][18:15:43][INFO][mxu_lib::web_server] Web server listening"
+        start, end = MXU_LOG_PROFILE.fallback_time_stamp_range
+        self.assertEqual(
+            datetime.strptime(backend[start:end], MXU_LOG_PROFILE.fallback_time_format),
             datetime(2026, 8, 29, 18, 15, 43),
         )
 

@@ -1841,9 +1841,9 @@ class MaaFWManager(TaskExecuteBase):
         if self.project_root is None or profile is None:
             return None
 
-        preferred: Path | None = None
+        fallback: Path | None = None
         if profile.log_relpath_strftime:
-            preferred = self.project_root / resolve_log_relpath(profile, datetime.now())
+            fallback = self.project_root / resolve_log_relpath(profile, datetime.now())
         log_dir = (
             self.project_root / profile.log_glob_dir if profile.log_glob_dir else None
         )
@@ -1852,42 +1852,46 @@ class MaaFWManager(TaskExecuteBase):
             1, int(_SHELL_LOG_WAIT_SECONDS / _SHELL_LOG_PROBE_INTERVAL_SECONDS)
         )
         for attempt in range(attempts):
-            if preferred is not None and preferred.is_file():
-                logger.info(f"MaaFW 已定位外壳日志：{preferred.name}")
-                return preferred
+            # glob 优先：登记了 glob 目录的家族（MXU），判据串只出现在那份按当日
+            # 启动序号命名的日志里；确定性路径那份是另一个子系统写的，没有判据串。
+            # 没登记 glob 目录的家族（MFAAvalonia）直接落到确定性路径，行为不变。
             if log_dir is not None and log_dir.is_dir():
                 today = datetime.now().strftime("%Y-%m-%d")
                 picked = pick_latest_mxu_log(
                     [path.name for path in log_dir.glob("*.log")], today
                 )
                 if picked is not None:
-                    logger.info(f"MaaFW 已定位外壳日志（旧版命名）：{picked}")
-                    self._apply_legacy_log_timestamps()
+                    logger.info(f"MaaFW 已定位外壳日志：{picked}")
                     return log_dir / picked
+            if fallback is not None and fallback.is_file():
+                logger.info(f"MaaFW 已定位外壳日志（兜底）：{fallback.name}")
+                self._apply_fallback_log_timestamps()
+                return fallback
             if attempt + 1 < attempts:
                 await asyncio.sleep(_SHELL_LOG_PROBE_INTERVAL_SECONDS)
 
         logger.warning(
             f"MaaFW 等待外壳日志超时（{_SHELL_LOG_WAIT_SECONDS}s）："
-            f"{preferred if preferred is not None else log_dir}"
+            f"{log_dir if log_dir is not None else fallback}"
         )
         return None
 
-    def _apply_legacy_log_timestamps(self) -> None:
-        """回退到旧命名日志时，把 LogMonitor 的时间切片换成旧格式那套。
+    def _apply_fallback_log_timestamps(self) -> None:
+        """落到兜底日志时，把 LogMonitor 的时间切片换成那份文件的格式。
 
-        不换的话，首选格式的切片在旧文件上一行都解析不出来，``if_log_start``
-        永远为假 —— 外壳明明在跑，MAS 却读不到任何一行。
+        两份日志出自不同子系统，行首格式不同。不换的话首选格式的切片在兜底
+        文件上一行都解析不出来，``if_log_start`` 永远为假 —— 外壳明明在跑，
+        MAS 却读不到任何一行。
         """
 
         profile = self.log_profile
         if profile is None or self.log_monitor is None:
             return
-        if profile.legacy_time_stamp_range is None or not profile.legacy_time_format:
+        if profile.fallback_time_stamp_range is None or not profile.fallback_time_format:
             return
-        self.log_monitor.time_start = profile.legacy_time_stamp_range[0]
-        self.log_monitor.time_end = profile.legacy_time_stamp_range[1]
-        self.log_monitor.time_format = profile.legacy_time_format
+        self.log_monitor.time_start = profile.fallback_time_stamp_range[0]
+        self.log_monitor.time_end = profile.fallback_time_stamp_range[1]
+        self.log_monitor.time_format = profile.fallback_time_format
 
     def _resolve_log_path(self) -> Path | None:
         """按当前时刻解析外壳日志文件路径。
