@@ -6,6 +6,7 @@
 import { ref, type Ref } from 'vue'
 import { OpenAPI } from '@/api'
 import { dispatchMessage, subscribe, unsubscribe } from './subscriptions'
+import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
 import type {
   WSConnectionState,
   WSDataForType,
@@ -42,7 +43,7 @@ let automaticReconnectEnabled = true
 // 避免旧异步尝试创建的连接把已终止或已被立即重连替换的连接层复活
 let connectGeneration = 0
 let backendDevMode = import.meta.env.DEV === true || window.location.hostname === 'localhost'
-let websocketUrl = 'ws://localhost:36163/api/core/ws'
+let websocketUrl = `${getDefaultWebSocketEndpoint()}${DEFAULT_WS_PATH}`
 
 type DisconnectListener = (event: WSDisconnectEvent) => void
 type CycleFailureListener = () => void
@@ -87,7 +88,7 @@ const fetchWithTimeout = async (
 
 /** 协商主 WebSocket 地址与后端开发模式，失败时回退本地默认配置 */
 const negotiateWebSocketUrl = async (): Promise<string> => {
-  let httpBase = OpenAPI.BASE || 'http://localhost:36163'
+  let httpBase = OpenAPI.BASE || getDefaultHttpEndpoint()
   let websocketBase = toWebSocketBase(httpBase)
   let wsPath = DEFAULT_WS_PATH
 

@@ -36,13 +36,17 @@ import {
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { configureMainSentry, recordMainStartup, setMainTelemetryEnabled } from './services/sentry'
+import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
 import AdmZip = require('adm-zip')
+
+// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
 
 const logger = getLogger('主进程')
-const STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+M'
+const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
 interface ApiResult {
