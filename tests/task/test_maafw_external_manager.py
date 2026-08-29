@@ -568,6 +568,68 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                 )
             )
 
+    # ---- 问题 8：appsettings.json 的实例指针必须还原 ----
+
+    def test_appsettings_instance_pointers_are_restored(self) -> None:
+        asyncio.run(self._test_appsettings_instance_pointers_are_restored())
+
+    async def _test_appsettings_instance_pointers_are_restored(self) -> None:
+        """备份范围只有 config/，但外壳会改写项目根 appsettings.json 的实例指针。
+
+        MAS 删光 instances/*.json 只留自己那个，外壳退出时把 List / Order 收缩成
+        单项、LastActive 指向 MAS 实例。这四键不还原的话，用户的实例集合在外壳
+        UI 里会永久变成只剩 MAS 一个。
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "project"
+            self._make_project(root)
+            app_path = root / "appsettings.json"
+            original = {
+                "Instances.List": "adbe33bf,7ym1fl9",
+                "Instances.Order": "adbe33bf,7ym1fl9",
+                "Instances.LastActive": "adbe33bf",
+                "Instances.LastActiveName": "用户自己的配置",
+                "ShowGui": "未设置",
+            }
+            app_path.write_text(json.dumps(original), encoding="utf-8")
+            (root / "config" / "instances" / "adbe33bf.json").write_bytes(
+                (root / "config" / "instances" / "default.json").read_bytes()
+            )
+
+            manager, runtime, _ = await self._make_manager(root)
+            _FakeLogMonitor.callback_lines = [self._SUCCESS_LOG]
+
+            with self._patched_runtime(runtime, manager, self._no_sleep):
+                self.assertEqual(await manager.check(), "Pass")
+                await manager.prepare()
+                # 模拟外壳退出时把实例集合收缩成只剩 MAS 那一个。
+                app_path.write_text(
+                    json.dumps(
+                        {
+                            "Instances.List": "adbe33bf",
+                            "Instances.Order": "adbe33bf",
+                            "Instances.LastActive": "adbe33bf",
+                            "Instances.LastActiveName": "MAS",
+                            "ShowGui": "未设置",
+                            "Window.Left": "120",
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                await manager.final_task()
+
+            restored = json.loads(app_path.read_text(encoding="utf-8"))
+            for key in (
+                "Instances.List",
+                "Instances.Order",
+                "Instances.LastActive",
+                "Instances.LastActiveName",
+            ):
+                self.assertEqual(restored[key], original[key], key)
+            # 与实例指针无关的键不被回滚：外壳运行期的其他改动应当保留。
+            self.assertEqual(restored["Window.Left"], "120")
+
     # ---- 问题 7：日志路径必须按开跑时刻重算（跨零点） ----
 
     def test_log_path_is_recomputed_per_user_run(self) -> None:

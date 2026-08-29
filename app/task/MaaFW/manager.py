@@ -64,6 +64,16 @@ _COMPLETION_MARKERS = ("任务已全部完成！", "All tasks completed")
 _ABANDON_MARKER = "已放弃本次任务"
 _STATE_DIR_NAME = "MaaFWExternal"
 
+# 项目根 appsettings.json 中描述实例集合与活动实例的键（.NET 平铺写法）。
+# MAS 运行期会删光 instances/*.json 只留自己那个，外壳退出时据此收缩这几项；
+# 它们在备份范围（config/）之外，必须单独快照与还原。
+_APPSETTINGS_INSTANCE_KEYS = (
+    "Instances.List",
+    "Instances.Order",
+    "Instances.LastActive",
+    "Instances.LastActiveName",
+)
+
 # 外壳在控制器初始化失败后仍会输出完成串——该串由 MFA 的 Monitor 组件在任务
 # 队列排空时发出，语义是「没有待办了」，而非「任务都成功了」。实测：控制器初始化
 # 失败 21 毫秒后即出现「任务已全部完成！」，紧随其后的耗时行为 (用时 0h 0m 0s)，
@@ -691,8 +701,10 @@ class MaaFWManager(TaskExecuteBase):
                     "MaaFW 残留外壳无法确认已结束，已保留备份并拒绝恢复 config"
                 )
             logger.info(f"MaaFW 已结束残留外壳，准备恢复：{self.exe_path}")
-        self._recover_residual_backup()
-        self._backup_project_config()
+        # copytree / rmtree / rglob 是同步阻塞调用，项目目录可达数百 MB；直接跑在
+        # 事件循环上会卡住整个后端（含 WebSocket 心跳与其他脚本的调度）。
+        await asyncio.to_thread(self._recover_residual_backup)
+        await asyncio.to_thread(self._backup_project_config)
         # 运行配置按用户在运行循环里逐个写入，备份只发布一次。
 
     def _ensure_virtual_user(self) -> UserItem:
@@ -742,11 +754,68 @@ class MaaFWManager(TaskExecuteBase):
             "script_id": str(self.script_info.script_id),
             "project_path": str(self.project_root.resolve()),
             "config_exists": self.config_existed,
+            # 备份范围只有 config/，但外壳会改写项目根 appsettings.json 里的实例
+            # 指针（MAS 删光 instances/*.json 只留自己那个，外壳退出时把 List /
+            # Order 收缩成单项、LastActive 指向 MAS 实例）。这四键不还原的话，
+            # 用户的实例集合在外壳 UI 里会永久变成只剩 MAS 一个。存进 manifest
+            # 而不是另开文件：manifest 是崩溃恢复的唯一可信入口，也是原子写。
+            "appsettings_instances": self._snapshot_appsettings_instance_keys(),
         }
         atomic_write_maafw_config(self.manifest_path, manifest, journal=False)
         self.backup_published = True
         self.restored = False
         logger.info(f"MaaFW config 已备份到 MAS 数据目录：{self.backup_path}")
+
+    def _snapshot_appsettings_instance_keys(self) -> dict[str, Any]:
+        """快照项目根 ``appsettings.json`` 里的实例指针键。
+
+        只取 ``_APPSETTINGS_INSTANCE_KEYS`` 这几项，不整文件快照——外壳在运行期
+        还会写窗口位置、公告已读等与本层无关的设置，整文件还原会把用户这些改动
+        一并回滚。缺失的键不进快照，还原时按「原本就没有」处理并删除。
+        """
+
+        if self.project_root is None:
+            return {}
+        path = self.project_root / "appsettings.json"
+        try:
+            settings = _read_json_object(path, label="MaaFW appsettings")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"MaaFW 读取 appsettings.json 失败，跳过实例指针快照：{exc}")
+            return {}
+        return {key: settings[key] for key in _APPSETTINGS_INSTANCE_KEYS if key in settings}
+
+    def _restore_appsettings_instance_keys(self, snapshot: Any) -> None:
+        """把实例指针键还原成本轮运行前的样子。
+
+        ``snapshot`` 为 ``None`` 时说明这份 manifest 由旧版本写出（不含该字段），
+        按既有行为跳过，不报错。整个过程自保护：还原实例指针失败不应阻断 config
+        目录本身的还原结果。
+        """
+
+        if not isinstance(snapshot, dict) or self.project_root is None:
+            return
+        path = self.project_root / "appsettings.json"
+        if not path.is_file():
+            return
+        try:
+            settings = _read_json_object(path, label="MaaFW appsettings")
+            changed = False
+            for key in _APPSETTINGS_INSTANCE_KEYS:
+                if key in snapshot:
+                    if settings.get(key) != snapshot[key]:
+                        settings[key] = snapshot[key]
+                        changed = True
+                elif key in settings:
+                    # 本轮运行前没有这个键，是外壳新写的，删回去。
+                    del settings[key]
+                    changed = True
+            if changed:
+                atomic_write_maafw_config(path, settings, journal=False)
+                logger.info("MaaFW 已还原 appsettings.json 的实例指针")
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(
+                f"MaaFW 还原 appsettings.json 实例指针失败：{exc}"
+            )
 
     def _has_residual_state(self) -> bool:
         """返回是否存在本模块留下的、需要启动前处理的状态。"""
@@ -830,6 +899,8 @@ class MaaFWManager(TaskExecuteBase):
         _remove_owned_path(self.config_dir)
         if config_existed:
             temporary_restore.rename(self.config_dir)
+
+        self._restore_appsettings_instance_keys(manifest.get("appsettings_instances"))
 
         _remove_owned_path(self.state_dir)
         self.restored = True
@@ -1124,7 +1195,7 @@ class MaaFWManager(TaskExecuteBase):
 
         if needs_restore and process_stopped:
             try:
-                self._restore_backup_from_state()
+                await asyncio.to_thread(self._restore_backup_from_state)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"恢复 MaaFW 配置失败：{exc}")
                 logger.opt(exception=True).warning(f"恢复 MaaFW 配置失败：{exc}")
