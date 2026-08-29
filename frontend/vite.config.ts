@@ -23,7 +23,11 @@ const sentryUploadPlugin = sentryAuthToken
       authToken: sentryAuthToken,
       release: {
         name: sentryRelease,
-        setCommits: false,
+        setCommits: {
+          auto: true,
+          ignoreMissing: true,
+          ignoreEmpty: true,
+        },
       },
       sourcemaps: {
         filesToDeleteAfterUpload: ['dist/**/*.map'],

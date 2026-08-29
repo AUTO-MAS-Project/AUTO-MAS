@@ -13,6 +13,7 @@ import { MirrorService } from './mirrorService'
 import { isDevelopmentEnvironment } from './environmentService'
 
 import { getLogger } from './logger'
+import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
 const logger = getLogger('后端服务')
 const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 
@@ -103,6 +104,31 @@ export class BackendService {
   }
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
+    const startedAt = performance.now()
+
+    return observeMainOperation(
+      'AUTO-MAS backend startup',
+      'auto_mas.backend.start',
+      { component: 'electron-main' },
+      async () => {
+        const result = await this.startBackendProcess(options)
+        const attributes = {
+          component: 'electron-main',
+          outcome: result.success ? 'success' : 'failure',
+        }
+
+        recordMainCount('auto_mas.backend.starts', attributes)
+        recordMainDuration(
+          'auto_mas.backend.startup.duration',
+          performance.now() - startedAt,
+          attributes
+        )
+        return result
+      }
+    )
+  }
+
+  private async startBackendProcess(options?: BackendStartOptions): Promise<BackendStartResult> {
     // 检查是否已经在运行
     if (this.isTrackedProcessRunning()) {
       logger.info('后端服务已在运行，等待健康检查')
