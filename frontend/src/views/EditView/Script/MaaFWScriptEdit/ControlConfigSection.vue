@@ -187,10 +187,30 @@
             style="width: 100%"
             @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
           >
-            <a-select-option value="AttachOnly">仅附加，不主动启动</a-select-option>
-            <a-select-option value="DirectExe">直接启动游戏 exe</a-select-option>
-            <a-select-option value="LauncherExe">启动器 exe，再附加游戏</a-select-option>
-            <a-select-option value="URL">启动协议 URL，再附加游戏</a-select-option>
+            <a-select-option value="AttachOnly">
+              <div class="launch-option">
+                <span class="launch-option-title">我自己启动游戏</span>
+                <span class="launch-option-hint">MAS 只接管已经运行的游戏</span>
+              </div>
+            </a-select-option>
+            <a-select-option value="DirectExe">
+              <div class="launch-option">
+                <span class="launch-option-title">让 MAS 启动游戏</span>
+                <span class="launch-option-hint">选游戏本体的 exe</span>
+              </div>
+            </a-select-option>
+            <a-select-option value="LauncherExe">
+              <div class="launch-option">
+                <span class="launch-option-title">让 MAS 启动官方启动器</span>
+                <span class="launch-option-hint">选启动器 exe，MAS 再等游戏本体出现</span>
+              </div>
+            </a-select-option>
+            <a-select-option value="URL">
+              <div class="launch-option">
+                <span class="launch-option-title">让 MAS 用快捷链接启动</span>
+                <span class="launch-option-hint">填 steam:// 这类协议链接</span>
+              </div>
+            </a-select-option>
           </a-select>
           <div class="field-help">{{ launchModeDescription }}</div>
         </a-form-item>
@@ -416,13 +436,13 @@ const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.Launch
 const launchModeDescription = computed(() => {
   switch (launchMode.value) {
     case 'DirectExe':
-      return '直接启动实际游戏 exe；目标进程字段用于后续附加与检测。'
+      return 'MAS 会启动你选的游戏 exe，运行结束后按下方设置决定是否关闭它。'
     case 'LauncherExe':
-      return '启动启动器 exe，再按目标进程字段等待并附加实际游戏。'
+      return '启动器和游戏通常不是同一个进程，所以还要在下方告诉 MAS 游戏本体叫什么，它才知道该等谁。'
     case 'URL':
-      return '交给系统协议处理器启动，再按目标进程字段等待并附加实际游戏。'
+      return '交给系统按链接启动（如 Steam）。同样要在下方告诉 MAS 游戏本体叫什么，它才知道该等谁。'
     default:
-      return '不启动任何程序，只附加已经运行的目标进程。'
+      return 'MAS 不会启动任何程序，只等你把游戏开起来后接管它。'
   }
 })
 const targetProcessMissing = computed(
@@ -484,6 +504,22 @@ const targetProcessMissing = computed(
 
 .modern-input {
   border-radius: 8px;
+}
+
+.launch-option {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+  padding: 2px 0;
+}
+
+.launch-option-title {
+  font-weight: 500;
+}
+
+.launch-option-hint {
+  font-size: 12px;
+  opacity: 0.65;
 }
 
 .field-help {
