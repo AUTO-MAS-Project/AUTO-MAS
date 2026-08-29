@@ -23,6 +23,7 @@
 
 from .core import router as core_router
 from .info import router as info_router
+from .maafw import router as maafw_router
 from .scripts import router as scripts_router
 from .plan import router as plan_router
 from .emulator import router as emulator_router
@@ -43,6 +44,7 @@ except ImportError:
 __all__ = [
     "core_router",
     "info_router",
+    "maafw_router",
     "scripts_router",
     "plan_router",
     "emulator_router",

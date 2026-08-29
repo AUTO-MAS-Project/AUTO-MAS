@@ -300,6 +300,7 @@ def main():
         core_router,
         info_router,
         scripts_router,
+        maafw_router,
         plan_router,
         emulator_router,
         queue_router,
@@ -330,6 +331,7 @@ def main():
     app.include_router(core_router)
     app.include_router(info_router)
     app.include_router(scripts_router)
+    app.include_router(maafw_router)
     app.include_router(plan_router)
     app.include_router(emulator_router)
     app.include_router(queue_router)
