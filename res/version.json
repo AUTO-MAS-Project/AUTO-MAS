@@ -7,7 +7,7 @@
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
-                "回滚启动时的遮罩",
+                "回滚启动时的遮罩 by [@HarcoChen](https://github.com/HarcoChen)",
                 "匿名遥测 接入 Electron 主进程与渲染进程错误上报，增加应用启动、后端启动和任务执行的性能指标，抑制无异常的日志事件并遮蔽上报内容中的本机用户名，并关联 Sentry 发布提交与生产部署信息 by [@ClozyA](https://github.com/ClozyA)"
             ],
             "开发流程": [],
