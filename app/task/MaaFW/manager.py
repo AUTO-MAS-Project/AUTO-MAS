@@ -1198,8 +1198,22 @@ class MaaFWManager(TaskExecuteBase):
         `雷电模拟器-LDPlayer`，于是「未找到设备」，自动运行直接失败。
 
         本层是模拟器的实际启动方，adb 地址是手上最硬的事实，写进去即可绕开命名
-        差异。名字保持继承不动：地址匹配不到时它还能当兜底，且用户在外壳 UI 里
-        看到的仍是自己熟悉的名字。
+        差异 —— 但只对新版外壳有效。**继承来的名字必须一并清掉**，理由见下。
+
+        旧版外壳（如 MaaYYs v3.14.8 内置的那版）根本没有 ``adbDeviceAddress``
+        这个字段，只按名字匹配，且逻辑是硬的：
+
+            F?.adbDeviceName
+              ? (按名字过滤，命中唯一才连)
+              : (设备数 > 0 就自动选第一个)
+
+        而外壳日志里的设备名（``ldplayer-LDPlayer``、``MuMu安卓设备-MuMuPlayer v5+``）
+        是 **MaaFramework 枚举出来的**，前缀不是本层用的类型串，本层又刻意不加载
+        MaaFW DLL，复现不了也不能猜。留着一个过期名字的结果是硬失败；清掉则退化成
+        「自动选第一个设备」，而本层刚刚亲手把目标模拟器起了起来。
+
+        取舍写明：同时有多个模拟器在跑时，旧版外壳可能选错那个。这比「必然失败」
+        好，但不是没有代价 —— 新版外壳靠地址精确匹配，不受影响。
 
         Adb 之外的控制方式（Win32 / PlayCover 等）没有 adb 地址，原样跳过。
         """
@@ -1209,11 +1223,16 @@ class MaaFWManager(TaskExecuteBase):
             return
         saved = base.get("savedDevice")
         saved = dict(saved) if isinstance(saved, dict) else {}
-        if saved.get("adbDeviceAddress") == info.adb_address:
-            return
+        stale_name = saved.pop("adbDeviceName", None)
         saved["adbDeviceAddress"] = info.adb_address
         base["savedDevice"] = saved
         logger.info(f"MFW 已写入 MXU 连接目标：{info.adb_address}")
+        if stale_name:
+            logger.info(
+                f"MFW 已清除继承的 MXU 设备名 {stale_name!r}："
+                "旧版外壳只按名字匹配，而这个名字由 MaaFramework 枚举生成、"
+                "本层无从复现；清掉后外壳会自动选用当前设备"
+            )
 
     def _write_mfaavalonia_runtime_config(self) -> None:
         if (

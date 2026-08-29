@@ -130,12 +130,19 @@ class MxuSavedDeviceTest(unittest.TestCase):
         self.manager = MaaFWManager.__new__(MaaFWManager)
         self.manager.emulator_info = SimpleNamespace(adb_address="emulator-5554")
 
-    def test_writes_the_address_and_keeps_the_name(self) -> None:
+    def test_writes_the_address_and_drops_the_stale_name(self) -> None:
+        """名字必须清掉，留着就是硬失败。
+
+        旧版外壳没有 adbDeviceAddress，只按名字匹配且命中唯一才连；而外壳里的
+        设备名由 MaaFramework 枚举生成（ldplayer-LDPlayer），本层不加载 MaaFW DLL，
+        复现不了也不猜。清掉后旧版外壳退化成「自动选第一个设备」，而本层刚把目标
+        模拟器起起来；新版外壳则靠地址精确匹配。
+        """
+
         base = {"savedDevice": {"adbDeviceName": "雷电模拟器-LDPlayer"}}
         self.manager._apply_mxu_saved_device(base)
         self.assertEqual(base["savedDevice"]["adbDeviceAddress"], "emulator-5554")
-        # 名字保留：地址匹配不到时它还能兜底，用户在外壳里看到的也还是熟悉的名字。
-        self.assertEqual(base["savedDevice"]["adbDeviceName"], "雷电模拟器-LDPlayer")
+        self.assertNotIn("adbDeviceName", base["savedDevice"])
 
     def test_creates_saved_device_when_absent(self) -> None:
         base = {}
@@ -147,6 +154,7 @@ class MxuSavedDeviceTest(unittest.TestCase):
         self.manager._apply_mxu_saved_device(base)
         self.assertEqual(base["id"], "keep")
         self.assertEqual(base["tasks"], [{"taskName": "x"}])
+        # savedDevice 里除设备标识外的键原样保留。
         self.assertEqual(base["savedDevice"]["a"], 1)
 
     def test_no_emulator_leaves_base_untouched(self) -> None:
