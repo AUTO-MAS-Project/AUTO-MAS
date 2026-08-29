@@ -464,6 +464,13 @@ import { Service, TaskCreateIn } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_LOG_UPDATED,
+  WS_TASK_NOTICE,
+  type WSTaskLogUpdatedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import type { PathDiscoveryCandidate } from '@/types/electron'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
@@ -576,17 +583,17 @@ const updateModal = reactive({
 })
 
 const updateSession = reactive({
-  subscriptionId: null as string | null,
-  websocketId: '',
+  subscriptionIds: [] as string[],
+  taskId: '',
   timeout: null as number | null,
 })
 
 const clearUpdateSession = () => {
-  if (updateSession.subscriptionId) {
-    unsubscribe(updateSession.subscriptionId)
-    updateSession.subscriptionId = null
+  for (const subscriptionId of updateSession.subscriptionIds) {
+    unsubscribe(subscriptionId)
   }
-  updateSession.websocketId = ''
+  updateSession.subscriptionIds = []
+  updateSession.taskId = ''
   if (updateSession.timeout) {
     window.clearTimeout(updateSession.timeout)
     updateSession.timeout = null
@@ -594,7 +601,7 @@ const clearUpdateSession = () => {
 }
 
 const stopUpdateSession = async (): Promise<boolean> => {
-  const taskId = updateSession.websocketId
+  const taskId = updateSession.taskId
   if (!taskId) {
     clearUpdateSession()
     return true
@@ -651,25 +658,28 @@ const startUpdate = async () => {
       throw new Error(response.message || '启动鸣潮更新失败')
     }
     updateModal.running = true
-    updateSession.websocketId = response.taskId
-    updateSession.subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'Update' && typeof wsMessage.data?.log === 'string') {
-        updateModal.log = wsMessage.data.log
-      }
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`鸣潮更新失败: ${String(wsMessage.data.Error)}`)
-        updateModal.running = false
-        updateModal.open = false
-        void stopUpdateSession()
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+    updateSession.taskId = response.taskId
+    updateSession.subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskLogUpdatedData
+        updateModal.log = data.log
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`鸣潮更新失败: ${data.message}`)
+          updateModal.running = false
+          updateModal.open = false
+          void stopUpdateSession()
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         message.success('鸣潮更新任务已结束')
         updateModal.running = false
         updateModal.open = false
         void stopUpdateSession()
-      }
-    })
+      }),
+    ]
     updateSession.timeout = window.setTimeout(
       () => {
         message.error('鸣潮更新超时，已自动停止')

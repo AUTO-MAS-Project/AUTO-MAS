@@ -14,7 +14,8 @@
             "程序优化": [
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)"
+                "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)",
+                "重构 WebSocket 通信子系统，统一前后端实时消息协议并收紧连接与关闭流程 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "开发流程": [
                 "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
@@ -24,7 +25,8 @@
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复开机自启动后台任务异常未记录问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)"
+                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "日志采集 修复多账号任务各用户节点详情被合并推送的问题，报告按用户分开展示节点归属"
             ]
         },
         "v5.4.0": {

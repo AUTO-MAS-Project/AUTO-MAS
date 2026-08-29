@@ -2,7 +2,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 
 // 调度台状态
-export type SchedulerStatus = '空闲' | '运行' | '结束'
+export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
 
 // 新增：任务总览数据类型
 export interface User {
@@ -23,6 +23,7 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
   空闲: 'default',
   运行: 'processing',
   结束: 'success',
+  异常: 'error',
 }
 
 // 队列状态 -> 颜色
@@ -36,6 +37,11 @@ export const getQueueStatusColor = (status: string): string => {
 
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [{ label: '自动代理', value: TaskCreateIn.mode.AUTO_PROXY }]
+
+export const getTaskModeOptions = (supportedModes?: string[] | null) => {
+  if (!supportedModes) return TASK_MODE_OPTIONS
+  return TASK_MODE_OPTIONS.filter(option => supportedModes.includes(option.value))
+}
 
 // 电源操作映射
 export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
@@ -77,8 +83,8 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  websocketId: string | null
-  subscriptionId?: string | null
+  taskId: string | null
+  subscriptionIds?: string[]
   taskQueue: QueueItem[]
   userQueue: QueueItem[]
   logs: LogEntry[]
@@ -94,12 +100,4 @@ export interface SchedulerTab {
   runningModeLabel?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
-}
-
-export interface TaskMessage {
-  title: string
-  content: string
-  needInput: boolean
-  messageId?: string
-  taskId?: string
 }

@@ -556,7 +556,7 @@ import { parseStatusTagList } from '@/composables/useStatusTag'
 
 interface Props {
   scripts: Script[]
-  activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>

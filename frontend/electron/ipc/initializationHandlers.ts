@@ -28,9 +28,9 @@ function getInitService(targetBranch: string = 'dev'): InitializationService {
 }
 
 /**
- * 获取后端服务实例
+ * 获取后端服务实例（主进程协调关闭时用于开发模式判定与限定范围强杀）
  */
-function getBackendService(): BackendService {
+export function getBackendService(): BackendService {
   if (!backendService) {
     const appRoot = getAppRoot()
     const initService = getInitService()

@@ -26,12 +26,7 @@
             完成后点击“保存设置”结束本次会话。
           </p>
           <div class="mask-actions">
-            <a-button
-              v-if="okwwWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveOkwwConfig"
-            >
+            <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
               保存设置
             </a-button>
           </div>
@@ -461,6 +456,11 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -482,8 +482,8 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 const okwwConfigLoading = ref(false)
-const okwwSubscriptionId = ref<string | null>(null)
-const okwwWebsocketId = ref<string | null>(null)
+const okwwSubscriptionIds = ref<string[]>([])
+const okwwTaskId = ref<string | null>(null)
 const showOkwwConfigMask = ref(false)
 const stoppingOkwwConfig = ref(false)
 let okwwConfigTimeout: number | null = null
@@ -626,11 +626,11 @@ const handleConfigModeChange = async (value: boolean | string) => {
 }
 
 const clearOkwwConfigSession = () => {
-  if (okwwSubscriptionId.value) {
-    unsubscribe(okwwSubscriptionId.value)
-    okwwSubscriptionId.value = null
+  for (const subscriptionId of okwwSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  okwwWebsocketId.value = null
+  okwwSubscriptionIds.value = []
+  okwwTaskId.value = null
   showOkwwConfigMask.value = false
   if (okwwConfigTimeout) {
     window.clearTimeout(okwwConfigTimeout)
@@ -639,7 +639,7 @@ const clearOkwwConfigSession = () => {
 }
 
 const stopOkwwConfigSession = async (keepOnFailure = false): Promise<boolean> => {
-  const taskId = okwwWebsocketId.value
+  const taskId = okwwTaskId.value
   if (!taskId) {
     clearOkwwConfigSession()
     return true
@@ -759,23 +759,20 @@ const handleOkwwConfig = async () => {
     }
 
     showOkwwConfigMask.value = true
-    okwwWebsocketId.value = response.taskId
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`ok-ww 设置连接失败: ${String(wsMessage.data)}`)
-        void stopOkwwConfigSession()
-        return
-      }
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`ok-ww 设置失败: ${String(wsMessage.data.Error)}`)
-        void stopOkwwConfigSession()
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+    okwwTaskId.value = response.taskId
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`ok-ww 设置失败: ${data.message}`)
+          void stopOkwwConfigSession()
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         clearOkwwConfigSession()
-      }
-    })
-    okwwSubscriptionId.value = subscriptionId
+      }),
+    ]
+    okwwSubscriptionIds.value = subscriptionIds
     const configTarget =
       formData.Info.Mode === '直控'
         ? '脚本直控'
@@ -794,7 +791,7 @@ const handleOkwwConfig = async () => {
 }
 
 const handleSaveOkwwConfig = async () => {
-  if (!okwwWebsocketId.value) return
+  if (!okwwTaskId.value) return
   if (await stopOkwwConfigSession(true)) {
     message.success('ok-ww 设置已保存')
   } else {

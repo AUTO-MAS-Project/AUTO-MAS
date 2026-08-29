@@ -66,7 +66,7 @@
         </p>
         <div class="mask-actions">
           <a-button
-            v-if="generalWebsocketId"
+            v-if="generalTaskId"
             type="primary"
             size="large"
             @click="handleSaveGeneralConfig"
@@ -288,6 +288,12 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import WebhookManager from '@/components/WebhookManager.vue'
@@ -318,8 +324,8 @@ const scriptName = ref('')
 // 通用配置相关
 const generalConfigLoading = ref(false)
 const configModeSaving = ref(false)
-const generalSubscriptionId = ref<string | null>(null)
-const generalWebsocketId = ref<string | null>(null)
+const generalSubscriptionIds = ref<string[]>([])
+const generalTaskId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
@@ -587,10 +593,12 @@ const handleGeneralConfig = async () => {
     showGeneralConfigMask.value = true
 
     // 如果已有连接，先断开并清理
-    if (generalSubscriptionId.value) {
-      unsubscribe(generalSubscriptionId.value)
-      generalSubscriptionId.value = null
-      generalWebsocketId.value = null
+    if (generalSubscriptionIds.value.length > 0) {
+      for (const subscriptionId of generalSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
+      }
+      generalSubscriptionIds.value = []
+      generalTaskId.value = null
       showGeneralConfigMask.value = false
       configTimedOut.value = false
       if (generalConfigTimeout) {
@@ -609,60 +617,44 @@ const handleGeneralConfig = async () => {
     if (response && response.taskId) {
       const wsId = response.taskId
 
-      logger.debug(`订阅 websocketId: ${wsId}`)
+      logger.debug(`订阅 taskId: ${wsId}`)
 
       // 订阅 websocket
-      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          logger.error(`用户 ${formData.userName} 通用配置错误: ${wsMessage.data}`)
-          message.error(`通用配置连接失败: ${wsMessage.data}`)
-          unsubscribe(subscriptionId)
-          generalSubscriptionId.value = null
-          generalWebsocketId.value = null
-          showGeneralConfigMask.value = false
-          configTimedOut.value = false
-          if (generalConfigTimeout) {
-            window.clearTimeout(generalConfigTimeout)
-            generalConfigTimeout = null
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            logger.error(`用户 ${formData.userName} 通用配置异常: ${data.message}`)
+            message.error(`通用配置失败: ${data.message}`)
           }
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(`用户 ${formData.userName} 通用配置异常: ${wsMessage.data.Error}`)
-          message.error(`通用配置失败: ${wsMessage.data.Error}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
+        }),
+        // 处理任务结束消息
+        subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
+          const result = data.result
           if (result && !result.includes('异常') && !result.includes('错误')) {
             message.success(`用户 ${formData.userName} 的配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
-          generalSubscriptionId.value = null
-          generalWebsocketId.value = null
+          for (const subscriptionId of generalSubscriptionIds.value) {
+            unsubscribe(subscriptionId)
+          }
+          generalSubscriptionIds.value = []
+          generalTaskId.value = null
           showGeneralConfigMask.value = false
           configTimedOut.value = false
           if (generalConfigTimeout) {
             window.clearTimeout(generalConfigTimeout)
             generalConfigTimeout = null
           }
-        }
-      })
+        }),
+      ]
 
-      generalSubscriptionId.value = subscriptionId
-      generalWebsocketId.value = wsId
+      generalSubscriptionIds.value = subscriptionIds
+      generalTaskId.value = wsId
       showGeneralConfigMask.value = true
       configTimedOut.value = false
       message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
@@ -670,7 +662,7 @@ const handleGeneralConfig = async () => {
       // 设置 30 分钟超时自动断开
       generalConfigTimeout = window.setTimeout(
         async () => {
-          if (generalSubscriptionId.value && generalWebsocketId.value) {
+          if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
             // 超时后自动保存配置
             message.warning(
               `用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`
@@ -678,15 +670,15 @@ const handleGeneralConfig = async () => {
             logger.warn('配置会话已超时，自动执行保存操作')
 
             try {
-              const websocketId = generalWebsocketId.value
-              const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+              const taskId = generalTaskId.value
+              const response = await Service.stopTaskApiDispatchStopPost({ taskId })
 
               if (response && response.code === 200) {
-                if (generalSubscriptionId.value) {
-                  unsubscribe(generalSubscriptionId.value)
-                  generalSubscriptionId.value = null
+                for (const subscriptionId of generalSubscriptionIds.value) {
+                  unsubscribe(subscriptionId)
                 }
-                generalWebsocketId.value = null
+                generalSubscriptionIds.value = []
+                generalTaskId.value = null
                 showGeneralConfigMask.value = false
                 configTimedOut.value = false
                 message.success('配置会话超时，已自动保存配置')
@@ -721,19 +713,19 @@ const handleGeneralConfig = async () => {
 
 const handleSaveGeneralConfig = async () => {
   try {
-    const websocketId = generalWebsocketId.value
-    if (!websocketId) {
+    const taskId = generalTaskId.value
+    if (!taskId) {
       message.error('未找到活动的配置会话')
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response && response.code === 200) {
-      if (generalSubscriptionId.value) {
-        unsubscribe(generalSubscriptionId.value)
-        generalSubscriptionId.value = null
+      for (const subscriptionId of generalSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
       }
-      generalWebsocketId.value = null
+      generalSubscriptionIds.value = []
+      generalTaskId.value = null
       showGeneralConfigMask.value = false
       configTimedOut.value = false
       if (generalConfigTimeout) {
@@ -758,10 +750,12 @@ const handleWebhookChange = () => {
 }
 
 const handleCancel = () => {
-  if (generalSubscriptionId.value) {
-    unsubscribe(generalSubscriptionId.value)
-    generalSubscriptionId.value = null
-    generalWebsocketId.value = null
+  if (generalSubscriptionIds.value.length > 0) {
+    for (const subscriptionId of generalSubscriptionIds.value) {
+      unsubscribe(subscriptionId)
+    }
+    generalSubscriptionIds.value = []
+    generalTaskId.value = null
     showGeneralConfigMask.value = false
     configTimedOut.value = false
     if (generalConfigTimeout) {

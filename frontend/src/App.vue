@@ -12,7 +12,6 @@ import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
 import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
-import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import { useCursorEffectStore } from './stores/cursorEffect'
@@ -97,9 +96,6 @@ onMounted(async () => {
 
       <!-- 全局电源倒计时弹窗 -->
       <GlobalPowerCountdown />
-
-      <!-- WebSocket 消息监听组件 -->
-      <WebSocketMessageListener />
     </template>
 
     <!-- 应用关闭遮罩 - 始终可用 -->

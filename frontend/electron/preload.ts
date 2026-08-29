@@ -23,6 +23,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
+  // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
+  onSystemResume: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('system-resumed', listener)
+    return () => ipcRenderer.removeListener('system-resumed', listener)
+  },
+  onAppCloseRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('app-close-requested', listener)
+    return () => ipcRenderer.removeListener('app-close-requested', listener)
+  },
+
   // 窗口可见性/后台状态
   getWindowActivity: () => ipcRenderer.invoke('get-window-activity'),
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => {
