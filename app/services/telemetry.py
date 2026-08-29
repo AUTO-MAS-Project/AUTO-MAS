@@ -22,11 +22,15 @@
 
 import json
 import re
+from contextlib import contextmanager
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import sentry_sdk
+from sentry_sdk import metrics
 from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.loguru import LoguruIntegration
 
 
 SENTRY_DSN = (
@@ -56,6 +60,11 @@ PATH_DATA_MARKERS = {"file", "filename", "path", "uri", "url"}
 _sentry_release: str | None = None
 _sentry_dist: str | None = None
 _sentry_started = False
+
+NOISY_TRANSACTIONS = {
+    "/api/core/health",
+    "/api/core/ws_meta",
+}
 
 
 def _strip_url_query(url: str) -> str:
@@ -118,10 +127,15 @@ def _sanitize_stacktrace(stacktrace: Any) -> None:
             frame.pop("module_metadata", None)
 
 
-def sanitize_event(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
+def sanitize_event(
+    event: dict[str, Any], hint: dict[str, Any]
+) -> dict[str, Any] | None:
     """在发送前移除用户、请求内容和本机绝对路径。"""
 
-    del hint
+    log_record = hint.get("log_record")
+    if log_record is not None and not getattr(log_record, "exc_info", None):
+        return None
+
     event.pop("user", None)
     event.pop("extra", None)
 
@@ -227,13 +241,34 @@ def _start_sentry(release: str, dist: str | None = None) -> None:
         max_request_body_size="never",
         server_name="AUTO-MAS",
         integrations=[
-            LoggingIntegration(level=None, event_level=None, sentry_logs_level=None)
+            LoggingIntegration(level=None, event_level=None, sentry_logs_level=None),
+            LoguruIntegration(level=None, event_level=30, sentry_logs_level=None),
         ],
-        traces_sample_rate=0.1,
+        traces_sampler=sample_trace,
         before_send=sanitize_event,
         before_send_transaction=sanitize_event,
     )
     _sentry_started = True
+
+
+def sample_trace(sampling_context: dict[str, Any]) -> float:
+    """优先保留任务链路，跳过高频探活，并限制普通请求的配额占用。"""
+
+    transaction_context = sampling_context.get("transaction_context")
+    if not isinstance(transaction_context, dict):
+        return 0.02
+
+    name = transaction_context.get("name")
+    op = transaction_context.get("op")
+    if name in NOISY_TRANSACTIONS:
+        return 0.0
+    if op == "auto_mas.task.run":
+        return 0.25
+
+    parent_sampled = sampling_context.get("parent_sampled")
+    if isinstance(parent_sampled, bool):
+        return 1.0 if parent_sampled else 0.0
+    return 0.02
 
 
 def set_telemetry_enabled(enabled: bool) -> None:
@@ -249,7 +284,75 @@ def set_telemetry_enabled(enabled: bool) -> None:
         return
 
     if not _sentry_started and _sentry_release is not None:
-        _start_sentry(_sentry_release, _sentry_dist)
+        if _sentry_dist is None:
+            _start_sentry(_sentry_release)
+        else:
+            _start_sentry(_sentry_release, _sentry_dist)
+
+
+def record_count(
+    name: str,
+    value: float = 1,
+    *,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+) -> None:
+    """记录低基数计数指标；遥测关闭或 SDK 异常时保持空操作。"""
+
+    if not _sentry_started:
+        return
+
+    try:
+        metrics.count(name, value, attributes=dict(attributes or {}))
+    except Exception:
+        pass
+
+
+def record_distribution(
+    name: str,
+    value: float,
+    *,
+    unit: str | None = None,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+) -> None:
+    """记录低基数分布指标；遥测失败不能影响业务流程。"""
+
+    if not _sentry_started:
+        return
+
+    try:
+        metrics.distribution(
+            name,
+            value,
+            unit=unit,
+            attributes=dict(attributes or {}),
+        )
+    except Exception:
+        pass
+
+
+@contextmanager
+def observe_span(
+    *,
+    name: str,
+    op: str,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+    force_transaction: bool = False,
+) -> Iterator[None]:
+    """在遥测开启时创建 Span，关闭时保持相同调用语义。"""
+
+    if not _sentry_started:
+        yield
+        return
+
+    start_observation = (
+        sentry_sdk.start_span
+        if not force_transaction and sentry_sdk.get_current_span() is not None
+        else sentry_sdk.start_transaction
+    )
+    with start_observation(name=name, op=op) as span:
+        for key, value in (attributes or {}).items():
+            span.set_data(key, value)
+        yield
 
 
 def init_sentry(
@@ -281,7 +384,11 @@ def init_sentry(
 __all__ = [
     "init_sentry",
     "is_telemetry_enabled",
+    "observe_span",
+    "record_count",
+    "record_distribution",
     "resolve_sentry_dist",
+    "sample_trace",
     "sanitize_event",
     "set_telemetry_enabled",
 ]
