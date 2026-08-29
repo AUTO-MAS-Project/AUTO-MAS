@@ -1594,7 +1594,10 @@ class MaaFWExternalManagerTest(unittest.TestCase):
     def test_dispatch_branch_is_registered(self) -> None:
         source = Path("app/core/task_manager.py").read_text(encoding="utf-8")
         self.assertIn("elif isinstance(script_config, MaaFWConfig):", source)
-        self.assertIn("task_item = MaaFWManager(script_item)", source)
+        # 走 `task.XxxManager` 而不是裸名：app.core.task_manager 顶层是
+        # `import app.task as task`（惰性到子模块解析时才真正取类），与其余
+        # 八个脚本类型的分派写法保持一致。
+        self.assertIn("task_item = task.MaaFWManager(script_item)", source)
 
     # ---- 用户层迁移：用户遍历 / 字段回退 ----
 
