@@ -134,7 +134,7 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 - **通用脚本**：`PushLogEnabled`（web UI 配置）控制是否采集并聚合推送日志。
 - **OK-WW专项**：用户级 `Notify.PushLogEnabled`（用户编辑页「是否采集节点详情」，与快速配置同排）
   ——关闭时 **AutoProxy 侧不创建 log_box**（不读日志、不翻译、不匹配），该用户 push_log 为空，
-  报告聚合（`build_push_log_text`）自然不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
+  报告聚合（`build_user_result_text`）自然不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
   的 `prepare()` 按开关启停 + `final_task()` 判空收尾。
 
 **给未来适配器的模式**：开关 = 专项自己的配置项，在专项**是否创建/启用 log_box** 的
@@ -230,30 +230,28 @@ def resolve(results):
 push_log 落进 `cur_user_item.push_log`（`list[(log_type, text)]`）后，后续聚合与
 追加统一走 `app/tools/push_log.py`，专项**不要**自行拼接实现：
 
-- `build_push_log_text(users, has_uncompleted)`：聚合各用户 push_log 为报告文本，
-  每条条目独占一行；「失败」类型条目仅在任务存在未完成用户时纳入（与 MAS 原生
-  推送策略一致）。专项在 `manager.final_task` 汇总时调用。
+- `build_user_result_text(users, has_uncompleted)`：按用户交错组装「用户结果行 +
+  该用户节点详情」为报告正文，多账号任务时各用户节点归属清晰；「失败」类型条目
+  仅在任务存在未完成用户时纳入（与 MAS 原生推送策略一致），无节点的用户只输出
+  结果行。
 - `append_push_log(message_text, push_log, separator="\n")`：把推送日志追加到通知
-  正文，**默认以单个换行分隔**；专项（如 `tools/notify.py`）按默认调用即可，无需
-  传 `separator`，push_log 为空时原样返回正文。
+  正文，**默认以单个换行分隔**；push_log 为空时原样返回正文。
 
-> ⚠️ **报告注入是两个端点，缺一不可**：仅采集（log_box→`cur_user_item.push_log`）
-> 不会让节点出现在报告里，还必须同时接通「聚合」与「追加」两端：
-> 1. `manager.final_task` 算 `has_uncompleted` 并 `build_push_log_text(...)` 写入
->    `message["push_log"]`；
-> 2. `tools/notify.py` 的「代理结果/结果」分支 `append_push_log(message_text,
->    message.get("push_log"))` 追加到正文。
-> 漏接任一 → 报告里只有总体状态、看不到任何节点。
-> 完成专项后自检：任务报告应能实际看到节点行；若整体结果有、节点缺失，优先复查
-> 这两端是否都接了，而不是怀疑采集规则。
+> ⚠️ **报告注入是硬约束，采完必须注入**：仅采集（log_box→`cur_user_item.push_log`）
+> 不会让节点出现在报告里，必须把聚合结果放进最终报告正文。当前报告契约把节点
+> **按用户交错并入 result 正文**（`build_user_result_text`），不再走独立的
+> `push_log` 通知字段；多账号时各用户节点必须保留归属，用户级开关关闭的用户应
+> 无节点。注入的具体端点（管理器汇总 / 通知正文追加）现场反查参考实现，不照抄
+> 固定路径。完成专项后自检：任务报告应能实际看到节点行；若整体结果有、节点缺失，
+> 优先复查注入端是否接通，而不是怀疑采集规则。
 
 ```python
-# manager.final_task：聚合后放入通知消息
+# 管理器汇总：按用户交错组装「结果行 + 节点详情」为报告正文
 has_uncompleted = len(error_user) + len(wait_user) > 0
-push_log_text = build_push_log_text(self.script_info.user_list, has_uncompleted)
-message = {"push_log": push_log_text, ...}
+user_result_text = build_user_result_text(self.script_info.user_list, has_uncompleted)
+result = {"result": task_result, ...}  # 节点已并入 result，不再单独推送 push_log
 
-# tools/notify.py：追加（默认 separator="\n"）
+# 通知正文追加（通用工具；push_log 为空时原样返回）
 message_text = append_push_log(message_text, message.get("push_log"))
 ```
 
