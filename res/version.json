@@ -12,7 +12,7 @@
                 "清理无用前端资源、依赖及后端冗余代码 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "开发流程": [
-                "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行"
+                "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
                 "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
