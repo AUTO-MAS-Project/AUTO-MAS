@@ -46,7 +46,7 @@
             <a-button
               size="large"
               class="path-button"
-              :disabled="interfaceLoading"
+              :disabled="interfaceLoading || updateApplying"
               @click="emit('select-path')"
             >
               <template #icon>
@@ -60,7 +60,7 @@
               size="middle"
               class="path-button"
               :loading="interfaceLoading"
-              :disabled="!maafwConfig.Info.Path"
+              :disabled="!maafwConfig.Info.Path || updateApplying"
               @click="emit('preview-interface')"
             >
               <template #icon>
@@ -107,7 +107,7 @@
       <a-button
         type="primary"
         size="large"
-        :disabled="interfaceLoading"
+        :disabled="interfaceLoading || updateApplying"
         @click="emit('select-path')"
       >
         <template #icon>
@@ -136,6 +136,8 @@ defineProps<{
   interfaceLoading: boolean
   previewProjectTitle: string
   interfaceStats: Array<{ label: string; value: number }>
+  /** 项目更新正在落盘：此时读 interface 会读到半成品，按钮一律禁用。 */
+  updateApplying: boolean
 }>()
 
 const emit = defineEmits<{

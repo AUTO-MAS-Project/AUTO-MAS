@@ -39,6 +39,7 @@
           :interface-loading="previewLoading"
           :preview-project-title="previewProjectTitle"
           :interface-stats="interfaceStats"
+          :update-applying="updateApplying"
           @change="handleChange"
           @select-path="selectMaaFWPath"
           @preview-interface="handlePreviewInterface"
