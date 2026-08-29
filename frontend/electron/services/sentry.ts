@@ -26,8 +26,14 @@ const startSentry = () => {
     serverName: 'AUTO-MAS',
     attachScreenshot: false,
     enableRendererProfiling: false,
+    // 显式建立 enabled，避免下面的开关判断依赖 SDK 默认值。
+    enabled: true,
+    // Minidump 以附件形式上传，附件在 beforeSend 之后才拼进 envelope，
+    // 脱敏钩子够不到；而 Windows minidump 含完整命令行与环境变量块，故整体禁用。
     integrations: defaultIntegrations =>
-      defaultIntegrations.filter(integration => integration.name !== 'Console'),
+      defaultIntegrations.filter(
+        integration => integration.name !== 'Console' && !/minidump/i.test(integration.name)
+      ),
     tracesSampleRate: 0.05,
     beforeSend: sanitizeMainSentryEvent,
     beforeSendTransaction: sanitizeMainSentryEvent,

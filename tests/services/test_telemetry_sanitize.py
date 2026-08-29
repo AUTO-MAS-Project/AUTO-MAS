@@ -98,6 +98,34 @@ class SanitizeEventTest(unittest.TestCase):
             sanitize_event(event, _log_hint(exc_info=(None, None, None)))
         )
 
+    def test_drops_non_actionable_exception(self):
+        event = {
+            "exception": {
+                "values": [
+                    {"type": "ConnectionResetError", "value": "[WinError 10054]"}
+                ]
+            }
+        }
+
+        self.assertIsNone(sanitize_event(event, {}))
+
+    def test_keeps_chain_containing_actionable_exception(self):
+        event = {
+            "exception": {
+                "values": [
+                    {"type": "ConnectionResetError", "value": "[WinError 10054]"},
+                    {"type": "ValueError", "value": "string too long"},
+                ]
+            }
+        }
+
+        self.assertIsNotNone(sanitize_event(event, {}))
+
+    def test_keeps_exception_without_type(self):
+        event = {"exception": {"values": [{"value": "未知异常"}]}}
+
+        self.assertIsNotNone(sanitize_event(event, {}))
+
 
 if __name__ == "__main__":
     unittest.main()

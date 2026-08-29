@@ -26,6 +26,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import sentry_sdk
 from sentry_sdk import metrics
@@ -73,6 +74,19 @@ _sentry_started = False
 NOISY_TRANSACTIONS = {
     "/api/core/health",
     "/api/core/ws_meta",
+}
+
+# 逐条都不可行动的异常：前两类是客户端断开时本地 socket 拆除的正常表现，
+# 后一类是正常退出路径。它们既不代表缺陷也无从修复，不必占用事件配额。
+NON_ACTIONABLE_ERRORS = {
+    "BrokenPipeError",
+    "CancelledError",
+    "ClientDisconnect",
+    "ConnectionAbortedError",
+    "ConnectionResetError",
+    "KeyboardInterrupt",
+    "LocalProtocolError",
+    "SystemExit",
 }
 
 
@@ -134,6 +148,28 @@ def _sanitize_stacktrace(stacktrace: Any) -> None:
             frame.pop("module_metadata", None)
 
 
+def _is_non_actionable(event: dict[str, Any]) -> bool:
+    """判断事件是否整体由不可行动的异常构成。
+
+    异常链中只要有一个类型不在名单内就保留，避免误伤把真实缺陷包在
+    ExceptionGroup 或 ``raise ... from ...`` 里的情况。
+    """
+
+    container = event.get("exception")
+    if not isinstance(container, dict):
+        return False
+
+    values = container.get("values")
+    if not isinstance(values, list) or not values:
+        return False
+
+    types = [value.get("type") for value in values if isinstance(value, dict)]
+    if not types or any(name is None for name in types):
+        return False
+
+    return all(name in NON_ACTIONABLE_ERRORS for name in types)
+
+
 def _mask_user_dirs(value: str) -> str:
     """遮蔽路径中的用户名段，保留路径结构以便定位问题。"""
 
@@ -168,6 +204,9 @@ def sanitize_event(
 
     log_record = hint.get("log_record")
     if log_record is not None and not getattr(log_record, "exc_info", None):
+        return None
+
+    if _is_non_actionable(event):
         return None
 
     event.pop("user", None)
@@ -291,6 +330,28 @@ def _start_sentry(release: str, dist: str | None = None) -> None:
     _sentry_started = True
 
 
+def _resolve_transaction_path(
+    sampling_context: dict[str, Any], name: Any
+) -> str | None:
+    """取出事务对应的请求路径。
+
+    采样发生在路由匹配之前，此时事务名仍是完整 URL（如
+    ``http://127.0.0.1:36199/api/core/health``），路由模板要到 FastAPI 集成层
+    才写入，直接拿事务名比对会永远匹配不上。
+    """
+
+    scope = sampling_context.get("asgi_scope")
+    if isinstance(scope, dict):
+        path = scope.get("path")
+        if isinstance(path, str):
+            return path
+
+    if isinstance(name, str):
+        return urlsplit(name).path or name
+
+    return None
+
+
 def sample_trace(sampling_context: dict[str, Any]) -> float:
     """优先保留任务链路，跳过高频探活，并限制普通请求的配额占用。"""
 
@@ -300,7 +361,7 @@ def sample_trace(sampling_context: dict[str, Any]) -> float:
 
     name = transaction_context.get("name")
     op = transaction_context.get("op")
-    if name in NOISY_TRANSACTIONS:
+    if _resolve_transaction_path(sampling_context, name) in NOISY_TRANSACTIONS:
         return 0.0
     if op == "auto_mas.task.run":
         return 0.25

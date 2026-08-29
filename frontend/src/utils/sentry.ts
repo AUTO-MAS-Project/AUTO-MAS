@@ -47,6 +47,8 @@ const startSentry = () => {
           history: false,
         }),
       ],
+      // 显式建立 enabled，避免开关判断依赖 SDK 默认值。
+      enabled: true,
       tracesSampleRate: 0.05,
       tracePropagationTargets: [/^http:\/\/(?:localhost|127\.0\.0\.1):36163\//],
       beforeSend: sanitizeSentryEvent,

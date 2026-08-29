@@ -286,7 +286,7 @@ function saveConfig(config: AppConfig) {
   }
 }
 
-configureMainSentry(loadConfig().Function.IfEnableTelemetry !== false)
+configureMainSentry(loadConfig().Function?.IfEnableTelemetry !== false)
 
 // 创建托盘
 function createTray() {
@@ -1644,7 +1644,7 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
 
     // 保存到前端配置文件
     saveConfig(currentConfig)
-    setMainTelemetryEnabled(currentConfig.Function.IfEnableTelemetry !== false)
+    setMainTelemetryEnabled(currentConfig.Function?.IfEnableTelemetry !== false)
 
     // 更新托盘状态
     updateTrayVisibility(currentConfig)
