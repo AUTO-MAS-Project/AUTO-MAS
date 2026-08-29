@@ -2955,6 +2955,10 @@ class OkwwConfig(ConfigBase):
         self.Game_UpdateFullSyncLimit = ConfigItem(
             "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
         )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
+        )
         ## Run -------------------------------------------------------------
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(

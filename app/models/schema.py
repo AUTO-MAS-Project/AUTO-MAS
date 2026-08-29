@@ -865,6 +865,9 @@ class OkwwConfig_Game(BaseModel):
     UpdateFullSyncLimit: Optional[int] = Field(
         default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
     )
+    AccountSwitch: Optional[bool] = Field(
+        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
+    )
 
 
 class OkwwConfig_Run(GeneralConfig_Run):

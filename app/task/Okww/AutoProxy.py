@@ -49,7 +49,7 @@ from .push_log import (
     _okww_supplement_po,
     okww_resolve,
 )
-from .tools import push_notification
+from .tools import async_switch_account, push_notification
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -368,6 +368,44 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
+    async def handle_pre_okww_error(
+        self, error_message: str, e: Exception | None = None
+    ) -> None:
+        """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 MaaEnd）。"""
+
+        if e is None:
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": error_message},
+            )
+        else:
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"{error_message}: {e}"},
+            )
+        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
+        self.cur_user_log.status = error_message
+
+        await self.kill_managed_process(
+            kill_game=self._game_management_enabled()
+        )
+
+        try:
+            await Notify.push_plyer(
+                "OK-WW 自动代理出现异常！",
+                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                f"{self.cur_user_item.name}的自动代理出现异常",
+                3,
+            )
+        except Exception:
+            pass
+
     async def _ensure_wuthering_waves_updated(self) -> None:
         """确保游戏已是官方最新版，需要时由 MAS 自行下载覆写。
 
@@ -513,6 +551,41 @@ class AutoProxyTask(TaskExecuteBase):
                     else:
                         self.cur_user_item.status = "异常"
                     continue
+
+            # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
+            # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
+            # 用户未填写手机号时跳过不切换。
+            if (
+                self.script_config.get("Game", "AccountSwitch")
+                and self.script_config.get("Game", "Enabled")
+                and self.game_manager is not None
+            ):
+                account_id = str(self.cur_user_config.get("Info", "Id")).strip()
+                if not account_id:
+                    await self._push_dispatch_log(
+                        "未配置账号，跳过账号切换"
+                    )
+                else:
+                    try:
+                        await self._push_dispatch_log(
+                            "正在强制切换鸣潮登录账号..."
+                        )
+                        await async_switch_account(
+                            account_id, on_log=self._push_dispatch_log
+                        )
+                        await self._push_dispatch_log(
+                            f"鸣潮账号切换成功：****{account_id[-4:]}"
+                        )
+                    except Exception as e:
+                        await self.handle_pre_okww_error("鸣潮账号切换失败", e)
+                        if i + 1 < run_limit:
+                            await self._push_dispatch_log(
+                                f"鸣潮账号切换失败，将在稍后重试 ({i + 1}/{run_limit})"
+                            )
+                            await asyncio.sleep(10)
+                        else:
+                            self.cur_user_item.status = "异常"
+                        continue
 
             await self.set_okww()
             await self._push_dispatch_log(

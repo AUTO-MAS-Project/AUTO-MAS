@@ -148,7 +148,7 @@
                   <template #label>
                     <span class="form-label">
                       账号
-                      <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号">
+                      <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号；开启「运行前强制切换账号」时按手机号后 4 位匹配游戏内已保存账号登录">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
