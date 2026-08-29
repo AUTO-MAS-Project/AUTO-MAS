@@ -42,7 +42,7 @@ from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.log_box import log_box
+from app.log_box import LogCollect, log_box, LogType
 from app.task.general.tools import execute_script_task
 
 from .push_log import (
@@ -189,8 +189,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
-        self.log_collect = None
-        self.log_translator = None
+        self.log_collect: LogCollect | None = None
+        self.log_translator: PoTranslator | None = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -640,6 +640,10 @@ class AutoProxyTask(TaskExecuteBase):
                 self.log_translator.clear()
         except Exception:
             logger.opt(exception=True).warning("OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）")
+            # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
+            self.cur_user_item.push_log.append(
+                (LogType.NORMAL, "⚠️ 节点采集失败（log_box 收尾异常），本次报告缺少该用户节点详情")
+            )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         statistic_paths: list[Path] = []
