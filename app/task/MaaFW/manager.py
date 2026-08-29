@@ -23,7 +23,10 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.utils.constants import TASK_MODE_ZH, UTC4
-from app.task.MaaFW.tools.config_write_guard import atomic_write_maafw_config
+from app.task.MaaFW.tools.config_write_guard import (
+    atomic_write_maafw_config,
+    read_maafw_config_snapshot,
+)
 from app.task.MaaFW.tools.controller.game_lifecycle import (
     MaaFWGameLaunchSpec,
     MaaFWOwnedGameProcess,
@@ -1172,7 +1175,7 @@ class MaaFWManager(TaskExecuteBase):
         updated = append_instance(
             container, entry, set_active=True, replace_same_name=True
         )
-        atomic_write_maafw_config(self.mxu_container_path, updated, journal=False)
+        self._write_shell_config(self.mxu_container_path, updated, label="MXU 容器配置")
         # 同名替换会沿用被替换者的 id，所以要读**写回去的那份**，不能读 entry；
         # 读 entry 会把日志里的实例 id 报成一个根本没落盘的值。
         self.mxu_instance_id = str(updated.get("lastActiveInstanceId") or "")
@@ -1246,7 +1249,7 @@ class MaaFWManager(TaskExecuteBase):
             if json_file.is_symlink() or not json_file.is_file():
                 raise RuntimeError(f"MFW instances 条目不是普通文件：{json_file}")
             json_file.unlink()
-        atomic_write_maafw_config(self.instance_path, instance_config, journal=False)
+        self._write_shell_config(self.instance_path, instance_config, label="实例配置")
 
         shell_config = _read_json_object(self.config_json_path, label="MFW config.json")
         shell_config.update(
@@ -1268,10 +1271,41 @@ class MaaFWManager(TaskExecuteBase):
                 "EnableCheckVersion": False,
                 "EnableAutoUpdateResource": False,
                 "EnableAutoUpdateMFA": False,
+                # 关掉外壳自己的外部通知：通知归 MAS（本层跑完会发运行报告），
+                # 留着外壳那份就是同一轮发两遍。真机上它还必然报错——这个字段存
+                # 的是 provider 名（样本里是 CustomWebhook），URL 走 DPAPI 加密，
+                # 而 DPAPI 绑用户+机器，项目目录一旦换过位置就解不开，收尾必然
+                # 抛「通用Webhook URL不能为空」（2026-08-29 真机日志里就有）。
+                # 未配置过的外壳压根没有这个键（MaaKes 参考包即如此），故空串就是
+                # 「没有选择任何 provider」。同样无需显式恢复：整个 config/ 目录在
+                # 收尾时按备份还原。
+                "ExternalNotificationEnabled": "",
             }
         )
-        atomic_write_maafw_config(self.config_json_path, shell_config, journal=False)
+        self._write_shell_config(self.config_json_path, shell_config, label="外壳 config.json")
         logger.info(f"MFW 运行配置已写入：{self.instance_path}")
+
+    def _write_shell_config(self, path: Path, payload: dict, *, label: str) -> None:
+        """写外壳配置并**回读确认**落盘。
+
+        外壳启动后会自己写同一批文件；真机上出现过外壳
+        「配置保存失败：default.json ... being used by another process」。本层这边
+        用的是 mkstemp + os.replace，句柄都随 with 关闭，起壳之后也不再碰
+        config/ —— 但「我这边没问题」是推断，不是证据。回读一次把它变成证据：
+        确认替换已经落地、文件此刻可读、且内容就是刚写进去的那份。
+
+        对不上不抛异常：配置已经写出去了，外壳多半能正常读到；这里只留一条告警，
+        免得把一次本可以跑完的运行判死在一个存疑的自检上。
+        """
+
+        snapshot = atomic_write_maafw_config(path, payload, journal=False)
+        try:
+            verified = read_maafw_config_snapshot(path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"MFW {label} 写入后回读失败：{exc}")
+            return
+        if verified.revision != snapshot.revision:
+            logger.warning(f"MFW {label} 写入后回读内容不一致：{path}")
 
     async def _run_external(self) -> None:
         profile = self.log_profile

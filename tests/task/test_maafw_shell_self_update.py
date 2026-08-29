@@ -91,5 +91,80 @@ class DisableShellSelfUpdateTest(unittest.TestCase):
         self.assertEqual(self._read(), self.original)
 
 
+class ShellNotificationDisabledTest(unittest.TestCase):
+    """外壳自己的外部通知要关掉：通知归 MAS，留着就是一轮发两遍。
+
+    真机上它还必然报错——该字段存的是 provider 名，URL 走 DPAPI 加密，而 DPAPI
+    绑用户+机器，项目目录换过位置就解不开，收尾必然抛「通用Webhook URL不能为空」。
+    """
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.root = Path(self._temp.name)
+        self.config_json = self.root / "config.json"
+        self.original = {
+            "ExternalNotificationEnabled": "CustomWebhook",
+            "ExternalNotificationCustomWebhookUrl": "AQAAANCM...",
+            "EnableCheckVersion": True,
+            "SomeUserSetting": "keep-me",
+        }
+        self.config_json.write_text(
+            json.dumps(self.original, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def _write(self) -> dict:
+        manager = MaaFWManager.__new__(MaaFWManager)
+        manager.config_json_path = self.config_json
+        manager.instance_path = self.root / "instances" / "mas.json"
+        payload = json.loads(self.config_json.read_text(encoding="utf-8"))
+        payload.update(
+            {
+                "AutoMinimize": True,
+                "AutoHide": True,
+                "ShouldMinimizeToTray": True,
+                "EnableCheckVersion": False,
+                "EnableAutoUpdateResource": False,
+                "EnableAutoUpdateMFA": False,
+                "ExternalNotificationEnabled": "",
+            }
+        )
+        manager._write_shell_config(
+            self.config_json, payload, label="外壳 config.json"
+        )
+        return json.loads(self.config_json.read_text(encoding="utf-8"))
+
+    def test_notification_provider_is_cleared(self) -> None:
+        self.assertEqual(self._write()["ExternalNotificationEnabled"], "")
+
+    def test_user_settings_survive(self) -> None:
+        written = self._write()
+        # 只压住该压的键；用户其余设置逐字保留（收尾还会整目录还原）。
+        self.assertEqual(written["SomeUserSetting"], "keep-me")
+        self.assertEqual(
+            written["ExternalNotificationCustomWebhookUrl"],
+            self.original["ExternalNotificationCustomWebhookUrl"],
+        )
+
+    def test_write_is_read_back(self) -> None:
+        # 回读校验：写完立刻能读回同一份内容。
+        written = self._write()
+        self.assertEqual(written["EnableCheckVersion"], False)
+        self.assertEqual(written["AutoMinimize"], True)
+
+    def test_read_back_failure_only_warns(self) -> None:
+        # 自检失败不能把一次本可以跑完的运行判死。
+        manager = MaaFWManager.__new__(MaaFWManager)
+        with patch.object(
+            manager_module,
+            "read_maafw_config_snapshot",
+            side_effect=OSError("locked"),
+        ):
+            manager._write_shell_config(self.config_json, {"a": 1}, label="x")
+        self.assertEqual(
+            json.loads(self.config_json.read_text(encoding="utf-8")), {"a": 1}
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
