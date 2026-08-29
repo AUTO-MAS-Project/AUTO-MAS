@@ -90,6 +90,8 @@ _FAILURE_MARKERS = ("任务运行失败！",)
 _STATE_DIR_NAME = "MaaFWExternal"
 # MAS 在 MXU 容器里追加的实例显示名；外壳的 -i 参数按**显示名**匹配，
 # 两者必须一致。
+# interface.json 里控制 MXU 自动更新的键。见 _disable_shell_self_update。
+_INTERFACE_UPDATE_KEYS = ("mirrorchyan_rid",)
 _MXU_INSTANCE_NAME = "MAS"
 # 起进程后等外壳把日志文件建出来的上界与探测节奏。
 _SHELL_LOG_WAIT_SECONDS = 30
@@ -871,6 +873,9 @@ class MaaFWManager(TaskExecuteBase):
             # 用户的实例集合在外壳 UI 里会永久变成只剩 MAS 一个。存进 manifest
             # 而不是另开文件：manifest 是崩溃恢复的唯一可信入口，也是原子写。
             "appsettings_instances": self._snapshot_appsettings_instance_keys(),
+            # 同理，MXU 的自动更新闸门读的是项目根 interface.json，不是外壳
+            # 设置，故这里也只快照那几个键，跑完还原。
+            "interface_update_keys": self._snapshot_interface_update_keys(),
         }
         atomic_write_maafw_config(self.manifest_path, manifest, journal=False)
         self.backup_published = True
@@ -894,6 +899,90 @@ class MaaFWManager(TaskExecuteBase):
             logger.warning(f"MaaFW 读取 appsettings.json 失败，跳过实例指针快照：{exc}")
             return {}
         return {key: settings[key] for key in _APPSETTINGS_INSTANCE_KEYS if key in settings}
+
+    def _snapshot_interface_update_keys(self) -> dict[str, Any]:
+        """快照项目根 ``interface.json`` 里控制外壳自动更新的键。
+
+        与 appsettings 那份同理：只取需要的键，不整文件快照。
+        """
+
+        if self.project_root is None:
+            return {}
+        path = self.project_root / "interface.json"
+        try:
+            data = _read_json_object(path, label="MaaFW interface")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"MaaFW 读取 interface.json 失败，跳过更新键快照：{exc}")
+            return {}
+        return {key: data[key] for key in _INTERFACE_UPDATE_KEYS if key in data}
+
+    def _disable_shell_self_update(self) -> None:
+        """摘掉 MXU 的自动更新闸门键，让本轮运行不去检查/下载更新。
+
+        更新必须由 MAS 统一编排，外壳自己更新会把这一轮任务顶掉：MXU 的自动
+        运行是**排在更新检查之后**的，一旦开始下载就把待跑任务挂起，等安装重启
+        后才执行（MXU src/App.tsx 的 autoStartTasksPending → pendingAutoTasksRef）。
+        2026-08-29 真机实测就是这样：外壳已经匹配到 MAS 实例、连上 Win32 控制器，
+        随后开始下载 v2.27.0-beta.1，整轮再没出现过「开始执行任务」。
+
+        闸门条件是 ``interface.mirrorchyan_rid && interface.version``（两者都来自
+        项目根 interface.json，不是外壳设置——所以 MXU 的 UI 里根本没有这个开关）。
+        这里摘 ``mirrorchyan_rid``：它只服务于更新，摘掉整段检查都不会执行；而
+        ``version`` 还要参与界面显示与遥测，动它副作用更大。
+
+        MFAAvalonia 家族走的是另一条路——写 config.json 的 EnableCheckVersion 等
+        三个开关，见 _write_mfaavalonia_runtime_config。
+        """
+
+        if self.project_root is None:
+            return
+        path = self.project_root / "interface.json"
+        if not path.is_file():
+            return
+        try:
+            data = _read_json_object(path, label="MaaFW interface")
+            removed = [key for key in _INTERFACE_UPDATE_KEYS if key in data]
+            if not removed:
+                return
+            for key in removed:
+                del data[key]
+            atomic_write_maafw_config(path, data, journal=False)
+            logger.info(f"MaaFW 已关闭外壳自动更新：移除 interface.json 的 {removed}")
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(
+                f"MaaFW 关闭外壳自动更新失败，本轮可能被外壳更新顶掉：{exc}"
+            )
+
+    def _restore_interface_update_keys(self, snapshot: Any) -> None:
+        """把 interface.json 的更新键还原成本轮运行前的样子。
+
+        ``snapshot`` 为 ``None`` 说明 manifest 由旧版本写出，按既有行为跳过。
+        自保护：还原失败不应阻断 config 目录本身的还原结果。
+        """
+
+        if not isinstance(snapshot, dict) or self.project_root is None:
+            return
+        path = self.project_root / "interface.json"
+        if not path.is_file():
+            return
+        try:
+            data = _read_json_object(path, label="MaaFW interface")
+            changed = False
+            for key in _INTERFACE_UPDATE_KEYS:
+                if key in snapshot:
+                    if data.get(key) != snapshot[key]:
+                        data[key] = snapshot[key]
+                        changed = True
+                elif key in data:
+                    del data[key]
+                    changed = True
+            if changed:
+                atomic_write_maafw_config(path, data, journal=False)
+                logger.info("MaaFW 已还原 interface.json 的自动更新键")
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(
+                f"MaaFW 还原 interface.json 更新键失败：{exc}"
+            )
 
     def _restore_appsettings_instance_keys(self, snapshot: Any) -> None:
         """把实例指针键还原成本轮运行前的样子。
@@ -1012,6 +1101,7 @@ class MaaFWManager(TaskExecuteBase):
             temporary_restore.rename(self.config_dir)
 
         self._restore_appsettings_instance_keys(manifest.get("appsettings_instances"))
+        self._restore_interface_update_keys(manifest.get("interface_update_keys"))
 
         _remove_owned_path(self.state_dir)
         self.restored = True
@@ -1023,6 +1113,7 @@ class MaaFWManager(TaskExecuteBase):
 
         if self.shell_family is ShellFamily.MXU:
             self._write_mxu_runtime_config()
+            self._disable_shell_self_update()
             return
         self._write_mfaavalonia_runtime_config()
 
@@ -1241,7 +1332,9 @@ class MaaFWManager(TaskExecuteBase):
                     # 不能像 MFAAvalonia 那样判「异常退出」——那个家族的外壳
                     # 永不自退，退出确实意味着出事；这个家族反过来。
                     # 仍要过「选中任务是否露过面」这道关，避免空跑被判成功。
-                    self._mark_completion(self.last_log_text)
+                    self._mark_completion(
+                        self.last_log_text, evidence="外壳已自行退出"
+                    )
                 elif any(
                     m in self.last_log_text
                     for m in self._profile_markers("abandon_markers")
@@ -1298,19 +1391,23 @@ class MaaFWManager(TaskExecuteBase):
             "MaaFW 控制器初始化失败，任务未实际执行",
         )
 
-    def _mark_completion(self, log_text: str) -> None:
-        """完成串出现时收口：选中任务全部在日志里露过面才判成功。
+    def _mark_completion(self, log_text: str, *, evidence: str = "输出完成串") -> None:
+        """完成信号出现时收口：选中任务全部在日志里露过面才判成功。
 
         弱形式的逐任务校验——只回答「选中的事到底有没有被尝试」。实测的假成功里
         选中任务在整份日志出现 0 次，完成串却存在。不解析逐任务成功/失败：没有一次
         成功运行的样本，任何日志格式假设都是臆造。
+
+        ``evidence`` 是「凭什么认为跑完了」的说法，会进用户可见的报错。自退型外壳
+        （MXU 带 -q）走的是「进程干净退出」这条证据，日志里并没有完成串；沿用默认
+        说法会把用户引向错误的排查方向。
         """
 
         absent = self._selected_tasks_absent(log_text)
         if absent:
             self._mark_terminal(
                 "tasks_missing",
-                f"MaaFW 输出完成串，但选中任务未出现：{'、'.join(absent)}",
+                f"MaaFW {evidence}，但选中任务未出现：{'、'.join(absent)}",
             )
         elif self._contains_failure(log_text):
             # 队列跑到了排空，但中途有任务失败（ContinueRunningWhenError=True 时

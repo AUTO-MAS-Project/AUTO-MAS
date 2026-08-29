@@ -74,6 +74,8 @@ class MxuRuntimeConfigTest(unittest.TestCase):
         self.manager.shell_family = ShellFamily.MXU
         self.manager.interface_model = _interface()
         self.manager.mxu_container_path = self.container
+        # 写运行配置时会顺手关掉外壳自更新，需要项目根定位 interface.json。
+        self.manager.project_root = self.root
         self.manager.backup_path = self.root / "no-backup"
         self.manager.controller_name = "Android"
         self.manager.resource_name = "官服3"
