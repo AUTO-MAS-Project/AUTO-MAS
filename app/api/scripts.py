@@ -887,7 +887,46 @@ async def prepare_maafw_agent_env(
         runtime_pool_route_from_service,
     )
 
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
+
     logs: list[str] = []
+    # 准备过程可能持续数分钟（首次要下载 MaaFramework），全程把阶段、百分比
+    # 与新增日志行推给前端。progress_id 留空时只落日志、不推送。
+    progress_id = str(payload.scriptId or "").strip()
+    loop = asyncio.get_running_loop()
+
+    def publish_progress(event: dict) -> None:
+        if not progress_id:
+            return
+        data = WSMaaFWEnvPrepareProgressData(
+            stage=str(event.get("stage") or ""),
+            status=str(event.get("status") or "running"),
+            message=str(event.get("message") or ""),
+            percent=event.get("percent"),
+            log=event.get("log"),
+        )
+        # 准备跑在工作线程里，回调要跨回事件循环才能发 WS
+        asyncio.run_coroutine_threadsafe(
+            Publisher.send(
+                id=progress_id,
+                type=ws_protocol.MAAFW_ENV_PREPARE_PROGRESS,
+                data=data,
+            ),
+            loop,
+        )
+
+    def append_log(line: str) -> None:
+        logs.append(line)
+        publish_progress(
+            {
+                "stage": "log",
+                "status": "running",
+                "message": line,
+                "log": line,
+            }
+        )
+
     project_value = str(payload.path or "").strip()
     if not project_value:
         return MaaFWAgentEnvPrepareOut(
@@ -936,9 +975,17 @@ async def prepare_maafw_agent_env(
                 runtime_pool_id=route.pool_id,
                 # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
                 import_paths=[Path.cwd()],
-                send_log=logs.append,
+                send_log=append_log,
+                progress=publish_progress,
             )
         except Exception as exc:
+            publish_progress(
+                {
+                    "stage": "failed",
+                    "status": "failed",
+                    "message": f"MFW 运行环境准备失败: {exc}",
+                }
+            )
             return MaaFWAgentEnvPrepareOut(
                 code=500,
                 status="error",
@@ -967,6 +1014,14 @@ async def prepare_maafw_agent_env(
         if isinstance(plan, dict)
     ]
 
+    publish_progress(
+        {
+            "stage": "ready",
+            "status": "success",
+            "message": "MFW 运行环境已就绪",
+            "percent": 100.0,
+        }
+    )
     return MaaFWAgentEnvPrepareOut(
         message="MFW 运行环境已就绪",
         data=MaaFWAgentEnvPrepareData(

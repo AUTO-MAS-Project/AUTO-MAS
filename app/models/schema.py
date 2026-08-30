@@ -2993,6 +2993,16 @@ class WSUpdateProgressData(BaseModel):
     source: str = Field(..., description="下载源")
 
 
+class WSMaaFWEnvPrepareProgressData(BaseModel):
+    """MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress)"""
+
+    stage: str = Field(..., description="阶段：resolving / creating_runtime / installing_runtime / runtime_ready / reused / failed 等")
+    status: str = Field(..., description="running / success / failed")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    percent: Optional[float] = Field(default=None, description="总体进度百分比，未知时为 null")
+    log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+
+
 class WSUpdateCompletedData(BaseModel):
     """更新下载完成数据 (id=Update, type=update.completed)。"""
 

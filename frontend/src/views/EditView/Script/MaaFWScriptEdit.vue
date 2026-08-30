@@ -154,11 +154,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import { WS_MAAFW_ENV_PREPARE_PROGRESS } from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
@@ -418,8 +420,40 @@ const handlePreviewInterface = async () => {
 // 不做的话这份成本会推迟到用户第一次点运行时才付，界面上看起来像卡住。
 const envPreparing = ref(false)
 const envReady = ref(false)
+const envFailed = ref(false)
 const envMessage = ref('')
+const envPercent = ref<number | null>(null)
+const envLogs = ref<string[]>([])
 const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
+let envSubscriptionId: string | null = null
+
+// 准备过程可能几分钟，全程订阅后端推来的阶段与日志
+const ensureEnvSubscription = () => {
+  if (envSubscriptionId) return
+  envSubscriptionId = subscribe(
+    { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
+    wsMessage => {
+      const data = wsMessage.data
+      if (data.log) {
+        envLogs.value = [...envLogs.value.slice(-199), data.log]
+      }
+      if (data.stage === 'log') return
+      envMessage.value = data.message || envMessage.value
+      if (typeof data.percent === 'number') envPercent.value = data.percent
+      if (data.status === 'failed') {
+        envFailed.value = true
+        envPreparing.value = false
+      }
+    }
+  )
+}
+
+onBeforeUnmount(() => {
+  if (envSubscriptionId) {
+    unsubscribe(envSubscriptionId)
+    envSubscriptionId = null
+  }
+})
 
 const envPreparedPath = ref('')
 
@@ -429,22 +463,31 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
   if (envPreparing.value) return
   // 同一个项目已经备好过就不重复跑；换了目录才重新准备
   if (envReady.value && envPreparedPath.value === path) return
+  ensureEnvSubscription()
   envPreparing.value = true
   envReady.value = false
+  envFailed.value = false
+  envPercent.value = null
+  envLogs.value = []
   envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
   try {
     const response = await prepareMaaFWAgentEnv(path, scriptId)
     if (!response || response.code !== 200 || !response.data) {
+      envFailed.value = true
       envMessage.value = response?.message || 'MFW 运行环境准备失败'
       message.error(envMessage.value)
       return
     }
     envReady.value = true
+    envPercent.value = 100
     envPreparedPath.value = path
     envAgents.value = response.data.agents ?? []
+    // 后端返回的完整日志兜底：WS 断连时至少事后能看到
+    if (response.data.logs?.length) envLogs.value = response.data.logs
     const version = response.data.maafwVersion
     envMessage.value = version ? `运行环境已就绪，MaaFramework ${version}` : '运行环境已就绪'
   } catch (error) {
+    envFailed.value = true
     envMessage.value = error instanceof Error ? error.message : String(error)
     message.error(envMessage.value)
   } finally {
@@ -542,6 +585,28 @@ onMounted(async () => {
 <style scoped>
 .env-prepare-alert {
   margin-top: 4px;
+}
+
+.env-agent-line {
+  margin-top: 6px;
+}
+
+.env-log-box {
+  margin-top: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--ant-color-fill-quaternary);
+  font-family: var(--ant-font-family-code, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.env-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
 }
 
 .wizard-steps {
