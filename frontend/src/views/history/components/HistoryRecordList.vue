@@ -3,13 +3,13 @@
     <div class="panel-header">
       <div class="header-left">
         <UnorderedListOutlined />
-        <span>记录条目</span>
+        <span>{{ t('history.recordList') }}</span>
       </div>
       <div class="header-right">
-        <span class="record-count">{{ records.length }} 条记录</span>
+        <span class="record-count">{{ t('history.recordCount', { count: records.length }) }}</span>
         <a-popover placement="bottomRight">
           <template #content>
-            <p style="margin: 0">计时规则：4:00-28:00</p>
+            <p style="margin: 0">{{ t('history.timeRule') }}</p>
           </template>
           <HistoryOutlined class="info-icon" />
         </a-popover>
@@ -18,8 +18,8 @@
 
     <div class="records-container">
       <div v-if="records.length === 0" class="empty-records">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-        <span class="empty-text">暂无记录</span>
+        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
+        <span class="empty-text">{{ t('history.emptyRecords') }}</span>
       </div>
 
       <div v-else class="records-scroll">
@@ -47,10 +47,10 @@
                 <CloseCircleOutlined v-else />
                 {{
                   record.status === 'DONE'
-                    ? '完成'
+                    ? t('history.done')
                     : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
-                      ? `失败: ${errorInfo[record.date]}`
-                      : '失败'
+                      ? t('history.failedWith', { error: errorInfo[record.date] })
+                      : t('history.failed')
                 }}
               </a-tag>
             </div>
@@ -64,6 +64,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -92,6 +93,8 @@ defineEmits<{
 }>()
 
 const formatRecordTime = (date: string) => formatBackendDateTime(date)
+
+const { t } = useI18n()
 </script>
 
 <style scoped>

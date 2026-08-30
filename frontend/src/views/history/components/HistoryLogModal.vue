@@ -16,11 +16,11 @@
           <div class="header-info">
             <FileTextOutlined class="header-icon" />
             <div class="header-text">
-              <span class="header-title">详细日志</span>
+              <span class="header-title">{{ t('history.log.title') }}</span>
               <span class="header-subtitle">{{ recordDate }}</span>
             </div>
             <a-tag :color="recordStatus === 'DONE' ? 'success' : 'error'" size="small">
-              {{ recordStatus === 'DONE' ? '完成' : '失败' }}
+              {{ recordStatus === 'DONE' ? t('history.done') : t('history.failed') }}
             </a-tag>
           </div>
 
@@ -32,7 +32,7 @@
               v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
               class="stat-group"
             >
-              <span class="stat-label">公招:</span>
+              <span class="stat-label">{{ t('history.log.recruit') }}:</span>
               <div class="stat-items">
                 <span v-for="(count, star) in recruitStatistics" :key="star" class="stat-item">
                   <span class="star-text" :class="`star-${star}`">{{ star }}：</span>
@@ -58,7 +58,7 @@
                   </div>
                 </div>
               </template>
-              <a-button size="small" class="drop-btn"> <GiftOutlined /> 查看掉落统计 </a-button>
+              <a-button size="small" class="drop-btn"> <GiftOutlined /> {{ t('history.log.viewDrops') }} </a-button>
             </a-popover>
             <!-- 基质统计 -->
             <a-popover
@@ -78,22 +78,26 @@
               </template>
               <a-button size="small" class="drop-btn">
                 <InboxOutlined />
-                查看基质统计
+                {{ t('history.log.viewMatrix') }}
               </a-button>
             </a-popover>
-            <a-tag v-else-if="matrixStatistics !== null" color="default">无合适的基质</a-tag>
+            <a-tag v-else-if="matrixStatistics !== null" color="default">{{ t('history.log.noMatrix') }}</a-tag>
             <a-popover v-if="pullCountStatistics" placement="bottomLeft" trigger="hover">
               <template #content>
                 <div class="pull-count-popover">
-                  <span>资源折算：{{ pullCountStatistics.resource_pulls }} 抽</span>
-                  <span>可留到下版本：{{ pullCountStatistics.carry_over_pulls }} 抽</span>
-                  <span>下版本商店：{{ pullCountStatistics.next_pool_shop_pulls }} 抽</span>
-                  <span>下版本签到：{{ pullCountStatistics.next_pool_signin_pulls }} 抽</span>
+                  <span>{{ t('history.log.resourcePulls', { n: pullCountStatistics.resource_pulls }) }}</span>
+                  <span>{{ t('history.log.carryOver', { n: pullCountStatistics.carry_over_pulls }) }}</span>
+                  <span>{{ t('history.log.nextShop', { n: pullCountStatistics.next_pool_shop_pulls }) }}</span>
+                  <span>{{ t('history.log.nextSignin', { n: pullCountStatistics.next_pool_signin_pulls }) }}</span>
                 </div>
               </template>
               <a-button size="small" class="drop-btn">
-                当前 {{ pullCountStatistics.current_pool_total }} 抽 · 下版本
-                {{ pullCountStatistics.next_pool_total }} 抽
+                {{
+                  t('history.log.poolSummary', {
+                    current: pullCountStatistics.current_pool_total,
+                    next: pullCountStatistics.next_pool_total,
+                  })
+                }}
               </a-button>
             </a-popover>
           </div>
@@ -101,17 +105,17 @@
 
         <div class="header-actions">
           <a-checkbox v-model:checked="removeEmptyLines" class="empty-lines-checkbox">
-            去除空行
+            {{ t('history.log.stripBlank') }}
           </a-checkbox>
           <a-divider type="vertical" />
-          <a-tooltip title="打开日志文件">
+          <a-tooltip :title="t('history.log.openFile')">
             <a-button size="small" type="text" :disabled="!hasFile" @click="$emit('open-file')">
               <template #icon>
                 <FileOutlined />
               </template>
             </a-button>
           </a-tooltip>
-          <a-tooltip title="打开所在目录">
+          <a-tooltip :title="t('history.log.openDir')">
             <a-button
               size="small"
               type="text"
@@ -124,7 +128,7 @@
             </a-button>
           </a-tooltip>
           <a-divider type="vertical" />
-          <a-tooltip title="字体大小">
+          <a-tooltip :title="t('history.log.fontSize')">
             <a-select
               :value="fontSize"
               size="small"
@@ -133,7 +137,7 @@
               @change="(v: number) => $emit('update:fontSize', v)"
             />
           </a-tooltip>
-          <a-tooltip title="搜索: Ctrl+F">
+          <a-tooltip :title="t('history.log.searchTip')">
             <a-button size="small" type="text">
               <template #icon>
                 <SearchOutlined />
@@ -160,7 +164,7 @@
             <LoadingOutlined v-if="loading" style="font-size: 32px" />
             <template v-else>
               <FileExclamationOutlined class="empty-icon" />
-              <span class="empty-title">暂无日志内容</span>
+              <span class="empty-title">{{ t('history.log.emptyLog') }}</span>
               <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
             </template>
           </div>
@@ -171,6 +175,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   FileExclamationOutlined,
   FileOutlined,
@@ -228,6 +233,8 @@ const displayLogContent = computed(() => {
 })
 
 // 计算掉落物品总数
+
+const { t } = useI18n()
 </script>
 
 <style scoped>
