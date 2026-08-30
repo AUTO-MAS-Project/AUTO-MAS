@@ -123,5 +123,68 @@ class RunnerBudgetTest(unittest.TestCase):
         self.assertEqual(restored.adbReadyTimeout, 300)
 
 
+class PreflightOrderTest(unittest.TestCase):
+    """设备连通性必须排在加载插件与资源之前。
+
+    此前顺序是「全局初始化 -> 原生插件 -> 资源 -> 连接设备」，设备没起来时
+    先白加载几秒的 DLL 与资源，等待失败后再逐个拆掉。冷启动可能要等几分钟，
+    更不该压在已经初始化了一半的 MaaFramework 上。
+    """
+
+    def test_device_preflight_runs_before_plugins_and_resources(self) -> None:
+        import ast
+        from pathlib import Path
+
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        target = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_ensure_initialized"
+        )
+        calls = [
+            node.func.attr
+            for node in ast.walk(target)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        ]
+        order = [name for name in calls if name.startswith("_")]
+        self.assertIn("_preflight_device", order)
+        for later in ("_load_native_plugins", "_load_resources", "_start_agents"):
+            self.assertLess(
+                order.index("_preflight_device"),
+                order.index(later),
+                f"设备连通性必须早于 {later}",
+            )
+
+    def test_preflight_only_touches_the_device(self) -> None:
+        """前置检查不能依赖 resource/tasker/controller，否则前移就不成立。"""
+
+        import ast
+        from pathlib import Path
+
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        target = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_preflight_device"
+        )
+        attrs = {
+            node.attr
+            for node in ast.walk(target)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+        }
+        for forbidden in ("resource", "tasker", "controller"):
+            self.assertNotIn(forbidden, attrs)
+
+
 if __name__ == "__main__":
     unittest.main()

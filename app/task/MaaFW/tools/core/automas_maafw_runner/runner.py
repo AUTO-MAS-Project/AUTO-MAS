@@ -404,6 +404,11 @@ class MaaFWRunner:
             return
 
         _ensure_maafw_global_init(Path(self.plan.path))
+        # 先确认设备真的连得上，再去加载原生插件与资源。
+        # 这两步对 M9A 这类项目要几秒并会载入 DLL，设备没起来时全是白做的功，
+        # 失败还要再逐个拆掉。冷启动的模拟器可能要等几分钟，更不该让它压在
+        # 已经初始化了一半的 MaaFramework 上。
+        self._preflight_device(device_config)
         self._load_native_plugins()
         self.resource = Resource()
         self.tasker = Tasker()
@@ -583,29 +588,39 @@ class MaaFWRunner:
             self._wait_job(self.resource.post_bundle(path_info.resolved))
             self.send_log(f"已加载资源: {path_info.resolved}")
 
-    def _connect_device(self, device_config: MaaFWDeviceConfig) -> None:
+    def _preflight_device(self, device_config: MaaFWDeviceConfig) -> None:
+        """在加载插件与资源之前先把设备连通性确认掉。
+
+        只做不依赖 resource/tasker/controller 的检查：类型一致性、ADB 路径解析
+        与设备就绪等待。冷启动的模拟器可能要等几分钟，先做这一步就不必为一台
+        起不来的设备付出 MaaFramework 初始化与资源加载的代价。
+        """
+
         if device_config.type != self.plan.controllerType:
             raise RuntimeError(
                 f"设备类型 {device_config.type} 与 controller {self.plan.controllerType} 不一致"
             )
 
-        if device_config.type == "Adb":
-            adb_path_source = "上游配置"
-            if not device_config.adbPath:
-                adb_path_source = "MaaFW Toolkit 自动发现"
-            self._resolve_adb_device(device_config)
-            connection_mode = (
-                "TCP/IP"
-                if _is_network_adb_address(device_config.address or "")
-                else "本地/USB serial"
-            )
-            self.send_log(
-                "ADB 连接方式: "
-                f"{connection_mode}; 地址={device_config.address}; "
-                f"ADB 路径={device_config.adbPath}; 路径来源={adb_path_source}"
-            )
-            self._wait_adb_device_ready(device_config)
+        if device_config.type != "Adb":
+            return
 
+        adb_path_source = "上游配置"
+        if not device_config.adbPath:
+            adb_path_source = "MaaFW Toolkit 自动发现"
+        self._resolve_adb_device(device_config)
+        connection_mode = (
+            "TCP/IP"
+            if _is_network_adb_address(device_config.address or "")
+            else "本地/USB serial"
+        )
+        self.send_log(
+            "ADB 连接方式: "
+            f"{connection_mode}; 地址={device_config.address}; "
+            f"ADB 路径={device_config.adbPath}; 路径来源={adb_path_source}"
+        )
+        self._wait_adb_device_ready(device_config)
+
+    def _connect_device(self, device_config: MaaFWDeviceConfig) -> None:
         self._log_controller_config(device_config)
         self.controller = self._create_controller(device_config)
         self._install_controller_sink(self.controller)
