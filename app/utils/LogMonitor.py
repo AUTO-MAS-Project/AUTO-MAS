@@ -203,6 +203,18 @@ class LogMonitor:
 
                 log_stat = current_path.stat()
 
+                if log_stat.st_size < offset:
+                    # 文件比记录的偏移还短，说明它被替换或截断过。按日期滚动
+                    # 切回旧路径时最容易撞上：offset 是离开前记住的，而文件在
+                    # 离开期间被换掉了，既有的缩水检测只比较在场期间的两次
+                    # stat，对此天然失明。不归零就会永远落进下面的「无变化」
+                    # 分支空转，新内容再也读不到。
+                    logger.info(
+                        f"日志文件已被替换或截断（{log_stat.st_size} < {offset}），从头重读"
+                    )
+                    offset = 0
+                    continue
+
                 if log_stat.st_size <= offset:
 
                     # 日志无变化超时调用回调
