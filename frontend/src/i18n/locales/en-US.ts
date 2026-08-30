@@ -21,6 +21,8 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    enabled: 'On',
+    disabled: 'Off',
     updateDownloadTest: 'Update download test',
     otherOperators: '= < > ! and other operators',
     debugLevel: 'DEBUG level',

@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zhCN from './locales/zh-CN'
@@ -46,5 +49,33 @@ describe('词表', () => {
   it('占位符能正常代入', () => {
     expect(t('scripts.toast.copied', { name: 'demo' })).toBe('已复制脚本「demo」')
     expect(t('scheduler.tabName', { n: 2 })).toBe('调度台2')
+  })
+
+  // 词表少一条 key 时 t() 会把 key 原样渲染出来，页面上就是一串 comp.enabled，
+  // 但 lint / typecheck / 其余单测都不报错，只能靠这里兜。
+  it('源码里用到的 key 在中文词表里都有', () => {
+    const zhKeys = new Set(zhEntries.map(([k]) => k))
+    const namespaces = new Set(Object.keys(zhCN))
+    const srcDir = fileURLToPath(new URL('..', import.meta.url))
+
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) return entry.name === 'api' ? [] : walk(full)
+        return /\.(vue|ts)$/.test(entry.name) && !entry.name.endsWith('.test.ts') ? [full] : []
+      })
+
+    const missing: string[] = []
+    for (const file of walk(srcDir)) {
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(/\bt\(\s*'([\w.]+)'/g)) {
+        const key = match[1]
+        // 只校验带命名空间前缀的字面量 key，动态拼接的（t(`x.${y}`)）匹配不到
+        if (namespaces.has(key.split('.')[0]) && !zhKeys.has(key)) {
+          missing.push(`${file.slice(srcDir.length)}: ${key}`)
+        }
+      }
+    }
+    expect(missing).toEqual([])
   })
 })

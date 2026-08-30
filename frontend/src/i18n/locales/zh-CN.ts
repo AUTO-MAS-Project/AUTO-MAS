@@ -23,6 +23,8 @@ export default {
     unknown: '未知',
   },
   comp: {
+    enabled: '启用',
+    disabled: '禁用',
     updateDownloadTest: '更新下载测试',
     otherOperators: '= < > ! 等操作符',
     debugLevel: 'DEBUG 级别',
