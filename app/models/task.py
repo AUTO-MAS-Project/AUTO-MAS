@@ -181,6 +181,11 @@ class TaskItem(ABC):
             self._change_dirty = False
 
     @property
+    def is_queue_task(self) -> bool:
+        """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
+        return self.queue_id is not None
+
+    @property
     def asdict(self) -> list:
         """将 TaskItem 转换为字典形式"""
         return [
