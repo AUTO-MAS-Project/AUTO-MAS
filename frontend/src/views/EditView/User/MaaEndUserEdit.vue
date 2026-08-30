@@ -447,7 +447,7 @@ const handleMaaEndConfig = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(`MaaEnd 配置异常: ${data.message}`)
+          message.error(t('edit.maaendConfigurationErrorP0', { p0: data.message }))
         }
       }),
       subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
@@ -458,7 +458,11 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionIds.value = subscriptionIds
     maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success(`已启动 ${formData.Info.Mode === '简洁' ? '脚本' : '用户'} MaaEnd 配置`)
+    message.success(
+      t('edit.startedP0MaaendConfiguration', {
+        p0: formData.Info.Mode === '简洁' ? '脚本' : '用户',
+      })
+    )
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
@@ -484,7 +488,9 @@ const handleImportMaaEndConfig = async () => {
     if (response.code !== 200) {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
-    message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
+    message.success(
+      t('edit.importedP0ConfigurationFile', { p0: formData.Info.Mode === '简洁' ? '脚本' : '用户' })
+    )
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
   } finally {

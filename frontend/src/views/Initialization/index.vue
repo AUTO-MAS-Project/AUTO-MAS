@@ -421,7 +421,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
         // 但不触发自动进入应用，由 handleBackendComplete 控制
         return true
       default:
-        throw new Error(`未知步骤: ${stepKey}`)
+        throw new Error(t('init.unknownStepP0', { p0: stepKey }))
     }
 
     if (result.success) {

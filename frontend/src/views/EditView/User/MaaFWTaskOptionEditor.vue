@@ -460,7 +460,7 @@ const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
     const regexp = new RegExp(inputItem.verify)
     if (regexp.test(value)) return true
   } catch {
-    message.error(`输入校验正则无效：${inputItem.name}`)
+    message.error(t('edit.validationPatternInvalidP0', { p0: inputItem.name }))
     return false
   }
 

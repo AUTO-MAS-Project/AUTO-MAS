@@ -100,7 +100,7 @@ export function useAudioPlayer() {
       audio.addEventListener('error', e => {
         const errorMsg = e instanceof Error ? e.message : String(e)
         logger.error(`音频播放失败: ${fileName} - ${errorMsg}`)
-        message.error(`音频播放失败: ${fileName}`)
+        message.error(t('misc.audioPlaybackFailedP0', { p0: fileName }))
         isPlaying.value = false
         currentAudio.value = null
       })

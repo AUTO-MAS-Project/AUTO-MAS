@@ -451,7 +451,7 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
 
       // 重新加载最新数据
       await loadWebhooks()
-      message.success(`Webhook "${webhook.name}" 已${newEnabled ? '启用' : '禁用'}`)
+      message.success(t('comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' }))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新Webhook状态失败: ${errorMsg}`)
@@ -466,7 +466,7 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
     )
     webhooks.value = newWebhooks
     emit('change')
-    message.success(`Webhook "${webhook.name}" 已${newEnabled ? '启用' : '禁用'}`)
+    message.success(t('comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' }))
   }
 }
 
@@ -543,15 +543,15 @@ const testWebhook = async (webhook: WebhookItem) => {
     })
 
     if (response.code === 200) {
-      message.success(`Webhook "${webhook.name}" 测试成功`)
+      message.success(t('comp.webhookP0TestedSuccessfully', { p0: webhook.name }))
     } else {
-      message.error(`Webhook 测试失败: ${response.message || '未知错误'}`)
+      message.error(t('comp.webhookTestFailedP0', { p0: response.message || '未知错误' }))
     }
   } catch (error: any) {
     const errorMsg =
       error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
     logger.error(`Webhook测试错误: ${errorMsg}`)
-    message.error(`Webhook 测试失败: ${errorMsg}`)
+    message.error(t('comp.webhookTestFailedP0', { p0: errorMsg }))
   } finally {
     testingWebhooks.value[webhook.uid] = false
   }

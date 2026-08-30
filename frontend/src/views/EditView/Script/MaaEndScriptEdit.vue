@@ -719,7 +719,7 @@ const handleMaaEndConfig = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(`MaaEnd 配置异常: ${data.message}`)
+          message.error(t('edit.maaendConfigurationErrorP0', { p0: data.message }))
         }
       }),
       subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {

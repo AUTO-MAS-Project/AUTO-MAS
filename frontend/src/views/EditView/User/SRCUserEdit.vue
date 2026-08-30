@@ -361,7 +361,7 @@ const handleSRCConfig = async () => {
             logger.error(
               `用户 ${formData.Info?.Name || formData.userName} SRC配置异常:${data.message}`
             )
-            message.error(`SRC配置失败: ${data.message}`)
+            message.error(t('edit.srcConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -370,7 +370,9 @@ const handleSRCConfig = async () => {
           logger.info(`用户 ${formData.Info?.Name || formData.userName} SRC配置任务已结束`)
           // 根据结果显示不同消息
           if (data.outcome === 'success') {
-            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+            message.success(
+              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           // 清理连接
           for (const subscriptionId of srcSubscriptionIds.value) {
@@ -389,7 +391,9 @@ const handleSRCConfig = async () => {
       srcSubscriptionIds.value = subscriptionIds
       srcTaskId.value = wsId
       showSrcConfigMask.value = true
-      message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的SRC设置`)
+      message.success(
+        t('edit.startedSrcSetupUser', { p0: formData.Info?.Name || formData.userName })
+      )
 
       // 设置 30 分钟超时自动断开
       srcConfigTimeout = window.setTimeout(
@@ -401,7 +405,9 @@ const handleSRCConfig = async () => {
             srcSubscriptionIds.value = []
             srcTaskId.value = null
             showSrcConfigMask.value = false
-            message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
+            message.info(
+              t('edit.configurationSessionUserP0', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           srcConfigTimeout = null
         },
@@ -440,7 +446,9 @@ const handleSaveSRCConfig = async () => {
         window.clearTimeout(srcConfigTimeout)
         srcConfigTimeout = null
       }
-      message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已保存`)
+      message.success(
+        t('edit.configurationUserP0Was', { p0: formData.Info?.Name || formData.userName })
+      )
     } else {
       message.error(response?.message || '保存配置失败')
     }

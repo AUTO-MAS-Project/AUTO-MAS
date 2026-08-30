@@ -566,7 +566,7 @@ const handleOkNteConfig = async () => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
           logger.error(`用户 ${formData.userName} OK-NTE 配置异常: ${data.message}`)
-          message.error(`OK-NTE 配置失败: ${data.message}`)
+          message.error(t('edit.okNteConfigurationFailed', { p0: data.message }))
         }
       }),
       // 处理任务结束消息
@@ -575,7 +575,7 @@ const handleOkNteConfig = async () => {
         logger.info(`用户 ${formData.userName} OK-NTE 配置任务已结束`)
         if (data.outcome === 'success') {
           refreshOkNteConfigEditor()
-          message.success(`用户 ${formData.userName} 的 OK-NTE 配置已完成`)
+          message.success(t('edit.okNteConfigurationUser', { p0: formData.userName }))
         }
         clearOkNteConfigSession()
       }),
@@ -583,7 +583,7 @@ const handleOkNteConfig = async () => {
 
     oknteSubscriptionIds.value = subscriptionIds
     oknteTaskId.value = wsId
-    message.success(`已开始配置用户 ${formData.userName} 的 OK-NTE 设置`)
+    message.success(t('edit.startedOkNteSetup', { p0: formData.userName }))
 
     oknteConfigTimeout = window.setTimeout(
       async () => {

@@ -108,7 +108,7 @@ const addCustomStage = () => {
   // 检查是否已存在
   const exists = props.options.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(`关卡 "${trimmedName}" 已存在`)
+    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
     return
   }
 

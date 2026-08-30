@@ -762,7 +762,7 @@ const handleOkwwConfig = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(`ok-ww 设置失败: ${data.message}`)
+          message.error(t('edit.okWwSetupFailed', { p0: data.message }))
           void stopOkwwConfigSession()
         }
       }),
@@ -777,7 +777,7 @@ const handleOkwwConfig = async () => {
         : formData.Info.Mode === '脚本'
           ? '脚本共享'
           : '当前用户'
-    message.success(`已打开${configTarget}的 ok-ww 设置`)
+    message.success(t('edit.openedOkWwSettings', { p0: configTarget }))
     okwwConfigTimeout = window.setTimeout(handleSaveOkwwConfig, 30 * 60 * 1000)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))

@@ -304,7 +304,7 @@ const loadLogFile = async () => {
       return
     }
 
-    message.success(`日志文件加载成功，共加载 ${logLines.value.length} 行`)
+    message.success(t('comp.logFileLoadedP0', { p0: logLines.value.length }))
   } catch (error) {
     logger.error(`加载日志文件失败: ${String(error)}`)
     message.error(t('comp.couldNotLoadLog') + (error as Error).message)
@@ -327,7 +327,7 @@ const applySelection = async () => {
   await props.handleChange('Script', 'LogTimeStart', startPos)
   await props.handleChange('Script', 'LogTimeEnd', endPos)
 
-  message.success(`已应用选择：起始位置 ${startPos}，结束位置 ${endPos}`)
+  message.success(t('comp.selectionAppliedStartP0', { p0: startPos, p1: endPos }))
 }
 </script>
 

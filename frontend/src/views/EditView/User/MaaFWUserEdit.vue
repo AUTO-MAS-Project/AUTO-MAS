@@ -737,7 +737,7 @@ const handleFieldSave = async (key: string, value: unknown) => {
     }
 
     const success = await updateUser(scriptId, userId, userData)
-    if (!success) throw new Error(`用户配置保存失败: ${key}`)
+    if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
     logger.info(`用户配置已保存: ${key}`)
   }).catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)

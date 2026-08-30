@@ -638,7 +638,7 @@ const startUpdate = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(`鸣潮更新失败: ${data.message}`)
+          message.error(t('edit.wutheringWavesUpdateFailed', { p0: data.message }))
           updateModal.running = false
           updateModal.open = false
           void stopUpdateSession()

@@ -1117,7 +1117,7 @@ const appDataPath = ref('')
 const validatePath = (rootPath: string, targetPath: string, pathName: string): boolean => {
   if (!targetPath || targetPath === '.') return true
   if (!rootPath || rootPath === '.') {
-    message.warning(`请先设置脚本根目录后再选择${pathName}`)
+    message.warning(t('edit.setScriptRootDirectory', { p0: pathName }))
     return false
   }
 
@@ -1131,7 +1131,7 @@ const validatePath = (rootPath: string, targetPath: string, pathName: string): b
   }
 
   if (!isUnderRoot && !isUnderAppData) {
-    message.error(`${pathName}必须是脚本根目录或 AppData 目录的子路径`)
+    message.error(t('edit.p0MustSitUnder', { p0: pathName }))
     return false
   }
 
@@ -1452,13 +1452,13 @@ const setupConfigPathModeWatcher = () => {
           newConfigPath = rootPath
           generalConfig.Script.ConfigPath = rootPath
           const typeText = newMode === 'Folder' ? '文件夹' : '文件'
-          message.info(`配置文件类型已切换为${typeText}，路径已重置为根目录`)
+          message.info(t('edit.configurationFileTypeChanged2', { p0: typeText }))
         } else {
           // 如果没有设置根目录，则清空路径
           newConfigPath = '.'
           generalConfig.Script.ConfigPath = '.'
           const typeText = newMode === 'Folder' ? '文件夹' : '文件'
-          message.info(`配置文件类型已切换为${typeText}，请重新选择路径`)
+          message.info(t('edit.configurationFileTypeChanged', { p0: typeText }))
         }
 
         // 保存被重置的 ConfigPath（ConfigPathMode 已经通过 @change 保存了）
@@ -1984,14 +1984,14 @@ const selectConfigPath = async () => {
         updatePathRelations()
         // 保存配置路径
         await handleChange('Script', 'ConfigPath', normalizedPath)
-        message.success(`${pathType}路径选择成功`)
+        message.success(t('edit.p0PathSelected', { p0: pathType }))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择配置路径失败: ${errorMsg}`)
     const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '文件夹' : '文件'
-    message.error(`选择${typeText}失败`)
+    message.error(t('edit.couldNotPickP0', { p0: typeText }))
   }
 }
 

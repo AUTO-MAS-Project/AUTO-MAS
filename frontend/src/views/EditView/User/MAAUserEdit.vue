@@ -1005,7 +1005,7 @@ const handleMAAConfig = async () => {
             logger.error(
               `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${data.message}`
             )
-            message.error(`MAA配置失败: ${data.message}`)
+            message.error(t('edit.maaConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -1014,7 +1014,9 @@ const handleMAAConfig = async () => {
           logger.info(`用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`)
           // 根据结果显示不同消息
           if (data.outcome === 'success') {
-            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+            message.success(
+              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           // 清理连接
           for (const subscriptionId of maaSubscriptionIds.value) {
@@ -1033,7 +1035,9 @@ const handleMAAConfig = async () => {
       maaSubscriptionIds.value = subscriptionIds
       maaTaskId.value = wsId
       showMAAConfigMask.value = true
-      message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
+      message.success(
+        t('edit.startedMaaSetupUser', { p0: formData.Info?.Name || formData.userName })
+      )
 
       // 设置 30 分钟超时自动断开
       maaConfigTimeout = window.setTimeout(
@@ -1045,7 +1049,9 @@ const handleMAAConfig = async () => {
             maaSubscriptionIds.value = []
             maaTaskId.value = null
             showMAAConfigMask.value = false
-            message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
+            message.info(
+              t('edit.configurationSessionUserP0', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           maaConfigTimeout = null
         },
@@ -1125,7 +1131,7 @@ const addStageToOptions = (stageName: string) => {
   // 检查是否已存在
   const exists = stageOptions.value.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(`关卡 "${trimmedName}" 已存在`)
+    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
     return false
   }
 
@@ -1136,7 +1142,7 @@ const addStageToOptions = (stageName: string) => {
     isCustom: true,
   })
 
-  message.success(`自定义关卡 "${trimmedName}" 添加成功`)
+  message.success(t('edit.customStageP0Added', { p0: trimmedName }))
   return true
 }
 
@@ -1313,7 +1319,7 @@ onMounted(() => {
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
             const planName = planOption ? planOption.label : newStageMode
 
-            message.success(`已切换到计划模式：${planName}`)
+            message.success(t('edit.switchedPlanModeP0', { p0: planName }))
           } else {
             logger.warn(`计划配置响应不完整: ${JSON.stringify({ response, newStageMode })}`)
             message.warning(t('edit.couldNotLoadPlan'))

@@ -390,7 +390,7 @@ const addFromPreset = () => {
     }
 
     emit('update:taskQueue', newQueue)
-    message.success(`成功添加 ${validTasks.length} 个任务`)
+    message.success(t('edit.addedP0Tasks', { p0: validTasks.length }))
   } finally {
     addingFromPreset.value = false
   }

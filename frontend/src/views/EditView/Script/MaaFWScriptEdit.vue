@@ -418,7 +418,7 @@ const runPreview = async () => {
 const handlePreviewInterface = async () => {
   await runPreview()
   if (!previewData.value) return
-  message.success(`已读取 ${previewProjectTitle.value}`)
+  message.success(t('edit.readP0', { p0: previewProjectTitle.value }))
 }
 
 // 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。

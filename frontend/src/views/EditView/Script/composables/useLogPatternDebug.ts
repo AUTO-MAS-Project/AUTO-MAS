@@ -109,7 +109,7 @@ export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
       const n = logLines.value
       const lines = n < 0 ? allLines : allLines.slice(Math.max(0, allLines.length - n))
       input.value = lines.join('\n')
-      message.success(`已加载 ${lines.length} 行日志（共 ${allLines.length} 行）`)
+      message.success(t('edit.loadedP0P1Log', { p0: lines.length, p1: allLines.length }))
     } catch (error) {
       message.error(t('edit.couldNotLoadLog') + (error as Error).message)
     } finally {

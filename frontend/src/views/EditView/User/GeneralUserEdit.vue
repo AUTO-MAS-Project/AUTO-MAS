@@ -629,7 +629,7 @@ const handleGeneralConfig = async () => {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             logger.error(`用户 ${formData.userName} 通用配置异常: ${data.message}`)
-            message.error(`通用配置失败: ${data.message}`)
+            message.error(t('edit.generalConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -638,7 +638,7 @@ const handleGeneralConfig = async () => {
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息
           if (data.outcome === 'success') {
-            message.success(`用户 ${formData.userName} 的配置已完成`)
+            message.success(t('edit.configurationUserP0Done', { p0: formData.userName }))
           }
           // 清理连接
           for (const subscriptionId of generalSubscriptionIds.value) {
@@ -659,16 +659,14 @@ const handleGeneralConfig = async () => {
       generalTaskId.value = wsId
       showGeneralConfigMask.value = true
       configTimedOut.value = false
-      message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
+      message.success(t('edit.startedGeneralSetupUser', { p0: formData.userName }))
 
       // 设置 30 分钟超时自动断开
       generalConfigTimeout = window.setTimeout(
         async () => {
           if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
             // 超时后自动保存配置
-            message.warning(
-              `用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`
-            )
+            message.warning(t('edit.configurationSessionUserP02', { p0: formData.userName }))
             logger.warn('配置会话已超时，自动执行保存操作')
 
             try {

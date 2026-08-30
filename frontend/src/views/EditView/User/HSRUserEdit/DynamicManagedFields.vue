@@ -112,7 +112,7 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
   try {
     emitValue(field, JSON.parse(raw))
   } catch {
-    message.error(`${field.label} 不是有效的 JSON`)
+    message.error(t('edit.p0NotValidJson', { p0: field.label }))
   }
 }
 </script>

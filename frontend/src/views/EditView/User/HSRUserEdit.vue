@@ -620,10 +620,13 @@ const handleDirectConfigImport = async (engine: HSREngine) => {
     if (!formData.Direct) formData.Direct = {}
     formData.Direct[`${engine}ImportedAt`] = result.imported_at
     formData.Direct[`${engine}Source`] = result.source
-    message.success(`${engine} 原生配置已导入当前用户`)
+    message.success(t('edit.nativeP0ConfigurationWas', { p0: engine }))
   } catch (error) {
     message.error(
-      `${engine} 配置导入失败：${error instanceof Error ? error.message : String(error)}`
+      t('edit.couldNotImportP0', {
+        p0: engine,
+        p1: error instanceof Error ? error.message : String(error),
+      })
     )
   } finally {
     importingDirectEngine.value = null

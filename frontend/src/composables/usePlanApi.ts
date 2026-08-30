@@ -33,7 +33,7 @@ export function usePlanApi() {
     try {
       const createType = getPlanCreateType(type)
       if (!createType) {
-        throw new Error(`不支持的计划表类型: ${type}`)
+        throw new Error(t('misc.unsupportedPlanTypeP0', { p0: type }))
       }
 
       const params: PlanCreateIn = { type: createType }
