@@ -206,6 +206,7 @@ def main():
 
                 await Config.get_stage()
                 await Config.clean_old_history()
+                await Config.clean_maafw_agent_venvs()
 
                 if IS_WINDOWS:
                     for adapter in (

@@ -82,37 +82,79 @@ class OrphanDetectionTest(unittest.TestCase):
 
 
 class SweepWiringTest(unittest.TestCase):
-    """清理要真的被调用，且只做一次。"""
+    """清理挂在启动流程上，而不是运行前的校验里。
 
-    def test_check_triggers_the_sweep(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[2]
-            / "app/task/MaaFW/embedded_manager.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn("_sweep_orphan_agent_venvs_once()", source)
-        # 一次进程只扫一遍
-        self.assertIn("_ORPHAN_SWEEP_DONE", source)
+    起初挂在 `MaaFWEmbeddedManager.check()` 上，结果**跑一次测试就把开发者
+    磁盘上的真 venv 删了**：check() 是被测试真实调用的，而测试会把
+    `Config.ScriptConfig` 换成只含临时项目的替身，于是真 venv 全被判成孤儿。
 
-    def test_the_sweep_only_considers_maafw_scripts(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[2]
-            / "app/task/MaaFW/embedded_manager.py"
-        ).read_text(encoding="utf-8")
-        flat = " ".join(source.split())
+    两个教训钉在下面：校验方法不得有破坏性副作用；判定依赖「当前全部脚本
+    配置」这种全局状态时，只有真实启动时它才可信。
+    """
+
+    def _source(self, relative: str) -> str:
+        return (Path(__file__).resolve().parents[2] / relative).read_text(
+            encoding="utf-8"
+        )
+
+    def test_startup_triggers_the_cleanup(self) -> None:
+        self.assertIn("await Config.clean_maafw_agent_venvs()", self._source("main.py"))
+
+    def test_check_has_no_destructive_side_effect(self) -> None:
+        """校验方法不得删文件——这正是当初出事的地方。"""
+
+        source = self._source("app/task/MaaFW/embedded_manager.py")
+        for destructive in ("rmtree", "unlink", "collect_orphan_agent_venvs"):
+            with self.subTest(symbol=destructive):
+                self.assertNotIn(destructive, source)
+
+    def test_the_cleanup_only_considers_maafw_scripts(self) -> None:
+        flat = " ".join(self._source("app/core/config.py").split())
         self.assertIn("isinstance(config, MaaFWConfig)", flat)
 
-    def test_cleanup_failure_does_not_block_the_run(self) -> None:
-        """回收磁盘不该挡住运行。"""
+    def test_recently_touched_venvs_are_spared(self) -> None:
+        """刚动过的一律不碰，避免与正在准备环境的运行抢。"""
 
-        source = (
-            Path(__file__).resolve().parents[2]
-            / "app/task/MaaFW/embedded_manager.py"
-        ).read_text(encoding="utf-8")
-        sweep = source[source.index("def _sweep_orphan_agent_venvs_once"):]
-        sweep = sweep[: sweep.index("\nclass ")]
-        self.assertIn("except Exception", sweep)
-        self.assertIn("except OSError", sweep)
-        self.assertNotIn("raise", sweep)
+        source = self._source("app/core/config.py")
+        body = source[source.index("async def clean_maafw_agent_venvs") :]
+        body = body[: body.index(chr(10) + "    async def ", 10)]
+        self.assertIn("MAAFW_AGENT_VENV_GRACE_SECONDS", body)
+        self.assertIn("st_mtime", body)
+
+    def test_cleanup_failure_does_not_block_startup(self) -> None:
+        source = self._source("app/core/config.py")
+        body = source[source.index("async def clean_maafw_agent_venvs") :]
+        body = body[: body.index(chr(10) + "    async def ", 10)]
+        self.assertIn("except Exception", body)
+        self.assertIn("except OSError", body)
+        self.assertNotIn("raise", body)
+
+
+class TestsMustNotTouchRealVenvsTest(unittest.TestCase):
+    """回归：测试套件本身不得删掉真实的 venv 目录。
+
+    这条是被真事逼出来的——一次 pytest 就清空了开发者的
+    `config/maafw_agent_venvs`。
+    """
+
+    def test_no_test_reaches_the_real_venv_root(self) -> None:
+        real_root = Path.cwd() / "config" / "maafw_agent_venvs"
+        sentinel = real_root / "maafw_venv_pytest_sentinel"
+        created = False
+        if real_root.is_dir() and not sentinel.exists():
+            sentinel.mkdir()
+            created = True
+        try:
+            from app.task.MaaFW import embedded_manager
+
+            self.assertNotIn("rmtree", Path(embedded_manager.__file__).read_text(
+                encoding="utf-8"
+            ))
+            if created:
+                self.assertTrue(sentinel.is_dir())
+        finally:
+            if created and sentinel.is_dir():
+                sentinel.rmdir()
 
 
 if __name__ == "__main__":

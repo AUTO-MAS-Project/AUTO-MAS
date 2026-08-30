@@ -29,7 +29,6 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 
 from __future__ import annotations
 
-import shutil
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -49,59 +48,6 @@ if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 
 logger = get_logger("MFW 内置运行")
 
 
-
-
-# 隔离 venv 的孤儿清理每个进程只做一次：它要遍历目录，而一次会话里存活的脚本
-# 集合不会频繁变化，每跑一个任务都扫一遍没有意义。
-_ORPHAN_SWEEP_DONE = False
-
-
-def _sweep_orphan_agent_venvs_once() -> None:
-    """清掉已无脚本引用的 agent 隔离 venv。
-
-    这些 venv 每个几十到上百 MB，而在此之前**没有任何回收**——只有「同一项目
-    依赖变了就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，
-    旧 venv 都会永远留着（实测残留过一份指向 Maa_bbb v1.12.10 的，
-    而用户早已升到 v1.12.14）。
-
-    判定见 ``collect_orphan_agent_venvs``：目录名是项目路径的哈希，凡不属于
-    任何存活脚本的目录即孤儿，存活项目的 venv 不可能被误删。
-
-    清理失败只记日志——回收磁盘不该挡住运行。
-    """
-
-    global _ORPHAN_SWEEP_DONE
-    if _ORPHAN_SWEEP_DONE:
-        return
-    _ORPHAN_SWEEP_DONE = True
-
-    from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
-        collect_orphan_agent_venvs,
-    )
-
-    root = Path.cwd() / "config" / "maafw_agent_venvs"
-    if not root.is_dir():
-        return
-
-    live_paths = [
-        path
-        for config in Config.ScriptConfig.values()
-        if isinstance(config, MaaFWConfig)
-        and (path := str(config.get("Info", "Path") or "").strip())
-    ]
-    try:
-        orphans = collect_orphan_agent_venvs(root, live_paths)
-    except Exception as exc:  # pragma: no cover - 回收失败不该挡住运行
-        logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
-        return
-
-    for venv_path in orphans:
-        try:
-            shutil.rmtree(venv_path)
-        except OSError as exc:
-            logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
-            continue
-        logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
 
 
 class MaaFWEmbeddedManager(TaskExecuteBase):
@@ -150,8 +96,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if not isinstance(script_config, MaaFWConfig):
             return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
-
-        _sweep_orphan_agent_venvs_once()
 
         project_value = str(script_config.get("Info", "Path") or "").strip()
         if not project_value:
