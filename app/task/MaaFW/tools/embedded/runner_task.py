@@ -493,6 +493,31 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 await self._save_user_logs()
         await self._release_project_path()
 
+    def _mas_manages_game_launch(self) -> bool:
+        """MAS 是否负责启动/关闭游戏。
+
+        只有两种模式：AttachOnly（脚本或用户自己启动，MAS 不碰）与
+        DirectExe（MAS 启动并按 CloseOnFinish 关闭）。此前这里根本没读过
+        LaunchMode，Win32 controller 无论哪种模式都强制索要 exe。
+        """
+
+        mode = str(self.script_config.get("Game", "LaunchMode") or "AttachOnly").strip()
+        return mode == "DirectExe"
+
+    def _resolve_game_launch_path(self) -> Path | None:
+        """DirectExe 模式下 MAS 要启动的客户端 exe。
+
+        前端写的是 Game.LaunchPath；Game.Path 是旧版桌面控制器路径，按
+        config.py 里的注释「仅用于读取兼容」，所以只作回退。此前这里只读
+        Game.Path，用户在新 UI 选好了 exe 也照样报「请选择实际游戏 exe」。
+        """
+
+        for section_key in ("LaunchPath", "Path"):
+            raw = str(self.script_config.get("Game", section_key) or "").strip()
+            if raw:
+                return Path(raw)
+        return None
+
     def _load_run_state_for_check(
         self,
     ) -> tuple[MaaFWInterface, MaaFWRunPlan, MaaFWRunPlan, str | None]:
@@ -501,9 +526,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         run_plan = self._filter_period_once_tasks(base_run_plan)
 
         game_path_error: str | None = None
-        if run_plan.tasks and run_plan.controllerType == "Win32":
-            game_path = Path(str(self.script_config.get("Game", "Path") or "").strip())
-            if not game_path.is_file():
+        if (
+            run_plan.tasks
+            and run_plan.controllerType == "Win32"
+            and self._mas_manages_game_launch()
+        ):
+            game_path = self._resolve_game_launch_path()
+            if game_path is None or not game_path.is_file():
                 game_path_error = (
                     "当前 MaaFW controller 需要由 MAS 启动游戏，请在脚本管理页选择实际游戏 exe"
                 )
@@ -1366,9 +1395,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
         if self.opened_game:
             return
+        if not self._mas_manages_game_launch():
+            # AttachOnly：游戏由脚本或用户自己起，MAS 只负责找窗口。窗口找不到时
+            # _resolve_window_handle 会给出「未找到匹配 MaaFW Win32 controller
+            # 的窗口」，比在这里索要一个本模式用不上的 exe 更贴题。
+            return
 
-        game_path = Path(str(self.script_config.get("Game", "Path") or "").strip())
-        if not await asyncio.to_thread(game_path.is_file):
+        game_path = self._resolve_game_launch_path()
+        if game_path is None or not await asyncio.to_thread(game_path.is_file):
             raise RuntimeError("当前 MaaFW controller 需要由 MAS 启动游戏，请在脚本管理页选择实际游戏 exe")
 
         if self.interface_model is not None and self.run_plan is not None:

@@ -157,8 +157,29 @@ class MaaFWPipelineOverrideBuilder:
         selected_set = set(selected_values)
         return [case_name for case_name in case_order if case_name in selected_set]
 
-    def _coerce_input_value(self, raw_value: str, pipeline_type: str | None) -> tuple[object, str]:
+    def _coerce_input_value(
+        self,
+        raw_value: str,
+        pipeline_type: str | None,
+        default: object = None,
+        *,
+        option_name: str = "",
+        field_name: str = "",
+    ) -> tuple[object, str]:
         normalized_type = (pipeline_type or "string").lower()
+        if normalized_type not in {"string", "str", ""} and not raw_value.strip():
+            # 非字符串类型没有「空」这个取值。未填写时必须回落到 interface 声明的
+            # default —— 那是个真数字（MaaEnd 的 SupplyPlanLimit 默认 260、
+            # CloseGamePCGameSettingResolutionWidth 默认 1280），不是「占位」那种
+            # 哨兵，所以回落不会重演兑换码那个坑。字符串走不到这里：空串对它是
+            # 合法取值（M9A 的兑换码没填就该是空）。
+            fallback = "" if default is None else str(default).strip()
+            if not fallback:
+                raise ValueError(
+                    f"选项 {option_name or '?'} 的字段 {field_name or '?'} "
+                    f"需要 {normalized_type} 值，但未填写且 interface 未声明默认值"
+                )
+            raw_value = fallback
         if normalized_type in {"bool", "boolean"}:
             typed_value = raw_value.lower() in {"true", "1", "yes", "y", "on"}
             return typed_value, "true" if typed_value else "false"
@@ -252,7 +273,13 @@ class MaaFWPipelineOverrideBuilder:
             elif isinstance(raw_option_value, list):
                 raw_text = raw_option_value[0] if raw_option_value else ""
 
-            typed_value, text_value = self._coerce_input_value(raw_text, input_item.pipeline_type)
+            typed_value, text_value = self._coerce_input_value(
+                raw_text,
+                input_item.pipeline_type,
+                input_item.default,
+                option_name=option_name,
+                field_name=input_item.name,
+            )
             placeholder = f"{{{input_item.name}}}"
             typed_replacements[placeholder] = typed_value
             text_replacements[placeholder] = text_value
