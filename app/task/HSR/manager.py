@@ -399,11 +399,6 @@ class HSRManager(TaskExecuteBase):
             if not game_exe_path.exists():
                 return f"游戏启动文件不存在：{game_exe_path}"
 
-        if sra_needed and not sra_available:
-            if game_management_enabled:
-                return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
-            return "HSR 自动代理需要配置 SRA 路径"
-
         try:
             if m7a_needed:
                 load_m7a_native_config(script_config)
