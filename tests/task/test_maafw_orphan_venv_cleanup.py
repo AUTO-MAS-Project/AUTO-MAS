@@ -12,6 +12,7 @@ r"""已无脚本引用的 agent 隔离 venv 要被回收。
 而**存活项目的 venv 永远不会落进结果里**——这是最重要的性质。
 """
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -128,6 +129,48 @@ class SweepWiringTest(unittest.TestCase):
         self.assertIn("except Exception", body)
         self.assertIn("except OSError", body)
         self.assertNotIn("raise", body)
+
+
+class UnreachableProjectAbstainsTest(unittest.TestCase):
+    """存活项目路径当前不可达时整轮弃权。
+
+    目录名是 ``Path.resolve()`` 之后的路径哈希，而 resolve() 只在路径**当下
+    存在**时才展开映射盘 / junction / 符号链接；不存在时原样返回。建 venv 时
+    项目必然在，算的是展开后的真实路径；开机自启动早于网络盘挂载时这里只能
+    算出字面路径——名字对不上，存活 venv 就会被当成孤儿删掉。
+
+    宽限期挡不住它：venv 顶层目录的 mtime 建成后基本不变，pip 只动子目录。
+    所以只能靠弃权：分不清的时候不删。
+    """
+
+    def _body(self) -> str:
+        source = (
+            Path(__file__).resolve().parents[2] / "app/core/config.py"
+        ).read_text(encoding="utf-8")
+        body = source[source.index("async def clean_maafw_agent_venvs") :]
+        return body[: body.index(chr(10) + "    async def ", 10)]
+
+    def test_unreachable_paths_abort_the_sweep(self) -> None:
+        body = self._body()
+        self.assertIn("exists()", body)
+        # 弃权必须发生在收集孤儿之前
+        self.assertLess(
+            body.index("unreachable"), body.index("collect_orphan_agent_venvs(root")
+        )
+
+    def test_the_abstention_returns_instead_of_filtering(self) -> None:
+        """不能只把不可达的项目剔出存活集合——那等于确认它们是孤儿。"""
+
+        body = self._body()
+        guard = body[body.index("unreachable") : body.index("collect_orphan_agent_venvs(root")]
+        self.assertIn("return", guard)
+
+    def test_resolve_does_not_expand_missing_paths(self) -> None:
+        """钉住这条前提本身：不存在的路径 resolve() 不做任何展开。"""
+
+        ghost = Path("Z:/definitely-not-mounted/project")
+        self.assertFalse(ghost.exists())
+        self.assertEqual(str(ghost.resolve()).casefold(), str(ghost).replace("/", os.sep).casefold())
 
 
 class TestsMustNotTouchRealVenvsTest(unittest.TestCase):

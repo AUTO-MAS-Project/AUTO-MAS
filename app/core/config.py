@@ -2908,6 +2908,20 @@ class AppConfig(GlobalConfig):
             if isinstance(config, MaaFWConfig)
             and (path := str(config.get("Info", "Path") or "").strip())
         ]
+
+        # 目录名是 Path.resolve() 之后的路径哈希，而 resolve() 只在路径**当下
+        # 存在**时才展开映射盘 / junction / 符号链接；不存在时原样返回。建 venv
+        # 时项目必然在，算的是展开后的真实路径；开机自启动早于网络盘挂载时，
+        # 这里却只能算出字面路径——名字对不上，存活 venv 就会被当成孤儿删掉。
+        # 分不清的时候不删：只要有一个存活项目此刻不可达，整轮弃权。
+        unreachable = [path for path in live_paths if not Path(path).exists()]
+        if unreachable:
+            logger.info(
+                "MFW 隔离 venv 清理已跳过：以下项目路径当前不可达，"
+                f"无法可靠判定归属: {unreachable[:3]}"
+            )
+            return
+
         try:
             orphans = collect_orphan_agent_venvs(root, live_paths)
         except Exception as exc:
