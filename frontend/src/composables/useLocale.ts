@@ -52,7 +52,10 @@ async function initLocale(preloadedConfig?: FrontendConfig): Promise<void> {
     // 未设置过则跟随系统：渲染进程的 navigator.language 即 Electron 的应用语言
     locale.value = normalizeLocale(navigator.language)
   } catch (error) {
-    logger.warn(`读取语言设置失败，回退中文: ${error instanceof Error ? error.message : error}`)
+    // 配置读不出来时仍能拿到系统语言，没必要连它一起放弃——
+    // 「读取失败」和「语言标记不认识」是同一类情况，应给同一个答案。
+    logger.warn(`读取语言设置失败，改用系统语言: ${error instanceof Error ? error.message : error}`)
+    locale.value = normalizeLocale(navigator.language)
   }
 }
 
