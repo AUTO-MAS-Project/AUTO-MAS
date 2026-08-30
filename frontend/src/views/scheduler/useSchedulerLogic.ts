@@ -1,4 +1,4 @@
-import { useI18n } from 'vue-i18n'
+import { translate as t } from '@/i18n'
 import { computed, h, ref, watch } from 'vue'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -29,7 +29,6 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type SchedulerStatus } from './schedulerConstants'
 
-const { t } = useI18n()
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
 // 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据

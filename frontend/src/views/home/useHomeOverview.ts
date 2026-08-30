@@ -1,4 +1,4 @@
-import { useI18n } from 'vue-i18n'
+import { translate as t } from '@/i18n'
 import { onScopeDispose, ref } from 'vue'
 import { Service } from '@/api/services/Service'
 import {
@@ -23,8 +23,6 @@ type ActivityOverviewLike = Pick<SraActivityOverview, 'Available' | 'Message'>
 
 const isProviderFetching = (overview: ActivityOverviewLike): boolean =>
   !overview.Available && overview.Message.includes('正在获取')
-
-const { t } = useI18n()
 
 export const useHomeOverview = () => {
   const loading = ref(false)

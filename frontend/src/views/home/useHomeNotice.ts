@@ -1,10 +1,8 @@
-import { useI18n } from 'vue-i18n'
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-
-const { t } = useI18n()
 
 export const useHomeNotice = () => {
   const logger = window.electronAPI.getLogger('首页')

@@ -1,4 +1,4 @@
-import { useI18n } from 'vue-i18n'
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
@@ -88,8 +88,6 @@ const pickHomeGreeting = (): HomeGreetingMessage => {
   const index = Math.floor(Math.random() * homeGreetingMessages.length)
   return homeGreetingMessages[index] ?? homeGreetingMessages[0]
 }
-
-const { t } = useI18n()
 
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')

@@ -1751,6 +1751,10 @@ export default {
     },
   },
   misc: {
+    dateTime: '{y}年{mo}月{d}日 {h}:{mi}:{s}',
+    dateGroup: '{y}年{mo}月{d}日',
+    monthGroup: '{y}年{mo}月',
+    weekGroup: '{y}年 第{w}周',
     unsupportedPlanTypeP0: '不支持的计划表类型: {p0}',
     couldNotLoadEmulator: '加载模拟器实例选项失败: {p0}',
     couldNotExportIssue: '导出问题包异常: {p0}',

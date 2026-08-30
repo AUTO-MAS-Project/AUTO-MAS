@@ -443,8 +443,8 @@
                       <div class="user-status">
                         <a-switch
                           :checked="user.Info.Status"
-                          :checked-children="'启用'"
-                          :un-checked-children="'禁用'"
+                          :checked-children="t('comp.enabled')"
+                          :un-checked-children="t('comp.disabled')"
                           class="status-switch"
                           @click="handleToggleUserStatus(user)"
                         />

@@ -1829,6 +1829,10 @@ export default {
     },
   },
   misc: {
+    dateTime: '{y}-{mo}-{d} {h}:{mi}:{s}',
+    dateGroup: '{y}-{mo}-{d}',
+    monthGroup: '{y}-{mo}',
+    weekGroup: '{y} week {w}',
     unsupportedPlanTypeP0: 'Unsupported plan type: {p0}',
     couldNotLoadEmulator: 'Could not load the emulator instance options: {p0}',
     couldNotExportIssue: 'Could not export the issue bundle: {p0}',
