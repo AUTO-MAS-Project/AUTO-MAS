@@ -1,21 +1,21 @@
 <template>
   <div class="step-panel">
-    <h3>依赖安装</h3>
+    <h3>{{ t('init.dependency.title') }}</h3>
     <div class="install-section">
       <!-- 环境检查 -->
       <div v-if="checking" class="check-status">
-        <p>正在检查依赖状态...</p>
+        <p>{{ t('init.dependency.checking') }}</p>
       </div>
 
       <!-- 依赖状态 -->
       <div v-else-if="!installing" class="dependency-status">
         <a-alert
           :type="needsInstall ? 'warning' : 'success'"
-          :message="needsInstall ? '需要安装依赖' : '依赖已是最新'"
+          :message="needsInstall ? t('init.dependency.needsInstall') : t('init.dependency.upToDate')"
           :description="
             needsInstall
-              ? 'requirements.txt 已更新，需要重新安装依赖'
-              : '依赖包已是最新版本，无需重新安装'
+              ? t('init.dependency.needsInstallDesc')
+              : t('init.dependency.upToDateDesc')
           "
           show-icon
         />
@@ -28,7 +28,7 @@
         </div>
         <a-progress :percent="installProgress" :status="progressStatus" />
         <div v-if="currentMirror" class="current-mirror">
-          <span>当前使用: {{ currentMirror }}</span>
+          <span>{{ t('init.common.currentMirror', { mirror: currentMirror }) }}</span>
         </div>
       </div>
     </div>
@@ -36,6 +36,8 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 defineProps<{
   checking: boolean
   needsInstall: boolean
@@ -46,6 +48,8 @@ defineProps<{
   currentMirror?: string
   progressStatus?: 'normal' | 'exception' | 'success'
 }>()
+
+const { t } = useI18n()
 </script>
 
 <style scoped>

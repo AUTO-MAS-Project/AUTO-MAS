@@ -1,18 +1,18 @@
 <template>
   <div class="step-panel">
-    <h3>源码拉取</h3>
+    <h3>{{ t('init.repository.title') }}</h3>
     <div class="install-section">
       <!-- 环境检查 -->
       <div v-if="checking" class="check-status">
-        <p>正在检查本地仓库...</p>
+        <p>{{ t('init.repository.checking') }}</p>
       </div>
 
       <!-- 仓库状态 -->
       <div v-else-if="!pulling" class="repo-status">
         <a-alert
           :type="repoExists ? 'info' : 'warning'"
-          :message="repoExists ? '本地仓库已存在' : '本地仓库不存在'"
-          :description="repoExists ? '将更新现有仓库到最新版本' : '将从远程克隆仓库到本地'"
+          :message="repoExists ? t('init.repository.exists') : t('init.repository.missing')"
+          :description="repoExists ? t('init.repository.willUpdate') : t('init.repository.willClone')"
           show-icon
         />
       </div>
@@ -24,7 +24,7 @@
         </div>
         <a-progress :percent="pullProgress" :status="progressStatus" />
         <div v-if="currentMirror" class="current-mirror">
-          <span>当前使用: {{ currentMirror }}</span>
+          <span>{{ t('init.common.currentMirror', { mirror: currentMirror }) }}</span>
         </div>
       </div>
 
@@ -37,6 +37,8 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 defineProps<{
   checking: boolean
   repoExists: boolean
@@ -48,6 +50,8 @@ defineProps<{
   currentMirror?: string
   progressStatus?: 'normal' | 'exception' | 'success'
 }>()
+
+const { t } = useI18n()
 </script>
 
 <style scoped>
