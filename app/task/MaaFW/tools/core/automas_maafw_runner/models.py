@@ -86,6 +86,9 @@ class MaaFWDeviceConfig(BaseModel):
     mouseMethod: int = 0
     keyboardMethod: int = 0
     config: dict[str, Any] = Field(default_factory=dict)
+    # 等待 adb 认出设备的秒数。冷启动的模拟器在 open() 返回后往往还要一段时间
+    # adbd 才起来；宿主按该模拟器的 Info.MaxWaitTime 下发，缺省时用 runner 常量。
+    adbReadyTimeout: int | None = None
 
 
 class MaaFWRunResult(BaseModel):

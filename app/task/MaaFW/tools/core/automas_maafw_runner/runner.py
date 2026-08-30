@@ -91,7 +91,16 @@ MaaFWControllerType = Literal["Adb", "Win32"]
 AGENT_CONNECT_RETRY_COUNT = 30
 AGENT_CONNECT_RETRY_INTERVAL = 0.2
 AGENT_CONNECT_TIMEOUT_MS = 1000
-ADB_READY_RETRY_COUNT = 30
+# 冷启动的模拟器要等很久：LDPlayer.open() 在 in_android==1 之后只 sleep 3 秒
+# 就返回「启动完成」（不传 package_name 时不走那个 30 秒分支），此时 Android
+# 里的 adbd 往往还没起来。第一层不受影响——它把等待交给项目外壳自己做了，
+# 内置运行这条等待是唯一的缓冲。
+#
+# 插件带来的 30 次（30 秒）在雷电冷启动上不够用：真机实测 open() 报完成后
+# 30 秒仍是 device not found，手动确认设备最终是能出现的。放宽到 3 分钟，
+# 与 MAS 模拟器层自身 Info.MaxWaitTime（默认 300 秒）的耐心量级一致；
+# 设备真的起不来时也仍然有界。
+ADB_READY_RETRY_COUNT = 180
 ADB_READY_RETRY_INTERVAL = 1.0
 ADB_COMMAND_TIMEOUT = 5
 AGENT_PROJECT_RUNTIME_DIRS = ("debug", "logs", "temp")
@@ -736,7 +745,15 @@ class MaaFWRunner:
 
         last_detail = ""
         network_connect_logged = False
-        for attempt in range(ADB_READY_RETRY_COUNT):
+        # 宿主下发了该模拟器的等待预算就用它，否则退回常量
+        retry_count = ADB_READY_RETRY_COUNT
+        configured_timeout = getattr(device_config, "adbReadyTimeout", None)
+        if isinstance(configured_timeout, int) and configured_timeout > 0:
+            retry_count = max(
+                1, int(configured_timeout / ADB_READY_RETRY_INTERVAL)
+            )
+
+        for attempt in range(retry_count):
             connect_detail = ""
             if _should_adb_connect(device_config.address, attempt):
                 connected, connect_detail = self._connect_adb_network_device(
@@ -788,13 +805,13 @@ class MaaFWRunner:
 
             should_log = (
                 attempt == 0
-                or attempt == ADB_READY_RETRY_COUNT - 1
-                or (attempt + 1) % 5 == 0
+                or attempt == retry_count - 1
+                or (attempt + 1) % 15 == 0
             )
             if should_log:
                 self.send_log(
                     f"ADB 设备未就绪，等待重试 "
-                    f"({attempt + 1}/{ADB_READY_RETRY_COUNT}): "
+                    f"({attempt + 1}/{retry_count}): "
                     f"{device_config.address}; {last_detail}"
                 )
             time.sleep(ADB_READY_RETRY_INTERVAL)

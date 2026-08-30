@@ -576,6 +576,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 screencapMethods=self._resolve_adb_screencap_methods(adb_profile),
                 inputMethods=self._resolve_adb_input_methods(adb_profile),
                 config=adb_profile.config,
+                adbReadyTimeout=self._resolve_adb_ready_timeout(),
             )
 
         if plan.controllerType == "Win32":
@@ -728,6 +729,27 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
         return self._cached_adb_profile
+
+    def _resolve_adb_ready_timeout(self) -> int | None:
+        """按该模拟器自己的 Info.MaxWaitTime 决定等 adb 的耐心。
+
+        LDPlayer.open() 在 in_android==1 之后只 sleep 3 秒就返回「启动完成」
+        （不传 package_name 时不走 30 秒分支），此时 Android 里的 adbd 常常还
+        没起来。第一层把等待交给项目外壳，内置运行这条等待是唯一的缓冲，
+        插件版固定 30 秒在冷启动的雷电上不够用。
+
+        取不到模拟器配置时返回 None，由 runner 用自己的常量兜底。
+        """
+
+        manager = self.emulator_manager
+        config = getattr(manager, "config", None) if manager is not None else None
+        if config is None:
+            return None
+        try:
+            value = int(config.get("Info", "MaxWaitTime"))
+        except Exception:  # noqa: BLE001 - 取不到就交给 runner 兜底
+            return None
+        return value if value > 0 else None
 
     def _resolve_adb_screencap_methods(self, profile: MaaFWAdbControlProfile) -> int:
         extra_method = _ADB_SCREENCAP_EMULATOR_EXTRAS
