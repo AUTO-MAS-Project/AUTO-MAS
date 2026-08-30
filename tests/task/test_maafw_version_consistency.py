@@ -88,7 +88,7 @@ class InitLoggingTest(unittest.TestCase):
             ),
             mock.patch.object(
                 self.module,
-                "_project_maafw_runtime_path",
+                "project_maafw_runtime_path",
                 lambda *_: runtime_path,
             ),
             mock.patch.object(

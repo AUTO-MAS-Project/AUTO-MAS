@@ -47,23 +47,26 @@ MAA_MODULES = (
 
 
 def load():
-    patcher = mock.patch.dict(
-        sys.modules, {name: mock.MagicMock() for name in MAA_MODULES}
-    )
-    patcher.start()
+    """解析实现放在 environment —— 它只依赖 stdlib + packaging，不碰 maa。
+
+    早先这段逻辑在 runner 里，而 runner 顶层 import maa（导入即打开原生库），
+    测试因此得先 mock 一整套 maa 模块。搬到 environment 后连 mock 都不需要了。
+    """
+
     import importlib
 
     return (
         importlib.import_module(
-            "app.task.MaaFW.tools.core.automas_maafw_runner.runner"
+            "app.task.MaaFW.tools.core.automas_maafw_runner.environment"
         ),
-        patcher,
+        mock.patch.dict(sys.modules, {}),
     )
 
 
 class ProjectRuntimePathTest(unittest.TestCase):
     def setUp(self) -> None:
         self.module, patcher = load()
+        patcher.start()
         self.addCleanup(patcher.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
@@ -81,7 +84,7 @@ class ProjectRuntimePathTest(unittest.TestCase):
     def test_bundled_maafw_directory_wins(self) -> None:
         root = self._project("maafw")
         self.assertEqual(
-            self.module._project_maafw_runtime_path(root), root / "maafw"
+            self.module.project_maafw_runtime_path(root), root / "maafw"
         )
 
     def test_dotnet_native_layout_is_found(self) -> None:
@@ -89,14 +92,14 @@ class ProjectRuntimePathTest(unittest.TestCase):
 
         root = self._project("runtimes/win-x64/native")
         self.assertEqual(
-            self.module._project_maafw_runtime_path(root),
+            self.module.project_maafw_runtime_path(root),
             root / "runtimes" / "win-x64" / "native",
         )
 
     def test_flat_win_x64_layout_still_works(self) -> None:
         root = self._project("runtimes/win-x64")
         self.assertEqual(
-            self.module._project_maafw_runtime_path(root),
+            self.module.project_maafw_runtime_path(root),
             root / "runtimes" / "win-x64",
         )
 
@@ -105,21 +108,21 @@ class ProjectRuntimePathTest(unittest.TestCase):
         (root / "runtimes" / "win-x64" / "native").mkdir(parents=True)
         (root / "runtimes" / "win-x64" / "native" / "MaaFramework.dll").write_bytes(b"")
         self.assertEqual(
-            self.module._project_maafw_runtime_path(root), root / "maafw"
+            self.module.project_maafw_runtime_path(root), root / "maafw"
         )
 
     def test_project_without_a_bundled_runtime_falls_back(self) -> None:
         """没有自带 DLL 时回落 venv —— 返回 None，由调用方走默认路径。"""
 
-        self.assertIsNone(self.module._project_maafw_runtime_path(self._project(None)))
+        self.assertIsNone(self.module.project_maafw_runtime_path(self._project(None)))
 
     def test_none_project_is_tolerated(self) -> None:
-        self.assertIsNone(self.module._project_maafw_runtime_path(None))
+        self.assertIsNone(self.module.project_maafw_runtime_path(None))
 
     def test_directory_without_the_dll_is_not_accepted(self) -> None:
         root = self.base / "empty-maafw"
         (root / "maafw").mkdir(parents=True)
-        self.assertIsNone(self.module._project_maafw_runtime_path(root))
+        self.assertIsNone(self.module.project_maafw_runtime_path(root))
 
 
 class RelocatedLayoutFallbackTest(unittest.TestCase):
@@ -127,6 +130,7 @@ class RelocatedLayoutFallbackTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.module, patcher = load()
+        patcher.start()
         self.addCleanup(patcher.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
@@ -144,7 +148,7 @@ class RelocatedLayoutFallbackTest(unittest.TestCase):
             with self.subTest(layout=relative):
                 root = self._with_dll_at(relative)
                 self.assertEqual(
-                    self.module._project_maafw_runtime_path(root),
+                    self.module.project_maafw_runtime_path(root),
                     root / Path(relative),
                 )
 
@@ -155,7 +159,7 @@ class RelocatedLayoutFallbackTest(unittest.TestCase):
             with self.subTest(rid=rid):
                 root = self._with_dll_at(f"runtimes/{rid}/native")
                 self.assertEqual(
-                    self.module._project_maafw_runtime_path(root),
+                    self.module.project_maafw_runtime_path(root),
                     root / "runtimes" / rid / "native",
                 )
 
@@ -163,21 +167,21 @@ class RelocatedLayoutFallbackTest(unittest.TestCase):
         """深处那份多半是项目自带解释器里的副本，属于 agent 而非外壳。"""
 
         root = self._with_dll_at("a/b/c/d/e")
-        self.assertIsNone(self.module._project_maafw_runtime_path(root))
+        self.assertIsNone(self.module.project_maafw_runtime_path(root))
 
     def test_shallowest_wins(self) -> None:
         root = self._with_dll_at("bin")
         deep = root / "bin" / "x" / "y"
         deep.mkdir(parents=True)
         (deep / "MaaFramework.dll").write_bytes(b"")
-        self.assertEqual(self.module._project_maafw_runtime_path(root), root / "bin")
+        self.assertEqual(self.module.project_maafw_runtime_path(root), root / "bin")
 
     def test_known_layout_still_wins_over_the_search(self) -> None:
         root = self._with_dll_at("maafw")
         other = root / "bin"
         other.mkdir(parents=True)
         (other / "MaaFramework.dll").write_bytes(b"")
-        self.assertEqual(self.module._project_maafw_runtime_path(root), root / "maafw")
+        self.assertEqual(self.module.project_maafw_runtime_path(root), root / "maafw")
 
 
 class RealTargetLayoutsTest(unittest.TestCase):
@@ -194,6 +198,7 @@ class RealTargetLayoutsTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.module, patcher = load()
+        patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_every_target_resolves_to_its_own_runtime(self) -> None:
@@ -202,7 +207,7 @@ class RealTargetLayoutsTest(unittest.TestCase):
             if not root.is_dir():
                 self.skipTest(f"靶子不在本机: {name}")
             with self.subTest(target=name):
-                resolved = self.module._project_maafw_runtime_path(root)
+                resolved = self.module.project_maafw_runtime_path(root)
                 self.assertIsNotNone(resolved, f"{name} 回落到了 venv")
                 self.assertEqual(resolved, root / Path(expected))
 
