@@ -1279,6 +1279,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if process is None or process.returncode is not None:
             return
 
+        # 必须在 terminate 之前把后代记下来：Windows 的 TerminateProcess 是立即
+        # 且不可捕获的，worker 的 shutdown() 没机会跑；而父进程一死，子进程就
+        # 被重新挂到别处，事后再按父子关系已经查不到它们。
+        descendants = await asyncio.to_thread(_snapshot_descendants, process.pid)
+
         try:
             process.terminate()
             await asyncio.wait_for(process.wait(), timeout=5)
@@ -1286,9 +1291,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             process.kill()
             await process.wait()
         except ProcessLookupError:
-            return
+            pass
         except Exception as exc:
             logger.warning(f"MaaFW runner worker 清理失败: {exc}")
+
+        if descendants:
+            await asyncio.to_thread(_terminate_snapshot, descendants)
 
     def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
         daily_tasks = set(_load_json_list(self.script_config.get("Run", "DailyOnceTasks")))
@@ -1682,6 +1690,53 @@ def _resolve_win32_method(
     if interface_method:
         return method_values.get(interface_method, default)
     return default
+
+
+
+def _snapshot_descendants(pid: int) -> list[tuple[int, float]]:
+    """记下某进程当前的全部后代（pid 与创建时间）。
+
+    创建时间与 pid 配对使用，防止 pid 复用导致误杀——这段时间里原进程可能
+    已经退出、pid 被别人占了。
+    """
+
+    snapshot: list[tuple[int, float]] = []
+    try:
+        for child in psutil.Process(pid).children(recursive=True):
+            with suppress(psutil.Error):
+                snapshot.append((child.pid, child.create_time()))
+    except psutil.Error:
+        return []
+    return snapshot
+
+
+def _terminate_snapshot(snapshot: list[tuple[int, float]]) -> None:
+    """结束快照里仍然存活、且身份对得上的进程。
+
+    worker 被强杀后它启动的 agent 会变成孤儿：MaaFW 的 AgentClient 用 IPC 起
+    agent，生命周期本该随 worker，但 TerminateProcess 不给收尾机会。实测残留
+    过二十多个 agent.exe / python.exe，最老的有二十二小时，它们占内存也占文件
+    句柄——曾导致 venv 目录删不掉。
+    """
+
+    victims: list[psutil.Process] = []
+    for pid, create_time in snapshot:
+        try:
+            process = psutil.Process(pid)
+            if abs(process.create_time() - create_time) > 1:
+                continue  # pid 被复用了，不是当初那个进程
+            process.terminate()
+            victims.append(process)
+        except psutil.Error:
+            continue
+    if not victims:
+        return
+    _gone, alive = psutil.wait_procs(victims, timeout=3)
+    for process in alive:
+        with suppress(psutil.Error):
+            process.kill()
+    psutil.wait_procs(alive, timeout=2)
+    logger.info(f"已清理 MaaFW worker 残留的 {len(victims)} 个子进程")
 
 
 def _decode_subprocess_output(data: bytes) -> str:
