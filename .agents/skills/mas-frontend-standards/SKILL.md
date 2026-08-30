@@ -103,7 +103,7 @@ All commands run from `frontend/`.
 
 | Touched surface | Command | Passing criterion |
 | --- | --- | --- |
-| Any business code | `yarn lint` | 0 errors (1 pre-existing `no-v-html` warning is expected) |
+| Any business code | `yarn eslint . --max-warnings 1` | exit 0. Warnings count: the budget of 1 is the single pre-existing `vue/no-v-html`, so any new warning fails the gate. `yarn lint` alone only surfaces errors — Yarn does not forward `--max-warnings` to the script, hence the direct `yarn eslint` form. |
 | Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | 0 errors |
 | A module with a sibling `*.test.ts`, or shared logic/styles under test | `yarn test` | fully green |
 | Build, routing, or Electron entry | `yarn build` | succeeds |
@@ -114,7 +114,7 @@ Rules:
 
 1. Run `yarn lint`, `yarn typecheck` and `yarn test` whole. All three can and should pass; there is no baseline to subtract.
 2. Lint and typecheck are still orthogonal — they check different things, so passing one says nothing about the other. Run both.
-3. `yarn lint:fix` resolves `prettier/prettier` findings; use it rather than hand-formatting.
+3. `yarn lint:fix` resolves `prettier/prettier` findings; use it rather than hand-formatting. Warnings are part of the gate — do not leave a new one behind.
 4. A failure in any of the three is yours until proven otherwise. If you believe it pre-exists, verify on an untouched checkout and say so explicitly in your result.
 
 Prefer `yarn typecheck` over a full `yarn build` for type validation; it is much faster and covers the renderer via `tsconfig.app.json`.
