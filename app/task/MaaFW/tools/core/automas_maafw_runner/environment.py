@@ -6,6 +6,8 @@ import os
 import re
 import shutil
 import subprocess
+import platform as platform_module
+import struct
 import sys
 import sysconfig
 import threading
@@ -653,6 +655,76 @@ def project_maafw_runtime_path(project_path: Path | None) -> Path | None:
         if (candidate / PROJECT_MAAFW_DLL_NAME).is_file():
             return candidate
     return _search_project_maafw_dll(project_path)
+
+
+_PE_SIGNATURE = bytes((0x50, 0x45, 0x00, 0x00))  # PE signature
+# PE 头里的 machine 字段 -> 架构名。取值来自 PE/COFF 规范。
+_PE_MACHINE_ARCHITECTURES = {
+    0x014C: "x86",
+    0x8664: "x64",
+    0xAA64: "arm64",
+}
+
+
+def detect_pe_architecture(path: Path) -> str | None:
+    """读出 PE 文件的目标架构，**不映射也不执行它**。
+
+    只解析 DOS 头里的 e_lfanew 偏移、跳到 PE 签名、再读两字节 machine 字段。
+    做法取自 mfwa 的 ``tools/runtime/probe.py``。
+
+    Returns:
+        ``"x86"`` / ``"x64"`` / ``"arm64"``；不是 PE 文件或读不出来时 None。
+    """
+
+    try:
+        with path.open("rb") as stream:
+            if stream.read(2) != b"MZ":
+                return None
+            stream.seek(0x3C)
+            offset_bytes = stream.read(4)
+            if len(offset_bytes) != 4:
+                return None
+            stream.seek(int.from_bytes(offset_bytes, "little"))
+            if stream.read(4) != _PE_SIGNATURE:
+                return None
+            machine = int.from_bytes(stream.read(2), "little")
+    except (OSError, ValueError):
+        return None
+    return _PE_MACHINE_ARCHITECTURES.get(machine)
+
+
+def host_architecture() -> str:
+    """当前解释器进程的架构。"""
+
+    if struct.calcsize("P") == 8:
+        machine = platform_module.machine().casefold()
+        return "arm64" if "arm" in machine or "aarch" in machine else "x64"
+    return "x86"
+
+
+def describe_runtime_architecture_mismatch(runtime_path: Path | None) -> str | None:
+    """项目自带的原生库架构与本机不符时给出可读原因。
+
+    不符时 ``Library.open`` 必然失败，但原生层报的错难以定位到「装错了包」。
+    提前判断只是把同一个失败说清楚，不会挡下任何原本能跑的情况。
+
+    典型场景：arm64 机器上装了 win-x86_64 的发行包（或反之）——MaaFramework
+    的项目普遍两种都发，选错了很难自己看出来。
+    """
+
+    if runtime_path is None:
+        return None
+    dll = runtime_path / PROJECT_MAAFW_DLL_NAME
+    found = detect_pe_architecture(dll)
+    if found is None:
+        return None  # 读不出来就不猜，交给原生层去报
+    expected = host_architecture()
+    if found == expected:
+        return None
+    return (
+        f"项目自带的 MaaFramework 是 {found} 架构，本机是 {expected}——"
+        "多半是下载了不匹配的发行包，请换成对应架构的包"
+    )
 
 
 def probe_bundled_maafw_version(project_path: Path) -> str | None:

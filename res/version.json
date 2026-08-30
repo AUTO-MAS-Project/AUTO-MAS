@@ -19,7 +19,8 @@
                 "配置任务的成败判定改用协议中的机器可读字段，不再匹配结果文本 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 运行日志改为记录实际加载的 MaaFramework 版本与来源，并在原生库与 Python 绑定版本不一致时给出警告 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",

@@ -39,6 +39,7 @@ from packaging.version import InvalidVersion, Version
 import maa as maa_package
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    describe_runtime_architecture_mismatch,
     project_maafw_runtime_path,
 )
 from maa.agent_client import AgentClient
@@ -434,6 +435,11 @@ def _ensure_maafw_global_init(
         if _MAAFW_INITIALIZED:
             return
         runtime_path = project_maafw_runtime_path(project_path)
+        # 架构不符时 Library.open 必然失败，但原生层的报错定位不到「装错了包」。
+        # 提前判断只是把同一个失败说清楚，不会挡下原本能跑的情况。
+        architecture_error = describe_runtime_architecture_mismatch(runtime_path)
+        if architecture_error:
+            raise RuntimeError(architecture_error)
         _ensure_maafw_client_library_mode(runtime_path)
         if send_log is not None:
             loaded, binding = describe_loaded_maafw()
