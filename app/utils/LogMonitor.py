@@ -20,6 +20,8 @@
 
 
 import asyncio
+import time
+
 import aiofiles
 from contextlib import suppress
 from datetime import datetime, timedelta, date
@@ -72,8 +74,17 @@ class LogMonitor:
         # 日志处理钩子：日志行进入日志内容前逐行预处理（改写）或丢弃
         self.line_hook = line_hook
         self.last_callback_time: datetime = datetime.now()
+        # 节流判定用的单调时钟读数。last_callback_time 还要充当 strptime 的
+        # 基准日期，必须保持墙钟；而墙钟回拨会让节流差值变成负数，接下来
+        # 「跳变幅度」那么久都不再触发回调——文件监控没有兜底超时，停滞
+        # 判定与界面状态会一起冻结。
+        self.last_callback_at = time.monotonic()
         self.log_contents: list[str] = []
         self.latest_time = datetime.now()
+        # 最近一次日志推进的单调时钟读数。停滞判定必须用单调时钟：
+        # latest_time 与 datetime.now() 都是墙钟，系统时钟跳变（夏令时切换、
+        # NTP 校时）会让两者的差值凭空增加一小时，把正常任务误判为超时。
+        self.latest_progress_at = time.monotonic()
         self.task: asyncio.Task | None = None
 
     async def monitor_file(
@@ -218,7 +229,7 @@ class LogMonitor:
                 if log_stat.st_size <= offset:
 
                     # 日志无变化超时调用回调
-                    if datetime.now() - self.last_callback_time > timedelta(minutes=1):
+                    if time.monotonic() - self.last_callback_at > 60:
                         await self.do_callback()
 
                     await asyncio.sleep(1)
@@ -281,12 +292,13 @@ class LogMonitor:
                 await self.do_callback()
                 break
 
-            if datetime.now() - self.last_callback_time > timedelta(seconds=1):
+            if time.monotonic() - self.last_callback_at > 1:
                 await self.do_callback()
 
     async def do_callback(self):
         """安全调用回调函数"""
         self.last_callback_time = datetime.now()
+        self.last_callback_at = time.monotonic()
         try:
             if self.parse_log is None:
                 await self.callback(self.log_contents, self.latest_time)
@@ -325,6 +337,7 @@ class LogMonitor:
         if if_init:
             self.last_log = log
             self.latest_time = datetime.now()
+            self.latest_progress_at = time.monotonic()
             return
 
         if log == "" or any(_ in log for _ in self.except_logs):
@@ -339,6 +352,12 @@ class LogMonitor:
                     self.last_callback_time,
                 )
                 self.last_log = log_text
+                self.latest_progress_at = time.monotonic()
+
+    def seconds_since_progress(self) -> float:
+        """距最近一次日志推进的秒数，按单调时钟计量。"""
+
+        return time.monotonic() - self.latest_progress_at
 
     async def _consume_new_lines(
         self,

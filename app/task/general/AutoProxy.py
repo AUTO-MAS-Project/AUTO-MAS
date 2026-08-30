@@ -24,6 +24,7 @@ import uuid
 import shlex
 import shutil
 import asyncio
+import time
 import re
 from pathlib import Path
 from contextlib import suppress
@@ -150,6 +151,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
+        self.log_start_at = time.monotonic()
 
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
@@ -294,6 +296,7 @@ class AutoProxyTask(TaskExecuteBase):
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
             )
             self.log_start_time = datetime.now()
+            self.log_start_at = time.monotonic()
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
                 LogRecord()
             )
@@ -390,7 +393,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在等待脚本日志文件生成"
             if_get_file = False
             target_suffix: int | None = None  # None = 未锁定
-            while datetime.now() - t < timedelta(minutes=1):
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
                 if self.log_use_prefix:
                     prefix_fmt = self.log_format[: -len(_PREFIX_SENTINEL)]
                     pattern = _format_to_prefix_regex(prefix_fmt)
@@ -711,7 +715,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 成功/失败标志按配置模式（子串包含 / 正则）在日志全文中查找
         if self.success_log.search(log) is not None:
             self.cur_user_log.status = "Success!"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "脚本进程超时"
@@ -722,8 +727,9 @@ class AutoProxyTask(TaskExecuteBase):
             elif await self.general_process_manager.is_running():
                 self._process_seen = True
                 self.cur_user_log.status = "通用脚本正常运行中"
-            elif not self._process_seen and datetime.now() - self.log_start_time < timedelta(
-                seconds=_PROCESS_START_GRACE_SECONDS
+            elif (
+                not self._process_seen
+                and time.monotonic() - self.log_start_at < _PROCESS_START_GRACE_SECONDS
             ):
                 # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
                 # 收尾日志触发了回调，不据此判定任务结束
@@ -756,7 +762,7 @@ class AutoProxyTask(TaskExecuteBase):
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

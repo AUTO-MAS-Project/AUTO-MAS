@@ -30,6 +30,7 @@ if IS_WINDOWS:
     import win32gui
     import keyboard
 from datetime import datetime, timedelta
+import time
 from pydantic import BaseModel
 from pathlib import Path
 
@@ -180,10 +181,8 @@ class LDManager(DeviceBase):
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
@@ -210,10 +209,8 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 await asyncio.sleep(
@@ -258,10 +255,8 @@ class LDManager(DeviceBase):
 
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
                 await self._verify_and_restore_instance_config(idx)
@@ -331,10 +326,8 @@ class LDManager(DeviceBase):
 
         result = (await self.get_device_info(idx))[idx]
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             # 检查窗口可见性是否符合预期
             if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
                 return status
