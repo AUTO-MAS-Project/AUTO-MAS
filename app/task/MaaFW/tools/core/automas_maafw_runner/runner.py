@@ -400,14 +400,63 @@ def _venv_bootstrap_python() -> str:
     return sys.executable
 
 
-def _ensure_maafw_global_init(project_path: Path | None = None) -> None:
+def describe_loaded_maafw() -> tuple[str, str]:
+    """返回实际加载的 MaaFramework 版本与 Python binding 的版本。
+
+    两者未必相同：DLL 来自项目自带目录，binding 来自 runner venv。MaaFW 的
+    py binding 与原生库是绑定关系，跨 minor 混用**不会报错**，但行为可能不同，
+    真机上表现为「资源能导入、识别却不对」这类只在生产复现的问题。
+    """
+
+    try:
+        loaded = str(Library.version() or "").strip()
+    except Exception:  # pragma: no cover - 取不到就当未知，不能因此挡住运行
+        loaded = ""
+    try:
+        from importlib.metadata import version as _dist_version
+
+        binding = str(_dist_version("maafw") or "").strip()
+    except Exception:  # pragma: no cover
+        binding = ""
+    return loaded, binding
+
+
+def _normalize_maafw_version(value: str) -> str:
+    return value.strip().lstrip("vV")
+
+
+def _ensure_maafw_global_init(
+    project_path: Path | None = None,
+    send_log: Callable[[str], None] | None = None,
+) -> None:
     global _MAAFW_INITIALIZED
     if _MAAFW_INITIALIZED:
         return
     with _MAAFW_INIT_LOCK:
         if _MAAFW_INITIALIZED:
             return
-        _ensure_maafw_client_library_mode(_project_maafw_runtime_path(project_path))
+        runtime_path = _project_maafw_runtime_path(project_path)
+        _ensure_maafw_client_library_mode(runtime_path)
+        if send_log is not None:
+            loaded, binding = describe_loaded_maafw()
+            source = str(runtime_path) if runtime_path else "runner 运行环境自带"
+            send_log(
+                f"MaaFramework 实际加载: v{loaded or '未知'}; 来源={source}"
+            )
+            if (
+                loaded
+                and binding
+                and _normalize_maafw_version(loaded)
+                != _normalize_maafw_version(binding)
+            ):
+                # 只警告不拦截：现有项目正是这么跑起来的，贸然拦下会让原本能跑的
+                # 直接失败。但必须让人看见——这类不一致不会报错，只会行为不同。
+                send_log(
+                    f"⚠ MaaFramework 版本不一致: 原生库 v{loaded} 与 Python "
+                    f"binding v{binding} 不是同一版本。MaaFW 的 binding 与原生库"
+                    "是绑定关系，跨版本混用不报错但行为可能不同，"
+                    "识别异常时请优先怀疑这里"
+                )
         user_path = (project_path or Path.cwd()).resolve()
         option_path = user_path / "config" / "maa_option.json"
         option_path.parent.mkdir(parents=True, exist_ok=True)
@@ -479,7 +528,7 @@ class MaaFWRunner:
         if self._initialized:
             return
 
-        _ensure_maafw_global_init(Path(self.plan.path))
+        _ensure_maafw_global_init(Path(self.plan.path), self.send_log)
         # 先确认设备真的连得上，再去加载原生插件与资源。
         # 这两步对 M9A 这类项目要几秒并会载入 DLL，设备没起来时全是白做的功，
         # 失败还要再逐个拆掉。冷启动的模拟器可能要等几分钟，更不该让它压在
