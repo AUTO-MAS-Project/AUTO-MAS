@@ -781,7 +781,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning("OK-NTE log_box 收尾推送失败（oknte_resolve）")
             # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
             self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败（log_box 收尾异常），本次报告缺少该用户节点详情")
+                (LogType.NORMAL, "⚠️ 节点采集失败")
             )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
