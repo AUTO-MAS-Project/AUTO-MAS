@@ -19,15 +19,15 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
           </div>
-          <h2 class="mask-title">正在进行 ok-ww 设置</h2>
+          <h2 class="mask-title">{{ t('edit.okWwSetupProgress') }}</h2>
           <p class="mask-description">
-            请在 ok-ww 界面完成设置。
+            {{ t('edit.finishSetupOkWw') }}
             <br />
-            完成后点击“保存设置”结束本次会话。
+            {{ t('edit.clickSaveSettingsWhen') }}
           </p>
           <div class="mask-actions">
             <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-              保存设置
+              {{ t('edit.saveSettings') }}
             </a-button>
           </div>
         </div>
@@ -39,7 +39,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>基本信息</h3>
+              <h3>{{ t('edit.basicInfo') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -47,15 +47,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      用户名
-                      <a-tooltip title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计">
+                      {{ t('edit.username') }}
+                      <a-tooltip :title="t('edit.nameUsedTellUsers')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.userName"
-                    placeholder="请输入用户名"
+                    :placeholder="t('edit.enterUsername')"
                     size="large"
                     @blur="saveField('Info.Name', formData.userName)"
                   />
@@ -65,8 +65,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      启用状态
-                      <a-tooltip title="是否启用该用户">
+                      {{ t('edit.enabled') }}
+                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -76,8 +76,8 @@
                     size="large"
                     @change="saveField('Info.Status', formData.Info.Status)"
                   >
-                    <a-select-option :value="true">是</a-select-option>
-                    <a-select-option :value="false">否</a-select-option>
+                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -98,10 +98,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      是否启用快速配置
-                      <a-tooltip
-                        title="开启后，使用下方快速配置面板中的高频任务字段覆盖当前脚本配置；关闭后保留当前脚本配置中的完整任务设置"
-                      >
+                      {{ t('edit.enableQuickConfiguration') }}
+                      <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -118,10 +116,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      是否采集节点详情
-                      <a-tooltip
-                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
-                      >
+                      {{ t('edit.collectNodeDetails') }}
+                      <a-tooltip :title="t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -142,15 +138,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      账号
-                      <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号">
+                      {{ t('edit.account') }}
+                      <a-tooltip :title="t('edit.usedSwitchAccountsLeave')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    placeholder="请输入账号"
+                    :placeholder="t('edit.enterAccount')"
                     size="large"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
@@ -160,15 +156,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      密码
-                      <a-tooltip title="PC 端需要切换账号时必须填写">
+                      {{ t('edit.password') }}
+                      <a-tooltip :title="t('edit.requiredWhenSwitchingAccounts')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    placeholder="请输入密码"
+                    :placeholder="t('edit.enterPassword')"
                     size="large"
                     @blur="saveField('Info.Password', formData.Info.Password)"
                   />
@@ -181,15 +177,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      游戏资源
-                      <a-tooltip title="选择当前用户使用的游戏资源">
+                      {{ t('edit.gameResource') }}
+                      <a-tooltip :title="t('edit.pickGameResourceThis')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
-                    placeholder="请选择资源"
+                    :placeholder="t('edit.pickResource')"
                     size="large"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
@@ -200,8 +196,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      剩余天数
-                      <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                      {{ t('edit.daysLeft') }}
+                      <a-tooltip :title="t('edit.daysLeftAccount1')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -221,15 +217,15 @@
             <a-form-item>
               <template #label>
                 <span class="form-label">
-                  备注
-                  <a-tooltip title="为用户添加备注信息">
+                  {{ t('edit.note') }}
+                  <a-tooltip :title="t('edit.addNoteAboutThis')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </span>
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
-                placeholder="请输入备注"
+                :placeholder="t('edit.enterNote')"
                 :rows="4"
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
@@ -242,7 +238,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>任务配置</h3>
+              <h3>{{ t('edit.taskConfiguration') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -250,8 +246,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      启动任务（-t N）
-                      <a-tooltip title="任务序号与 ok-ww 任务列表一致">
+                      {{ t('edit.startTaskTN') }}
+                      <a-tooltip :title="t('edit.taskNumbersMatchOk2')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -275,8 +271,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      当前启动参数
-                      <a-tooltip title="参数由任务配置自动生成，固定追加 -e">
+                      {{ t('edit.currentLaunchArguments') }}
+                      <a-tooltip :title="t('edit.argumentsGeneratedFromTask')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -288,7 +284,7 @@
 
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item label="消耗体力刷取">
+                <a-form-item :label="t('edit.spendSanityFarm')">
                   <a-select
                     v-model:value="formData.Task.WhichToFarm"
                     size="large"
@@ -298,7 +294,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-if="formData.Task.WhichToFarm === 'Tacet Suppression'" :span="12">
-                <a-form-item label="F2 列表中的无音区序号">
+                <a-form-item :label="t('edit.sonanceCasketNumberF2')">
                   <a-input-number
                     v-model:value="formData.Task.WhichTacetSuppressionToFarm"
                     :min="1"
@@ -310,7 +306,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-else-if="formData.Task.WhichToFarm === 'Forgery Challenge'" :span="12">
-                <a-form-item label="F2 列表中的凝素领域序号">
+                <a-form-item :label="t('edit.echoDomainNumberF2')">
                   <a-input-number
                     v-model:value="formData.Task.WhichForgeryChallengeToFarm"
                     :min="1"
@@ -322,7 +318,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-else :span="12">
-                <a-form-item label="模拟领域材料">
+                <a-form-item :label="t('edit.simulatedUniverseMaterials')">
                   <a-select
                     v-model:value="formData.Task.MaterialSelection"
                     size="large"
@@ -333,14 +329,14 @@
               </a-col>
             </a-row>
 
-            <a-form-item label="需要时使用梦魇巢穴完成日常声骸">
+            <a-form-item :label="t('edit.useNightmareNestDaily')">
               <a-switch
                 v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
                 @change="saveTaskConfig"
               />
             </a-form-item>
 
-            <a-form-item label="每日任务后运行的附加任务">
+            <a-form-item :label="t('edit.extraTasksThatRun')">
               <a-checkbox-group
                 v-model:value="formData.Task.AdditionalTasks"
                 :options="additionalTaskOptions"
@@ -365,11 +361,11 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>通知配置</h3>
+              <h3>{{ t('edit.notificationSettings') }}</h3>
             </div>
             <a-row :gutter="24" align="middle">
               <a-col :span="6">
-                <span style="font-weight: 500">启用通知</span>
+                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
               </a-col>
               <a-col :span="18">
                 <a-switch
@@ -381,7 +377,7 @@
 
             <a-row :gutter="24" style="margin-top: 16px">
               <a-col :span="6">
-                <span style="font-weight: 500">通知内容</span>
+                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
               </a-col>
               <a-col :span="18">
                 <a-checkbox
@@ -389,7 +385,7 @@
                   :disabled="!formData.Notify.Enabled"
                   @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
                 >
-                  统计信息
+                  {{ t('edit.statistics') }}
                 </a-checkbox>
               </a-col>
             </a-row>
@@ -401,13 +397,13 @@
                   :disabled="!formData.Notify.Enabled"
                   @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
                 >
-                  邮件通知
+                  {{ t('edit.emailNotification') }}
                 </a-checkbox>
               </a-col>
               <a-col :span="18">
                 <a-input
                   v-model:value="formData.Notify.ToAddress"
-                  placeholder="请输入收件邮箱"
+                  :placeholder="t('edit.enterRecipientAddress')"
                   :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
                   size="large"
                   @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
@@ -422,13 +418,13 @@
                   :disabled="!formData.Notify.Enabled"
                   @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
                 >
-                  Server酱
+                  {{ t('edit.serverchan') }}
                 </a-checkbox>
               </a-col>
               <a-col :span="18">
                 <a-input
                   v-model:value="formData.Notify.ServerChanKey"
-                  placeholder="请输入 SENDKEY"
+                  :placeholder="t('edit.enterSendkey')"
                   :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
                   size="large"
                   @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
@@ -447,6 +443,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
@@ -465,6 +462,8 @@ import UserEditHeader from '@/components/UserEditHeader.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -494,8 +493,8 @@ const resourceOptions = [
 ]
 
 const quickConfigOptions = [
-  { label: '启用', value: true },
-  { label: '关闭', value: false },
+  { label: t('edit.enabled3'), value: true },
+  { label: t('edit.off'), value: false },
 ]
 
 const okwwConfigModeOptions: Array<{
@@ -506,24 +505,24 @@ const okwwConfigModeOptions: Array<{
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
-    label: '脚本',
+    label: t('edit.script'),
     value: '脚本',
-    title: '脚本',
-    description: '使用脚本级共享配置，所有用户共用。',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
-    label: '用户',
+    label: t('edit.user'),
     value: '用户',
-    title: '用户',
-    description: '使用当前用户独立配置，与脚本配置隔离。',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: '直控',
+    label: t('edit.directControl'),
     value: '直控',
-    title: '直控',
-    description: '直接使用 Okww 原有配置，复杂设置交给脚本 GUI。',
+    title: t('edit.directControl'),
+    description: t('edit.useExistingOkwwConfiguration'),
     icon: 'setting',
   },
 ]
@@ -675,10 +674,9 @@ const createUserImmediately = async (): Promise<boolean> => {
     const errorMessage = userApiError.value || '创建用户失败'
     if (addUserErrorCode.value === 409) {
       Modal.warning({
-        title: '尚未生成 ok-ww 设置',
-        content:
-          '当前 ok-ww 安装中没有可用的设置目录。首次下载后，请先返回脚本列表点击“配置 ok-ww”，在本体中保存一次设置，再重新添加用户。',
-        okText: '返回脚本列表',
+        title: t('edit.noOkWwSettings'),
+        content: t('edit.currentOkWwInstall'),
+        okText: t('edit.backScriptList'),
         onOk: handleCancel,
       })
       return false
@@ -764,7 +762,7 @@ const handleOkwwConfig = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(`ok-ww 设置失败: ${data.message}`)
+          message.error(t('edit.okWwSetupFailed', { p0: data.message }))
           void stopOkwwConfigSession()
         }
       }),
@@ -779,7 +777,7 @@ const handleOkwwConfig = async () => {
         : formData.Info.Mode === '脚本'
           ? '脚本共享'
           : '当前用户'
-    message.success(`已打开${configTarget}的 ok-ww 设置`)
+    message.success(t('edit.openedOkWwSettings', { p0: configTarget }))
     okwwConfigTimeout = window.setTimeout(handleSaveOkwwConfig, 30 * 60 * 1000)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
@@ -793,16 +791,16 @@ const handleOkwwConfig = async () => {
 const handleSaveOkwwConfig = async () => {
   if (!okwwTaskId.value) return
   if (await stopOkwwConfigSession(true)) {
-    message.success('ok-ww 设置已保存')
+    message.success(t('edit.okWwSettingsSaved'))
   } else {
-    message.error('保存 ok-ww 设置失败')
+    message.error(t('edit.couldNotSaveOk2'))
   }
 }
 
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'Okww') {
-    message.error('ok-ww 脚本不存在或加载失败')
+    message.error(t('edit.okWwScriptDoes'))
     handleCancel()
     return false
   }
@@ -836,7 +834,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error('加载用户失败')
+    message.error(t('edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false

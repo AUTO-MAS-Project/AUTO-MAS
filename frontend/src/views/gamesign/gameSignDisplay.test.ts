@@ -5,7 +5,7 @@ import {
   buildUserTagsMap,
   getSignDetailAlias,
   getSignDetailClass,
-  getSignStatusText,
+  getSignStatusKey,
   getTagClass,
   getTagText,
   hasPlatformToken,
@@ -249,12 +249,12 @@ describe('Tooltip 行展示', () => {
   })
 
   it('状态文案', () => {
-    expect(getSignStatusText('成功')).toBe('已签')
-    expect(getSignStatusText('已签到')).toBe('已签')
-    expect(getSignStatusText('风控')).toBe('风控')
-    expect(getSignStatusText('失败')).toBe('失败')
-    expect(getSignStatusText('')).toBe('未签')
-    expect(getSignStatusText('莫名其妙的状态')).toBe('未签')
+    expect(getSignStatusKey('成功')).toBe('gamesign.signStatus.signed')
+    expect(getSignStatusKey('已签到')).toBe('gamesign.signStatus.signed')
+    expect(getSignStatusKey('风控')).toBe('gamesign.signStatus.risk')
+    expect(getSignStatusKey('失败')).toBe('gamesign.signStatus.failed')
+    expect(getSignStatusKey('')).toBe('gamesign.signStatus.unsigned')
+    expect(getSignStatusKey('莫名其妙的状态')).toBe('gamesign.signStatus.unsigned')
   })
 
   it('状态样式类', () => {

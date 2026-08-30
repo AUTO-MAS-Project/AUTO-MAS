@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { DownOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed } from 'vue'
 import draggable from 'vuedraggable'
@@ -9,6 +10,8 @@ import {
   type LogHookRule as LogHookRuleItem,
   type LogHookType,
 } from '../composables/useLogHookRules'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   enabled: boolean
@@ -44,8 +47,8 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'drop', label: '丢弃行', title: '匹配正则命中的日志行整行丢弃' },
-  { key: 'replace', label: '改写行', title: '按匹配正则替换行内内容后继续交给后续规则' },
+  { key: 'drop', label: t('edit.dropLine'), title: t('edit.dropWholeLineWhen') },
+  { key: 'replace', label: t('edit.rewriteLine'), title: t('edit.rewriteLineMatchPattern') },
 ]
 
 const onAddMenuClick = ({ key }: { key: string }) => {
@@ -71,14 +74,12 @@ const onDragEnd = () => {
   <div class="log-hook-config">
     <div class="hook-config-header">
       <h3>
-        日志处理钩子
-        <a-tooltip
-          title="开启后按下列规则逐行预处理脚本日志：丢弃命中的噪声行、改写需要脱敏或归一化的内容。钩子先于任务日志、推送日志采集与成功/失败判定执行，被丢弃的行不会进入其中任何一环，请勿丢弃成功/失败标志所在的行。"
-        >
+        {{ t('edit.logHooks') }}
+        <a-tooltip :title="t('edit.whenScriptLogPreprocessed')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
-      <a-tooltip title="开启后才会按规则处理日志；关闭时配置仍保留，行为与未配置钩子一致">
+      <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
         <a-switch
           :checked="enabled"
           :checked-children="'启用'"
@@ -90,7 +91,7 @@ const onDragEnd = () => {
 
     <div class="hook-config-body">
       <div v-if="!enabled" class="hook-config-disabled-tip">
-        日志处理钩子已停用，规则不会参与日志处理。
+        {{ t('edit.logHooksOffRules') }}
       </div>
 
       <draggable
@@ -121,7 +122,7 @@ const onDragEnd = () => {
         <a-dropdown :trigger="['click']">
           <a-button type="dashed" class="add-hook-btn">
             <PlusOutlined />
-            添加规则
+            {{ t('edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>

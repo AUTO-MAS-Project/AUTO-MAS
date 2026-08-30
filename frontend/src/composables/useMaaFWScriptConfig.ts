@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service, type ComboBoxItem } from '@/api'
@@ -282,17 +283,17 @@ export function useMaaFWControlConfig(
 
     return [
       {
-        label: '模拟器',
+        label: t('misc.emulator'),
         value: selectedEmulatorLabel.value,
       },
       {
-        label: '截图',
+        label: t('misc.screenshot'),
         value: screencapWithExtras
           ? 'MaaFW 默认截图集合（包含 EmulatorExtras）'
           : 'MaaFW 默认截图集合（不启用 EmulatorExtras）',
       },
       {
-        label: '输入',
+        label: t('misc.input'),
         value: inputWithExtras
           ? 'MaaFW 全量输入集合（优先 EmulatorExtras）'
           : 'MaaFW 默认输入集合（不启用 EmulatorExtras）',
@@ -418,7 +419,7 @@ export function useMaaFWControlConfig(
 
       const fileName = path.split(/[\\/]/).pop() || ''
       if (!fileName.toLowerCase().endsWith('.exe')) {
-        message.error('请选择 exe 文件')
+        message.error(t('misc.pickExeFile'))
         return
       }
 
@@ -427,7 +428,7 @@ export function useMaaFWControlConfig(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`选择启动 exe 失败: ${errorMsg}`)
-      message.error('选择启动 exe 失败')
+      message.error(t('misc.couldNotPickLaunch'))
     }
   }
 

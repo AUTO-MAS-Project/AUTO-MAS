@@ -22,7 +22,7 @@
           <template #icon>
             <CalendarOutlined />
           </template>
-          跳转到计划表
+          {{ t('edit.goPlan') }}
         </a-button>
       </a-col>
     </a-row>
@@ -40,7 +40,7 @@
                 <!-- eslint-disable vue/no-v-html -- formatTooltip escapes all HTML before converting newlines to br tags. -->
                 <div class="plan-tooltip" v-html="formatTooltip(medicineNumbTooltip)"></div>
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示输入框 -->
@@ -71,7 +71,7 @@
                 displaySeriesNumb === '0'
                   ? 'AUTO'
                   : displaySeriesNumb === '-1'
-                    ? '不切换'
+                    ? t('edit.doNotSwitch')
                     : displaySeriesNumb
               }}
             </div>
@@ -79,7 +79,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(seriesNumbTooltip)"></div>
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -94,7 +94,7 @@
               { label: '4', value: '4' },
               { label: '5', value: '5' },
               { label: '6', value: '6' },
-              { label: '不切换', value: '-1' },
+              { label: t('edit.doNotSwitch'), value: '-1' },
             ]"
             :disabled="loading"
             @update:value="$emit('update-series-numb', $event)"
@@ -116,7 +116,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stageTooltip)"></div>
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -125,7 +125,7 @@
             :value="displayStage"
             :options="stageOptions"
             :loading="loading"
-            placeholder="选择或输入自定义关卡"
+            :placeholder="t('edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage', $event)"
             @add-custom-stage="handleAddCustomStage"
           />
@@ -150,7 +150,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage1Tooltip)"></div>
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -159,7 +159,7 @@
             :value="displayStage1"
             :options="stageOptions"
             :loading="loading"
-            placeholder="选择或输入自定义关卡"
+            :placeholder="t('edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage1', $event)"
             @add-custom-stage="handleAddCustomStage1"
           />
@@ -182,7 +182,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage2Tooltip)"></div>
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -191,7 +191,7 @@
             :value="displayStage2"
             :options="stageOptions"
             :loading="loading"
-            placeholder="选择或输入自定义关卡"
+            :placeholder="t('edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage2', $event)"
             @add-custom-stage="handleAddCustomStage2"
           />
@@ -214,7 +214,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage3Tooltip)"></div>
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -223,7 +223,7 @@
             :value="displayStage3"
             :options="stageOptions"
             :loading="loading"
-            placeholder="选择或输入自定义关卡"
+            :placeholder="t('edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage3', $event)"
             @add-custom-stage="handleAddCustomStage3"
           />
@@ -244,7 +244,7 @@
                 <div class="plan-tooltip" v-html="formatTooltip(stageRemainTooltip)"></div>
                 <!-- eslint-enable vue/no-v-html -->
               </template>
-              <div class="plan-source">来自计划表</div>
+              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -253,7 +253,7 @@
             :value="displayStageRemain"
             :options="stageRemainOptions"
             :loading="loading"
-            placeholder="选择或输入自定义关卡"
+            :placeholder="t('edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage-remain', $event)"
             @add-custom-stage="handleAddCustomStageRemain"
           />
@@ -264,10 +264,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { CalendarOutlined } from '@ant-design/icons-vue'
 import LabelWithHint from './LabelWithHint.vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
+
+const { t } = useI18n()
 
 const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{

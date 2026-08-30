@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { BookOutlined } from '@ant-design/icons-vue'
@@ -6,6 +7,8 @@ import splitDocRaw from './docs/split-doc.md?raw'
 import regexDocRaw from './docs/regex-doc.md?raw'
 import expressionDocRaw from './docs/expression-doc.md?raw'
 import multilineDocRaw from './docs/multiline-doc.md?raw'
+
+const { t } = useI18n()
 
 type DocKey = 'split' | 'regex' | 'expression' | 'multiline'
 
@@ -145,7 +148,7 @@ watch(
 <template>
   <a-modal
     v-model:open="open"
-    title="日志提取表达式参考"
+    :title="t('edit.extractionPatternReference')"
     width="1000px"
     :footer="null"
     :destroy-on-close="false"
@@ -154,20 +157,20 @@ watch(
     <template #title>
       <span class="modal-title">
         <BookOutlined />
-        日志提取表达式参考
+        {{ t('edit.extractionPatternReference') }}
       </span>
     </template>
 
     <a-tabs v-model:active-key="activeKey" size="small" class="docs-tabs">
-      <a-tab-pane key="split" tab="字符串切割指南" />
-      <a-tab-pane key="regex" tab="正则指南" />
-      <a-tab-pane key="expression" tab="表达式指南" />
-      <a-tab-pane key="multiline" tab="多行聚合指南" />
+      <a-tab-pane key="split" :tab="t('edit.stringSplittingGuide')" />
+      <a-tab-pane key="regex" :tab="t('edit.regexGuide')" />
+      <a-tab-pane key="expression" :tab="t('edit.expressionGuide')" />
+      <a-tab-pane key="multiline" :tab="t('edit.multiLineAggregationGuide')" />
     </a-tabs>
 
     <div class="docs-body">
       <aside class="docs-toc">
-        <div class="docs-toc-title">目录</div>
+        <div class="docs-toc-title">{{ t('edit.directory') }}</div>
         <ul class="docs-toc-list">
           <li
             v-for="item in tocItems"

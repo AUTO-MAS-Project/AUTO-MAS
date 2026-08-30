@@ -1,4 +1,5 @@
 import { type HistoryData, HistorySearchIn } from '@/api'
+import { useI18n } from 'vue-i18n'
 import { Service } from '@/api/services/Service'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { message } from 'ant-design-vue'
@@ -13,7 +14,7 @@ export interface HistoryDateGroup {
   users: Record<string, HistoryData>
 }
 
-// 快捷时间预设
+// 快捷时间预设。label 仅为代码内可读标识，界面显示走 history.preset.<key>
 export const timePresets = [
   {
     key: 'today',
@@ -67,6 +68,8 @@ export const timePresets = [
 ]
 
 export function useHistoryLogic() {
+  const { t } = useI18n()
+
   // 响应式数据
   const searchLoading = ref(false)
   const detailLoading = ref(false)
@@ -102,7 +105,7 @@ export function useHistoryLogic() {
   // 搜索历史记录
   const handleSearch = async () => {
     if (!searchForm.startDate || !searchForm.endDate) {
-      message.error('请选择开始日期和结束日期')
+      message.error(t('history.toast.needDateRange'))
       return
     }
 
@@ -126,15 +129,15 @@ export function useHistoryLogic() {
         await playSound('history_query')
 
         if (!isMounted) return
-        message.success('搜索完成')
+        message.success(t('history.toast.searchDone'))
       } else {
-        message.error(response.message || '搜索失败')
+        message.error(response.message || t('history.toast.searchFailed'))
       }
     } catch (error) {
       if (!isMounted) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`搜索历史记录失败: ${errorMsg}`)
-      message.error('搜索历史记录失败')
+      message.error(t('history.toast.searchHistoryFailed'))
     } finally {
       if (isMounted) searchLoading.value = false
     }
@@ -196,14 +199,14 @@ export function useHistoryLogic() {
       if (response.code === 200) {
         currentDetail.value = response.data
       } else {
-        message.error(response.message || '获取详细日志失败')
+        message.error(response.message || t('history.toast.fetchLogFailed'))
         currentDetail.value = null
       }
     } catch (error) {
       if (!isMounted) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取历史记录详情失败: ${errorMsg}`)
-      message.error('获取历史记录详情失败')
+      message.error(t('history.toast.fetchDetailFailed'))
       currentDetail.value = null
     } finally {
       if (isMounted) detailLoading.value = false
@@ -213,7 +216,7 @@ export function useHistoryLogic() {
   // 打开日志文件
   const handleOpenLogFile = async () => {
     if (!currentJsonFile.value) {
-      message.warning('请先选择一条记录')
+      message.warning(t('history.toast.needRecord'))
       return
     }
 
@@ -221,21 +224,21 @@ export function useHistoryLogic() {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
       if (window.electronAPI && window.electronAPI.openFile) {
         await window.electronAPI.openFile(logFilePath)
-        message.success('日志文件已打开')
+        message.success(t('history.toast.logOpened'))
       } else {
-        message.error('当前环境不支持打开文件功能')
+        message.error(t('history.toast.openFileUnsupported'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`打开日志文件失败: ${errorMsg}`)
-      message.error(`打开日志文件失败: ${errorMsg}`)
+      message.error(t('history.toast.openFileFailed', { error: errorMsg }))
     }
   }
 
   // 打开日志文件所在目录
   const handleOpenLogDirectory = async () => {
     if (!currentJsonFile.value) {
-      message.warning('请先选择一条记录')
+      message.warning(t('history.toast.needRecord'))
       return
     }
 
@@ -243,14 +246,14 @@ export function useHistoryLogic() {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
       if (window.electronAPI && window.electronAPI.showItemInFolder) {
         await window.electronAPI.showItemInFolder(logFilePath)
-        message.success('日志文件目录已打开')
+        message.success(t('history.toast.dirOpened'))
       } else {
-        message.error('当前环境不支持打开目录功能')
+        message.error(t('history.toast.openDirUnsupported'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`打开日志文件目录失败: ${errorMsg}`)
-      message.error(`打开日志文件目录失败: ${errorMsg}`)
+      message.error(t('history.toast.openDirFailed', { error: errorMsg }))
     }
   }
 

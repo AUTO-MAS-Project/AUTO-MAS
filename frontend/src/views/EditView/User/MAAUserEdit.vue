@@ -7,15 +7,15 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
           </div>
-          <h2 class="mask-title">正在进行MAA配置</h2>
+          <h2 class="mask-title">{{ t('edit.maaConfigurationProgress') }}</h2>
           <p class="mask-description">
-            当前正在配置该用户的 MAA，请在 MAA 配置界面完成相关设置。
+            {{ t('edit.maaConfigurationThisUser') }}
             <br />
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
             <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
-              保存配置
+              {{ t('edit.saveConfiguration') }}
             </a-button>
           </div>
         </div>
@@ -133,6 +133,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -165,6 +166,8 @@ import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
+const { t } = useI18n()
+
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
@@ -182,7 +185,7 @@ let fieldSavePromise: Promise<boolean> | null = null
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
   if (!errorMsg || errorMsg.includes('HTTP error')) {
-    message.error('用户配置保存失败，请检查后端连接后重试')
+    message.error(t('edit.couldNotSaveUser'))
   }
   logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
 }
@@ -223,7 +226,7 @@ const serverOptions = [
 ]
 
 // 关卡选项
-const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
+const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
 const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
@@ -252,7 +255,7 @@ const isCustomStage = (value: string) => {
 }
 
 // 关卡配置模式选项
-const stageModeOptions = ref<any[]>([{ label: '固定', value: 'Fixed' }])
+const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }])
 
 // 计划模式状态
 const isPlanMode = computed(() => {
@@ -556,8 +559,8 @@ const fightSummary = computed(() =>
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
+      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -713,13 +716,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error('脚本不存在')
+      message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error('加载脚本信息失败')
+    message.error(t('edit.couldNotLoadScript2'))
   }
 }
 
@@ -739,13 +742,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error('创建用户失败')
+    message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -786,17 +789,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error('用户不存在')
+        message.error(t('edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error('获取用户数据失败')
+      message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error('加载用户数据失败')
+    message.error(t('edit.couldNotLoadUser2'))
   }
 }
 
@@ -896,15 +899,15 @@ const loadStageModeOptions = async () => {
 // 选择并导入基建配置文件
 const selectAndImportInfrastructureConfig = async () => {
   if (!isEdit.value) {
-    message.warning('请先保存用户后再导入配置')
+    message.warning(t('edit.saveUserBeforeImporting'))
     return
   }
 
   try {
     // 选择文件
     const path = await window.electronAPI?.selectFile([
-      { name: 'JSON 文件', extensions: ['json'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('edit.jsonFiles'), extensions: ['json'] },
+      { name: t('edit.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
@@ -924,18 +927,18 @@ const selectAndImportInfrastructureConfig = async () => {
         // 清空 InfrastIndex，等待用户从下拉框中选择
         formData.Info.InfrastIndex = ''
 
-        message.success('基建配置导入成功')
+        message.success(t('edit.baseConfigurationImported'))
 
         // 重新加载基建配置选项
         await loadInfrastructureOptions()
       } else {
-        message.error('基建配置导入失败')
+        message.error(t('edit.couldNotImportBase'))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`基建配置导入失败: ${errorMsg}`)
-    message.error('基建配置导入失败')
+    message.error(t('edit.couldNotImportBase'))
   } finally {
     infrastructureImporting.value = false
   }
@@ -1002,7 +1005,7 @@ const handleMAAConfig = async () => {
             logger.error(
               `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${data.message}`
             )
-            message.error(`MAA配置失败: ${data.message}`)
+            message.error(t('edit.maaConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -1011,7 +1014,9 @@ const handleMAAConfig = async () => {
           logger.info(`用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`)
           // 根据结果显示不同消息
           if (data.outcome === 'success') {
-            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+            message.success(
+              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           // 清理连接
           for (const subscriptionId of maaSubscriptionIds.value) {
@@ -1030,7 +1035,9 @@ const handleMAAConfig = async () => {
       maaSubscriptionIds.value = subscriptionIds
       maaTaskId.value = wsId
       showMAAConfigMask.value = true
-      message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
+      message.success(
+        t('edit.startedMaaSetupUser', { p0: formData.Info?.Name || formData.userName })
+      )
 
       // 设置 30 分钟超时自动断开
       maaConfigTimeout = window.setTimeout(
@@ -1042,7 +1049,9 @@ const handleMAAConfig = async () => {
             maaSubscriptionIds.value = []
             maaTaskId.value = null
             showMAAConfigMask.value = false
-            message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
+            message.info(
+              t('edit.configurationSessionUserP0', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           maaConfigTimeout = null
         },
@@ -1054,7 +1063,7 @@ const handleMAAConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动MAA配置失败: ${errorMsg}`)
-    message.error('启动MAA配置失败')
+    message.error(t('edit.couldNotStartMaa'))
   } finally {
     maaConfigLoading.value = false
   }
@@ -1064,7 +1073,7 @@ const handleSaveMAAConfig = async () => {
   try {
     const taskId = maaTaskId.value
     if (!taskId) {
-      message.error('未找到活动的配置会话')
+      message.error(t('edit.noActiveConfigurationSession'))
       return
     }
 
@@ -1080,14 +1089,14 @@ const handleSaveMAAConfig = async () => {
         window.clearTimeout(maaConfigTimeout)
         maaConfigTimeout = null
       }
-      message.success('用户的配置已保存')
+      message.success(t('edit.configurationThisUserWas'))
     } else {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存MAA配置失败: ${errorMsg}`)
-    message.error('保存MAA配置失败')
+    message.error(t('edit.couldNotSaveMaa'))
   }
 }
 
@@ -1122,7 +1131,7 @@ const addStageToOptions = (stageName: string) => {
   // 检查是否已存在
   const exists = stageOptions.value.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(`关卡 "${trimmedName}" 已存在`)
+    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
     return false
   }
 
@@ -1133,14 +1142,14 @@ const addStageToOptions = (stageName: string) => {
     isCustom: true,
   })
 
-  message.success(`自定义关卡 "${trimmedName}" 添加成功`)
+  message.success(t('edit.customStageP0Added', { p0: trimmedName }))
   return true
 }
 
 // 添加主关卡
 const addCustomStage = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1152,7 +1161,7 @@ const addCustomStage = (stageName: string) => {
 // 添加备选关卡-1
 const addCustomStage1 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1164,7 +1173,7 @@ const addCustomStage1 = (stageName: string) => {
 // 添加备选关卡-2
 const addCustomStage2 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1176,7 +1185,7 @@ const addCustomStage2 = (stageName: string) => {
 // 添加备选关卡-3
 const addCustomStage3 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1188,7 +1197,7 @@ const addCustomStage3 = (stageName: string) => {
 // 添加剩余理智关卡
 const addCustomStageRemain = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1252,7 +1261,7 @@ watch(
 // 初始化加载
 onMounted(() => {
   if (!scriptId) {
-    message.error('缺少脚本ID参数')
+    message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
@@ -1310,10 +1319,10 @@ onMounted(() => {
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
             const planName = planOption ? planOption.label : newStageMode
 
-            message.success(`已切换到计划模式：${planName}`)
+            message.success(t('edit.switchedPlanModeP0', { p0: planName }))
           } else {
             logger.warn(`计划配置响应不完整: ${JSON.stringify({ response, newStageMode })}`)
-            message.warning('计划配置加载失败，请检查计划是否存在')
+            message.warning(t('edit.couldNotLoadPlan'))
             planModeConfig.value = null
           }
         } catch (error) {
@@ -1325,7 +1334,7 @@ onMounted(() => {
             name: error instanceof Error ? error.name : error?.constructor?.name,
           }
           logger.error(`加载计划配置失败: ${JSON.stringify(errorInfo)}`)
-          message.error('加载计划配置时发生错误')
+          message.error(t('edit.somethingWentWrongLoading'))
           planModeConfig.value = null
         }
       }

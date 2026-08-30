@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted } from 'vue'
 import {
   EditOutlined,
@@ -19,13 +20,15 @@ import {
   buildUserTagsMap,
   getSignDetailAlias,
   getSignDetailClass,
-  getSignStatusText,
+  getSignStatusKey,
   getTagClass,
   getTagText,
   parseSignResult,
   type AccountGroup,
   type PlatformTag,
 } from './gameSignDisplay'
+
+const { t } = useI18n()
 
 const {
   config,
@@ -42,10 +45,8 @@ const {
 const logger = window.electronAPI.getLogger('游戏签到')
 const signLoading = ref(false)
 const notifySaving = ref(false)
-const credentialToolDescription =
-  '游戏签到社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。'
-const credentialPrivacyNotice =
-  '账密获取 Token 不保存任何账号密码；本次登录使用的账号密码仅存在于当前登录请求的内存中，登录完成或失败后立即清理，不写入配置、日志或通知。'
+const credentialToolDescription = computed(() => t('gamesign.section.toolDesc'))
+const credentialPrivacyNotice = computed(() => t('gamesign.section.privacyNotice'))
 
 // ==================== 账号管理 ====================
 
@@ -81,7 +82,7 @@ const loadAccounts = async () => {
       instances.push({
         uid,
         type: inst.type || 'GameSignAccountGroup',
-        Name: accountData.Name || '用户',
+        Name: accountData.Name || t('gamesign.defaultUserName'),
         Enabled: accountData.Enabled ?? true,
         MiyousheToken: accountData.MiyousheToken || '',
         KuroToken: accountData.KuroToken || '',
@@ -110,7 +111,7 @@ const handleAddAccount = async () => {
   try {
     const result = await addAccount()
     if (result) {
-      const defaultName = `用户 ${accounts.value.length + 1}`
+      const defaultName = t('gamesign.newUserName', { n: accounts.value.length + 1 })
       const data = result.data || {}
       const newAccount: AccountInstance = {
         uid: result.accountId,
@@ -123,7 +124,7 @@ const handleAddAccount = async () => {
         TaygedoToken: data.TaygedoToken || '',
       }
       accounts.value.push(newAccount)
-      message.success('用户已添加')
+      message.success(t('gamesign.toast.userAdded'))
       openEditModal(newAccount)
     }
   } finally {
@@ -133,11 +134,11 @@ const handleAddAccount = async () => {
 
 const handleDeleteAccount = (account: AccountInstance) => {
   Modal.confirm({
-    title: '删除用户',
-    content: `确定要删除「${account.Name}」吗？该操作不可撤销。`,
-    okText: '删除',
+    title: t('gamesign.toast.deleteTitle'),
+    content: t('gamesign.toast.deleteContent', { name: account.Name }),
+    okText: t('gamesign.list.del'),
     okType: 'danger',
-    cancelText: '取消',
+    cancelText: t('common.cancel'),
     onOk: async () => {
       await deleteAccount(account.uid)
       accounts.value = accounts.value.filter(a => a.uid !== account.uid)
@@ -152,7 +153,7 @@ const handleAccountEnabledChange = async (account: AccountInstance, enabled: boo
     await updateAccount(account.uid, { Enabled: enabled })
   } catch {
     account.Enabled = previousEnabled
-    message.error('保存失败，请重试')
+    message.error(t('gamesign.toast.saveFailed'))
   }
 }
 
@@ -165,13 +166,13 @@ const onDragEnd = async (evt: any) => {
     const order = accounts.value.map(a => a.uid)
     const response = await reorderAccounts(order)
     if (response.code !== 200) {
-      throw new Error(response.message || '排序保存失败')
+      throw new Error(response.message || t('gamesign.toast.reorderFailed'))
     }
     logger.info('用户排序已保存')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`排序保存失败: ${errorMsg}`)
-    message.error(`排序保存失败：${errorMsg}`)
+    message.error(t('gamesign.toast.reorderError', { error: errorMsg }))
     await loadAccounts()
   } finally {
     isDragging.value = false
@@ -248,14 +249,14 @@ const handleEditModalOk = async () => {
     if (idx >= 0) {
       accounts.value[idx] = { ...editingAccount.value }
     }
-    message.success('Token 已保存')
+    message.success(t('gamesign.toast.tokenSaved'))
     closeQrModal()
     editModalVisible.value = false
     editingAccount.value = null
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 Token 失败: ${errorMsg}`)
-    message.error('保存失败，请重试')
+    message.error(t('gamesign.toast.saveFailed'))
   }
 }
 
@@ -265,7 +266,7 @@ const handleTaygedoLogin = async () => {
   const password = taygedoLoginPassword.value
   if (!accountId) return
   if (!phone || !password) {
-    message.warning('请填写塔吉多账号和密码')
+    message.warning(t('gamesign.toast.needTaygedoCredential'))
     return
   }
   credentialAction.value = 'taygedo-login'
@@ -292,7 +293,7 @@ const handleSklandLogin = async () => {
   const password = sklandLoginPassword.value
   if (!accountId) return
   if (!phone || !password) {
-    message.warning('请填写森空岛手机号和密码')
+    message.warning(t('gamesign.toast.needSklandCredential'))
     return
   }
   credentialAction.value = 'skland-login'
@@ -393,19 +394,19 @@ const handleManualSign = async () => {
   try {
     const response = await manualSign()
     if (response.code === 409) {
-      const warning = response.message || '自动签到正在执行，请稍后再试'
+      const warning = response.message || t('gamesign.toast.autoSignRunning')
       logger.warn(`手动签到被拒绝: ${warning}`)
       message.warning(warning)
       return
     }
     if (response.code !== 200 && response.code !== 0) {
-      throw new Error(response.message || '签到失败')
+      throw new Error(response.message || t('gamesign.toast.signFailed'))
     }
     logger.info('游戏签到完成')
     if (response.status === 'warning') {
-      message.warning(response.message || '签到完成，但部分通知发送失败')
+      message.warning(response.message || t('gamesign.toast.signPartialNotify'))
     } else {
-      message.success(response.message || '签到完成')
+      message.success(response.message || t('gamesign.toast.signDone'))
     }
     // 立即刷新签到结果（不等父组件轮询）
     if (onRefreshConfig) await onRefreshConfig()
@@ -413,7 +414,7 @@ const handleManualSign = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`签到失败: ${errorMsg}`)
-    message.error(`签到失败: ${errorMsg}`)
+    message.error(t('gamesign.toast.signError', { error: errorMsg }))
   } finally {
     signLoading.value = false
   }
@@ -431,15 +432,15 @@ onMounted(() => {
     <!-- 全局设置区 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>签到设置</h3>
+        <h3>{{ t('gamesign.section.settings') }}</h3>
         <div class="section-header-actions">
           <a
             href="https://doc.auto-mas.top/docs/advanced-features/game-sign.html"
             class="section-doc-link"
-            title="查看森空岛签到配置文档"
+            :title="t('gamesign.section.doc')"
             @click="handleExternalLink"
           >
-            文档
+            {{ t('common.doc') }}
           </a>
           <a-button
             type="primary"
@@ -450,12 +451,12 @@ onMounted(() => {
             @click="handleManualSign"
           >
             <template #icon><SwapOutlined /></template>
-            全部签到
+            {{ t('gamesign.section.signAll') }}
           </a-button>
         </div>
       </div>
       <a-alert class="game-sign-notice" type="info" show-icon>
-        <template #message>功能说明与隐私声明</template>
+        <template #message>{{ t('gamesign.section.noticeTitle') }}</template>
         <template #description>
           <div>{{ credentialToolDescription }}</div>
           <div>{{ credentialPrivacyNotice }}</div>
@@ -464,10 +465,8 @@ onMounted(() => {
       <div class="settings-list">
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">启用签到工具</span>
-            <span class="setting-desc"
-              >启用后按 MAS 任务调度执行签到，手动签到不受每日自动签到限制</span
-            >
+            <span class="setting-title">{{ t('gamesign.section.enable') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.enableDesc') }}</span>
           </div>
           <a-switch
             :checked="config.Enabled"
@@ -477,8 +476,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">结果通知</span>
-            <span class="setting-desc">签到完成后通过已配置的通知渠道推送结果</span>
+            <span class="setting-title">{{ t('gamesign.section.notify') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.notifyDesc') }}</span>
           </div>
           <a-switch
             :checked="config.NotifyEnabled"
@@ -489,8 +488,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">启动时签到</span>
-            <span class="setting-desc">应用启动后立即执行一次签到</span>
+            <span class="setting-title">{{ t('gamesign.section.runOnStartup') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.runOnStartupDesc') }}</span>
           </div>
           <a-switch
             :checked="config.RunOnStartup"
@@ -500,13 +499,13 @@ onMounted(() => {
         </div>
         <div class="setting-row setting-row-static">
           <div class="setting-info">
-            <span class="setting-title">上次签到</span>
-            <span class="setting-desc">最近一次完成签到的日期</span>
+            <span class="setting-title">{{ t('gamesign.section.lastSign') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.lastSignDesc') }}</span>
           </div>
           <span class="setting-value">{{
             config.LastSignDate && config.LastSignDate !== '2000-01-01'
               ? config.LastSignDate
-              : '从未签到'
+              : t('gamesign.section.neverSigned')
           }}</span>
         </div>
       </div>
@@ -515,7 +514,7 @@ onMounted(() => {
     <!-- 用户列表 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>用户列表</h3>
+        <h3>{{ t('gamesign.list.title') }}</h3>
         <a-button
           type="primary"
           ghost
@@ -525,7 +524,7 @@ onMounted(() => {
           @click="handleAddAccount"
         >
           <template #icon><PlusOutlined /></template>
-          添加用户
+          {{ t('gamesign.list.add') }}
         </a-button>
       </div>
 
@@ -533,10 +532,10 @@ onMounted(() => {
         <!-- 表头 -->
         <div class="user-table-header">
           <div class="header-cell drag-cell"></div>
-          <div class="header-cell name-cell">用户名</div>
-          <div class="header-cell status-cell">启用</div>
-          <div class="header-cell tags-cell">各社区签到情况</div>
-          <div class="header-cell actions-cell">操作</div>
+          <div class="header-cell name-cell">{{ t('gamesign.list.colName') }}</div>
+          <div class="header-cell status-cell">{{ t('gamesign.list.colEnabled') }}</div>
+          <div class="header-cell tags-cell">{{ t('gamesign.list.colTags') }}</div>
+          <div class="header-cell actions-cell">{{ t('gamesign.list.colActions') }}</div>
         </div>
 
         <!-- 拖拽内容 -->
@@ -556,7 +555,7 @@ onMounted(() => {
             <div class="user-row">
               <!-- 拖拽手柄 -->
               <div class="row-cell drag-cell">
-                <span class="drag-handle" title="拖拽排序">
+                <span class="drag-handle" :title="t('gamesign.list.drag')">
                   <span class="drag-dots"></span>
                 </span>
               </div>
@@ -582,7 +581,9 @@ onMounted(() => {
                   >
                     <template #title>
                       <div class="sign-tooltip">
-                        <div class="sign-tooltip-title">{{ tag.platform }} - 签到详情</div>
+                        <div class="sign-tooltip-title">
+                          {{ t('gamesign.list.tooltipTitle', { platform: tag.platform }) }}
+                        </div>
                         <template
                           v-for="(group, gIdx) in getAccountGroupsForPlatformReactive(
                             account,
@@ -595,19 +596,19 @@ onMounted(() => {
                             :key="`${game.account || group.account_alias}-${game.game}`"
                           >
                             <div class="sign-tooltip-alias">
-                              {{ getSignDetailAlias(group, game) }}
+                              {{ getSignDetailAlias(group, game, t('gamesign.unknownUser')) }}
                             </div>
                             <div class="sign-tooltip-row">
                               <span>{{ game.game }}</span>
                               <span :class="getSignDetailClass(game.status)">
-                                ● {{ getSignStatusText(game.status) }}
+                                ● {{ t(getSignStatusKey(game.status)) }}
                               </span>
                               <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
                             </div>
                           </template>
                         </template>
                         <div v-if="tag.games.length === 0" class="sign-tooltip-empty">
-                          暂无签到数据
+                          {{ t('gamesign.list.noSignData') }}
                         </div>
                       </div>
                     </template>
@@ -626,7 +627,7 @@ onMounted(() => {
                     @click="openEditModal(account)"
                   >
                     <template #icon><EditOutlined /></template>
-                    编辑
+                    {{ t('gamesign.list.edit') }}
                   </a-button>
                   <a-button
                     size="middle"
@@ -634,7 +635,7 @@ onMounted(() => {
                     @click="handleDeleteAccount(account)"
                   >
                     <template #icon><DeleteOutlined /></template>
-                    删除
+                    {{ t('gamesign.list.del') }}
                   </a-button>
                 </a-space>
               </div>
@@ -644,8 +645,8 @@ onMounted(() => {
 
         <!-- 空状态 -->
         <div v-if="accounts.length === 0" class="empty-state">
-          <div class="empty-hint">暂无用户</div>
-          <div class="empty-guide">点击右上角「添加用户」创建</div>
+          <div class="empty-hint">{{ t('gamesign.list.empty') }}</div>
+          <div class="empty-guide">{{ t('gamesign.list.emptyGuide') }}</div>
         </div>
       </div>
     </div>
@@ -653,24 +654,26 @@ onMounted(() => {
     <!-- 编辑 Token 模态框 -->
     <a-modal
       v-model:open="editModalVisible"
-      :title="`编辑 — ${editingAccount?.Name || ''}`"
-      ok-text="保存"
-      cancel-text="取消"
+      :title="t('gamesign.edit.title', { name: editingAccount?.Name || '' })"
+      :ok-text="t('gamesign.edit.save')"
+      :cancel-text="t('common.cancel')"
       :width="560"
       @ok="handleEditModalOk"
       @cancel="handleEditModalCancel"
     >
       <div v-if="editingAccount" class="modal-form">
         <div class="form-item-vertical">
-          <span class="form-label">用户名称</span>
+          <span class="form-label">{{ t('gamesign.edit.userName') }}</span>
           <a-input v-model:value="editingAccount.Name" size="large" />
         </div>
-        <a-divider orientation="left" class="community-divider">米游社</a-divider>
+        <a-divider orientation="left" class="community-divider">{{
+          t('gamesign.edit.miyoushe')
+        }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.MiyousheToken"
             size="large"
-            placeholder="浏览器 F12 → document.cookie 获取"
+            :placeholder="t('gamesign.edit.miyoushePlaceholder')"
             allow-clear
           />
           <a-button
@@ -682,24 +685,28 @@ onMounted(() => {
             @click="startQrLogin"
           >
             <template #icon><QrcodeOutlined /></template>
-            扫码获取 Token
+            {{ t('gamesign.edit.qrLogin') }}
           </a-button>
         </div>
-        <a-divider orientation="left" class="community-divider">库街区</a-divider>
+        <a-divider orientation="left" class="community-divider">{{
+          t('gamesign.edit.kuro')
+        }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.KuroToken"
             size="large"
-            placeholder="粘贴已从库街区客户端获取的 Token"
+            :placeholder="t('gamesign.edit.kuroPlaceholder')"
             allow-clear
           />
         </div>
-        <a-divider orientation="left" class="community-divider">森空岛</a-divider>
+        <a-divider orientation="left" class="community-divider">{{
+          t('gamesign.edit.skland')
+        }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.SklandToken"
             size="large"
-            placeholder="鹰角网络通行证登录凭证"
+            :placeholder="t('gamesign.edit.sklandPlaceholder')"
             allow-clear
           />
           <a-button
@@ -711,15 +718,17 @@ onMounted(() => {
             :disabled="credentialAction !== null"
             @click="openSklandLoginModal"
           >
-            账密获取 Token
+            {{ t('gamesign.edit.passwordLogin') }}
           </a-button>
         </div>
-        <a-divider orientation="left" class="community-divider">塔吉多 / 云异环</a-divider>
+        <a-divider orientation="left" class="community-divider">{{
+          t('gamesign.edit.taygedo')
+        }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.TaygedoToken"
             size="large"
-            placeholder="refreshToken 或凭据 JSON（可含 cloudToken/cloudUserId/cloudDeviceId）"
+            :placeholder="t('gamesign.edit.taygedoPlaceholder')"
             allow-clear
           />
           <a-button
@@ -731,7 +740,7 @@ onMounted(() => {
             :disabled="credentialAction !== null"
             @click="openTaygedoLoginModal"
           >
-            账密获取 Token
+            {{ t('gamesign.edit.passwordLogin') }}
           </a-button>
         </div>
       </div>
@@ -740,40 +749,40 @@ onMounted(() => {
     <!-- 塔吉多账号密码登录弹窗 -->
     <a-modal
       v-model:open="taygedoLoginModalVisible"
-      title="塔吉多账密获取 Token"
+      :title="t('gamesign.login.taygedoTitle')"
       :footer="null"
       :width="420"
       @cancel="closeTaygedoLoginModal"
     >
       <div class="modal-form">
         <a-alert class="credential-disclaimer" type="warning" show-icon>
-          <template #message>账密获取 Token 免责声明</template>
+          <template #message>{{ t('gamesign.login.disclaimerTitle') }}</template>
           <template #description>{{ credentialPrivacyNotice }}</template>
         </a-alert>
         <div class="form-item-vertical">
-          <span class="form-label">当前账号</span>
+          <span class="form-label">{{ t('gamesign.login.currentAccount') }}</span>
           <a-input :value="editingAccount?.Name || ''" disabled />
         </div>
         <div class="form-item-vertical">
-          <span class="form-label">账号或手机号</span>
+          <span class="form-label">{{ t('gamesign.login.taygedoAccount') }}</span>
           <a-input
             v-model:value="taygedoLoginPhone"
             autocomplete="off"
-            placeholder="请输入塔吉多账号或手机号"
+            :placeholder="t('gamesign.login.taygedoAccountPlaceholder')"
             allow-clear
           />
         </div>
         <div class="form-item-vertical">
-          <span class="form-label">密码</span>
+          <span class="form-label">{{ t('gamesign.login.password') }}</span>
           <a-input-password
             v-model:value="taygedoLoginPassword"
             autocomplete="new-password"
-            placeholder="请输入塔吉多账号密码"
+            :placeholder="t('gamesign.login.taygedoPasswordPlaceholder')"
             allow-clear
           />
         </div>
         <a-space style="width: 100%; justify-content: flex-end">
-          <a-button @click="closeTaygedoLoginModal">取消</a-button>
+          <a-button @click="closeTaygedoLoginModal">{{ t('common.cancel') }}</a-button>
           <a-button
             type="primary"
             class="credential-helper-btn"
@@ -782,7 +791,7 @@ onMounted(() => {
             :disabled="credentialAction !== null"
             @click="handleTaygedoLogin"
           >
-            获取并保存 Token
+            {{ t('gamesign.login.submit') }}
           </a-button>
         </a-space>
       </div>
@@ -791,40 +800,40 @@ onMounted(() => {
     <!-- 森空岛账密获取 Token 弹窗 -->
     <a-modal
       v-model:open="sklandLoginModalVisible"
-      title="森空岛账密获取 Token"
+      :title="t('gamesign.login.sklandTitle')"
       :footer="null"
       :width="420"
       @cancel="closeSklandLoginModal"
     >
       <div class="modal-form">
         <a-alert class="credential-disclaimer" type="warning" show-icon>
-          <template #message>账密获取 Token 免责声明</template>
+          <template #message>{{ t('gamesign.login.disclaimerTitle') }}</template>
           <template #description>{{ credentialPrivacyNotice }}</template>
         </a-alert>
         <div class="form-item-vertical">
-          <span class="form-label">当前账号</span>
+          <span class="form-label">{{ t('gamesign.login.currentAccount') }}</span>
           <a-input :value="editingAccount?.Name || ''" disabled />
         </div>
         <div class="form-item-vertical">
-          <span class="form-label">手机号</span>
+          <span class="form-label">{{ t('gamesign.login.sklandPhone') }}</span>
           <a-input
             v-model:value="sklandLoginPhone"
             autocomplete="off"
-            placeholder="请输入鹰角网络通行证手机号"
+            :placeholder="t('gamesign.login.sklandPhonePlaceholder')"
             allow-clear
           />
         </div>
         <div class="form-item-vertical">
-          <span class="form-label">密码</span>
+          <span class="form-label">{{ t('gamesign.login.password') }}</span>
           <a-input-password
             v-model:value="sklandLoginPassword"
             autocomplete="new-password"
-            placeholder="请输入鹰角网络通行证密码"
+            :placeholder="t('gamesign.login.sklandPasswordPlaceholder')"
             allow-clear
           />
         </div>
         <a-space style="width: 100%; justify-content: flex-end">
-          <a-button @click="closeSklandLoginModal">取消</a-button>
+          <a-button @click="closeSklandLoginModal">{{ t('common.cancel') }}</a-button>
           <a-button
             type="primary"
             class="credential-helper-btn"
@@ -833,7 +842,7 @@ onMounted(() => {
             :disabled="credentialAction !== null"
             @click="handleSklandLogin"
           >
-            获取并保存 Token
+            {{ t('gamesign.login.submit') }}
           </a-button>
         </a-space>
       </div>

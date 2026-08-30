@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { BugOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, watch } from 'vue'
 import { useLogPatternDebug } from '../composables/useLogPatternDebug'
 import type { PushLogPattern } from '../composables/usePushLogPatterns'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   open: boolean
@@ -76,7 +79,7 @@ const configPreview = computed(() => {
         </div>
 
         <div class="debug-toolbar">
-          <span class="debug-section-label">待调试日志</span>
+          <span class="debug-section-label">{{ t('edit.logDebug') }}</span>
           <div class="debug-toolbar-actions">
             <a-input-number
               v-model:value="debug.logLines"
@@ -85,7 +88,7 @@ const configPreview = computed(() => {
               :step="100"
               style="width: 80px"
             />
-            <span class="debug-toolbar-hint">行</span>
+            <span class="debug-toolbar-hint">{{ t('edit.lines') }}</span>
             <a-button
               type="primary"
               size="small"
@@ -93,7 +96,7 @@ const configPreview = computed(() => {
               :disabled="!logPath || logPath === '.'"
               @click="debug.loadLog"
             >
-              加载日志
+              {{ t('edit.loadLog') }}
             </a-button>
           </div>
         </div>
@@ -101,7 +104,7 @@ const configPreview = computed(() => {
         <a-textarea
           v-model:value="debug.input"
           :rows="14"
-          placeholder="粘贴要测试的日志行，每行一条..."
+          :placeholder="t('edit.pasteLogLinesTest')"
           class="debug-textarea"
         />
 
@@ -115,9 +118,9 @@ const configPreview = computed(() => {
             <template #icon>
               <BugOutlined />
             </template>
-            调试
+            {{ t('edit.debug') }}
           </a-button>
-          <a-button @click="debug.clear">清空</a-button>
+          <a-button @click="debug.clear">{{ t('edit.clear') }}</a-button>
         </div>
       </div>
 
@@ -127,7 +130,9 @@ const configPreview = computed(() => {
           <span class="debug-section-label">
             结果（{{ debug.hitCount }}/{{ debug.results.length }}）
           </span>
-          <a-checkbox v-model:checked="debug.onlyHit" size="small"> 仅显示已命中 </a-checkbox>
+          <a-checkbox v-model:checked="debug.onlyHit" size="small">{{
+            t('edit.matchesOnly')
+          }}</a-checkbox>
         </div>
 
         <a-alert
@@ -152,16 +157,20 @@ const configPreview = computed(() => {
               <span v-else class="debug-result-line-text">窗口 {{ item.idx + 1 }}</span>
             </div>
             <div class="debug-result-out">
-              <a-tag v-if="item.hit" color="green" class="debug-result-tag">命中</a-tag>
-              <a-tag v-else color="default" class="debug-result-tag">未命中</a-tag>
+              <a-tag v-if="item.hit" color="green" class="debug-result-tag">{{
+                t('edit.match')
+              }}</a-tag>
+              <a-tag v-else color="default" class="debug-result-tag">{{ t('edit.noMatch') }}</a-tag>
               <span v-if="item.hit" class="debug-result-extracted">{{ item.extracted }}</span>
               <span v-else-if="item.error" class="debug-result-error">{{ item.error }}</span>
             </div>
           </div>
-          <div v-if="debug.filteredResults.length === 0" class="debug-results-empty">无命中行</div>
+          <div v-if="debug.filteredResults.length === 0" class="debug-results-empty">
+            {{ t('edit.noMatchingLines') }}
+          </div>
         </div>
 
-        <div v-else class="debug-results-empty">点击「调试」查看匹配结果</div>
+        <div v-else class="debug-results-empty">{{ t('edit.clickDebugSeeMatches') }}</div>
       </div>
     </div>
   </a-modal>

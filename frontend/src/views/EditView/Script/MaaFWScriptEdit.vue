@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
@@ -19,7 +19,7 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
@@ -145,15 +145,18 @@
           :disabled="!canLeaveCurrentStep"
           @click="currentStep += 1"
         >
-          下一步
+          {{ t('edit.next') }}
         </a-button>
-        <a-button v-else type="primary" size="large" @click="handleCancel"> 完成 </a-button>
+        <a-button v-else type="primary" size="large" @click="handleCancel">{{
+          t('edit.done')
+        }}</a-button>
       </div>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -180,6 +183,8 @@ import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 
+const { t } = useI18n()
+
 const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
 
 // MaaFW pretask 伪任务：预览接口会把它们混进 tasks[]（entry 固定为 MXU_PRETASK、
@@ -204,10 +209,10 @@ const scriptId = route.params.id as string
 const isWizard = computed(() => route.name === 'MaaFWSetupWizard')
 const currentStep = ref(0)
 const stepItems = [
-  { title: '基本信息' },
-  { title: '控制配置' },
-  { title: '项目更新' },
-  { title: '运行配置' },
+  { title: t('edit.basicInfo') },
+  { title: t('edit.controlConfiguration') },
+  { title: t('edit.projectUpdate') },
+  { title: t('edit.runConfiguration') },
 ]
 // 第一步没读到 interface 就往下走，后面几步全是空的，先拦住
 const canLeaveCurrentStep = computed(() => currentStep.value !== 0 || previewData.value !== null)
@@ -232,7 +237,7 @@ const formData = reactive<{ type: ScriptType; name: string; path: string }>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
   path: [
     {
       validator: () =>
@@ -305,11 +310,11 @@ const projectDisplayName = computed(() => {
 })
 
 const interfaceStats = computed(() => [
-  { label: '任务', value: previewData.value?.tasks.length ?? 0 },
-  { label: '预设', value: previewData.value?.presets.length ?? 0 },
-  { label: '控制器', value: previewData.value?.controllers.length ?? 0 },
-  { label: '资源', value: previewData.value?.resources.length ?? 0 },
-  { label: '导入', value: previewData.value?.importCount ?? 0 },
+  { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
+  { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
+  { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
+  { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
+  { label: t('edit.import2'), value: previewData.value?.importCount ?? 0 },
   { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
 ])
 
@@ -413,7 +418,7 @@ const runPreview = async () => {
 const handlePreviewInterface = async () => {
   await runPreview()
   if (!previewData.value) return
-  message.success(`已读取 ${previewProjectTitle.value}`)
+  message.success(t('edit.readP0', { p0: previewProjectTitle.value }))
 }
 
 // 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
@@ -498,7 +503,7 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
 const selectMaaFWPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
     const path = await window.electronAPI.selectFolder()
@@ -509,7 +514,7 @@ const selectMaaFWPath = async () => {
     await runPreview()
   } catch (error) {
     logger.error(`选择项目目录失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 
@@ -555,7 +560,7 @@ onMounted(async () => {
   try {
     const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])
     if (!scriptDetail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
@@ -573,7 +578,7 @@ onMounted(async () => {
     }
   } catch (error) {
     logger.error(`加载脚本失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
