@@ -4,8 +4,8 @@
     <div v-if="!hasUserSelected" class="empty-state">
       <div class="empty-content">
         <UserSwitchOutlined class="empty-icon" />
-        <span class="empty-title">请选择用户</span>
-        <span class="empty-desc">从左侧日期列表中选择一个用户查看详细信息</span>
+        <span class="empty-title">{{ t('history.selectUser') }}</span>
+        <span class="empty-desc">{{ t('history.selectUserDesc') }}</span>
       </div>
     </div>
 
@@ -31,10 +31,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
 import type { PullCountStatistics } from '@/types/history'
+
+const { t } = useI18n()
 
 interface RecordItem {
   date: string

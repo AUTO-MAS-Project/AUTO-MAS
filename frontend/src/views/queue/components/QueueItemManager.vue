@@ -1,12 +1,12 @@
 <template>
-  <a-card title="任务列表" class="queue-item-card">
+  <a-card :title="t('queue.item.cardTitle')" class="queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" :loading="loading" @click="addQueueItem">
           <template #icon>
             <PlusOutlined />
           </template>
-          添加任务
+          {{ t('queue.item.add') }}
         </a-button>
       </a-space>
     </template>
@@ -16,9 +16,9 @@
       <!-- 表头 -->
       <div class="draggable-table-header">
         <div class="header-cell drag-cell"></div>
-        <div class="header-cell index-cell">序号</div>
-        <div class="header-cell script-cell">脚本任务</div>
-        <div class="header-cell actions-cell">操作</div>
+        <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
+        <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
+        <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
       </div>
 
       <!-- 拖拽内容区域 -->
@@ -38,7 +38,11 @@
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell drag-cell">
-              <span class="drag-handle" title="拖拽排序" aria-label="拖拽排序">
+              <span
+                class="drag-handle"
+                :title="t('queue.item.dragSort')"
+                :aria-label="t('queue.item.dragSort')"
+              >
                 <span class="drag-dots" aria-hidden="true"></span>
               </span>
             </div>
@@ -49,7 +53,7 @@
                 size="small"
                 style="width: 200px"
                 class="script-select"
-                placeholder="请选择脚本"
+                :placeholder="t('queue.item.selectScript')"
                 :options="scriptOptions"
                 allow-clear
                 @change="updateQueueItemScript(record)"
@@ -58,14 +62,14 @@
             <div class="row-cell actions-cell">
               <a-space>
                 <a-popconfirm
-                  title="确定要删除这个任务吗？"
-                  ok-text="确定"
-                  cancel-text="取消"
+                  :title="t('queue.item.deleteConfirm')"
+                  :ok-text="t('queue.ok')"
+                  :cancel-text="t('queue.cancel')"
                   @confirm="deleteQueueItem(record.id)"
                 >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
-                    删除
+                    {{ t('queue.del') }}
                   </a-button>
                 </a-popconfirm>
               </a-space>
@@ -77,7 +81,7 @@
       <!-- 空状态 -->
       <div v-if="queueItems.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
         </div>
       </div>
     </div>
@@ -85,11 +89,14 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
@@ -115,19 +122,19 @@ const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
 // 表格列配置
 const _queueColumns = [
   {
-    title: '序号',
+    title: t('queue.item.colIndex'),
     key: 'index',
     width: 80,
     align: 'center',
   },
   {
-    title: '脚本任务',
+    title: t('queue.item.colScript'),
     key: 'script',
     align: 'center',
     ellipsis: true,
   },
   {
-    title: '操作',
+    title: t('queue.item.colActions'),
     key: 'actions',
     width: 100,
     align: 'center',
@@ -188,12 +195,16 @@ const updateQueueItemScript = async (record: any) => {
     if (response.code === 200) {
       emit('refresh')
     } else {
-      message.error('脚本更新失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.scriptUpdateFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新脚本失败: ${errorMsg}`)
-    message.error(`更新脚本失败: ${errorMsg}`)
+    message.error(t('queue.toast.updateScriptFailed', { error: errorMsg }))
   } finally {
     loading.value = false
   }
@@ -212,12 +223,16 @@ const addQueueItem = async () => {
     if (createResponse.code === 200 && createResponse.queueItemId) {
       emit('refresh')
     } else {
-      message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
+      message.error(
+        t('queue.toast.addTaskFailed', {
+          error: createResponse.message || t('queue.toast.unknownError'),
+        })
+      )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加任务失败: ${errorMsg}`)
-    message.error(`添加任务失败: ${errorMsg}`)
+    message.error(t('queue.toast.addTaskFailed2', { error: errorMsg }))
   } finally {
     loading.value = false
   }
@@ -235,12 +250,16 @@ const deleteQueueItem = async (itemId: string) => {
       // 确保删除后刷新数据
       emit('refresh')
     } else {
-      message.error('删除队列项失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.deleteItemFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除队列项失败: ${errorMsg}`)
-    message.error(`删除队列项失败: ${errorMsg}`)
+    message.error(t('queue.toast.deleteItemFailed', { error: errorMsg }))
   }
 }
 
@@ -269,14 +288,16 @@ const onDragEnd = async (evt: any) => {
       // 刷新数据以确保与服务器同步
       emit('refresh')
     } else {
-      message.error('更新任务顺序失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.reorderFailed', { error: response.message || t('queue.toast.unknownError') })
+      )
       // 如果失败，刷新数据恢复原状态
       emit('refresh')
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拖拽排序失败: ${errorMsg}`)
-    message.error(`更新任务顺序失败: ${errorMsg}`)
+    message.error(t('queue.toast.reorderFailed', { error: errorMsg }))
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {

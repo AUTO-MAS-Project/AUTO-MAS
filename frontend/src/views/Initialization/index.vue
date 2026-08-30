@@ -2,12 +2,12 @@
   <div class="initialization-page">
     <div class="header">
       <a-typography-title :level="3">
-        欢迎使用 AUTO-MAS，正在自动配置您的运行环境
+        {{ t('init.page.subtitle') }}
       </a-typography-title>
     </div>
 
     <a-steps :current="currentStepIndex" :status="stepStatus" class="init-steps">
-      <a-step v-for="step in steps" :key="step.key" :title="step.title" />
+      <a-step v-for="step in steps" :key="step.key" :title="t(`init.steps.${step.key}`)" />
     </a-steps>
 
     <div class="step-content">
@@ -30,14 +30,14 @@
   <!-- 跳过初始化弹窗 -->
   <a-modal
     v-model:open="forceEnterVisible"
-    title="警告"
-    ok-text="我知道我在做什么"
-    cancel-text="取消"
+    :title="t('init.page.skipModalTitle')"
+    :ok-text="t('init.page.skipModalOk')"
+    :cancel-text="t('init.page.skipModalCancel')"
     @ok="handleForceEnterConfirm"
   >
     <a-alert
-      message="注意"
-      description="你正在尝试跳过初始化流程，可能导致程序无法正常运行。请确保你已经手动完成了所有配置。"
+      :message="t('init.page.skipModalAlert')"
+      :description="t('init.page.skipModalDesc')"
       type="warning"
       show-icon
     />
@@ -45,6 +45,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
@@ -55,9 +56,12 @@ import type { MirrorConfig } from '@/types/mirror'
 
 defineOptions({ name: 'InitializationPage' })
 
+const { t } = useI18n()
+
 const logger = window.electronAPI.getLogger('初始化流程')
 
 // ==================== 步骤定义 ====================
+// title 仅用于日志标签；界面显示走 init.steps.<key> 词表
 const steps = [
   { key: 'python', title: 'Python 安装', canSkip: false },
   { key: 'pip', title: 'Pip 安装', canSkip: false },
@@ -235,7 +239,7 @@ const currentStepProps = computed(() => {
   const step = currentStep.value
 
   return {
-    title: step.title,
+    title: t(`init.steps.${step.key}`),
     status: state.status,
     message: state.message,
     progress: state.progress,
@@ -305,7 +309,7 @@ function handleProgress(stepKey: string, progressData: any) {
   if (progress >= 100) {
     // 进度达到 100%，标记为成功
     state.status = 'success'
-    state.message = msg || '完成'
+    state.message = msg || t('init.msg.done')
     state.progress = 100
     state.currentMirror = ''
     state.downloadSpeed = ''
@@ -371,7 +375,7 @@ function handleProgress(stepKey: string, progressData: any) {
     // 避免在安装过程中因为某些中间步骤发送 progress: 0 导致进度条跳回0
     if (state.progress === 0 || state.status === 'waiting') {
       state.status = 'processing'
-      state.message = msg || '准备中...'
+      state.message = msg || t('init.msg.preparing')
       state.progress = 0
       logger.info(`[${stepKey}] 开始 - ${msg}`)
     } else {
@@ -386,7 +390,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
   const state = stepStates.value[stepKey]
   state.status = 'processing'
   state.progress = 0
-  state.message = '正在执行...'
+  state.message = t('init.msg.running')
 
   try {
     let result: any
@@ -424,7 +428,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
       // 确保进度更新到 100%
       state.status = 'success'
       state.progress = 100
-      state.message = '阶段完成'
+      state.message = t('init.msg.stageDone')
       state.currentMirror = ''
       state.downloadSpeed = ''
       state.downloadSize = ''
@@ -439,7 +443,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
       return true
     } else {
-      throw new Error(result.error || '执行失败')
+      throw new Error(result.error || t('init.msg.execFailed'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -487,7 +491,7 @@ async function startInitialization(startIndex: number = 0) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化失败: ${errorMsg}`)
     stepStatus.value = 'error'
-    message.error('初始化失败')
+    message.error(t('init.msg.initFailed'))
   }
 }
 
@@ -514,11 +518,11 @@ async function handleSkip() {
     // 标记为已跳过
     state.status = 'success'
     state.progress = 100
-    state.message = '已跳过'
+    state.message = t('init.msg.skipped')
     state.showMirrorSelection = false
     state.countdown = 0
 
-    message.warning(`已跳过 ${currentStep.value.title}`)
+    message.warning(t('init.msg.skippedStep', { step: t(`init.steps.${currentStep.value.key}`) }))
 
     // 等待一下让用户看到跳过状态
     await new Promise(resolve => setTimeout(resolve, 500))
@@ -597,12 +601,12 @@ async function handleBackendComplete() {
   const state = stepStates.value.backend
   state.status = 'success'
   state.progress = 100
-  state.message = '后端服务启动成功'
+  state.message = t('init.msg.backendStarted')
 
   // 标记初始化完成
   initCompleted.value = true
   stepStatus.value = 'finish'
-  message.success('初始化完成')
+  message.success(t('init.msg.initDone'))
 
   // 保存初始化版本号，用于下次启动时比对
   const api = window.electronAPI
@@ -774,7 +778,7 @@ onMounted(async () => {
       const state = stepStates.value[stepKey]
       state.status = 'success'
       state.progress = 100
-      state.message = '已跳过'
+      state.message = t('init.msg.skipped')
       state.showMirrorSelection = false
       state.countdown = 0
     }
@@ -792,7 +796,7 @@ onMounted(async () => {
         const state = stepStates.value[stepKey]
         state.status = 'success'
         state.progress = 100
-        state.message = '已跳过'
+        state.message = t('init.msg.skipped')
         state.showMirrorSelection = false
         state.countdown = 0
       }
@@ -823,7 +827,7 @@ onMounted(async () => {
       const state = stepStates.value.backend
       state.status = 'success'
       state.progress = 100
-      state.message = `后端服务已启动，PID: ${status.pid}`
+      state.message = t('init.msg.backendRunning', { pid: status.pid })
     }
   })
 
