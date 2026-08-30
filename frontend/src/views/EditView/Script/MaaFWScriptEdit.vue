@@ -397,6 +397,9 @@ const runPreview = async () => {
     previewData.value = response.data as MaaFWInterfacePreviewData
     await syncControllerResourceSelection(true)
     await prunePeriodTaskSelections()
+    // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
+    // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
+    void runAgentEnvPrepare(path)
   } catch (error) {
     previewData.value = null
     message.error(error instanceof Error ? error.message : String(error))
@@ -409,7 +412,6 @@ const handlePreviewInterface = async () => {
   await runPreview()
   if (!previewData.value) return
   message.success(`已读取 ${previewProjectTitle.value}`)
-  await runAgentEnvPrepare()
 }
 
 // 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
@@ -419,9 +421,14 @@ const envReady = ref(false)
 const envMessage = ref('')
 const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
 
-const runAgentEnvPrepare = async () => {
-  const path = maafwConfig.Info.Path.trim()
+const envPreparedPath = ref('')
+
+const runAgentEnvPrepare = async (targetPath?: string) => {
+  const path = (targetPath ?? maafwConfig.Info.Path).trim()
   if (!path) return
+  if (envPreparing.value) return
+  // 同一个项目已经备好过就不重复跑；换了目录才重新准备
+  if (envReady.value && envPreparedPath.value === path) return
   envPreparing.value = true
   envReady.value = false
   envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
@@ -433,6 +440,7 @@ const runAgentEnvPrepare = async () => {
       return
     }
     envReady.value = true
+    envPreparedPath.value = path
     envAgents.value = response.data.agents ?? []
     const version = response.data.maafwVersion
     envMessage.value = version ? `运行环境已就绪，MaaFramework ${version}` : '运行环境已就绪'
