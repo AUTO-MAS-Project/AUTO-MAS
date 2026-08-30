@@ -5,7 +5,7 @@
             "新增功能": [
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 新增 MaaFW 脚本类型，通过外壳外部运行 MaaFramework 项目（MAS 主进程不加载任何项目 DLL）：编辑页读取项目 interface.json 后选择控制器、资源与任务，支持 ADB 模拟器与 Win32 PC 游戏两条控制链路；已适配 MFAAvalonia（M9A / MaaKes）与 MXU（MaaEnd / MaaYYs）两类外壳，运行期接管外壳配置并在收尾时原样还原，关闭外壳自身的更新与通知以免与 MAS 抢同一批文件或重复推送；运行判定按外壳家族取日志来源（MXU 读进程 stdout），逐任务判定不绑定外壳界面语言 by [@qiyinxi](https://github.com/qiyinxi)",
-                "自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日"
+                "自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
