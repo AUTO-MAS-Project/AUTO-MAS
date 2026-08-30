@@ -6,9 +6,10 @@ import 'dayjs/locale/zh-cn'
 import 'dayjs/locale/en'
 import antdEnUS from 'ant-design-vue/es/locale/en_US'
 import antdZhCN from 'ant-design-vue/es/locale/zh_CN'
+import { message } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 
-import { i18n, normalizeLocale, type AppLocale } from '@/i18n'
+import { i18n, normalizeLocale, t, type AppLocale } from '@/i18n'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 
 const logger = window.electronAPI.getLogger('语言设置')
@@ -55,14 +56,25 @@ async function initLocale(preloadedConfig?: FrontendConfig): Promise<void> {
   }
 }
 
+// saveConfig 是「读全量 → 合并 → 写回」，并发调用会让先发的后完成从而覆盖后发的选择，
+// 所以语言写入必须串行。
+let savePending: Promise<void> = Promise.resolve()
+
 async function setLocale(next: AppLocale): Promise<void> {
   // 不在此处按当前值早退：首启跟随系统时选择器已显示该语言，
   // 用户再显式选一次的意图是"钉住它"，必须落盘，否则日后仍会跟着系统变。
+  const previous = locale.value
   locale.value = next
+
+  savePending = savePending.catch(() => {}).then(() => saveConfig({ language: next }))
   try {
-    await saveConfig({ language: next })
+    await savePending
   } catch (error) {
+    // 存不下就退回原值：否则界面显示的语言与重启后的语言不一致，且用户毫不知情。
+    // 只在自己仍是最新选择时回退，避免踩掉后一次切换。
+    if (locale.value === next) locale.value = previous
     logger.error(`保存语言设置失败: ${error instanceof Error ? error.message : error}`)
+    message.error(t('common.languageSaveFailed'))
   }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, normalizeLocale } from './index'
+import { SUPPORTED_LOCALES, UNRECOGNIZED_LOCALE, normalizeLocale } from './index'
 
 describe('normalizeLocale', () => {
   it('把各种中文标记归一到 zh-CN', () => {
@@ -15,9 +15,11 @@ describe('normalizeLocale', () => {
     }
   })
 
-  it('空值与无法识别的语言回退到默认语言', () => {
+  it('空值与无法识别的语言回退到英文而不是中文', () => {
+    // 系统语言既非中文也非英文的人更可能看不懂中文，给英文更接近「看得懂」
+    expect(UNRECOGNIZED_LOCALE).toBe('en-US')
     for (const raw of [null, undefined, '', 'fr-FR', 'ja-JP', 'de']) {
-      expect(normalizeLocale(raw)).toBe(DEFAULT_LOCALE)
+      expect(normalizeLocale(raw)).toBe('en-US')
     }
   })
 

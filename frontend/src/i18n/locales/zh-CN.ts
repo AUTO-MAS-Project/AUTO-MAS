@@ -11,6 +11,7 @@ export default {
   common: {
     language: '语言',
     languageTip: '界面显示语言',
+    languageSaveFailed: '语言设置保存失败，已恢复原语言',
   },
   locale: {
     'zh-CN': '简体中文',

@@ -9,6 +9,7 @@ export default {
   common: {
     language: 'Language',
     languageTip: 'Interface display language',
+    languageSaveFailed: 'Failed to save the language setting; reverted to the previous one.',
   },
   locale: {
     'zh-CN': '简体中文',
