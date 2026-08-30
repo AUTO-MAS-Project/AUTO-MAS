@@ -109,6 +109,72 @@ export function resolveDataRoots(appRoot: string): string[] {
   return roots
 }
 
+export interface InstallationOptions {
+  /** ScriptConfig.json 实例记录中的类型值，如 'OkwwConfig' / 'MaaEndConfig' */
+  configType: string
+  /** 安装目录字段名，如 'RootPath' / 'Path' */
+  pathField: 'Path' | 'RootPath'
+  /** 问题包归档目录的标签前缀，如 'okww' */
+  labelPrefix: string
+}
+
+export interface Installation {
+  label: string
+  rootPath: string
+}
+
+interface ScriptConfigRecord {
+  instances?: Array<{ uid?: string; type?: string }>
+  [key: string]: unknown
+}
+
+export function discoverInstallations(
+  dataRoots: string[],
+  options: InstallationOptions
+): Installation[] {
+  const installations: Installation[] = []
+  const seenPaths = new Set<string>()
+
+  for (const dataRoot of dataRoots) {
+    const config = readJson(path.join(dataRoot, 'config', 'ScriptConfig.json'))
+    if (!isRecord(config)) {
+      continue
+    }
+
+    const records = config as ScriptConfigRecord
+    for (const instance of records.instances || []) {
+      if (instance?.type !== options.configType || !instance.uid) {
+        continue
+      }
+
+      const scriptConfig = records[instance.uid]
+      const info =
+        isRecord(scriptConfig) && isRecord(scriptConfig.Info) ? scriptConfig.Info : undefined
+      const rootPath =
+        info && typeof info[options.pathField] === 'string'
+          ? (info[options.pathField] as string).trim()
+          : ''
+      if (!rootPath) {
+        continue
+      }
+
+      const normalizedPath = path.resolve(rootPath)
+      const pathKey = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
+      if (seenPaths.has(pathKey)) {
+        continue
+      }
+
+      seenPaths.add(pathKey)
+      installations.push({
+        label: `${options.labelPrefix}-${installations.length + 1}`,
+        rootPath: normalizedPath,
+      })
+    }
+  }
+
+  return installations
+}
+
 export function addEntry(
   state: CollectorState,
   archivePath: string,

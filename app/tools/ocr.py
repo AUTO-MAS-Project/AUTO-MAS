@@ -25,10 +25,9 @@
 
 示例::
 
-    from app.tools.ocr import ocr_image, ocr_texts
+    from app.tools.ocr import ocr_image
 
     items = ocr_image(frame, roi=(100, 100, 800, 600))
-    texts = ocr_texts(frame)
 """
 
 from functools import lru_cache
@@ -83,8 +82,3 @@ def ocr_image(frame: np.ndarray, roi: Box | None = None) -> list[OCRItem]:
         )
         items.append(("".join(str(text).split()), box))
     return items
-
-
-def ocr_texts(frame: np.ndarray, roi: Box | None = None) -> list[str]:
-    """仅返回识别到的文本列表，便于快速判定文字存在性。"""
-    return [text for text, _ in ocr_image(frame, roi)]

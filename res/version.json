@@ -3,7 +3,8 @@
     "version_info": {
         "v5.5.0-beta.2": {
             "新增功能": [
-                "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)"
+                "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
+                "OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
@@ -22,8 +23,7 @@
                 "日志采集 支持将运行节点推送至任务报告 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "调度队列 支持每日首次启动时运行队列 by [@luo-luo-o](https://github.com/luo-luo-o)",
                 "界面设置 支持自定义托盘菜单及任务控制命令 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "界面设置 支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败"
+                "界面设置 支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "程序优化": [
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -38,8 +38,7 @@
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复开机自启动后台任务异常未记录问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)",
-                "日志采集 修复多账号任务各用户节点详情被合并推送的问题，报告按用户分开展示节点归属"
+                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)"
             ]
         },
         "v5.4.0": {

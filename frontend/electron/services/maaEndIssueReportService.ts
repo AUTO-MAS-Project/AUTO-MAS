@@ -6,67 +6,13 @@ import { getLogger } from './logger'
 import {
   CollectorState,
   addDirectory,
-  addEntry,
   addLatestMasHistoryLog,
   addSanitizedJsonFile,
-  addSkippedEntry,
-  isRecord,
-  readJson,
+  discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
 
 const logger = getLogger('MaaEnd问题包')
-
-interface MaaEndInstallation {
-  label: string
-  rootPath: string
-}
-
-interface MaaEndConfigRecord {
-  instances?: Array<{ uid?: string; type?: string }>
-  [key: string]: unknown
-}
-
-function discoverMaaEndInstallations(dataRoots: string[]): MaaEndInstallation[] {
-  const installations: MaaEndInstallation[] = []
-  const seenPaths = new Set<string>()
-
-  for (const dataRoot of dataRoots) {
-    const config = readJson(path.join(dataRoot, 'config', 'ScriptConfig.json'))
-    if (!isRecord(config)) {
-      continue
-    }
-
-    const records = config as MaaEndConfigRecord
-    for (const instance of records.instances || []) {
-      if (instance?.type !== 'MaaEndConfig' || !instance.uid) {
-        continue
-      }
-
-      const scriptConfig = records[instance.uid]
-      const info =
-        isRecord(scriptConfig) && isRecord(scriptConfig.Info) ? scriptConfig.Info : undefined
-      const rootPath = info && typeof info.Path === 'string' ? info.Path.trim() : ''
-      if (!rootPath) {
-        continue
-      }
-
-      const normalizedPath = path.resolve(rootPath)
-      const pathKey = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
-      if (seenPaths.has(pathKey)) {
-        continue
-      }
-
-      seenPaths.add(pathKey)
-      installations.push({
-        label: `maaend-${installations.length + 1}`,
-        rootPath: normalizedPath,
-      })
-    }
-  }
-
-  return installations
-}
 
 export interface MaaEndIssueReportResult {
   success: boolean
@@ -79,7 +25,11 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
   const zip = new AdmZip()
   const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
   const dataRoots = resolveDataRoots(appRoot)
-  const installations = discoverMaaEndInstallations(dataRoots)
+  const installations = discoverInstallations(dataRoots, {
+    configType: 'MaaEndConfig',
+    pathField: 'Path',
+    labelPrefix: 'maaend',
+  })
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {

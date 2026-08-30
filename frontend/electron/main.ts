@@ -1108,53 +1108,52 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
-ipcMain.handle('maaend:exportIssueReport', async () => {
-  try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+function registerIssueReportExporter(
+  ipcChannel: string,
+  title: string,
+  fileNamePrefix: string,
+  create: (
+    appRoot: string,
+    zipPath: string
+  ) => { success: boolean; message?: string; zipPath?: string; error?: string }
+): void {
+  ipcMain.handle(ipcChannel, async () => {
+    try {
+      if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出 MaaEnd 问题包',
-      defaultPath: `MaaEnd-logs-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title,
+        defaultPath: `${fileNamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      })
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
+
+      return create(getAppRoot(), result.filePath)
+    } catch (error) {
+      logger.error(`${title}失败:`, error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
     }
+  })
+}
 
-    return createMaaEndIssueReport(getAppRoot(), result.filePath)
-  } catch (error) {
-    logger.error('导出 MaaEnd 问题包失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
-})
-
-ipcMain.handle('okww:exportIssueReport', async () => {
-  try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
-
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出 OK-WW 问题包',
-      defaultPath: `OK-WW-logs-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
-
-    return createOkwwIssueReport(getAppRoot(), result.filePath)
-  } catch (error) {
-    logger.error('导出 OK-WW 问题包失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
-})
+registerIssueReportExporter(
+  'maaend:exportIssueReport',
+  '导出 MaaEnd 问题包',
+  'MaaEnd-logs',
+  createMaaEndIssueReport
+)
+registerIssueReportExporter(
+  'okww:exportIssueReport',
+  '导出 OK-WW 问题包',
+  'OK-WW-logs',
+  createOkwwIssueReport
+)
 
 ipcMain.handle('data:backup', async () => {
   let partialPath: string | undefined

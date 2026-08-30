@@ -37,20 +37,26 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 import cv2
 import numpy as np
 import psutil
-import pyautogui
-import win32api
-import win32con
-import win32gui
-import win32process
 from PIL import Image
 
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
+    # IS_WINDOWS 检查一并惰性导入，避免非 Windows 环境在未启用切号时导入崩溃
+    import pyautogui
+    import win32api
+    import win32con
+    import win32gui
+    import win32process
 
 logger = get_logger("OK-WW 账号切换")
 
@@ -87,20 +93,24 @@ _LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
 _MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
 _MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
 
-_user32 = ctypes.windll.user32
-_user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-_user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+@lru_cache(maxsize=1)
+def _user32_dpi_api():
+    user32 = ctypes.windll.user32
+    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    return user32
 
 
 @contextmanager
 def _per_monitor_dpi():
     """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    previous = _user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    user32 = _user32_dpi_api()
+    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     try:
         yield
     finally:
         if previous:
-            _user32.SetThreadDpiAwarenessContext(previous)
+            user32.SetThreadDpiAwarenessContext(previous)
 
 
 # ── 窗口定位 ────────────────────────────────────────────────────────────
@@ -298,7 +308,6 @@ def _wait_ocr_text(
     *,
     roi: Box | None = None,
     timeout: int,
-    raise_if_not_found: bool = True,
 ) -> Box | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -306,8 +315,6 @@ def _wait_ocr_text(
         if box is not None:
             return box
         time.sleep(1)
-    if raise_if_not_found:
-        raise RuntimeError(f"等待文本超时（{timeout}s）：{keywords}")
     return None
 
 
@@ -395,16 +402,14 @@ def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
 
     on_log("正在返回登录界面")
     _press_escape(hwnd)
-    _wait_ocr_text(hwnd, ("终端",), timeout=30, raise_if_not_found=False)
+    _wait_ocr_text(hwnd, ("终端",), timeout=30)
     _click_point(
         hwnd,
         round(0.04 * _FRAME_WIDTH),
         round(0.96 * _FRAME_HEIGHT),
         after_sleep=1,
     )
-    back_box = _wait_ocr_text(
-        hwnd, ("返回登录",), timeout=30, raise_if_not_found=False
-    )
+    back_box = _wait_ocr_text(hwnd, ("返回登录",), timeout=30)
     if back_box is not None:
         _click_box(hwnd, back_box, after_sleep=3)
     else:
@@ -419,7 +424,6 @@ def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
         _LOGIN_PAGE_TEXTS,
         roi=_LOGIN_ROI,
         timeout=60,
-        raise_if_not_found=False,
     )
     on_log("已返回登录界面")
 
@@ -558,6 +562,8 @@ def account_switch(
         RuntimeError: 未找到游戏窗口 / 登录流程失败 / 超时。
     """
     on_log = on_log or (lambda msg: logger.info(msg))
+    if not IS_WINDOWS:
+        raise RuntimeError("OK-WW 账号切换仅支持 Windows 平台")
     account_id = str(account_id or "").strip()
     if len(account_id) < 4:
         raise RuntimeError("账号不足四位，无法按手机号后 4 位匹配登录账号")

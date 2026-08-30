@@ -134,7 +134,7 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 - **通用脚本**：`PushLogEnabled`（web UI 配置）控制是否采集并聚合推送日志。
 - **OK-WW专项**：用户级 `Notify.PushLogEnabled`（用户编辑页「是否采集节点详情」，与快速配置同排）
   ——关闭时 **AutoProxy 侧不创建 log_box**（不读日志、不翻译、不匹配），该用户 push_log 为空，
-  报告聚合（`build_user_result_text`）自然只有结果行、不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
+  报告聚合（`build_push_log_text`）自然不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
   的 `prepare()` 按开关启停 + `final_task()` 判空收尾。
 
 **给未来适配器的模式**：开关 = 专项自己的配置项，在专项**是否创建/启用 log_box** 的
@@ -230,23 +230,20 @@ def resolve(results):
 push_log 落进 `cur_user_item.push_log`（`list[(log_type, text)]`）后，后续聚合与
 追加统一走 `app/tools/push_log.py`，专项**不要**自行拼接实现：
 
-- `build_user_result_text(users, has_uncompleted)`：按用户交错组装「用户结果行 +
-  该用户节点详情」报告文本——每个用户先输出 `用户名: 用户result` 结果行，随后
-  紧跟该用户采集的节点（每条独占一行），多账号任务时各用户节点归属清晰；
-  「失败」类型条目仅在任务存在未完成用户时纳入（与 MAS 原生推送策略一致）。
-  专项在 `manager.final_task` 汇总时**用它替代原 result 拼接**（节点并入 result，
-  `push_log` 字段置空），不要再单独平铺所有用户节点。
+- `build_push_log_text(users, has_uncompleted)`：聚合各用户 push_log 为报告文本，
+  每条条目独占一行；「失败」类型条目仅在任务存在未完成用户时纳入（与 MAS 原生
+  推送策略一致）。专项在 `manager.final_task` 汇总时调用。
 - `append_push_log(message_text, push_log, separator="\n")`：把推送日志追加到通知
   正文，**默认以单个换行分隔**；专项（如 `tools/notify.py`）按默认调用即可，无需
-  传 `separator`，push_log 为空时原样返回正文（节点并入 result 后此处自然为空）。
+  传 `separator`，push_log 为空时原样返回正文。
 
 ```python
-# manager.final_task：按用户交错组装（节点并入 result，push_log 置空）
+# manager.final_task：聚合后放入通知消息
 has_uncompleted = len(error_user) + len(wait_user) > 0
-user_result_text = build_user_result_text(self.script_info.user_list, has_uncompleted)
-message = {"result": user_result_text, "push_log": "", ...}
+push_log_text = build_push_log_text(self.script_info.user_list, has_uncompleted)
+message = {"push_log": push_log_text, ...}
 
-# tools/notify.py：追加（push_log 为空，append_push_log 原样返回正文）
+# tools/notify.py：追加（默认 separator="\n"）
 message_text = append_push_log(message_text, message.get("push_log"))
 ```
 
