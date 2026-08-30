@@ -26,6 +26,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
+
 from typing import Dict, Literal
 
 from .config import (
@@ -787,7 +788,6 @@ class _TaskManager:
             return
 
         self._startup_queue_running = True
-        curday = datetime.now().strftime("%Y-%m-%d")
 
         try:
             await asyncio.sleep(10)
@@ -795,6 +795,10 @@ class _TaskManager:
             if not MainConnection.is_connected:
                 logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
                 return
+
+            # 必须在等待之后取值：若在等待前取，冷启动恰好落在跨日前 10 秒时，
+            # 比较和写入的都是前一天，会漏跑新的一天或在同一天跑两次。
+            curday = datetime.now().strftime("%Y-%m-%d")
 
             self._startup_queue_started = True
             logger.info("开始运行启动时任务")
