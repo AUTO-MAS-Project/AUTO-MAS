@@ -41,7 +41,7 @@ from app.core import Config
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase
-from app.models.task import ScriptItem, TaskExecuteBase
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
@@ -73,8 +73,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         self.script_config: MaaFWConfig | None = None
         self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
+        self.runnable_user_uids: list[uuid.UUID] = []
         self.emulator_manager: DeviceBase | None = None
+        # 当前正在跑的那一位用户的 AutoProxy 任务；每个用户各建一个。
         self.inner_task: "MaaFWPluginAutoProxyTask | None" = None
+        self._inner_finalized = True
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。"""
@@ -109,8 +112,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         await user_config.load(await script_config.UserData.toDict())
         self.user_config = user_config
 
-        if not self.script_info.user_list:
-            return "MFW 脚本没有可运行的用户"
+        # 与第一层同一套筛选口径（manager.py 的 runnable_uids）。
+        self.runnable_user_uids = [
+            uid
+            for uid, cfg in user_config.data.items()
+            if cfg.get("Info", "Status") and cfg.get("Info", "RemainedDay") != 0
+        ]
+        if not self.runnable_user_uids:
+            return "MFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
         return "Pass"
@@ -163,17 +172,61 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
             return
 
-        self.inner_task = self._build_inner_task()
-        await self.inner_task.main_task()
+        # task_manager 只放了一个「暂未加载」占位项，真实用户列表由各 manager
+        # 自己填（与 manager.py 的做法一致）。AutoProxy 任务按 current_index
+        # 取当前用户，这一步不做后面必然取到占位项、拿它的随机 uid 去查
+        # user_config 而 KeyError。
+        assert self.user_config is not None
+        self.script_info.user_list = [
+            UserItem(
+                user_id=str(uid),
+                name=self.user_config[uid].get("Info", "Name"),
+                status="等待",
+            )
+            for uid in self.runnable_user_uids
+        ]
+        self.script_info.status = "运行"
+        logger.info(
+            f"MFW 内置运行用户列表加载完成，已筛选用户数: "
+            f"{len(self.script_info.user_list)}"
+        )
+
+        # AutoProxy 的 main_task / final_task 都是**按用户**的（final_task 会
+        # 结算该用户的代理次数、剩余天数并释放项目锁），因此每个用户各建一个。
+        for index in range(len(self.runnable_user_uids)):
+            self.script_info.current_index = index
+            self.inner_task = self._build_inner_task()
+            self._inner_finalized = False
+            try:
+                await self.inner_task.main_task()
+            # 只截 Exception：CancelledError 属 BaseException，必须继续外抛，
+            # 否则基类的取消路径与下面的收尾保证一起失效。
+            except Exception as exc:  # noqa: BLE001
+                await self.inner_task.on_crash(exc)
+            finally:
+                await self._finalize_inner_task()
+
+    async def _finalize_inner_task(self) -> None:
+        """收尾当前用户的 AutoProxy 任务；对同一个任务只做一次。"""
+
+        if self.inner_task is None or self._inner_finalized:
+            return
+        self._inner_finalized = True
+        try:
+            await self.inner_task.final_task()
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MFW 内置运行收尾异常：{exc}")
 
     async def final_task(self) -> None:
-        if self.inner_task is None:
-            return
-        await self.inner_task.final_task()
+        # 正常路径下每个用户跑完就已收尾；这里只兜取消与异常路径的最后一位用户。
+        await self._finalize_inner_task()
+        for user in self.script_info.user_list:
+            if user.status in ("等待", "运行"):
+                user.status = "异常"
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")
-        if self.inner_task is not None:
+        if self.inner_task is not None and not self._inner_finalized:
             await self.inner_task.on_crash(e)
             return
         self.script_info.status = "异常"
