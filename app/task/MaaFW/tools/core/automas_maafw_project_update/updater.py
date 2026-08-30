@@ -2482,17 +2482,71 @@ def _select_github_release_asset(
     return None, f"GitHub release package selection is ambiguous: {names}"
 
 
-def detect_maafw_project_shell_hint(project_path: Path) -> str:
-    """Identify a local UI shell only from strong root-level file markers."""
+# rid 后缀 -> 外壳家族规范名。取值域与 _select_github_release_asset 的
+# shell_aliases 保持一致。
+_RID_SHELL_SUFFIXES = {
+    "mfaa": "MFAAvalonia",
+    "mfaavalonia": "MFAAvalonia",
+    "mxu": "MXU",
+    "cfa": "CFA",
+    "mfw": "MFW",
+}
+
+
+def _shell_from_mirrorchyan_rid(project_path: Path) -> str:
+    """按 interface.json 自己声明的 Mirror酱 资源 ID 判定外壳家族。
+
+    这是项目作者声明的、而非猜的：同一项目发布多个外壳变体时 rid 必须逐个
+    不同（M9A 的 MFAA 包是 ``M9A``、MXU 包是 ``M9A-MXU``），而那个后缀正是
+    GitHub 分包名里用来区分的那一段。
+
+    只在末段确实是已知外壳名时才采信，避免把 ``Foo-Bar`` 这类普通带横线的
+    rid 误判。只发一个外壳的项目（MaaYYs / MaaEnd / 识宝）rid 没有后缀，
+    自然落回下面的文件与目录特征。
+    """
 
     try:
-        file_names = {
-            item.name.casefold()
-            for item in project_path.iterdir()
-            if item.is_file()
-        }
+        raw = (project_path / "interface.json").read_text(encoding="utf-8-sig")
+        rid = str(json.loads(raw).get("mirrorchyan_rid") or "").strip()
+    except (OSError, ValueError):
+        # 解析不了（比如 JSON5 写法）就当没有，交给下面的特征判定
+        return ""
+
+    if "-" not in rid:
+        return ""
+    suffix = re.sub(r"[^a-z0-9]+", "", rid.rsplit("-", 1)[1].casefold())
+    return _RID_SHELL_SUFFIXES.get(suffix, "")
+
+
+def detect_maafw_project_shell_hint(project_path: Path) -> str:
+    """Identify a local UI shell from root-level markers.
+
+    File-name markers come first. They only work when the shell names its
+    executable after itself, which MXU does not always do: MaaYYs ships
+    ``mxu.exe`` but M9A ships ``m9a.exe`` and MaaEnd ships ``MaaEnd.exe``,
+    all three being MXU packages. Those fell through to "" and left the
+    updater unable to choose between e.g. ``M9A-...-MFAA.zip`` and
+    ``M9A-...-MXU.zip``.
+
+    So when no file marker matches, fall back to structure: MXU ships the
+    MaaFramework runtime in a root ``maafw/`` directory, and MFAAvalonia
+    does not (it ships ``MaaAgentBinary/`` + ``libs/`` + ``runtimes/``
+    alongside ``MFAAvalonia.dll``). The fallback runs **only** after the
+    file markers came up empty, so MFW/CFA packages — which also carry
+    ``maafw/`` but are already identified by ``MFW.exe`` / ``CFA.exe`` —
+    keep their own answer.
+    """
+
+    declared = _shell_from_mirrorchyan_rid(project_path)
+    if declared:
+        return declared
+
+    try:
+        entries = list(project_path.iterdir())
     except OSError:
         return ""
+
+    file_names = {item.name.casefold() for item in entries if item.is_file()}
 
     markers = {
         "MFAAvalonia": {
@@ -2510,7 +2564,15 @@ def detect_maafw_project_shell_hint(project_path: Path) -> str:
         for shell_name, shell_markers in markers.items()
         if file_names.intersection(shell_markers)
     ]
-    return detected[0] if len(detected) == 1 else ""
+    if len(detected) == 1:
+        return detected[0]
+    if detected:
+        return ""
+
+    directory_names = {item.name.casefold() for item in entries if item.is_dir()}
+    if "maafw" in directory_names:
+        return "MXU"
+    return ""
 
 
 def _sanitize_log_message(message: str) -> str:

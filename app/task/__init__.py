@@ -42,7 +42,6 @@ _LAZY_EXPORTS = {
     "OkwwManager": (".Okww", "OkwwManager"),
     "OkNteManager": (".OkNte", "OkNteManager"),
     "HSRManager": (".HSR", "HSRManager"),
-    "MaaFWManager": (".MaaFW.manager", "MaaFWManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
 }
 
@@ -69,6 +68,5 @@ __all__ = [
     "OkwwManager",
     "OkNteManager",
     "HSRManager",
-    "MaaFWManager",
     "MaaFWEmbeddedManager",
 ]

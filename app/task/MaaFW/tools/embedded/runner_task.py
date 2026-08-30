@@ -83,6 +83,8 @@ _WIN32_INPUT_METHODS = {
 _SUBPROCESS_OUTPUT_ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
 _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
+# 启动/附着游戏后定位其窗口的等待秒数
+WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERBOSE_FRAMEWORK_LOG_MARKERS = (
     "Transceiver::send] send canceled",
@@ -505,18 +507,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return mode == "DirectExe"
 
     def _resolve_game_launch_path(self) -> Path | None:
-        """DirectExe 模式下 MAS 要启动的客户端 exe。
+        """DirectExe 模式下 MAS 要启动的客户端 exe。"""
 
-        前端写的是 Game.LaunchPath；Game.Path 是旧版桌面控制器路径，按
-        config.py 里的注释「仅用于读取兼容」，所以只作回退。此前这里只读
-        Game.Path，用户在新 UI 选好了 exe 也照样报「请选择实际游戏 exe」。
-        """
-
-        for section_key in ("LaunchPath", "Path"):
-            raw = str(self.script_config.get("Game", section_key) or "").strip()
-            if raw:
-                return Path(raw)
-        return None
+        raw = str(self.script_config.get("Game", "LaunchPath") or "").strip()
+        return Path(raw) if raw else None
 
     def _load_run_state_for_check(
         self,
@@ -1542,9 +1536,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def _activate_desktop_game_window(self, game_path: Path) -> None:
         try:
+            # 第二个参数是**秒数**，不是截止时刻。dev 的 #473 把计时改成单调时钟后
+            # 内部是 `time.monotonic() + timeout_seconds`，传 datetime 会直接
+            # TypeError（真机上表现为「游戏进程已启动，但定位窗口失败」，窗口没被
+            # 前置，随后第一个任务识别不到而失败）。
             await self.game_process_manager.search_process(
                 ProcessInfo(exe=str(game_path.resolve())),
-                datetime.now() + timedelta(seconds=5),
+                WINDOW_SEARCH_TIMEOUT_SECONDS,
             )
         except Exception as exc:
             logger.warning(f"MaaFW 定位游戏进程窗口失败: {exc}")

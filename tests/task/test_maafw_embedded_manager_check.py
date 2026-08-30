@@ -20,7 +20,7 @@ import app.core  # noqa: F401  # 初始化宿主配置
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.core.task_manager import TaskInfo
 from app.models.task import ScriptItem
-from app.task.MaaFW.embedded_manager import ENGINE_VALUE, MaaFWEmbeddedManager
+from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -51,7 +51,6 @@ def make_project(root: Path) -> Path:
 async def build_manager(
     project: Path,
     *,
-    engine: str = ENGINE_VALUE,
     emulator_id: str = "",
 ) -> tuple[MaaFWEmbeddedManager, uuid.UUID, MaaFWConfig]:
     script_uid = uuid.uuid4()
@@ -64,7 +63,6 @@ async def build_manager(
                 "Controller": "桌面端",
                 "Resource": "简中",
             },
-            "Run": {"Engine": engine},
         }
     )
     if emulator_id:
@@ -109,9 +107,13 @@ class EmbeddedManagerCheckIntegrationTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.project = make_project(Path(self._tmp.name) / "project")
 
-    def _run_check(self, **kwargs) -> tuple[str, MaaFWEmbeddedManager]:
+    def _run_check(
+        self, project: Path | None = None, **kwargs
+    ) -> tuple[str, MaaFWEmbeddedManager]:
         async def go():
-            manager, script_uid, config = await build_manager(self.project, **kwargs)
+            manager, script_uid, config = await build_manager(
+                project if project is not None else self.project, **kwargs
+            )
             with mock.patch.object(
                 app.core.Config, "ScriptConfig", {script_uid: config}
             ):
@@ -119,7 +121,7 @@ class EmbeddedManagerCheckIntegrationTest(unittest.TestCase):
 
         return asyncio.run(go())
 
-    def test_embedded_engine_passes_the_gate(self) -> None:
+    def test_a_well_formed_script_passes_the_gate(self) -> None:
         result, manager = self._run_check()
         self.assertEqual(result, "Pass")
         self.assertIsNotNone(manager.script_config)
@@ -156,11 +158,6 @@ class EmbeddedManagerCheckIntegrationTest(unittest.TestCase):
         result = asyncio.run(go())
         self.assertNotEqual(result, "Pass")
         self.assertIn("可运行的用户", result)
-
-    def test_external_engine_is_refused(self) -> None:
-        result, _ = self._run_check(engine="external")
-        self.assertNotEqual(result, "Pass")
-        self.assertIn("内置运行", result)
 
     def test_missing_project_directory_is_refused(self) -> None:
         async def go():
@@ -199,15 +196,15 @@ class EmbeddedManagerCheckIntegrationTest(unittest.TestCase):
         self.assertIsNone(manager.emulator_manager)
 
     def test_inner_task_is_only_built_after_a_passing_check(self) -> None:
-        _, manager = self._run_check(engine="external")
+        _, manager = self._run_check(project=self.project / "nope")
         self.assertIsNone(manager.inner_task)
 
     def test_final_task_is_safe_before_any_run(self) -> None:
-        _, manager = self._run_check(engine="external")
+        _, manager = self._run_check(project=self.project / "nope")
         asyncio.run(manager.final_task())  # 不得抛
 
     def test_on_crash_without_inner_task_marks_the_script(self) -> None:
-        _, manager = self._run_check(engine="external")
+        _, manager = self._run_check(project=self.project / "nope")
         asyncio.run(manager.on_crash(RuntimeError("boom")))
         self.assertEqual(manager.script_info.status, "异常")
 
@@ -242,8 +239,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                         "Controller": "桌面端",
                         "Resource": "简中",
                     },
-                    "Run": {"Engine": ENGINE_VALUE},
-                }
+                                    }
             )
             for name in user_names:
                 _, user_cfg = await config.UserData.add(MaaFWUserConfig)
@@ -323,8 +319,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                         "Controller": "桌面端",
                         "Resource": "简中",
                     },
-                    "Run": {"Engine": ENGINE_VALUE},
-                }
+                                    }
             )
             for name in ("用户A", "用户B"):
                 _, user_cfg = await config.UserData.add(MaaFWUserConfig)
@@ -482,8 +477,7 @@ class EmbeddedManagerAgainstRealProjectTest(unittest.TestCase):
                         "Controller": "PC",
                         "Resource": "官服",
                     },
-                    "Run": {"Engine": ENGINE_VALUE},
-                }
+                                    }
             )
             _, user_cfg = await config.UserData.add(MaaFWUserConfig)
             tasks = ["收取荒原"]

@@ -66,13 +66,9 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PlayCoverUuid: '',
   },
   Game: {
-    Path: '',
     LaunchMode: 'AttachOnly',
     LaunchPath: '',
-    LaunchURL: '',
     Arguments: '',
-    ProcessPath: '',
-    ProcessName: '',
     WaitTime: 60,
     CloseOnFinish: true,
   },
@@ -113,7 +109,6 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     GitHubAssetPattern: '\\.zip$',
   },
   Run: {
-    Engine: 'external',
     ProxyTimesLimit: 0,
     RunTimesLimit: 1,
     RunTimeLimit: 30,
@@ -428,17 +423,7 @@ export function useMaaFWControlConfig(
       }
 
       maafwConfig.Game.LaunchPath = path
-      // 进程字段不再让用户填：DirectExe 直启游戏本体（LauncherExe 已下线），
-      // 检测目标按定义就是启动目标，从所选 exe 推导即可。内置运行压根不读这
-      // 两个键（runner_task 用 LaunchPath 做进程检测），保留它们只为第一层
-      // 外部运行路径的 game_lifecycle 仍能读到。
-      maafwConfig.Game.ProcessPath = path
-      maafwConfig.Game.ProcessName = fileName
       await handleChange('Game', 'LaunchPath', path)
-      // 这两个键此前靠输入框 @blur 落盘，输入框删掉后必须显式持久化，
-      // 否则只改了内存、第一层读到的仍是旧值。
-      await handleChange('Game', 'ProcessPath', path)
-      await handleChange('Game', 'ProcessName', fileName)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`选择启动 exe 失败: ${errorMsg}`)

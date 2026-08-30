@@ -16,19 +16,15 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MaaFW 第二层（内置运行 embedded）任务管理器。
+"""MaaFW 内置运行任务管理器。
 
-第一层由 ``manager.MaaFWManager`` 启动项目自己的 UI shell；本层在 MAS 自己的
-worker 子进程内加载项目的 MaaFramework 直接驱动，编排实现在
-``tools/embedded/runner_task.py``。
-
-`task_manager` 按 ``Run.Engine`` 在两者之间分派，**第一层路径完全不经过本文件**。
-
-⚠️ 实验性：本层尚未经过真机验证，默认引擎仍是 ``external``。
+MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，不启动项目
+自带的 UI 外壳；编排实现在 ``tools/embedded/runner_task.py``。这是
+``task_manager`` 对 MaaFW 脚本的唯一分派目标。
 
 ``tools/embedded.runner_task`` 会经 runner 包 import ``maa``（导入即打开 DLL），
-因此本模块**只在 check() 通过后才延迟导入它**，让第一层与所有不启用 embedded
-的进程都不承担这个代价。
+因此本模块**只在 check() 通过后才延迟导入它**，让不跑 MaaFW 的进程不承担
+这个代价。
 """
 
 from __future__ import annotations
@@ -51,7 +47,6 @@ if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 
 
 logger = get_logger("MFW 内置运行")
 
-ENGINE_VALUE = "embedded"
 
 
 class MaaFWEmbeddedManager(TaskExecuteBase):
@@ -101,9 +96,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
 
-        if script_config.get("Run", "Engine") != ENGINE_VALUE:
-            return "当前脚本未启用 MFW 内置运行引擎"
-
         project_value = str(script_config.get("Info", "Path") or "").strip()
         if not project_value:
             return "请设置 MFW 项目路径"
@@ -114,7 +106,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         await user_config.load(await script_config.UserData.toDict())
         self.user_config = user_config
 
-        # 与第一层同一套筛选口径（manager.py 的 runnable_uids）。
+        # 只跑「已启用且剩余天数未耗尽」的用户。
         self.runnable_user_uids = [
             uid
             for uid, cfg in user_config.data.items()
@@ -266,4 +258,4 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self.script_info.status = "异常"
 
 
-__all__ = ["ENGINE_VALUE", "MaaFWEmbeddedManager"]
+__all__ = ["MaaFWEmbeddedManager"]

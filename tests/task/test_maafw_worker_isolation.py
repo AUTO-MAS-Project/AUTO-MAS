@@ -121,8 +121,8 @@ class WorkerImportIsolationTest(unittest.TestCase):
         import app.task as task
         import app.task.MaaFW.tools.core as core
 
-        self.assertTrue(callable(task.MaaFWManager))
         self.assertTrue(callable(task.MaaFWEmbeddedManager))
+        self.assertTrue(callable(task.MaaManager))
         self.assertTrue(callable(core.MaaFWInterfaceService))
         self.assertTrue(callable(core.MaaFWProjectUpdateService))
 

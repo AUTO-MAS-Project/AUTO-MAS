@@ -2442,7 +2442,7 @@ class MaaFWConfig(ConfigBase):
         self.Device_PlayCoverUuid = ConfigItem("Device", "PlayCoverUuid", "")
 
         ## Game ------------------------------------------------------------
-        ## 游戏生命周期模式。旧配置只保存 Game.Path，运行时会按兼容规则解释。
+        ## 游戏生命周期模式
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
@@ -2451,18 +2451,10 @@ class MaaFWConfig(ConfigBase):
             # （DirectExe）。LauncherExe 与 URL 已下线，旧配置由校验器纠正回默认值。
             OptionsValidator(["AttachOnly", "DirectExe"]),
         )
-        ## 启动目标路径（DirectExe 为客户端，LauncherExe 为启动器）
+        ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
-        ## URL 协议启动目标
-        self.Game_LaunchURL = ConfigItem("Game", "LaunchURL", "", URLValidator())
-        ## 旧版桌面控制器路径，仅用于读取兼容；新配置优先使用 LaunchPath
-        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
-        ## 启动后用于检测实际客户端的可执行文件路径
-        self.Game_ProcessPath = ConfigItem("Game", "ProcessPath", "", FileValidator())
-        ## 启动后用于检测实际客户端的进程名（仅精确匹配）
-        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         ## 游戏启动后等待窗口就绪的时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 任务结束后是否关闭由 MAS 启动的游戏
@@ -2552,14 +2544,6 @@ class MaaFWConfig(ConfigBase):
 
         ## Run -------------------------------------------------------------
         ## 运行引擎，决定「谁来跑」：
-        ## embedded = MAS 在自己的 worker 进程内加载项目 DLL 直接驱动（默认）；
-        ## external = 启动项目自己的 UI shell 让它自运行。
-        ## **前端不暴露该开关**，MaaFW 统一走内置运行；external 保留为配置级
-        ## 自救通道（内置运行出问题时可手工改配置文件切回），第一层代码因此保留。
-        ## task_manager 按本值分派 MaaFWEmbeddedManager / MaaFWManager。
-        self.Run_Engine = ConfigItem(
-            "Run", "Engine", "embedded", OptionsValidator(["external", "embedded"])
-        )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
