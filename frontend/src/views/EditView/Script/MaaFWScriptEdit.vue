@@ -57,6 +57,21 @@
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
           />
+
+          <a-alert
+            v-if="envPreparing || envReady || envMessage"
+            class="env-prepare-alert"
+            :type="envPreparing ? 'info' : envReady ? 'success' : 'error'"
+            show-icon
+            :message="envMessage"
+          >
+            <template v-if="envPreparing" #icon>
+              <LoadingOutlined spin />
+            </template>
+            <template v-if="envReady && envAgents.length" #description>
+              已就绪的 Agent：{{ envAgents.map(a => a.runtimeKind || '未知').join('、') }}
+            </template>
+          </a-alert>
         </div>
 
         <div v-show="!isWizard || currentStep === 1">
@@ -143,7 +158,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
@@ -177,7 +192,7 @@ type PeriodKey = (typeof PERIOD_KEYS)[number]
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, previewMaaFWInterface } = useScriptApi()
+const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
 const scriptId = route.params.id as string
@@ -392,7 +407,41 @@ const runPreview = async () => {
 
 const handlePreviewInterface = async () => {
   await runPreview()
-  if (previewData.value) message.success(`已读取 ${previewProjectTitle.value}`)
+  if (!previewData.value) return
+  message.success(`已读取 ${previewProjectTitle.value}`)
+  await runAgentEnvPrepare()
+}
+
+// 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
+// 不做的话这份成本会推迟到用户第一次点运行时才付，界面上看起来像卡住。
+const envPreparing = ref(false)
+const envReady = ref(false)
+const envMessage = ref('')
+const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
+
+const runAgentEnvPrepare = async () => {
+  const path = maafwConfig.Info.Path.trim()
+  if (!path) return
+  envPreparing.value = true
+  envReady.value = false
+  envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
+  try {
+    const response = await prepareMaaFWAgentEnv(path, scriptId)
+    if (!response || response.code !== 200 || !response.data) {
+      envMessage.value = response?.message || 'MFW 运行环境准备失败'
+      message.error(envMessage.value)
+      return
+    }
+    envReady.value = true
+    envAgents.value = response.data.agents ?? []
+    const version = response.data.maafwVersion
+    envMessage.value = version ? `运行环境已就绪，MaaFramework ${version}` : '运行环境已就绪'
+  } catch (error) {
+    envMessage.value = error instanceof Error ? error.message : String(error)
+    message.error(envMessage.value)
+  } finally {
+    envPreparing.value = false
+  }
 }
 
 const selectMaaFWPath = async () => {
@@ -483,6 +532,10 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.env-prepare-alert {
+  margin-top: 4px;
+}
+
 .wizard-steps {
   margin-bottom: 28px;
 }

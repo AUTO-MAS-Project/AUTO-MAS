@@ -855,6 +855,135 @@ async def update_maafw_project(
 
 
 @router.post(
+    "/maafw/agent-env/prepare",
+    tags=["MaaFW"],
+    summary="预备 MFW 运行环境",
+    response_model=MaaFWAgentEnvPrepareOut,
+    status_code=200,
+)
+async def prepare_maafw_agent_env(
+    payload: MaaFWAgentEnvPrepareIn = Body(...),
+) -> MaaFWAgentEnvPrepareOut:
+    """按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
+
+    在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
+    成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
+    在请求内完成，首次冷启动可能耗时数分钟。
+    """
+
+    # 这些模块会拉起 runtime_pool 与 agent_env，放在函数内延迟导入，
+    # 避免所有 API 请求都为它们付出导入成本。
+    from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+        MaaFWRunnerService,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.embedded.project_path import (
+        release_project_path,
+        try_reserve_project_path,
+    )
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+
+    logs: list[str] = []
+    project_value = str(payload.path or "").strip()
+    if not project_value:
+        return MaaFWAgentEnvPrepareOut(
+            code=400, status="error", message="请先设置 MFW 项目路径"
+        )
+    root_path = Path(project_value).resolve()
+    if not root_path.is_dir():
+        return MaaFWAgentEnvPrepareOut(
+            code=400,
+            status="error",
+            message="MFW 项目路径不是有效目录，请检查项目目录",
+        )
+
+    # 与运行、更新共用同一把项目锁：同一目录同时准备/运行会互相踩。
+    reservation_key = await try_reserve_project_path(root_path)
+    if reservation_key is None:
+        return MaaFWAgentEnvPrepareOut(
+            code=409,
+            status="error",
+            message="该 MFW 项目正在运行、更新或准备环境，请稍后重试",
+            data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
+        )
+
+    try:
+        try:
+            interface = await asyncio.to_thread(
+                load_interface_model_cached, root_path
+            )
+        except MaaFWInterfaceLoadError as exc:
+            return MaaFWAgentEnvPrepareOut(
+                code=400,
+                status="error",
+                message=f"MFW interface 读取失败: {exc}",
+                data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
+            )
+
+        route = await asyncio.to_thread(
+            lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
+        )
+        try:
+            result = await asyncio.to_thread(
+                MaaFWRunnerService().prepare_project_environment,
+                root_path,
+                interface,
+                runtime_pool_root=route.root,
+                runtime_pool_id=route.pool_id,
+                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
+                import_paths=[Path.cwd()],
+                send_log=logs.append,
+            )
+        except Exception as exc:
+            return MaaFWAgentEnvPrepareOut(
+                code=500,
+                status="error",
+                message=f"MFW 运行环境准备失败: {exc}",
+                data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
+            )
+    finally:
+        await release_project_path(reservation_key)
+
+    runtime = result.get("runtime")
+    runtime = runtime if isinstance(runtime, dict) else {}
+    agent_payload = result.get("agents")
+    agent_payload = agent_payload if isinstance(agent_payload, dict) else {}
+    raw_plans = agent_payload.get("plans")
+    raw_plans = raw_plans if isinstance(raw_plans, list) else []
+
+    agents = [
+        MaaFWAgentEnvInfo(
+            childExec=str(plan.get("childExec") or ""),
+            executable=str(plan.get("executable") or ""),
+            runtimeKind=plan.get("runtimeKind"),
+            isolatedVenvPath=plan.get("isolatedVenvPath"),
+            fallbackReason=plan.get("fallbackReason"),
+        )
+        for plan in raw_plans
+        if isinstance(plan, dict)
+    ]
+
+    return MaaFWAgentEnvPrepareOut(
+        message="MFW 运行环境已就绪",
+        data=MaaFWAgentEnvPrepareData(
+            path=str(root_path),
+            agentCount=len(agents),
+            agents=agents,
+            logs=logs,
+            runtimeId=runtime.get("runtimeId"),
+            poolId=runtime.get("poolId"),
+            pythonExecutable=runtime.get("pythonExecutable"),
+            venvPath=runtime.get("venvPath"),
+            maafwVersion=runtime.get("maafwVersion"),
+        ),
+    )
+
+
+@router.post(
     "/m9a/tasks/available",
     tags=["M9A"],
     summary="获取 M9A 可用任务列表（排除 standalone 任务）",

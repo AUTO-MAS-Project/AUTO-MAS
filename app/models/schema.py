@@ -2170,6 +2170,55 @@ class MaaFWProjectUpdateOut(OutBase):
     )
 
 
+class MaaFWAgentEnvPrepareIn(BaseModel):
+    path: str = Field(..., description="MFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None, description="脚本 ID，仅用于日志定位"
+    )
+
+
+class MaaFWAgentEnvInfo(BaseModel):
+    childExec: str = Field(..., description="interface 声明的 agent child_exec")
+    executable: str = Field(..., description="实际使用的解释器或可执行文件")
+    runtimeKind: Optional[str] = Field(
+        default=None,
+        description="agent 运行时类型：project_python / project_binary / "
+        "isolated_venv / embedded / external",
+    )
+    isolatedVenvPath: Optional[str] = Field(
+        default=None, description="该 agent 专属隔离 venv 路径"
+    )
+    fallbackReason: Optional[str] = Field(
+        default=None, description="回退原因，供用户排查"
+    )
+
+
+class MaaFWAgentEnvPrepareData(BaseModel):
+    path: str = Field(..., description="MFW 项目根目录")
+    agentCount: int = Field(default=0, description="agent 数量")
+    agents: List[MaaFWAgentEnvInfo] = Field(
+        default_factory=list, description="各 agent 的运行环境信息"
+    )
+    logs: List[str] = Field(default_factory=list, description="准备过程日志")
+    runtimeId: Optional[str] = Field(
+        default=None, description="Runtime Pool 中的 runtime ID"
+    )
+    poolId: Optional[str] = Field(default=None, description="Runtime Pool 身份")
+    pythonExecutable: Optional[str] = Field(
+        default=None, description="Runner 使用的 Python 解释器"
+    )
+    venvPath: Optional[str] = Field(default=None, description="Runner 虚拟环境路径")
+    maafwVersion: Optional[str] = Field(
+        default=None, description="实际解析到的 MaaFramework 版本"
+    )
+
+
+class MaaFWAgentEnvPrepareOut(OutBase):
+    data: Optional[MaaFWAgentEnvPrepareData] = Field(
+        default=None, description="MFW 运行环境准备结果"
+    )
+
+
 PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
 PlanComboxConsumer = Literal["maa", "maaend"]
 

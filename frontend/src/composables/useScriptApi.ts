@@ -13,6 +13,7 @@ import {
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
+  type MaaFWAgentEnvPrepareOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
@@ -1256,6 +1257,22 @@ export function useScriptApi() {
     }
   }
 
+  const prepareMaaFWAgentEnv = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWAgentEnvPrepareOut | null> => {
+    try {
+      return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
+        path,
+        scriptId,
+      })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
+      return null
+    }
+  }
+
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
@@ -1379,6 +1396,7 @@ export function useScriptApi() {
     getHsrStageOptions,
     getMaaEndOptions,
     previewMaaFWInterface,
+    prepareMaaFWAgentEnv,
     deleteScript,
     updateScript,
     reorderScript,
