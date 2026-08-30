@@ -916,11 +916,12 @@ class SrcManager(TaskExecuteBase):
             await self._report_notification_error("推送系统通知", e)
 
         try:
-            await asyncio.wait_for(
+            failed_channels = await asyncio.wait_for(
                 push_notification("代理结果", title, result, None),
                 timeout=_NOTIFICATION_TIMEOUT_SECONDS,
             )
-            if has_game_sign_summary:
+            # 有渠道失败时不消费签到汇总, 留给下一份报告重发, 避免静默丢失
+            if has_game_sign_summary and not failed_channels:
                 mark_task_game_sign_summary_consumed(self.task_info)
         except Exception as e:
             await self._report_notification_error("推送代理结果", e)

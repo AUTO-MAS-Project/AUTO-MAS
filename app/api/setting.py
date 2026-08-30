@@ -29,27 +29,28 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
 from app.core import Config
-from app.services.data_backup import create_data_backup
-from app.services import Notify
+from app.core.notify import send_test_notification
+from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
-    SettingGetOut,
     GlobalConfig,
     OutBase,
-    SettingUpdateIn,
-    WebhookGetOut,
-    WebhookIndexItem,
-    Webhook,
-    WebhookGetIn,
-    WebhookCreateOut,
-    WebhookUpdateIn,
-    WebhookDeleteIn,
-    WebhookReorderIn,
-    WebhookTestIn,
     PatternDebugIn,
     PatternDebugOut,
     PatternDebugResultItem,
+    SettingGetOut,
+    SettingUpdateIn,
+    Webhook,
+    WebhookCreateOut,
+    WebhookDeleteIn,
+    WebhookGetIn,
+    WebhookGetOut,
+    WebhookIndexItem,
+    WebhookReorderIn,
+    WebhookTestIn,
+    WebhookUpdateIn,
 )
-from app.models.config import Webhook as WebhookConfig
+from app.services import Notify
+from app.services.data_backup import create_data_backup
 from app.utils import debug_pattern, get_logger
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
@@ -150,10 +151,16 @@ async def test_notify() -> OutBase:
     """测试通知"""
 
     try:
-        await Notify.send_test_notification()
+        failed_channels = await send_test_notification()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    if failed_channels:
+        return OutBase(
+            code=500,
+            status="error",
+            message=f"部分通知发送失败: {'、'.join(failed_channels)}",
         )
     return OutBase()
 

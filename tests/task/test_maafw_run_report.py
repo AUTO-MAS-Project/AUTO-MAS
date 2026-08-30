@@ -4,7 +4,7 @@ from contextlib import ExitStack
 from unittest.mock import patch
 
 import app.core  # noqa: F401
-
+import app.core.notify as core_notify
 from app.task.MaaFW.tools.notify import report
 
 
@@ -36,8 +36,8 @@ class _FakeNotify:
         self.webhook_calls = []
         self.koishi_calls = []
 
-    async def send_mail(self, kind, title, content, to_address):
-        self.mail_calls.append((kind, title, content, to_address))
+    async def send_mail(self, mode, title, content, to_address):
+        self.mail_calls.append((mode, title, content, to_address))
 
     async def ServerChanPush(self, title, content, send_key):
         self.serverchan_calls.append((title, content, send_key))
@@ -67,7 +67,8 @@ class MaafwRunReportGateTest(unittest.TestCase):
     def _push(self, config, notify, mode="代理结果", message=None):
         with ExitStack() as stack:
             stack.enter_context(patch.object(report, "Config", config))
-            stack.enter_context(patch.object(report, "Notify", notify))
+            stack.enter_context(patch.object(core_notify, "Config", config))
+            stack.enter_context(patch.object(core_notify, "Notify", notify))
             asyncio.run(
                 report.push_notification(
                     mode, "标题", message if message is not None else _message()

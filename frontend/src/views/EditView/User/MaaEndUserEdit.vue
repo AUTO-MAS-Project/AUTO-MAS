@@ -74,8 +74,8 @@
             :loading="loading"
             @save="handleFieldSave"
           />
-          <NotifyConfigSection
-            v-model:form-data="formData"
+          <UserNotifyConfig
+            v-model="formData.Notify"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
@@ -117,7 +117,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')

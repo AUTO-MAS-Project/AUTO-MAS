@@ -20,15 +20,15 @@
 #   Contact: DLmaster_361@163.com
 
 from app.core import Config
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     statistic_targets,
 )
-from app.utils import get_logger
 from app.models.config import SrcUserConfig
+from app.utils import get_logger
 
 logger = get_logger("SRC通知工具")
 

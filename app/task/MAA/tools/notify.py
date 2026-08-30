@@ -20,7 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 from app.core import Config
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     NotifyTarget,
     dispatch,
@@ -29,8 +29,8 @@ from app.services.notify_dispatch import (
     statistic_targets,
     user_target,
 )
-from app.utils import get_logger
 from app.models.config import MaaUserConfig
+from app.utils import get_logger
 
 logger = get_logger("MAA 通知工具")
 
@@ -100,9 +100,7 @@ async def push_notification(
         template = Config.notify_env.get_template("MAA_result.html")
 
         return await dispatch(
-            NotifyPayload(
-                title, message_text, template.render(message), SIGNATURE_SEP
-            ),
+            NotifyPayload(title, message_text, template.render(message), SIGNATURE_SEP),
             [global_target()],
         )
 
@@ -121,9 +119,7 @@ async def push_notification(
         template = Config.notify_env.get_template("MAA_six_star.html")
 
         return await dispatch(
-            NotifyPayload(
-                title, "好羡慕~", template.render(message), SIGNATURE_SEP
-            ),
+            NotifyPayload(title, "好羡慕~", template.render(message), SIGNATURE_SEP),
             _six_star_targets(user_config),
         )
 

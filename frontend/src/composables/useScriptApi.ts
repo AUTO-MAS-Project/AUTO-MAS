@@ -210,7 +210,6 @@ export function useScriptApi() {
                   ToAddress: any
                   IfServerChan: any
                   ServerChanKey: any
-                  CustomWebhooks: any
                 }
                 Data: {
                   LastProxyDate: any
@@ -237,7 +236,6 @@ export function useScriptApi() {
                   ToAddress: any
                   IfServerChan: any
                   ServerChanKey: any
-                  CustomWebhooks: any
                 }
                 Data: { LastProxyDate: any; ProxyTimes: any }
               }
@@ -425,10 +423,6 @@ export function useScriptApi() {
                           maaUserData.Notify?.ServerChanKey !== undefined
                             ? maaUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          maaUserData.Notify?.CustomWebhooks !== undefined
-                            ? maaUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -529,10 +523,6 @@ export function useScriptApi() {
                           srcUserData.Notify?.ServerChanKey !== undefined
                             ? srcUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          srcUserData.Notify?.CustomWebhooks !== undefined
-                            ? srcUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -615,10 +605,6 @@ export function useScriptApi() {
                           generalUserData.Notify?.ServerChanKey !== undefined
                             ? generalUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          generalUserData.Notify?.CustomWebhooks !== undefined
-                            ? generalUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -790,10 +776,6 @@ export function useScriptApi() {
                           maaEndUserData.Notify?.ServerChanKey !== undefined
                             ? maaEndUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          maaEndUserData.Notify?.CustomWebhooks !== undefined
-                            ? maaEndUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -876,10 +858,6 @@ export function useScriptApi() {
                           m9aUserData.Notify?.ServerChanKey !== undefined
                             ? m9aUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          m9aUserData.Notify?.CustomWebhooks !== undefined
-                            ? m9aUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -1001,10 +979,6 @@ export function useScriptApi() {
                           okwwUserData.Notify?.ServerChanKey !== undefined
                             ? okwwUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          okwwUserData.Notify?.CustomWebhooks !== undefined
-                            ? okwwUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:

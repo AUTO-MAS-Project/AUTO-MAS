@@ -66,8 +66,8 @@
           />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection
-            v-model:form-data="formData"
+          <UserNotifyConfig
+            v-model="formData.Notify"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
@@ -103,7 +103,7 @@ const logger = window.electronAPI.getLogger('SRC用户编辑')
 import SRCUserEditHeader from '@/views/SRCUserEdit/SRCUserEditHeader.vue'
 import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
-import NotifyConfigSection from '@/views/SRCUserEdit/NotifyConfigSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()

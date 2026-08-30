@@ -363,83 +363,13 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>通知配置</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">启用通知</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">通知内容</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  统计信息
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  邮件通知
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  placeholder="请输入收件邮箱"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  Server酱
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  placeholder="请输入 SENDKEY"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
     </div>
@@ -462,8 +392,8 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import UserEditHeader from '@/components/UserEditHeader.vue'
-import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')

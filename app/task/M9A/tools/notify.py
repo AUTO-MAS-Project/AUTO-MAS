@@ -22,15 +22,15 @@ import re
 from pathlib import Path
 
 from app.core import Config
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     statistic_targets,
 )
-from app.utils import get_logger
 from app.models.config import M9AUserConfig
+from app.utils import get_logger
 
 logger = get_logger("M9A通知工具")
 
@@ -210,7 +210,7 @@ class M9ALogAnalyzer:
             if in_drops and current_task:
                 if "MonitorMarkdown" in line:
                     idx = line.find("MonitorMarkdown")
-                    raw = line[idx + len("MonitorMarkdown"):].lstrip("] ")
+                    raw = line[idx + len("MonitorMarkdown") :].lstrip("] ")
                     drop_text = M9ALogAnalyzer._strip_html(raw.strip())
                     if drop_text and drop_text not in M9ALogAnalyzer.DROP_KEYWORDS:
                         drops.append(drop_text)

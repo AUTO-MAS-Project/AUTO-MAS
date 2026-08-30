@@ -264,6 +264,14 @@
               </a-col>
             </a-row>
           </div>
+
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="isSaving"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -277,6 +285,7 @@ import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import hsrLogo from '@/assets/hsr.png'
 import UserEditHeader from '@/components/UserEditHeader.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
@@ -357,6 +366,14 @@ const formData = reactive<HSRUserConfigData>({
     WeeklyCompletedThisWeek: false,
     WeeklyLastResetWeek: '',
     WeeklyLastCompletionDate: '',
+  },
+  Notify: {
+    Enabled: false,
+    IfSendStatistic: false,
+    IfSendMail: false,
+    ToAddress: '',
+    IfServerChan: false,
+    ServerChanKey: '',
   },
   Control: {
     Mode: 'managed',
@@ -875,6 +892,7 @@ const loadUserData = async () => {
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
         if (userData.TaskOpt) formData.TaskOpt = { ...formData.TaskOpt, ...userData.TaskOpt }
         if (userData.Data) formData.Data = { ...formData.Data, ...userData.Data }
+        if (userData.Notify) formData.Notify = { ...formData.Notify, ...userData.Notify }
         if (userData.Control)
           formData.Control = { ...(formData.Control ?? {}), ...userData.Control }
         if (userData.Managed) {

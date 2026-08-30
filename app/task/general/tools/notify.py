@@ -20,16 +20,16 @@
 #   Contact: DLmaster_361@163.com
 
 from app.core import Config
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     statistic_targets,
 )
-from app.utils import get_logger
 from app.models.config import GeneralUserConfig
 from app.tools.push_log import append_push_log
+from app.utils import get_logger
 
 logger = get_logger("通用通知工具")
 

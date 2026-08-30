@@ -20,14 +20,14 @@
 
 
 from app.core import Config
-from app.models.config import HSRUserConfig
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     statistic_targets,
 )
+from app.models.config import HSRUserConfig
 from app.utils import get_logger
 
 logger = get_logger("HSR 通知工具")
@@ -56,7 +56,7 @@ async def push_notification(
         # HSR 的全局渠道额外校验收件人非空, 配置不全时静默跳过
         return await dispatch(
             NotifyPayload(title, message_text, message_html),
-            [global_target(skip_empty_recipient=True)],
+            [global_target(empty_policy="skip")],
         )
 
     if mode == "统计信息":
@@ -71,7 +71,7 @@ async def push_notification(
 
         return await dispatch(
             NotifyPayload(title, message_text, message_html),
-            statistic_targets(user_config, skip_empty_recipient=True),
+            statistic_targets(user_config, global_empty_policy="skip"),
         )
 
     return []

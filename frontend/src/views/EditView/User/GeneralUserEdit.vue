@@ -186,94 +186,13 @@
           @save="handleFieldSave"
         />
 
-        <!-- 通知配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>通知配置</h3>
-          </div>
-          <a-row :gutter="24" align="middle">
-            <a-col :span="6">
-              <span style="font-weight: 500">启用通知</span>
-            </a-col>
-            <a-col :span="18">
-              <a-switch
-                v-model:checked="formData.Notify.Enabled"
-                :disabled="loading"
-                @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)"
-              />
-              <span class="switch-description">启用后将发送任务通知</span>
-            </a-col>
-          </a-row>
-
-          <!-- 发送统计 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <span style="font-weight: 500">通知内容</span>
-            </a-col>
-            <a-col :span="18">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >统计信息
-              </a-checkbox>
-            </a-col>
-          </a-row>
-
-          <!-- 邮件通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >邮件通知
-              </a-checkbox>
-            </a-col>
-            <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ToAddress"
-                placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                size="large"
-                style="width: 100%"
-                @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)"
-              />
-            </a-col>
-          </a-row>
-
-          <!-- Server酱通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >Server酱
-              </a-checkbox>
-            </a-col>
-            <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ServerChanKey"
-                placeholder="请输入SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                size="large"
-                style="width: 100%"
-                @blur="handleFieldSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-              />
-            </a-col>
-          </a-row>
-
-          <!-- 自定义 Webhook 通知 -->
-          <div style="margin-top: 16px">
-            <WebhookManager
-              mode="user"
-              :script-id="scriptId"
-              :user-id="userId"
-              @change="handleWebhookChange"
-            />
-          </div>
-        </div>
+        <UserNotifyConfig
+          v-model="formData.Notify"
+          :loading="loading"
+          :script-id="scriptId"
+          :user-id="userId"
+          @save="handleFieldSave"
+        />
       </a-form>
     </a-card>
   </div>
@@ -296,8 +215,8 @@ import {
 } from '@/services/websocket/types'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
-import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
@@ -352,7 +271,6 @@ const getDefaultGeneralUserData = () => ({
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '2000-01-01',
@@ -740,12 +658,6 @@ const handleSaveGeneralConfig = async () => {
     logger.error(`保存通用配置失败: ${errorMsg}`)
     message.error('保存通用配置失败')
   }
-}
-
-// 处理 Webhook 变化
-const handleWebhookChange = () => {
-  // Webhook 有自己的保存逻辑，这里只记录日志
-  logger.info(`User webhooks changed: ${JSON.stringify(formData.Notify.CustomWebhooks)}`)
 }
 
 const handleCancel = () => {

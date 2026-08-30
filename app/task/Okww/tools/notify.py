@@ -17,16 +17,16 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 from app.core import Config
-from app.models.config import OkwwUserConfig
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     user_statistic_targets,
 )
-from app.utils import get_logger
+from app.models.config import OkwwUserConfig
 from app.tools.push_log import append_push_log
+from app.utils import get_logger
 
 logger = get_logger("OK-WW 通知工具")
 
@@ -53,13 +53,11 @@ async def push_notification(
             f"结束时间: {message['end_time']}\n"
             f"执行结果: {message['user_result']}"
         )
-        message_html = Config.notify_env.get_template(
-            "general_statistics.html"
-        ).render(message)
-
-        return await dispatch(
-            NotifyPayload(title, message_text, message_html), targets
+        message_html = Config.notify_env.get_template("general_statistics.html").render(
+            message
         )
+
+        return await dispatch(NotifyPayload(title, message_text, message_html), targets)
 
     if mode != "代理结果":
         return []
@@ -75,9 +73,7 @@ async def push_notification(
     )
     # 通知详情追加采集的推送日志（任务进程信息，与 HTML 模板的 push_log 区块一致）
     message_text = append_push_log(message_text, message.get("push_log"))
-    message_html = Config.notify_env.get_template("general_result.html").render(
-        message
-    )
+    message_html = Config.notify_env.get_template("general_result.html").render(message)
 
     return await dispatch(
         NotifyPayload(title, message_text, message_html), [global_target()]

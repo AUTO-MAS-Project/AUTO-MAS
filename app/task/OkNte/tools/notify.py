@@ -17,14 +17,14 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 from app.core import Config
-from app.models.config import OkNteUserConfig
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     statistic_targets,
 )
+from app.models.config import OkNteUserConfig
 from app.utils import get_logger
 
 logger = get_logger("OK-NTE 通知工具")

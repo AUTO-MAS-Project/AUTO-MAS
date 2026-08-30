@@ -21,8 +21,19 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    TypeVar,
+    Union,
+)
+
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
-from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -1438,7 +1449,6 @@ class HSRUserConfig_Notify(BaseModel):
     ToAddress: Optional[str] = Field(default=None, description="收件地址")
     IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-    CustomWebhooks: Optional[Any] = Field(default=None, description="自定义 Webhook")
 
 
 class HSRUserConfig(BaseModel):
@@ -1764,7 +1774,6 @@ class MaaFWUserConfig_Notify(BaseModel):
     ToAddress: Optional[str] = Field(default=None, description="收件地址")
     IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-    CustomWebhooks: Optional[Any] = Field(default=None, description="自定义 Webhook")
 
 
 class MaaFWUserConfig(BaseModel):

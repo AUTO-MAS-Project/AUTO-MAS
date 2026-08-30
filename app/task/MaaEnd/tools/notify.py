@@ -21,14 +21,14 @@
 
 
 from app.core import Config
-from app.models.config import MaaEndUserConfig
-from app.services.notify_dispatch import (
+from app.core.notify import (
     NotifyPayload,
     dispatch,
     global_target,
     should_send_result,
     statistic_targets,
 )
+from app.models.config import MaaEndUserConfig
 from app.utils import get_logger
 
 logger = get_logger("MaaEnd 通知工具")
