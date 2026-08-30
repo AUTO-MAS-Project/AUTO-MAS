@@ -194,6 +194,26 @@ class ConnectionLogWordingTest(unittest.TestCase):
         # 测速提示只在确实传了多个候选时才出现
         self.assertIn("if not (screencap_single and input_single):", source)
 
+    def test_preconnect_line_uses_the_same_rule(self) -> None:
+        """连接前那条「传入」日志也得按位数措辞，两处不能互相打架。"""
+
+        source = (
+            REPO_ROOT
+            / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
+        ).read_text(encoding="utf-8")
+        # 折叠空白，免得断言绑死在换行与缩进上
+        flat = " ".join(source.split())
+        self.assertIn(
+            '"截图方法" if _is_single_method(screencap_methods) else "截图候选集合"',
+            flat,
+        )
+        self.assertIn(
+            '"输入方法" if _is_single_method(input_methods) else "输入候选集合"',
+            flat,
+        )
+        # 旧的无条件措辞不该再有
+        self.assertNotIn("ADB controller 传入候选集合", source)
+
 
 if __name__ == "__main__":
     unittest.main()

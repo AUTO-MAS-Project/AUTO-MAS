@@ -755,10 +755,20 @@ class MaaFWRunner:
             input_methods = (
                 device_config.inputMethods or MaaAdbInputMethodEnum.Default
             )
+            screencap_label = (
+                "截图方法"
+                if _is_single_method(screencap_methods)
+                else "截图候选集合"
+            )
+            input_label = (
+                "输入方法" if _is_single_method(input_methods) else "输入候选集合"
+            )
             self.send_log(
-                "ADB controller 传入候选集合: "
-                f"截图={_format_enum_methods(MaaAdbScreencapMethodEnum, screencap_methods)}; "
-                f"输入={_format_enum_methods(MaaAdbInputMethodEnum, input_methods)}; "
+                "ADB controller 传入: "
+                f"{screencap_label}="
+                f"{_format_enum_methods(MaaAdbScreencapMethodEnum, screencap_methods)}; "
+                f"{input_label}="
+                f"{_format_enum_methods(MaaAdbInputMethodEnum, input_methods)}; "
                 f"地址={device_config.address}"
             )
             if device_config.config:
