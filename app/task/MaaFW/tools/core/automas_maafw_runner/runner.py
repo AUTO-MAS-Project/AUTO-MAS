@@ -137,17 +137,78 @@ MAAFW_FAILURE_EVENT_MESSAGES = {
 MAAFW_FAILURE_SUMMARY_LIMIT = 8
 
 
+# 兜底搜索的最大深度。真实布局最深是 ``runtimes/<rid>/native``（3 层），
+# 留一层余量吸收未来的挪动；再深就会扫进 ``python/Lib/site-packages/maa/bin``
+# 那种项目自带解释器的副本，那是 agent 的，不是外壳的。
+_RUNTIME_SEARCH_MAX_DEPTH = 4
+_RUNTIME_DLL_NAME = "MaaFramework.dll"
+
+
+def _iter_runtime_candidates(project_path: Path):
+    """按优先级产出可能放着 MaaFramework.dll 的目录。
+
+    先枚举已知布局，再退到有界的逐层搜索——不写死具体 rid，也不指望布局
+    永远不变。
+    """
+
+    yield project_path / "maafw"
+
+    runtimes = project_path / "runtimes"
+    if runtimes.is_dir():
+        # .NET 把原生库放在 runtimes/<rid>/native/ 下（MFAAvalonia 即如此）。
+        # 用 glob 而不是钉死 win-x64，arm64 / linux-x64 同样能命中。
+        try:
+            for rid in sorted(runtimes.iterdir()):
+                if rid.is_dir():
+                    yield rid / "native"
+            for rid in sorted(runtimes.iterdir()):
+                if rid.is_dir():
+                    yield rid
+        except OSError:
+            return
+
+
+def _search_runtime_dll(project_path: Path) -> Path | None:
+    """逐层就近搜索，返回最浅的那一份。
+
+    已知布局全部落空时才走这里：宁可多花一次目录遍历，也好过静默回落到
+    runner venv 里那份——同版本号下二进制未必相同。
+    """
+
+    frontier = [project_path]
+    for _ in range(_RUNTIME_SEARCH_MAX_DEPTH):
+        following: list[Path] = []
+        for directory in frontier:
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError:
+                continue
+            for item in entries:
+                if item.is_dir():
+                    following.append(item)
+                elif item.name == _RUNTIME_DLL_NAME:
+                    return directory
+        if not following:
+            break
+        frontier = following
+    return None
+
+
 def _project_maafw_runtime_path(project_path: Path | None) -> Path | None:
+    """项目自带的 MaaFramework 运行时目录。
+
+    优先用项目自己的 DLL 而不是 runner venv 里那份：同一个版本号下二进制未必
+    相同（实测 MaaYYs 与 MaaEnd 自带的 MaaFramework.dll 互不相同，也都不同于
+    PyPI 的 maafw 包），项目的自定义构建只有用它自己的 DLL 才对得上。
+    """
+
     if project_path is None:
         return None
 
-    for candidate in (
-        project_path / "maafw",
-        project_path / "runtimes" / "win-x64",
-    ):
-        if (candidate / "MaaFramework.dll").is_file():
+    for candidate in _iter_runtime_candidates(project_path):
+        if (candidate / _RUNTIME_DLL_NAME).is_file():
             return candidate
-    return None
+    return _search_runtime_dll(project_path)
 
 
 def decode_bytes(data: bytes) -> str:

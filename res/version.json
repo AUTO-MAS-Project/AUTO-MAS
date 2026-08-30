@@ -35,7 +35,8 @@
                 "修复系统时钟跳变（夏令时切换、NTP 校时）导致运行中任务被误判超时、模拟器等待提前放弃与历史记录归档时刻偏移一小时的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 复用原生预设任务队列，补齐剿灭、活动关优先和库存保持并移除生息演算，同时明确剿灭与日常分两次启动",
                 "MaaFW专项 修复 Win32 项目定位游戏窗口时因超时参数类型不符而失败，导致窗口未前置、首个任务识别不到目标的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复内置运行未加载项目自带的 MaaFramework 而回落到 AUTO-MAS 运行环境中同版本号但二进制不同的一份的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {
