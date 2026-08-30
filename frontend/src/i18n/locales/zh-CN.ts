@@ -13,6 +13,14 @@ export default {
     languageTip: '界面显示语言',
     languageSaveFailed: '语言设置保存失败，已恢复原语言',
   },
+  status: {
+    waiting: '等待',
+    running: '运行',
+    done: '完成',
+    error: '异常',
+    idle: '空闲',
+    finished: '结束',
+  },
   locale: {
     'zh-CN': '简体中文',
     'en-US': 'English',
