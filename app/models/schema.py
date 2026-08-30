@@ -1816,14 +1816,10 @@ class MaaFWConfig_Game(BaseModel):
     LaunchMode: Optional[
         Literal["AttachOnly", "DirectExe"]
     ] = Field(default=None, description="游戏启动模式")
-    LaunchPath: Optional[str] = Field(default=None, description="启动目标路径")
-    LaunchURL: Optional[str] = Field(default=None, description="系统协议启动 URL")
-    Path: Optional[str] = Field(
-        default=None, description="桌面控制器使用的实际游戏可执行文件路径"
+    LaunchPath: Optional[str] = Field(
+        default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
     )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
-    ProcessPath: Optional[str] = Field(default=None, description="实际客户端可执行文件路径")
-    ProcessName: Optional[str] = Field(default=None, description="实际客户端进程名")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
     )
@@ -1853,12 +1849,6 @@ class MaaFWConfig_Update(BaseModel):
 
 
 class MaaFWConfig_Run(BaseModel):
-    Engine: Literal["external", "embedded"] = Field(
-        default="embedded",
-        description="MaaFW 运行引擎：embedded 由 MAS 进程内 runner 直接驱动（默认）；"
-        "external 启动项目自己的 UI shell。前端不暴露该开关，"
-        "external 仅作为配置级自救通道保留",
-    )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(

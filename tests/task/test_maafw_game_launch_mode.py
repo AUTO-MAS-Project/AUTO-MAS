@@ -72,24 +72,6 @@ class GameLaunchResolutionTest(unittest.TestCase):
         self.assertTrue(task._mas_manages_game_launch())
         self.assertEqual(task._resolve_game_launch_path(), Path(r"D:\game\game.exe"))
 
-    def test_legacy_path_is_still_honoured_as_a_fallback(self) -> None:
-        task = self._task(
-            {
-                ("Game", "LaunchMode"): "DirectExe",
-                ("Game", "Path"): r"D:\old\game.exe",
-            }
-        )
-        self.assertEqual(task._resolve_game_launch_path(), Path(r"D:\old\game.exe"))
-
-    def test_launch_path_wins_over_the_legacy_key(self) -> None:
-        task = self._task(
-            {
-                ("Game", "LaunchPath"): r"D:\new\game.exe",
-                ("Game", "Path"): r"D:\old\game.exe",
-            }
-        )
-        self.assertEqual(task._resolve_game_launch_path(), Path(r"D:\new\game.exe"))
-
     def test_no_path_configured_returns_none_not_a_bogus_path(self) -> None:
         self.assertIsNone(self._task({})._resolve_game_launch_path())
 
@@ -137,13 +119,11 @@ class CheckOnlyDemandsExeWhenMasLaunchesTest(unittest.TestCase):
         self.assertIn("if not self._mas_manages_game_launch(): # AttachOnly", flat)
 
 
-class ProcessFieldsAreDerivedNotAskedTest(unittest.TestCase):
-    """目标进程路径/名称不该让用户填。
+class ProcessFieldsAreGoneTest(unittest.TestCase):
+    """目标进程路径/名称已随第一层一并删除。
 
-    内置运行压根不读这两个键（runner_task 用 LaunchPath 做进程检测）；
-    只剩 AttachOnly / DirectExe 两种模式后，LauncherExe 那种「启动目标与
-    检测目标不同」的场景也没了，进程按定义就是所选 exe。保留配置键仅为第一层
-    外部运行路径的 game_lifecycle 仍能读到，因此改为选 exe 时自动推导并落盘。
+    这两个键只有第一层的 game_lifecycle 在读；内置运行用 LaunchPath 做进程
+    检测。第一层删除后它们无人读写，配置键、schema 与前端推导一并移除。
     """
 
     def setUp(self) -> None:
@@ -156,25 +136,24 @@ class ProcessFieldsAreDerivedNotAskedTest(unittest.TestCase):
             root / "composables/useMaaFWScriptConfig.ts"
         ).read_text(encoding="utf-8")
 
-    def test_no_process_inputs_remain_in_the_form(self) -> None:
+    def test_frontend_no_longer_mentions_them(self) -> None:
         for gone in ("ProcessPath", "ProcessName", "targetProcessMissing"):
-            self.assertNotIn(gone, self.section, gone)
+            with self.subTest(symbol=gone):
+                self.assertNotIn(gone, self.section)
+                self.assertNotIn(gone, self.composable)
 
-    def test_selecting_the_exe_derives_both_fields(self) -> None:
+    def test_config_model_no_longer_defines_them(self) -> None:
+        from app.models.config import MaaFWConfig
+
+        game = MaaFWConfig()._config_item_index["Game"]
+        for gone in ("ProcessPath", "ProcessName", "LaunchURL", "Path"):
+            with self.subTest(key=gone):
+                self.assertNotIn(gone, game)
+
+    def test_selecting_the_exe_only_persists_the_launch_path(self) -> None:
         flat = " ".join(self.composable.split())
-        self.assertIn("maafwConfig.Game.ProcessPath = path", flat)
-        self.assertIn("maafwConfig.Game.ProcessName = fileName", flat)
-
-    def test_derived_fields_are_persisted_not_just_set_in_memory(self) -> None:
-        """删掉输入框就没了 @blur，必须显式落盘，否则第一层读到旧值。"""
-
-        flat = " ".join(self.composable.split())
-        for call in (
-            "await handleChange('Game', 'LaunchPath', path)",
-            "await handleChange('Game', 'ProcessPath', path)",
-            "await handleChange('Game', 'ProcessName', fileName)",
-        ):
-            self.assertIn(call, flat, call)
+        self.assertIn("await handleChange('Game', 'LaunchPath', path)", flat)
+        self.assertNotIn("handleChange('Game', 'ProcessPath'", flat)
 
 
 if __name__ == "__main__":

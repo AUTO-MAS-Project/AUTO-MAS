@@ -45,7 +45,9 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
     MaaFWProjectUpdateError,
     discover_maafw_project_update,
 )
-from app.task.MaaFW.tools.external import ShellFamily, detect_shell_family
+from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+    detect_maafw_project_shell_hint,
+)
 from app.task.MaaFW.tools.project_updater import update_maafw_project_if_needed
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -112,9 +114,9 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
 
     额外注入 ``project_shell_hint``：GitHub 发行版常按 UI 外壳分包
     （如 M9A 同版本同时发 ``*-MFAA.zip`` 与 ``*-MXU.zip``），选包实现
-    在项目名/平台收窄后需要外壳家族才能消歧。``fdde4d51`` 经服务层
-    ``MaaFWProjectUpdateService.discover_update`` 注入该提示，当前 API
-    直连 ``discover_maafw_project_update``，故在此按项目根目录识别。
+    在项目名/平台收窄后需要外壳家族才能消歧。本 API 直连
+    ``discover_maafw_project_update``，而该函数**自身不做兜底识别**
+    （兜底在 ``update_maafw_project_if_needed`` 里），故必须在此补上。
     """
 
     source = str(script_config.get("Update", "Source") or "").strip()
@@ -131,9 +133,9 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     }
     project_path = str(script_config.get("Info", "Path") or "").strip()
     if project_path:
-        shell_family = detect_shell_family(project_path)
-        if shell_family is not ShellFamily.UNKNOWN:
-            config["project_shell_hint"] = shell_family.value
+        shell_hint = detect_maafw_project_shell_hint(Path(project_path))
+        if shell_hint:
+            config["project_shell_hint"] = shell_hint
     return config
 
 

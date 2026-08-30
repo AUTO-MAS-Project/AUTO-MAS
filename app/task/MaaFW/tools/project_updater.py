@@ -41,7 +41,9 @@ from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.security import sanitize_log_message
 
 from .core.automas_maafw_interface.models import MaaFWInterface
-from .external import ShellFamily, detect_shell_family
+from .core.automas_maafw_project_update.updater import (
+    detect_maafw_project_shell_hint,
+)
 
 
 logger = get_logger("MaaFW 项目更新")
@@ -977,9 +979,9 @@ async def update_maafw_project_if_needed(
     # 选包实现需要 project_shell_hint 才能在项目名/平台收窄后按外壳消歧；
     # 与 API 检查路径保持一致，按项目根目录识别外壳家族补上。
     if not source_config.get("project_shell_hint"):
-        shell_family = await asyncio.to_thread(detect_shell_family, root)
-        if shell_family is not ShellFamily.UNKNOWN:
-            source_config["project_shell_hint"] = shell_family.value
+        shell_hint = await asyncio.to_thread(detect_maafw_project_shell_hint, root)
+        if shell_hint:
+            source_config["project_shell_hint"] = shell_hint
 
     discovery: MaaFWProjectUpdateDiscovery | None = None
     try:

@@ -15,7 +15,6 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _select_github_release_asset,
     discover_maafw_project_update,
 )
-from app.task.MaaFW.tools.external.shell import ShellFamily
 
 
 class _FakeInterface:
@@ -111,17 +110,17 @@ class ShellFamilyAssetDisambiguationTest(unittest.TestCase):
         )
 
     def test_mfaavalonia_family_selects_mfaa_package(self):
-        url, reason = self._select(ShellFamily.MFAAVALONIA.value)
+        url, reason = self._select("MFAAvalonia")
         self.assertEqual(url, "https://x/M9A-MFAA.zip")
         self.assertEqual(reason, "")
 
     def test_mxu_family_selects_mxu_package(self):
-        url, reason = self._select(ShellFamily.MXU.value)
+        url, reason = self._select("MXU")
         self.assertEqual(url, "https://x/M9A-MXU.zip")
         self.assertEqual(reason, "")
 
     def test_unknown_family_stays_ambiguous(self):
-        url, reason = self._select(ShellFamily.UNKNOWN.value)
+        url, reason = self._select("unknown")
         self.assertIsNone(url)
         self.assertIn("ambiguous", reason)
         self.assertIn("MFAA.zip", reason)
@@ -150,7 +149,7 @@ class ShellFamilyAssetDisambiguationTest(unittest.TestCase):
             release,
             r"\.zip$",
             project_name="M9A",
-            project_shell_hint=ShellFamily.MXU.value,
+            project_shell_hint="MXU",
             prefer_windows_x64=True,
         )
         self.assertEqual(url, "https://x/m9a.zip")

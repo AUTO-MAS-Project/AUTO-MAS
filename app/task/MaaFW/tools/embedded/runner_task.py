@@ -505,18 +505,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return mode == "DirectExe"
 
     def _resolve_game_launch_path(self) -> Path | None:
-        """DirectExe 模式下 MAS 要启动的客户端 exe。
+        """DirectExe 模式下 MAS 要启动的客户端 exe。"""
 
-        前端写的是 Game.LaunchPath；Game.Path 是旧版桌面控制器路径，按
-        config.py 里的注释「仅用于读取兼容」，所以只作回退。此前这里只读
-        Game.Path，用户在新 UI 选好了 exe 也照样报「请选择实际游戏 exe」。
-        """
-
-        for section_key in ("LaunchPath", "Path"):
-            raw = str(self.script_config.get("Game", section_key) or "").strip()
-            if raw:
-                return Path(raw)
-        return None
+        raw = str(self.script_config.get("Game", "LaunchPath") or "").strip()
+        return Path(raw) if raw else None
 
     def _load_run_state_for_check(
         self,

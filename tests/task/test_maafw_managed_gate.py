@@ -83,12 +83,10 @@ class ManagedLayerStaysUnwiredTest(unittest.TestCase):
         self.assertNotIn("ManagedServiceGateway", source)
 
     def test_no_manager_references_the_managed_layer(self) -> None:
-        for name in ("manager.py", "embedded_manager.py"):
-            source = (REPO_ROOT / "app" / "task" / "MaaFW" / name).read_text(
-                encoding="utf-8"
-            )
-            with self.subTest(module=name):
-                self.assertNotIn("embedded.managed", source)
+        source = (
+            REPO_ROOT / "app" / "task" / "MaaFW" / "embedded_manager.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("embedded.managed", source)
 
     def test_project_source_axis_is_not_in_the_config_model(self) -> None:
         """三层规划 §5 的 `Project.Source` 轴尚未引入，第三层因此无从开启。"""

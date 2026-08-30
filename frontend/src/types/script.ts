@@ -222,14 +222,9 @@ export interface MaaFWScriptConfig {
     PlayCoverUuid: string
   }
   Game: {
-    /** 仅用于旧 v1 配置读取；新配置保存使用 LaunchPath/LaunchURL。 */
-    Path?: string
     LaunchMode: MaaFWLaunchMode
     LaunchPath: string
-    LaunchURL: string
     Arguments: string
-    ProcessPath: string
-    ProcessName: string
     WaitTime: number
     CloseOnFinish: boolean
   }
@@ -270,8 +265,6 @@ export interface MaaFWScriptConfig {
     GitHubAssetPattern: string
   }
   Run: {
-    /** 当前仅支持 external，manager.py 的启动前校验依赖该值。 */
-    Engine?: string
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number

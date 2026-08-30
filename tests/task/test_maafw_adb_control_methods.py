@@ -36,9 +36,9 @@ MAA_MODULES = (
     "maa.toolkit",
 )
 
-# 第一层 manager.py 里写死的两个值
-FIRST_LAYER_SCREENCAP = 64
-FIRST_LAYER_INPUT = 18446744073709551607
+# 真机验证过的两个取值（最早由第一层 manager.py 写死，第一层删除后本文件即出处）
+VERIFIED_SCREENCAP = 64
+VERIFIED_INPUT = 18446744073709551607
 
 
 def load_runner_task():
@@ -90,7 +90,7 @@ class AdbScreencapMethodTest(unittest.TestCase):
     def test_default_already_contains_emulator_extras(self) -> None:
         """旧实现写的是 DEFAULT | EXTRAS，而 DEFAULT 本就含 EXTRAS —— 空操作。"""
 
-        self.assertTrue(self.module._ADB_SCREENCAP_DEFAULT & FIRST_LAYER_SCREENCAP)
+        self.assertTrue(self.module._ADB_SCREENCAP_DEFAULT & VERIFIED_SCREENCAP)
 
     def test_ldplayer_with_extras_uses_emulator_extras_only(self) -> None:
         task = self._task()
@@ -99,7 +99,7 @@ class AdbScreencapMethodTest(unittest.TestCase):
         )
         self.assertEqual(
             methods,
-            FIRST_LAYER_SCREENCAP,
+            VERIFIED_SCREENCAP,
             "雷电必须只用模拟器增强截图，否则 MaaFW 会按测速选到抓不到画面的 ADB 截图",
         )
 
@@ -108,7 +108,7 @@ class AdbScreencapMethodTest(unittest.TestCase):
         methods = task._resolve_adb_screencap_methods(
             self._profile("mumu", screencap_extra=True)
         )
-        self.assertEqual(methods, FIRST_LAYER_SCREENCAP)
+        self.assertEqual(methods, VERIFIED_SCREENCAP)
 
     def test_emulator_without_extras_drops_the_extras_bit(self) -> None:
         """探测不到增强能力时不能再传 64，否则 MaaFW 会去用一个不存在的通道。"""
@@ -117,14 +117,14 @@ class AdbScreencapMethodTest(unittest.TestCase):
         methods = task._resolve_adb_screencap_methods(
             self._profile("ldplayer", screencap_extra=False)
         )
-        self.assertFalse(methods & FIRST_LAYER_SCREENCAP)
+        self.assertFalse(methods & VERIFIED_SCREENCAP)
 
     def test_unknown_emulator_falls_back_to_configured_value(self) -> None:
         task = self._task(screencap_cfg=-57)
         methods = task._resolve_adb_screencap_methods(
             self._profile("other", screencap_extra=False)
         )
-        self.assertFalse(methods & FIRST_LAYER_SCREENCAP)
+        self.assertFalse(methods & VERIFIED_SCREENCAP)
 
 
 class AdbInputMethodTest(unittest.TestCase):
@@ -150,18 +150,23 @@ class AdbInputMethodTest(unittest.TestCase):
         methods = self._task()._resolve_adb_input_methods(self._profile("ldplayer"))
         self.assertEqual(
             methods & 0xFFFFFFFFFFFFFFFF,
-            FIRST_LAYER_INPUT,
-            "输入方法必须与第一层写死的 18446744073709551607 一致",
+            VERIFIED_INPUT,
+            "输入方法必须是真机验证的 18446744073709551607",
         )
 
 
-class FirstLayerValuesUnchangedTest(unittest.TestCase):
-    """第一层的既验证取值是本文件的基准，改动它必须是有意识的。"""
+class VerifiedValuesUnchangedTest(unittest.TestCase):
+    """这两个取值是真机基准，改动必须是有意识的。
 
-    def test_manager_still_hardcodes_the_verified_values(self) -> None:
-        source = (REPO_ROOT / "app/task/MaaFW/manager.py").read_text(encoding="utf-8")
-        self.assertIn('"ScreencapMethods": 64', source)
-        self.assertIn('"InputMethods": 18446744073709551607', source)
+    原先锚在第一层 `manager.py` 的源码上（那是它们最早被真机验证的地方）。
+    第一层删除后改锚到本文件顶部的常量——取值不变，只是出处从「抄第一层」
+    变成「本层自己的基准」。解析行为由上面的 AdbScreencapMethodTest 覆盖，
+    这里只钉住数值本身。
+    """
+
+    def test_constants_still_hold_the_verified_values(self) -> None:
+        self.assertEqual(VERIFIED_SCREENCAP, 64)
+        self.assertEqual(VERIFIED_INPUT, 18446744073709551607)
 
 
 class ConnectionLogWordingTest(unittest.TestCase):
@@ -177,7 +182,7 @@ class ConnectionLogWordingTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_single_method_detection(self) -> None:
-        self.assertTrue(self.module._is_single_method(FIRST_LAYER_SCREENCAP))
+        self.assertTrue(self.module._is_single_method(VERIFIED_SCREENCAP))
         self.assertTrue(self.module._is_single_method(1))
         # Default 是多位掩码
         self.assertFalse(self.module._is_single_method(-57))
