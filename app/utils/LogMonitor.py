@@ -33,6 +33,9 @@ from .tools import decode_bytes
 
 logger = get_logger("日志监控器")
 
+# 排空旧日志失败时的最大重试轮次，超过后放弃旧文件剩余内容继续切换
+_DRAIN_RETRY_LIMIT = 5
+
 
 def strptime(date_string: str, format: str, default_date: datetime) -> datetime:
     """根据指定格式解析日期字符串"""
@@ -75,13 +78,22 @@ class LogMonitor:
 
     async def monitor_file(
         self,
-        log_file_path: Path,
+        log_file_path: Path | Callable[[], Path],
         log_start_time: datetime,
         bak_log_path: Path | None = None,
     ):
-        """监控日志文件"""
+        """监控日志文件
 
-        logger.info(f"开始监控日志文件: {log_file_path}")
+        ``log_file_path`` 允许传入可调用对象，每轮循环重新解析。用于监控
+        按日期滚动的日志（如 M9A 的 ``logs/log-YYYYMMDD.log``）：任务跨过
+        本地午夜时，被监控脚本会写入新文件，固定路径会导致再也读不到新行。
+        """
+
+        resolve_path = (
+            log_file_path if callable(log_file_path) else (lambda: log_file_path)
+        )
+        current_path = resolve_path()
+        logger.info(f"开始监控日志文件: {current_path}")
 
         await self.update_latest_timestamp("", if_init=True)
 
@@ -90,20 +102,68 @@ class LogMonitor:
         if_log_start = False
         offset = 0
         log_contents = []
+        # 按路径记忆读取偏移：时钟回拨可能让解析出的路径倒退回昨天，
+        # 若一律从 0 重读会把整份旧日志重复摄入。
+        read_offsets: dict[Path, int] = {current_path: 0}
+        drain_failures = 0
 
         while True:
 
+            # 日志按日期滚动（如 M9A 的 log-YYYYMMDD.log）时切换到新文件。
+            try:
+                resolved = resolve_path()
+            except Exception as e:
+                # 解析器异常不应让监控任务静默死亡，否则调用方会永久挂起
+                logger.warning(f"日志路径解析失败，沿用当前路径: {e}")
+                resolved = current_path
+
+            if resolved != current_path:
+                # 必须先读完旧文件的剩余内容：轮询间隔内被监控进程可能刚往
+                # 旧文件写了完成或失败标志，直接切换会永久丢掉这些行。
+                drain_error = None
+                if current_path.is_file():
+                    offset, if_log_start, drain_error = await self._consume_new_lines(
+                        current_path, offset, log_contents,
+                        if_log_start, log_start_time,
+                    )
+                if drain_error is not None and drain_failures < _DRAIN_RETRY_LIMIT:
+                    drain_failures += 1
+                    logger.warning(
+                        f"排空旧日志失败（第 {drain_failures} 次），本轮不切换: {drain_error}"
+                    )
+                    await asyncio.sleep(1)
+                    continue
+                if drain_error is not None:
+                    logger.warning(f"排空旧日志连续失败，放弃其剩余内容: {drain_error}")
+                drain_failures = 0
+
+                # 排空所得必须立刻同步并回调：新文件可能尚未创建，下方
+                # 「文件不存在」分支会 continue，绕过循环底部的同步，让刚
+                # 读到的完成或失败标志永远到不了回调。
+                await self._sync_and_callback(log_contents)
+
+                logger.info(
+                    f"日志文件已滚动，切换监控目标: {current_path} -> {resolved}"
+                )
+                # log_contents 与 if_log_start 保留：滚动前后属于同一次运行，
+                # 清空会丢掉午夜前累积的全部日志，历史记录也只剩后半截。
+                read_offsets[current_path] = offset
+                current_path = resolved
+                if_mtime_checked = False
+                warned_mtime_date = None
+                offset = read_offsets.get(current_path, 0)
+
             # 检查文件是否仍然存在
-            if not log_file_path.exists():
-                logger.warning(f"日志文件不存在: {log_file_path}")
+            if not current_path.exists():
+                logger.warning(f"日志文件不存在: {current_path}")
                 await self.do_callback()
                 await asyncio.sleep(1)
                 continue
 
             if not if_mtime_checked:
-                file_mtime_date = date.fromtimestamp(log_file_path.stat().st_mtime)
+                file_mtime_date = date.fromtimestamp(current_path.stat().st_mtime)
                 if file_mtime_date == date.today():
-                    log_stat = log_file_path.stat()
+                    log_stat = current_path.stat()
                     if_mtime_checked = True
                 else:
                     if warned_mtime_date != file_mtime_date:
@@ -118,8 +178,8 @@ class LogMonitor:
 
                 # 发生日志轮转或文件被替换，重置监控状态并加载被轮换的旧日志
                 if (
-                    log_stat.st_ino != log_file_path.stat().st_ino
-                    or log_stat.st_size > log_file_path.stat().st_size
+                    log_stat.st_ino != current_path.stat().st_ino
+                    or log_stat.st_size > current_path.stat().st_size
                 ):
                     offset = 0
                     log_contents = []
@@ -141,7 +201,7 @@ class LogMonitor:
                                 else:
                                     self.append_line(log_contents, line)
 
-                log_stat = log_file_path.stat()
+                log_stat = current_path.stat()
 
                 if log_stat.st_size <= offset:
 
@@ -152,25 +212,15 @@ class LogMonitor:
                     await asyncio.sleep(1)
                     continue
 
-                async with aiofiles.open(log_file_path, "rb") as f:
-                    await f.seek(offset)
-                    async for bline in f:
-                        offset = await f.tell()
-                        line = decode_bytes(bline)
-                        if not if_log_start:
-                            with suppress(IndexError, ValueError):
-                                entry_time = strptime(
-                                    line[self.time_start : self.time_end],
-                                    self.time_format,
-                                    self.last_callback_time,
-                                )
-                                if entry_time > log_start_time:
-                                    if_log_start = True
-                                    self.append_line(log_contents, line)
-                                    await self.update_latest_timestamp(line)
-                        else:
-                            self.append_line(log_contents, line)
-                            await self.update_latest_timestamp(line)
+                offset, if_log_start, read_error = await self._consume_new_lines(
+                    current_path, offset, log_contents, if_log_start, log_start_time
+                )
+                if read_error is not None:
+                    # 已读到的行必须先同步，否则重试期间回调看不到它们
+                    await self._sync_and_callback(log_contents)
+                    logger.warning(f"文件访问错误: {read_error}")
+                    await asyncio.sleep(5)
+                    continue
 
             except (FileNotFoundError, PermissionError) as e:
                 logger.warning(f"文件访问错误: {e}")
@@ -178,9 +228,7 @@ class LogMonitor:
                 continue
 
             # 日志变化调用回调
-            if len(log_contents) != len(self.log_contents):
-                self.log_contents = copy(log_contents)
-                await self.do_callback()
+            await self._sync_and_callback(log_contents)
 
             await asyncio.sleep(1)
 
@@ -280,9 +328,68 @@ class LogMonitor:
                 )
                 self.last_log = log_text
 
+    async def _consume_new_lines(
+        self,
+        path: Path,
+        offset: int,
+        log_contents: list[str],
+        if_log_start: bool,
+        log_start_time: datetime,
+    ) -> tuple[int, bool, Exception | None]:
+        """读取文件自 offset 起的新增行并追加到 log_contents。
+
+        Args:
+            path (Path): 日志文件路径。
+            offset (int): 上次读到的字节偏移。
+            log_contents (list[str]): 日志内容列表，原地追加。
+            if_log_start (bool): 是否已越过本次运行的起始时刻。
+            log_start_time (datetime): 本次运行的起始时刻。
+
+        Returns:
+            tuple[int, bool, Exception | None]: 新的字节偏移、if_log_start，以及
+                读取过程中捕获的文件访问异常。异常必须在函数内捕获并连同已推进
+                的进度一起回传：若让它逸出，调用方拿不到返回值，offset 会退回
+                调用前，而 log_contents 已就地追加，重试时会重复摄入这些行。
+        """
+
+        try:
+            async with aiofiles.open(path, "rb") as f:
+                await f.seek(offset)
+                async for bline in f:
+                    offset = await f.tell()
+                    line = decode_bytes(bline)
+                    if not if_log_start:
+                        with suppress(IndexError, ValueError):
+                            entry_time = strptime(
+                                line[self.time_start : self.time_end],
+                                self.time_format,
+                                self.last_callback_time,
+                            )
+                            if entry_time > log_start_time:
+                                if_log_start = True
+                                self.append_line(log_contents, line)
+                                await self.update_latest_timestamp(line)
+                    else:
+                        self.append_line(log_contents, line)
+                        await self.update_latest_timestamp(line)
+        except (FileNotFoundError, PermissionError) as e:
+            return offset, if_log_start, e
+        return offset, if_log_start, None
+
+    async def _sync_and_callback(self, log_contents: list[str]) -> None:
+        """日志内容有变化时同步到实例缓冲区并触发回调。
+
+        Args:
+            log_contents (list[str]): 当前轮询累积的日志内容。
+        """
+
+        if len(log_contents) != len(self.log_contents):
+            self.log_contents = copy(log_contents)
+            await self.do_callback()
+
     async def start_monitor_file(
         self,
-        log_file_path: Path,
+        log_file_path: Path | Callable[[], Path],
         start_time: datetime,
         bak_log_path: Path | None = None,
     ) -> None:
@@ -290,12 +397,14 @@ class LogMonitor:
         开始监控日志文件
 
         Args:
-            log_file_path (Path): 日志文件路径
+            log_file_path (Path | Callable[[], Path]): 日志文件路径；传入可调用
+                对象时每轮循环重新解析，用于按日期滚动的日志
             start_time (datetime): 日志时间戳起始时间
         """
 
-        if log_file_path.is_dir():
-            raise ValueError(f"日志文件不能是目录: {log_file_path}")
+        probe_path = log_file_path() if callable(log_file_path) else log_file_path
+        if probe_path.is_dir():
+            raise ValueError(f"日志文件不能是目录: {probe_path}")
 
         if self.task is not None and not self.task.done():
             await self.stop()
@@ -303,7 +412,7 @@ class LogMonitor:
         self.task = asyncio.create_task(
             self.monitor_file(log_file_path, start_time, bak_log_path)
         )
-        logger.info(f"日志文件监控已启动: {log_file_path}")
+        logger.info(f"日志文件监控已启动: {probe_path}")
 
     async def start_monitor_process(
         self,
