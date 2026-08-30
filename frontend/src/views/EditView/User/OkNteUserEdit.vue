@@ -570,8 +570,7 @@ const handleOkNteConfig = async () => {
       subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskCompletedData
         logger.info(`用户 ${formData.userName} OK-NTE 配置任务已结束`)
-        const result = String(data.result || '')
-        if (!result.includes('异常') && !result.includes('错误')) {
+        if (data.outcome === 'success') {
           refreshOkNteConfigEditor()
           message.success(`用户 ${formData.userName} 的 OK-NTE 配置已完成`)
         }

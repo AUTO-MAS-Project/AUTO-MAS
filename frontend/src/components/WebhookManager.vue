@@ -135,7 +135,7 @@
           <a-textarea
             v-model:value="formData.template"
             :rows="6"
-            placeholder="请输入消息模板，支持变量: {title}, {content}, {datetime}, {date}, {time}"
+            placeholder="请输入消息模板，支持变量: {title}, {content}, {datetime}, {date}, {time}, {gamedate}"
           />
           <div class="template-help">
             <a-typography-text type="secondary" style="font-size: 12px">
