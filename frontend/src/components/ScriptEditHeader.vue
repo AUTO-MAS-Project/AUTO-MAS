@@ -43,7 +43,7 @@ const props = withDefaults(
     /** 第二级面包屑文字，默认「编辑脚本」 */
     title?: string
   }>(),
-  { title: '编辑脚本' }
+  { title: t('comp.editScript') }
 )
 
 const emit = defineEmits<{ cancel: [] }>()

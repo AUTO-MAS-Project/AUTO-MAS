@@ -39,65 +39,85 @@ const colorGroups: {
   {
     title: t('comp.time'),
     items: [
-      { key: 'timestamp', label: '时间戳', description: '完整的日期时间格式' },
-      { key: 'date', label: '日期', description: '单独的日期格式' },
+      { key: 'timestamp', label: t('comp.timestamp'), description: t('comp.fullDateTime') },
+      { key: 'date', label: t('comp.date'), description: t('comp.standaloneDate') },
     ],
   },
   {
     title: t('comp.logLevel'),
     items: [
-      { key: 'error', label: '错误', description: 'ERROR/FATAL/CRITICAL 级别' },
-      { key: 'warning', label: '警告', description: 'WARN/WARNING 级别' },
-      { key: 'info', label: '信息', description: 'INFO/NOTICE 级别' },
-      { key: 'debug', label: '调试', description: 'DEBUG 级别' },
-      { key: 'trace', label: '追踪', description: 'TRACE/VERBOSE 级别' },
+      { key: 'error', label: t('comp.error'), description: t('comp.errorFatalCriticalLevel') },
+      { key: 'warning', label: t('comp.warning'), description: t('comp.warnWarningLevel') },
+      { key: 'info', label: t('comp.info'), description: t('comp.infoNoticeLevel') },
+      { key: 'debug', label: t('comp.debug'), description: t('comp.debugLevel') },
+      { key: 'trace', label: t('comp.trace'), description: t('comp.traceVerboseLevel') },
     ],
   },
   {
     title: t('comp.structure'),
     items: [
-      { key: 'module', label: '模块名', description: '方括号内的模块/线程名' },
-      { key: 'bracket', label: '括号内容', description: '圆括号内的内容' },
+      { key: 'module', label: t('comp.moduleName'), description: t('comp.moduleThreadNameSquare') },
+      {
+        key: 'bracket',
+        label: t('comp.bracketedContent'),
+        description: t('comp.textInsideParentheses'),
+      },
     ],
   },
   {
     title: t('comp.network'),
     items: [
-      { key: 'ip', label: 'IP 地址', description: 'IPv4 地址' },
-      { key: 'url', label: 'URL', description: 'HTTP/HTTPS 链接' },
-      { key: 'port', label: '端口', description: '端口号' },
+      { key: 'ip', label: t('comp.ipAddress'), description: t('comp.ipv4Address') },
+      { key: 'url', label: 'URL', description: t('comp.httpHttpsLinks') },
+      { key: 'port', label: t('comp.port'), description: t('comp.portNumber') },
     ],
   },
   {
     title: t('comp.fileSystem'),
     items: [
-      { key: 'path', label: '文件路径', description: '完整的文件路径' },
-      { key: 'filename', label: '文件名', description: '带扩展名的文件名' },
+      { key: 'path', label: t('comp.filePath'), description: t('comp.fullFilePath') },
+      { key: 'filename', label: t('comp.fileName'), description: t('comp.fileNameExtension') },
     ],
   },
   {
     title: t('comp.dataType'),
     items: [
-      { key: 'number', label: '数字', description: '整数、小数、科学计数法' },
-      { key: 'string', label: '字符串', description: '引号包裹的字符串' },
-      { key: 'boolean', label: '布尔值', description: 'true/false/null' },
-      { key: 'uuid', label: 'UUID', description: 'UUID 格式的标识符' },
+      {
+        key: 'number',
+        label: t('comp.number'),
+        description: t('comp.integersDecimalsScientificNotation'),
+      },
+      { key: 'string', label: t('comp.string'), description: t('comp.quotedString') },
+      { key: 'boolean', label: t('comp.boolean'), description: 'true/false/null' },
+      { key: 'uuid', label: 'UUID', description: t('comp.uuidFormattedIdentifiers') },
     ],
   },
   {
     title: t('comp.keyword'),
     items: [
-      { key: 'errorKeyword', label: '错误关键词', description: 'Exception/Error/Failed 等' },
-      { key: 'success', label: '成功关键词', description: 'Success/Complete/Done 等' },
+      {
+        key: 'errorKeyword',
+        label: t('comp.errorKeyword'),
+        description: t('comp.exceptionErrorFailedSimilar'),
+      },
+      {
+        key: 'success',
+        label: t('comp.successKeyword'),
+        description: t('comp.successCompleteDoneSimilar'),
+      },
     ],
   },
   {
     title: t('comp.specialContent'),
     items: [
-      { key: 'stackTrace', label: '堆栈跟踪', description: 'Java/Python 堆栈信息' },
-      { key: 'json', label: 'JSON', description: 'JSON 对象/数组' },
-      { key: 'variable', label: '变量', description: 'key=value 格式的变量名' },
-      { key: 'operator', label: '操作符', description: '= < > ! 等操作符' },
+      {
+        key: 'stackTrace',
+        label: t('comp.stackTrace'),
+        description: t('comp.javaPythonStackTraces'),
+      },
+      { key: 'json', label: 'JSON', description: t('comp.jsonObjectsArrays') },
+      { key: 'variable', label: t('comp.variable'), description: t('comp.keyValueVariableNames') },
+      { key: 'operator', label: t('comp.operator'), description: t('comp.otherOperators') },
     ],
   },
 ]
