@@ -57,7 +57,10 @@ async def push_notification(
             message
         )
 
-        return await dispatch(NotifyPayload(title, message_text, message_html), targets)
+        return await dispatch(
+            NotifyPayload(title=title, text=message_text, html=message_html),
+            targets,
+        )
 
     if mode != "代理结果":
         return []
@@ -76,5 +79,6 @@ async def push_notification(
     message_html = Config.notify_env.get_template("general_result.html").render(message)
 
     return await dispatch(
-        NotifyPayload(title, message_text, message_html), [global_target()]
+        NotifyPayload(title=title, text=message_text, html=message_html),
+        [global_target()],
     )

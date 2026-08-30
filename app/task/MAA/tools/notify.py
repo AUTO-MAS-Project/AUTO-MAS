@@ -100,7 +100,12 @@ async def push_notification(
         template = Config.notify_env.get_template("MAA_result.html")
 
         return await dispatch(
-            NotifyPayload(title, message_text, template.render(message), SIGNATURE_SEP),
+            NotifyPayload(
+                title=title,
+                text=message_text,
+                html=template.render(message),
+                signature_sep=SIGNATURE_SEP,
+            ),
             [global_target()],
         )
 
@@ -109,7 +114,10 @@ async def push_notification(
 
         return await dispatch(
             NotifyPayload(
-                title, _statistic_text(message), template.render(message), SIGNATURE_SEP
+                title=title,
+                text=_statistic_text(message),
+                html=template.render(message),
+                signature_sep=SIGNATURE_SEP,
             ),
             statistic_targets(user_config),
         )
@@ -119,7 +127,12 @@ async def push_notification(
         template = Config.notify_env.get_template("MAA_six_star.html")
 
         return await dispatch(
-            NotifyPayload(title, "好羡慕~", template.render(message), SIGNATURE_SEP),
+            NotifyPayload(
+                title=title,
+                text="好羡慕~",
+                html=template.render(message),
+                signature_sep=SIGNATURE_SEP,
+            ),
             _six_star_targets(user_config),
         )
 

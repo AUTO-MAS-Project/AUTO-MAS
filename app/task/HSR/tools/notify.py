@@ -55,7 +55,7 @@ async def push_notification(
 
         # HSR 的全局渠道额外校验收件人非空, 配置不全时静默跳过
         return await dispatch(
-            NotifyPayload(title, message_text, message_html),
+            NotifyPayload(title=title, text=message_text, html=message_html),
             [global_target(empty_policy="skip")],
         )
 
@@ -70,7 +70,7 @@ async def push_notification(
         )
 
         return await dispatch(
-            NotifyPayload(title, message_text, message_html),
+            NotifyPayload(title=title, text=message_text, html=message_html),
             statistic_targets(user_config, global_empty_policy="skip"),
         )
 

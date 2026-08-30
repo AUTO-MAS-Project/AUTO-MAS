@@ -52,7 +52,11 @@ async def push_notification(
         template = Config.notify_env.get_template("general_result.html")
 
         return await dispatch(
-            NotifyPayload(title, message_text, template.render(message)),
+            NotifyPayload(
+                title=title,
+                text=message_text,
+                html=template.render(message),
+            ),
             [global_target()],
         )
 
@@ -65,7 +69,11 @@ async def push_notification(
         template = Config.notify_env.get_template("general_statistics.html")
 
         return await dispatch(
-            NotifyPayload(title, message_text, template.render(message)),
+            NotifyPayload(
+                title=title,
+                text=message_text,
+                html=template.render(message),
+            ),
             statistic_targets(user_config),
         )
 

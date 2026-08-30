@@ -339,7 +339,8 @@ async def push_version_update(title: str, message: dict) -> list[str]:
     message_html = Config.notify_env.get_template("general_result.html").render(message)
 
     return await dispatch(
-        NotifyPayload(title, message["result"], message_html), [global_target()]
+        NotifyPayload(title=title, text=message["result"], html=message_html),
+        [global_target()],
     )
 
 
@@ -358,7 +359,12 @@ async def _push_proxy_result(title: str, message: dict) -> list[str]:
     template = Config.notify_env.get_template("general_result.html")
 
     return await dispatch(
-        NotifyPayload(title, message_text, template.render(message)), [global_target()]
+        NotifyPayload(
+            title=title,
+            text=message_text,
+            html=template.render(message),
+        ),
+        [global_target()],
     )
 
 
@@ -378,6 +384,10 @@ async def _push_statistics(
     template = Config.notify_env.get_template("m9a_statistics.html")
 
     return await dispatch(
-        NotifyPayload(title, message_text, template.render(message)),
+        NotifyPayload(
+            title=title,
+            text=message_text,
+            html=template.render(message),
+        ),
         statistic_targets(user_config),
     )
