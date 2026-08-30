@@ -69,7 +69,7 @@
             <div class="tab-content">
               <span class="tab-title">{{ tab.title }}</span>
               <a-tag :color="TAB_STATUS_COLOR[tab.status]" size="small" class="tab-status">
-                {{ tab.status }}
+                {{ statusLabel(tab.status) }}
               </a-tag>
             </div>
           </template>
@@ -143,12 +143,15 @@ import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
 import OverlayRainMask from '@/components/OverlayRainMask.vue'
+import { useStatusLabel } from '@/i18n/status'
 import type { SchedulerTab } from './schedulerConstants'
 
 // 用于 keep-alive 识别
 defineOptions({ name: 'SchedulerPage' })
 
 const logger = window.electronAPI.getLogger('调度中心')
+
+const statusLabel = useStatusLabel()
 
 // 使用业务逻辑层
 const {

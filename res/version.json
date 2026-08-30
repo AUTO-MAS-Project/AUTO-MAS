@@ -6,7 +6,8 @@
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 新增 MaaFW 脚本类型，可直接托管 MaaFramework 项目：编辑页读取项目 interface.json 后选择控制器、资源与任务，支持 ADB 模拟器与 Win32 PC 游戏两条控制链路；运行时由 AUTO-MAS 进程内的 runner 在独立子进程中驱动项目的 MaaFramework，不启动项目自带界面，也不占用项目自身的配置文件；已在 M9A、MaaYYs、Maa_bbb、MaaEnd 五个项目包上真机验证，覆盖项目自带解释器、项目自带二进制、隔离虚拟环境与双 Agent 四类运行环境 by [@qiyinxi](https://github.com/qiyinxi)",
                 "自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日 by [@qiyinxi](https://github.com/qiyinxi)",
-                "界面设置 新增语言选项并接入 i18n 框架，首次启动跟随系统语言，英文界面将逐步补全 by [@qiyinxi](https://github.com/qiyinxi)"
+                "界面设置 新增语言选项并接入 i18n 框架，首次启动跟随系统语言，英文界面将逐步补全 by [@qiyinxi](https://github.com/qiyinxi)",
+                "界面显示 任务与调度台的状态标签跟随界面语言显示，判定逻辑不变 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
@@ -20,6 +21,7 @@
             ],
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
+                "前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，保持既有规则与格式配置兼容，并由每周自动格式化工作流执行 Markdown lint 修复 by [@Craun718](https://github.com/Craun718)",
                 "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
                 "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
                 "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",

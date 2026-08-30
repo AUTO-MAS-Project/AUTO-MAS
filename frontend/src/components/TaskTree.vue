@@ -21,7 +21,7 @@
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
-              {{ script.status }}
+              {{ statusLabel(script.status) }}
             </a-tag>
           </div>
         </div>
@@ -42,7 +42,7 @@
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
-                {{ user.status }}
+                {{ statusLabel(user.status) }}
               </a-tag>
             </div>
           </div>
@@ -56,7 +56,11 @@
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
+import { useStatusLabel } from '@/i18n/status'
+
 const logger = window.electronAPI.getLogger('任务树组件')
+
+const statusLabel = useStatusLabel()
 
 interface User {
   user_id: string

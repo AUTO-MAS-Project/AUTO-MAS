@@ -11,6 +11,14 @@ export default {
     languageTip: 'Interface display language',
     languageSaveFailed: 'Failed to save the language setting; reverted to the previous one.',
   },
+  status: {
+    waiting: 'Waiting',
+    running: 'Running',
+    done: 'Done',
+    error: 'Error',
+    idle: 'Idle',
+    finished: 'Finished',
+  },
   locale: {
     'zh-CN': '简体中文',
     'en-US': 'English',
