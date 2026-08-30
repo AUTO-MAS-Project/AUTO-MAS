@@ -734,7 +734,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if profile.emulator_type in {"ldplayer", "mumu"}:
             default_methods = _ADB_SCREENCAP_DEFAULT
             if profile.screencap_extra:
-                return default_methods | extra_method
+                # 只给模拟器增强这一种，与第一层写死的 ScreencapMethods=64 一致。
+                #
+                # 此前返回的是 default_methods | extra_method，而 -57 本身已含
+                # 1<<6，等于把全部方法交给 MaaFW 测速。雷电上 ADB 系截图
+                # （RawWithGzip 等）拿不到游戏的 GPU 渲染层：图有正常的
+                # 1280x720，内容却是空的，于是识别全程无命中、一次点击都发不出，
+                # 每个任务空转到超时。测速只比快慢、不比对不对，必然选错。
+                return extra_method
             return _remove_method(default_methods, extra_method, default_methods)
         return _remove_method(
             int(self.script_config.get("Device", "AdbScreencapMethods")),
