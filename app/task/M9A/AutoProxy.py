@@ -23,6 +23,7 @@
 import json
 import uuid
 import asyncio
+import time
 import re
 from pathlib import Path
 from datetime import datetime
@@ -142,6 +143,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
+        self.log_start_at = time.monotonic()
 
 
     async def main_task(self):
@@ -182,6 +184,7 @@ class AutoProxyTask(TaskExecuteBase):
             self._m9a_failed_task_names.clear()
             self._m9a_failure_signal_seen = False
             self.log_start_time = datetime.now()
+            self.log_start_at = time.monotonic()
             self.cur_user_item.log_record[self.log_start_time] = (
                 self.cur_user_log
             ) = LogRecord()
@@ -696,7 +699,7 @@ class AutoProxyTask(TaskExecuteBase):
                         short_err = short_err[:77] + '...'
                     self.script_info._m9a_err_log.append(short_err)
 
-        elapsed = (datetime.now() - self.log_start_time).total_seconds()
+        elapsed = time.monotonic() - self.log_start_at
         if elapsed > 600:
             self.script_info._m9a_timeout = True
             err_log = getattr(self.script_info, '_m9a_err_log', [])

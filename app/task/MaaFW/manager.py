@@ -407,7 +407,9 @@ class MaaFWManager(TaskExecuteBase):
         self.terminal_event = asyncio.Event()
         self.terminal_kind: str | None = None
         self.last_log_text = ""
-        self.last_log_at: datetime | None = None
+        # 最近一条外壳日志的单调时钟读数。超时判定不能用墙钟差值：
+        # 时钟前跳会把健康任务立刻判成超时，回拨则让真超时被推迟。
+        self.last_log_at: float | None = None
 
         # LogRecord 的变化不触发任何前端通知（UserItem.__setattr__ 只监听
         # user_id / name / status）。这是事实而非缺陷：它在 _write_history_records
@@ -1392,7 +1394,7 @@ class MaaFWManager(TaskExecuteBase):
         self.terminal_event.clear()
         self.terminal_kind = None
         self.last_log_text = ""
-        self.last_log_at = datetime.now()
+        self.last_log_at = time.monotonic()
         self.log_start_time = datetime.now()
 
         # 自退型外壳（MXU）的运行日志走进程 stdout，故必须接管这条流。
@@ -1476,7 +1478,7 @@ class MaaFWManager(TaskExecuteBase):
 
             if runtime_limit <= 0 or (
                 self.last_log_at is not None
-                and (datetime.now() - self.last_log_at).total_seconds() >= runtime_limit
+                and time.monotonic() - self.last_log_at >= runtime_limit
             ):
                 self._mark_terminal("timeout", "MFW 进程超时")
                 break
@@ -1653,7 +1655,7 @@ class MaaFWManager(TaskExecuteBase):
             # 只改这一处：展示（script_info.log）与终态判定（下方受保护分支）
             # 仍吃完整 log_text，两路互不污染。
             if self._has_substantive_progress(self.last_log_text, log_text):
-                self.last_log_at = datetime.now()
+                self.last_log_at = time.monotonic()
             self.last_log_text = log_text
 
         # 控制器初始化失败压过完成串：外壳排空队列时照样输出完成串，但选中的任务
@@ -2581,7 +2583,7 @@ class MaaFWManager(TaskExecuteBase):
         if owned is None:
             return True
 
-        started = datetime.now()
+        started = time.monotonic()
         pid = owned.pid
         if spec.mode == "LauncherExe":
             client = await asyncio.to_thread(
@@ -2597,7 +2599,7 @@ class MaaFWManager(TaskExecuteBase):
 
         # 与日志等待同理，按次数计而不是墙钟 deadline：测试里 asyncio.sleep 被打成
         # 空转，墙钟写法会变成真的忙等满 wait_time 秒。
-        elapsed = (datetime.now() - started).total_seconds()
+        elapsed = time.monotonic() - started
         remaining = max(0.0, spec.wait_time - elapsed)
         attempts = max(1, int(remaining / _GAME_READY_PROBE_INTERVAL_SECONDS))
         for attempt in range(attempts):

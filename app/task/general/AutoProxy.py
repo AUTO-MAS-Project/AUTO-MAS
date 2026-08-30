@@ -151,6 +151,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
+        self.log_start_at = time.monotonic()
 
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
@@ -295,6 +296,7 @@ class AutoProxyTask(TaskExecuteBase):
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
             )
             self.log_start_time = datetime.now()
+            self.log_start_at = time.monotonic()
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
                 LogRecord()
             )
@@ -725,8 +727,9 @@ class AutoProxyTask(TaskExecuteBase):
             elif await self.general_process_manager.is_running():
                 self._process_seen = True
                 self.cur_user_log.status = "通用脚本正常运行中"
-            elif not self._process_seen and datetime.now() - self.log_start_time < timedelta(
-                seconds=_PROCESS_START_GRACE_SECONDS
+            elif (
+                not self._process_seen
+                and time.monotonic() - self.log_start_at < _PROCESS_START_GRACE_SECONDS
             ):
                 # 进程启动宽限期内：可能是启动器拉起工作进程的延迟，或残留进程
                 # 收尾日志触发了回调，不据此判定任务结束
