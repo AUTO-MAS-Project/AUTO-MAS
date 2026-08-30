@@ -65,56 +65,6 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-collapse v-if="maafwConfig.Update.Source === 'GitHub'" ghost class="update-advanced">
-      <a-collapse-panel
-        key="github"
-        header="GitHub 高级选项（留空按 interface 与 Mirror酱目标版本解析）"
-      >
-        <a-row :gutter="24" class="update-config-row">
-          <a-col :xs="24" :md="8">
-            <a-form-item label="GitHub 仓库">
-              <a-input
-                v-model:value="maafwConfig.Update.GitHubRepo"
-                placeholder="owner/repository（可留空，读取 interface）"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Update', 'GitHubRepo', maafwConfig.Update.GitHubRepo)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="8">
-            <a-form-item label="GitHub 版本标签">
-              <a-input
-                v-model:value="maafwConfig.Update.GitHubTag"
-                placeholder="按 Mirror酱目标版本精确匹配"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Update', 'GitHubTag', maafwConfig.Update.GitHubTag)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="8">
-            <a-form-item label="资产匹配规则">
-              <a-input
-                v-model:value="maafwConfig.Update.GitHubAssetPattern"
-                placeholder="例如 \.zip$"
-                size="large"
-                class="modern-input"
-                @blur="
-                  emit(
-                    'change',
-                    'Update',
-                    'GitHubAssetPattern',
-                    maafwConfig.Update.GitHubAssetPattern
-                  )
-                "
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-collapse-panel>
-    </a-collapse>
-
     <a-row :gutter="24" class="update-action-row">
       <a-col :span="8">
         <a-form-item>
@@ -292,10 +242,6 @@ const handleAutoUpdateChange = (checked: boolean) => {
 
 .update-config-row {
   margin-top: 4px;
-}
-
-.update-advanced {
-  margin-bottom: 8px;
 }
 
 .update-action-row {
