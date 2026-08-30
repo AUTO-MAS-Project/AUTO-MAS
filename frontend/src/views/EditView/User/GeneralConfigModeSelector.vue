@@ -45,6 +45,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
 import {
   DatabaseOutlined,
   FileTextOutlined,
@@ -62,36 +63,38 @@ type ConfigModeOption = {
   icon?: 'database' | 'file' | 'setting'
 }
 
-const props = withDefaults(
-  defineProps<{
-    modelValue: boolean | string
-    disabled?: boolean
-    saving?: boolean
-    options?: ConfigModeOption[]
-    alertMessage?: string
-  }>(),
-  {
-    options: () => [
-      {
-        value: true,
-        title: t('edit.perUserConfiguration'),
-        description: t('edit.saveSeparateConfigurationThis'),
-        icon: 'database',
-      },
-      {
-        value: false,
-        title: t('edit.scriptDirectConfiguration'),
-        description: t('edit.useScriptSCurrent'),
-        icon: 'file',
-      },
-    ],
-    alertMessage:
-      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
-  }
-)
+const props = defineProps<{
+  modelValue: boolean | string
+  disabled?: boolean
+  saving?: boolean
+  options?: ConfigModeOption[]
+  alertMessage?: string
+}>()
 
-const options = props.options
-const alertMessage = props.alertMessage
+// 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+// 引用不到 useI18n() 返回的 t，编译期直接报错（typecheck 与单测都发现不了，
+// 只有真正构建时才暴露）。改成在这里按需兜底。
+const defaultOptions = computed<ConfigModeOption[]>(() => [
+  {
+    value: true,
+    title: t('edit.perUserConfiguration'),
+    description: t('edit.saveSeparateConfigurationThis'),
+    icon: 'database',
+  },
+  {
+    value: false,
+    title: t('edit.scriptDirectConfiguration'),
+    description: t('edit.useScriptSCurrent'),
+    icon: 'file',
+  },
+])
+
+const options = computed(() => props.options ?? defaultOptions.value)
+const alertMessage = computed(
+  () =>
+    props.alertMessage ??
+    '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。'
+)
 
 const emit = defineEmits<{
   change: [value: boolean | string]

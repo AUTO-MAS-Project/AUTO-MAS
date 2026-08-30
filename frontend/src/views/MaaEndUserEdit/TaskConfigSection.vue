@@ -61,7 +61,7 @@
         <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
-            :options="sanityModeOptions"
+            :options="resolvedSanityModeOptions"
             :disabled="loading"
             size="large"
             @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
@@ -191,6 +191,9 @@ const props = withDefaults(
     optionsLoading?: boolean
     optionsLoaded?: boolean
     isPlanMode?: boolean
+    // 默认值不写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+    // 引用不到 useI18n() 的 t。兜底见下方 resolvedSanityModeOptions。
+    // oxlint-disable-next-line vue/require-default-prop
     sanityModeOptions?: Array<{ label: string; value: string }>
     planModeConfig?: MaaEndSanityConfig | null
   }>(),
@@ -200,9 +203,14 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
-    sanityModeOptions: () => [{ label: t('edit.fixed'), value: 'Fixed' }],
     planModeConfig: null,
   }
+)
+
+// 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+// 引用不到 useI18n() 返回的 t，编译期直接报错。改成在这里兜底。
+const resolvedSanityModeOptions = computed(
+  () => props.sanityModeOptions ?? [{ label: t('edit.fixed'), value: 'Fixed' }]
 )
 
 const emit = defineEmits<{

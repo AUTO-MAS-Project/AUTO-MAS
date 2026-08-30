@@ -8,7 +8,7 @@
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img :src="logoSrc" :alt="logoAlt" class="breadcrumb-logo" />
-            {{ title }}
+            {{ headerTitle }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -36,15 +36,16 @@ import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 const { t } = useI18n()
 
-const props = withDefaults(
-  defineProps<{
-    /** 脚本类型，决定面包屑图标与 alt 文案 */
-    scriptType: ScriptType
-    /** 第二级面包屑文字，默认「编辑脚本」 */
-    title?: string
-  }>(),
-  { title: t('comp.editScript') }
-)
+const props = defineProps<{
+  /** 脚本类型，决定面包屑图标与 alt 文案 */
+  scriptType: ScriptType
+  /** 第二级面包屑文字，留空则用「编辑脚本」 */
+  title?: string
+}>()
+
+// 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+// 引用不到 useI18n() 返回的 t，编译期直接报错。改在这里兜底。
+const headerTitle = computed(() => props.title ?? t('comp.editScript'))
 
 const emit = defineEmits<{ cancel: [] }>()
 
