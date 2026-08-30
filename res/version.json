@@ -45,7 +45,8 @@
                 "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 修复内置运行未加载项目自带的 MaaFramework 而回落到 AUTO-MAS 运行环境中同版本号但二进制不同的一份的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 修复内置运行装上与项目自带 MaaFramework 版本不符的 Python 绑定的问题，改为按项目实际发行的运行库版本安装 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 修复运行期间界面日志停止更新、点击停止无响应的问题，原因是转发脚本输出时独占事件循环 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 修复运行期间界面日志停止更新、点击停止无响应的问题，原因是转发脚本输出时独占事件循环 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复删除脚本或项目升级后，旧的隔离运行环境永久占用磁盘不被清理的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {

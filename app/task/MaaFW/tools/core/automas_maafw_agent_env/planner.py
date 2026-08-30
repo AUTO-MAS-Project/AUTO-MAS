@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,43 @@ def compute_isolated_venv_path(
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
     root = Path(managed_env_root) if managed_env_root is not None else Path.cwd() / "config" / "maafw_agent_venvs"
     return root.resolve() / f"maafw_venv_{digest}"
+
+
+AGENT_VENV_DIR_PREFIX = "maafw_venv_"
+
+
+def collect_orphan_agent_venvs(
+    root: str | Path,
+    live_project_paths: Iterable[str | Path],
+) -> list[Path]:
+    """列出已无脚本引用的隔离 venv。
+
+    目录名就是项目路径的哈希（见 ``compute_isolated_venv_path``），所以判定
+    孤儿不需要读目录内的清单：把所有仍被脚本引用的项目路径算成目录名，
+    剩下的即孤儿。这样即使清单损坏或缺失也不会误判，而**存活项目的 venv
+    永远不会落进结果里**——这是这个实现最重要的性质。
+
+    覆盖三种情形：用户删了脚本、改了项目路径、项目升级换了目录
+    （实测残留过一份指向 ``Maa_bbb-win-x86_64-v1.12.10`` 的 venv，
+    而用户早已升到 v1.12.14）。
+    """
+
+    root_path = Path(root).resolve()
+    expected = {
+        compute_isolated_venv_path(path, managed_env_root=root_path).name
+        for path in live_project_paths
+    }
+    try:
+        entries = sorted(root_path.iterdir())
+    except OSError:
+        return []
+    return [
+        entry
+        for entry in entries
+        if entry.is_dir()
+        and entry.name.startswith(AGENT_VENV_DIR_PREFIX)
+        and entry.name not in expected
+    ]
 
 
 def venv_python_exe(venv_path: str | Path) -> Path:
