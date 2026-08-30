@@ -2,8 +2,8 @@
   <div class="log-timestamp-selector">
     <!-- 切换视图模式 -->
     <a-radio-group v-model:value="viewMode" style="margin-bottom: 16px" @change="onViewModeChange">
-      <a-radio-button value="input">输入框模式</a-radio-button>
-      <a-radio-button value="visual">可视化选择模式</a-radio-button>
+      <a-radio-button value="input">{{ t('comp.textInput') }}</a-radio-button>
+      <a-radio-button value="visual">{{ t('comp.visualSelection') }}</a-radio-button>
     </a-radio-group>
 
     <!-- 输入框模式 -->
@@ -12,9 +12,9 @@
         <a-col :span="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
-              <a-tooltip title="脚本日志时间戳起始位置">
+              <a-tooltip :title="t('comp.logTimestampStartPosition')">
                 <span class="form-label">
-                  日志时间戳起始位置
+                  {{ t('comp.logTimestampStart') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
@@ -32,9 +32,9 @@
         <a-col :span="12">
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
-              <a-tooltip title="脚本日志时间戳结束位置">
+              <a-tooltip :title="t('comp.logTimestampEndPosition')">
                 <span class="form-label">
-                  日志时间戳结束位置
+                  {{ t('comp.logTimestampEnd') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
@@ -56,14 +56,14 @@
     <div v-else-if="viewMode === 'visual'">
       <div class="visual-mode-container">
         <div class="log-preview-header">
-          <span>日志预览 (使用鼠标文本选择功能选择时间戳区域)</span>
+          <span>{{ t('comp.logPreviewSelectTimestamp') }}</span>
           <a-button
             type="primary"
             :loading="loadingPreview"
             :disabled="!logFilePath"
             @click="loadLogFile"
           >
-            加载日志
+            {{ t('comp.loadLog') }}
           </a-button>
         </div>
 
@@ -99,7 +99,7 @@
             <span v-if="selectedText">(内容: "{{ selectedText }}")</span>
           </div>
           <a-button type="primary" :disabled="!selection.valid" @click="applySelection">
-            应用选择
+            {{ t('comp.appSelection') }}
           </a-button>
         </div>
       </div>
@@ -108,9 +108,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('日志时间戳选择器')
 
@@ -273,7 +276,7 @@ const loadLogFile = async () => {
   const targetPath = props.logFilePath
 
   if (!targetPath || targetPath.trim() === '') {
-    message.warning('请先选择日志文件路径')
+    message.warning(t('comp.pickLogFilePath'))
     return
   }
 
@@ -286,7 +289,7 @@ const loadLogFile = async () => {
       const content = await window.electronAPI.readFile(targetPath)
 
       if (!content) {
-        message.warning('日志文件为空或无法读取')
+        message.warning(t('comp.logFileEmptyCould'))
         return
       }
 
@@ -297,14 +300,14 @@ const loadLogFile = async () => {
       logLines.value = logLines.value.filter(line => line.trim() !== '').slice(0, 50) // 进一步过滤并限制行数
     } else {
       // 如果没有Electron API可用，显示错误信息
-      message.error('无法访问文件系统，请在Electron环境中使用此功能')
+      message.error(t('comp.fileSystemUnavailableUse'))
       return
     }
 
     message.success(`日志文件加载成功，共加载 ${logLines.value.length} 行`)
   } catch (error) {
     logger.error(`加载日志文件失败: ${String(error)}`)
-    message.error('加载日志文件失败: ' + (error as Error).message)
+    message.error(t('comp.couldNotLoadLog') + (error as Error).message)
   } finally {
     loadingPreview.value = false
   }
@@ -313,7 +316,7 @@ const loadLogFile = async () => {
 // 应用选择
 const applySelection = async () => {
   if (!selection.valid) {
-    message.warning('请先选择有效的日志时间戳范围')
+    message.warning(t('comp.pickValidLogTimestamp'))
     return
   }
 

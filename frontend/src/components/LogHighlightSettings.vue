@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed } from 'vue'
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useLogHighlight, type LogHighlightColors } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
 import { message } from 'ant-design-vue'
+
+const { t } = useI18n()
 
 const { isDark } = useTheme()
 const {
@@ -34,14 +37,14 @@ const colorGroups: {
   items: { key: keyof LogHighlightColors; label: string; description: string }[]
 }[] = [
   {
-    title: '时间相关',
+    title: t('comp.time'),
     items: [
       { key: 'timestamp', label: '时间戳', description: '完整的日期时间格式' },
       { key: 'date', label: '日期', description: '单独的日期格式' },
     ],
   },
   {
-    title: '日志级别',
+    title: t('comp.logLevel'),
     items: [
       { key: 'error', label: '错误', description: 'ERROR/FATAL/CRITICAL 级别' },
       { key: 'warning', label: '警告', description: 'WARN/WARNING 级别' },
@@ -51,14 +54,14 @@ const colorGroups: {
     ],
   },
   {
-    title: '结构元素',
+    title: t('comp.structure'),
     items: [
       { key: 'module', label: '模块名', description: '方括号内的模块/线程名' },
       { key: 'bracket', label: '括号内容', description: '圆括号内的内容' },
     ],
   },
   {
-    title: '网络相关',
+    title: t('comp.network'),
     items: [
       { key: 'ip', label: 'IP 地址', description: 'IPv4 地址' },
       { key: 'url', label: 'URL', description: 'HTTP/HTTPS 链接' },
@@ -66,14 +69,14 @@ const colorGroups: {
     ],
   },
   {
-    title: '文件系统',
+    title: t('comp.fileSystem'),
     items: [
       { key: 'path', label: '文件路径', description: '完整的文件路径' },
       { key: 'filename', label: '文件名', description: '带扩展名的文件名' },
     ],
   },
   {
-    title: '数据类型',
+    title: t('comp.dataType'),
     items: [
       { key: 'number', label: '数字', description: '整数、小数、科学计数法' },
       { key: 'string', label: '字符串', description: '引号包裹的字符串' },
@@ -82,14 +85,14 @@ const colorGroups: {
     ],
   },
   {
-    title: '关键词',
+    title: t('comp.keyword'),
     items: [
       { key: 'errorKeyword', label: '错误关键词', description: 'Exception/Error/Failed 等' },
       { key: 'success', label: '成功关键词', description: 'Success/Complete/Done 等' },
     ],
   },
   {
-    title: '特殊内容',
+    title: t('comp.specialContent'),
     items: [
       { key: 'stackTrace', label: '堆栈跟踪', description: 'Java/Python 堆栈信息' },
       { key: 'json', label: 'JSON', description: 'JSON 对象/数组' },
@@ -112,7 +115,7 @@ const updateColor = (key: keyof LogHighlightColors, value: string) => {
 // 重置为默认
 const handleReset = () => {
   resetToDefaults()
-  message.success('已重置为默认配置')
+  message.success(t('comp.resetDefaults'))
 }
 
 // 重置单个颜色
@@ -138,7 +141,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">字体大小</span>
+            <span class="form-label">{{ t('comp.fontSize') }}</span>
           </div>
           <a-select
             :value="editorConfig.fontSize"
@@ -155,7 +158,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">行高</span>
+            <span class="form-label">{{ t('comp.lineHeight') }}</span>
           </div>
           <a-select
             :value="editorConfig.lineHeight"
@@ -172,32 +175,32 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="24">
         <div class="form-item-vertical text-style-item">
           <div class="form-label-wrapper">
-            <span class="form-label">文字强调</span>
+            <span class="form-label">{{ t('comp.boldText') }}</span>
           </div>
           <div class="checkbox-row">
             <a-checkbox
               :checked="styles.timestampBold"
               @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
             >
-              时间戳加粗
+              {{ t('comp.boldTimestamps') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.levelBold"
               @change="(e: any) => setStyles({ levelBold: e.target.checked })"
             >
-              日志级别加粗
+              {{ t('comp.boldLogLevels') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.keywordBold"
               @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
             >
-              关键词加粗
+              {{ t('comp.boldKeywords') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.urlUnderline"
               @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
             >
-              URL 下划线
+              {{ t('comp.urlUnderline') }}
             </a-checkbox>
           </div>
         </div>
@@ -208,24 +211,24 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-collapse-panel key="highlight">
         <template #header>
           <div class="advanced-settings-header">
-            <span class="advanced-settings-title">高亮颜色与预览设置区域</span>
+            <span class="advanced-settings-title">{{ t('comp.highlightColorsPreview') }}</span>
           </div>
         </template>
 
         <!-- 颜色配置 -->
         <div class="config-section">
           <div class="log-section-header">
-            <div class="section-title">颜色配置</div>
+            <div class="section-title">{{ t('comp.colors') }}</div>
             <div class="section-actions">
               <a-radio-group v-model:value="editingTheme" button-style="solid" size="small">
-                <a-radio-button value="light">浅色主题</a-radio-button>
-                <a-radio-button value="dark">深色主题</a-radio-button>
+                <a-radio-button value="light">{{ t('comp.lightTheme') }}</a-radio-button>
+                <a-radio-button value="dark">{{ t('comp.darkTheme') }}</a-radio-button>
               </a-radio-group>
               <a-button size="small" @click="handleReset">
                 <template #icon>
                   <ReloadOutlined />
                 </template>
-                重置全部
+                {{ t('comp.resetEverything') }}
               </a-button>
             </div>
           </div>
@@ -253,7 +256,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                   <a-button
                     size="small"
                     type="text"
-                    title="重置此颜色"
+                    :title="t('comp.resetThisColor')"
                     @click="resetSingleColor(item.key)"
                   >
                     <template #icon>
@@ -268,7 +271,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
         <!-- 预览 -->
         <div class="config-section">
-          <div class="section-title">预览效果</div>
+          <div class="section-title">{{ t('comp.preview') }}</div>
           <div
             class="preview-content"
             :class="editingTheme === 'dark' ? 'preview-dark' : 'preview-light'"
@@ -294,7 +297,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 INFO
               </span>
               <span :style="{ color: '#' + currentColors.module }">[MainModule]</span>
-              <span> 应用启动成功，端口</span>
+              <span>{{ t('comp.appStartedPort') }}</span>
               <span :style="{ color: '#' + currentColors.port }">:8080</span>
             </div>
             <div class="preview-line">
@@ -314,7 +317,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 WARN
               </span>
               <span :style="{ color: '#' + currentColors.module }">[Network]</span>
-              <span> 连接超时，IP: </span>
+              <span>{{ t('comp.connectionTimedOutIp') }}</span>
               <span :style="{ color: '#' + currentColors.ip }">192.168.1.100</span>
               <span :style="{ color: '#' + currentColors.variable }"> retries</span>
               <span :style="{ color: '#' + currentColors.operator }">=</span>
@@ -345,7 +348,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
               >
                 Exception</span
               >
-              <span>: 连接失败 </span>
+              <span>{{ t('comp.connectionFailed') }}</span>
               <span :style="{ color: '#' + currentColors.string }">"Connection refused"</span>
             </div>
             <div class="preview-line">
@@ -378,7 +381,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
               >
               <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
               <span :style="{ color: '#' + currentColors.module }">[HTTP]</span>
-              <span> 请求 </span>
+              <span>{{ t('comp.request') }}</span>
               <span
                 :style="{
                   color: '#' + currentColors.url,
@@ -397,7 +400,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
             </div>
             <div class="preview-line">
               <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span> 响应: </span>
+              <span>{{ t('comp.response') }}</span>
               <span :style="{ color: '#' + currentColors.json }"
                 >{"status": "ok", "count": 42}</span
               >

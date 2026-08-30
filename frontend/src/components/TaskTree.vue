@@ -3,7 +3,7 @@
     <div v-if="taskData.length === 0" class="empty-state">
       <div class="empty-content">
         <div class="empty-image-container">
-          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="t('comp.noData2')" class="empty-image" />
         </div>
       </div>
     </div>
@@ -30,7 +30,7 @@
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
           <div v-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
-              <span class="no-users-text">暂无用户</span>
+              <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
             </div>
           </div>
           <div
@@ -53,10 +53,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
 import { useStatusLabel } from '@/i18n/status'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('任务树组件')
 
