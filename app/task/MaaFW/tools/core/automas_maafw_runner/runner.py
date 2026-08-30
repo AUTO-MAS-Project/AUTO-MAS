@@ -34,8 +34,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Literal, TextIO
 
+from packaging.version import InvalidVersion, Version
+
 import maa as maa_package
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
+from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    project_maafw_runtime_path,
+)
 from maa.agent_client import AgentClient
 from maa.controller import (
     AdbController,
@@ -135,19 +140,6 @@ MAAFW_FAILURE_EVENT_MESSAGES = {
     "Tasker.Task.Failed",
 }
 MAAFW_FAILURE_SUMMARY_LIMIT = 8
-
-
-def _project_maafw_runtime_path(project_path: Path | None) -> Path | None:
-    if project_path is None:
-        return None
-
-    for candidate in (
-        project_path / "maafw",
-        project_path / "runtimes" / "win-x64",
-    ):
-        if (candidate / "MaaFramework.dll").is_file():
-            return candidate
-    return None
 
 
 def decode_bytes(data: bytes) -> str:
@@ -339,14 +331,141 @@ def _venv_bootstrap_python() -> str:
     return sys.executable
 
 
-def _ensure_maafw_global_init(project_path: Path | None = None) -> None:
+def describe_loaded_maafw() -> tuple[str, str]:
+    """返回实际加载的 MaaFramework 版本与 Python binding 的版本。
+
+    两者未必相同：原生库来自项目自带目录，binding 来自 runner venv。MaaFW 的
+    py binding 与原生库是绑定关系，跨 minor 混用**不会报错**，但行为可能不同，
+    真机上表现为「资源能导入、识别却不对」这类只在生产复现的问题。
+    """
+
+    try:
+        loaded = str(Library.version() or "").strip()
+    except Exception:  # pragma: no cover - 取不到就当未知，不能因此挡住运行
+        loaded = ""
+    try:
+        from importlib.metadata import version as _dist_version
+
+        binding = str(_dist_version("maafw") or "").strip()
+    except Exception:  # pragma: no cover
+        binding = ""
+    return loaded, binding
+
+
+def _file_fingerprint(path: Path) -> tuple[int, str] | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return len(data), hashlib.sha256(data).hexdigest()
+
+
+def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
+    """项目自带的原生库是否与 binding 附带的那份不是同一个二进制。
+
+    版本号相同不等于二进制相同。按版本钉 binding 只能保证「官方发布的同版本」，
+    挡不住项目塞进来一份自己改的构建——它报的版本串照样是 X，版本一致性检查
+    看不出任何异常。
+
+    两份文件此时都在本地（一份在项目目录，一份在 runner venv 的 ``maa/bin``），
+    直接比字节即可，**不需要联网**。这是版本号抓不到、又能廉价拿到的那层证据。
+
+    对 MaaFramework 官方目录里 46 个 Windows 发行包做过全量比对：能确定版本的
+    44 个**全部与对应 PyPI wheel 逐字节相同**，无人自带改过的构建。所以这个
+    检查平时不会响；它是给「哪天真有人这么干」留的。
+
+    Returns:
+        True 表示确实是另一个二进制；False 表示同一份；无法判断时返回 None。
+    """
+
+    if runtime_path is None:
+        # 没有项目自带的库，本来就直接用 binding 那份，不存在分歧
+        return False
+
+    project_dll = runtime_path / "MaaFramework.dll"
+    binding_dll = (
+        Path(maa_package.__file__).resolve().parent / "bin" / "MaaFramework.dll"
+    )
+    try:
+        if project_dll.resolve() == binding_dll:
+            return False  # 同一个文件，谈不上分歧
+    except OSError:
+        return None
+
+    project_print = _file_fingerprint(project_dll)
+    binding_print = _file_fingerprint(binding_dll)
+    if project_print is None or binding_print is None:
+        return None
+    return project_print != binding_print
+
+
+def _normalize_maafw_version(value: str) -> str:
+    """把版本串归一到可比较的形式。
+
+    两边的写法本来就不同：原生库报的是语义化版本（``v5.13.0-beta.2``），
+    PyPI 包报的是 PEP 440（``5.13.0b2``）。只剥 ``v`` 前缀不够——那样
+    同一个预发布版会被判成不一致，真机上就误报过一次。
+    """
+
+    raw = value.strip().lstrip("vV")
+    try:
+        return str(Version(raw))
+    except InvalidVersion:
+        return raw
+
+
+def _display_maafw_version(value: str) -> str:
+    """展示用：保证恰好一个 ``v`` 前缀，不重不缺。"""
+
+    raw = value.strip()
+    return "v" + raw.lstrip("vV") if raw else "未知"
+
+
+def _ensure_maafw_global_init(
+    project_path: Path | None = None,
+    send_log: Callable[[str], None] | None = None,
+) -> None:
     global _MAAFW_INITIALIZED
     if _MAAFW_INITIALIZED:
         return
     with _MAAFW_INIT_LOCK:
         if _MAAFW_INITIALIZED:
             return
-        _ensure_maafw_client_library_mode(_project_maafw_runtime_path(project_path))
+        runtime_path = project_maafw_runtime_path(project_path)
+        _ensure_maafw_client_library_mode(runtime_path)
+        if send_log is not None:
+            loaded, binding = describe_loaded_maafw()
+            source = str(runtime_path) if runtime_path else "runner 运行环境自带"
+            send_log(
+                "MaaFramework 实际加载: "
+                f"{_display_maafw_version(loaded)}; 来源={source}"
+            )
+            versions_differ = (
+                loaded
+                and binding
+                and _normalize_maafw_version(loaded)
+                != _normalize_maafw_version(binding)
+            )
+            if versions_differ:
+                # 只警告不拦截：现有项目正是这么跑起来的，贸然拦下会让原本能跑的
+                # 直接失败。但必须让人看见——这类不一致不会报错，只会行为不同。
+                send_log(
+                    "⚠ MaaFramework 版本不一致: 原生库 "
+                    f"{_display_maafw_version(loaded)} 与 Python binding "
+                    f"{_display_maafw_version(binding)} 不是同一版本。"
+                    "MaaFW 的 binding 与原生库"
+                    "是绑定关系，跨版本混用不报错但行为可能不同，"
+                    "识别异常时请优先怀疑这里"
+                )
+            elif detect_custom_maafw_build(runtime_path):
+                # 版本号相同但二进制不同：项目自带的是改过的构建。按版本钉
+                # binding 只保证「官方发布的同版本」，挡不住这种情况，而版本
+                # 一致性检查同样看不出来——只有比字节能发现。
+                send_log(
+                    "MaaFramework 原生库为项目自带的非官方构建（版本同为 "
+                    f"{_display_maafw_version(loaded)}，二进制与官方发行版不同）。"
+                    "这是项目的选择，MAS 按其自带的库运行"
+                )
         user_path = (project_path or Path.cwd()).resolve()
         option_path = user_path / "config" / "maa_option.json"
         option_path.parent.mkdir(parents=True, exist_ok=True)
@@ -418,7 +537,7 @@ class MaaFWRunner:
         if self._initialized:
             return
 
-        _ensure_maafw_global_init(Path(self.plan.path))
+        _ensure_maafw_global_init(Path(self.plan.path), self.send_log)
         # 先确认设备真的连得上，再去加载原生插件与资源。
         # 这两步对 M9A 这类项目要几秒并会载入 DLL，设备没起来时全是白做的功，
         # 失败还要再逐个拆掉。冷启动的模拟器可能要等几分钟，更不该让它压在

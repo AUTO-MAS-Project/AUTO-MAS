@@ -209,6 +209,13 @@ def prepare_runner_environment(
         )
     if explicit_requirements is None:
         if selected_requirement is None:
+            # 自带原生库的版本优先于 requirements.txt 的声明：我们加载的就是
+            # 项目自带的那份库，binding 必须跟它一致。实测 46 个发行包里有 3 个
+            # 声明是陈旧的（MAAAE 声明 5.3.0 实际 5.6.0、MaaNTE 声明 v5.10.4
+            # 实际 5.10.5、MaaADr 声明 5.12.2 实际 5.12.3），另有 20 个压根
+            # 没有 requirements.txt、4 个写的是无版本约束。
+            selected_requirement = _bundled_project_maafw_requirement(project)
+        if selected_requirement is None:
             selected_requirement = _declared_project_maafw_requirement(project)
         if selected_requirement is None and bound_runtime is not None:
             selected_requirement = (
@@ -556,6 +563,148 @@ def _runtime_constraint_text(value: Any) -> str:
         if isinstance(version, str) and version.strip()
         else ""
     )
+
+
+# 内置运行能驱动的最低 MaaFramework 版本。
+#
+# runner 侧 import 了 ``maa.event_sink``，而该模块是 **5.0.0** 才加进 py binding
+# 的：逐个 minor 首版查过 PyPI 上的 wheel，4.0.0 到 4.5.0 全部没有它，5.0.0 起
+# 才有。装上更老的 binding，worker 会在启动时 ``ModuleNotFoundError``。
+#
+# MaaFramework 上游自己的支持线更高——5.1 之前一律不再支持。这里取 5.0.0 是
+# 因为它是**本代码实际需要**的下限，不替上游表态。
+#
+# 官方目录里踩线的项目（2026-08-30 勘察）：MMleo 自带 4.5.3、MaaEOV 自带 4.5.6。
+# 这两个用内置运行跑不起来，属已知边界而非缺陷——太老的不支持是正常的。
+MINIMUM_SUPPORTED_MAAFW_VERSION = "5.0.0"
+
+PROJECT_MAAFW_DLL_NAME = "MaaFramework.dll"
+
+# 兜底搜索的最大深度。真实布局最深是 ``runtimes/<rid>/native``（3 层），
+# 留一层余量吸收未来的挪动；再深就会扫进 ``python/Lib/site-packages/maa/bin``
+# 那种项目自带解释器的副本，那是 agent 的，不是外壳的。
+_RUNTIME_SEARCH_MAX_DEPTH = 4
+
+# MaaFramework 把自身版本以 ``v5.13.0-beta.2`` 这样的形式内嵌在原生库里。
+# 用已知版本的样本校验过：来自 ``maafw==5.12.3`` 包的那份原生库提取出的正是
+# ``5.12.3``，说明取到的确实是它自己的版本而非别的字符串。
+_MAAFW_DLL_VERSION_RE = re.compile(
+    rb"(?<![0-9A-Za-z.])v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)(?![0-9A-Za-z.])"
+)
+
+
+def _iter_project_maafw_candidates(project_path: Path):
+    """按优先级产出可能放着 MaaFramework.dll 的目录。
+
+    先枚举已知布局，再退到有界的逐层搜索——不写死具体 rid，也不指望布局
+    永远不变。
+    """
+
+    yield project_path / "maafw"
+
+    runtimes = project_path / "runtimes"
+    if runtimes.is_dir():
+        # .NET 把原生库放在 runtimes/<rid>/native/ 下（MFAAvalonia 即如此）。
+        # 用枚举而不是钉死 win-x64，arm64 / linux-x64 同样能命中。
+        try:
+            rids = [item for item in sorted(runtimes.iterdir()) if item.is_dir()]
+        except OSError:
+            return
+        for rid in rids:
+            yield rid / "native"
+        for rid in rids:
+            yield rid
+
+
+def _search_project_maafw_dll(project_path: Path) -> Path | None:
+    """逐层就近搜索，返回最浅的那一份。"""
+
+    frontier = [project_path]
+    for _ in range(_RUNTIME_SEARCH_MAX_DEPTH):
+        following: list[Path] = []
+        for directory in frontier:
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError:
+                continue
+            for item in entries:
+                if item.is_dir():
+                    following.append(item)
+                elif item.name == PROJECT_MAAFW_DLL_NAME:
+                    return directory
+        if not following:
+            break
+        frontier = following
+    return None
+
+
+def project_maafw_runtime_path(project_path: Path | None) -> Path | None:
+    """项目自带的 MaaFramework 运行时目录。
+
+    优先用项目自己的原生库而不是 runner venv 里那份：同一个版本号下二进制未必
+    相同（实测 MaaYYs 与 MaaEnd 自带的 MaaFramework.dll 互不相同，也都不同于
+    PyPI 的 maafw 包），项目的自定义构建只有用它自己的库才对得上。
+    """
+
+    if project_path is None:
+        return None
+
+    for candidate in _iter_project_maafw_candidates(project_path):
+        if (candidate / PROJECT_MAAFW_DLL_NAME).is_file():
+            return candidate
+    return _search_project_maafw_dll(project_path)
+
+
+def probe_bundled_maafw_version(project_path: Path) -> str | None:
+    """读出项目自带原生库的版本，规范化成 PEP 440。
+
+    ``v5.13.0-beta.2`` -> ``5.13.0b2``，正好对得上 PyPI 上的预发布版本号。
+    只在原生库里恰好存在唯一一个版本串时才采信——多于一个说明这个提取方式
+    对该构建不成立，宁可返回 None 走原有兜底。
+    """
+
+    runtime_path = project_maafw_runtime_path(project_path)
+    if runtime_path is None:
+        return None
+    try:
+        data = (runtime_path / PROJECT_MAAFW_DLL_NAME).read_bytes()
+    except OSError:
+        return None
+
+    found = {
+        match.group(1).decode("ascii", errors="ignore")
+        for match in _MAAFW_DLL_VERSION_RE.finditer(data)
+    }
+    if len(found) != 1:
+        return None
+    try:
+        return str(Version(found.pop()))
+    except InvalidVersion:
+        return None
+
+
+def _bundled_project_maafw_requirement(project_path: Path) -> str | None:
+    """按项目自带原生库的版本钉 Python binding。
+
+    MaaFW 的 py binding 与原生库是绑定关系，跨 minor 混用不报错但行为可能不同。
+    我们加载的就是项目自带的那份库（见 ``project_maafw_runtime_path``），
+    所以 binding 必须跟它一致——这比 ``requirements.txt`` 的声明更可靠。
+
+    对 MaaFramework 官方目录里 46 个 Windows 发行包做过远程勘察，结论：
+
+    - 涉及 10 个不同的 FW 版本（4.5.3 到 5.13.0-beta.5），**PyPI 上全都有**
+    - 20 个包没有 requirements.txt（agent 是 Go/C++ 或纯 Pipeline 的项目）
+    - 4 个写的是无版本约束的 ``maafw`` / ``MaaFw``
+    - **3 个的声明与实际发行的库对不上**：MAAAE 声明 5.3.0 实际 5.6.0、
+      MaaNTE 声明 v5.10.4 实际 5.10.5、MaaADr 声明 5.12.2 实际 5.12.3
+
+    从库二进制里读出的版本可直接对上 PyPI 的包：抽查 4.5.3 / 5.6.0 / 5.10.2 /
+    5.12.2 四个版本，项目自带的库与对应 wheel 里的**逐字节相同**；本机另验过
+    5.13.0b2 与 5.13.0b5 亦然。
+    """
+
+    version = probe_bundled_maafw_version(project_path)
+    return f"maafw=={version}" if version else None
 
 
 def _declared_project_maafw_requirement(project_path: Path) -> str | None:
