@@ -1700,7 +1700,7 @@ def _framework_ui_message(message: str) -> str:
     compact = "\n".join(line[:240] for line in lines[:8]).strip()
     omitted = max(0, len(cleaned) - len(compact))
     summary = (
-        f"{compact}\n… MaaFW 框架错误详情已省略 {omitted} 个字符，"
+        f"{compact}\n… 上述内容已省略 {omitted} 个字符，"
         "完整内容请查看本次运行的 .maafw.log"
     )
     return summary[:_FRAMEWORK_UI_LOG_MAX_CHARS]

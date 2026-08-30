@@ -82,6 +82,9 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 MAAFW_DEBUG_LOG_PATH = Path("debug") / "maafw.log"
 TASK_CONFIG_LOG_VALUE_LIMIT = 1200
+# 整行上限。留足余量低于宿主 _FRAMEWORK_UI_LOG_MAX_CHARS(1200)，
+# 免得任务配置被当成框架错误诊断截断。
+TASK_CONFIG_LOG_LINE_LIMIT = 1000
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -2486,11 +2489,25 @@ def _format_task_config_log(task: MaaFWTaskRunPlan) -> str:
     override_text = ", ".join(task.overrideNodes[:12]) or "-"
     if len(task.overrideNodes) > 12:
         override_text += f", ...(+{len(task.overrideNodes) - 12})"
-    return (
-        "MaaFW 任务配置: "
-        f"label={display_name}; name={task.name}; entry={task.entry}; options={option_text}; "
-        f"override_nodes={override_text}"
-    )
+
+    def compose(options: str) -> str:
+        return (
+            "MaaFW 任务配置: "
+            f"label={display_name}; name={task.name}; entry={task.entry}; options={options}; "
+            f"override_nodes={override_text}"
+        )
+
+    line = compose(option_text)
+    # 整行也要收进限额。此前只有 options 单独受限，override_nodes 名字一长
+    # （MaaEnd 的 _AutoEcoFarmEnterCameraModeFallbackReleaseOnError 之流）整行
+    # 就会超过宿主转发日志的上限，被那条**给框架错误用的**兜底按 240 字符
+    # 拦腰截断，JSON 断在半个键上、还被冠以「框架错误详情」。宁可在这里多砍
+    # options，也要保证 override_nodes 与结尾完整。
+    if len(line) > TASK_CONFIG_LOG_LINE_LIMIT:
+        room = TASK_CONFIG_LOG_LINE_LIMIT - (len(line) - len(option_text))
+        option_text = option_text[: max(0, room - 3)] + "..." if room > 3 else "..."
+        line = compose(option_text)
+    return line
 
 
 def _task_display_name(task: MaaFWTaskRunPlan) -> str:
