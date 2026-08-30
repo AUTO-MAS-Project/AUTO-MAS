@@ -97,28 +97,29 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 
 All commands run from `frontend/`.
 
-**The repo-wide lint and typecheck baseline is not clean.** As of `v5.4.0-beta.8`, untouched `dev` reports roughly 4900 ESLint problems across ~77 hand-written files (overwhelmingly `prettier/prettier` indentation drift) and 92 `vue-tsc` errors across 7 files (~84 of them in the two `OkNte` edit views). Do not treat a non-empty `yarn lint` or `yarn typecheck` output as evidence that you broke something, and do not try to clean the repo as a side effect of an unrelated task.
+**The repo-wide baseline is clean.** On untouched `dev` (verified 2026-08-30), `yarn lint` reports 0 errors and 1 long-standing `vue/no-v-html` warning, `yarn typecheck` reports 0 errors, and `yarn test` is fully green. `weekly-format.yml` re-runs `ruff format`, `yarn lint:fix` and `yarn format` on `dev` every Monday, so formatting drift does not accumulate.
+
+**Therefore any lint or typecheck error you see is almost certainly yours.** Do not dismiss it as pre-existing noise without first checking the same command on an untouched checkout.
 
 | Touched surface | Command | Passing criterion |
 | --- | --- | --- |
-| Any business code | `npx eslint <your changed files>` | clean, exit 0 |
-| Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | no **new** error naming a file you touched |
+| Any business code | `yarn lint` | 0 errors (1 pre-existing `no-v-html` warning is expected) |
+| Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | 0 errors |
 | A module with a sibling `*.test.ts`, or shared logic/styles under test | `yarn test` | fully green |
 | Build, routing, or Electron entry | `yarn build` | succeeds |
 | Documentation only | file existence, headings, sections, `git status --short` | — |
 | UI | also follow `mas-frontend-ui` verification | — |
 
-Rules that follow from the dirty baseline:
+Rules:
 
-1. Scope lint to the files you changed. `npx eslint <paths>` exits 0 on a clean file and nonzero on a dirty one, so it is a real gate; `yarn lint` is not, because it cannot pass.
-2. `yarn typecheck` has no scoping flag, so run it whole and grep the output for your own file paths. Compare against the baseline instead of expecting zero.
-3. Lint and typecheck are orthogonal. `OkNteUserEdit.vue` is lint-clean with 41 type errors; `scheduler-debug.ts` is the reverse. Passing one says nothing about the other.
-4. `yarn test` is the one gate that is green repo-wide. It must stay green — a failure there is always yours.
-5. If you touch a file that is already in the dirty baseline, leave the pre-existing problems alone and say so in your result. Fixing them is a separate, explicitly-requested task.
+1. Run `yarn lint`, `yarn typecheck` and `yarn test` whole. All three can and should pass; there is no baseline to subtract.
+2. Lint and typecheck are still orthogonal — they check different things, so passing one says nothing about the other. Run both.
+3. `yarn lint:fix` resolves `prettier/prettier` findings; use it rather than hand-formatting.
+4. A failure in any of the three is yours until proven otherwise. If you believe it pre-exists, verify on an untouched checkout and say so explicitly in your result.
 
 Prefer `yarn typecheck` over a full `yarn build` for type validation; it is much faster and covers the renderer via `tsconfig.app.json`.
 
-If a command cannot run, state the exact command and the reason. Never claim "complete", "fixed", or "passed" without verification evidence, and never restate a pre-existing baseline failure as a result of your change.
+If a command cannot run, state the exact command and the reason. Never claim "complete", "fixed", or "passed" without verification evidence.
 
 ## Frontend Tests
 
@@ -144,9 +145,9 @@ Pattern 3 is how several `mas-frontend-ui` layout rules are actually enforced. W
 | "Pinia should hold every frontend value." | Keep isolated short-lived state local, and keep persistent authoritative data in its backend or Electron configuration owner. |
 | "I can tweak generated API files." | `src/api` is generated; regenerate through the project command instead. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
-| "`yarn lint` is failing, so I broke the build." | ~4900 problems and 92 type errors pre-exist on clean `dev`. Scope lint to your own files and compare typecheck against the baseline. |
-| "Lint passed, so the types are fine." | The two are orthogonal. Lint-clean files carry dozens of type errors in this repo. |
-| "I'll fix the surrounding lint noise while I'm here." | Baseline cleanup is a separate, explicitly-requested task; it buries your real diff. |
+| "`yarn lint` is failing, but the repo baseline is dirty anyway." | It is not. Clean `dev` passes lint, typecheck and tests. A failure is yours until you verify otherwise on an untouched checkout. |
+| "Lint passed, so the types are fine." | The two are orthogonal and check different things. Run both. |
+| "I'll fix the surrounding lint noise while I'm here." | `weekly-format.yml` already formats `dev` every Monday. Unrelated cleanup buries your real diff. |
 | "I need jsdom to test this component." | Tests run in node with no DOM. Extract logic to a sibling `.ts`, or assert on source text. |
 
 ## Final Response
