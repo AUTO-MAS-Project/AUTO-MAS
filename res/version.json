@@ -18,6 +18,7 @@
             ],
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
+                "添加pyproject和ruff配置",
                 "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
