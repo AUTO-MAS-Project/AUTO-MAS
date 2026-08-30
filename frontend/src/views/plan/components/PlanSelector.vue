@@ -2,9 +2,9 @@
   <a-card class="plan-selector-card" :bordered="false">
     <template #title>
       <div class="card-title">
-        <span>计划选择</span>
+        <span>{{ t('plan.selectLabel') }}</span>
         <a-tag :color="planList.length > 0 ? 'success' : 'default'">
-          {{ planList.length }} 个计划
+          {{ t('plan.count', { count: planList.length }) }}
         </a-tag>
       </div>
     </template>
@@ -33,7 +33,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
+
+const { t } = useI18n()
 
 interface Plan {
   id: string

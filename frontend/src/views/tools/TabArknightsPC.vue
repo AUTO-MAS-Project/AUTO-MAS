@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined, WarningOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import type { ToolsConfig_ArknightsPC } from '@/api'
+
+const { t } = useI18n()
 
 const { config, disabled, onFieldChange, recordingKeyField, startRecordKey, stopRecordKey } =
   defineProps<{
@@ -33,11 +36,11 @@ const isRecording = (fieldName: string) => {
       <div class="detail-card intro-card">
         <div class="card-header">
           <QuestionCircleOutlined />
-          <span>工具简介</span>
+          <span>{{ t('tools.ark.introTitle') }}</span>
         </div>
         <div class="card-content">
           <p class="intro-text">
-            尽管明日方舟已上线暂停时部署功能，但选中干员与跳帧操作仍未实现。本工具旨在提供极限操作支持，改善您的游戏体验。
+            {{ t('tools.ark.introText') }}
           </p>
         </div>
       </div>
@@ -48,18 +51,18 @@ const isRecording = (fieldName: string) => {
       <div class="detail-card requirement-card">
         <div class="card-header">
           <WarningOutlined />
-          <span>使用要求</span>
+          <span>{{ t('tools.ark.requirementTitle') }}</span>
         </div>
         <div class="card-content">
           <div class="content-item">
             <span class="item-dot"></span>
-            <span>游戏 UI 缩放设为 <strong>100%</strong></span>
+            <span>{{ t('tools.ark.reqScale') }} <strong>100%</strong></span>
           </div>
           <div class="content-item">
             <span class="item-dot"></span>
             <span
-              >屏幕比例 <strong>16:9</strong>
-              <span class="item-hint">（推荐 1280×720 / 1920×1080）</span></span
+              >{{ t('tools.ark.reqRatio') }} <strong>16:9</strong>
+              <span class="item-hint">{{ t('tools.ark.reqRatioHint') }}</span></span
             >
           </div>
         </div>
@@ -71,12 +74,14 @@ const isRecording = (fieldName: string) => {
       <div class="detail-card performance-card">
         <div class="card-header">
           <ThunderboltOutlined />
-          <span>工具性能</span>
+          <span>{{ t('tools.ark.performanceTitle') }}</span>
         </div>
         <div class="card-content">
           <div class="content-item">
             <span class="item-dot"></span>
-            <span>操作精度：<strong>每帧 2 次有效操作</strong></span>
+            <span
+              >{{ t('tools.ark.perfLabel') }} <strong>{{ t('tools.ark.perfValue') }}</strong></span
+            >
           </div>
         </div>
       </div>
@@ -84,14 +89,14 @@ const isRecording = (fieldName: string) => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>基础设置</h3>
+        <h3>{{ t('tools.ark.basicSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">明日方舟 PC 划火柴</span>
-              <a-tooltip title="是否启用明日方舟 PC 端划火柴工具">
+              <span class="form-label">{{ t('tools.ark.enable') }}</span>
+              <a-tooltip :title="t('tools.ark.enableTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -107,20 +112,22 @@ const isRecording = (fieldName: string) => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>键位配置</h3>
+        <h3>{{ t('tools.ark.keySection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">划火柴功能暂停</span>
-              <a-tooltip title="暂停划火柴工具运行的键位">
+              <span class="form-label">{{ t('tools.ark.pause') }}</span>
+              <a-tooltip :title="t('tools.ark.pauseTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="config.PauseKey"
-              :placeholder="isRecording('PauseKey') ? '请按下键位...' : '点击录制按钮修改'"
+              :placeholder="
+                isRecording('PauseKey') ? t('tools.ark.pressKey') : t('tools.ark.clickRecord')
+              "
               size="large"
               :disabled="disabled || !config.Enabled || isRecording('PauseKey')"
               readonly
@@ -134,10 +141,10 @@ const isRecording = (fieldName: string) => {
                   :disabled="disabled || !config.Enabled"
                   @click="startRecordKey?.('PauseKey')"
                 >
-                  录制
+                  {{ t('tools.ark.record') }}
                 </a-button>
                 <a-button v-else type="primary" danger size="small" @click="stopRecordKey?.()">
-                  取消
+                  {{ t('common.cancel') }}
                 </a-button>
               </template>
             </a-input>
@@ -147,14 +154,18 @@ const isRecording = (fieldName: string) => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">选中已部署干员</span>
-              <a-tooltip title="游戏暂停时，鼠标悬浮于已部署干员上，按此键选中干员">
+              <span class="form-label">{{ t('tools.ark.selectDeployed') }}</span>
+              <a-tooltip :title="t('tools.ark.selectDeployedTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="config.SelectDeployedKey"
-              :placeholder="isRecording('SelectDeployedKey') ? '请按下键位...' : '点击录制按钮修改'"
+              :placeholder="
+                isRecording('SelectDeployedKey')
+                  ? t('tools.ark.pressKey')
+                  : t('tools.ark.clickRecord')
+              "
               size="large"
               :disabled="disabled || !config.Enabled || isRecording('SelectDeployedKey')"
               readonly
@@ -168,10 +179,10 @@ const isRecording = (fieldName: string) => {
                   :disabled="disabled || !config.Enabled"
                   @click="startRecordKey?.('SelectDeployedKey')"
                 >
-                  录制
+                  {{ t('tools.ark.record') }}
                 </a-button>
                 <a-button v-else type="primary" danger size="small" @click="stopRecordKey?.()">
-                  取消
+                  {{ t('common.cancel') }}
                 </a-button>
               </template>
             </a-input>
@@ -181,14 +192,16 @@ const isRecording = (fieldName: string) => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">释放技能</span>
-              <a-tooltip title="游戏暂停时，鼠标悬浮于已部署干员上，按此键使释放干员技能">
+              <span class="form-label">{{ t('tools.ark.useSkill') }}</span>
+              <a-tooltip :title="t('tools.ark.useSkillTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="config.UseSkillKey"
-              :placeholder="isRecording('UseSkillKey') ? '请按下键位...' : '点击录制按钮修改'"
+              :placeholder="
+                isRecording('UseSkillKey') ? t('tools.ark.pressKey') : t('tools.ark.clickRecord')
+              "
               size="large"
               :disabled="disabled || !config.Enabled || isRecording('UseSkillKey')"
               readonly
@@ -202,10 +215,10 @@ const isRecording = (fieldName: string) => {
                   :disabled="disabled || !config.Enabled"
                   @click="startRecordKey?.('UseSkillKey')"
                 >
-                  录制
+                  {{ t('tools.ark.record') }}
                 </a-button>
                 <a-button v-else type="primary" danger size="small" @click="stopRecordKey?.()">
-                  取消
+                  {{ t('common.cancel') }}
                 </a-button>
               </template>
             </a-input>
@@ -215,14 +228,16 @@ const isRecording = (fieldName: string) => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">撤退干员</span>
-              <a-tooltip title="游戏暂停时，鼠标悬浮于已部署干员上，按此键撤退干员">
+              <span class="form-label">{{ t('tools.ark.retreat') }}</span>
+              <a-tooltip :title="t('tools.ark.retreatTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="config.RetreatKey"
-              :placeholder="isRecording('RetreatKey') ? '请按下键位...' : '点击录制按钮修改'"
+              :placeholder="
+                isRecording('RetreatKey') ? t('tools.ark.pressKey') : t('tools.ark.clickRecord')
+              "
               size="large"
               :disabled="disabled || !config.Enabled || isRecording('RetreatKey')"
               readonly
@@ -236,10 +251,10 @@ const isRecording = (fieldName: string) => {
                   :disabled="disabled || !config.Enabled"
                   @click="startRecordKey?.('RetreatKey')"
                 >
-                  录制
+                  {{ t('tools.ark.record') }}
                 </a-button>
                 <a-button v-else type="primary" danger size="small" @click="stopRecordKey?.()">
-                  取消
+                  {{ t('common.cancel') }}
                 </a-button>
               </template>
             </a-input>
@@ -249,14 +264,16 @@ const isRecording = (fieldName: string) => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">下一帧</span>
-              <a-tooltip title="让游戏向前进 1 帧">
+              <span class="form-label">{{ t('tools.ark.nextFrame') }}</span>
+              <a-tooltip :title="t('tools.ark.nextFrameTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="config.NextFrameKey"
-              :placeholder="isRecording('NextFrameKey') ? '请按下键位...' : '点击录制按钮修改'"
+              :placeholder="
+                isRecording('NextFrameKey') ? t('tools.ark.pressKey') : t('tools.ark.clickRecord')
+              "
               size="large"
               :disabled="disabled || !config.Enabled || isRecording('NextFrameKey')"
               readonly
@@ -270,10 +287,10 @@ const isRecording = (fieldName: string) => {
                   :disabled="disabled || !config.Enabled"
                   @click="startRecordKey?.('NextFrameKey')"
                 >
-                  录制
+                  {{ t('tools.ark.record') }}
                 </a-button>
                 <a-button v-else type="primary" danger size="small" @click="stopRecordKey?.()">
-                  取消
+                  {{ t('common.cancel') }}
                 </a-button>
               </template>
             </a-input>
@@ -283,14 +300,16 @@ const isRecording = (fieldName: string) => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">自定义退出/暂停</span>
-              <a-tooltip title="自定义的退出/暂停键位，仅战斗中有效">
+              <span class="form-label">{{ t('tools.ark.anotherQuit') }}</span>
+              <a-tooltip :title="t('tools.ark.anotherQuitTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="config.AnotherQuitKey"
-              :placeholder="isRecording('AnotherQuitKey') ? '请按下键位...' : '点击录制按钮修改'"
+              :placeholder="
+                isRecording('AnotherQuitKey') ? t('tools.ark.pressKey') : t('tools.ark.clickRecord')
+              "
               size="large"
               :disabled="disabled || !config.Enabled || isRecording('AnotherQuitKey')"
               readonly
@@ -304,10 +323,10 @@ const isRecording = (fieldName: string) => {
                   :disabled="disabled || !config.Enabled"
                   @click="startRecordKey?.('AnotherQuitKey')"
                 >
-                  录制
+                  {{ t('tools.ark.record') }}
                 </a-button>
                 <a-button v-else type="primary" danger size="small" @click="stopRecordKey?.()">
-                  取消
+                  {{ t('common.cancel') }}
                 </a-button>
               </template>
             </a-input>
