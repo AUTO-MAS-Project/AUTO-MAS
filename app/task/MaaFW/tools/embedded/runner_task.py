@@ -83,6 +83,8 @@ _WIN32_INPUT_METHODS = {
 _SUBPROCESS_OUTPUT_ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
 _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
+# 启动/附着游戏后定位其窗口的等待秒数
+WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERBOSE_FRAMEWORK_LOG_MARKERS = (
     "Transceiver::send] send canceled",
@@ -1534,9 +1536,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def _activate_desktop_game_window(self, game_path: Path) -> None:
         try:
+            # 第二个参数是**秒数**，不是截止时刻。dev 的 #473 把计时改成单调时钟后
+            # 内部是 `time.monotonic() + timeout_seconds`，传 datetime 会直接
+            # TypeError（真机上表现为「游戏进程已启动，但定位窗口失败」，窗口没被
+            # 前置，随后第一个任务识别不到而失败）。
             await self.game_process_manager.search_process(
                 ProcessInfo(exe=str(game_path.resolve())),
-                datetime.now() + timedelta(seconds=5),
+                WINDOW_SEARCH_TIMEOUT_SECONDS,
             )
         except Exception as exc:
             logger.warning(f"MaaFW 定位游戏进程窗口失败: {exc}")
