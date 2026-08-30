@@ -8,7 +8,8 @@
                 "自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日 by [@qiyinxi](https://github.com/qiyinxi)",
                 "界面设置 新增语言选项并接入 i18n 框架，首次启动跟随系统语言，英文界面将逐步补全 by [@qiyinxi](https://github.com/qiyinxi)",
                 "界面显示 任务与调度台的状态标签跟随界面语言显示，判定逻辑不变 by [@qiyinxi](https://github.com/qiyinxi)",
-                "界面显示 初始化向导全部界面文案接入 i18n 词表，可随语言切换 by [@qiyinxi](https://github.com/qiyinxi)"
+                "界面显示 初始化向导全部界面文案接入 i18n 词表，可随语言切换 by [@qiyinxi](https://github.com/qiyinxi)",
+                "界面显示 历史记录、模拟器管理与调度队列三个页面的界面文案接入 i18n 词表 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
