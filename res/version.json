@@ -25,7 +25,8 @@
                 "修复系统通知标题或内容过长时推送失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 修复任务生成时无条件覆盖用户原生高级配置的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "通知服务 自定义 Webhook 推送本地/内网目标绕过代理 by [@ArmedHelicopter](https://github.com/ArmedHelicopter)",
-                "修复 M9A 任务跨过本地午夜后日志监控仍读取前一天文件、导致任务被误判超时的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复 M9A 任务跨过本地午夜后日志监控仍读取前一天文件、导致任务被误判超时的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复启动时队列的「每日首次」在跨日前十秒内冷启动时，可能漏跑当天或在同一天重复运行的问题"
             ]
         },
         "v5.5.0-beta.1": {
