@@ -44,7 +44,6 @@ import { useEventListener, useWindowSize } from '@vueuse/core'
 import RouteInfoPage from './RouteInfoPage.vue'
 import EnvironmentPage from './EnvironmentPage.vue'
 import QuickNavPage from './QuickNavPage.vue'
-import MessageTestPage from './MessageTestPage.vue'
 import BackendLaunchPage from './BackendLaunchPage.vue'
 
 defineOptions({ name: 'DevtoolsPanel' })
@@ -55,7 +54,6 @@ const tabs = [
   { key: 'env', title: '环境', icon: '⚙️', component: EnvironmentPage },
   { key: 'backend', title: '后端', icon: '🚀', component: BackendLaunchPage },
   { key: 'nav', title: '导航', icon: '🧭', component: QuickNavPage },
-  { key: 'message', title: '消息', icon: '💬', component: MessageTestPage },
 ]
 
 // 开发环境检测

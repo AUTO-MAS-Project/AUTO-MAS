@@ -21,11 +21,14 @@
 
 from __future__ import annotations
 import asyncio
+import time
 import weakref
 from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional, Literal
+
+from app.runtime_tasks import RuntimeTasks
 
 
 TaskTriggerSource = Literal[
@@ -62,7 +65,7 @@ class UserItem:
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
-                asyncio.create_task(ti.on_change())
+                ti.schedule_on_change()
 
     @property
     def result(self) -> str:
@@ -97,7 +100,7 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
-            asyncio.create_task(self.task_info.on_change())
+            self.task_info.schedule_on_change()
 
     @property
     def task_info(self) -> Optional[TaskItem]:
@@ -130,6 +133,10 @@ class TaskItem(ABC):
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
     game_sign_results: list[dict] = field(default_factory=list, repr=False)
     game_sign_summary_consumed: bool = field(default=False, repr=False)
+    _change_task: asyncio.Task[None] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -152,15 +159,44 @@ class TaskItem(ABC):
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
 
+    def schedule_on_change(self) -> None:
+        """合并高频字段变化，并由应用任务注册表持有异步通知。"""
+
+        self._change_dirty = True
+        if self._change_task is not None and not self._change_task.done():
+            return
+
+        async def _flush_changes() -> None:
+            try:
+                while self._change_dirty:
+                    self._change_dirty = False
+                    await self.on_change()
+            finally:
+                self._change_task = None
+
+        self._change_task = RuntimeTasks.spawn(
+            _flush_changes(), name=f"task-state-change:{self.task_id}"
+        )
+        if self._change_task is None:
+            # teardown 已开始时不再发布状态；RuntimeTasks 已关闭协程对象。
+            self._change_dirty = False
+
+    @property
+    def is_queue_task(self) -> bool:
+        """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
+        return self.queue_id is not None
+
     @property
     def asdict(self) -> list:
         """将 TaskItem 转换为字典形式"""
         return [
             {
+                "script_id": script_item.script_id,
                 "name": script_item.name,
                 "status": script_item.status,
                 "userList": [
                     {
+                        "user_id": user_item.user_id,
                         "name": user_item.name,
                         "status": user_item.status,
                     }
@@ -193,6 +229,40 @@ class TaskExecuteBase(ABC):
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
+
+    # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
+    # 不加类型注解，避免被 @dataclass 收作字段。
+    _log_progress = None
+
+    def is_log_stalled(
+        self, latest_time: datetime, minutes: float, key: str = "default"
+    ) -> bool:
+        """日志是否已停滞超过给定分钟数。
+
+        不能直接用 ``datetime.now() - latest_time``：两端都是墙钟，系统时钟
+        跳变（夏令时切换、NTP 校时）会让差值凭空增加一小时，把正常运行的
+        任务误判为超时。这里只用 ``latest_time`` 判断“是否有推进”，实际计时
+        交给单调时钟。
+
+        Args:
+            latest_time (datetime): 最近一条日志的时间戳。
+            minutes (float): 允许的最长无新日志时间，单位分钟。
+            key (str): 阶段标识。同一任务的不同阶段（如资源下载与正式运行）
+                各自独立计时，避免阶段切换时互相干扰。
+
+        Returns:
+            bool: 超过阈值返回 True。
+        """
+
+        if self._log_progress is None:
+            self._log_progress = {}
+
+        now = time.monotonic()
+        previous = self._log_progress.get(key)
+        if previous is None or previous[0] != latest_time:
+            self._log_progress[key] = (latest_time, now)
+            return False
+        return now - previous[1] > minutes * 60
 
     @abstractmethod
     async def main_task(self): ...

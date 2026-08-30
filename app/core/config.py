@@ -30,7 +30,6 @@ import uvicorn
 import sqlite3
 import truststore
 from pathlib import Path
-from fastapi import WebSocket, WebSocketDisconnect
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
@@ -38,11 +37,13 @@ from typing import Literal, Optional, Dict, Any, List
 import uuid
 import json
 
+from app.utils.platform import IS_WINDOWS
 from app.models.config import (
     GeneralConfig,
     MaaConfig,
     SrcConfig,
     M9AConfig,
+    MaaFWConfig,
     MaaEndConfig,
     OkwwConfig,
     OkNteConfig,
@@ -55,6 +56,7 @@ from app.models.config import (
     MaaUserConfig,
     SrcUserConfig,
     M9AUserConfig,
+    MaaFWUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
     OkwwUserConfig,
@@ -67,7 +69,7 @@ from app.models.config import (
     EmulatorConfig,
     GameSignAccountGroup,
 )
-from app.models.schema import PlanComboxConsumer, WebSocketMessage
+from app.models.schema import PlanComboxConsumer
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -236,7 +238,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.1"
+    VERSION = "v5.5.0-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -267,7 +269,6 @@ class AppConfig(GlobalConfig):
         )
 
         self.server: Optional[uvicorn.Server] = None
-        self.websocket: Optional[WebSocket] = None
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -688,35 +689,6 @@ class AppConfig(GlobalConfig):
             db.close()
             logger.success("数据文件版本更新完成")
 
-    async def send_json(self, data: dict) -> None:
-        """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(data)
-
-    async def send_websocket_message(
-        self,
-        id: str,
-        type: Literal["Update", "Message", "Info", "Signal"],
-        data: Dict[str, Any],
-    ) -> None:
-        """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            websocket = Config.websocket
-            try:
-                await websocket.send_json(
-                    WebSocketMessage(id=id, type=type, data=data).model_dump()
-                )
-            except (RuntimeError, WebSocketDisconnect) as e:
-                if Config.websocket is websocket:
-                    Config.websocket = None
-                logger.warning(
-                    f"WebSocket 已断开，消息未发送: {e.__class__.__name__}: {e}"
-                )
-
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
 
@@ -758,7 +730,15 @@ class AppConfig(GlobalConfig):
     async def add_script(
         self,
         script: Literal[
-            "MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"
+            "MAA",
+            "SRC",
+            "General",
+            "MaaEnd",
+            "M9A",
+            "MaaFW",
+            "Okww",
+            "OkNte",
+            "HSR",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -768,6 +748,7 @@ class AppConfig(GlobalConfig):
         | GeneralConfig
         | MaaEndConfig
         | M9AConfig
+        | MaaFWConfig
         | OkwwConfig
         | OkNteConfig
         | HSRConfig,
@@ -1029,8 +1010,11 @@ class AppConfig(GlobalConfig):
                         Path(config["Info"]["RootPath"])
                     )
                 )
-            if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
-                Path(os.environ["APPDATA"])
+            if (
+                IS_WINDOWS
+                and Path(config["Script"][path]).is_relative_to(
+                    Path(os.environ["APPDATA"])
+                )
             ):
                 config["Script"][path] = (
                     f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
@@ -1067,6 +1051,7 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
+        | MaaFWUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig,
@@ -1102,6 +1087,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, MaaFWConfig):
+            uid, config = await script_config.UserData.add(MaaFWUserConfig)
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         else:
@@ -1676,10 +1663,15 @@ class AppConfig(GlobalConfig):
         )
 
         try:
-            await self.send_websocket_message(
-                id="GameSign",
-                type="Update",
-                data={"Result": json.dumps(result, ensure_ascii=False)},
+            from app.core.ws import Publisher, protocol
+            from app.models.schema import WSGameSignResultData
+
+            await Publisher.send(
+                id=protocol.ID_GAME_SIGN,
+                type=protocol.GAMESIGN_RESULT_UPDATED,
+                data=WSGameSignResultData(
+                    result=json.dumps(result, ensure_ascii=False)
+                ),
             )
         except Exception as e:
             logger.warning(f"广播游戏签到结果失败: {e}")

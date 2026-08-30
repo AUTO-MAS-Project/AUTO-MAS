@@ -24,6 +24,8 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -207,8 +209,10 @@ class OkNteManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
-                id=self.task_info.task_id, type="Info", data={"Error": self.check_result}
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -231,8 +235,10 @@ class OkNteManager(TaskExecuteBase):
                 current_user = self.script_info.user_list[self.script_info.current_index]
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id, type="Info", data={"Error": sub_check}
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=sub_check),
                 )
                 continue
 
@@ -306,10 +312,13 @@ class OkNteManager(TaskExecuteBase):
                         mark_task_game_sign_summary_consumed(self.task_info)
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
+                        ),
                     )
         finally:
             if script_cfg.is_locked:
@@ -337,8 +346,8 @@ class OkNteManager(TaskExecuteBase):
                 )
         except Exception:
             logger.opt(exception=True).warning("on_crash 写回 UserConfig 失败，放弃本次状态变更")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-NTE任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"OK-NTE任务出现异常: {e}"),
         )

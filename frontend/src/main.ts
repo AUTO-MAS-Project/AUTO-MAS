@@ -7,7 +7,8 @@ import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
-import { configureSentry } from '@/utils/sentry'
+import { configureSentry, recordRendererStartup } from '@/utils/sentry'
+import { getDefaultHttpEndpoint } from '@/utils/backendEndpoint'
 
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
@@ -18,6 +19,7 @@ import 'dayjs/locale/zh-cn'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8
+const rendererStartedAt = performance.now()
 
 // 静态 message 默认从窗口顶部 8px 开始，会覆盖无边框窗口的标题栏。
 message.config({ top: `${TITLE_BAR_HEIGHT + MESSAGE_TOP_GAP}px` })
@@ -42,15 +44,19 @@ if (typeof window.requestIdleCallback === 'function') {
 if (
   (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
 ) {
-  OpenAPI.BASE = 'http://127.0.0.1:36163'
+  OpenAPI.BASE = getDefaultHttpEndpoint()
 }
 
-// 导入WebSocket消息监听组件
-import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
+import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
 // 正常路由：执行完整初始化
 // 配置dayjs中文本地化
 dayjs.locale('zh-cn')
+
+// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
 if (window.electronAPI?.getApiEndpoint) {
@@ -64,12 +70,12 @@ if (window.electronAPI?.getApiEndpoint) {
     .catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
-      OpenAPI.BASE = 'http://127.0.0.1:36163'
+      OpenAPI.BASE = getDefaultHttpEndpoint()
       logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
     })
 } else {
   // 非 Electron 环境，使用默认值
-  OpenAPI.BASE = 'http://127.0.0.1:36163'
+  OpenAPI.BASE = getDefaultHttpEndpoint()
   logger.info('前端应用开始初始化')
   logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
 }
@@ -94,9 +100,7 @@ const bootstrap = async () => {
 
   // 挂载应用
   app.mount('#app')
-
-  // 注册WebSocket消息监听组件
-  app.component('WebSocketMessageListener', WebSocketMessageListener)
+  recordRendererStartup(performance.now() - rendererStartedAt)
 
   logger.info('前端应用初始化完成')
 }

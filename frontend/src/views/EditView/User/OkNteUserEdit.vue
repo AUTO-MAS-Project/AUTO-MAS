@@ -26,12 +26,7 @@
             配置完成后，请点击“保存配置”按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button
-              v-if="oknteWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveOkNteConfig"
-            >
+            <a-button v-if="oknteTaskId" type="primary" size="large" @click="handleSaveOkNteConfig">
               保存配置
             </a-button>
           </div>
@@ -342,6 +337,12 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
@@ -363,8 +364,8 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 const oknteConfigLoading = ref(false)
-const oknteSubscriptionId = ref<string | null>(null)
-const oknteWebsocketId = ref<string | null>(null)
+const oknteSubscriptionIds = ref<string[]>([])
+const oknteTaskId = ref<string | null>(null)
 const showOkNteConfigMask = ref(false)
 const oknteConfigRefreshToken = ref(0)
 let oknteConfigTimeout: number | null = null
@@ -415,6 +416,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Mode: '简洁',
     Resource: '官服',
     RemainedDay: -1,
+    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
@@ -450,11 +452,11 @@ const formData = reactive<OkNteUserFormData>({
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 2} -e`)
 
 const clearOkNteConfigSession = () => {
-  if (oknteSubscriptionId.value) {
-    unsubscribe(oknteSubscriptionId.value)
-    oknteSubscriptionId.value = null
+  for (const subscriptionId of oknteSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  oknteWebsocketId.value = null
+  oknteSubscriptionIds.value = []
+  oknteTaskId.value = null
   showOkNteConfigMask.value = false
   if (oknteConfigTimeout) {
     window.clearTimeout(oknteConfigTimeout)
@@ -555,38 +557,34 @@ const handleOkNteConfig = async () => {
     }
 
     const wsId = response.taskId
-    const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        logger.error(`用户 ${formData.userName} OK-NTE 配置连接失败: ${wsMessage.data}`)
-        message.error(`OK-NTE 配置连接失败: ${wsMessage.data}`)
-        clearOkNteConfigSession()
-        return
-      }
-
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        logger.error(`用户 ${formData.userName} OK-NTE 配置异常: ${wsMessage.data.Error}`)
-        message.error(`OK-NTE 配置失败: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+    const subscriptionIds = [
+      // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+      subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          logger.error(`用户 ${formData.userName} OK-NTE 配置异常: ${data.message}`)
+          message.error(`OK-NTE 配置失败: ${data.message}`)
+        }
+      }),
+      // 处理任务结束消息
+      subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskCompletedData
         logger.info(`用户 ${formData.userName} OK-NTE 配置任务已结束`)
-        const result = String(wsMessage.data.Accomplish || '')
-        if (!result.includes('异常') && !result.includes('错误')) {
+        if (data.outcome === 'success') {
           refreshOkNteConfigEditor()
           message.success(`用户 ${formData.userName} 的 OK-NTE 配置已完成`)
         }
         clearOkNteConfigSession()
-      }
-    })
+      }),
+    ]
 
-    oknteSubscriptionId.value = subscriptionId
-    oknteWebsocketId.value = wsId
+    oknteSubscriptionIds.value = subscriptionIds
+    oknteTaskId.value = wsId
     message.success(`已开始配置用户 ${formData.userName} 的 OK-NTE 设置`)
 
     oknteConfigTimeout = window.setTimeout(
       async () => {
-        if (oknteWebsocketId.value) {
+        if (oknteTaskId.value) {
           message.warning('OK-NTE 配置会话已超时，正在自动保存配置')
           await handleSaveOkNteConfig()
         }
@@ -603,14 +601,14 @@ const handleOkNteConfig = async () => {
 }
 
 const handleSaveOkNteConfig = async () => {
-  const websocketId = oknteWebsocketId.value
-  if (!websocketId) {
+  const taskId = oknteTaskId.value
+  if (!taskId) {
     message.error('未找到活动的 OK-NTE 配置会话')
     return
   }
 
   try {
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response?.code === 200) {
       refreshOkNteConfigEditor()
       clearOkNteConfigSession()

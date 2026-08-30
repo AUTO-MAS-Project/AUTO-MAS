@@ -21,8 +21,8 @@
 
 
 import re
-import base64
-import win32crypt
+
+from app.utils.platform import secret
 
 
 def sanitize_log_message(message: str) -> str:
@@ -104,11 +104,11 @@ def dpapi_encrypt(
 
     if note == "":
         return ""
-
-    encrypted = win32crypt.CryptProtectData(
-        note.encode("utf-8"), description, entropy, None, None, 0
+    return secret.dpapi_encrypt(
+        note,
+        description,
+        entropy,
     )
-    return base64.b64encode(encrypted).decode("utf-8")
 
 
 def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
@@ -125,8 +125,4 @@ def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
 
     if note == "":
         return ""
-
-    decrypted = win32crypt.CryptUnprotectData(
-        base64.b64decode(note), entropy, None, None, 0
-    )
-    return decrypted[1].decode("utf-8")
+    return secret.dpapi_decrypt(note, entropy)

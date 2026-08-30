@@ -10,6 +10,7 @@ import * as http from 'http'
 
 // 导入日志服务
 import { getLogger } from './logger'
+import { getDefaultApiEndpoints, isDevelopmentEnvironment } from './instanceConfig'
 const logger = getLogger('镜像源服务')
 
 // ==================== 类型定义 ====================
@@ -48,10 +49,7 @@ export interface LocalConfigCache {
 
 // ==================== 默认配置 ====================
 
-const DEFAULT_API_ENDPOINTS: ApiEndpoints = {
-  local: 'http://127.0.0.1:36163',
-  websocket: 'ws://127.0.0.1:36163',
-}
+const DEFAULT_API_ENDPOINTS: ApiEndpoints = getDefaultApiEndpoints()
 
 const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
   python: [
@@ -217,6 +215,20 @@ export class MirrorService {
    * 初始化镜像源配置
    * 使用 ETag 机制判断是否需要更新配置
    */
+  /**
+   * 解析生效的 API 端点
+   *
+   * 开发环境固定使用本地默认端点：云端 mirror.json 与本地缓存下发的都是正式版端口，
+   * 一旦被 ETag 刷新覆盖，开发版前端就会转而连上正式版后端。
+   */
+  private resolveApiEndpoints(configured?: ApiEndpoints): ApiEndpoints {
+    if (isDevelopmentEnvironment()) {
+      return { ...DEFAULT_API_ENDPOINTS }
+    }
+
+    return configured || DEFAULT_API_ENDPOINTS
+  }
+
   async initialize(): Promise<void> {
     logger.info('=== 初始化镜像源配置 ===')
 
@@ -224,7 +236,7 @@ export class MirrorService {
     const localCache = this.loadLocalConfig()
     if (localCache) {
       this.mirrorConfig = localCache.config.mirrors
-      this.apiEndpoints = localCache.config.apiEndpoints || DEFAULT_API_ENDPOINTS
+      this.apiEndpoints = this.resolveApiEndpoints(localCache.config.apiEndpoints)
       this.currentEtag = localCache.etag
       logger.info('加载本地缓存配置')
       logger.info(`ETag: ${this.currentEtag || '无'}`)
@@ -237,7 +249,7 @@ export class MirrorService {
       if (result.status === 'updated') {
         // 配置已更新
         this.mirrorConfig = result.config!.mirrors
-        this.apiEndpoints = result.config!.apiEndpoints || DEFAULT_API_ENDPOINTS
+        this.apiEndpoints = this.resolveApiEndpoints(result.config!.apiEndpoints)
         this.currentEtag = result.etag
         this.saveLocalConfig(result.config!, result.etag)
         logger.info('云端配置已更新')

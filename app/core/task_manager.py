@@ -23,8 +23,10 @@
 import uuid
 import asyncio
 import os
+import time
 from pathlib import Path
 from datetime import datetime
+
 from typing import Dict, Literal
 
 from .config import (
@@ -37,11 +39,25 @@ from .config import (
     OkwwConfig,
     OkNteConfig,
     HSRConfig,
+    MaaFWConfig,
 )
 
 # 延迟加载 System，避免 app.services 初始化期间触发循环导入；
 # 绑定为模块级 LazyProxy（真实对象引用），函数体裸名 System 才能经
 # LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
+from .ws import MainConnection, Publisher, protocol
+from app.models.config import CLASS_BOOK
+from app.models.schema import (
+    TaskRuntimeSnapshot,
+    TaskRuntimeSnapshotItem,
+    WSPowerSignData,
+    WSTaskCompletedData,
+    WSTaskCreatedData,
+    WSTaskInfoUpdatedData,
+    WSTaskLogUpdatedData,
+    WSTaskNoticeData,
+    WSTaskScriptIdentityData,
+)
 from app.models.task import (
     ScriptItem,
     TaskExecuteBase,
@@ -51,9 +67,11 @@ from app.models.task import (
 )
 from app.utils import LazyProxy, get_logger
 import app.task as task
-from app.utils.constants import POWER_SIGN_MAP
 
 System = LazyProxy("app.services", "System")
+
+# 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
+_SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 
 logger = get_logger("业务调度")
 
@@ -155,16 +173,18 @@ def _get_src_root_path(script_config: object) -> Path | None:
 class TaskInfo(TaskItem):
 
     async def on_change(self):
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_id,
-            type="Update",
-            data={"task_info": self.asdict},
+            type=protocol.TASK_INFO_UPDATED,
+            data=WSTaskInfoUpdatedData(task_info=self.asdict),
         )
         if self.current_index != -1:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_id,
-                type="Update",
-                data={"log": self.script_list[self.current_index].log},
+                type=protocol.TASK_LOG_UPDATED,
+                data=WSTaskLogUpdatedData(
+                    log=self.script_list[self.current_index].log
+                ),
             )
 
 
@@ -173,27 +193,35 @@ class Task(TaskExecuteBase):
     def __init__(
         self,
         task_info: TaskInfo,
+        script_identities: list[WSTaskScriptIdentityData],
         script_reservations: _ScriptTaskReservations | None = None,
     ):
         super().__init__()
         self.task_info = task_info
+        self.script_identities = script_identities
         self.script_reservations = script_reservations or _ScriptTaskReservations()
         self.is_closing = False
+        self._exit_result = "success"
+        self._exit_error: str | None = None
+
+    def _record_error(self, error: str) -> None:
+        """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
+        if self._exit_result == "success":
+            self._exit_result = "error"
+            self._exit_error = error
+
+    def cancel(self) -> bool:
+        """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        cancelled = super().cancel()
+        if cancelled and self._exit_result == "success":
+            self._exit_result = "cancelled"
+            self._exit_error = "任务执行被取消"
+        return cancelled
 
     async def prepare(self):
 
-        # 初始化任务列表
-        script_ids = (
-            [
-                queue_item.get("Info", "ScriptId")
-                for queue_item in Config.QueueConfig[
-                    uuid.UUID(self.task_info.queue_id)
-                ].QueueItem.values()
-                if queue_item.get("Info", "ScriptId") != "-"
-            ]
-            if self.task_info.script_id is None
-            else [self.task_info.script_id]
-        )
+        # 使用创建任务时冻结的脚本标识，确保执行内容与 task.created/快照一致
+        script_ids = [identity.scriptId for identity in self.script_identities]
 
         self.task_info.script_list = [
             ScriptItem(
@@ -212,6 +240,45 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
+        from app.services.telemetry import (
+            observe_span,
+            record_count,
+            record_distribution,
+        )
+
+        attributes = {
+            "mode": self.task_info.mode,
+            "trigger": self.task_info.trigger_source,
+        }
+        started_at = time.perf_counter()
+        outcome = "success"
+
+        try:
+            with observe_span(
+                name="AUTO-MAS task",
+                op="auto_mas.task.run",
+                attributes=attributes,
+                force_transaction=True,
+            ):
+                await self._run_main_task()
+                outcome = self._exit_result
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            metric_attributes = {**attributes, "outcome": outcome}
+            record_count("auto_mas.task.runs", attributes=metric_attributes)
+            record_distribution(
+                "auto_mas.task.duration",
+                (time.perf_counter() - started_at) * 1000,
+                unit="millisecond",
+                attributes=metric_attributes,
+            )
+
+    async def _run_main_task(self):
 
         # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
         if self.task_info.mode == "AutoProxy":
@@ -261,11 +328,15 @@ class Task(TaskExecuteBase):
             # 检查任务对应脚本是否仍存在
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
+                self._record_error(f"脚本 {current_script_uid} 已被删除")
                 logger.info(f"跳过任务: {current_script_uid}, 该任务对应脚本已被删除")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"任务 {script_item.name} 对应脚本已被删除"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
                 )
                 continue
 
@@ -282,10 +353,13 @@ class Task(TaskExecuteBase):
                 logger.info(
                     f"跳过任务: {current_script_uid}, 该任务已被其他任务调度器锁定"
                 )
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Warning": f"任务 {script_item.name} 已被其他任务调度器锁定"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 已被其他任务调度器锁定",
+                    ),
                 )
                 continue
 
@@ -293,10 +367,13 @@ class Task(TaskExecuteBase):
                 if script_config.is_locked:
                     script_item.status = "跳过"
                     logger.info(f"跳过任务: {current_script_uid}, 该任务配置已被锁定")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Warning": f"任务 {script_item.name} 已被锁定"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="warning",
+                            message=f"任务 {script_item.name} 已被锁定",
+                        ),
                     )
                     continue
 
@@ -332,14 +409,20 @@ class Task(TaskExecuteBase):
                     task_item = task.M9AManager(script_item)
                 elif isinstance(script_config, HSRConfig):
                     task_item = task.HSRManager(script_item)
+                elif isinstance(script_config, MaaFWConfig):
+                    task_item = task.MaaFWEmbeddedManager(script_item)
                 else:
+                    script_item.status = "异常"
+                    self._record_error(
+                        f"不支持的脚本类型: {type(script_config).__name__}"
+                    )
                     logger.error(
                         f"不支持的脚本类型: {type(script_config).__name__}"
                     )
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": "脚本类型不支持"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message="脚本类型不支持"),
                     )
                     continue
 
@@ -352,10 +435,15 @@ class Task(TaskExecuteBase):
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=str(self.task_info.task_id),
-            type="Signal",
-            data={"Accomplish": self.task_info.result},
+            type=protocol.TASK_COMPLETED,
+            data=WSTaskCompletedData(
+                result=self.task_info.result,
+                outcome=self._exit_result,
+                error=self._exit_error,
+                task_info=self.task_info.asdict,
+            ),
         )
 
         if (
@@ -368,16 +456,26 @@ class Task(TaskExecuteBase):
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
                 ].get("Info", "AfterAccomplish")
-                await Config.send_websocket_message(
-                    id="Main", type="Update", data={"PowerSign": Config.power_sign}
+                await Publisher.send(
+                    id=protocol.ID_MAIN,
+                    type=protocol.POWER_SIGN_UPDATED,
+                    data=WSPowerSignData(signal=Config.power_sign),
                 )
 
     async def on_crash(self, e: Exception) -> None:
+        """处理任务异常并记录退出状态。"""
+        if self._exit_result == "success":
+            self._exit_result = "error"
+            self._exit_error = f"{type(e).__name__}: {e}"
+
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"任务出现异常: {type(e).__name__}: {str(e)}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error",
+                message=f"任务出现异常: {type(e).__name__}: {str(e)}",
+            ),
         )
 
 
@@ -390,8 +488,100 @@ class _TaskManager:
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
         self._script_reservations = _ScriptTaskReservations()
+        self._cleanup_tasks: set[asyncio.Task[None]] = set()
+        self._stop_all_lock = asyncio.Lock()
+        self._stopping_all = False
         self._startup_queue_started = False
         self._startup_queue_running = False
+
+    @staticmethod
+    def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
+        """返回队列中实际引用的脚本 ID。"""
+
+        return [
+            uuid.UUID(script_id)
+            for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
+            if (
+                script_id := str(queue_item.get("Info", "ScriptId") or "").strip()
+            )
+            and script_id != "-"
+        ]
+
+    @staticmethod
+    def _script_identity(script_id: uuid.UUID) -> WSTaskScriptIdentityData:
+        """构造脚本静态身份，类型键与 ScriptCreateIn.type 词表一致。"""
+
+        class_name = type(Config.ScriptConfig[script_id]).__name__
+        return WSTaskScriptIdentityData(
+            scriptId=str(script_id),
+            scriptType=_SCRIPT_TYPE_BY_CLASS.get(class_name, class_name),
+        )
+
+    def _scheduled_script_identities(self) -> list[WSTaskScriptIdentityData]:
+        """返回存在有效定时配置的队列脚本身份。"""
+
+        identities: dict[uuid.UUID, WSTaskScriptIdentityData] = {}
+        for queue_id, queue in Config.QueueConfig.items():
+            if not queue.get("Info", "TimeEnabled"):
+                continue
+            if not any(
+                time_set.get("Info", "Enabled")
+                and time_set.get("Info", "Days")
+                for time_set in queue.TimeSet.values()
+            ):
+                continue
+
+            for script_id in self._queue_script_ids(queue_id):
+                if script_id not in Config.ScriptConfig:
+                    continue
+                identities.setdefault(script_id, self._script_identity(script_id))
+
+        return list(identities.values())
+
+    def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
+        """返回任务运行状态与定时队列的 HTTP 初始快照。"""
+
+        tasks: list[TaskRuntimeSnapshotItem] = []
+        for task_uid, task_info in list(self.task_info.items()):
+            log = ""
+            if 0 <= task_info.current_index < len(task_info.script_list):
+                log = task_info.script_list[task_info.current_index].log
+            handler = self.task_handler.get(task_uid)
+            tasks.append(
+                TaskRuntimeSnapshotItem(
+                    taskId=str(task_uid),
+                    mode=task_info.mode,
+                    queueId=task_info.queue_id,
+                    scriptId=task_info.script_id,
+                    userId=task_info.user_id,
+                    stopping=bool(handler and handler.is_closing),
+                    scripts=handler.script_identities if handler else [],
+                    task_info=task_info.asdict,
+                    log=log,
+                )
+            )
+        return TaskRuntimeSnapshot(
+            tasks=tasks,
+            scheduledScripts=self._scheduled_script_identities(),
+        )
+
+    def _schedule_clean_task(self, task_uid: uuid.UUID) -> None:
+        """创建并持有任务收尾协程，结束后统一移出集合。"""
+
+        clean_task = asyncio.create_task(self.clean_task(task_uid))
+        self._cleanup_tasks.add(clean_task)
+
+        def _on_done(done_task: asyncio.Task[None]) -> None:
+            self._cleanup_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            exc = done_task.exception()
+            if exc is not None:
+                logger.error(
+                    f"任务收尾异常({task_uid}): {type(exc).__name__}: {exc}"
+                )
+
+        clean_task.add_done_callback(_on_done)
 
     async def add_task(
         self,
@@ -445,6 +635,18 @@ class _TaskManager:
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
+        # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用
+        target_script_ids = (
+            self._queue_script_ids(queue_id)
+            if queue_id is not None
+            else [script_uid] if script_uid is not None else []
+        )
+        script_identities = [
+            self._script_identity(script_id)
+            for script_id in target_script_ids
+            if script_id in Config.ScriptConfig
+        ]
+
         reservation_owner = str(task_uid)
         reservation_acquired = False
         if script_uid is not None:
@@ -461,11 +663,6 @@ class _TaskManager:
             logger.info(
                 f"创建任务: {task_uid}, 模式: {mode}, 触发来源: {trigger_source}"
             )
-            if new_task_info:
-                new_task_info["newTask"] = str(task_uid)
-                await Config.send_websocket_message(
-                    id="TaskManager", type="Signal", data=new_task_info
-                )
             self.task_info[task_uid] = TaskInfo(
                 mode=mode,
                 task_id=str(task_uid),
@@ -476,10 +673,24 @@ class _TaskManager:
                 trigger_source=trigger_source,
             )
             self.task_handler[task_uid] = Task(
-                self.task_info[task_uid], self._script_reservations
+                self.task_info[task_uid],
+                script_identities,
+                self._script_reservations,
+            )
+            await Publisher.send(
+                id=protocol.ID_TASK_MANAGER,
+                type=protocol.TASK_CREATED,
+                data=WSTaskCreatedData(
+                    taskId=str(task_uid),
+                    mode=mode,
+                    scripts=script_identities,
+                    queueId=str(queue_id) if queue_id else None,
+                    taskName=new_task_info.get("taskName") if new_task_info else None,
+                    taskType=new_task_info.get("taskType") if new_task_info else None,
+                ),
             )
             self.task_handler[task_uid].execute()
-            asyncio.create_task(self.clean_task(task_uid))
+            self._schedule_clean_task(task_uid)
         except BaseException:
             if reservation_acquired and script_uid is not None:
                 self._script_reservations.release(script_uid, reservation_owner)
@@ -506,19 +717,12 @@ class _TaskManager:
 
         if (
             power_enabled
+            and not self._stopping_all
             and len(self.task_handler) == 0
             and Config.power_sign != "NoAction"
         ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
-            await Config.send_websocket_message(
-                id="Main",
-                type="Message",
-                data={
-                    "type": "Countdown",
-                    "title": f"{POWER_SIGN_MAP[Config.power_sign]}倒计时",
-                    "message": f"程序将在倒计时结束后执行 {POWER_SIGN_MAP[Config.power_sign]} 操作",
-                },
-            )
+            # 倒计时进度由电源任务经 power.countdown.updated 持续推送
             await System.start_power_task()
 
     async def stop_task(self, task_id: str) -> None:
@@ -531,33 +735,44 @@ class _TaskManager:
         logger.info(f"中止任务: {task_id}")
 
         if task_id == "ALL":
-            task_item_list = list(self.task_handler.values())
+            async with self._stop_all_lock:
+                self._stopping_all = True
+                # 主动停止全部任务时，禁止触发队列完成后的电源操作
+                Config.power_sign = "NoAction"
+                try:
+                    if System.power_task is not None and not System.power_task.done():
+                        await System.cancel_power_task()
 
-            # 主动停止全部任务时，禁止触发队列完成后的电源操作
-            Config.power_sign = "NoAction"
-            for task_item in task_item_list:
-                if not task_item.is_closing:
-                    task_item.is_closing = True
-                    task_item.cancel()
-
-            if System.power_task is not None and not System.power_task.done():
-                await System.cancel_power_task()
-
-            await asyncio.gather(
-                *(task_item.accomplish.wait() for task_item in task_item_list)
-            )
-            await Config.send_websocket_message(
-                id="Main", type="Update", data={"PowerSign": Config.power_sign}
+                    task_item_list = list(self.task_handler.values())
+                    for task_item in task_item_list:
+                        if not task_item.is_closing:
+                            task_item.cancel()
+                            task_item.is_closing = True
+                            await task_item.accomplish.wait()
+                    cleanup_tasks = [
+                        cleanup for cleanup in self._cleanup_tasks if not cleanup.done()
+                    ]
+                    if cleanup_tasks:
+                        await asyncio.gather(*cleanup_tasks)
+                finally:
+                    # final_task 可能重新写入 AfterAccomplish，主动停止全部任务时必须丢弃。
+                    Config.power_sign = "NoAction"
+                    self._stopping_all = False
+            await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.POWER_SIGN_UPDATED,
+                data=WSPowerSignData(signal=Config.power_sign),
             )
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
                 # 任务已经结束时，中止操作仍视为成功。
+                logger.info(f"任务 {task_id} 已结束，无需中止")
                 return
             if self.task_handler[uid].is_closing:
                 raise RuntimeError("任务已在中止中")
-            self.task_handler[uid].is_closing = True
             self.task_handler[uid].cancel()
+            self.task_handler[uid].is_closing = True
             logger.info(f"等待任务 {task_id} 结束...")
             await self.task_handler[uid].accomplish.wait()
             logger.info(f"任务 {task_id} 已结束")
@@ -573,14 +788,17 @@ class _TaskManager:
             return
 
         self._startup_queue_running = True
-        curday = datetime.now().strftime("%Y-%m-%d")
 
         try:
             await asyncio.sleep(10)
 
-            if Config.websocket is None:
+            if not MainConnection.is_connected:
                 logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
                 return
+
+            # 必须在等待之后取值：若在等待前取，冷启动恰好落在跨日前 10 秒时，
+            # 比较和写入的都是前一天，会漏跑新的一天或在同一天跑两次。
+            curday = datetime.now().strftime("%Y-%m-%d")
 
             self._startup_queue_started = True
             logger.info("开始运行启动时任务")
@@ -589,16 +807,22 @@ class _TaskManager:
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
                     logger.info(f"启动时需要运行的队列：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "启动时代理",
-                        },
-                        trigger_source="startup_task",
-                    )
+                    # 单个队列创建失败（脚本被锁/已在运行）不中断其余启动队列；
+                    # 失败时不写 LastStartupTime，下次启动仍可重试。
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "启动时代理",
+                            },
+                            trigger_source="startup_task",
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
+                        continue
                     await queue.set("Data", "LastStartupTime", curday)
 
                 elif StartUpMode == "DailyFirst":
@@ -610,16 +834,20 @@ class _TaskManager:
                         continue
 
                     logger.info(f"启动时需要运行的队列：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "启动时代理",
-                        },
-                        trigger_source="startup_task",
-                    )
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "启动时代理",
+                            },
+                            trigger_source="startup_task",
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
+                        continue
                     await queue.set("Data", "LastStartupTime", curday)
                 
         finally:

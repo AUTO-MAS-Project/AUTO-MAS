@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
@@ -550,10 +552,10 @@ class HSRManager(TaskExecuteBase):
         if self.check_result != "Pass":
             logger.warning(f"HSR 配置检查未通过：{self.check_result}")
             self._append_log(f"HSR 配置检查未通过：{self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -747,9 +749,7 @@ class HSRManager(TaskExecuteBase):
                     if log_item.status in ("未开始监看日志", "HSR 正常运行中"):
                         log_item.status = "未捕获到日志"
 
-                dt = start_time.replace(
-                    tzinfo=datetime.now().astimezone().tzinfo
-                ).astimezone(UTC4)
+                dt = start_time.astimezone(UTC4)
                 log_path = Config.build_history_log_path(
                     script_name=self.script_info.name,
                     user_name=user_item.name,
@@ -845,10 +845,10 @@ class HSRManager(TaskExecuteBase):
         """通知失败时尽量提示前端；提示失败不影响任务收尾。"""
 
         try:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=message),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"发送 HSR 通知错误提示失败：{e}")
@@ -947,8 +947,8 @@ class HSRManager(TaskExecuteBase):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"HSR 任务出现异常：{e}")
         self._append_log(f"HSR 任务出现异常：{e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"HSR 任务出现异常：{e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"HSR 任务出现异常：{e}"),
         )

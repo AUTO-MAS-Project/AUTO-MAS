@@ -1,15 +1,15 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "v5.5.0-beta.1",
+  "version": "v5.5.0-beta.2",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"yarn watch:main\" \"yarn electron-dev\"",
     "dev:fullstack": "concurrently \"yarn backend\" \"vite\" \"yarn watch:main\" \"yarn electron-dev:wait\"",
-    "backend": "cross-env PYTHONIOENCODING=utf-8 python ../main.py",
-    "electron-dev:wait": "wait-on http://localhost:5173 http://127.0.0.1:36163/openapi.json && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "backend": "cross-env PYTHONIOENCODING=utf-8 AUTO_MAS_HTTP_PORT=36164 python ../main.py",
+    "electron-dev:wait": "wait-on http://localhost:5173 http://127.0.0.1:36164/openapi.json && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build:main": "tsc -p tsconfig.electron.json",
@@ -24,7 +24,7 @@
     "lint:md:fix": "markdownlint-cli2 --fix \"**/*.md\"",
     "format": "oxfmt . --write",
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
-    "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios",
+    "openapi": "openapi --input http://127.0.0.1:36164/openapi.json --output ./src/api --client axios",
     "test": "vitest run"
   },
   "build": {
@@ -68,7 +68,7 @@
     }
   },
   "dependencies": {
-    "@inspira-ui/plugins": "^0.0.2",
+    "@sentry/electron": "7.16.0",
     "@sentry/vue": "10.67.0",
     "adm-zip": "^0.5.16",
     "axios": "1.15.2",

@@ -33,9 +33,14 @@ if str(current_dir) not in sys.path:
 if __name__ == "__main__":
     os.chdir(current_dir)
 
+from app.utils.platform import IS_WINDOWS
 from app.utils import get_logger, sanitize_log_message
 
 logger = get_logger("主程序")
+
+# 正式版固定端口；开发环境错开一位，避免与用户已装正式版抢占同一端口
+DEFAULT_HTTP_PORT = 36163
+DEV_HTTP_PORT = 36164
 
 
 class InterceptHandler(logging.Handler):
@@ -59,7 +64,7 @@ for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
 
 def is_admin() -> bool:
     """检查当前程序是否以管理员身份运行"""
-    if sys.platform == 'win32':
+    if IS_WINDOWS:
         try:
             return ctypes.windll.shell32.IsUserAnAdmin()
         except:  # noqa: E722
@@ -68,7 +73,7 @@ def is_admin() -> bool:
 
 def restart_as_admin():
     """以管理员权限重启当前进程"""
-    if sys.platform == 'win32':
+    if IS_WINDOWS:
         executable = sys.executable.removesuffix('.exe')
         executable += '.exe'
         result = ctypes.windll.shell32.ShellExecuteW(
@@ -100,6 +105,33 @@ def is_hosted_launch() -> bool:
 
     raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def resolve_http_port(development_environment: bool) -> int:
+    """解析 HTTP/WS 监听端口，让开发环境与用户安装的正式版可以同时运行。
+
+    正式版保持 36163 不变；开发环境默认改用 36164，因此源码调试不会再抢占
+    用户已装正式版的端口。前端拉起后端时会注入 AUTO_MAS_HTTP_PORT，保证两侧
+    始终对齐同一个端口。
+
+    Args:
+        development_environment: 当前是否为开发环境。
+
+    Returns:
+        实际用于监听的端口号。
+    """
+
+    raw = str(os.getenv("AUTO_MAS_HTTP_PORT", "")).strip()
+    if raw:
+        try:
+            port = int(raw)
+        except ValueError:
+            port = 0
+        if 1 <= port <= 65535:
+            return port
+        logger.warning(f"AUTO_MAS_HTTP_PORT 取值无效，已忽略: {raw}")
+
+    return DEV_HTTP_PORT if development_environment else DEFAULT_HTTP_PORT
 
 
 @logger.catch
@@ -175,20 +207,25 @@ def main():
                 await Config.get_stage()
                 await Config.clean_old_history()
 
-                # ArknightWin32 导入链含 pyautogui/cv2/numpy (约 700ms 重 CPU)，
-                # 放入线程导入，避免阻塞事件循环影响 API 响应
-                await asyncio.to_thread(
-                    importlib.import_module, "app.MaaFW.ArknightWin32"
-                )
-                from app.MaaFW import ArknightWin32Toolkit
+                if IS_WINDOWS:
+                    for adapter in (
+                        "app.MaaFW.ArknightWin32",
+                        "app.MaaFW.EndFieldPCWin32",
+                    ):
+                        await asyncio.to_thread(importlib.import_module, adapter)
 
-                await ArknightWin32Toolkit.init()
+                    from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+
+                    await ArknightWin32Toolkit.init()
                 await MainTimer.start()
 
                 # 初始化 Koishi 系统客户端（如果已启用）
                 if Config.get("Notify", "IfKoishiSupport"):
+                    from app.api.ws_command import execute_ws_command
                     from app.utils.websocket import ws_client_manager
 
+                    # 出站客户端不再反射导入 API，命令执行器需显式注入
+                    ws_client_manager.set_command_executor(execute_ws_command)
                     await ws_client_manager.init_system_client_koishi()
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
@@ -216,23 +253,46 @@ def main():
         app.state.background_error = None
         background_task = asyncio.create_task(initialize_background_services())
 
-        try:
-            yield
-        finally:
-            # 停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
+        async def shutdown_services() -> None:
+            """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
+
+            from app.core.ws import Dispatcher, MainConnection
+            from app.runtime_tasks import RuntimeTasks
+            from app.services import Matomo, System, Updater
+
+            # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
 
-            await TaskManager.stop_task("ALL")
+            # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
+            await MainConnection.begin_shutdown()
+            await Dispatcher.shutdown()
+            await MainConnection.cancel_hook_tasks()
+
+            # 取消待执行的电源操作（无任务在跑属正常）
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
 
             await MainTimer.stop()
-
-            from app.services import Matomo
-
+            await TaskManager.stop_task("ALL")
+            # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
+            await Updater.cancel_download(notify=False)
+            await RuntimeTasks.shutdown()
             await Matomo.close()
+            logger.info("AUTO-MAS 后端服务清理完成")
 
+        from app.core.lifecycle import ShutdownCoordinator
+
+        ShutdownCoordinator.set_teardown(shutdown_services)
+        try:
+            yield
+        finally:
+            # 覆盖 taskkill 等未经 /close 的退出路径；已由 /close 执行过则跳过
+            await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
 
     from fastapi.middleware.cors import CORSMiddleware
@@ -249,7 +309,6 @@ def main():
         setting_router,
         update_router,
         ocr_router,
-        ws_debug_router,
         qr_login_router,
     )
 
@@ -280,7 +339,6 @@ def main():
     app.include_router(setting_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
-    app.include_router(ws_debug_router)
 
     # 可选补丁：米游社扫码登录
     if qr_login_router is not None:
@@ -298,8 +356,17 @@ def main():
     )
 
     async def run_server():
+        http_port = resolve_http_port(development_environment)
+        logger.info(f"后端监听端口: {http_port}")
+        # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
-            app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+            app,
+            host="0.0.0.0",
+            port=http_port,
+            log_level="info",
+            log_config=None,
+            ws_ping_interval=20.0,
+            ws_ping_timeout=20.0,
         )
         server = uvicorn.Server(config)
 

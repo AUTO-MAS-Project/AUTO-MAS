@@ -23,7 +23,7 @@ class SrcConfigTransactionTest(unittest.TestCase):
                 installation_id,
             )
 
-            other_src_root_path = src_root_path.parent / "other-src"
+            other_src_root_path = src_root_path / "other-src"
             other_src_root_path.mkdir()
             (other_src_root_path / "src.exe").write_bytes(src_exe_path.read_bytes())
             self.assertNotEqual(

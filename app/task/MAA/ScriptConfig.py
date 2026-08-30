@@ -25,14 +25,16 @@ import shutil
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
-from app.utils.constants import MAA_TASKS
 from app.utils.io import read_file, write_file
+from .AutoProxy import _build_maa_preset_task_queue
 
 logger = get_logger("MAA 脚本设置")
 
@@ -114,6 +116,14 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
         default_set = gui_set["Configurations"]["Default"]
+
+        # 配置 GUI 使用与 MAS 运行时一致的任务顺序，并预置合成任务。
+        source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
+        if not isinstance(source_queue, list):
+            source_queue = []
+        gui_new_set["Configurations"]["Default"]["TaskQueue"] = (
+            _build_maa_preset_task_queue(source_queue)
+        )
 
         # 任务间切换方式
         default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
@@ -197,8 +207,8 @@ class ScriptConfigTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"脚本设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
         )

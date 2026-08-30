@@ -20,21 +20,20 @@
 #   Contact: DLmaster_361@163.com
 
 
-import sys
-import ctypes
 import asyncio
 import os
 import psutil
-import subprocess
-import tempfile
-import getpass
-from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from app.utils import LazyProxy, ProcessRunner, get_logger
+from app.core.ws import MainConnection, Publisher, protocol
+from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData
+from app.utils import LazyProxy, get_logger
+from app.utils.platform.process import platform_process
+
+from .platform.power import power
+from .platform.startup import startup
 
 logger = get_logger("系统服务")
 
@@ -52,12 +51,24 @@ class _ProcessPathScan:
 
 
 class _SystemHandler:
-    ES_CONTINUOUS = 0x80000000
-    ES_SYSTEM_REQUIRED = 0x00000001
     countdown = 60
+    frontend_close_timeout = 10.0
 
     def __init__(self) -> None:
         self.power_task: Optional[asyncio.Task] = None
+        self._power_cancelled_event_task: Optional[asyncio.Task] = None
+        self.current_power_operation: Optional[str] = None
+        self.current_power_remaining = 0
+
+    def get_power_countdown_snapshot(self) -> PowerCountdownSnapshot:
+        """返回当前电源倒计时的 HTTP 初始快照。"""
+
+        active = bool(self.power_task is not None and not self.power_task.done())
+        return PowerCountdownSnapshot(
+            active=active,
+            operation=self.current_power_operation if active else None,
+            remaining=self.current_power_remaining if active else 0,
+        )
 
     async def set_Sleep(self, if_allow_sleep: bool) -> None:
         """
@@ -69,137 +80,23 @@ class _SystemHandler:
             是否允许系统休眠
         """
 
-        if if_allow_sleep:
-            # 设置系统电源状态
-            ctypes.windll.kernel32.SetThreadExecutionState(
-                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
-            )
-        else:
-            # 恢复系统电源状态
-            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
+        if not power.supported:
+            # 该方法绑定在配置项上, 启动流程会无条件调用, 因此记录后跳过而非抛出
+            logger.info(f"当前平台不支持阻止休眠, 跳过设置(目标值: {if_allow_sleep})")
+            return
+        await power.set_sleep_prevention(if_allow_sleep)
 
     async def set_SelfStart(self, if_self_start: bool) -> None:
-        """
-        设置程序开机自启
-
-        Parameters
-        ----------
-        if_self_start: bool
-            程序是否开机自启
-        """
+        """设置程序开机自启。"""
 
         # 开发环境不管理需要提权的开机自启任务计划
         if os.getenv("AUTO_MAS_ENV") == "development":
             return
-
-        if if_self_start:
-
-            # 创建或更新任务计划
-
-            # 获取当前用户和时间
-            current_user = getpass.getuser()
-            current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-            # XML 模板
-            xml_content = f"""<?xml version="1.0" encoding="UTF-16"?>
-            <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-                <RegistrationInfo>
-                    <Date>{current_time}</Date>
-                    <Author>{current_user}</Author>
-                    <Description>AUTO-MAS自启动服务</Description>
-                    <URI>\\AUTO-MAS_AutoStart</URI>
-                </RegistrationInfo>
-                <Triggers>
-                    <LogonTrigger>
-                        <StartBoundary>{current_time}</StartBoundary>
-                        <Enabled>true</Enabled>
-                    </LogonTrigger>
-                </Triggers>
-                <Principals>
-                    <Principal id="Author">
-                        <LogonType>InteractiveToken</LogonType>
-                        <RunLevel>HighestAvailable</RunLevel>
-                    </Principal>
-                </Principals>
-                <Settings>
-                    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-                    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-                    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-                    <AllowHardTerminate>false</AllowHardTerminate>
-                    <StartWhenAvailable>true</StartWhenAvailable>
-                    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-                    <IdleSettings>
-                        <StopOnIdleEnd>false</StopOnIdleEnd>
-                        <RestartOnIdle>false</RestartOnIdle>
-                    </IdleSettings>
-                    <AllowStartOnDemand>true</AllowStartOnDemand>
-                    <Enabled>true</Enabled>
-                    <Hidden>false</Hidden>
-                    <RunOnlyIfIdle>false</RunOnlyIfIdle>
-                    <WakeToRun>false</WakeToRun>
-                    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-                    <Priority>7</Priority>
-                </Settings>
-                <Actions Context="Author">
-                    <Exec>
-                        <Command>{Path.cwd() / 'AUTO-MAS.exe'}</Command>
-                        <Arguments>--auto-start</Arguments>
-                    </Exec>
-                </Actions>
-            </Task>"""
-
-            # 创建临时 XML 文件并执行
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".xml", delete=False, encoding="utf-16"
-            ) as f:
-                f.write(xml_content)
-                xml_file = f.name
-
-            try:
-                result = await ProcessRunner.run_process(
-                    "schtasks",
-                    "/create",
-                    "/tn",
-                    "AUTO-MAS_AutoStart",
-                    "/xml",
-                    xml_file,
-                    "/f",
-                )
-
-                if result.returncode == 0:
-                    logger.success(
-                        f"程序自启动任务计划已创建或更新: {Path.cwd() / 'AUTO-MAS.exe'}"
-                    )
-                else:
-                    logger.error(f"程序自启动任务计划创建或更新失败({result.returncode}):")
-                    logger.error(f"  - 标准输出:{result.stdout}")
-                    logger.error(f"  - 错误输出:{result.stderr}")
-
-            except Exception as e:
-                logger.exception(f"程序自启动任务计划创建或更新失败: {e}")
-
-            finally:
-                # 删除临时文件
-                with suppress(Exception):
-                    Path(xml_file).unlink()
-
-        elif not if_self_start and await self.is_startup():
-
-            try:
-
-                result = await ProcessRunner.run_process(
-                    "schtasks", "/delete", "/tn", "AUTO-MAS_AutoStart", "/f"
-                )
-
-                if result.returncode == 0:
-                    logger.success("程序自启动任务计划已删除")
-                else:
-                    logger.error(f"程序自启动任务计划删除失败({result.returncode}):")
-                    logger.error(f"  - 标准输出:{result.stdout}")
-                    logger.error(f"  - 错误输出:{result.stderr}")
-
-            except Exception as e:
-                logger.exception(f"程序自启动任务计划删除失败: {e}")
+        if not startup.supported:
+            # 同上, 启动流程会无条件调用, 记录后跳过
+            logger.info(f"当前平台不支持开机自启, 跳过设置(目标值: {if_self_start})")
+            return
+        await startup.set_enabled(if_self_start)
 
     async def set_power(
         self,
@@ -221,94 +118,46 @@ class _SystemHandler:
         :param mode: 电源操作
         """
 
-        if sys.platform.startswith("win"):
+        if mode == "NoAction":
+            logger.info("不执行系统电源操作")
+            return
 
-            if mode == "NoAction":
+        if mode == "KillSelf" and Config.server is not None:
+            logger.info("执行退出主程序操作")
+            if not from_frontend:
+                await self._request_frontend_close()
+            Config.server.should_exit = True
+            return
 
-                logger.info("不执行系统电源操作")
+        if mode not in power.supported_actions:
+            raise RuntimeError(f"当前平台不支持电源操作: {mode}")
+        if mode in {"Shutdown", "Reboot", "Logoff"}:
+            await self.kill_emulator_processes()
+        logger.info(f"执行电源操作: {mode}")
+        await self._request_frontend_close()
+        await power.execute(mode)
 
-            elif mode == "Shutdown":
+    async def _request_frontend_close(self) -> None:
+        """请求前端退出，并等待主会话断开后才允许执行系统动作。"""
 
-                await self.kill_emulator_processes()
-                logger.info("执行关机操作")
-                subprocess.run(["shutdown", "/s", "/t", "0"])
+        sent = await Publisher.send(
+            id=protocol.ID_MAIN, type=protocol.FRONTEND_CLOSE_REQUESTED
+        )
+        if not sent:
+            # 当前没有前端会话，本身已满足“前端关闭”前置条件。
+            logger.info("当前无前端主连接，继续执行系统电源操作")
+            return
 
-            elif mode == "ShutdownForce":
-                logger.info("执行强制关机操作")
-                subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
+        disconnected = await MainConnection.wait_until_disconnected(
+            timeout=self.frontend_close_timeout
+        )
+        if not disconnected:
+            raise TimeoutError(
+                "前端未在规定时间内完成关闭，已取消系统电源操作"
+            )
 
-            elif mode == "Reboot":
-
-                await self.kill_emulator_processes()
-                logger.info("执行重启操作")
-                subprocess.run(["shutdown", "/r", "/t", "0"])
-
-            elif mode == "Hibernate":
-
-                logger.info("执行休眠操作")
-                subprocess.run(["shutdown", "/h"])
-
-            elif mode == "Sleep":
-
-                logger.info("执行睡眠操作")
-                subprocess.run(
-                    ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
-                )
-
-            elif mode == "KillSelf" and Config.server is not None:
-
-                logger.info("执行退出主程序操作")
-                if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
-                Config.server.should_exit = True
-
-            elif mode == "Logoff":
-
-                await self.kill_emulator_processes()
-                logger.info("执行注销此账户操作")
-                subprocess.run(["shutdown", "/l"])
-
-        elif sys.platform.startswith("linux"):
-
-            if mode == "NoAction":
-
-                logger.info("不执行系统电源操作")
-
-            elif mode == "Shutdown":
-
-                logger.info("执行关机操作")
-                subprocess.run(["shutdown", "-h", "now"])
-
-            elif mode == "Reboot":
-
-                logger.info("执行重启操作")
-                subprocess.run(["shutdown", "-r", "now"])
-
-            elif mode == "Hibernate":
-
-                logger.info("执行休眠操作")
-                subprocess.run(["systemctl", "hibernate"])
-
-            elif mode == "Sleep":
-
-                logger.info("执行睡眠操作")
-                subprocess.run(["systemctl", "suspend"])
-
-            elif mode == "KillSelf" and Config.server is not None:
-
-                logger.info("执行退出主程序操作")
-                if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
-                Config.server.should_exit = True
-
-            elif mode == "Logoff":
-
-                logger.info("执行注销此账户操作")
-                subprocess.run(["loginctl", "terminate-user", getpass.getuser()])
+        # 主连接断开是 renderer 退出的可观测边界；给 Electron 窗口销毁留出短暂调度时间。
+        await asyncio.sleep(0.2)
 
     async def _power_task(
         self,
@@ -323,32 +172,71 @@ class _SystemHandler:
             "Logoff",
         ],
     ) -> None:
-        """电源任务"""
+        """电源任务：逐秒推送倒计时状态，归零后执行电源操作"""
 
-        await asyncio.sleep(self.countdown)
-        await self.set_power(power_sign)
+        self.current_power_operation = power_sign
+        try:
+            for remaining in range(self.countdown, 0, -1):
+                self.current_power_remaining = remaining
+                await Publisher.send(
+                    id=protocol.ID_MAIN,
+                    type=protocol.POWER_COUNTDOWN_UPDATED,
+                    data=WSPowerCountdownData(
+                        operation=power_sign, remaining=remaining
+                    ),
+                )
+                await asyncio.sleep(1)
+            await self.set_power(power_sign)
+        except asyncio.CancelledError:
+            await self._publish_power_cancelled(asyncio.current_task())
+            raise
+        except Exception:
+            await self._publish_power_cancelled(asyncio.current_task())
+            raise
+        finally:
+            self.current_power_operation = None
+            self.current_power_remaining = 0
 
     async def start_power_task(self):
         """开始电源任务"""
 
         if self.power_task is None or self.power_task.done():
-            self.power_task = asyncio.create_task(self._power_task(Config.power_sign))
+            power_sign = Config.power_sign
+            self._power_cancelled_event_task = None
+            power_task = asyncio.create_task(self._power_task(power_sign))
+            self.power_task = power_task
             logger.info(
-                f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"
+                f"电源任务已启动, {self.countdown}秒后执行: {power_sign}"
             )
             Config.power_sign = "NoAction"
         else:
             logger.warning("已有电源任务在运行, 请勿重复启动")
 
+    async def _publish_power_cancelled(
+        self, power_task: Optional[asyncio.Task]
+    ) -> None:
+        """按电源任务身份幂等发布取消事件。"""
+
+        if power_task is not None and self._power_cancelled_event_task is power_task:
+            return
+        self._power_cancelled_event_task = power_task
+        await Publisher.send(
+            id=protocol.ID_MAIN, type=protocol.POWER_COUNTDOWN_CANCELLED
+        )
+
     async def cancel_power_task(self):
         """取消电源任务"""
 
-        if self.power_task is not None and not self.power_task.done():
-            self.power_task.cancel()
+        power_task = self.power_task
+        if power_task is not None and not power_task.done():
+            power_task.cancel()
             try:
-                await self.power_task
+                await power_task
             except asyncio.CancelledError:
                 logger.info("电源任务已取消")
+            self.current_power_operation = None
+            self.current_power_remaining = 0
+            await self._publish_power_cancelled(power_task)
         else:
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")
@@ -371,30 +259,13 @@ class _SystemHandler:
         logger.success("模拟器进程清除完成")
 
     async def is_startup(self) -> bool:
-        """判断程序是否已经开机自启"""
+        """判断程序是否已经开机自启。
 
-        try:
-            result = await ProcessRunner.run_process(
-                "schtasks", "/query", "/tn", "AUTO-MAS_AutoStart"
-            )
-            return result.returncode == 0
-        except Exception as e:
-            logger.exception(f"检查任务计划程序失败: {e}")
-            return False
+        平台不支持开机自启时抛出 UnsupportedPlatformError, 不与「未开启」
+        共用 False; 调用方需在 API 边界转换为用户可见的错误。
+        """
 
-    # async def get_window_info(self) -> list:
-    #     """获取当前前台窗口信息"""
-
-    #     def callback(hwnd, window_info):
-    #         if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
-    #             _, pid = win32process.GetWindowThreadProcessId(hwnd)
-    #             process = psutil.Process(pid)
-    #             window_info.append((win32gui.GetWindowText(hwnd), process.exe()))
-    #         return True
-
-    #     window_info = []
-    #     win32gui.EnumWindows(callback, window_info)
-    #     return window_info
+        return await startup.is_enabled()
 
     async def kill_process(
         self, path: Path | str, *, kill_tree: bool = True
@@ -447,26 +318,17 @@ class _SystemHandler:
             kill_tree (bool): 是否同时中止子进程树。
 
         Returns:
-            bool: taskkill 成功执行时返回 True。
+            bool: 进程成功终止时返回 True。
         """
 
         logger.info(f"开始中止进程 PID: {pid}")
-        args = ["taskkill", "/F"]
-        if kill_tree:
-            args.append("/T")
-        args.extend(["/PID", str(pid)])
-        result = await ProcessRunner.run_process(
-            *args,
-        )
-        if result.returncode != 0:
+        succeeded, reason = await platform_process.kill_process(pid, kill_tree)
+        if not succeeded:
             if not psutil.pid_exists(pid):
                 logger.info(f"进程已自行退出 PID: {pid}")
                 return True
 
-            output = result.stderr.strip() or result.stdout.strip() or "无错误信息"
-            logger.warning(
-                f"进程中止失败 PID: {pid}, 返回码: {result.returncode}, 原因: {output}"
-            )
+            logger.warning(f"进程中止失败 PID: {pid}, {reason}")
             return False
 
         logger.success(f"进程已中止 PID: {pid}")

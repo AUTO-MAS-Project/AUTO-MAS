@@ -23,11 +23,16 @@
 import json
 import psutil
 import asyncio
-import win32gui
-import win32con
-import win32process
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32gui
+    import win32con
+    import win32process
 from contextlib import suppress
 from datetime import datetime, timedelta
+import time
 from pathlib import Path
 
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
@@ -257,10 +262,8 @@ class MumuManager(DeviceBase):
         from app.core import Config
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 if Config.get("Function", "IfBlockAd"):
@@ -306,10 +309,8 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if if_close_mumu_nx:
                 if_close_mumu_nx = not await self.close_mumu_nx_window()
@@ -361,10 +362,8 @@ class MumuManager(DeviceBase):
             if result.returncode != 0:
                 raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-            t = datetime.now()
-            while datetime.now() - t < timedelta(
-                seconds=self.config.get("Info", "MaxWaitTime")
-            ):
+            deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            while time.monotonic() < deadline:
                 status = await self.getStatus(idx)
                 if status == DeviceStatus.OFFLINE:
                     return DeviceStatus.OFFLINE
@@ -576,6 +575,9 @@ class MumuManager(DeviceBase):
         Returns:
             int | None: 窗口句柄，未找到返回 None
         """
+
+        if not IS_WINDOWS:
+            return None
 
         def enum_cb(hwnd: int, result_list: list[int | None]) -> bool:
             if result_list[0] is not None:
