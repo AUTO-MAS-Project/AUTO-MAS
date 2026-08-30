@@ -15,9 +15,9 @@
           class="source-link"
           @click="handleExternalLink"
         >
-          由 {{ sourceName }} 强力支持
+          {{ t('home.sra.poweredBy', { name: sourceName }) }}
         </a-typography-link>
-        <a-tag v-if="overview.Stale" color="orange">缓存数据</a-tag>
+        <a-tag v-if="overview.Stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
       </div>
     </template>
 
@@ -43,25 +43,27 @@
       <div class="version-content">
         <div class="version-badge">
           <span class="badge-dot" />
-          <span class="badge-text">{{ overview.version }} 版本</span>
+          <span class="badge-text">{{
+            t('home.sra.versionBadge', { version: overview.version })
+          }}</span>
         </div>
 
         <div class="version-name">{{ overview.versionName }}</div>
 
         <div class="version-time">
           <ClockCircleOutlined class="version-time-icon" />
-          <span>{{ formatTime(overview.endTime) }} 结束</span>
+          <span>{{ t('home.sra.endsAt', { time: formatTime(overview.endTime) }) }}</span>
         </div>
       </div>
 
       <div class="version-remaining">
-        <div class="remaining-label">版本剩余时间</div>
+        <div class="remaining-label">{{ t('home.sra.versionRemaining') }}</div>
         <a-statistic-countdown
           :value="getCountdownValue(overview.endTime)"
-          format="D 天 H 时"
+          :format="t('home.countdown.dh')"
           :value-style="remainingCountdownStyle"
         />
-        <div class="remaining-sub">即将进入下个版本</div>
+        <div class="remaining-sub">{{ t('home.sra.nextVersionSoon') }}</div>
       </div>
     </div>
 
@@ -71,7 +73,7 @@
         <div class="version-info-name">{{ overview.versionName }}</div>
         <div class="version-info-time">
           <ClockCircleOutlined class="version-info-time-icon" />
-          <span class="version-info-time-label">版本时间：</span>
+          <span class="version-info-time-label">{{ t('home.sra.versionTime') }}</span>
           <span class="version-info-time-value"
             >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
           >
@@ -80,9 +82,13 @@
 
       <div class="version-info-right">
         <a-statistic-countdown
-          title="版本剩余时间"
+          :title="t('home.sra.versionRemaining')"
           :value="getCountdownValue(overview.endTime)"
-          :format="getPlainTimeStatus(overview.endTime) === 'ended' ? '活动已结束' : 'D 天 H 时'"
+          :format="
+            getPlainTimeStatus(overview.endTime) === 'ended'
+              ? t('home.countdown.ended')
+              : t('home.countdown.dh')
+          "
           :value-style="plainRemainingCountdownStyle"
         />
       </div>
@@ -113,11 +119,13 @@
           <div class="activity-meta">
             <a-statistic-countdown
               :value="getCountdownValue(activity.endTime)"
-              format="D 天 H 时"
+              :format="t('home.countdown.dh')"
               :value-style="activityCountdownStyle"
               @finish="emit('refresh')"
             />
-            <div class="activity-end-time">结束于 {{ formatTime(activity.endTime) }}</div>
+            <div class="activity-end-time">
+              {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+            </div>
           </div>
         </div>
       </div>
@@ -128,6 +136,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { CSSProperties } from 'vue'
 import { ClockCircleOutlined } from '@ant-design/icons-vue'
@@ -135,6 +144,8 @@ import type { SraActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
 
 defineOptions({ name: 'HomeSraActivityOverview' })
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{

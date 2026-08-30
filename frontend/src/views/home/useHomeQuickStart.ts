@@ -1,3 +1,4 @@
+import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
@@ -6,11 +7,12 @@ import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 
-const mockSchedulerTasks: ComboBoxItem[] = [
-  { label: '队列 - 每日自动化', value: 'mock-daily-queue' },
-  { label: '脚本 - 通用巡检', value: 'mock-general-check' },
-  { label: '队列 - 夜间批处理', value: 'mock-nightly-queue' },
-]
+// 占位任务：value 是判断依据（startsWith('mock-')），label 只用于展示
+const mockSchedulerTaskDefs = [
+  { key: 'mockDaily', value: 'mock-daily-queue' },
+  { key: 'mockGeneral', value: 'mock-general-check' },
+  { key: 'mockNightly', value: 'mock-nightly-queue' },
+] as const
 
 interface HomeGreetingMessage {
   text: string
@@ -87,6 +89,8 @@ const pickHomeGreeting = (): HomeGreetingMessage => {
   return homeGreetingMessages[index] ?? homeGreetingMessages[0]
 }
 
+const { t } = useI18n()
+
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')
   const { playSound } = useAudioPlayer()
@@ -97,8 +101,14 @@ export const useHomeQuickStart = () => {
   const commandAuthor = ref(homeGreeting.author)
   const schedulerTasksLoading = ref(false)
   const startingHomeTask = ref(false)
-  const schedulerTaskOptions = ref<ComboBoxItem[]>(mockSchedulerTasks)
-  const selectedHomeTaskId = ref<string | null>(mockSchedulerTasks[0]?.value ?? null)
+  const buildMockSchedulerTasks = (): ComboBoxItem[] =>
+    mockSchedulerTaskDefs.map(item => ({
+      label: t(`home.quickStart.${item.key}`),
+      value: item.value,
+    }))
+
+  const schedulerTaskOptions = ref<ComboBoxItem[]>(buildMockSchedulerTasks())
+  const selectedHomeTaskId = ref<string | null>(mockSchedulerTaskDefs[0]?.value ?? null)
   const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
 
   const fetchSchedulerTaskOptions = async (options?: { quiet?: boolean }) => {
@@ -117,16 +127,16 @@ export const useHomeQuickStart = () => {
         return
       }
 
-      schedulerTaskOptions.value = mockSchedulerTasks
-      selectedHomeTaskId.value = mockSchedulerTasks[0]?.value ?? null
+      schedulerTaskOptions.value = buildMockSchedulerTasks()
+      selectedHomeTaskId.value = mockSchedulerTaskDefs[0]?.value ?? null
       if (!options?.quiet) {
-        message.warning('任务列表暂不可用，已显示占位任务')
+        message.warning(t('home.quickStart.listUnavailable'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取首页任务列表失败: ${errorMsg}`)
-      schedulerTaskOptions.value = mockSchedulerTasks
-      selectedHomeTaskId.value = mockSchedulerTasks[0]?.value ?? null
+      schedulerTaskOptions.value = buildMockSchedulerTasks()
+      selectedHomeTaskId.value = mockSchedulerTaskDefs[0]?.value ?? null
     } finally {
       schedulerTasksLoading.value = false
     }
@@ -140,12 +150,12 @@ export const useHomeQuickStart = () => {
 
   const startHomeTask = async () => {
     if (!selectedHomeTaskId.value) {
-      message.error('请选择任务项')
+      message.error(t('home.quickStart.selectTask'))
       return
     }
 
     if (selectedHomeTaskId.value.startsWith('mock-')) {
-      message.info('当前为首页占位任务，接入真实任务列表后可直接启动')
+      message.info(t('home.quickStart.mockNotStartable'))
       return
     }
 
@@ -164,18 +174,18 @@ export const useHomeQuickStart = () => {
           taskId: response.taskId,
           selectedTaskId: selectedHomeTaskId.value,
           selectedMode: selectedHomeMode.value,
-          taskLabel: selectedTask?.label || '首页快速任务',
+          taskLabel: selectedTask?.label || t('home.quickStart.fallbackLabel'),
           modeLabel: '自动代理',
         })
-        message.success('任务已开始')
+        message.success(t('home.quickStart.started'))
         await playSound('task_started')
       } else {
-        message.error(response.message || '开始任务失败')
+        message.error(response.message || t('home.quickStart.startFailed'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`首页开始任务失败: ${errorMsg}`)
-      message.error('开始任务失败，请检查调度服务状态')
+      message.error(t('home.quickStart.startError'))
     } finally {
       startingHomeTask.value = false
     }
