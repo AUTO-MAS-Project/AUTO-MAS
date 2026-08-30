@@ -4,7 +4,9 @@
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import 'dayjs/locale/en'
+import 'dayjs/locale/ja'
 import antdEnUS from 'ant-design-vue/es/locale/en_US'
+import antdJaJP from 'ant-design-vue/es/locale/ja_JP'
 import antdZhCN from 'ant-design-vue/es/locale/zh_CN'
 import { message } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
@@ -17,11 +19,13 @@ const logger = window.electronAPI.getLogger('语言设置')
 const DAYJS_LOCALE: Record<AppLocale, string> = {
   'zh-CN': 'zh-cn',
   'en-US': 'en',
+  'ja-JP': 'ja',
 }
 
 const ANTD_LOCALE = {
   'zh-CN': antdZhCN,
   'en-US': antdEnUS,
+  'ja-JP': antdJaJP,
 }
 
 // 模块级单例，与 useTheme 保持同一模式

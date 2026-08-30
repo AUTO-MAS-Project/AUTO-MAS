@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zhCN from './locales/zh-CN'
 import enUS from './locales/en-US'
+import jaJP from './locales/ja-JP'
 
 const i18n = createI18n({
   legacy: false,
@@ -12,7 +13,7 @@ const i18n = createI18n({
   fallbackLocale: 'zh-CN',
   missingWarn: false,
   fallbackWarn: false,
-  messages: { 'zh-CN': zhCN, 'en-US': enUS },
+  messages: { 'zh-CN': zhCN, 'en-US': enUS, 'ja-JP': jaJP },
 })
 const t = i18n.global.t as (key: string, named?: Record<string, unknown>, plural?: number) => string
 
@@ -24,12 +25,19 @@ const flatten = (node: unknown, prefix = ''): [string, string][] =>
       )
 
 const zhEntries = flatten(zhCN)
-const enEntries = flatten(enUS)
+// 中文が源言語。ほかの言語はここに無いキーを持てない
+const TRANSLATIONS = [
+  ['en-US', flatten(enUS)],
+  ['ja-JP', flatten(jaJP)],
+] as const
 
 describe('词表', () => {
-  it('英文词表的 key 都在中文词表里（中文是源语言）', () => {
+  it('各语言词表的 key 都在中文词表里（中文是源语言）', () => {
     const zhKeys = new Set(zhEntries.map(([k]) => k))
-    expect(enEntries.map(([k]) => k).filter(k => !zhKeys.has(k))).toEqual([])
+    for (const [locale, entries] of TRANSLATIONS) {
+      const extra = entries.map(([k]) => k).filter(k => !zhKeys.has(k))
+      expect([locale, extra]).toEqual([locale, []])
+    }
   })
 
   it('每条词条都能被 vue-i18n 编译', () => {
@@ -52,10 +60,7 @@ describe('词表', () => {
     const literal = /\{'[^']*'\}/g
     const param = /\{[A-Za-z_]\w*\}/g
     const offenders: string[] = []
-    for (const [locale, entries] of [
-      ['zh-CN', zhEntries],
-      ['en-US', enEntries],
-    ] as const) {
+    for (const [locale, entries] of [['zh-CN', zhEntries], ...TRANSLATIONS] as const) {
       for (const [key, value] of entries) {
         if (PLURAL_KEYS.has(key)) continue
         const rest = value.replace(literal, '').replace(param, '')
@@ -85,6 +90,10 @@ describe('词表', () => {
     i18n.global.locale.value = 'en-US'
     expect(t('queue.count', { count: 1 }, 1)).toBe('1 queue')
     expect(t('queue.count', { count: 3 }, 3)).toBe('3 queues')
+    // 日本語は単複同形なので、どちらも同じ文になる
+    i18n.global.locale.value = 'ja-JP'
+    expect(t('queue.count', { count: 1 }, 1)).toBe('1 件のキュー')
+    expect(t('queue.count', { count: 3 }, 3)).toBe('3 件のキュー')
     i18n.global.locale.value = 'zh-CN'
   })
 
