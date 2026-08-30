@@ -17,7 +17,7 @@
             ],
             "开发流程": [
                 "清理前端 TypeScript 类型错误与 ESLint 告警，恢复 typecheck 与 lint 全量通过 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "开发流程 前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，并保持既有规则与格式配置兼容 by [@Craun718](https://github.com/Craun718)"
+                "开发流程 前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，保持既有规则与格式配置兼容，并由每周自动格式化工作流执行 Markdown lint 修复 by [@Craun718](https://github.com/Craun718)"
             ],
             "修复BUG": [
                 "SRC专项 修复任务结束后进程残留、异常清理时配置丢失及 traceback 日志误判人工接管问题 by [@Craun718](https://github.com/Craun718)",
