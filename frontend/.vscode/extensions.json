@@ -1,4 +1,0 @@
-{
-  "recommendations": ["oxc.oxc-vscode", "Vue.volar"],
-  "unwantedRecommendations": ["octref.vetur"]
-}
