@@ -69,11 +69,11 @@ yarn build
 - **桌面端**: Electron
 - **包管理**: Yarn
 
-eslint + Prettier 代码规范相关
+oxlint + oxfmt 代码规范相关
 
 ```bash
 yarn lint          # 查看问题
 yarn lint:fix      # 自动修复
-yarn format        # 仅 Prettier 全量改格式（非必须）
+yarn format        # 仅 oxfmt 全量改格式（非必须）
 yarn typecheck     # 检查 Vue renderer 类型
 ```

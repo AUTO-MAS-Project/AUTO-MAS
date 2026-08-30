@@ -128,7 +128,7 @@ const currentPlanDescriptor = computed(() => {
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
-const clonePlanData = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const clonePlanData = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   const planData = planDataMap.value[planId]

@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+import { useLocale } from '@/composables/useLocale'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
+import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
@@ -40,6 +44,13 @@ const {
   handleLowPerformanceModeChange,
   handleSettingChange,
 } = defineProps<TabBasicProps>()
+
+const { t } = useI18n()
+const { locale, setLocale } = useLocale()
+
+const handleLocaleChange = (value: unknown): void => {
+  void setLocale(value as AppLocale)
+}
 </script>
 
 <template>
@@ -103,6 +114,23 @@ const {
                   />
                   {{ option.label }}
                 </div>
+              </a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('common.language') }}</span>
+              <a-tooltip :title="t('common.languageTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select :value="locale" size="large" style="width: 100%" @change="handleLocaleChange">
+              <a-select-option v-for="item in SUPPORTED_LOCALES" :key="item" :value="item">
+                {{ t(`locale.${item}`) }}
               </a-select-option>
             </a-select>
           </div>

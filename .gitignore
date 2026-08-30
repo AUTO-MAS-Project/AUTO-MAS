@@ -16,7 +16,7 @@ list/
 
 # IDE and editors
 .idea/
-.vscode/
+.vscode
 *.swp
 *.swo
 .DS_Store
