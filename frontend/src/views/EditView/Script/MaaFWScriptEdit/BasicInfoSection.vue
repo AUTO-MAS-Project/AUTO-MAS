@@ -27,9 +27,7 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip
-              title="选择包含 interface.json 的 MFW 项目目录；目前仅支持 MFAAvalonia 与 MXU 两类外壳"
-            >
+            <a-tooltip title="选择包含 interface.json 的 MFW 项目目录">
               <span class="form-label">
                 本地项目目录
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -104,10 +102,6 @@
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
       <h3>选择 MFW 项目</h3>
       <p>选择包含 interface.json 的项目目录，读取控制器、资源和任务。</p>
-      <p class="interface-guide-note">
-        目前仅支持 MFAAvalonia（如 M9A、MaaKes）与 MXU（如 MaaEnd、MaaYYs）两类外壳，
-        其余外壳尚未接入。
-      </p>
       <a-button
         type="primary"
         size="large"
@@ -316,11 +310,6 @@ const emit = defineEmits<{
   margin: 0;
   color: var(--ant-color-text-secondary);
   line-height: 1.6;
-}
-
-.interface-guide-note {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
 }
 
 .interface-guide-icon {

@@ -860,7 +860,11 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    // MFW 新建后进分步引导；其余类型直接进编辑页
+    path:
+      type === 'MaaFW'
+        ? `/scripts/${scriptId}/setup/maafw`
+        : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
       ? {
           state: {
