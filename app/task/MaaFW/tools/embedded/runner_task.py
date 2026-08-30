@@ -83,6 +83,9 @@ _WIN32_INPUT_METHODS = {
 _SUBPROCESS_OUTPUT_ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
 _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
+# worker 输出转发每处理这么多行就让出一次事件循环。取 50 是因为原生诊断
+# 的洪峰约每秒几十行，这个粒度下让出频率约每秒一次，开销可忽略。
+_RELAY_YIELD_EVERY_LINES = 50
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
@@ -1069,7 +1072,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             nonlocal result_payload
             if process.stdout is None:
                 return
+            processed = 0
             async for raw_line in process.stdout:
+                # StreamReader 缓冲里有数据时 `async for` 不会挂起，会一路取到
+                # 缓冲耗尽为止。MaaFramework 的原生诊断动辄每秒几十行、单次运行
+                # 几千行，这个循环于是能连续独占事件循环数十秒——真机上表现为
+                # 界面日志停更、API 不响应、点了停止没反应，等这波处理完才一起
+                # 恢复。定期显式让出，代价可以忽略。
+                processed += 1
+                if processed % _RELAY_YIELD_EVERY_LINES == 0:
+                    await asyncio.sleep(0)
                 # Worker protocol events are UTF-8 JSON, while MaaFramework
                 # native diagnostics may be written directly to stdout using
                 # the Windows ACP/GBK code page.  Decode protocol lines
@@ -1112,7 +1124,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         async def read_stderr() -> None:
             if process.stderr is None:
                 return
+            processed = 0
             async for raw_line in process.stderr:
+                processed += 1
+                if processed % _RELAY_YIELD_EVERY_LINES == 0:
+                    await asyncio.sleep(0)  # 同 read_stdout：别独占事件循环
                 line = _clean_framework_output(_decode_subprocess_output(raw_line)).strip()
                 if not line:
                     continue

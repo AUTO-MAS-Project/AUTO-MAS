@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Literal, TextIO
 
+from packaging.version import InvalidVersion, Version
+
 import maa as maa_package
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
@@ -398,7 +400,25 @@ def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
 
 
 def _normalize_maafw_version(value: str) -> str:
-    return value.strip().lstrip("vV")
+    """把版本串归一到可比较的形式。
+
+    两边的写法本来就不同：原生库报的是语义化版本（``v5.13.0-beta.2``），
+    PyPI 包报的是 PEP 440（``5.13.0b2``）。只剥 ``v`` 前缀不够——那样
+    同一个预发布版会被判成不一致，真机上就误报过一次。
+    """
+
+    raw = value.strip().lstrip("vV")
+    try:
+        return str(Version(raw))
+    except InvalidVersion:
+        return raw
+
+
+def _display_maafw_version(value: str) -> str:
+    """展示用：保证恰好一个 ``v`` 前缀，不重不缺。"""
+
+    raw = value.strip()
+    return "v" + raw.lstrip("vV") if raw else "未知"
 
 
 def _ensure_maafw_global_init(
@@ -417,7 +437,8 @@ def _ensure_maafw_global_init(
             loaded, binding = describe_loaded_maafw()
             source = str(runtime_path) if runtime_path else "runner 运行环境自带"
             send_log(
-                f"MaaFramework 实际加载: v{loaded or '未知'}; 来源={source}"
+                "MaaFramework 实际加载: "
+                f"{_display_maafw_version(loaded)}; 来源={source}"
             )
             versions_differ = (
                 loaded
@@ -429,8 +450,10 @@ def _ensure_maafw_global_init(
                 # 只警告不拦截：现有项目正是这么跑起来的，贸然拦下会让原本能跑的
                 # 直接失败。但必须让人看见——这类不一致不会报错，只会行为不同。
                 send_log(
-                    f"⚠ MaaFramework 版本不一致: 原生库 v{loaded} 与 Python "
-                    f"binding v{binding} 不是同一版本。MaaFW 的 binding 与原生库"
+                    "⚠ MaaFramework 版本不一致: 原生库 "
+                    f"{_display_maafw_version(loaded)} 与 Python binding "
+                    f"{_display_maafw_version(binding)} 不是同一版本。"
+                    "MaaFW 的 binding 与原生库"
                     "是绑定关系，跨版本混用不报错但行为可能不同，"
                     "识别异常时请优先怀疑这里"
                 )
@@ -439,8 +462,8 @@ def _ensure_maafw_global_init(
                 # binding 只保证「官方发布的同版本」，挡不住这种情况，而版本
                 # 一致性检查同样看不出来——只有比字节能发现。
                 send_log(
-                    f"MaaFramework 原生库为项目自带的非官方构建（版本同为 "
-                    f"v{loaded or '未知'}，二进制与官方发行版不同）。"
+                    "MaaFramework 原生库为项目自带的非官方构建（版本同为 "
+                    f"{_display_maafw_version(loaded)}，二进制与官方发行版不同）。"
                     "这是项目的选择，MAS 按其自带的库运行"
                 )
         user_path = (project_path or Path.cwd()).resolve()

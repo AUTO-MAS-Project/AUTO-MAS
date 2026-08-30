@@ -60,16 +60,50 @@ def load():
 
 
 class VersionNormalisationTest(unittest.TestCase):
+    """两边的版本写法本来就不同，比较前必须归一。
+
+    原生库报的是语义化版本（``v5.13.0-beta.2``），PyPI 包报的是 PEP 440
+    （``5.13.0b2``）。真机上误报过一次：当时只剥了 ``v`` 前缀，没做 PEP 440
+    规范化，同一个预发布版被判成不一致。
+    """
+
     def setUp(self) -> None:
         self.module, patcher = load()
         self.addCleanup(patcher.stop)
 
     def test_v_prefix_does_not_count_as_a_mismatch(self) -> None:
-        """Library.version() 带 v 前缀，包版本不带，不能因此误报。"""
-
         normalize = self.module._normalize_maafw_version
         self.assertEqual(normalize("v5.12.3"), normalize("5.12.3"))
         self.assertNotEqual(normalize("v5.13.0"), normalize("5.12.3"))
+
+    def test_prerelease_spellings_are_the_same_version(self) -> None:
+        """真机踩到的那一对：v5.13.0-beta.2 与 5.13.0b2。"""
+
+        normalize = self.module._normalize_maafw_version
+        for native, wheel in (
+            ("v5.13.0-beta.2", "5.13.0b2"),
+            ("v5.13.0-beta.5", "5.13.0b5"),
+            ("5.13.0-beta.1", "5.13.0b1"),
+        ):
+            with self.subTest(native=native):
+                self.assertEqual(normalize(native), normalize(wheel))
+
+    def test_genuinely_different_versions_still_differ(self) -> None:
+        normalize = self.module._normalize_maafw_version
+        self.assertNotEqual(normalize("v5.13.0-beta.2"), normalize("5.12.3"))
+        self.assertNotEqual(normalize("v5.13.0-beta.2"), normalize("5.13.0b5"))
+
+    def test_unparsable_versions_fall_back_to_plain_text(self) -> None:
+        normalize = self.module._normalize_maafw_version
+        self.assertEqual(normalize("vnot-a-version"), "not-a-version")
+
+    def test_display_never_doubles_the_v(self) -> None:
+        """真机日志里出现过 vv5.13.0-beta.2。"""
+
+        display = self.module._display_maafw_version
+        self.assertEqual(display("v5.13.0-beta.2"), "v5.13.0-beta.2")
+        self.assertEqual(display("5.13.0b2"), "v5.13.0b2")
+        self.assertEqual(display(""), "未知")
 
 
 class InitLoggingTest(unittest.TestCase):
@@ -126,6 +160,17 @@ class InitLoggingTest(unittest.TestCase):
     def test_matching_versions_do_not_warn(self) -> None:
         logs = self._run("v5.12.3", "5.12.3")
         self.assertFalse([line for line in logs if line.startswith("⚠")], logs)
+
+    def test_the_real_maayys_pairing_does_not_warn(self) -> None:
+        """MaaYYs 实际的组合：原生库 v5.13.0-beta.2、binding 5.13.0b2。"""
+
+        logs = self._run("v5.13.0-beta.2", "5.13.0b2")
+        self.assertFalse([line for line in logs if line.startswith("⚠")], logs)
+        self.assertTrue(
+            any("vv" not in line for line in logs) and
+            not any("vv" in line for line in logs),
+            logs,
+        )
 
     def test_unknown_version_does_not_warn(self) -> None:
         """取不到版本时不能瞎报，也不能因此挡住运行。"""
