@@ -140,6 +140,8 @@ MAAFW_FAILURE_EVENT_MESSAGES = {
     "Tasker.Task.Failed",
 }
 MAAFW_FAILURE_SUMMARY_LIMIT = 8
+# 失败消息里最多回溯几个节点。再往前是正常走过的路径，列出来只会淹没重点。
+FAILURE_NODE_NAME_LIMIT = 3
 
 
 def decode_bytes(data: bytes) -> str:
@@ -607,12 +609,19 @@ class MaaFWRunner:
             completed_tasks = self._run_tasks()
             if self._failed_task_errors:
                 first_failed_task, _ = self._failed_task_errors[0]
-                error_message = "；".join(
-                    f"{task_name}: {message}"
-                    for task_name, message in self._failed_task_errors[:3]
-                )
-                if len(self._failed_task_errors) > 3:
-                    error_message += f"；另有 {len(self._failed_task_errors) - 3} 个任务失败"
+                if len(self._failed_task_errors) == 1:
+                    # 只有一个任务失败时不带任务名——宿主侧已经拼上了任务标签，
+                    # 再带一次就成了「拜访好友：任务执行失败：VisitFriends: ...」。
+                    error_message = self._failed_task_errors[0][1]
+                else:
+                    error_message = "；".join(
+                        f"{task_name}: {message}"
+                        for task_name, message in self._failed_task_errors[:3]
+                    )
+                    if len(self._failed_task_errors) > 3:
+                        error_message += (
+                            f"；另有 {len(self._failed_task_errors) - 3} 个任务失败"
+                        )
                 return MaaFWRunResult(
                     success=False,
                     projectName=self.plan.projectName,
@@ -2450,16 +2459,68 @@ class MaaFWRunner:
         if len(self._task_failure_summaries) > MAAFW_FAILURE_SUMMARY_LIMIT:
             del self._task_failure_summaries[:-MAAFW_FAILURE_SUMMARY_LIMIT]
 
+    def _resolve_node_names(self, detail: Any | None) -> list[str]:
+        """把最后几个节点的数字 id 解析成名字。
+
+        数字 id 对用户没有任何意义，节点名才说明它停在哪一步。只取末尾几个：
+        再往前是正常走过的路径，列出来只会淹没重点。逐个容错——取不到就跳过，
+        诊断信息不该因为取不到名字而失败。
+        """
+
+        node_ids = list(getattr(detail, "node_id_list", None) or [])
+        if not node_ids or self.tasker is None:
+            return []
+
+        names: list[str] = []
+        for node_id in node_ids[-FAILURE_NODE_NAME_LIMIT:]:
+            try:
+                node = self.tasker.get_node_detail(int(node_id))
+            except Exception:  # pragma: no cover - 诊断信息，取不到就算了
+                continue
+            name = str(getattr(node, "name", "") or "").strip()
+            if name and (not names or names[-1] != name):
+                names.append(name)
+        return names
+
     def _build_job_failure_message(self, detail: Any | None) -> str:
-        parts = ["任务执行失败"]
-        detail_summary = _format_maafw_task_detail(detail)
-        if detail_summary:
-            parts.append(detail_summary)
-        if self._task_failure_summaries:
-            parts.append(
-                "失败事件: " + "；".join(self._task_failure_summaries[-3:])
-            )
-        return ": ".join(parts)
+        """给用户看的失败原因。
+
+        只说「哪里坏了」，不重复任务名，也不带「任务执行失败」——宿主侧已经
+        拼上了任务标签和这句话。内部标识（task_id、节点数字 id）同样不进来：
+        它们对用户没有意义，且完整内容已经在本次运行的 *.maafw.log 里。
+        """
+
+        parts: list[str] = []
+
+        names = self._resolve_node_names(detail)
+        if names:
+            parts.append("最后停在 " + " → ".join(names))
+        elif getattr(detail, "entry", None):
+            # 连节点名都取不到时，入口名至少还能定位到是哪条流程
+            parts.append(f"入口 {detail.entry} 未能走完")
+
+        events = self._describe_failure_events(detail)
+        if events:
+            parts.append(events)
+
+        return "；".join(parts)
+
+    def _describe_failure_events(self, detail: Any | None) -> str:
+        """框架报的失败事件，去掉与节点信息重复的部分。"""
+
+        if not self._task_failure_summaries:
+            return ""
+        entry = str(getattr(detail, "entry", "") or "").strip()
+        kept: list[str] = []
+        for summary in self._task_failure_summaries[-3:]:
+            # `Tasker.Task.Failed, <entry>` 只是重复上面已经说过的入口名
+            if entry and summary.strip() in (
+                f"Tasker.Task.Failed, {entry}",
+                f"Tasker.Task.Failed {entry}",
+            ):
+                continue
+            kept.append(summary)
+        return "框架失败事件: " + "；".join(kept) if kept else ""
 
 def prepare_maafw_agent_python_envs(
     project_path: str | Path,
@@ -2634,45 +2695,6 @@ def _task_display_name(task: MaaFWTaskRunPlan) -> str:
     if isinstance(label, str) and label.strip() and not label.lstrip().startswith("$"):
         return label.strip()
     return task.name
-
-
-def _format_maafw_task_detail(detail: Any | None) -> str:
-    if detail is None:
-        return ""
-
-    parts: list[str] = []
-    entry = getattr(detail, "entry", None)
-    if entry:
-        parts.append(f"entry={entry}")
-
-    task_id = getattr(detail, "task_id", None)
-    if task_id is not None:
-        parts.append(f"task_id={task_id}")
-
-    status = _format_maafw_status(getattr(detail, "status", None))
-    if status:
-        parts.append(f"status={status}")
-
-    node_id_list = getattr(detail, "node_id_list", None)
-    if node_id_list:
-        tail = list(node_id_list)[-5:]
-        parts.append(f"last_nodes={tail}")
-
-    return ", ".join(parts)
-
-
-def _format_maafw_status(status: Any | None) -> str:
-    if status is None:
-        return ""
-
-    status_value = getattr(status, "_status", status)
-    name = getattr(status_value, "name", None)
-    value = getattr(status_value, "value", None)
-    if name is not None and value is not None:
-        return f"{name}({value})"
-    if value is not None:
-        return str(value)
-    return str(status_value)
 
 
 def _format_maafw_failure_event(message: str, details: dict[str, Any]) -> str:
