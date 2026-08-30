@@ -34,6 +34,7 @@ from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 from app.utils.io import read_file, write_file
+from .AutoProxy import _build_maa_preset_task_queue
 
 logger = get_logger("MAA 脚本设置")
 
@@ -115,6 +116,14 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
         default_set = gui_set["Configurations"]["Default"]
+
+        # 配置 GUI 使用与 MAS 运行时一致的任务顺序，并预置合成任务。
+        source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
+        if not isinstance(source_queue, list):
+            source_queue = []
+        gui_new_set["Configurations"]["Default"]["TaskQueue"] = (
+            _build_maa_preset_task_queue(source_queue)
+        )
 
         # 任务间切换方式
         default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除

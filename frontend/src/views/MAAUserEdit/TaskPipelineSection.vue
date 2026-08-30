@@ -2,8 +2,16 @@
   <div class="form-section">
     <div class="section-header">
       <h3>任务配置</h3>
-      <span class="section-note">按执行顺序，从上到下</span>
+      <span class="section-note">剿灭与日常分两次启动 MAA，组内按执行顺序排列</span>
     </div>
+
+    <a-alert
+      message="剿灭作战和日常任务会分别启动两次 MAA"
+      description="启用剿灭时会先单独启动一次 MAA 执行剿灭；剿灭结束后，再启动一次 MAA 执行日常流程。"
+      type="info"
+      show-icon
+      class="task-alert"
+    />
 
     <a-alert
       v-if="activityStageError"
@@ -14,13 +22,13 @@
     />
 
     <div class="task-list">
-      <!-- 剿灭代理：日常之前的独立一轮流程 -->
+      <div class="pipeline-phase">第一次启动 MAA：剿灭流程</div>
       <PipelineRow
-        name="剿灭代理"
+        name="剿灭作战"
         :summary="annihilationSummary"
         :checked="annihilationEnabled"
         :disabled="loading"
-        hint="剿灭是独立的一轮完整流程（唤醒 + 作战），会在下方所有日常流程之前执行"
+        hint="这是一次独立的 MAA 启动，仅执行唤醒和剿灭作战；不会在同一次启动中继续日常任务"
         @change="handleAnnihilationToggle"
       >
         <a-row :gutter="16">
@@ -74,13 +82,13 @@
         </a-row>
       </PipelineRow>
 
-      <!-- 活动关作战：紧跟唤醒之后插入队列 -->
+      <div class="pipeline-phase">第二次启动 MAA：日常流程</div>
       <PipelineRow
-        name="活动关作战"
+        name="活动关优先"
         :summary="activitySummary"
         :checked="activityFirst"
         :disabled="loading"
-        hint="启用后会在日常理智作战之前优先刷取活动关卡"
+        hint="这是日常流程中的独立合成任务，会在普通理智作战之前执行"
         @change="handleActivityToggle"
       >
         <a-row :gutter="16">
@@ -126,7 +134,7 @@
         </a-row>
       </PipelineRow>
 
-      <!-- 库存保持：MAA_TASKS 第 3 位，计划模式下后端强制关闭 -->
+      <!-- 库存保持：日常流程中的独立任务，计划模式下后端强制关闭 -->
       <PipelineRow
         name="库存保持"
         :summary="depotSummary"
@@ -413,6 +421,14 @@ const depotSummary = computed(() =>
 
 .task-alert {
   margin: 12px 0;
+}
+
+.pipeline-phase {
+  padding: 12px 4px 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .daily-checks {
