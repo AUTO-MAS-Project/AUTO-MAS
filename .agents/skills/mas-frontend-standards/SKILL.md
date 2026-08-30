@@ -97,13 +97,15 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 
 All commands run from `frontend/`.
 
-**The repo-wide baseline is clean.** On untouched `dev` (verified 2026-08-30), `yarn lint` reports 0 errors and 1 long-standing `vue/no-v-html` warning, `yarn typecheck` reports 0 errors, and `yarn test` is fully green. `weekly-format.yml` re-runs `ruff format`, `yarn lint:fix` and `yarn format` on `dev` every Monday, so formatting drift does not accumulate.
+**The repo-wide baseline is clean.** On untouched `dev` (verified 2026-08-30), `yarn lint` reports 0 errors and exactly 1 warning (`vue/no-v-html` in `LogPatternDocsModal.vue`, which arrived with #399 on 2026-08-27), `yarn typecheck` reports 0 errors, and `yarn test` is fully green. `weekly-format.yml` re-runs `ruff format`, `yarn lint:fix` and `yarn format` on `dev` every Monday, so formatting drift does not accumulate.
 
-**Therefore any lint or typecheck error you see is almost certainly yours.** Do not dismiss it as pre-existing noise without first checking the same command on an untouched checkout.
+**Therefore any lint or typecheck error you see is almost certainly yours.** Do not dismiss it as pre-existing noise without first checking the same command on an untouched checkout — the repository runs no lint, typecheck or test CI, so this baseline is held by convention alone and can drift.
+
+Maintenance note: the warning budget of 1 exists only because that single `vue/no-v-html` is unfixed. Once it is suppressed or resolved, tighten the gate to `--max-warnings 0`; leaving the budget at 1 silently permits one arbitrary new warning.
 
 | Touched surface | Command | Passing criterion |
 | --- | --- | --- |
-| Any business code | `yarn eslint . --max-warnings 1` | exit 0. Warnings count: the budget of 1 is the single pre-existing `vue/no-v-html`, so any new warning fails the gate. `yarn lint` alone only surfaces errors — Yarn does not forward `--max-warnings` to the script, hence the direct `yarn eslint` form. |
+| Any business code | `yarn lint --max-warnings 1` | exit 0. The budget of 1 covers the single known warning (`vue/no-v-html`, introduced with #399), so any additional warning fails the gate. Plain `yarn lint` prints warnings but does not fail on them. |
 | Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | 0 errors |
 | A module with a sibling `*.test.ts`, or shared logic/styles under test | `yarn test` | fully green |
 | Build, routing, or Electron entry | `yarn build` | succeeds |
@@ -112,7 +114,7 @@ All commands run from `frontend/`.
 
 Rules:
 
-1. Run `yarn lint`, `yarn typecheck` and `yarn test` whole. All three can and should pass; there is no baseline to subtract.
+1. Run all three gates whole — `yarn lint --max-warnings 1`, `yarn typecheck`, `yarn test`. They can and should pass; there is no baseline to subtract. Use the `--max-warnings` form, not plain `yarn lint`, or new warnings slip through.
 2. Lint and typecheck are still orthogonal — they check different things, so passing one says nothing about the other. Run both.
 3. `yarn lint:fix` resolves `prettier/prettier` findings; use it rather than hand-formatting. Warnings are part of the gate — do not leave a new one behind.
 4. A failure in any of the three is yours until proven otherwise. If you believe it pre-exists, verify on an untouched checkout and say so explicitly in your result.
