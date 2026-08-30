@@ -902,6 +902,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     int(self.script_config.get("Run", "RunTimeLimit") or 30) * 60
                     + 600,
                 ),
+                # worker 跑在 runtime pool 的隔离 venv 里，代码要靠 PYTHONPATH
+                # 找到本仓。插件形态下这里给的是插件目录（get_plugin_import_paths），
+                # 树内对应物就是仓库根。只给代码路径、不给宿主 venv 的
+                # site-packages，隔离 venv 里的 maafw 因此仍然优先。
+                import_paths=[Path.cwd()],
                 send_log=send_runner_log,
             )
         )

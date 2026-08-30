@@ -35,6 +35,11 @@ RUNNER_DEFAULT_PACKAGES = (
     "pydantic==2.11.7",
     "json5==0.14.0",
     "json-with-comments",
+    # worker 子进程自身要用：runner 与 worker 看门狗用 psutil，
+    # runtime_pool 用 packaging。插件形态下它们由插件目录经 PYTHONPATH
+    # 提供，树内没有那层，必须装进 runner venv。
+    "psutil",
+    "packaging",
 )
 RUNNER_ENV_TIMEOUT = 300
 DEFAULT_RUNTIME_LEASE_TTL_SECONDS = 24 * 60 * 60
