@@ -634,8 +634,7 @@ const handleGeneralConfig = async () => {
           const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息
-          const result = data.result
-          if (result && !result.includes('异常') && !result.includes('错误')) {
+          if (data.outcome === 'success') {
             message.success(`用户 ${formData.userName} 的配置已完成`)
           }
           // 清理连接
