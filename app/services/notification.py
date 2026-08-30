@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.models.config import Webhook
+from app.utils.constants import UTC4
 from app.utils import LazyProxy, get_logger
 
 logger = get_logger("通知服务")
@@ -279,6 +280,9 @@ class Notification:
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "time": datetime.now().strftime("%H:%M:%S"),
+                # 游戏日（东 4 区），与历史记录归档的日期分组一致。
+                # {date} 保持本地日期语义不变。
+                "gamedate": datetime.now(tz=UTC4).strftime("%Y-%m-%d"),
             }
 
             logger.debug("开始解析 Webhook 消息模板")
