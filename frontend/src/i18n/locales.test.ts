@@ -51,6 +51,16 @@ describe('词表', () => {
     expect(t('scheduler.tabName', { n: 2 })).toBe('调度台2')
   })
 
+  // 计数类文案在英文下要区分单复数，中文两个形式写成一样的
+  it('计数文案的单复数', () => {
+    expect(t('queue.count', { count: 1 }, 1)).toBe('1 个队列')
+    expect(t('queue.count', { count: 3 }, 3)).toBe('3 个队列')
+    i18n.global.locale.value = 'en-US'
+    expect(t('queue.count', { count: 1 }, 1)).toBe('1 queue')
+    expect(t('queue.count', { count: 3 }, 3)).toBe('3 queues')
+    i18n.global.locale.value = 'zh-CN'
+  })
+
   // 词表少一条 key 时 t() 会把 key 原样渲染出来，页面上就是一串 comp.enabled，
   // 但 lint / typecheck / 其余单测都不报错，只能靠这里兜。
   it('源码里用到的 key 在中文词表里都有', () => {

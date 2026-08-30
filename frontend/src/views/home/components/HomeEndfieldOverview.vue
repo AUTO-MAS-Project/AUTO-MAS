@@ -75,7 +75,11 @@
       <div class="activity-section-header">
         <span>{{ t('home.endfield.concurrent') }}</span>
         <span class="activity-count">{{
-          t('home.endfield.ongoing', { count: overview.Activities.length })
+          t(
+            'home.endfield.ongoing',
+            { count: overview.Activities.length },
+            overview.Activities.length
+          )
         }}</span>
       </div>
 

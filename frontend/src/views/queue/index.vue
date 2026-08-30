@@ -59,7 +59,7 @@
           <div class="card-title">
             <span>{{ t('queue.selectLabel') }}</span>
             <a-tag :color="queueList.length > 0 ? 'success' : 'default'">
-              {{ t('queue.count', { count: queueList.length }) }}
+              {{ t('queue.count', { count: queueList.length }, queueList.length) }}
             </a-tag>
           </div>
         </template>

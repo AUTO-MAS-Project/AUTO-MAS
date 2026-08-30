@@ -16,7 +16,7 @@
         <a-breadcrumb-item>
           <span class="breadcrumb-current">
             <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
-            {{ currentLabel ?? (isEdit ? '编辑用户' : '添加用户') }}
+            {{ currentLabel ?? (isEdit ? t('comp.editUser') : t('comp.addUser2')) }}
           </span>
         </a-breadcrumb-item>
       </a-breadcrumb>

@@ -4,7 +4,7 @@
       <div class="card-title">
         <span>{{ t('plan.selectLabel') }}</span>
         <a-tag :color="planList.length > 0 ? 'success' : 'default'">
-          {{ t('plan.count', { count: planList.length }) }}
+          {{ t('plan.count', { count: planList.length }, planList.length) }}
         </a-tag>
       </div>
     </template>

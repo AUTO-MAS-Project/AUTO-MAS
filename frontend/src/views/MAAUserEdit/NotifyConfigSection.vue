@@ -26,13 +26,13 @@
           v-model:checked="formData.Notify.IfSendStatistic"
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-          >统计信息
+          >{{ t('edit.notifyStatistics') }}
         </a-checkbox>
         <a-checkbox
           v-model:checked="formData.Notify.IfSendSixStar"
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfSendSixStar', formData.Notify.IfSendSixStar)"
-          >公开招募高资喜报
+          >{{ t('edit.notifyRecruit') }}
         </a-checkbox>
       </a-col>
     </a-row>
@@ -44,7 +44,7 @@
           v-model:checked="formData.Notify.IfSendMail"
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfSendMail', formData.Notify.IfSendMail)"
-          >邮件通知
+          >{{ t('edit.notifyMail') }}
         </a-checkbox>
       </a-col>
       <a-col :span="18">
@@ -66,7 +66,7 @@
           v-model:checked="formData.Notify.IfServerChan"
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfServerChan', formData.Notify.IfServerChan)"
-          >Server酱
+          >{{ t('edit.notifyServerChan') }}
         </a-checkbox>
       </a-col>
       <a-col :span="18" style="display: flex; gap: 8px">

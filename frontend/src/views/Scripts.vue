@@ -343,7 +343,13 @@
                 </span>
                 <span class="script-users">
                   <UserOutlined />
-                  {{ t('scripts.userCount', { count: script.users?.length || 0 }) }}
+                  {{
+                    t(
+                      'scripts.userCount',
+                      { count: script.users?.length || 0 },
+                      script.users?.length || 0
+                    )
+                  }}
                 </span>
               </div>
             </div>
