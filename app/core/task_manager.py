@@ -410,7 +410,13 @@ class Task(TaskExecuteBase):
                 elif isinstance(script_config, HSRConfig):
                     task_item = task.HSRManager(script_item)
                 elif isinstance(script_config, MaaFWConfig):
-                    task_item = task.MaaFWManager(script_item)
+                    # Run.Engine 决定「谁来跑」：embedded 走第二层（MAS 进程内
+                    # runner，默认且是 UI 唯一暴露的方式），external 走第一层
+                    # （启动项目自己的 UI shell），仅旧配置或手改配置文件可达。
+                    if script_config.get("Run", "Engine") == "embedded":
+                        task_item = task.MaaFWEmbeddedManager(script_item)
+                    else:
+                        task_item = task.MaaFWManager(script_item)
                 else:
                     script_item.status = "异常"
                     self._record_error(

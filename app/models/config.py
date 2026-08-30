@@ -2447,7 +2447,9 @@ class MaaFWConfig(ConfigBase):
             "Game",
             "LaunchMode",
             "AttachOnly",
-            OptionsValidator(["AttachOnly", "DirectExe", "LauncherExe", "URL"]),
+            # 只保留两种：我自己启动游戏（AttachOnly）/ 让 MAS 启动并按设置关闭
+            # （DirectExe）。LauncherExe 与 URL 已下线，旧配置由校验器纠正回默认值。
+            OptionsValidator(["AttachOnly", "DirectExe"]),
         )
         ## 启动目标路径（DirectExe 为客户端，LauncherExe 为启动器）
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
@@ -2549,9 +2551,14 @@ class MaaFWConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
-        ## 运行引擎，当前仅支持外部运行（manager.py 的启动前校验依赖该值）
+        ## 运行引擎，决定「谁来跑」：
+        ## embedded = MAS 在自己的 worker 进程内加载项目 DLL 直接驱动（默认）；
+        ## external = 启动项目自己的 UI shell 让它自运行。
+        ## **前端不暴露该开关**，MaaFW 统一走内置运行；external 保留为配置级
+        ## 自救通道（内置运行出问题时可手工改配置文件切回），第一层代码因此保留。
+        ## task_manager 按本值分派 MaaFWEmbeddedManager / MaaFWManager。
         self.Run_Engine = ConfigItem(
-            "Run", "Engine", "external", OptionsValidator(["external"])
+            "Run", "Engine", "embedded", OptionsValidator(["external", "embedded"])
         )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(

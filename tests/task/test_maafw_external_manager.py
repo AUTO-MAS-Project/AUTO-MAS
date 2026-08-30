@@ -2627,6 +2627,9 @@ class MaaFWExternalManagerTest(unittest.TestCase):
                     "Controller": "安卓端",
                     "Resource": "简中",
                 },
+                # 本文件测的是第一层（外部运行）。Run.Engine 默认已改为 embedded，
+                # 这里显式钉住 external，避免夹具默认值漂移把整组测试带偏。
+                "Run": {"Engine": "external"},
             }
         )
         if run_config:

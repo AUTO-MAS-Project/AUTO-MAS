@@ -1814,7 +1814,7 @@ class MaaFWConfig_Device(BaseModel):
 
 class MaaFWConfig_Game(BaseModel):
     LaunchMode: Optional[
-        Literal["AttachOnly", "DirectExe", "LauncherExe", "URL"]
+        Literal["AttachOnly", "DirectExe"]
     ] = Field(default=None, description="游戏启动模式")
     LaunchPath: Optional[str] = Field(default=None, description="启动目标路径")
     LaunchURL: Optional[str] = Field(default=None, description="系统协议启动 URL")
@@ -1853,8 +1853,11 @@ class MaaFWConfig_Update(BaseModel):
 
 
 class MaaFWConfig_Run(BaseModel):
-    Engine: Literal["external"] = Field(
-        default="external", description="MaaFW 运行引擎"
+    Engine: Literal["external", "embedded"] = Field(
+        default="embedded",
+        description="MaaFW 运行引擎：embedded 由 MAS 进程内 runner 直接驱动（默认）；"
+        "external 启动项目自己的 UI shell。前端不暴露该开关，"
+        "external 仅作为配置级自救通道保留",
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
@@ -2164,6 +2167,55 @@ class MaaFWProjectUpdateData(BaseModel):
 class MaaFWProjectUpdateOut(OutBase):
     data: Optional[MaaFWProjectUpdateData] = Field(
         default=None, description="MaaFW 项目更新结果"
+    )
+
+
+class MaaFWAgentEnvPrepareIn(BaseModel):
+    path: str = Field(..., description="MFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None, description="脚本 ID，仅用于日志定位"
+    )
+
+
+class MaaFWAgentEnvInfo(BaseModel):
+    childExec: str = Field(..., description="interface 声明的 agent child_exec")
+    executable: str = Field(..., description="实际使用的解释器或可执行文件")
+    runtimeKind: Optional[str] = Field(
+        default=None,
+        description="agent 运行时类型：project_python / project_binary / "
+        "isolated_venv / embedded / external",
+    )
+    isolatedVenvPath: Optional[str] = Field(
+        default=None, description="该 agent 专属隔离 venv 路径"
+    )
+    fallbackReason: Optional[str] = Field(
+        default=None, description="回退原因，供用户排查"
+    )
+
+
+class MaaFWAgentEnvPrepareData(BaseModel):
+    path: str = Field(..., description="MFW 项目根目录")
+    agentCount: int = Field(default=0, description="agent 数量")
+    agents: List[MaaFWAgentEnvInfo] = Field(
+        default_factory=list, description="各 agent 的运行环境信息"
+    )
+    logs: List[str] = Field(default_factory=list, description="准备过程日志")
+    runtimeId: Optional[str] = Field(
+        default=None, description="Runtime Pool 中的 runtime ID"
+    )
+    poolId: Optional[str] = Field(default=None, description="Runtime Pool 身份")
+    pythonExecutable: Optional[str] = Field(
+        default=None, description="Runner 使用的 Python 解释器"
+    )
+    venvPath: Optional[str] = Field(default=None, description="Runner 虚拟环境路径")
+    maafwVersion: Optional[str] = Field(
+        default=None, description="实际解析到的 MaaFramework 版本"
+    )
+
+
+class MaaFWAgentEnvPrepareOut(OutBase):
+    data: Optional[MaaFWAgentEnvPrepareData] = Field(
+        default=None, description="MFW 运行环境准备结果"
     )
 
 
@@ -2939,6 +2991,16 @@ class WSUpdateProgressData(BaseModel):
     file_size: int = Field(..., description="文件总字节数")
     speed: float = Field(..., description="下载速度 (B/s)")
     source: str = Field(..., description="下载源")
+
+
+class WSMaaFWEnvPrepareProgressData(BaseModel):
+    """MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress)"""
+
+    stage: str = Field(..., description="阶段：resolving / creating_runtime / installing_runtime / runtime_ready / reused / failed 等")
+    status: str = Field(..., description="running / success / failed")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    percent: Optional[float] = Field(default=None, description="总体进度百分比，未知时为 null")
+    log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
 
 
 class WSUpdateCompletedData(BaseModel):

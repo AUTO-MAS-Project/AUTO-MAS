@@ -8,7 +8,7 @@
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="../../../assets/maafw.png" alt="MFW" class="breadcrumb-logo" />
-            {{ projectDisplayName }} 项目配置
+            {{ projectDisplayName }} {{ isWizard ? '项目引导' : '项目配置' }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -25,91 +25,142 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card :title="`${projectDisplayName} 项目配置`" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="`${projectDisplayName} ${isWizard ? '项目引导' : '项目配置'}`"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
-        <a-tag color="geekblue" class="type-tag"> MFW（外部运行）</a-tag>
+        <a-tag color="geekblue" class="type-tag"> MFW</a-tag>
       </template>
 
+      <a-steps
+        v-if="isWizard"
+        size="small"
+        :current="currentStep"
+        :items="stepItems"
+        class="wizard-steps"
+      />
+
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <BasicInfoSection
-          :maafw-config="maafwConfig"
-          :form-data="formData"
-          :rules="rules"
-          :preview-data="previewData"
-          :interface-loading="previewLoading"
-          :preview-project-title="previewProjectTitle"
-          :interface-stats="interfaceStats"
-          :update-applying="updateApplying"
-          @change="handleChange"
-          @select-path="selectMaaFWPath"
-          @preview-interface="handlePreviewInterface"
-        />
+        <div v-show="!isWizard || currentStep === 0">
+          <BasicInfoSection
+            :maafw-config="maafwConfig"
+            :form-data="formData"
+            :rules="rules"
+            :preview-data="previewData"
+            :interface-loading="previewLoading"
+            :preview-project-title="previewProjectTitle"
+            :interface-stats="interfaceStats"
+            :update-applying="updateApplying"
+            @change="handleChange"
+            @select-path="selectMaaFWPath"
+            @preview-interface="handlePreviewInterface"
+          />
 
-        <ControlConfigSection
-          :maafw-config="maafwConfig"
-          :preview-data="previewData"
-          :interface-loading="previewLoading"
-          :emulator-loading="emulatorLoading"
-          :emulator-options-ready="emulatorOptionsReady"
-          :emulator-device-loading="emulatorDeviceLoading"
-          :emulator-options="emulatorOptions"
-          :emulator-device-options="emulatorDeviceOptions"
-          :emulator-type-by-id="emulatorTypeById"
-          :controller-options="controllerOptions"
-          :effective-controller-name="effectiveControllerName"
-          :effective-controller-type="effectiveControllerType"
-          :is-adb-controller="isAdbController"
-          :is-desktop-controller="isDesktopController"
-          :resource-options="resourceOptions"
-          :unsupported-controller-options="unsupportedControllerOptions"
-          :unsupported-controller-message="unsupportedControllerMessage"
-          :adb-control-strategy-message="adbControlStrategyMessage"
-          :adb-control-strategy-items="adbControlStrategyItems"
-          :selected-emulator-label="selectedEmulatorLabel"
-          :interface-dependent-disabled="interfaceDependentDisabled"
-          @change="handleChange"
-          @controller-change="handleControllerChange"
-          @resource-change="handleResourceChange"
-          @emulator-select-change="handleEmulatorSelectChange"
-          @select-launch-path="selectLaunchPath"
-        />
+          <a-alert
+            v-if="envPreparing || envReady || envMessage"
+            class="env-prepare-alert"
+            :type="envPreparing ? 'info' : envReady ? 'success' : 'error'"
+            show-icon
+            :message="envMessage"
+          >
+            <template v-if="envPreparing" #icon>
+              <LoadingOutlined spin />
+            </template>
+            <template v-if="envReady && envAgents.length" #description>
+              已就绪的 Agent：{{ envAgents.map(a => a.runtimeKind || '未知').join('、') }}
+            </template>
+          </a-alert>
+        </div>
 
-        <UpdateSettingsSection
-          :maafw-config="maafwConfig"
-          :preview-data="previewData"
-          :is-auto-update-disabled="isAutoUpdateDisabled"
-          :update-checking="updateChecking"
-          :update-applying="updateApplying"
-          :update-error="updateError"
-          :update-result="updateResult"
-          :update-source-options="updateSourceOptions"
-          :update-channel-options="updateChannelOptions"
-          @change="handleChange"
-          @check-update="runUpdateCheck"
-          @apply-update="runUpdateApply"
-        />
+        <div v-show="!isWizard || currentStep === 1">
+          <ControlConfigSection
+            :maafw-config="maafwConfig"
+            :preview-data="previewData"
+            :interface-loading="previewLoading"
+            :emulator-loading="emulatorLoading"
+            :emulator-options-ready="emulatorOptionsReady"
+            :emulator-device-loading="emulatorDeviceLoading"
+            :emulator-options="emulatorOptions"
+            :emulator-device-options="emulatorDeviceOptions"
+            :emulator-type-by-id="emulatorTypeById"
+            :controller-options="controllerOptions"
+            :effective-controller-name="effectiveControllerName"
+            :effective-controller-type="effectiveControllerType"
+            :is-adb-controller="isAdbController"
+            :is-desktop-controller="isDesktopController"
+            :resource-options="resourceOptions"
+            :unsupported-controller-options="unsupportedControllerOptions"
+            :unsupported-controller-message="unsupportedControllerMessage"
+            :adb-control-strategy-message="adbControlStrategyMessage"
+            :adb-control-strategy-items="adbControlStrategyItems"
+            :selected-emulator-label="selectedEmulatorLabel"
+            :interface-dependent-disabled="interfaceDependentDisabled"
+            @change="handleChange"
+            @controller-change="handleControllerChange"
+            @resource-change="handleResourceChange"
+            @emulator-select-change="handleEmulatorSelectChange"
+            @select-launch-path="selectLaunchPath"
+          />
+        </div>
 
-        <RunConfigSection
-          :maafw-config="maafwConfig"
-          :daily-once-tasks="dailyOnceTasks"
-          :weekly-once-tasks="weeklyOnceTasks"
-          :monthly-once-tasks="monthlyOnceTasks"
-          :period-task-options="periodTaskOptions"
-          :interface-dependent-disabled="interfaceDependentDisabled"
-          @change="handleChange"
-          @period-task-change="handlePeriodTaskChange"
-        />
+        <div v-show="!isWizard || currentStep === 2">
+          <UpdateSettingsSection
+            :maafw-config="maafwConfig"
+            :preview-data="previewData"
+            :is-auto-update-disabled="isAutoUpdateDisabled"
+            :update-checking="updateChecking"
+            :update-applying="updateApplying"
+            :update-error="updateError"
+            :update-result="updateResult"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            @change="handleChange"
+            @check-update="runUpdateCheck"
+            @apply-update="runUpdateApply"
+          />
+        </div>
+
+        <div v-show="!isWizard || currentStep === 3">
+          <RunConfigSection
+            :maafw-config="maafwConfig"
+            :daily-once-tasks="dailyOnceTasks"
+            :weekly-once-tasks="weeklyOnceTasks"
+            :monthly-once-tasks="monthlyOnceTasks"
+            :period-task-options="periodTaskOptions"
+            :interface-dependent-disabled="interfaceDependentDisabled"
+            @change="handleChange"
+            @period-task-change="handlePeriodTaskChange"
+          />
+        </div>
       </a-form>
+
+      <div v-if="isWizard" class="wizard-actions">
+        <a-button v-if="currentStep > 0" size="large" @click="currentStep -= 1"> 上一步 </a-button>
+        <a-button
+          v-if="currentStep < stepItems.length - 1"
+          type="primary"
+          size="large"
+          :disabled="!canLeaveCurrentStep"
+          @click="currentStep += 1"
+        >
+          下一步
+        </a-button>
+        <a-button v-else type="primary" size="large" @click="handleCancel"> 完成 </a-button>
+      </div>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import { WS_MAAFW_ENV_PREPARE_PROGRESS } from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
@@ -143,10 +194,23 @@ type PeriodKey = (typeof PERIOD_KEYS)[number]
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, previewMaaFWInterface } = useScriptApi()
+const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
 const scriptId = route.params.id as string
+
+// 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 脚本后进这里，
+// 之后再编辑走 /scripts/:id/edit/maafw 的完整单页形态。
+const isWizard = computed(() => route.name === 'MaaFWSetupWizard')
+const currentStep = ref(0)
+const stepItems = [
+  { title: '基本信息' },
+  { title: '控制配置' },
+  { title: '项目更新' },
+  { title: '运行配置' },
+]
+// 第一步没读到 interface 就往下走，后面几步全是空的，先拦住
+const canLeaveCurrentStep = computed(() => currentStep.value !== 0 || previewData.value !== null)
 const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
@@ -335,6 +399,9 @@ const runPreview = async () => {
     previewData.value = response.data as MaaFWInterfacePreviewData
     await syncControllerResourceSelection(true)
     await prunePeriodTaskSelections()
+    // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
+    // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
+    void runAgentEnvPrepare(path)
   } catch (error) {
     previewData.value = null
     message.error(error instanceof Error ? error.message : String(error))
@@ -345,7 +412,87 @@ const runPreview = async () => {
 
 const handlePreviewInterface = async () => {
   await runPreview()
-  if (previewData.value) message.success(`已读取 ${previewProjectTitle.value}`)
+  if (!previewData.value) return
+  message.success(`已读取 ${previewProjectTitle.value}`)
+}
+
+// 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
+// 不做的话这份成本会推迟到用户第一次点运行时才付，界面上看起来像卡住。
+const envPreparing = ref(false)
+const envReady = ref(false)
+const envFailed = ref(false)
+const envMessage = ref('')
+const envPercent = ref<number | null>(null)
+const envLogs = ref<string[]>([])
+const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
+let envSubscriptionId: string | null = null
+
+// 准备过程可能几分钟，全程订阅后端推来的阶段与日志
+const ensureEnvSubscription = () => {
+  if (envSubscriptionId) return
+  envSubscriptionId = subscribe(
+    { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
+    wsMessage => {
+      const data = wsMessage.data
+      if (data.log) {
+        envLogs.value = [...envLogs.value.slice(-199), data.log]
+      }
+      if (data.stage === 'log') return
+      envMessage.value = data.message || envMessage.value
+      if (typeof data.percent === 'number') envPercent.value = data.percent
+      if (data.status === 'failed') {
+        envFailed.value = true
+        envPreparing.value = false
+      }
+    }
+  )
+}
+
+onBeforeUnmount(() => {
+  if (envSubscriptionId) {
+    unsubscribe(envSubscriptionId)
+    envSubscriptionId = null
+  }
+})
+
+const envPreparedPath = ref('')
+
+const runAgentEnvPrepare = async (targetPath?: string) => {
+  const path = (targetPath ?? maafwConfig.Info.Path).trim()
+  if (!path) return
+  if (envPreparing.value) return
+  // 同一个项目已经备好过就不重复跑；换了目录才重新准备
+  if (envReady.value && envPreparedPath.value === path) return
+  ensureEnvSubscription()
+  envPreparing.value = true
+  envReady.value = false
+  envFailed.value = false
+  envPercent.value = null
+  envLogs.value = []
+  envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
+  try {
+    const response = await prepareMaaFWAgentEnv(path, scriptId)
+    if (!response || response.code !== 200 || !response.data) {
+      envFailed.value = true
+      envMessage.value = response?.message || 'MFW 运行环境准备失败'
+      message.error(envMessage.value)
+      return
+    }
+    envReady.value = true
+    envPercent.value = 100
+    envPreparedPath.value = path
+    envAgents.value = response.data.agents ?? []
+    // 后端返回的完整日志兜底：WS 断连时至少事后能看到
+    if (response.data.logs?.length) envLogs.value = response.data.logs
+    const version = response.data.maafwVersion
+    envMessage.value = version ? `运行环境已就绪，MaaFramework ${version}` : '运行环境已就绪'
+  } catch (error) {
+    envFailed.value = true
+    envMessage.value = error instanceof Error ? error.message : String(error)
+    message.error(envMessage.value)
+  } finally {
+    envPreparing.value = false
+  }
 }
 
 const selectMaaFWPath = async () => {
@@ -436,6 +583,45 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.env-prepare-alert {
+  margin-top: 4px;
+}
+
+.env-agent-line {
+  margin-top: 6px;
+}
+
+.env-log-box {
+  margin-top: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--ant-color-fill-quaternary);
+  font-family: var(--ant-font-family-code, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.env-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.wizard-steps {
+  margin-bottom: 28px;
+}
+
+.wizard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
 .script-edit-header {
   display: flex;
   justify-content: space-between;
