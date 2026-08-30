@@ -18,6 +18,8 @@ from typing import Any, Mapping
 import psutil
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
@@ -334,12 +336,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 检查未通过: "
+                            f"{self.check_result}"
+                        ),
+                    ),
                 )
             self.script_info.log = self.check_result
             return
@@ -389,10 +395,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(message)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": message},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=message),
                     )
                     continue
                 finally:
@@ -469,10 +475,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.cur_user_log is not None:
             self.cur_user_log.status = f"MaaFW 插件自动代理任务出现异常: {e}"
         try:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"MaaFW 插件自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"MaaFW 内置运行任务出现异常: {e}",
+                ),
             )
         except Exception:
             pass
