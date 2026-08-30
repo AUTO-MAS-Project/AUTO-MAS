@@ -111,12 +111,12 @@ class AutoProxyTask(TaskExecuteBase):
         if self.is_virtual_update_user:
             return "Pass"
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
