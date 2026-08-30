@@ -25,6 +25,7 @@ import re
 import sys
 import httpx
 import shutil
+import time
 import asyncio
 import uvicorn
 import sqlite3
@@ -81,6 +82,9 @@ from app.utils.constants import (
 )
 from app.utils import get_logger
 from app.utils.io import write_file
+
+# 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
+MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 
 logger = get_logger("配置管理")
 
@@ -2873,6 +2877,67 @@ class AppConfig(GlobalConfig):
             k: v
             for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
+
+    async def clean_maafw_agent_venvs(self) -> None:
+        """清掉已无脚本引用的 MFW agent 隔离 venv。
+
+        这些 venv 每个几十到上百 MB，此前没有任何回收——只有「同一项目依赖变了
+        就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，旧 venv 都会
+        永远留着。
+
+        放在启动清理里而不是运行前：判定依赖「当前全部脚本配置」这个全局状态，
+        只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
+        把开发者磁盘上的真 venv 删掉了。
+
+        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
+        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
+        """
+
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+            collect_orphan_agent_venvs,
+        )
+        from app.models.config import MaaFWConfig
+
+        root = Path.cwd() / "config" / "maafw_agent_venvs"
+        if not root.is_dir():
+            return
+
+        live_paths = [
+            path
+            for config in self.ScriptConfig.values()
+            if isinstance(config, MaaFWConfig)
+            and (path := str(config.get("Info", "Path") or "").strip())
+        ]
+
+        # 目录名是 Path.resolve() 之后的路径哈希，而 resolve() 只在路径**当下
+        # 存在**时才展开映射盘 / junction / 符号链接；不存在时原样返回。建 venv
+        # 时项目必然在，算的是展开后的真实路径；开机自启动早于网络盘挂载时，
+        # 这里却只能算出字面路径——名字对不上，存活 venv 就会被当成孤儿删掉。
+        # 分不清的时候不删：只要有一个存活项目此刻不可达，整轮弃权。
+        unreachable = [path for path in live_paths if not Path(path).exists()]
+        if unreachable:
+            logger.info(
+                "MFW 隔离 venv 清理已跳过：以下项目路径当前不可达，"
+                f"无法可靠判定归属: {unreachable[:3]}"
+            )
+            return
+
+        try:
+            orphans = collect_orphan_agent_venvs(root, live_paths)
+        except Exception as exc:
+            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
+            return
+
+        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
+        for venv_path in orphans:
+            try:
+                if venv_path.stat().st_mtime > cutoff:
+                    continue  # 刚动过，可能有运行正在用它
+                shutil.rmtree(venv_path)
+            except OSError as exc:
+                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
+                continue
+            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
 
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""

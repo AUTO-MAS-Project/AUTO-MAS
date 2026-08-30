@@ -19,7 +19,9 @@
                 "任务调度 单独运行脚本任务不再受单日代理次数上限约束，该限制仅对计划队列生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "配置任务的成败判定改用协议中的机器可读字段，不再匹配结果文本 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 运行日志改为记录实际加载的 MaaFramework 版本与来源，并在原生库与 Python 绑定版本不一致时给出警告 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -27,7 +29,8 @@
                 "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
                 "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
                 "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",
-                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)"
+                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理 MaaFW 配置复用模块：能力未接入任何界面，留着只会让人以为可用，需要时可从上游重新取用 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
                 "前端i18n 修复两条含「|」的说明文案在界面上被截断的问题——vue-i18n 把 | 当复数分隔符，字面量需要转义 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -45,7 +48,8 @@
                 "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 修复内置运行未加载项目自带的 MaaFramework 而回落到 AUTO-MAS 运行环境中同版本号但二进制不同的一份的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 修复内置运行装上与项目自带 MaaFramework 版本不符的 Python 绑定的问题，改为按项目实际发行的运行库版本安装 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 修复运行期间界面日志停止更新、点击停止无响应的问题，原因是转发脚本输出时独占事件循环 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 修复运行期间界面日志停止更新、点击停止无响应的问题，原因是转发脚本输出时独占事件循环 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复删除脚本或项目升级后，旧的隔离运行环境永久占用磁盘不被清理的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {
