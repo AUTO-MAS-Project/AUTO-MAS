@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   DeleteOutlined,
   DragOutlined,
@@ -9,6 +10,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { validateRegexPattern } from '../logRegex'
 import type { LogHookRule, LogHookType } from '../composables/useLogHookRules'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: LogHookRule
@@ -104,7 +107,7 @@ const typeOptions = [
           v-model:value="nameValue"
           class="rule-title-input"
           size="small"
-          placeholder="规则标题"
+          :placeholder="t('edit.ruleTitle')"
           @blur="finishEditName"
           @press-enter="finishEditName"
         />
@@ -113,7 +116,7 @@ const typeOptions = [
       <div class="rule-header-right">
         <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
 
-        <a-tooltip title="删除">
+        <a-tooltip :title="t('edit.delete')">
           <a-button size="small" danger class="rule-op-btn" @click="emit('remove')">
             <DeleteOutlined />
           </a-button>
@@ -131,16 +134,16 @@ const typeOptions = [
             :help="matchError || undefined"
           >
             <template #label>
-              <a-tooltip title="必填，留空则该规则不生效；按 Python 正则匹配整行日志">
+              <a-tooltip :title="t('edit.requiredEmptyValueDisables3')">
                 <span class="form-label">
-                  匹配正则
+                  {{ t('edit.matchPattern') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.match"
-              placeholder="例如：heartbeat|当前进度"
+              :placeholder="t('edit.exampleHeartbeatCurrentProgress')"
               size="middle"
               @blur="commit"
             />
@@ -149,16 +152,16 @@ const typeOptions = [
         <a-col v-if="local.type === 'replace'" :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip title="命中内容的替换文本，支持反向引用捕获组；留空表示删除命中内容">
+              <a-tooltip :title="t('edit.replacementTextMatchBack')">
                 <span class="form-label">
-                  替换为
+                  {{ t('edit.replace') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.replace"
-              placeholder="例如：token=***"
+              :placeholder="t('edit.exampleToken')"
               size="middle"
               @blur="commit"
             />

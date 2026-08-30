@@ -3,12 +3,12 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -19,19 +19,23 @@
         <template #icon>
           <CloudUploadOutlined />
         </template>
-        分享当前配置到配置分享站
+        {{ t('edit.shareThisConfigurationConfig') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
   <div class="script-edit-content">
-    <a-card title="通用脚本配置" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('edit.generalScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="green" class="type-tag"> General </a-tag>
       </template>
@@ -40,22 +44,22 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip title="为脚本设置一个易于识别的名称">
+                  <a-tooltip :title="t('edit.giveScriptNameYou')">
                     <span class="form-label">
-                      脚本名称
+                      {{ t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -65,9 +69,9 @@
             <a-col :span="16">
               <a-form-item name="rootPath" :rules="rules.rootPath">
                 <template #label>
-                  <a-tooltip title="脚本的根目录路径，其余路径将基于此目录自动调整">
+                  <a-tooltip :title="t('edit.rootDirectoryScriptEvery')">
                     <span class="form-label">
-                      脚本根目录
+                      {{ t('edit.scriptRootDirectory') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -75,7 +79,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.rootPath"
-                    placeholder="请选择脚本根目录"
+                    :placeholder="t('edit.pickScriptRootDirectory2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -84,7 +88,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -95,15 +99,15 @@
         <!-- 基础配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>脚本配置</h3>
+            <h3>{{ t('edit.scriptConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item name="scriptPath" :rules="rules.scriptPath">
                 <template #label>
-                  <a-tooltip title="脚本主程序文件路径">
+                  <a-tooltip :title="t('edit.pathScriptSMain')">
                     <span class="form-label">
-                      主程序路径
+                      {{ t('edit.mainProgramPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -111,7 +115,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.scriptPath"
-                    placeholder="请选择脚本主程序文件"
+                    :placeholder="t('edit.pickScriptSMain')"
                     size="large"
                     class="path-input"
                     readonly
@@ -120,7 +124,7 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    选择文件
+                    {{ t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -128,16 +132,16 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="启动脚本任务时需要添加的附加命令，详细语法参见官网文档">
+                  <a-tooltip :title="t('edit.extraArgumentsUsedWhen')">
                     <span class="form-label">
-                      启动参数
+                      {{ t('edit.launchArguments') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.Arguments"
-                  placeholder="请输入脚本启动参数"
+                  :placeholder="t('edit.enterScriptLaunchArguments')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)"
@@ -147,9 +151,9 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后仅在脚本的子进程结束时认定脚本进程结束">
+                  <a-tooltip :title="t('edit.treatScriptAsFinished')">
                     <span class="form-label">
-                      追踪子进程
+                      {{ t('edit.trackChildProcesses') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -159,8 +163,8 @@
                   size="large"
                   @change="handleChange('Script', 'IfTrackProcess', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -170,18 +174,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="要追踪的进程名称，打开脚本后启动任务管理器，在目标脚本进程右键，选择转到详细信息，填入名称栏中的内容即可，无法确认时可以留空"
-                  >
+                  <a-tooltip :title="t('edit.nameProcessTrackOpen')">
                     <span class="form-label">
-                      被追踪进程的名称
+                      {{ t('edit.nameTrackedProcess') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.TrackProcessName"
-                  placeholder="请输入要追踪的进程名称"
+                  :placeholder="t('edit.enterProcessNameTrack')"
                   size="large"
                   class="modern-input"
                   @blur="
@@ -197,11 +199,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="要追踪的进程可执行文件路径，打开脚本后启动任务管理器，在目标脚本进程右键，选择「打开文件所在位置」，即可定位到可执行文件路径，无法确认时可以留空"
-                  >
+                  <a-tooltip :title="t('edit.executablePathProcessTrack')">
                     <span class="form-label">
-                      被追踪进程的文件路径
+                      {{ t('edit.pathTrackedProcess') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -209,7 +209,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Script.TrackProcessExe"
-                    placeholder="请选择进程可执行文件路径"
+                    :placeholder="t('edit.pickProcessExecutablePath')"
                     size="large"
                     class="path-input"
                     readonly
@@ -218,12 +218,12 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    选择文件
+                    {{ t('edit.pickFile') }}
                   </a-button>
                   <a-button
                     size="large"
                     class="path-clear-icon-btn"
-                    aria-label="清空路径"
+                    :aria-label="t('edit.clearPath')"
                     @click="clearTrackProcessExe"
                   >
                     <template #icon>
@@ -236,18 +236,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空"
-                  >
+                  <a-tooltip :title="t('edit.commandLineProcessTrack')">
                     <span class="form-label">
-                      追踪进程命令行参数
+                      {{ t('edit.trackedProcessCommandLine') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.TrackProcessCmdline"
-                  placeholder="请输入进程启动命令行参数"
+                  :placeholder="t('edit.enterProcessCommandLine')"
                   size="large"
                   class="modern-input"
                   @blur="
@@ -268,12 +266,12 @@
                   <a-tooltip
                     :title="
                       generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? '脚本配置文件所在的文件夹路径'
-                        : '脚本配置文件的路径'
+                        ? t('edit.pathFolderHoldingScript')
+                        : t('edit.pathScriptConfigurationFile')
                     "
                   >
                     <span class="form-label">
-                      配置文件路径
+                      {{ t('edit.configurationFilePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -283,8 +281,8 @@
                     v-model:value="formData.configPath"
                     :placeholder="
                       generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? '请选择配置文件夹'
-                        : '请选择配置文件'
+                        ? t('edit.pickConfigurationFolder')
+                        : t('edit.pickConfigurationFile')
                     "
                     size="large"
                     class="path-input"
@@ -305,9 +303,9 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="脚本配置文件类型">
+                  <a-tooltip :title="t('edit.scriptConfigurationFileType')">
                     <span class="form-label">
-                      配置文件类型
+                      {{ t('edit.configurationFileType') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -317,17 +315,17 @@
                   size="large"
                   @change="handleChange('Script', 'ConfigPathMode', $event)"
                 >
-                  <a-select-option value="File">单文件</a-select-option>
-                  <a-select-option value="Folder">文件夹</a-select-option>
+                  <a-select-option value="File">{{ t('edit.singleFile') }}</a-select-option>
+                  <a-select-option value="Folder">{{ t('edit.folder') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="在选定的时刻更新脚本配置文件">
+                  <a-tooltip :title="t('edit.updateScriptConfigurationFile')">
                     <span class="form-label">
-                      配置文件更新时机
+                      {{ t('edit.whenConfigurationFileUpdated') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -337,10 +335,10 @@
                   size="large"
                   @change="handleChange('Script', 'UpdateConfigMode', $event)"
                 >
-                  <a-select-option value="Never">从不</a-select-option>
-                  <a-select-option value="Success">成功时</a-select-option>
-                  <a-select-option value="Failure">失败时</a-select-option>
-                  <a-select-option value="Always">总是</a-select-option>
+                  <a-select-option value="Never">{{ t('edit.never') }}</a-select-option>
+                  <a-select-option value="Success">{{ t('edit.success') }}</a-select-option>
+                  <a-select-option value="Failure">{{ t('edit.failure') }}</a-select-option>
+                  <a-select-option value="Always">{{ t('edit.always') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -349,9 +347,9 @@
             <a-col :span="12">
               <a-form-item name="logPath" :rules="rules.logPath">
                 <template #label>
-                  <a-tooltip title="脚本用于存放日志信息的文件路径">
+                  <a-tooltip :title="t('edit.pathFileScriptWrites')">
                     <span class="form-label">
-                      日志文件路径
+                      {{ t('edit.logFilePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -359,7 +357,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.logPath"
-                    placeholder="请选择日志文件"
+                    :placeholder="t('edit.pickLogFile')"
                     size="large"
                     class="path-input"
                     readonly
@@ -368,7 +366,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件
+                    {{ t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -377,22 +375,18 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    日志文件名格式
-                    <a-tooltip
-                      title="指示实时生成日志文件名的格式（strptime 格式），文件名固定时留空"
-                    >
+                    {{ t('edit.logFileNameFormat') }}
+                    <a-tooltip :title="t('edit.formatLogFileName')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
-                    <a-tooltip
-                      title="针对 mxu 按日期+自增序号命名的日志：末尾加 ****** 启用mxu日志前缀匹配（如 %Y-%m-%d******）"
-                    >
+                    <a-tooltip :title="t('edit.mxuLogsNamedBy')">
                       <QuestionCircleOutlined class="help-icon" style="margin-left: 2px" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.LogPathFormat"
-                  placeholder="日志文件名格式，文件名固定时留空"
+                  :placeholder="t('edit.logFileNameFormat2')"
                   size="large"
                   class="modern-input"
                   @blur="
@@ -415,16 +409,16 @@
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                 <template #label>
-                  <a-tooltip title="脚本日志文件中时间戳的格式">
+                  <a-tooltip :title="t('edit.timestampFormatUsedScript')">
                     <span class="form-label">
-                      日志时间戳格式
+                      {{ t('edit.logTimestampFormat') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.logTimeFormat"
-                  placeholder="请输入脚本日志时间戳格式"
+                  :placeholder="t('edit.enterScriptLogTimestamp')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
@@ -433,8 +427,8 @@
                   示例：<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
                 <div v-if="hasFractionalSecondToken" class="format-preview-tip">
-                  提示：%f 同时支持 3 位毫秒（如 123）和 6 位微秒（如
-                  123456），会按日志中的位数自动识别。
+                  {{ t('edit.tipFAcceptsBoth') }}
+                  {{ t('edit.k123456DigitCountLog') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -450,11 +444,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功"
-                  >
+                  <a-tooltip :title="t('edit.whenSetIfAny')">
                     <span class="form-label">
-                      任务成功日志
+                      {{ t('edit.successLog') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -473,8 +465,8 @@
                         class="log-sign-mode-select"
                         @change="handleChange('Script', 'SuccessLogMode', $event)"
                       >
-                        <a-select-option value="Split">关键字</a-select-option>
-                        <a-select-option value="Regex">正则</a-select-option>
+                        <a-select-option value="Split">{{ t('edit.keyword2') }}</a-select-option>
+                        <a-select-option value="Regex">{{ t('edit.regex') }}</a-select-option>
                       </a-select>
                     </a-tooltip>
                   </template>
@@ -487,9 +479,9 @@
             <a-col :span="12">
               <a-form-item name="errorLog" :rules="rules.errorLog">
                 <template #label>
-                  <a-tooltip title="若任务异常日志先于任务成功日志出现，则视为任务失败">
+                  <a-tooltip :title="t('edit.ifFailureLogAppears')">
                     <span class="form-label">
-                      任务失败日志
+                      {{ t('edit.failureLog') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -508,8 +500,8 @@
                         class="log-sign-mode-select"
                         @change="handleChange('Script', 'ErrorLogMode', $event)"
                       >
-                        <a-select-option value="Split">关键字</a-select-option>
-                        <a-select-option value="Regex">正则</a-select-option>
+                        <a-select-option value="Split">{{ t('edit.keyword2') }}</a-select-option>
+                        <a-select-option value="Regex">{{ t('edit.regex') }}</a-select-option>
                       </a-select>
                     </a-tooltip>
                   </template>
@@ -529,16 +521,16 @@
           />
 
           <div class="section-header">
-            <h3>游戏配置</h3>
+            <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
 
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="是否由AUTO-MAS管理游戏/模拟器进程">
+                  <a-tooltip :title="t('edit.whetherAutoMasManages')">
                     <span class="form-label">
-                      启用游戏相关功能
+                      {{ t('edit.enableGameRelatedFeatures') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -548,17 +540,17 @@
                   size="large"
                   @change="handleChange('Game', 'Enabled', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏在哪个平台上运行">
+                  <a-tooltip :title="t('edit.whichPlatformGameRuns')">
                     <span class="form-label">
-                      启动方式
+                      {{ t('edit.launchMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -568,9 +560,9 @@
                   size="large"
                   @change="handleGameTypeChange"
                 >
-                  <a-select-option value="Emulator">模拟器</a-select-option>
-                  <a-select-option value="Client">PC客户端</a-select-option>
-                  <a-select-option value="URL">URL协议(如Starward)</a-select-option>
+                  <a-select-option value="Emulator">{{ t('edit.emulator2') }}</a-select-option>
+                  <a-select-option value="Client">{{ t('edit.pcClient') }}</a-select-option>
+                  <a-select-option value="URL">{{ t('edit.urlProtocolEG') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -578,9 +570,9 @@
             <a-col v-if="generalConfig.Game.Type === 'Client'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏可执行文件的路径">
+                  <a-tooltip :title="t('edit.pathGameExecutable')">
                     <span class="form-label">
-                      游戏路径
+                      {{ t('edit.gamePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -588,7 +580,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Game.Path"
-                    placeholder="请选择游戏的可执行文件"
+                    :placeholder="t('edit.pickGameExecutable2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -597,7 +589,7 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    选择文件
+                    {{ t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -606,9 +598,9 @@
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="选择要使用的模拟器">
+                  <a-tooltip :title="t('edit.pickEmulatorUse')">
                     <span class="form-label">
-                      模拟器
+                      {{ t('edit.emulator') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -616,7 +608,7 @@
                 <a-select
                   v-model:value="generalConfig.Game.EmulatorId"
                   size="large"
-                  placeholder="请选择模拟器"
+                  :placeholder="t('edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorChange"
                 >
@@ -634,9 +626,9 @@
             <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="自定义协议的URL">
+                  <a-tooltip :title="t('edit.urlCustomProtocol')">
                     <span class="form-label">
-                      URL地址
+                      {{ t('edit.url') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -644,7 +636,7 @@
                 <a-input-group class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Game.URL"
-                    placeholder="请输入URL参数，如：starward://startgame/xxxx"
+                    :placeholder="t('edit.enterUrlEG')"
                     size="large"
                     @blur="handleChange('Game', 'URL', generalConfig.Game.URL)"
                   />
@@ -658,12 +650,12 @@
                   <a-tooltip
                     :title="
                       emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
-                        : '选择模拟器的具体实例'
+                        ? t('edit.thisEmulatorCannotBe')
+                        : t('edit.pickEmulatorInstance')
                     "
                   >
                     <span class="form-label">
-                      模拟器实例
+                      {{ t('edit.emulatorInstance') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -677,7 +669,7 @@
                   "
                   v-model:value="generalConfig.Game.EmulatorIndex"
                   size="large"
-                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  :placeholder="t('edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)"
                 />
@@ -686,7 +678,7 @@
                   v-else
                   v-model:value="generalConfig.Game.EmulatorIndex"
                   size="large"
-                  placeholder="请先选择模拟器"
+                  :placeholder="t('edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!generalConfig.Game.EmulatorId"
                   @change="handleChange('Game', 'EmulatorIndex', $event)"
@@ -708,16 +700,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="启动游戏时的命令行参数">
+                  <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
                     <span class="form-label">
-                      启动参数
+                      {{ t('edit.launchArguments') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Game.Arguments"
-                  placeholder="请输入启动参数"
+                  :placeholder="t('edit.enterLaunchArguments')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)"
@@ -727,9 +719,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="启动游戏后等待的时间">
+                  <a-tooltip :title="t('edit.howLongWaitAfter2')">
                     <span class="form-label">
-                      启动后等待时间（秒）
+                      {{ t('edit.waitAfterLaunchSeconds') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -748,9 +740,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="脚本结束后是否强制关闭游戏进程">
+                  <a-tooltip :title="t('edit.whetherGameProcessForce')">
                     <span class="form-label">
-                      强制关闭游戏
+                      {{ t('edit.forceGameClose') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -760,8 +752,8 @@
                   size="large"
                   @change="handleChange('Game', 'IfForceClose', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -773,18 +765,16 @@
           <a-col :span="8">
             <a-form-item>
               <template #label>
-                <a-tooltip
-                  title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。"
-                >
+                <a-tooltip :title="t('edit.processNameEG')">
                   <span class="form-label">
-                    进程名称
+                    {{ t('edit.processName') }}
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="generalConfig.Game.ProcessName"
-                placeholder="比如 StarRail.exe"
+                :placeholder="t('edit.exampleStarrailExe')"
                 size="large"
                 class="modern-input"
                 @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)"
@@ -795,17 +785,15 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
-                  >
+                  <a-tooltip :title="t('edit.skipRunOnceThis')">
                     <span class="form-label">
-                      单日代理次数上限
+                      {{ t('edit.runsPerDay') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -824,9 +812,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
+                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
                     <span class="form-label">
-                      代理重试次数限制
+                      {{ t('edit.retryLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -845,9 +833,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="执行代理任务时，脚本日志无变化时间超过该阀值视为超时">
+                  <a-tooltip :title="t('edit.treatRunAsTimed')">
                     <span class="form-label">
-                      代理超时限制（分钟）
+                      {{ t('edit.runTimeoutMinutes') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -872,7 +860,7 @@
   <!-- 上传脚本弹窗 -->
   <a-modal
     v-model:open="uploadModalVisible"
-    title="上传脚本配置到云端"
+    :title="t('edit.uploadThisScriptConfiguration')"
     :confirm-loading="uploadLoading"
     width="600px"
     :mask-closable="false"
@@ -886,10 +874,10 @@
       layout="vertical"
       class="upload-form"
     >
-      <a-form-item name="config_name" label="配置名称">
+      <a-form-item name="config_name" :label="t('edit.configurationName')">
         <a-input
           v-model:value="uploadForm.config_name"
-          placeholder="为您的脚本配置起一个易于识别的名称"
+          :placeholder="t('edit.giveYourScriptConfiguration')"
           size="large"
           :maxlength="50"
           show-count
@@ -897,10 +885,10 @@
         />
       </a-form-item>
 
-      <a-form-item name="author" label="作者">
+      <a-form-item name="author" :label="t('edit.author')">
         <a-input
           v-model:value="uploadForm.author"
-          placeholder="请输入作者名称"
+          :placeholder="t('edit.enterAuthorName')"
           size="large"
           :maxlength="30"
           show-count
@@ -908,10 +896,10 @@
         />
       </a-form-item>
 
-      <a-form-item name="description" label="描述">
+      <a-form-item name="description" :label="t('edit.description')">
         <a-textarea
           v-model:value="uploadForm.description"
-          placeholder="请简要描述该脚本配置的功能、适用场景等信息"
+          :placeholder="t('edit.brieflyDescribeWhatThis')"
           size="large"
           :rows="4"
           :maxlength="200"
@@ -920,7 +908,7 @@
         />
       </a-form-item>
 
-      <a-alert message="分享说明" type="info">
+      <a-alert :message="t('edit.aboutSharing')" type="info">
         <template #description>
           <p>
             所有<span style="font-weight: bold"> 敏感信息 </span
@@ -933,6 +921,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -954,6 +943,8 @@ import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 import LogHookConfig from './components/LogHookConfig.vue'
 import PushLogConfig from './components/PushLogConfig.vue'
 import { validateRegexPattern } from './logRegex'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
@@ -1660,7 +1651,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        message.error('脚本不存在或加载失败')
+        message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -1684,7 +1675,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -1706,12 +1697,12 @@ const loadEmulatorOptions = async () => {
     if (response && response.code === 200) {
       emulatorOptions.value = response.data || []
     } else {
-      message.error('加载模拟器选项失败')
+      message.error(t('edit.couldNotLoadEmulator'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error('加载模拟器选项失败')
+    message.error(t('edit.couldNotLoadEmulator'))
   } finally {
     emulatorLoading.value = false
   }
@@ -1800,7 +1791,7 @@ const handleGameTypeChange = async (gameType: string) => {
 const selectRootPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
@@ -1848,54 +1839,54 @@ const selectRootPath = async () => {
           updateData.Script = scriptPathUpdates
         }
         await persistAndRefresh(updateData, '根路径及关联路径')
-        message.success('根路径选择成功，其他路径已自动调整以保持相对关系')
+        message.success(t('edit.rootPathSelectedOther'))
       } else {
         // 保存根目录更改
         await handleChange('Info', 'RootPath', normalizedPath)
-        message.success('根路径选择成功')
+        message.success(t('edit.rootPathSelected'))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择根路径失败: ${errorMsg}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 
 const selectGamePath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
     const paths = await window.electronAPI.selectFile([
-      { name: '可执行文件', extensions: ['exe'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('edit.executables'), extensions: ['exe'] },
+      { name: t('edit.allFiles'), extensions: ['*'] },
     ])
     if (paths && paths.length > 0) {
       generalConfig.Game.Path = paths[0]
       // 保存游戏路径
       await handleChange('Game', 'Path', paths[0])
-      message.success('游戏路径选择成功')
+      message.success(t('edit.gamePathSelected'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择游戏路径失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('edit.couldNotPickFile'))
   }
 }
 
 const selectScriptPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
     const paths = await window.electronAPI.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('edit.executables'), extensions: ['exe', 'bat'] },
+      { name: t('edit.allFiles'), extensions: ['*'] },
     ])
     if (paths && paths.length > 0) {
       const path = paths[0]
@@ -1907,26 +1898,26 @@ const selectScriptPath = async () => {
         updatePathRelations()
         // 保存脚本路径
         await handleChange('Script', 'ScriptPath', normalizedPath)
-        message.success('脚本路径选择成功')
+        message.success(t('edit.scriptPathSelected'))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择脚本路径失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('edit.couldNotPickFile'))
   }
 }
 
 const selectTrackProcessExe = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
     const paths = await window.electronAPI.selectFile([
-      { name: '可执行文件', extensions: ['exe'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('edit.executables'), extensions: ['exe'] },
+      { name: t('edit.allFiles'), extensions: ['*'] },
     ])
     if (paths && paths.length > 0) {
       const path = paths[0]
@@ -1936,13 +1927,13 @@ const selectTrackProcessExe = async () => {
         generalConfig.Script.TrackProcessExe = normalizedPath
         // 保存被追踪进程可执行文件路径
         await handleChange('Script', 'TrackProcessExe', normalizedPath)
-        message.success('被追踪进程可执行文件选择成功')
+        message.success(t('edit.trackedProcessExecutableSelected'))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择被追踪进程可执行文件失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('edit.couldNotPickFile'))
   }
 }
 
@@ -1950,13 +1941,13 @@ const clearTrackProcessExe = async () => {
   generalConfig.Script.TrackProcessExe = ''
   updatePathRelations()
   await handleChange('Script', 'TrackProcessExe', '')
-  message.success('被追踪进程可执行文件路径已清空')
+  message.success(t('edit.trackedProcessExecutablePath'))
 }
 
 const selectConfigPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
@@ -1970,12 +1961,15 @@ const selectConfigPath = async () => {
     } else {
       // 选择文件（默认行为）
       const paths = await window.electronAPI.selectFile([
-        { name: '配置文件', extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'] },
-        { name: 'JSON 文件', extensions: ['json'] },
-        { name: 'YAML 文件', extensions: ['yaml', 'yml'] },
-        { name: 'INI 文件', extensions: ['ini', 'conf'] },
-        { name: 'TOML 文件', extensions: ['toml'] },
-        { name: '所有文件', extensions: ['*'] },
+        {
+          name: t('edit.configurationFiles'),
+          extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'],
+        },
+        { name: t('edit.jsonFiles'), extensions: ['json'] },
+        { name: t('edit.yamlFiles'), extensions: ['yaml', 'yml'] },
+        { name: t('edit.iniFiles'), extensions: ['ini', 'conf'] },
+        { name: t('edit.tomlFiles'), extensions: ['toml'] },
+        { name: t('edit.allFiles'), extensions: ['*'] },
       ])
       selectedPath = paths && paths.length > 0 ? paths[0] : undefined
     }
@@ -2004,7 +1998,7 @@ const selectConfigPath = async () => {
 const selectLogPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
@@ -2019,13 +2013,13 @@ const selectLogPath = async () => {
         updatePathRelations()
         // 保存日志路径
         await handleChange('Script', 'LogPath', normalizedPath)
-        message.success('日志路径选择成功')
+        message.success(t('edit.logPathSelected'))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择日志路径失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('edit.couldNotPickFile'))
   }
 }
 
@@ -2074,7 +2068,7 @@ const handleUpload = async () => {
     // 调用上传API
     await Service.uploadScriptToWebApiScriptsUploadWebPost(uploadData)
 
-    message.success('脚本配置上传成功，等待审核通过后即可向所有用户展示~')
+    message.success(t('edit.configurationUploadedItWill'))
     uploadModalVisible.value = false
 
     // 重置表单
@@ -2084,7 +2078,7 @@ const handleUpload = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`上传失败: ${errorMsg}`)
-    message.error('上传失败，请检查网络连接或稍后重试')
+    message.error(t('edit.uploadFailedCheckYour'))
   } finally {
     uploadLoading.value = false
   }

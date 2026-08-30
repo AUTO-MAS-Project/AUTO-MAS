@@ -7,15 +7,15 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
           </div>
-          <h2 class="mask-title">正在进行SRC配置</h2>
+          <h2 class="mask-title">{{ t('edit.srcConfigurationProgress') }}</h2>
           <p class="mask-description">
-            当前正在配置该用户的 SRC，请在 SRC 配置界面完成相关设置。
+            {{ t('edit.srcConfigurationThisUser') }}
             <br />
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
             <a-button v-if="srcTaskId" type="primary" size="large" @click="handleSaveSRCConfig">
-              保存配置
+              {{ t('edit.saveConfiguration') }}
             </a-button>
           </div>
         </div>
@@ -80,6 +80,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -105,6 +106,8 @@ import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
 import NotifyConfigSection from '@/views/SRCUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()
@@ -298,21 +301,21 @@ const loadUserData = async () => {
           await nextTick()
           formData.userName = formData.Info.Name || ''
         } else {
-          message.error('用户类型不匹配')
+          message.error(t('edit.userTypeDoesNot'))
           router.push('/scripts')
         }
       } else {
-        message.error('用户不存在')
+        message.error(t('edit.userDoesNotExist'))
         router.push('/scripts')
       }
     } else {
-      message.error('加载用户失败')
+      message.error(t('edit.couldNotLoadUser'))
       router.push('/scripts')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户失败: ${errorMsg}`)
-    message.error('加载用户失败')
+    message.error(t('edit.couldNotLoadUser'))
     router.push('/scripts')
   }
 }
@@ -410,7 +413,7 @@ const handleSRCConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动SRC配置失败: ${errorMsg}`)
-    message.error('启动SRC配置失败')
+    message.error(t('edit.couldNotStartSrc'))
   } finally {
     srcConfigLoading.value = false
   }
@@ -421,7 +424,7 @@ const handleSaveSRCConfig = async () => {
   try {
     const taskId = srcTaskId.value
     if (!taskId) {
-      message.error('未找到活动的配置会话')
+      message.error(t('edit.noActiveConfigurationSession'))
       return
     }
 
@@ -444,7 +447,7 @@ const handleSaveSRCConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存SRC配置失败: ${errorMsg}`)
-    message.error('保存SRC配置失败')
+    message.error(t('edit.couldNotSaveSrc'))
   }
 }
 
@@ -468,7 +471,7 @@ const _saveNewUser = async () => {
       // 再更新用户数据
       const success = await updateUser(scriptId, userId, userData)
       if (success) {
-        message.success('添加成功')
+        message.success(t('edit.added'))
         router.push('/scripts')
       }
     }
@@ -490,7 +493,7 @@ if (!userId) {
       isEdit.value = true
       logger.info(`新建用户，获取userId: ${userId}`)
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       router.push('/scripts')
     }
     // 标记初始化完成

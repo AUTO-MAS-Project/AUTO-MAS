@@ -4,7 +4,7 @@
       <a-input
         v-model:value="optionSearchQuery"
         allow-clear
-        placeholder="搜索配置项…"
+        :placeholder="t('edit.searchSettings')"
         class="option-search"
       />
     </div>
@@ -74,7 +74,7 @@
           :value="getStringValue(option)"
           :disabled="props.disabled"
           class="option-control"
-          placeholder="请选择"
+          :placeholder="t('edit.pleaseChoose')"
           @change="handleSelectChange(option.name, $event)"
         >
           <a-select-option
@@ -136,8 +136,8 @@
               v-else-if="isBooleanInput(inputItem)"
               :checked="getBooleanInputValue(option, inputItem.name)"
               :disabled="props.disabled"
-              checked-children="是"
-              un-checked-children="否"
+              :checked-children="t('edit.yes')"
+              :un-checked-children="t('edit.no')"
               @change="handleInputBooleanChange(option.name, inputItem, $event)"
             />
             <a-input
@@ -196,6 +196,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
@@ -207,6 +208,8 @@ import type {
   MaaFWOptionInputInfo,
   MaaFWTaskOptionValue,
 } from '@/types/script'
+
+const { t } = useI18n()
 
 defineOptions({
   name: 'MaaFWTaskOptionEditor',
@@ -443,11 +446,11 @@ const emitOptionValue = (optionName: string, value: MaaFWTaskOptionValue) => {
 const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
   const trimmedValue = value.trim()
   if (isIntegerInput(inputItem) && !/^-?\d+$/.test(trimmedValue)) {
-    message.error('请输入整数')
+    message.error(t('edit.enterWholeNumber'))
     return false
   }
   if (isDecimalInput(inputItem) && (!trimmedValue || !Number.isFinite(Number(trimmedValue)))) {
-    message.error('请输入数字')
+    message.error(t('edit.enterNumber'))
     return false
   }
 

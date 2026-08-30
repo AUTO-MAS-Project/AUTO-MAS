@@ -1,7 +1,7 @@
 <template>
   <div class="form-section form-section-flat">
     <div class="section-header">
-      <h3>体力配置</h3>
+      <h3>{{ t('edit.sanityConfiguration') }}</h3>
     </div>
 
     <a-alert
@@ -9,7 +9,7 @@
       type="warning"
       show-icon
       style="margin-bottom: 8px"
-      message="体力执行脚本已切换，请重新选择副本。"
+      :message="t('edit.sanityScriptChangedPick')"
     />
     <a-alert
       v-if="stageOptionsError && !stageOptionsLoading"
@@ -24,9 +24,9 @@
       <a-col :span="6">
         <a-form-item>
           <template #label>
-            <a-tooltip title="拟造花萼（金）：角色经验 / 光锥经验 / 信用点">
+            <a-tooltip :title="t('edit.calyxGoldenCharacterExp')">
               <span class="form-label">
-                拟造花萼（金）
+                {{ t('edit.calyxGolden') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -34,7 +34,7 @@
           <a-select
             :value="stageValueByChannel.CalyxGolden"
             size="large"
-            placeholder="不刷"
+            :placeholder="t('edit.skip')"
             show-search
             :filter-option="filterOption"
             :disabled="isStageSelectDisabled('CalyxGolden')"
@@ -48,9 +48,9 @@
       <a-col :span="6">
         <a-form-item>
           <template #label>
-            <a-tooltip title="拟造花萼（赤）：行迹材料（金/赤互不覆盖，可同时保存）">
+            <a-tooltip :title="t('edit.calyxCrimsonTraceMaterials')">
               <span class="form-label">
-                拟造花萼（赤）
+                {{ t('edit.calyxCrimson') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -58,7 +58,7 @@
           <a-select
             :value="stageValueByChannel.CalyxCrimson"
             size="large"
-            placeholder="不刷"
+            :placeholder="t('edit.skip')"
             show-search
             :filter-option="filterOption"
             :disabled="isStageSelectDisabled('CalyxCrimson')"
@@ -72,9 +72,9 @@
       <a-col :span="6">
         <a-form-item>
           <template #label>
-            <a-tooltip title="侵蚀隧洞：遗器副本">
+            <a-tooltip :title="t('edit.cavernsCorrosionRelicDomains')">
               <span class="form-label">
-                侵蚀隧洞
+                {{ t('edit.cavernsCorrosion') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -82,7 +82,7 @@
           <a-select
             :value="stageValueByChannel.Relic"
             size="large"
-            placeholder="不刷"
+            :placeholder="t('edit.skip')"
             show-search
             :filter-option="filterOption"
             :disabled="isStageSelectDisabled('Relic')"
@@ -96,9 +96,9 @@
       <a-col :span="6">
         <a-form-item>
           <template #label>
-            <a-tooltip title="饰品提取：位面饰品副本">
+            <a-tooltip :title="t('edit.ornamentExtractionPlanarOrnament')">
               <span class="form-label">
-                饰品提取
+                {{ t('edit.ornamentExtraction') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -106,7 +106,7 @@
           <a-select
             :value="stageValueByChannel.Ornament"
             size="large"
-            placeholder="不刷"
+            :placeholder="t('edit.skip')"
             show-search
             :filter-option="filterOption"
             :disabled="isStageSelectDisabled('Ornament')"
@@ -124,9 +124,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择要刷取的副本；本字段会写入 Stage.Channel。">
+            <a-tooltip :title="t('edit.pickStageFarmThis')">
               <span class="form-label">
-                刷取副本
+                {{ t('edit.farmStages') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -143,7 +143,7 @@
       <a-col :span="16">
         <a-form-item>
           <template #label>
-            <span class="form-label">当前生效关卡</span>
+            <span class="form-label">{{ t('edit.activeStage') }}</span>
           </template>
           <div class="current-stage-display">
             <a-tag :color="currentStageColor" size="large" class="stage-tag">
@@ -159,9 +159,9 @@
       <a-col :span="12">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <a-tooltip title="选择要挑战的历战余响关卡。">
+            <a-tooltip :title="t('edit.pickDivergentUniverseStage')">
               <span class="form-label">
-                历战余响
+                {{ t('edit.divergentUniverse') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -169,7 +169,7 @@
           <a-select
             :value="eowSelectValue"
             size="large"
-            placeholder="不刷"
+            :placeholder="t('edit.skip')"
             show-search
             :disabled="loading || stageOptionsLoading || !dynamicEowCategory"
             :loading="stageOptionsLoading"
@@ -183,11 +183,9 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              title="到达开始日且本周未完成时，MAS 会交给 M7A/SRA 尝试完成历战余响；日志确认完成后本周不再执行。"
-            >
+            <a-tooltip :title="t('edit.startDayIfIt')">
               <span class="form-label">
-                历战余响开始日
+                {{ t('edit.divergentUniverseStartDay') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -208,12 +206,13 @@
       type="info"
       show-icon
       style="margin-top: 8px"
-      message="建议在游戏内开启结算遗器自动分解，以免刷取遗器时背包满导致流程中断。"
+      :message="t('edit.turnAutomaticRelicSalvage')"
     />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
@@ -226,6 +225,8 @@ import type {
   HSRStageEngine,
   HSRUserConfigData,
 } from './types'
+
+const { t } = useI18n()
 
 const EOW_WEEKDAY_OPTIONS: { value: string; label: string }[] = [
   { value: 'Monday', label: '周一' },

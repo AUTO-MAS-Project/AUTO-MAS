@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   BookOutlined,
   DownOutlined,
@@ -15,6 +16,8 @@ import {
   type PushLogPattern,
   type PushLogPatternType,
 } from '../composables/usePushLogPatterns'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   enabled: boolean
@@ -99,15 +102,13 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   <div class="push-log-config">
     <div class="push-config-header">
       <h3>
-        推送配置
-        <a-tooltip
-          title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，日志单行按规则顺序取首个命中的规则匹配提取，统一推送。"
-        >
+        {{ t('edit.pushSettings') }}
+        <a-tooltip :title="t('edit.whenTaskProgressCollected')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
       <div class="push-config-actions">
-        <a-tooltip title="开启后才会按规则采集任务进程信息；关闭时配置仍保留，但不进行采集">
+        <a-tooltip :title="t('edit.progressCollectedOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -115,17 +116,19 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
             @change="onEnabledChange"
           />
         </a-tooltip>
-        <a-tooltip title="查看日志提取表达式参考文档">
+        <a-tooltip :title="t('edit.readExtractionPatternReference')">
           <a-button size="small" class="docs-btn" @click="openDocs('regex')">
             <BookOutlined />
-            说明文档
+            {{ t('edit.documentation') }}
           </a-button>
         </a-tooltip>
       </div>
     </div>
 
     <div class="push-config-body">
-      <div v-if="!enabled" class="push-config-disabled-tip">推送配置已停用，规则不会参与采集。</div>
+      <div v-if="!enabled" class="push-config-disabled-tip">
+        {{ t('edit.pushCollectionOffRules') }}
+      </div>
 
       <draggable
         v-model="patterns"
@@ -157,7 +160,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
         <a-dropdown :trigger="['click']">
           <a-button type="dashed" class="add-pattern-btn">
             <PlusOutlined />
-            添加规则
+            {{ t('edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>

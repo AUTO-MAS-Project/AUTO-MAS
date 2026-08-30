@@ -3,12 +3,12 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="../../../assets/M9A.png" alt="M9A" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -19,13 +19,13 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
   <div class="script-edit-content">
-    <a-card title="M9A脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="t('edit.m9aScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="cyan" class="type-tag"> M9A </a-tag>
       </template>
@@ -33,22 +33,22 @@
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip title="为脚本设置一个易于识别的名称">
+                  <a-tooltip :title="t('edit.giveScriptNameYou')">
                     <span class="form-label">
-                      脚本名称
+                      {{ t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -58,9 +58,9 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <a-tooltip title="选择M9A所在的文件夹路径">
+                  <a-tooltip :title="t('edit.pickFolderHoldingM9a2')">
                     <span class="form-label">
-                      M9A路径
+                      {{ t('edit.m9aPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -68,7 +68,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="请选择M9A所在的文件夹"
+                    :placeholder="t('edit.pickFolderHoldingM9a')"
                     size="large"
                     class="path-input"
                     readonly
@@ -77,7 +77,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -87,15 +87,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>模拟器管理</h3>
+            <h3>{{ t('edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="选择要使用的模拟器">
+                  <a-tooltip :title="t('edit.pickEmulatorUse')">
                     <span class="form-label">
-                      模拟器
+                      {{ t('edit.emulator') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -103,7 +103,7 @@
                 <a-select
                   v-model:value="m9aConfig.Emulator.Id"
                   size="large"
-                  placeholder="请选择模拟器"
+                  :placeholder="t('edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -123,12 +123,12 @@
                   <a-tooltip
                     :title="
                       emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
-                        : '选择模拟器的具体实例'
+                        ? t('edit.thisEmulatorCannotBe')
+                        : t('edit.pickEmulatorInstance')
                     "
                   >
                     <span class="form-label">
-                      模拟器实例
+                      {{ t('edit.emulatorInstance') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -141,7 +141,7 @@
                   "
                   v-model:value="m9aConfig.Emulator.Index"
                   size="large"
-                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  :placeholder="t('edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Emulator', 'Index', m9aConfig.Emulator.Index)"
                 />
@@ -149,7 +149,7 @@
                   v-else
                   v-model:value="m9aConfig.Emulator.Index"
                   size="large"
-                  placeholder="请先选择模拟器"
+                  :placeholder="t('edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!m9aConfig.Emulator.Id"
                   @change="handleChange('Emulator', 'Index', $event)"
@@ -169,17 +169,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
-                  >
+                  <a-tooltip :title="t('edit.skipRunOnceThis')">
                     <span class="form-label">
-                      用户单日代理次数上限
+                      {{ t('edit.runsPerDayThis') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -198,9 +196,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="执行日常代理任务时，M9A日志无变化时间超过该阀值视为超时">
+                  <a-tooltip :title="t('edit.treatDailyRunAs')">
                     <span class="form-label">
-                      日常代理超时限制（分钟）
+                      {{ t('edit.dailyRunTimeoutMinutes') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -219,9 +217,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
+                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
                     <span class="form-label">
-                      代理重试次数限制
+                      {{ t('edit.retryLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -240,11 +238,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务"
-                  >
+                  <a-tooltip :title="t('edit.onceThisUserS')">
                     <span class="form-label">
-                      每日心相每日只执行一次
+                      {{ t('edit.dailyInsightRunsOnce') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -258,11 +254,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务"
-                  >
+                  <a-tooltip :title="t('edit.onceAutoDeepSleep')">
                     <span class="form-label">
-                      深眠浅梦每月只执行一次
+                      {{ t('edit.deepSleepRunsOnce') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -278,11 +272,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源"
-                  >
+                  <a-tooltip :title="t('edit.whenThisScriptRuns')">
                     <span class="form-label">
-                      队列结束后自动更新
+                      {{ t('edit.updateAutomaticallyAfterQueue') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -292,8 +284,8 @@
                   size="large"
                   @change="handleChange('Run', 'IfAutoUpdateAfterQueue', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -307,15 +299,15 @@
       <div class="guide-footer-content">
         <img src="@/assets/M9A.png" alt="M9A" class="guide-logo" />
         <div class="guide-message">
-          <span class="guide-text">提醒您：阁下若是遇到了难题，不妨查看</span>
+          <span class="guide-text">{{ t('edit.reminderIfYouRun') }}</span>
           <a
             href="https://doc.auto-mas.top/docs/script-guide/m9a.html"
             target="_blank"
             class="guide-link"
           >
-            M9A 官方配置指南
+            {{ t('edit.m9aConfigurationGuide') }}
           </a>
-          <span class="guide-text">，其中清晰写明了所有配置步骤。</span>
+          <span class="guide-text">{{ t('edit.whichSpellsOutEvery') }}</span>
         </div>
       </div>
     </div>
@@ -323,6 +315,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -336,6 +329,8 @@ import {
   FolderOpenOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('M9A脚本编辑')
 
@@ -462,7 +457,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        message.error('脚本不存在或加载失败')
+        message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -479,7 +474,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -537,7 +532,7 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
 const selectM9APath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
@@ -545,12 +540,12 @@ const selectM9APath = async () => {
     if (path) {
       m9aConfig.Info.Path = path
       await handleChange('Info', 'Path', path)
-      message.success('M9A路径选择成功')
+      message.success(t('edit.m9aPathSelected'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择M9A路径失败: ${errorMsg}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 </script>

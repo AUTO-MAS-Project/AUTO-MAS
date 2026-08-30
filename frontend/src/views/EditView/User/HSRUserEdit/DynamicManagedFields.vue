@@ -1,5 +1,5 @@
 <template>
-  <a-empty v-if="fields.length === 0" description="当前版本没有可配置项" />
+  <a-empty v-if="fields.length === 0" :description="t('edit.thisVersionHasNothing')" />
   <div v-else class="dynamic-fields">
     <div
       v-for="field in fields"
@@ -71,9 +71,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { HSRManagedField } from '@/composables/useHSRPluginApi'
+
+const { t } = useI18n()
 
 defineProps<{
   fields: HSRManagedField[]

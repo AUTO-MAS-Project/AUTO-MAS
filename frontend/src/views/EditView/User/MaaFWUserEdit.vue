@@ -87,6 +87,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   computed,
   markRaw,
@@ -121,6 +122,8 @@ import type {
   MaaFWTaskSnapshot,
   MaaFWUserConfig,
 } from '@/types/script'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('MaaFW用户编辑')
 
@@ -767,12 +770,12 @@ const loadScriptInfo = async () => {
   try {
     const script = await getScript(scriptId)
     if (!script) {
-      message.error('脚本不存在')
+      message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
       return
     }
     if (script.type !== 'MaaFW') {
-      message.error('脚本类型不是 MFW')
+      message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
     }
@@ -794,7 +797,7 @@ const loadScriptInfo = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error('加载脚本信息失败')
+    message.error(t('edit.couldNotLoadScript2'))
     handleCancel()
   } finally {
     pageLoading.value = false
@@ -813,13 +816,13 @@ const createUserImmediately = async () => {
       })
       await loadUserData()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error('创建用户失败')
+    message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -842,17 +845,17 @@ const loadUserData = async () => {
         hasUnsavedChanges.value = false
         isInitializing.value = false
       } else {
-        message.error('用户不存在')
+        message.error(t('edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error('获取用户数据失败')
+      message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error('加载用户数据失败')
+    message.error(t('edit.couldNotLoadUser2'))
     isInitializing.value = false
     handleCancel()
   }
@@ -860,7 +863,7 @@ const loadUserData = async () => {
 
 const reloadInterface = async (showMessage = true) => {
   if (!scriptPath.value) {
-    if (showMessage) message.warning('请先在脚本页导入 MFW 项目')
+    if (showMessage) message.warning(t('edit.importMfwProjectScript'))
     return
   }
 
@@ -871,7 +874,7 @@ const reloadInterface = async (showMessage = true) => {
     taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data)
     await syncControllerResourceSelection()
     await nextTick()
-    if (showMessage) message.success('interface 已读取')
+    if (showMessage) message.success(t('edit.interfaceLoaded'))
   }
 }
 
@@ -908,10 +911,10 @@ const handleTaskDragEnd = async () => {
 const handleCancel = () => {
   if (isSaving.value || hasUnsavedChanges.value) {
     Modal.confirm({
-      title: '有未保存的更改',
-      content: '确定要离开吗？未保存的更改可能会丢失。',
-      okText: '离开',
-      cancelText: '继续编辑',
+      title: t('edit.youHaveUnsavedChanges'),
+      content: t('edit.leaveWithoutSavingUnsaved'),
+      okText: t('edit.leave'),
+      cancelText: t('edit.keepEditing'),
       onOk: () => router.push('/scripts'),
     })
     return
@@ -928,7 +931,7 @@ const handleBeforeUnload = (event: BeforeUnloadEvent) => {
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   if (!scriptId) {
-    message.error('缺少脚本ID参数')
+    message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }

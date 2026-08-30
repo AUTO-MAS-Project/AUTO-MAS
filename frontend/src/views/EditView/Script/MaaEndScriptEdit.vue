@@ -5,15 +5,15 @@
         <div class="mask-icon">
           <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
         </div>
-        <h2 class="mask-title">正在进行 MaaEnd 配置</h2>
+        <h2 class="mask-title">{{ t('edit.maaendConfigurationProgress') }}</h2>
         <p class="mask-description">
-          当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。
+          {{ t('edit.scriptLevelMaaendConfiguration2') }}
           <br />
-          配置完成后，点击“保存配置”结束本次会话。
+          {{ t('edit.clickSaveConfigurationWhen') }}
         </p>
         <div class="mask-actions">
           <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
-            保存配置
+            {{ t('edit.saveConfiguration') }}
           </a-button>
         </div>
       </div>
@@ -38,17 +38,17 @@
   </ScriptEditHeader>
 
   <div class="script-edit-content">
-    <a-card title="MaaEnd 脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="t('edit.maaendScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag class="type-tag">MaaEnd</a-tag>
       </template>
 
-      <a-alert message="重要提示" type="warning" show-icon class="notice-alert">
+      <a-alert :message="t('edit.important')" type="warning" show-icon class="notice-alert">
         <template #description>
           <div class="notice-content">
-            <p>默认等待时间建议调到 60 秒。</p>
+            <p>{{ t('edit.k60SecondsRecommendedDefault') }}</p>
             <p>
-              MaaEnd专项还在积极测试中，如有问题请加入
+              {{ t('edit.maaendAdapterStillUnder') }}
               <a
                 :href="MAS_QQ_GROUP_URL"
                 target="_blank"
@@ -56,7 +56,7 @@
                 @click="handleExternalLink"
                 >QQ群</a
               >
-              反馈，或前往
+              {{ t('edit.reportIssueGo') }}
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/149"
                 @click="handleExternalLink"
@@ -70,22 +70,22 @@
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    脚本名称
-                    <a-tooltip title="用于区分不同的 MaaEnd 脚本实例">
+                    {{ t('edit.scriptName') }}
+                    <a-tooltip :title="t('edit.tellsMaaendScriptInstances')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   @blur="handleChange('Info', 'Name', formData.name)"
                 />
@@ -95,8 +95,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    MaaEnd 路径
-                    <a-tooltip title="选择 MaaEnd.exe 所在目录">
+                    {{ t('edit.maaendPath') }}
+                    <a-tooltip :title="t('edit.pickDirectoryHoldingMaaend2')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -104,7 +104,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="请选择 MaaEnd.exe 所在目录"
+                    :placeholder="t('edit.pickDirectoryHoldingMaaend')"
                     size="large"
                     class="path-input"
                     readonly
@@ -113,7 +113,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -123,7 +123,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>游戏配置</h3>
+            <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
 
           <a-row :gutter="24">
@@ -131,8 +131,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    控制器
-                    <a-tooltip title="选择游戏控制方式">
+                    {{ t('edit.controller') }}
+                    <a-tooltip :title="t('edit.pickHowGameControlled')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -151,8 +151,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    任务结束后关闭游戏
-                    <a-tooltip title="自动登录任务结束后是否关闭游戏">
+                    {{ t('edit.closeGameAfterTask2') }}
+                    <a-tooltip :title="t('edit.whetherGameClosesAfter')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -172,8 +172,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    游戏路径
-                    <a-tooltip title="选择 Endfield.exe 文件路径">
+                    {{ t('edit.gamePath') }}
+                    <a-tooltip :title="t('edit.pickEndfieldExePath')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -181,7 +181,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="maaEndConfig.Game.Path"
-                    placeholder="请选择游戏可执行文件"
+                    :placeholder="t('edit.pickGameExecutable')"
                     size="large"
                     class="path-input"
                     readonly
@@ -190,7 +190,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件
+                    {{ t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -199,15 +199,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动参数
-                    <a-tooltip title="启动游戏时的命令行参数">
+                    {{ t('edit.launchArguments') }}
+                    <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="maaEndConfig.Game.Arguments"
-                  placeholder="请输入启动参数"
+                  :placeholder="t('edit.enterLaunchArguments')"
                   size="large"
                   @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                 />
@@ -217,8 +217,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    等待时间
-                    <a-tooltip title="仅电脑端控制器需要配置，单位秒">
+                    {{ t('edit.waitTime') }}
+                    <a-tooltip :title="t('edit.pcControllersOnlySeconds')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -240,8 +240,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    模拟器
-                    <a-tooltip title="选择要使用的模拟器">
+                    {{ t('edit.emulator') }}
+                    <a-tooltip :title="t('edit.pickEmulatorUse')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -249,7 +249,7 @@
                 <a-select
                   v-model:value="maaEndConfig.Game.EmulatorId"
                   size="large"
-                  placeholder="请选择模拟器"
+                  :placeholder="t('edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -267,12 +267,12 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    模拟器实例
+                    {{ t('edit.emulatorInstance') }}
                     <a-tooltip
                       :title="
                         emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                          ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
-                          : '选择模拟器的具体实例'
+                          ? t('edit.thisEmulatorCannotBe')
+                          : t('edit.pickEmulatorInstance')
                       "
                     >
                       <QuestionCircleOutlined class="help-icon" />
@@ -283,14 +283,14 @@
                   v-if="showManualEmulatorIndexInput"
                   v-model:value="maaEndConfig.Game.EmulatorIndex"
                   size="large"
-                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  :placeholder="t('edit.enterInstanceInfoAs')"
                   @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
                 />
                 <a-select
                   v-else
                   v-model:value="maaEndConfig.Game.EmulatorIndex"
                   size="large"
-                  placeholder="请选择实例"
+                  :placeholder="t('edit.pickInstance')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!maaEndConfig.Game.EmulatorId"
                   @change="handleChange('Game', 'EmulatorIndex', $event)"
@@ -310,17 +310,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    账号切换方式
-                    <a-tooltip
-                      title="选择由 MAS 切换游戏内已保存账号，或由 MAAEND 内置任务按账号末四位切换"
-                    >
+                    {{ t('edit.accountSwitching') }}
+                    <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -337,10 +335,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    单日代理次数上限
-                    <a-tooltip
-                      title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
-                    >
+                    {{ t('edit.runsPerDay') }}
+                    <a-tooltip :title="t('edit.skipRunOnceThis')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -359,8 +355,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    重试次数限制
-                    <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
+                    {{ t('edit.retryLimit2') }}
+                    <a-tooltip :title="t('edit.ifRunStillUnfinished')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -379,8 +375,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    代理超时限制（分钟）
-                    <a-tooltip title="执行代理任务时，脚本日志无变化时间超过该阀值视为超时">
+                    {{ t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="t('edit.treatRunAsTimed')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -403,6 +399,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -422,6 +419,8 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -578,7 +577,7 @@ const loadScript = async () => {
 
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
@@ -682,7 +681,7 @@ const selectGamePath = async () => {
   if (!path) return
   const fileName = path.split(/[\\/]/).pop()
   if (fileName?.toLowerCase() !== 'endfield.exe') {
-    message.error('请选择 Endfield.exe')
+    message.error(t('edit.pickEndfieldExe'))
     return
   }
   maaEndConfig.Game.Path = path
@@ -731,12 +730,12 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionIds.value = subscriptionIds
     maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success('已启动脚本级 MaaEnd 配置')
+    message.success(t('edit.scriptLevelMaaendConfiguration'))
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
         cleanupConfigSession()
-        message.info('MaaEnd 配置会话已超时断开')
+        message.info(t('edit.maaendConfigurationSessionTimed'))
       },
       30 * 60 * 1000
     )
@@ -759,7 +758,7 @@ const handleSaveMaaEndConfig = async () => {
     }
 
     cleanupConfigSession()
-    message.success('MaaEnd 配置已保存')
+    message.success(t('edit.maaendConfigurationSaved'))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存配置失败')
   }

@@ -3,12 +3,12 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="@/assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -19,13 +19,13 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
   <div class="script-edit-content">
-    <a-card title="ok-ww 脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ok-ww</a-tag>
       </template>
@@ -33,22 +33,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    脚本名称
-                    <a-tooltip title="用于区分不同的 ok-ww 脚本实例">
+                    {{ t('edit.scriptName') }}
+                    <a-tooltip :title="t('edit.tellsOkWwScript')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -59,8 +59,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    ok-ww 路径
-                    <a-tooltip title="选择 ok-ww.exe 所在目录">
+                    {{ t('edit.okWwPath') }}
+                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk4')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -68,7 +68,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="请选择 ok-ww.exe 所在目录"
+                    :placeholder="t('edit.pickDirectoryHoldingOk2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -84,7 +84,7 @@
                     <template #icon>
                       <ImportOutlined />
                     </template>
-                    一键导入
+                    {{ t('edit.import') }}
                   </a-button>
                   <a-button
                     size="large"
@@ -95,7 +95,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -105,15 +105,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>游戏配置</h3>
+            <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后由 MAS 接管游戏启停">
+                  <a-tooltip :title="t('edit.masTakesOverStarting')">
                     <span class="form-label">
-                      启用游戏配置
+                      {{ t('edit.enableGameConfiguration') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -124,8 +124,8 @@
                   class="modern-input"
                   @change="handleChange('Game', 'Enabled', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -135,11 +135,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="开启后，代理启动游戏前由 MAS 检查官方版本并自行完成更新；关闭则直接启动游戏"
-                  >
+                  <a-tooltip :title="t('edit.beforeLaunchingGameRun')">
                     <span class="form-label">
-                      启动前自动更新
+                      {{ t('edit.updateAutomaticallyBeforeLaunching') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -151,19 +149,17 @@
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'IfAutoUpdate', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="版本跨越较大时需整文件同步，超过该体积不再自动下载，改为中止并提示手动处理"
-                  >
+                  <a-tooltip :title="t('edit.largeVersionGapNeeds')">
                     <span class="form-label">
-                      整文件同步上限（GB）
+                      {{ t('edit.wholeFileSyncLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -195,12 +191,12 @@
                 <template #icon>
                   <ThunderboltOutlined />
                 </template>
-                检查更新
+                {{ t('edit.checkUpdates') }}
               </a-button>
             </a-col>
             <a-col :span="12">
               <span class="label-hint">
-                由 MAS 检查官方版本并完成更新；更新前请确保游戏未在运行
+                {{ t('edit.masChecksOfficialVersion') }}
               </span>
             </a-col>
           </a-row>
@@ -210,14 +206,14 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    游戏启动器
-                    <span class="label-hint">仅支持鸣潮官方启动器</span>
+                    {{ t('edit.gameLauncher') }}
+                    <span class="label-hint">{{ t('edit.officialWutheringWavesLauncher') }}</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="okwwConfig.Game.Path"
-                    placeholder="请选择启动器所在目录"
+                    :placeholder="t('edit.pickLauncherDirectory')"
                     size="large"
                     class="path-input"
                     readonly
@@ -234,7 +230,7 @@
                     <template #icon>
                       <ImportOutlined />
                     </template>
-                    一键导入
+                    {{ t('edit.import') }}
                   </a-button>
                   <a-button
                     size="large"
@@ -245,7 +241,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
                 <a-alert
@@ -261,15 +257,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动参数
-                    <a-tooltip title="游戏启动参数（非 ok-ww 启动参数）">
+                    {{ t('edit.launchArguments') }}
+                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot2')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="okwwConfig.Game.Arguments"
-                  placeholder="请输入游戏启动参数"
+                  :placeholder="t('edit.enterGameLaunchArguments')"
                   size="large"
                   class="modern-input"
                   :disabled="!okwwConfig.Game.Enabled"
@@ -281,8 +277,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动等待时间
-                    <a-tooltip title="拉起游戏后的等待时间（秒）">
+                    {{ t('edit.startupWait') }}
+                    <a-tooltip :title="t('edit.howLongWaitAfter')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -303,15 +299,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    单日代理次数上限
-                    <a-tooltip title="阈值为 0 时表示不限制">
+                    {{ t('edit.runsPerDay') }}
+                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -330,8 +326,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    重试次数限制
-                    <a-tooltip title="超过该次数仍失败则终止">
+                    {{ t('edit.retryLimit2') }}
+                    <a-tooltip :title="t('edit.giveUpAfterThis')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -350,8 +346,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    代理超时限制（分钟）
-                    <a-tooltip title="日志长期无变化将判定超时">
+                    {{ t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -383,18 +379,14 @@
   >
     <template v-if="!updateModal.running">
       <a-form layout="vertical">
-        <a-form-item label="选择用户（按该用户的服务器检查更新）">
+        <a-form-item :label="t('edit.pickUserWhoseServer')">
           <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
             <a-select-option v-for="user in updateModal.users" :key="user.uid" :value="user.uid">
               {{ user.name }}（{{ user.resource }}）
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-alert
-          type="info"
-          show-icon
-          message="将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行"
-        />
+        <a-alert type="info" show-icon :message="t('edit.wutheringWavesWillBe')" />
       </a-form>
     </template>
     <template v-else>
@@ -406,13 +398,13 @@
 
   <a-modal
     v-model:open="candidateModal.open"
-    title="选择导入路径"
+    :title="t('edit.pickImportPath')"
     :confirm-loading="candidateModal.loading"
     @ok="confirmCandidateSelection"
     @cancel="closeCandidateModal"
   >
     <a-form layout="vertical">
-      <a-form-item label="检测到多个可用路径，请选择当前脚本使用的路径">
+      <a-form-item :label="t('edit.severalUsablePathsWere')">
         <a-select v-model:value="candidateModal.selectedPath" style="width: 100%">
           <a-select-option
             v-for="candidate in candidateModal.candidates"
@@ -428,6 +420,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
@@ -450,6 +443,8 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import type { PathDiscoveryCandidate } from '@/types/electron'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
@@ -609,7 +604,7 @@ const handleCheckUpdate = async () => {
         resource: user?.Info?.Resource || '官服',
       }))
     if (!users.length) {
-      message.warning('请先添加并启用用户，再进行更新检查')
+      message.warning(t('edit.addEnableUserBefore'))
       return
     }
     updateModal.users = users
@@ -618,7 +613,7 @@ const handleCheckUpdate = async () => {
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error('加载用户失败')
+    message.error(t('edit.couldNotLoadUser'))
   }
 }
 
@@ -650,7 +645,7 @@ const startUpdate = async () => {
         }
       }),
       subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-        message.success('鸣潮更新任务已结束')
+        message.success(t('edit.wutheringWavesUpdateTask'))
         updateModal.running = false
         updateModal.open = false
         void stopUpdateSession()
@@ -658,7 +653,7 @@ const startUpdate = async () => {
     ]
     updateSession.timeout = window.setTimeout(
       () => {
-        message.error('鸣潮更新超时，已自动停止')
+        message.error(t('edit.wutheringWavesUpdateTimed'))
         void stopUpdateSession()
       },
       30 * 60 * 1000
@@ -746,7 +741,7 @@ const validateGamePath = async (launcherPath: string) => {
 
 const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww 根目录已保存') => {
   if (!rootPath || rootPath === '.') {
-    message.warning('请先选择脚本根目录')
+    message.warning(t('edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -804,12 +799,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'Okww') {
-      message.error('脚本类型不是 ok-ww')
+      message.error(t('edit.scriptTypeNotOk2'))
       handleCancel()
       return
     }
@@ -823,7 +818,7 @@ const loadScript = async () => {
       await validateGamePath(okwwConfig.Game.Path)
     }
   } catch {
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false

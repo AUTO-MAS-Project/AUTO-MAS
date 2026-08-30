@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
@@ -19,7 +19,7 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
@@ -145,15 +145,18 @@
           :disabled="!canLeaveCurrentStep"
           @click="currentStep += 1"
         >
-          下一步
+          {{ t('edit.next') }}
         </a-button>
-        <a-button v-else type="primary" size="large" @click="handleCancel"> 完成 </a-button>
+        <a-button v-else type="primary" size="large" @click="handleCancel">{{
+          t('edit.done')
+        }}</a-button>
       </div>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -179,6 +182,8 @@ import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
 
@@ -498,7 +503,7 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
 const selectMaaFWPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
     const path = await window.electronAPI.selectFolder()
@@ -509,7 +514,7 @@ const selectMaaFWPath = async () => {
     await runPreview()
   } catch (error) {
     logger.error(`选择项目目录失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 
@@ -555,7 +560,7 @@ onMounted(async () => {
   try {
     const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])
     if (!scriptDetail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
@@ -573,7 +578,7 @@ onMounted(async () => {
     }
   } catch (error) {
     logger.error(`加载脚本失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   BugOutlined,
   DeleteOutlined,
@@ -9,6 +10,8 @@ import {
 } from '@ant-design/icons-vue'
 import { ref, watch, nextTick } from 'vue'
 import type { PushLogPattern, PushLogPatternType } from '../composables/usePushLogPatterns'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: PushLogPattern
@@ -129,7 +132,7 @@ const logTypeOptions = [
           v-model:value="nameValue"
           class="rule-title-input"
           size="small"
-          placeholder="规则标题"
+          :placeholder="t('edit.ruleTitle')"
           @blur="finishEditName"
           @press-enter="finishEditName"
         />
@@ -154,13 +157,13 @@ const logTypeOptions = [
 
         <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
 
-        <a-tooltip title="调试">
+        <a-tooltip :title="t('edit.debug')">
           <a-button size="small" class="rule-op-btn" @click="emit('debug')">
             <BugOutlined />
           </a-button>
         </a-tooltip>
 
-        <a-tooltip title="删除">
+        <a-tooltip :title="t('edit.delete')">
           <a-button size="small" danger class="rule-op-btn" @click="emit('remove')">
             <DeleteOutlined />
           </a-button>
@@ -176,22 +179,20 @@ const logTypeOptions = [
           <a-col :span="24">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip
-                  title="必填，留空则该规则不生效；多个关键字以「 | 」分隔，任一命中即通过"
-                >
+                <a-tooltip :title="t('edit.requiredEmptyValueDisables2')">
                   <span class="form-label">
-                    匹配关键字
+                    {{ t('edit.keyword') }}
                     <QuestionCircleOutlined class="help-icon" />
                     <span class="doc-link" @click.stop="$emit('open-docs', 'split')">
                       <BookOutlined />
-                      说明文档
+                      {{ t('edit.documentation') }}
                     </span>
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="local.match"
-                placeholder="例如：任务完成|成功|失败"
+                :placeholder="t('edit.exampleTaskDoneSuccess')"
                 size="middle"
                 @blur="commit"
               />
@@ -200,11 +201,9 @@ const logTypeOptions = [
           <a-col :span="12">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip
-                  title="从行首截取到关键字处；勾选「包含」则连同关键字一起去除，不勾选则保留关键字"
-                >
+                <a-tooltip :title="t('edit.cutFromStartLine')">
                   <span class="form-label">
-                    掐头关键字
+                    {{ t('edit.leadingKeyword') }}
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
@@ -212,22 +211,22 @@ const logTypeOptions = [
               <div class="inline-checkbox-row">
                 <a-input
                   v-model:value="local.head"
-                  placeholder="留空不掐头"
+                  :placeholder="t('edit.leaveEmptySkipLeading')"
                   size="middle"
                   @blur="commit"
                 />
-                <a-checkbox v-model:checked="local.headInclude" @change="commit"> 包含 </a-checkbox>
+                <a-checkbox v-model:checked="local.headInclude" @change="commit">{{
+                  t('edit.include')
+                }}</a-checkbox>
               </div>
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip
-                  title="从关键字处截取到行尾；勾选「包含」则连同关键字一起去除，不勾选则保留关键字"
-                >
+                <a-tooltip :title="t('edit.cutFromKeywordEnd')">
                   <span class="form-label">
-                    去尾关键字
+                    {{ t('edit.trailingKeyword') }}
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
@@ -235,11 +234,13 @@ const logTypeOptions = [
               <div class="inline-checkbox-row">
                 <a-input
                   v-model:value="local.tail"
-                  placeholder="留空不去尾"
+                  :placeholder="t('edit.leaveEmptySkipTrailing')"
                   size="middle"
                   @blur="commit"
                 />
-                <a-checkbox v-model:checked="local.tailInclude" @change="commit"> 包含 </a-checkbox>
+                <a-checkbox v-model:checked="local.tailInclude" @change="commit">{{
+                  t('edit.include')
+                }}</a-checkbox>
               </div>
             </a-form-item>
           </a-col>
@@ -252,20 +253,20 @@ const logTypeOptions = [
           <a-col :span="24">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="必填，留空则该规则不生效；用于过滤行的正则表达式">
+                <a-tooltip :title="t('edit.requiredEmptyValueDisables4')">
                   <span class="form-label">
-                    匹配正则
+                    {{ t('edit.matchPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
                     <span class="doc-link" @click.stop="$emit('open-docs', 'regex')">
                       <BookOutlined />
-                      说明文档
+                      {{ t('edit.documentation') }}
                     </span>
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="local.match"
-                placeholder="例如：任务执行"
+                :placeholder="t('edit.exampleTaskRun')"
                 size="middle"
                 @blur="commit"
               />
@@ -278,18 +279,18 @@ const logTypeOptions = [
                   title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链；留空则返回整行'
                 >
                   <span class="form-label">
-                    提取表达式
+                    {{ t('edit.extractionPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
                     <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
                       <BookOutlined />
-                      说明文档
+                      {{ t('edit.documentation') }}
                     </span>
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="local.extract"
-                placeholder="例如：$(任务执行: (\S+))"
+                :placeholder="t('edit.exampleTaskRunS')"
                 size="middle"
                 @blur="commit"
               />
@@ -304,16 +305,16 @@ const logTypeOptions = [
           <a-col :span="12">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="必填，留空则该规则不生效；匹配到此正则的行作为窗口起始（含该行）">
+                <a-tooltip :title="t('edit.requiredEmptyValueDisables')">
                   <span class="form-label">
-                    起始正则
+                    {{ t('edit.startPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="local.start"
-                placeholder="例如：一条龙任务执行"
+                :placeholder="t('edit.exampleFullRunStarted')"
                 size="middle"
                 @blur="commit"
               />
@@ -322,16 +323,16 @@ const logTypeOptions = [
           <a-col :span="12">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="匹配到此正则的行作为窗口结束（含该行）；留空则不限定结束">
+                <a-tooltip :title="t('edit.lineMatchingThisPattern')">
                   <span class="form-label">
-                    结束正则
+                    {{ t('edit.endPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="local.end"
-                placeholder="例如：任务结束"
+                :placeholder="t('edit.exampleTaskFinished')"
                 size="middle"
                 @blur="commit"
               />
@@ -344,18 +345,18 @@ const logTypeOptions = [
                   title='使用 $() 语法从窗口内容中提取字段；留空返回窗口原文。详见"表达式"说明文档'
                 >
                   <span class="form-label">
-                    提取表达式
+                    {{ t('edit.extractionPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
                     <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
                       <BookOutlined />
-                      说明文档
+                      {{ t('edit.documentation') }}
                     </span>
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="local.extract"
-                placeholder="例如：$(开始时间: (\S+));$(结束时间: (\S+))"
+                :placeholder="t('edit.exampleStartSEnd')"
                 size="middle"
                 @blur="commit"
               />
@@ -364,8 +365,8 @@ const logTypeOptions = [
           <a-col :span="4">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip title="窗口最大跨行数，达到后强制关闭">
-                  <span class="form-label">最大行数</span>
+                <a-tooltip :title="t('edit.maximumLinesWindowBefore')">
+                  <span class="form-label">{{ t('edit.maximumLines') }}</span>
                 </a-tooltip>
               </template>
               <a-input-number
