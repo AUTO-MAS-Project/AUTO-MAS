@@ -6,12 +6,14 @@
         <a-dropdown :disabled="loading" :trigger="['click']">
           <a-button type="dashed" size="small" :disabled="loading">
             <template #icon><AppstoreAddOutlined /></template>
-            添加预设
+            {{ t('edit.addPreset') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
             <a-menu>
-              <a-menu-item key="all" @click="importPreset('all')">全部预设</a-menu-item>
+              <a-menu-item key="all" @click="importPreset('all')">{{
+                t('edit.allPresets')
+              }}</a-menu-item>
               <a-menu-divider />
               <a-menu-item
                 v-for="preset in DEPOT_MAINTAIN_PRESETS"
@@ -25,17 +27,17 @@
         </a-dropdown>
         <a-button type="dashed" size="small" :disabled="loading" @click="addPlan">
           <template #icon><PlusOutlined /></template>
-          添加物品
+          {{ t('edit.addItem') }}
         </a-button>
         <a-popconfirm
           :title="`确定删除选中的 ${selectedRowKeys.length} 项库存保持计划吗？`"
-          ok-text="确定"
-          cancel-text="取消"
+          :ok-text="t('edit.ok')"
+          :cancel-text="t('edit.cancel')"
           @confirm="removeSelectedPlans"
         >
           <a-button danger size="small" :disabled="loading || selectedRowKeys.length === 0">
             <template #icon><DeleteOutlined /></template>
-            删除选中
+            {{ t('edit.deleteSelected') }}
           </a-button>
         </a-popconfirm>
       </a-space>
@@ -48,7 +50,7 @@
       :scroll="{ x: 680 }"
       size="small"
     >
-      <template #emptyText>暂无库存保持计划</template>
+      <template #emptyText>{{ t('edit.noStockKeepingPlans') }}</template>
       <template #bodyCell="{ column, record }">
         <a-select
           v-if="column.key === 'stage'"
@@ -58,7 +60,7 @@
           allow-clear
           show-search
           option-filter-prop="label"
-          placeholder="选择关卡"
+          :placeholder="t('edit.pickStage')"
           @change="savePlans"
         />
         <a-select
@@ -70,7 +72,7 @@
           allow-clear
           show-search
           option-filter-prop="label"
-          placeholder="选择物品"
+          :placeholder="t('edit.pickItem')"
           @change="savePlans"
         />
         <a-input-number
@@ -85,7 +87,7 @@
           v-else-if="column.key === 'action'"
           type="text"
           danger
-          aria-label="删除库存保持计划"
+          :aria-label="t('edit.deleteStockKeepingPlan')"
           :disabled="loading"
           @click="removePlan(record.key)"
         >
@@ -97,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import {
   AppstoreAddOutlined,
@@ -111,6 +114,8 @@ import {
   type DepotMaintainPlan as SavedDepotMaintainPlan,
   type DepotMaintainPresetKey,
 } from './depotMaintainPresets'
+
+const { t } = useI18n()
 
 type SelectOption = { label: string; value: string }
 type DepotMaintainPlan = SavedDepotMaintainPlan & { key: number }

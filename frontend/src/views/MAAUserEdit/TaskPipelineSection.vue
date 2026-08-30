@@ -1,13 +1,13 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>任务配置</h3>
-      <span class="section-note">剿灭与日常分两次启动 MAA，组内按执行顺序排列</span>
+      <h3>{{ t('edit.taskConfiguration') }}</h3>
+      <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
     </div>
 
     <a-alert
-      message="剿灭作战和日常任务会分别启动两次 MAA"
-      description="启用剿灭时会先单独启动一次 MAA 执行剿灭；剿灭结束后，再启动一次 MAA 执行日常流程。"
+      :message="t('edit.annihilationDailyTasksEach')"
+      :description="t('edit.annihilationMaaStartsOnce')"
       type="info"
       show-icon
       class="task-alert"
@@ -22,7 +22,7 @@
     />
 
     <div class="task-list">
-      <div class="pipeline-phase">第一次启动 MAA：剿灭流程</div>
+      <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
       <PipelineRow
         name="剿灭作战"
         :summary="annihilationSummary"
@@ -33,7 +33,7 @@
       >
         <a-row :gutter="16">
           <a-col :xs="24" :md="12">
-            <a-form-item label="剿灭关卡" class="detail-item">
+            <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
               <a-select
                 :value="formData.Info.Annihilation"
                 :options="annihilationStageOptions"
@@ -68,21 +68,21 @@
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', null)"
               >
-                重置状态
+                {{ t('edit.resetState') }}
               </a-button>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)"
               >
-                手动完成
+                {{ t('edit.markAsDone2') }}
               </a-button>
             </div>
           </a-col>
         </a-row>
       </PipelineRow>
 
-      <div class="pipeline-phase">第二次启动 MAA：日常流程</div>
+      <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
       <PipelineRow
         name="活动关优先"
         :summary="activitySummary"
@@ -200,7 +200,7 @@
               <div class="detail-inline">
                 <a-input
                   :value="formData.Info.InfrastName"
-                  placeholder="尚未导入配置"
+                  :placeholder="t('edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
                 />
@@ -210,7 +210,7 @@
                   :loading="infrastructureImporting"
                   @click="emit('selectAndImportInfrastructureConfig')"
                 >
-                  选择并导入
+                  {{ t('edit.pickImport') }}
                 </a-button>
               </div>
             </a-form-item>
@@ -225,7 +225,7 @@
                 :options="infrastructureOptions"
                 :loading="infrastructureOptionsLoading"
                 :disabled="loading"
-                placeholder="请选择自定义基建排班"
+                :placeholder="t('edit.pickCustomBaseLayout')"
                 @change="emitSave('Info.InfrastIndex', $event)"
               />
             </a-form-item>
@@ -269,6 +269,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
@@ -283,6 +284,8 @@ import {
   summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
+
+const { t } = useI18n()
 
 type SelectOption = { label: string; value: string }
 
