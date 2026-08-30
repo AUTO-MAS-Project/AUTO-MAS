@@ -27,7 +27,8 @@
                 "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
                 "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
                 "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",
-                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)"
+                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理 MaaFW 配置复用模块：能力未接入任何界面，留着只会让人以为可用，需要时可从上游重新取用 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
                 "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
