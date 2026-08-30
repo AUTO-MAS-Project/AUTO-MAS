@@ -14,7 +14,7 @@ const i18n = createI18n({
   fallbackWarn: false,
   messages: { 'zh-CN': zhCN, 'en-US': enUS },
 })
-const t = i18n.global.t as (key: string, named?: Record<string, unknown>) => string
+const t = i18n.global.t as (key: string, named?: Record<string, unknown>, plural?: number) => string
 
 const flatten = (node: unknown, prefix = ''): [string, string][] =>
   typeof node === 'string'
