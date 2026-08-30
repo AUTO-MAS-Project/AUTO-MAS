@@ -95,7 +95,7 @@
               :key="template.name"
               :value="template.name"
             >
-              {{ template.name }} - {{ template.description }}
+              {{ template.name }} - {{ t(template.descriptionKey) }}
             </a-select-option>
           </a-select>
         </a-form-item>

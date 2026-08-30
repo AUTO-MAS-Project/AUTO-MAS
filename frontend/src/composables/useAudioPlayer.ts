@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
@@ -110,7 +111,7 @@ export function useAudioPlayer() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`播放音频时发生错误: ${fileName} - ${errorMsg}`)
-      message.error('音频播放失败，请检查网络连接')
+      message.error(t('misc.audioPlaybackFailedCheck'))
       isPlaying.value = false
       currentAudio.value = null
       return false

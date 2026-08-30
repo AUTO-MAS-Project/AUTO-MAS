@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 
@@ -17,7 +18,7 @@ export function useMaaEndIssueReport(logger: ReportLogger) {
       const result = await window.electronAPI?.exportMaaEndIssueReport?.()
 
       if (!result) {
-        message.error('导出功能未响应，请检查程序')
+        message.error(t('misc.exportDidNotRespond'))
         logger.error('导出 MaaEnd 问题包失败: 未收到响应')
         return
       }

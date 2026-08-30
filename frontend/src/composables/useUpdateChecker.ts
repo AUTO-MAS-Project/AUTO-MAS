@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
@@ -125,7 +126,7 @@ export function useUpdateChecker() {
           // 播放无新版本音频
           if (!silent) {
             await playSound('no_new_version')
-            message.success('暂无更新~')
+            message.success(t('misc.noUpdates'))
           }
         }
       } else {
@@ -137,7 +138,7 @@ export function useUpdateChecker() {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`手动更新检查失败: ${errorMsg}`)
       if (!silent) {
-        message.error('获取更新失败！')
+        message.error(t('misc.couldNotCheckUpdates'))
       }
     }
   }
