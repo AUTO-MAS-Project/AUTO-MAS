@@ -332,7 +332,7 @@ def _venv_bootstrap_python() -> str:
 def describe_loaded_maafw() -> tuple[str, str]:
     """返回实际加载的 MaaFramework 版本与 Python binding 的版本。
 
-    两者未必相同：DLL 来自项目自带目录，binding 来自 runner venv。MaaFW 的
+    两者未必相同：原生库来自项目自带目录，binding 来自 runner venv。MaaFW 的
     py binding 与原生库是绑定关系，跨 minor 混用**不会报错**，但行为可能不同，
     真机上表现为「资源能导入、识别却不对」这类只在生产复现的问题。
     """
@@ -348,6 +348,53 @@ def describe_loaded_maafw() -> tuple[str, str]:
     except Exception:  # pragma: no cover
         binding = ""
     return loaded, binding
+
+
+def _file_fingerprint(path: Path) -> tuple[int, str] | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return len(data), hashlib.sha256(data).hexdigest()
+
+
+def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
+    """项目自带的原生库是否与 binding 附带的那份不是同一个二进制。
+
+    版本号相同不等于二进制相同。按版本钉 binding 只能保证「官方发布的同版本」，
+    挡不住项目塞进来一份自己改的构建——它报的版本串照样是 X，版本一致性检查
+    看不出任何异常。
+
+    两份文件此时都在本地（一份在项目目录，一份在 runner venv 的 ``maa/bin``），
+    直接比字节即可，**不需要联网**。这是版本号抓不到、又能廉价拿到的那层证据。
+
+    对 MaaFramework 官方目录里 46 个 Windows 发行包做过全量比对：能确定版本的
+    44 个**全部与对应 PyPI wheel 逐字节相同**，无人自带改过的构建。所以这个
+    检查平时不会响；它是给「哪天真有人这么干」留的。
+
+    Returns:
+        True 表示确实是另一个二进制；False 表示同一份；无法判断时返回 None。
+    """
+
+    if runtime_path is None:
+        # 没有项目自带的库，本来就直接用 binding 那份，不存在分歧
+        return False
+
+    project_dll = runtime_path / "MaaFramework.dll"
+    binding_dll = (
+        Path(maa_package.__file__).resolve().parent / "bin" / "MaaFramework.dll"
+    )
+    try:
+        if project_dll.resolve() == binding_dll:
+            return False  # 同一个文件，谈不上分歧
+    except OSError:
+        return None
+
+    project_print = _file_fingerprint(project_dll)
+    binding_print = _file_fingerprint(binding_dll)
+    if project_print is None or binding_print is None:
+        return None
+    return project_print != binding_print
 
 
 def _normalize_maafw_version(value: str) -> str:
@@ -372,12 +419,13 @@ def _ensure_maafw_global_init(
             send_log(
                 f"MaaFramework 实际加载: v{loaded or '未知'}; 来源={source}"
             )
-            if (
+            versions_differ = (
                 loaded
                 and binding
                 and _normalize_maafw_version(loaded)
                 != _normalize_maafw_version(binding)
-            ):
+            )
+            if versions_differ:
                 # 只警告不拦截：现有项目正是这么跑起来的，贸然拦下会让原本能跑的
                 # 直接失败。但必须让人看见——这类不一致不会报错，只会行为不同。
                 send_log(
@@ -385,6 +433,15 @@ def _ensure_maafw_global_init(
                     f"binding v{binding} 不是同一版本。MaaFW 的 binding 与原生库"
                     "是绑定关系，跨版本混用不报错但行为可能不同，"
                     "识别异常时请优先怀疑这里"
+                )
+            elif detect_custom_maafw_build(runtime_path):
+                # 版本号相同但二进制不同：项目自带的是改过的构建。按版本钉
+                # binding 只保证「官方发布的同版本」，挡不住这种情况，而版本
+                # 一致性检查同样看不出来——只有比字节能发现。
+                send_log(
+                    f"MaaFramework 原生库为项目自带的非官方构建（版本同为 "
+                    f"v{loaded or '未知'}，二进制与官方发行版不同）。"
+                    "这是项目的选择，MAS 按其自带的库运行"
                 )
         user_path = (project_path or Path.cwd()).resolve()
         option_path = user_path / "config" / "maa_option.json"

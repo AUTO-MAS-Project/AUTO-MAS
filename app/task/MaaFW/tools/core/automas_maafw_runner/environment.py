@@ -565,6 +565,19 @@ def _runtime_constraint_text(value: Any) -> str:
     )
 
 
+# 内置运行能驱动的最低 MaaFramework 版本。
+#
+# runner 侧 import 了 ``maa.event_sink``，而该模块是 **5.0.0** 才加进 py binding
+# 的：逐个 minor 首版查过 PyPI 上的 wheel，4.0.0 到 4.5.0 全部没有它，5.0.0 起
+# 才有。装上更老的 binding，worker 会在启动时 ``ModuleNotFoundError``。
+#
+# MaaFramework 上游自己的支持线更高——5.1 之前一律不再支持。这里取 5.0.0 是
+# 因为它是**本代码实际需要**的下限，不替上游表态。
+#
+# 官方目录里踩线的项目（2026-08-30 勘察）：MMleo 自带 4.5.3、MaaEOV 自带 4.5.6。
+# 这两个用内置运行跑不起来，属已知边界而非缺陷——太老的不支持是正常的。
+MINIMUM_SUPPORTED_MAAFW_VERSION = "5.0.0"
+
 PROJECT_MAAFW_DLL_NAME = "MaaFramework.dll"
 
 # 兜底搜索的最大深度。真实布局最深是 ``runtimes/<rid>/native``（3 层），
