@@ -28,7 +28,7 @@ import asyncio
 import shutil
 from copy import deepcopy
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -1009,7 +1009,8 @@ class AutoProxyTask(TaskExecuteBase):
             or not await self.maa_process_manager.is_running()
         ):
             self.cur_user_log.status = "MAA 在完成任务前退出"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=(
                 # 本次开始唤醒会触发资源热更新时放宽超时，避免把正常更新误判为卡死
                 max(
@@ -1054,7 +1055,7 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "MAA 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

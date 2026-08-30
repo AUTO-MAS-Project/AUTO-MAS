@@ -24,6 +24,7 @@ import uuid
 import shlex
 import shutil
 import asyncio
+import time
 import re
 from pathlib import Path
 from contextlib import suppress
@@ -390,7 +391,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在等待脚本日志文件生成"
             if_get_file = False
             target_suffix: int | None = None  # None = 未锁定
-            while datetime.now() - t < timedelta(minutes=1):
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
                 if self.log_use_prefix:
                     prefix_fmt = self.log_format[: -len(_PREFIX_SENTINEL)]
                     pattern = _format_to_prefix_regex(prefix_fmt)
@@ -711,7 +713,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 成功/失败标志按配置模式（子串包含 / 正则）在日志全文中查找
         if self.success_log.search(log) is not None:
             self.cur_user_log.status = "Success!"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "脚本进程超时"
@@ -756,7 +759,7 @@ class AutoProxyTask(TaskExecuteBase):
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

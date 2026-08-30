@@ -25,7 +25,7 @@ import uuid
 import asyncio
 import re
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -543,9 +543,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def _wait_for_failure_quiet_period(self) -> None:
         while not self.wait_event.is_set():
-            idle_seconds = (
-                datetime.now() - self.m9a_log_monitor.latest_time
-            ).total_seconds()
+            idle_seconds = self.m9a_log_monitor.seconds_since_progress()
             if idle_seconds >= M9A_FAILURE_QUIET_SECONDS:
                 failed_tasks = "、".join(sorted(self._m9a_failed_task_names)) or "未知任务"
                 self.cur_user_log.status = f"M9A 任务失败: {failed_tasks}"
@@ -625,7 +623,8 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "M9A 进程已异常结束"
             else:
                 self.cur_user_log.status = "M9A 进程已结束"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "M9A 进程超时"
@@ -783,7 +782,7 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "M9A 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

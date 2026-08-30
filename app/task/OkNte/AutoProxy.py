@@ -24,7 +24,7 @@ import shlex
 import shutil
 import uuid
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
@@ -722,7 +722,8 @@ class AutoProxyTask(TaskExecuteBase):
             elif not await self.oknte_process_manager.is_running():
                 log_status = "OK-NTE 在完成任务前退出"
                 user_item_status = "异常"
-            elif datetime.now() - latest_time > timedelta(
+            elif self.is_log_stalled(
+                latest_time,
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
                 log_status = "OK-NTE 运行超时"
@@ -754,7 +755,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

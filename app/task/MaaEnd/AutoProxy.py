@@ -24,7 +24,7 @@ import uuid
 import shutil
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -744,8 +744,10 @@ class AutoProxyTask(TaskExecuteBase):
             if if_stream_end:
                 logger.info("MaaEnd 更新进程已退出，日志锁已释放")
                 self.wait_event.set()
-            elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", "RunTimeLimit")
+            elif self.is_log_stalled(
+                latest_time,
+                minutes=self.script_config.get("Run", "RunTimeLimit"),
+                key="update_download",
             ):
                 logger.warning("MaaEnd 更新进程超时，日志锁已释放")
                 self.cur_user_log.status = "MaaEnd 更新超时"
@@ -816,7 +818,8 @@ class AutoProxyTask(TaskExecuteBase):
                 except:
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "MaaEnd 进程超时"
@@ -850,7 +853,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

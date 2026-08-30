@@ -20,6 +20,8 @@
 
 
 import asyncio
+import time
+
 import aiofiles
 from contextlib import suppress
 from datetime import datetime, timedelta, date
@@ -74,6 +76,10 @@ class LogMonitor:
         self.last_callback_time: datetime = datetime.now()
         self.log_contents: list[str] = []
         self.latest_time = datetime.now()
+        # 最近一次日志推进的单调时钟读数。停滞判定必须用单调时钟：
+        # latest_time 与 datetime.now() 都是墙钟，系统时钟跳变（夏令时切换、
+        # NTP 校时）会让两者的差值凭空增加一小时，把正常任务误判为超时。
+        self.latest_progress_at = time.monotonic()
         self.task: asyncio.Task | None = None
 
     async def monitor_file(
@@ -325,6 +331,7 @@ class LogMonitor:
         if if_init:
             self.last_log = log
             self.latest_time = datetime.now()
+            self.latest_progress_at = time.monotonic()
             return
 
         if log == "" or any(_ in log for _ in self.except_logs):
@@ -339,6 +346,12 @@ class LogMonitor:
                     self.last_callback_time,
                 )
                 self.last_log = log_text
+                self.latest_progress_at = time.monotonic()
+
+    def seconds_since_progress(self) -> float:
+        """距最近一次日志推进的秒数，按单调时钟计量。"""
+
+        return time.monotonic() - self.latest_progress_at
 
     async def _consume_new_lines(
         self,

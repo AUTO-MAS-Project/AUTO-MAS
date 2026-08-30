@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import shutil
 import uuid
@@ -2335,9 +2336,9 @@ class MaaFWManager(TaskExecuteBase):
         if not adb_path or not serial:
             return
 
-        deadline = datetime.now() + timedelta(seconds=_ADB_READY_TIMEOUT_SECONDS)
+        deadline = time.monotonic() + _ADB_READY_TIMEOUT_SECONDS
         attempt = 0
-        while datetime.now() < deadline:
+        while time.monotonic() < deadline:
             attempt += 1
             try:
                 result = await ProcessRunner.run_process(
@@ -2891,7 +2892,6 @@ class MaaFWManager(TaskExecuteBase):
             return
         self.history_written = True
 
-        local_tz = datetime.now().astimezone().tzinfo
         for user in self.script_info.user_list:
             for start_time, log_item in sorted(
                 user.log_record.items(), key=lambda item: item[0]
@@ -2904,7 +2904,7 @@ class MaaFWManager(TaskExecuteBase):
                     if not content:
                         content = ["未捕获到任何日志内容"]
                         status = "未捕获到日志"
-                    log_time = start_time.replace(tzinfo=local_tz).astimezone(UTC4)
+                    log_time = start_time.astimezone(UTC4)
                     log_path = Config.build_history_log_path(
                         script_name=self.script_info.name,
                         user_name=user.name,

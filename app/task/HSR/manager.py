@@ -749,9 +749,7 @@ class HSRManager(TaskExecuteBase):
                     if log_item.status in ("未开始监看日志", "HSR 正常运行中"):
                         log_item.status = "未捕获到日志"
 
-                dt = start_time.replace(
-                    tzinfo=datetime.now().astimezone().tzinfo
-                ).astimezone(UTC4)
+                dt = start_time.astimezone(UTC4)
                 log_path = Config.build_history_log_path(
                     script_name=self.script_info.name,
                     user_name=user_item.name,
