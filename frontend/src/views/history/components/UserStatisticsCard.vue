@@ -156,6 +156,8 @@ import { BarChartOutlined, GiftOutlined, InboxOutlined, TeamOutlined } from '@an
 import { computed, ref, watch } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
 
+const { t } = useI18n()
+
 interface Props {
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
@@ -215,8 +217,6 @@ watch(
   },
   { immediate: true }
 )
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

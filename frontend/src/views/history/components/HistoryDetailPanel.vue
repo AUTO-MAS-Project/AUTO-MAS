@@ -37,6 +37,8 @@ import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
 import type { PullCountStatistics } from '@/types/history'
 
+const { t } = useI18n()
+
 interface RecordItem {
   date: string
   jsonFile: string
@@ -59,8 +61,6 @@ defineProps<Props>()
 defineEmits<{
   'select-record': [number, RecordItem]
 }>()
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

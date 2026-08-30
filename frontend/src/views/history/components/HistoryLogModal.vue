@@ -190,6 +190,8 @@ import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
 
+const { t } = useI18n()
+
 interface Props {
   open: boolean
   logContent: string | null
@@ -233,8 +235,6 @@ const displayLogContent = computed(() => {
 })
 
 // 计算掉落物品总数
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

@@ -74,6 +74,8 @@ import {
 } from '@ant-design/icons-vue'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 
+const { t } = useI18n()
+
 interface RecordItem {
   date: string
   jsonFile: string
@@ -93,8 +95,6 @@ defineEmits<{
 }>()
 
 const formatRecordTime = (date: string) => formatBackendDateTime(date)
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

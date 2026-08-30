@@ -74,6 +74,8 @@ import { ref, watch } from 'vue'
 import type { HistorySearchIn } from '@/api'
 import { timePresets } from '../useHistoryLogic.ts'
 
+const { t } = useI18n()
+
 interface Props {
   mode: HistorySearchIn.mode
   startDate: string
@@ -130,8 +132,6 @@ const handleEndDateChange = (val: string) => {
   emit('update:endDate', val)
   emit('date-change')
 }
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

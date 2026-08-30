@@ -50,6 +50,8 @@ import { ref, watch } from 'vue'
 import { formatHistoryGroupLabel } from '@/utils/dateDisplay'
 import type { HistoryDateGroup } from '../useHistoryLogic.ts'
 
+const { t } = useI18n()
+
 interface Props {
   historyData: HistoryDateGroup[]
   activeKeys: string[]
@@ -78,8 +80,6 @@ const handleCollapseChange = (keys: string | string[]) => {
 }
 
 const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

@@ -96,6 +96,8 @@ import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { PullCountStatistics } from '@/types/history'
 
+const { t } = useI18n()
+
 defineOptions({
   name: 'HistoryPage',
 })
@@ -166,8 +168,6 @@ const handleSelectRecord = async (index: number, record: any) => {
   logModalOpen.value = true
   await selectRecord(index, record)
 }
-
-const { t } = useI18n()
 </script>
 
 <style scoped>
