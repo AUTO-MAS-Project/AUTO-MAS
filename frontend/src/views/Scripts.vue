@@ -319,6 +319,12 @@
                 alt="HSR"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'MaaFW'"
+                src="@/assets/maafw.png"
+                alt="MFW"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -331,23 +337,7 @@
                     'script-type-oknte': script.type === 'OkNte',
                   }"
                 >
-                  {{
-                    script.type === 'MAA'
-                      ? 'MAA脚本'
-                      : script.type === 'SRC'
-                        ? 'SRC脚本'
-                        : script.type === 'MaaEnd'
-                          ? 'MaaEnd脚本'
-                          : script.type === 'M9A'
-                            ? 'M9A脚本'
-                            : script.type === 'Okww'
-                              ? 'ok-ww脚本'
-                              : script.type === 'OkNte'
-                                ? 'ok-nte脚本'
-                                : script.type === 'HSR'
-                                  ? 'HSR脚本'
-                                  : '通用脚本'
-                  }}
+                  {{ getScriptTypeDisplayLabel(script.type) }}
                 </span>
                 <span class="script-users">
                   <UserOutlined />
@@ -704,10 +694,27 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   SRC: 'src',
   MaaEnd: 'maaend',
   M9A: 'm9a',
+  MaaFW: 'maafw',
   HSR: 'hsr',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
+
+// 复制脚本弹窗列表里的类型文案
+const scriptTypeDisplayLabelMap: Record<ScriptType, string> = {
+  MAA: 'MAA脚本',
+  General: '通用脚本',
+  Okww: 'ok-ww脚本',
+  OkNte: 'ok-nte脚本',
+  SRC: 'SRC脚本',
+  MaaEnd: 'MaaEnd脚本',
+  M9A: 'M9A脚本',
+  MaaFW: 'MFW脚本',
+  HSR: 'HSR脚本',
+}
+
+const getScriptTypeDisplayLabel = (type: ScriptType) =>
+  scriptTypeDisplayLabelMap[type] ?? '通用脚本'
 
 // WebSocket连接管理
 const activeConnections = ref<Map<string, { subscriptionIds: string[]; taskId: string }>>(new Map()) // scriptId -> { subscriptionIds, taskId }
@@ -1107,6 +1114,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/maaend`)
   } else if (script.type === 'M9A') {
     router.push(`/scripts/${script.id}/users/add/m9a`)
+  } else if (script.type === 'MaaFW') {
+    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
@@ -1131,6 +1140,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
     } else if (script.type === 'M9A') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
+    } else if (script.type === 'MaaFW') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {

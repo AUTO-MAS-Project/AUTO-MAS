@@ -38,6 +38,7 @@ from .config import (
     OkwwConfig,
     OkNteConfig,
     HSRConfig,
+    MaaFWConfig,
 )
 
 # 延迟加载 System，避免 app.services 初始化期间触发循环导入；
@@ -407,6 +408,8 @@ class Task(TaskExecuteBase):
                     task_item = task.M9AManager(script_item)
                 elif isinstance(script_config, HSRConfig):
                     task_item = task.HSRManager(script_item)
+                elif isinstance(script_config, MaaFWConfig):
+                    task_item = task.MaaFWManager(script_item)
                 else:
                     script_item.status = "异常"
                     self._record_error(

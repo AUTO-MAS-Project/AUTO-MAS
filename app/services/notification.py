@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.models.config import Webhook
-from app.utils import LazyProxy, get_logger, ImageUtils
+from app.utils import LazyProxy, get_logger
 
 logger = get_logger("通知服务")
 
@@ -44,9 +44,40 @@ Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
 
+# Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
+# UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
+# 数组，超长会抛 ValueError，且各留一位给结尾空字符，因此推送前先截断。
+PLYER_TITLE_LIMIT = 63
+PLYER_MESSAGE_LIMIT = 255
+
+
+def clip_notify_text(text: str, limit: int) -> str:
+    """
+    按 Windows 通知字段上限截断文本，超出部分以省略号收尾
+
+    ``ctypes.c_wchar`` 数组按 UTF-16 代码单元计数，而 ``len()`` 数的是码位：
+    emoji 等非 BMP 字符占 1 个码位却要 2 个代码单元，按码位截断仍会溢出，因此
+    这里按编码后的代码单元数裁剪。截断点落在代理对中间时，``errors="ignore"``
+    会丢弃残缺的那一半。
+
+    Args:
+        text: 待截断的文本
+        limit: 目标字段可用的 UTF-16 代码单元数（已扣除结尾空字符）
+
+    Returns:
+        str: 编码后不超过 ``limit`` 个 UTF-16 代码单元的文本
+    """
+
+    encoded = text.encode("utf-16-le")
+    if len(encoded) // 2 <= limit:
+        return text
+
+    clipped = encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore")
+
+    return f"{clipped}…"
+
 
 class Notification:
-
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
         推送系统通知
@@ -71,8 +102,8 @@ class Notification:
         if notification.notify is not None:
             await asyncio.to_thread(
                 notification.notify,
-                title=title,
-                message=message,
+                title=clip_notify_text(title, PLYER_TITLE_LIMIT),
+                message=clip_notify_text(message, PLYER_MESSAGE_LIMIT),
                 app_name="AUTO-MAS",
                 app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
                 timeout=t,
@@ -221,7 +252,6 @@ class Notification:
 
         # 替换模板变量
         try:
-
             # 准备模板变量
             template_vars = {
                 "title": title,
@@ -320,68 +350,6 @@ class Notification:
             )
         else:
             raise Exception(f"HTTP {response.status_code}: {response.text}")
-
-    async def _WebHookPush(self, title, content, webhook_url) -> None:
-        """
-        WebHook 推送通知 (即将弃用)
-
-        :param title: 通知标题
-        :param content: 通知内容
-        :param webhook_url: WebHook地址
-        """
-
-        if not webhook_url:
-            raise ValueError("WebHook 地址不能为空")
-
-        content = f"{title}\n{content}"
-        data = {"msgtype": "text", "text": {"content": content}}
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url=webhook_url, json=data)
-            info = response.json()
-
-        if info["errcode"] == 0:
-            logger.success(f"WebHook 推送通知成功: {title}")
-        else:
-            raise Exception(f"WebHook 推送通知失败: {response.text}")
-
-    async def CompanyWebHookBotPushImage(
-        self, image_path: Path, webhook_url: str
-    ) -> None:
-        """
-        使用企业微信群机器人推送图片通知（等待重新适配）
-
-        :param image_path: 图片文件路径
-        :param webhook_url: 企业微信群机器人的WebHook地址
-        """
-
-        if not webhook_url:
-            raise ValueError("webhook URL 不能为空")
-
-        # 压缩图片
-        ImageUtils.compress_image_if_needed(image_path)
-
-        # 检查图片是否存在
-        if not image_path.exists():
-            raise FileNotFoundError(f"文件未找到: {image_path}")
-
-        # 获取图片base64和md5
-        image_base64 = ImageUtils.get_base64_from_file(str(image_path))
-        image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
-
-        data = {
-            "msgtype": "image",
-            "image": {"base64": image_base64, "md5": image_md5},
-        }
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url=webhook_url, json=data)
-            info = response.json()
-
-        if info.get("errcode") == 0:
-            logger.success(f"企业微信群机器人推送图片成功: {image_path.name}")
-        else:
-            raise Exception(f"企业微信群机器人推送图片失败: {response.text}")
 
     async def send_koishi(
         self,

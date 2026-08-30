@@ -11,6 +11,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { killAllRelatedProcesses } from '../utils/processManager'
 import { MirrorService } from './mirrorService'
 import { isDevelopmentEnvironment } from './environmentService'
+import { resolveHttpPort } from './instanceConfig'
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
@@ -707,6 +708,8 @@ export class BackendService {
     env.PYTHONIOENCODING = 'utf-8'
     // 由前端拉起的后端无需自行提权
     env.AUTO_MAS_DEV = '1'
+    // 与前端使用的端点对齐，避免后端按自身环境判定另选端口
+    env.AUTO_MAS_HTTP_PORT = String(resolveHttpPort())
     // 仅开发环境标记运行环境，打包版必须清除继承值以正常上报遥测
     if (isDevelopmentEnvironment()) {
       env.AUTO_MAS_ENV = 'development'

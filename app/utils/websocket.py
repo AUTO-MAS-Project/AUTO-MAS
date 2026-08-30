@@ -527,27 +527,6 @@ class WSClientManager:
         self._logger.info(f"已创建 WebSocket 客户端: {name} -> {url}")
         return client
 
-    async def openws(
-        self,
-        name: str,
-        url: str,
-        ping_interval: float = 15.0,
-        ping_timeout: float = 30.0,
-        reconnect_interval: float = 5.0,
-        max_reconnect_attempts: int = -1,
-    ) -> WebSocketClient:
-        """正式的正向 WebSocket 打开接口。"""
-        client = await self.create_client(
-            name=name,
-            url=url,
-            ping_interval=ping_interval,
-            ping_timeout=ping_timeout,
-            reconnect_interval=reconnect_interval,
-            max_reconnect_attempts=max_reconnect_attempts,
-        )
-        await self.connect_client(name)
-        return client
-
     async def connect_client(self, name: str) -> bool:
         """连接客户端（非阻塞方式启动）"""
         client = self._clients.get(name)

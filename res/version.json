@@ -4,16 +4,24 @@
         "v5.5.0-beta.2": {
             "新增功能": [
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
-                "OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败"
+                "OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败",
+                "MaaFW专项 新增 MaaFW 脚本类型，通过外壳外部运行 MaaFramework 项目（MAS 主进程不加载任何项目 DLL）：编辑页读取项目 interface.json 后选择控制器、资源与任务，支持 ADB 模拟器与 Win32 PC 游戏两条控制链路；已适配 MFAAvalonia（M9A / MaaKes）与 MXU（MaaEnd / MaaYYs）两类外壳，运行期接管外壳配置并在收尾时原样还原，关闭外壳自身的更新与通知以免与 MAS 抢同一批文件或重复推送；运行判定按外壳家族取日志来源（MXU 读进程 stdout），逐任务判定不绑定外壳界面语言 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
                 "回滚启动时的遮罩 by [@HarcoChen](https://github.com/HarcoChen)",
-                "匿名遥测 接入 Electron 主进程与渲染进程错误上报，增加应用启动、后端启动和任务执行的性能指标，抑制无异常的日志事件并遮蔽上报内容中的本机用户名，并关联 Sentry 发布提交与生产部署信息 by [@ClozyA](https://github.com/ClozyA)"
+                "匿名遥测 接入 Electron 主进程与渲染进程错误上报，增加应用启动、后端启动和任务执行的性能指标，抑制无异常的日志事件并遮蔽上报内容中的本机用户名，并关联 Sentry 发布提交与生产部署信息 by [@ClozyA](https://github.com/ClozyA)",
+                "清理无用前端资源、依赖及后端冗余代码 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "MaaFW项目 interface 解析接上闲置的两级缓存，并对 .json 文件先按严格 JSON 解析、失败再回退 JSON5（json5 是纯 Python 实现，比标准库慢三个数量级）：用户页与脚本页进入耗时由约 5.5 秒降至约 0.12 秒 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
-            "开发流程": [],
+            "开发流程": [
+                "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)"
+            ],
             "修复BUG": [
-                "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 HSR 托管任务列表中点击任务开关导致界面报错的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复系统通知标题或内容过长时推送失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MAA专项 修复任务生成时无条件覆盖用户原生高级配置的问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ]
         },
         "v5.5.0-beta.1": {
