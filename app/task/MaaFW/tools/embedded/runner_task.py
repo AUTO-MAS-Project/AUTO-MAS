@@ -934,12 +934,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 expected_pool_id=runtime_pool_id,
             )
         native_debug_log_path = self.project_path / "debug" / "maafw.log"
-        try:
-            native_debug_log_offset = (
-                await asyncio.to_thread(native_debug_log_path.stat)
-            ).st_size
-        except OSError:
-            native_debug_log_offset = 0
+        (
+            native_debug_log_offset,
+            native_debug_log_rotations,
+        ) = await asyncio.to_thread(
+            _snapshot_native_debug_log_state, native_debug_log_path
+        )
 
         def send_runner_log(message: str) -> None:
             loop.call_soon_threadsafe(self._append_log, message)
@@ -1168,16 +1168,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if framework_log_writer is not None:
                 finalize_errors: list[str] = []
                 try:
-                    native_delta = await asyncio.to_thread(
-                        _read_native_debug_log_delta,
+                    native_sources = await asyncio.to_thread(
+                        _plan_native_debug_log_sources,
                         native_debug_log_path,
                         native_debug_log_offset,
+                        native_debug_log_rotations,
                     )
-                    if native_delta:
-                        write_framework_log(
-                            "debug/maafw.log",
-                            native_delta,
+                    # 逐个分片读写：一次运行可能轮转多次，每份都能有几十 MB，
+                    # 不要同时堆在内存里。
+                    for source_label, source_path, source_offset in native_sources:
+                        native_delta = await asyncio.to_thread(
+                            _read_native_debug_log_segment,
+                            source_path,
+                            source_offset,
                         )
+                        if native_delta:
+                            write_framework_log(source_label, native_delta)
                 except Exception as exc:
                     finalize_errors.append(f"原生 debug 日志读取失败: {exc}")
                 try:
@@ -1831,10 +1837,66 @@ def _load_json_list(value: Any) -> list[str]:
     return []
 
 
-def _read_native_debug_log_delta(path: Path, start_offset: int) -> str:
+def _iter_rotated_native_debug_logs(path: Path) -> list[Path]:
+    """按轮转时间升序列出 MaaFW 的历史原生日志。
+
+    文件名形如 ``maafw.bak.2026.08.30-22.58.30.451.log``，时间戳是零填充的
+    定宽字段，按文件名排序即按时间排序。
+    """
+
+    try:
+        return sorted(path.parent.glob(path.stem + ".bak.*" + path.suffix))
+    except OSError:
+        return []
+
+
+def _snapshot_native_debug_log_state(path: Path) -> tuple[int, frozenset[str]]:
+    """记下原生日志的读取起点：当前大小，以及运行前已存在的轮转文件。"""
+
+    try:
+        offset = path.stat().st_size
+    except OSError:
+        offset = 0
+    return offset, frozenset(
+        rotated.name for rotated in _iter_rotated_native_debug_logs(path)
+    )
+
+
+def _plan_native_debug_log_sources(
+    path: Path,
+    start_offset: int,
+    known_rotations: frozenset[str],
+) -> list[tuple[str, Path, int]]:
+    """列出本次运行写下的原生日志分片，按时间先后排列。
+
+    MaaFW 会在 ``maafw.log`` 涨到一定大小时把它整体挪成
+    ``maafw.bak.<时间戳>.log``，再开一个空文件继续写。只记字节偏移不够用：
+    轮转后新文件重新长回超过该偏移，收尾时便会拿运行前的偏移去 seek 一个
+    内容毫不相干的文件——运行前半段凭空消失，切口还落在任意字节上。而长到
+    足以触发轮转的运行，恰恰是最需要日志的那些。
+
+    所以改为对比运行前后的轮转文件集合：新出现的那些就是本次运行被挪走的
+    内容。其中最早的一个才是运行开始时正在写的文件，只有它要跳过运行前已有
+    的部分，其余分片都从头读。
+    """
+
+    rotated = [
+        candidate
+        for candidate in _iter_rotated_native_debug_logs(path)
+        if candidate.name not in known_rotations
+    ]
+    sources: list[tuple[str, Path, int]] = [
+        ("debug/" + candidate.name, candidate, start_offset if index == 0 else 0)
+        for index, candidate in enumerate(rotated)
+    ]
+    sources.append(("debug/" + path.name, path, 0 if rotated else start_offset))
+    return sources
+
+
+def _read_native_debug_log_segment(path: Path, start_offset: int) -> str:
     try:
         current_size = path.stat().st_size
-    except FileNotFoundError:
+    except OSError:
         return ""
     start_offset = start_offset if current_size >= start_offset else 0
     with path.open("rb") as native_debug_log_file:
