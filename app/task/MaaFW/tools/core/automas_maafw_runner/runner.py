@@ -2404,7 +2404,8 @@ class MaaFWRunner:
         completed_tasks: list[str] = []
         self._completed_tasks = completed_tasks
         self._failed_task_errors = []
-        for task in self.plan.tasks:
+        total_tasks = len(self.plan.tasks)
+        for index, task in enumerate(self.plan.tasks):
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
             tasker = self.tasker
@@ -2425,7 +2426,14 @@ class MaaFWRunner:
                     raise RuntimeError("MaaFW 任务已停止") from exc
                 message = str(exc)
                 self._failed_task_errors.append((task.name, message))
-                self.send_log(f"任务失败，将继续后续任务: {display_name}: {message}")
+                # 这条现在会实时出现在任务日志里，措辞不能对最后一个
+                # 任务说「将继续后续任务」。
+                if index + 1 < total_tasks:
+                    self.send_log(
+                        f"任务失败，将继续后续任务: {display_name}: {message}"
+                    )
+                else:
+                    self.send_log(f"任务失败: {display_name}: {message}")
                 time.sleep(0.1)
                 continue
             if self._stop_requested.is_set():

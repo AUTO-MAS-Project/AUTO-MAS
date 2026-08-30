@@ -194,5 +194,102 @@ class DeadFormattersRemovedTest(unittest.TestCase):
                 self.assertFalse(hasattr(module, name))
 
 
+class FailureLineVisibilityTest(unittest.TestCase):
+    """整理过的失败消息要实时进任务日志，原样回显的仍只留在 *.maafw.log。
+
+    真机现场（2026-08-30 MaaEnd）：「基建任务」22:56:08 开始、22:56:59 失败，
+    可主日志里这两条之间空无一物，直到 23:01:46 收尾摘要才提到它——失败任务
+    看上去像凭空消失。runner 其实当时就发了
+
+        任务失败，将继续后续任务: 🎁基建任务: 最后停在 ...
+
+    但这条消息和滤掉它的规则是同一个提交（#478）引进来的，属于把已经整理好
+    的消息混进了原样回显的噪声名单。
+    """
+
+    def _forward(self, message: str) -> bool:
+        from app.task.MaaFW.tools.embedded.runner_task import (
+            _should_forward_framework_log,
+        )
+
+        return _should_forward_framework_log(message)
+
+    def test_curated_failure_lines_reach_the_task_log(self) -> None:
+        for message in (
+            "任务失败，将继续后续任务: 🎁基建任务: 最后停在 ItemPut → Close",
+            "任务失败: 📅日常奖励领取: 最后停在 DailyRewardStart",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(self._forward(message))
+
+    def test_raw_echoes_still_stay_out(self) -> None:
+        for message in (
+            "MaaFW 任务执行失败: entry=VisitFriendsMain, task_id=200000001",
+            "[MaaFW Tasker] 失败: DijiangRewards",
+            "任务执行失败: <entry=CreditShoppingMain>",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(self._forward(message))
+
+
+class FailureWordingByPositionTest(unittest.TestCase):
+    """只有后面还有任务时才说「将继续后续任务」。
+
+    这条消息此前被过滤、没人看得见，措辞不准无所谓；现在它会实时出现在任务
+    日志里，最后一个任务失败时再说「将继续」就是错的。
+    """
+
+    def setUp(self) -> None:
+        self.module, patcher = load(
+            "app.task.MaaFW.tools.core.automas_maafw_runner.runner"
+        )
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _task(name: str):
+        return SimpleNamespace(
+            label=name,
+            name=name,
+            entry=f"{name}Entry",
+            logOptions={},
+            overrideNodes=[],
+            pipelineOverride=None,
+        )
+
+    def _failure_logs(self, count: int) -> list[str]:
+        runner = object.__new__(self.module.MaaFWRunner)
+        logs: list[str] = []
+        runner.send_log = logs.append
+        runner._task_failure_summaries = []
+        runner._stop_requested = SimpleNamespace(is_set=lambda: False)
+        runner.plan = SimpleNamespace(
+            tasks=[self._task(f"任务{i + 1}") for i in range(count)]
+        )
+
+        def always_fails(*_args):
+            raise RuntimeError("最后停在 SomeNode")
+
+        runner.tasker = SimpleNamespace(post_task=always_fails)
+        runner._run_tasks()
+        return [line for line in logs if line.startswith("任务失败")]
+
+    def test_last_task_does_not_promise_more_tasks(self) -> None:
+        failures = self._failure_logs(3)
+        self.assertEqual(len(failures), 3)
+        for line in failures[:-1]:
+            self.assertTrue(line.startswith("任务失败，将继续后续任务: "), line)
+        self.assertNotIn("将继续后续任务", failures[-1])
+        self.assertTrue(failures[-1].startswith("任务失败: "), failures[-1])
+
+    def test_single_task_run_does_not_promise_more_tasks(self) -> None:
+        failures = self._failure_logs(1)
+        self.assertEqual(len(failures), 1)
+        self.assertNotIn("将继续后续任务", failures[0])
+
+    def test_every_failure_still_reports_where_it_stopped(self) -> None:
+        for line in self._failure_logs(2):
+            self.assertIn("最后停在 SomeNode", line)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -111,8 +111,10 @@ _FRAMEWORK_DEBUG_PAYLOAD_MARKERS = (
     '"pipeline_override":',
 )
 
+# 这三条都是内部原样回显：Python 异常原文、框架通知里的入口名回声。runner
+# 另发一条整理过的「任务失败: <任务>: <最后停在哪>」，那条要实时进任务日志——
+# 否则失败任务在日志里就像凭空消失，要等收尾摘要才知道出了事。
 _RAW_FAILURE_UI_LOG_MARKERS = (
-    "任务失败，将继续后续任务:",
     "MaaFW 任务执行失败:",
     "[MaaFW Tasker] 失败:",
     "任务执行失败: <entry=",
