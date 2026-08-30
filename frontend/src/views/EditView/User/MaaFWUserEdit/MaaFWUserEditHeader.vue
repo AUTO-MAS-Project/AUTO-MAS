@@ -3,7 +3,7 @@
     <div class="header-left">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/maafw`" class="breadcrumb-link">
@@ -36,19 +36,22 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 defineProps<{
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'

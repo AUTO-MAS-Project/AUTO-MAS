@@ -8,8 +8,9 @@ export type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
 export interface ScriptTypeOption {
   value: ScriptType
-  title: string
-  description: string
+  titleKey: string
+  descriptionKey: string
+  /** 搜索别名。刻意保留中文：译成英文中文用户就搜不到了，英文用户用 latin 别名一样能命中 */
   keywords: string[]
   group: Exclude<ScriptTypeGroup, 'all'>
   icon: string
@@ -17,7 +18,7 @@ export interface ScriptTypeOption {
 
 export interface CreateStep {
   key: CreateStepKey
-  title: string
+  titleKey: string
 }
 
 export interface CreateRequestState {
@@ -34,72 +35,72 @@ export type ScriptCreateRequest =
 export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
     value: 'General',
-    title: '通用脚本',
-    description: '适用于具备日志文件的自动化脚本',
+    titleKey: 'scripts.type.General',
+    descriptionKey: 'scripts.create.typeDesc.General',
     keywords: ['general', '通用', '自定义'],
     group: 'general',
     icon: SCRIPT_LOGOS.General,
   },
   {
     value: 'MAA',
-    title: 'MAA 脚本',
-    description: '明日方舟自动化与多账号日常代理',
+    titleKey: 'scripts.type.MAA',
+    descriptionKey: 'scripts.create.typeDesc.MAA',
     keywords: ['maa', '明日方舟'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MAA,
   },
   {
     value: 'SRC',
-    title: 'SRC 脚本',
-    description: '星穹铁道自动化与多账号代理',
+    titleKey: 'scripts.type.SRC',
+    descriptionKey: 'scripts.create.typeDesc.SRC',
     keywords: ['src', '星穹铁道'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.SRC,
   },
   {
     value: 'MaaEnd',
-    title: 'MaaEnd 脚本',
-    description: 'MFW 专项适配脚本',
+    titleKey: 'scripts.type.MaaEnd',
+    descriptionKey: 'scripts.create.typeDesc.MaaEnd',
     keywords: ['maaend', 'maaframework'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaEnd,
   },
   {
     value: 'M9A',
-    title: 'M9A 脚本',
-    description: '重返未来：1999 自动化脚本',
+    titleKey: 'scripts.type.M9A',
+    descriptionKey: 'scripts.create.typeDesc.M9A',
     keywords: ['m9a', '1999', '重返未来'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.M9A,
   },
   {
     value: 'MaaFW',
-    title: 'MFW 脚本',
-    description: '托管 MaaFramework 项目',
+    titleKey: 'scripts.type.MaaFW',
+    descriptionKey: 'scripts.create.typeDesc.MaaFW',
     keywords: ['maafw', 'maaframework', 'framework', 'mfw'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaFW,
   },
   {
     value: 'Okww',
-    title: 'ok-ww 脚本',
-    description: 'ok-script 专项任务脚本',
+    titleKey: 'scripts.type.Okww',
+    descriptionKey: 'scripts.create.typeDesc.Okww',
     keywords: ['okww', 'ok-ww', 'ok-script'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.Okww,
   },
   {
     value: 'OkNte',
-    title: 'ok-nte 脚本',
-    description: '异环 OK-NTE 自动化脚本',
+    titleKey: 'scripts.type.OkNte',
+    descriptionKey: 'scripts.create.typeDesc.OkNte',
     keywords: ['oknte', 'ok-nte', '异环', 'ok-script'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.OkNte,
   },
   {
     value: 'HSR',
-    title: 'HSR 脚本',
-    description: '三月七 / SRA 双脚本适配',
+    titleKey: 'scripts.type.HSR',
+    descriptionKey: 'scripts.create.typeDesc.HSR',
     keywords: ['hsr', '三月七', 'sra'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.HSR,
@@ -107,24 +108,37 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
-  const steps: CreateStep[] = [{ key: 'type', title: '脚本类型' }]
+  const steps: CreateStep[] = [{ key: 'type', titleKey: 'scripts.create.step.type' }]
   if (type === 'General') {
-    steps.push({ key: 'config', title: '配置来源' })
+    steps.push({ key: 'config', titleKey: 'scripts.create.step.config' })
   }
   return steps
 }
 
-export const filterScriptTypeOptions = (options: ScriptTypeOption[], keyword: string) => {
+type TypeSearchFields = Pick<ScriptTypeOption, 'titleKey' | 'descriptionKey' | 'keywords'>
+
+/** translate 缺省时按 key 原样参与匹配，别名（keywords）永远参与匹配 */
+export const filterScriptTypeOptions = <T extends TypeSearchFields>(
+  options: T[],
+  keyword: string,
+  translate: (key: string) => string = key => key
+): T[] => {
   const normalizedKeyword = keyword.trim().toLowerCase()
   return options.filter(option => {
-    const searchableText = [option.title, option.description, ...option.keywords]
+    const searchableText = [
+      translate(option.titleKey),
+      translate(option.descriptionKey),
+      ...option.keywords,
+    ]
       .join(' ')
       .toLowerCase()
     return !normalizedKeyword || searchableText.includes(normalizedKeyword)
   })
 }
 
-export const splitScriptTypeOptions = (options: ScriptTypeOption[]) => ({
+export const splitScriptTypeOptions = <T extends Pick<ScriptTypeOption, 'group'>>(
+  options: T[]
+) => ({
   specialized: options.filter(option => option.group === 'specialized'),
   general: options.filter(option => option.group === 'general'),
 })

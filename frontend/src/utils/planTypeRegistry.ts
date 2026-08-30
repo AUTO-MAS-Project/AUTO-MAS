@@ -28,7 +28,8 @@ export type PlanChangeHandler = (
 export interface PlanTypeDescriptor {
   configType: PlanConfigType
   createType: PlanCreateType
-  displayName: string
+  /** 词表 key；defaultName 刻意不走词表，见下方注释 */
+  displayNameKey: string
   defaultName: string
   selectorTag: string
   reloadAfterSave: boolean
@@ -41,7 +42,8 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.MAA]: {
     configType: PLAN_CONFIG_TYPES.MAA,
     createType: PlanCreateIn.type.MAA_PLAN,
-    displayName: 'MAA 计划表',
+    displayNameKey: 'plan.type.maa',
+    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MAA 计划表',
     selectorTag: 'MAA',
     reloadAfterSave: true,
@@ -50,7 +52,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,
     createType: PlanCreateIn.type.MAA_END_PLAN,
-    displayName: 'MaaEnd 计划表',
+    displayNameKey: 'plan.type.maaEnd',
     defaultName: '新 MaaEnd 计划表',
     selectorTag: 'MaaEnd',
     reloadAfterSave: false,

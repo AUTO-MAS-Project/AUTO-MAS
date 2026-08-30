@@ -1,12 +1,12 @@
 <template>
   <div class="oknte-config-editor">
     <div class="editor-header">
-      <h3>OK-NTE 配置编辑</h3>
-      <a-tag v-if="hasChanges" color="warning">有未保存的更改</a-tag>
-      <a-tag v-else color="success">已保存</a-tag>
+      <h3>{{ t('edit.okNteConfiguration') }}</h3>
+      <a-tag v-if="hasChanges" color="warning">{{ t('edit.youHaveUnsavedChanges2') }}</a-tag>
+      <a-tag v-else color="success">{{ t('edit.saved') }}</a-tag>
     </div>
 
-    <a-spin :spinning="loading" tip="加载配置中...">
+    <a-spin :spinning="loading" :tip="t('edit.loadingConfiguration')">
       <a-row :gutter="24" class="editor-layout">
         <!-- 左侧：配置文件列表 -->
         <a-col :span="8" class="left-panel">
@@ -60,7 +60,7 @@
                   <div class="object-field">
                     <a-empty
                       v-if="!field.children || field.children.length === 0"
-                      description="该子任务暂无可编辑字段"
+                      :description="t('edit.thisSubtaskHasNo')"
                     />
                     <a-form-item
                       v-for="child in field.children || []"
@@ -100,7 +100,7 @@
                         :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
                         mode="multiple"
                         style="width: 100%"
-                        placeholder="请选择"
+                        :placeholder="t('edit.pleaseChoose')"
                         @change="
                           (val: string[]) =>
                             setNestedFieldValue(selectedConfigFilename, field.name, child, val)
@@ -188,7 +188,7 @@
                         <a-button
                           size="small"
                           :disabled="index === 0"
-                          aria-label="上移日常子任务"
+                          :aria-label="t('edit.moveDailySubtaskUp')"
                           @click="moveRoutineItem(selectedConfigFilename, field, index, -1)"
                         >
                           <template #icon>
@@ -200,7 +200,7 @@
                           :disabled="
                             index === getRoutineItemValues(selectedConfigFilename, field).length - 1
                           "
-                          aria-label="下移日常子任务"
+                          :aria-label="t('edit.moveDailySubtaskDown')"
                           @click="moveRoutineItem(selectedConfigFilename, field, index, 1)"
                         >
                           <template #icon>
@@ -237,7 +237,7 @@
                   :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   mode="multiple"
                   style="width: 100%"
-                  placeholder="请选择"
+                  :placeholder="t('edit.pleaseChoose')"
                   @change="
                     (val: string[]) => setFieldValue(selectedConfigFilename, field.name, val)
                   "
@@ -308,13 +308,13 @@
               </a-form-item>
 
               <div v-if="selectedConfig.fields.length === 0" class="empty-fields">
-                <a-empty description="该配置文件暂无可编辑的字段" />
+                <a-empty :description="t('edit.thisConfigurationFileHas')" />
               </div>
             </a-form>
           </div>
 
           <div v-else class="no-selection">
-            <a-empty description="请从左侧选择一个配置文件" />
+            <a-empty :description="t('edit.pickConfigurationFileLeft')" />
           </div>
         </a-col>
       </a-row>
@@ -323,10 +323,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import { OknteService } from '@/api/services/OknteService'
+
+const { t } = useI18n()
 
 interface RoutineItemDefinition {
   id: string
@@ -600,7 +603,7 @@ const loadConfigs = async () => {
     }
   } catch (e) {
     logger.error(`加载配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error('加载 OK-NTE 配置失败')
+    message.error(t('edit.couldNotLoadOk'))
   } finally {
     loading.value = false
   }
@@ -622,14 +625,14 @@ const saveAll = async (silent = true) => {
       await loadConfigs()
       emit('saved')
       if (!silent) {
-        message.success('配置已保存')
+        message.success(t('edit.configurationSaved'))
       }
     } else {
       message.error(resp?.message || '保存失败')
     }
   } catch (e) {
     logger.error(`保存配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error('保存配置失败')
+    message.error(t('edit.couldNotSaveConfiguration'))
   } finally {
     saving.value = false
   }

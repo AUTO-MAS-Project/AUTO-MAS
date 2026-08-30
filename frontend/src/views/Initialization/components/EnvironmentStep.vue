@@ -6,15 +6,15 @@
 
       <!-- 环境检查状态 -->
       <div v-if="checking" class="check-status">
-        <p>正在检查环境...</p>
+        <p>{{ t('init.env.checking') }}</p>
       </div>
 
       <!-- 镜像源选择 (仅Python显示) -->
       <template v-if="!checking && showMirrorSelection">
         <div class="mirror-section">
           <div class="step-section-header">
-            <h4>镜像源</h4>
-            <a-tag color="green">推荐使用</a-tag>
+            <h4>{{ t('init.env.mirrorSection') }}</h4>
+            <a-tag color="green">{{ t('init.env.recommendedUse') }}</a-tag>
           </div>
           <div class="mirror-grid">
             <div
@@ -27,12 +27,16 @@
               <div class="mirror-header">
                 <div class="mirror-title">
                   <h4>{{ mirror.name }}</h4>
-                  <a-tag v-if="mirror.recommended" color="gold" size="small">推荐</a-tag>
+                  <a-tag v-if="mirror.recommended" color="gold" size="small">{{
+                    t('init.env.recommended')
+                  }}</a-tag>
                 </div>
                 <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
-                  <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
-                  <span v-else-if="testingSpeed">测试中...</span>
-                  <span v-else-if="mirror.speed === 9999">超时</span>
+                  <span v-if="mirror.speed === null && !testingSpeed">{{
+                    t('init.env.speedUntested')
+                  }}</span>
+                  <span v-else-if="testingSpeed">{{ t('init.env.speedTesting') }}</span>
+                  <span v-else-if="mirror.speed === 9999">{{ t('init.env.speedTimeout') }}</span>
                   <span v-else>{{ mirror.speed }}ms</span>
                 </div>
               </div>
@@ -43,8 +47,8 @@
 
         <div class="mirror-section">
           <div class="step-section-header">
-            <h4>官方源</h4>
-            <a-tag color="orange">中国大陆连通性不佳</a-tag>
+            <h4>{{ t('init.env.officialSection') }}</h4>
+            <a-tag color="orange">{{ t('init.env.officialWarning') }}</a-tag>
           </div>
           <div class="mirror-grid">
             <div
@@ -59,9 +63,11 @@
                   <h4>{{ mirror.name }}</h4>
                 </div>
                 <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
-                  <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
-                  <span v-else-if="testingSpeed">测试中...</span>
-                  <span v-else-if="mirror.speed === 9999">超时</span>
+                  <span v-if="mirror.speed === null && !testingSpeed">{{
+                    t('init.env.speedUntested')
+                  }}</span>
+                  <span v-else-if="testingSpeed">{{ t('init.env.speedTesting') }}</span>
+                  <span v-else-if="mirror.speed === 9999">{{ t('init.env.speedTimeout') }}</span>
                   <span v-else>{{ mirror.speed }}ms</span>
                 </div>
               </div>
@@ -72,9 +78,9 @@
 
         <div class="test-actions">
           <a-button :loading="testingSpeed" type="primary" @click="handleTestSpeed">
-            {{ testingSpeed ? '测速中...' : '重新测速' }}
+            {{ testingSpeed ? t('init.env.testing') : t('init.env.retest') }}
           </a-button>
-          <span class="test-note">3秒无响应视为超时</span>
+          <span class="test-note">{{ t('init.env.testNote') }}</span>
         </div>
       </template>
 
@@ -86,7 +92,7 @@
         </div>
         <a-progress :percent="downloadProgress" :status="progressStatus" />
         <div v-if="currentMirror" class="current-mirror">
-          <span>当前使用: {{ currentMirror }}</span>
+          <span>{{ t('init.common.currentMirror', { mirror: currentMirror }) }}</span>
         </div>
       </div>
 
@@ -100,7 +106,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
 import type { MirrorConfig } from '@/types/mirror'
+
+const { t } = useI18n()
 
 /**
  * 根据速度和推荐度排序镜像源

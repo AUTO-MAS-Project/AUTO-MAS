@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { computed, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 
@@ -115,10 +116,10 @@ export function useLogHookRules(options: UseLogHookRulesOptions) {
       }
     })
     if (dropped.length > 0) {
-      message.warning(`${dropped.join('、')}未填写匹配正则，已按停用保存`)
+      message.warning(t('edit.p0HasNoMatch', { p0: dropped.join('、') }))
     }
     if (invalid.length > 0) {
-      message.warning(`${invalid.join('、')}的匹配正则语法错误，运行时不会生效`)
+      message.warning(t('edit.matchPatternP0Has', { p0: invalid.join('、') }))
     }
     onChange?.(json)
   }

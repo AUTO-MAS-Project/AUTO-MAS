@@ -1,20 +1,20 @@
 <template>
   <div class="step-panel">
-    <h3>镜像源配置</h3>
+    <h3>{{ t('init.mirror.title') }}</h3>
     <div class="install-section">
       <div class="mirror-status">
-        <a-spin v-if="loading" size="large" tip="正在从云端获取镜像源配置..." />
+        <a-spin v-if="loading" size="large" :tip="t('init.mirror.loading')" />
         <a-result
           v-else-if="success"
           status="success"
-          title="镜像源配置加载成功"
-          :sub-title="`已加载 ${mirrorCount} 个镜像源配置`"
+          :title="t('init.mirror.loadedTitle')"
+          :sub-title="t('init.mirror.loadedSubtitle', { count: mirrorCount })"
         />
         <a-result
           v-else
           status="warning"
-          title="使用本地默认配置"
-          sub-title="云端配置加载失败，将使用本地默认镜像源"
+          :title="t('init.mirror.fallbackTitle')"
+          :sub-title="t('init.mirror.fallbackSubtitle')"
         />
       </div>
     </div>
@@ -22,11 +22,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 defineProps<{
   loading: boolean
   success: boolean
   mirrorCount: number
 }>()
+
+const { t } = useI18n()
 </script>
 
 <style scoped>

@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
@@ -21,17 +21,20 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('comp.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -40,7 +43,7 @@ const props = withDefaults(
     /** 第二级面包屑文字，默认「编辑脚本」 */
     title?: string
   }>(),
-  { title: '编辑脚本' }
+  { title: t('comp.editScript') }
 )
 
 const emit = defineEmits<{ cancel: [] }>()

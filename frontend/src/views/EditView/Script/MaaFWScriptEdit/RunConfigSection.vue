@@ -2,11 +2,11 @@
 <template>
   <div class="form-section form-section-alt">
     <div class="section-header">
-      <h3>运行配置</h3>
+      <h3>{{ t('edit.runConfiguration') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
-        <a-form-item label="用户单日代理次数上限">
+        <a-form-item :label="t('edit.runsPerDayThis')">
           <a-input-number
             v-model:value="maafwConfig.Run.ProxyTimesLimit"
             :min="0"
@@ -19,7 +19,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="代理重试次数限制">
+        <a-form-item :label="t('edit.retryLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.RunTimesLimit"
             :min="1"
@@ -32,7 +32,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="单次运行时间限制（分钟）">
+        <a-form-item :label="t('edit.singleRunTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.RunTimeLimit"
             :min="1"
@@ -50,9 +50,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="任务在今日正常完成一次后，今日后续运行会自动跳过">
+            <a-tooltip :title="t('edit.onceTaskCompletesNormally')">
               <span class="form-label">
-                每日完成后跳过
+                {{ t('edit.skipOnceDoneToday') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -66,7 +66,7 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            placeholder="先读取 interface 后选择任务"
+            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'DailyOnceTasks', value)"
           />
         </a-form-item>
@@ -74,9 +74,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="任务在本周正常完成一次后，本周后续运行会自动跳过">
+            <a-tooltip :title="t('edit.onceTaskCompletesNormally2')">
               <span class="form-label">
-                每周完成后跳过
+                {{ t('edit.skipOnceDoneThis') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -90,7 +90,7 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            placeholder="先读取 interface 后选择任务"
+            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'WeeklyOnceTasks', value)"
           />
         </a-form-item>
@@ -98,9 +98,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="任务在本月正常完成一次后，本月后续运行会自动跳过">
+            <a-tooltip :title="t('edit.onceTaskCompletesNormally3')">
               <span class="form-label">
-                每月完成后跳过
+                {{ t('edit.skipOnceDoneThis2') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -114,7 +114,7 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            placeholder="先读取 interface 后选择任务"
+            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'MonthlyOnceTasks', value)"
           />
         </a-form-item>
@@ -124,8 +124,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWScriptConfig } from '@/types/script'
+
+const { t } = useI18n()
 
 defineProps<{
   maafwConfig: MaaFWScriptConfig

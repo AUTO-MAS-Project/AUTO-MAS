@@ -2,10 +2,10 @@
   <a-form-item class="config-mode-form-item">
     <template #label>
       <span class="config-mode-label">
-        配置管理方式
+        {{ t('edit.configurationManagement') }}
         <span v-if="saving" class="config-mode-saving">
           <LoadingOutlined spin />
-          正在保存
+          {{ t('edit.saving') }}
         </span>
       </span>
     </template>
@@ -15,7 +15,7 @@
       :disabled="disabled || saving"
       class="config-mode-options"
       :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
-      aria-label="配置管理方式"
+      :aria-label="t('edit.configurationManagement')"
       @change="handleChange"
     >
       <label
@@ -44,6 +44,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   DatabaseOutlined,
   FileTextOutlined,
@@ -51,6 +52,8 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
+
+const { t } = useI18n()
 
 type ConfigModeOption = {
   value: boolean | string
@@ -71,14 +74,14 @@ const props = withDefaults(
     options: () => [
       {
         value: true,
-        title: '用户独立配置',
-        description: '为该用户保存独立配置，运行前加载，结束时按任务策略保存。',
+        title: t('edit.perUserConfiguration'),
+        description: t('edit.saveSeparateConfigurationThis'),
         icon: 'database',
       },
       {
         value: false,
-        title: '脚本直控配置',
-        description: '直接使用脚本当前配置，不加载或回写该用户的独立配置。',
+        title: t('edit.scriptDirectConfiguration'),
+        description: t('edit.useScriptSCurrent'),
         icon: 'file',
       },
     ],

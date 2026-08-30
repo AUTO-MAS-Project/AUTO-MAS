@@ -7,7 +7,7 @@
       @click="handleMaskClick"
     >
       <canvas ref="canvasRef" class="overlay-rain-mask__canvas"></canvas>
-      <div class="overlay-rain-mask__exit-hint">单击任意位置可退出</div>
+      <div class="overlay-rain-mask__exit-hint">{{ t('comp.clickAnywhereDismiss') }}</div>
       <div class="overlay-rain-mask__float-layer">
         <span
           v-for="item in floatingTexts"
@@ -27,9 +27,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Bodies, Body, Composite, Engine, Events, World, type Body as MatterBody } from 'matter-js'
 import { usePerformanceStore } from '@/stores/performance'
+
+const { t } = useI18n()
 
 interface Props {
   modelValue?: boolean

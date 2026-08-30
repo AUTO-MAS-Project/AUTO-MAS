@@ -2,8 +2,8 @@
   <a-card class="endfield-card" :loading="loading">
     <template #title>
       <div class="card-title">
-        <span>终末地活动信息</span>
-        <a-tag v-if="overview.Stale" color="orange">缓存数据</a-tag>
+        <span>{{ t('home.module.endfield') }}</span>
+        <a-tag v-if="overview.Stale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
       </div>
     </template>
 
@@ -15,7 +15,7 @@
         class="source-link"
         @click="handleExternalLink"
       >
-        数据来源：{{ overview.SourceName }}
+        {{ t('home.endfield.source', { name: overview.SourceName }) }}
       </a-typography-link>
     </template>
 
@@ -44,12 +44,12 @@
             <div class="pool-name">{{ pool.Name }}</div>
             <div class="pool-end-time">
               <ClockCircleOutlined />
-              <span>{{ formatTime(pool.EndTime) }} 结束</span>
+              <span>{{ t('home.endfield.endsAt', { time: formatTime(pool.EndTime) }) }}</span>
             </div>
             <a-statistic-countdown
-              title="卡池剩余时间"
+              :title="t('home.endfield.poolRemaining')"
               :value="getCountdownValue(pool.EndTime)"
-              format="D 天 H 时 m 分"
+              :format="t('home.countdown.dhm')"
               :value-style="poolCountdownValueStyle"
               @finish="emit('refresh')"
             />
@@ -73,8 +73,14 @@
 
     <section v-if="overview.Activities.length" class="activity-section">
       <div class="activity-section-header">
-        <span>同期活动</span>
-        <span class="activity-count">{{ overview.Activities.length }} 项进行中</span>
+        <span>{{ t('home.endfield.concurrent') }}</span>
+        <span class="activity-count">{{
+          t(
+            'home.endfield.ongoing',
+            { count: overview.Activities.length },
+            overview.Activities.length
+          )
+        }}</span>
       </div>
 
       <div class="activity-grid">
@@ -98,10 +104,12 @@
               <a-tag v-if="activity.Tags[0]">{{ activity.Tags[0] }}</a-tag>
             </div>
             <div class="activity-meta">
-              <span>{{ formatShortTime(activity.EndTime) }} 结束</span>
+              <span>{{
+                t('home.endfield.endsAt', { time: formatShortTime(activity.EndTime) })
+              }}</span>
               <a-statistic-countdown
                 :value="getCountdownValue(activity.EndTime)"
-                format="D 天 H 时"
+                :format="t('home.countdown.dh')"
                 :value-style="activityCountdownValueStyle"
                 @finish="emit('refresh')"
               />
@@ -116,6 +124,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { ClockCircleOutlined, PictureOutlined } from '@ant-design/icons-vue'
 import type { CSSProperties } from 'vue'
@@ -151,8 +160,10 @@ const activityCountdownValueStyle: CSSProperties = {
   fontWeight: 600,
 }
 
+const { t } = useI18n()
+
 const emptyDescription = computed(() =>
-  props.overview.Available ? '暂无进行中的卡池或活动' : '暂无终末地活动数据'
+  props.overview.Available ? t('home.empty.endfield') : t('home.empty.endfieldNoData')
 )
 
 const formatTime = (timeString: string) => {
