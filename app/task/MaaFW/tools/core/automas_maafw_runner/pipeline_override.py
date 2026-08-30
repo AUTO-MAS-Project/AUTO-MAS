@@ -232,7 +232,17 @@ class MaaFWPipelineOverrideBuilder:
         text_replacements: dict[str, str] = {}
         for input_item in option.inputs:
             raw_option_value = options.get(option_name)
-            raw_text = input_item.default or ""
+            # 用户没填就当空，**不回退到 interface 的 default**。
+            #
+            # interface 里 input 的 default 是「用户打开该项后 UI 预填的提示值」，
+            # 不是「没配时该应用的值」：M9A 的 自定义兑换码 default 就是字面量
+            # 「占位」，MFAAvalonia 自己的配置里存的是空串。真机上把「占位」当真
+            # 兑换码发出去，游戏兑换不掉，该任务直接卡死。
+            #
+            # 需要哨兵默认值的选项，interface 作者是写在 switch 的 case override
+            # 里的（如 自定义吃糖次数=No -> EatCandyStart.max_hit=114514），
+            # 不依赖 input default，因此这里置空不会误伤它们。
+            raw_text = ""
             if isinstance(raw_option_value, dict):
                 field_value = raw_option_value.get(input_item.name)
                 if isinstance(field_value, str):
