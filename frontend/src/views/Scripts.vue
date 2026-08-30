@@ -700,6 +700,13 @@ const scriptEditPathMap: Record<ScriptType, string> = {
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
 
+// 新建脚本后的落地页。MFW 走分步引导（项目路径、控制、更新、运行四步都要配
+// 才跑得起来），其余类型仍直接进编辑页。
+const getScriptCreateRoute = (type: ScriptType, scriptId: string) =>
+  type === 'MaaFW'
+    ? `/scripts/${scriptId}/setup/maafw`
+    : `/scripts/${scriptId}/edit/${getScriptEditPath(type)}`
+
 // 复制脚本弹窗列表里的类型文案
 const scriptTypeDisplayLabelMap: Record<ScriptType, string> = {
   MAA: 'MAA脚本',
@@ -930,9 +937,8 @@ const handleConfirmScriptSelect = async () => {
     if (result) {
       scriptSelectVisible.value = false
       // 跳转到编辑页面
-      const editPath = getScriptEditPath(selectedScript.type)
       router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
+        path: getScriptCreateRoute(selectedScript.type, result.scriptId),
         state: {
           scriptData: {
             id: result.scriptId,
@@ -965,9 +971,8 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath = getScriptEditPath(selectedType.value)
       router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
+        path: getScriptCreateRoute(selectedType.value, result.scriptId),
         state: {
           scriptData: {
             id: result.scriptId,

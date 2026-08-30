@@ -8,7 +8,7 @@
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="../../../assets/maafw.png" alt="MFW" class="breadcrumb-logo" />
-            {{ projectDisplayName }} 项目配置
+            {{ projectDisplayName }} {{ isWizard ? '项目引导' : '项目配置' }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -25,81 +25,115 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card :title="`${projectDisplayName} 项目配置`" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="`${projectDisplayName} ${isWizard ? '项目引导' : '项目配置'}`"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
-        <a-tag color="geekblue" class="type-tag"> MFW（外部运行）</a-tag>
+        <a-tag color="geekblue" class="type-tag"> MFW</a-tag>
       </template>
 
+      <a-steps
+        v-if="isWizard"
+        size="small"
+        :current="currentStep"
+        :items="stepItems"
+        class="wizard-steps"
+      />
+
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <BasicInfoSection
-          :maafw-config="maafwConfig"
-          :form-data="formData"
-          :rules="rules"
-          :preview-data="previewData"
-          :interface-loading="previewLoading"
-          :preview-project-title="previewProjectTitle"
-          :interface-stats="interfaceStats"
-          :update-applying="updateApplying"
-          @change="handleChange"
-          @select-path="selectMaaFWPath"
-          @preview-interface="handlePreviewInterface"
-        />
+        <div v-show="!isWizard || currentStep === 0">
+          <BasicInfoSection
+            :maafw-config="maafwConfig"
+            :form-data="formData"
+            :rules="rules"
+            :preview-data="previewData"
+            :interface-loading="previewLoading"
+            :preview-project-title="previewProjectTitle"
+            :interface-stats="interfaceStats"
+            :update-applying="updateApplying"
+            @change="handleChange"
+            @select-path="selectMaaFWPath"
+            @preview-interface="handlePreviewInterface"
+          />
+        </div>
 
-        <ControlConfigSection
-          :maafw-config="maafwConfig"
-          :preview-data="previewData"
-          :interface-loading="previewLoading"
-          :emulator-loading="emulatorLoading"
-          :emulator-options-ready="emulatorOptionsReady"
-          :emulator-device-loading="emulatorDeviceLoading"
-          :emulator-options="emulatorOptions"
-          :emulator-device-options="emulatorDeviceOptions"
-          :emulator-type-by-id="emulatorTypeById"
-          :controller-options="controllerOptions"
-          :effective-controller-name="effectiveControllerName"
-          :effective-controller-type="effectiveControllerType"
-          :is-adb-controller="isAdbController"
-          :is-desktop-controller="isDesktopController"
-          :resource-options="resourceOptions"
-          :unsupported-controller-options="unsupportedControllerOptions"
-          :unsupported-controller-message="unsupportedControllerMessage"
-          :adb-control-strategy-message="adbControlStrategyMessage"
-          :adb-control-strategy-items="adbControlStrategyItems"
-          :selected-emulator-label="selectedEmulatorLabel"
-          :interface-dependent-disabled="interfaceDependentDisabled"
-          @change="handleChange"
-          @controller-change="handleControllerChange"
-          @resource-change="handleResourceChange"
-          @emulator-select-change="handleEmulatorSelectChange"
-          @select-launch-path="selectLaunchPath"
-        />
+        <div v-show="!isWizard || currentStep === 1">
+          <ControlConfigSection
+            :maafw-config="maafwConfig"
+            :preview-data="previewData"
+            :interface-loading="previewLoading"
+            :emulator-loading="emulatorLoading"
+            :emulator-options-ready="emulatorOptionsReady"
+            :emulator-device-loading="emulatorDeviceLoading"
+            :emulator-options="emulatorOptions"
+            :emulator-device-options="emulatorDeviceOptions"
+            :emulator-type-by-id="emulatorTypeById"
+            :controller-options="controllerOptions"
+            :effective-controller-name="effectiveControllerName"
+            :effective-controller-type="effectiveControllerType"
+            :is-adb-controller="isAdbController"
+            :is-desktop-controller="isDesktopController"
+            :resource-options="resourceOptions"
+            :unsupported-controller-options="unsupportedControllerOptions"
+            :unsupported-controller-message="unsupportedControllerMessage"
+            :adb-control-strategy-message="adbControlStrategyMessage"
+            :adb-control-strategy-items="adbControlStrategyItems"
+            :selected-emulator-label="selectedEmulatorLabel"
+            :interface-dependent-disabled="interfaceDependentDisabled"
+            @change="handleChange"
+            @controller-change="handleControllerChange"
+            @resource-change="handleResourceChange"
+            @emulator-select-change="handleEmulatorSelectChange"
+            @select-launch-path="selectLaunchPath"
+          />
+        </div>
 
-        <UpdateSettingsSection
-          :maafw-config="maafwConfig"
-          :preview-data="previewData"
-          :is-auto-update-disabled="isAutoUpdateDisabled"
-          :update-checking="updateChecking"
-          :update-applying="updateApplying"
-          :update-error="updateError"
-          :update-result="updateResult"
-          :update-source-options="updateSourceOptions"
-          :update-channel-options="updateChannelOptions"
-          @change="handleChange"
-          @check-update="runUpdateCheck"
-          @apply-update="runUpdateApply"
-        />
+        <div v-show="!isWizard || currentStep === 2">
+          <UpdateSettingsSection
+            :maafw-config="maafwConfig"
+            :preview-data="previewData"
+            :is-auto-update-disabled="isAutoUpdateDisabled"
+            :update-checking="updateChecking"
+            :update-applying="updateApplying"
+            :update-error="updateError"
+            :update-result="updateResult"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            @change="handleChange"
+            @check-update="runUpdateCheck"
+            @apply-update="runUpdateApply"
+          />
+        </div>
 
-        <RunConfigSection
-          :maafw-config="maafwConfig"
-          :daily-once-tasks="dailyOnceTasks"
-          :weekly-once-tasks="weeklyOnceTasks"
-          :monthly-once-tasks="monthlyOnceTasks"
-          :period-task-options="periodTaskOptions"
-          :interface-dependent-disabled="interfaceDependentDisabled"
-          @change="handleChange"
-          @period-task-change="handlePeriodTaskChange"
-        />
+        <div v-show="!isWizard || currentStep === 3">
+          <RunConfigSection
+            :maafw-config="maafwConfig"
+            :daily-once-tasks="dailyOnceTasks"
+            :weekly-once-tasks="weeklyOnceTasks"
+            :monthly-once-tasks="monthlyOnceTasks"
+            :period-task-options="periodTaskOptions"
+            :interface-dependent-disabled="interfaceDependentDisabled"
+            @change="handleChange"
+            @period-task-change="handlePeriodTaskChange"
+          />
+        </div>
       </a-form>
+
+      <div v-if="isWizard" class="wizard-actions">
+        <a-button v-if="currentStep > 0" size="large" @click="currentStep -= 1"> 上一步 </a-button>
+        <a-button
+          v-if="currentStep < stepItems.length - 1"
+          type="primary"
+          size="large"
+          :disabled="!canLeaveCurrentStep"
+          @click="currentStep += 1"
+        >
+          下一步
+        </a-button>
+        <a-button v-else type="primary" size="large" @click="handleCancel"> 完成 </a-button>
+      </div>
     </a-card>
   </div>
 </template>
@@ -147,6 +181,19 @@ const { getScript, updateScript, previewMaaFWInterface } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
 const scriptId = route.params.id as string
+
+// 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 脚本后进这里，
+// 之后再编辑走 /scripts/:id/edit/maafw 的完整单页形态。
+const isWizard = computed(() => route.name === 'MaaFWSetupWizard')
+const currentStep = ref(0)
+const stepItems = [
+  { title: '基本信息' },
+  { title: '控制配置' },
+  { title: '项目更新' },
+  { title: '运行配置' },
+]
+// 第一步没读到 interface 就往下走，后面几步全是空的，先拦住
+const canLeaveCurrentStep = computed(() => currentStep.value !== 0 || previewData.value !== null)
 const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
@@ -436,6 +483,19 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.wizard-steps {
+  margin-bottom: 28px;
+}
+
+.wizard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
 .script-edit-header {
   display: flex;
   justify-content: space-between;
