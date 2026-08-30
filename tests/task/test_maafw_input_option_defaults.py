@@ -98,5 +98,59 @@ class UnsetInputIsEmptyTest(unittest.TestCase):
         self.assertEqual(override["SelectStage"]["attach"]["stage"], "5-")
 
 
+class NormalizationDoesNotInjectDefaultsTest(unittest.TestCase):
+    """归一化才是真正的注入点 —— pipeline_override 那层够不着它。
+
+    修第一遍时只改了 `_build_input_override` 的回退分支，真机上仍旧提交「占位」：
+    值是 `_build_option_defaults` 在归一化阶段就填进任务选项的，
+    到 `_build_input_override` 时 `options` 里已经带着值，根本走不到回退。
+    """
+
+    def test_input_defaults_normalize_to_empty(self) -> None:
+        from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
+            normalize_task_options_by_task,
+        )
+
+        interface = MaaFWInterface.model_validate(INTERFACE)
+        normalized = normalize_task_options_by_task(
+            {"使用兑换码": {}},
+            ["使用兑换码"],
+            interface,
+            controller_name="安卓端",
+            resource_name="官服",
+        )
+        self.assertEqual(normalized["使用兑换码"]["自定义兑换码"]["兑换码"], "")
+
+    def test_user_value_survives_normalization(self) -> None:
+        from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
+            normalize_task_options_by_task,
+        )
+
+        interface = MaaFWInterface.model_validate(INTERFACE)
+        normalized = normalize_task_options_by_task(
+            {"使用兑换码": {"自定义兑换码": {"兑换码": "ABC"}}},
+            ["使用兑换码"],
+            interface,
+            controller_name="安卓端",
+            resource_name="官服",
+        )
+        self.assertEqual(normalized["使用兑换码"]["自定义兑换码"]["兑换码"], "ABC")
+
+    def test_frontend_uses_default_as_placeholder_not_value(self) -> None:
+        """前端同样不能把 default 预填成值，否则用户一保存又写回去。"""
+
+        from pathlib import Path
+
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "frontend/src/views/EditView/User/MaaFWTaskOptionEditor.vue"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            ':placeholder="inputItem.default || inputItem.description || inputItem.name"',
+            source,
+        )
+        self.assertNotIn("inputValues[inputItem.name] = inputItem.default", source)
+
+
 if __name__ == "__main__":
     unittest.main()

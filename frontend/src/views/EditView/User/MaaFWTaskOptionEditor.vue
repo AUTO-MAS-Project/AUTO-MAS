@@ -144,7 +144,7 @@
               v-else
               :value="getInputFieldValue(option, inputItem.name)"
               :disabled="props.disabled"
-              :placeholder="inputItem.description || inputItem.name"
+              :placeholder="inputItem.default || inputItem.description || inputItem.name"
               class="option-control"
               @change="handleInputTextChange(option.name, inputItem, $event)"
               @blur="handleInputTextBlur(inputItem, $event)"
@@ -386,7 +386,8 @@ const getDefaultValue = (option: MaaFWOptionInfo): MaaFWTaskOptionValue => {
   if (option.type === 'input') {
     const inputValues: Record<string, string> = {}
     for (const inputItem of option.inputs) {
-      inputValues[inputItem.name] = inputItem.default || ''
+      // 与后端一致：default 只作 placeholder 提示，不预填成值
+      inputValues[inputItem.name] = ''
     }
     return inputValues
   }
