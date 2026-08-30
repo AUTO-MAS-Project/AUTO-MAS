@@ -24,7 +24,6 @@
               :min="1"
               :max="9999"
               size="large"
-              class="modern-number-input"
               style="width: 100%"
               @blur="handleChange('Script', 'LogTimeStart', formData.logTimeStart)"
             />
@@ -45,7 +44,6 @@
               :min="1"
               :max="9999"
               size="large"
-              class="modern-number-input"
               style="width: 100%"
               @blur="handleChange('Script', 'LogTimeEnd', formData.logTimeEnd)"
             />
@@ -112,6 +110,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('日志时间戳选择器')
 

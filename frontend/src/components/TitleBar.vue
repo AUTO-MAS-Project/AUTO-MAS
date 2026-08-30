@@ -64,13 +64,14 @@
 </template>
 
 <script setup lang="ts">
-import { useAppClosing } from '@/composables/useAppClosing'
+import { closeApp } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useUiPreferences } from '@/composables/useUiPreferences'
+import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
@@ -78,7 +79,7 @@ import {
   MinusOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const logger = window.electronAPI.getLogger('标题栏')
@@ -86,6 +87,8 @@ const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
+const { startTaskById } = useSchedulerLogic()
+let removeTrayActionListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -124,7 +127,6 @@ const hasRunningTasks = (): boolean => {
 }
 
 const { isDark } = useTheme()
-const { showClosingOverlay } = useAppClosing()
 const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
@@ -202,17 +204,11 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作
+// 执行实际的关闭操作：交给生命周期协调器执行"退出并关闭后端"流程
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-
-    // 显示关闭遮罩
-    showClosingOverlay()
-
-    // 直接关闭窗口，后台清理由主进程处理
-    logger.info('正在退出应用...')
-    await window.electronAPI?.appQuit()
+    await closeApp()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
@@ -239,7 +235,72 @@ const closeWindow = async () => {
   }
 }
 
+// 托盘触发退出：与窗口关闭按钮走同一套确认流程
+const handleTrayQuit = () => {
+  if (hasRunningTasks()) {
+    // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
+    window.electronAPI?.windowFocus?.()
+    Modal.confirm({
+      title: '确认关闭',
+      content: '队列正在运行中，确认关闭AUTO-MAS吗？',
+      okText: '确认关闭',
+      cancelText: '取消',
+      okType: 'danger',
+      centered: true,
+      onOk: () => {
+        doCloseWindow()
+      },
+    })
+  } else {
+    void doCloseWindow()
+  }
+}
+
+// 托盘触发重启：统一确认窗风格（与关闭确认一致）
+const handleTrayRestart = () => {
+  // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
+  window.electronAPI?.windowFocus?.()
+  Modal.confirm({
+    title: '确认重启',
+    content: '重启 AUTO-MAS 会停止当前正在运行的任务，确认重启吗？',
+    okText: '确认重启',
+    cancelText: '取消',
+    okType: 'danger',
+    centered: true,
+    onOk: async () => {
+      await window.electronAPI?.appRestart()
+    },
+  })
+}
+
+// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
+const handleTrayStartTask = (taskId?: string, label?: string) => {
+  if (!taskId) {
+    logger.warn('托盘启动任务缺少任务 ID，忽略')
+    return
+  }
+  void startTaskById(taskId, label)
+}
+
+// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+const handleTrayActionRequest = (request: {
+  action: 'quit' | 'restart' | 'startTask'
+  taskId?: string
+  label?: string
+}) => {
+  if (request.action === 'restart') {
+    handleTrayRestart()
+  } else if (request.action === 'quit') {
+    handleTrayQuit()
+  } else {
+    handleTrayStartTask(request.taskId, request.label)
+  }
+}
+
 onMounted(async () => {
+  // 监听托盘动作请求（启动任务 / 退出 / 重启）
+  removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+
   try {
     const config = await window.electronAPI?.loadConfig()
     syncUiPreferences(config?.UI)
@@ -254,6 +315,11 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取窗口状态失败: ${errorMsg}`)
   }
+})
+
+onBeforeUnmount(() => {
+  removeTrayActionListener?.()
+  removeTrayActionListener = undefined
 })
 </script>
 

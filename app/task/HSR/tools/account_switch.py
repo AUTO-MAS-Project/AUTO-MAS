@@ -637,7 +637,7 @@ class HSRAccountSwitcher:
             try:
                 await manager.search_process(
                     ProcessInfo(name=process_name),
-                    datetime.now() + timedelta(seconds=5),
+                    5.0,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"定位 HSR 游戏进程窗口失败：{e}")

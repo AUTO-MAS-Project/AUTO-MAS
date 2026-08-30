@@ -22,9 +22,19 @@
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable v-model="queueItems" group="queueItems" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" handle=".drag-handle"
-        class="draggable-container" @end="onDragEnd">
+      <draggable
+        v-model="queueItems"
+        group="queueItems"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        handle=".drag-handle"
+        class="draggable-container"
+        @end="onDragEnd"
+      >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell drag-cell">
@@ -34,12 +44,25 @@
             </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell script-cell">
-              <a-select v-model:value="record.script" size="small" style="width: 200px" class="script-select"
-                placeholder="请选择脚本" :options="scriptOptions" allow-clear @change="updateQueueItemScript(record)" />
+              <a-select
+                v-model:value="record.script"
+                size="small"
+                style="width: 200px"
+                class="script-select"
+                placeholder="请选择脚本"
+                :options="scriptOptions"
+                allow-clear
+                @change="updateQueueItemScript(record)"
+              />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteQueueItem(record.id)">
+                <a-popconfirm
+                  title="确定要删除这个任务吗？"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="deleteQueueItem(record.id)"
+                >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
                     删除

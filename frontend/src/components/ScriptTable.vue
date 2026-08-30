@@ -65,30 +65,17 @@
                     alt="HSR"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'MaaFW'"
+                    src="@/assets/maafw.png"
+                    alt="MFW"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag
-                    :color="
-                      script.type === 'MAA'
-                        ? 'blue'
-                        : script.type === 'SRC'
-                          ? 'purple'
-                          : script.type === 'MaaEnd'
-                            ? 'blue'
-                            : script.type === 'M9A'
-                              ? 'cyan'
-                              : script.type === 'Okww'
-                                ? 'blue'
-                                : script.type === 'OkNte'
-                                  ? 'blue'
-                                  : script.type === 'HSR'
-                                    ? 'purple'
-                                    : 'green'
-                    "
-                    class="script-type"
-                  >
+                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
                 </div>
@@ -366,14 +353,8 @@
                             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
                             :key="index"
                             :title="tag.text"
-                            :class="[
-                              'info-tag',
-                              { 'clickable-tag': tag.text === '人工排查未通过' },
-                            ]"
+                            :class="['info-tag']"
                             :color="tag.color"
-                            @click="
-                              tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined
-                            "
                           >
                             {{ tag.text }}
                           </a-tag>
@@ -562,7 +543,7 @@ import { parseStatusTagList } from '@/composables/useStatusTag'
 
 interface Props {
   scripts: Script[]
-  activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
@@ -599,8 +580,6 @@ interface Emits {
   (e: 'startOkwwConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
-
-  (e: 'passCheckUser', user: User): void
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
@@ -754,17 +733,19 @@ const getScriptTypeLabel = (type: Script['type']) => {
   return type
 }
 
-const handlePassCheck = (user: User) => {
-  Modal.confirm({
-    title: '确认操作',
-    content: `确定要将用户 ${user.Info.Name} 标记为「已通过人工排查」吗？`,
-    okText: '确定',
-    cancelText: '取消',
-    onOk: () => {
-      emit('passCheckUser', user)
-    },
-  })
+const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+  MAA: 'blue',
+  SRC: 'purple',
+  MaaEnd: 'blue',
+  M9A: 'cyan',
+  MaaFW: 'geekblue',
+  Okww: 'blue',
+  OkNte: 'blue',
+  HSR: 'purple',
+  General: 'green',
 }
+
+const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
 
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
@@ -963,10 +944,6 @@ const getM9AOnceStatusTags = (script: Script, user: User) => {
   const queue = parseM9ATaskQueue((user as any).Task?.Queue)
   const data = (user as any).Data || {}
   const tags: Array<{ text: string; color: string }> = []
-
-  if (data.IfPassCheck === false) {
-    return tags
-  }
 
   if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
     const completed = data.LastPsychubeDate === getM9ATodayString()

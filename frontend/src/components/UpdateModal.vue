@@ -11,11 +11,13 @@
     <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
+        <!-- eslint-disable vue/no-v-html 更新说明来自 MAS 后端 markdown，属可信内容 -->
         <div
           ref="markdownContentRef"
           class="markdown-content"
           v-html="renderMarkdown(updateContent)"
         ></div>
+        <!-- eslint-enable vue/no-v-html -->
       </div>
 
       <!-- 操作按钮 -->

@@ -93,7 +93,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭">
+                  <a-tooltip
+                    title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭"
+                  >
                     <span class="form-label">
                       启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
@@ -136,7 +138,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭">
+                  <a-tooltip
+                    title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭"
+                  >
                     <span class="form-label">
                       任务后关闭游戏
                       <QuestionCircleOutlined class="help-icon" />
@@ -163,7 +167,10 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择包含 <strong>Neverness To Everness</strong> 的任意目录，自动定位 HTGame.exe</span>
+                    <span class="label-hint"
+                      >选择包含 <strong>Neverness To Everness</strong> 的任意目录，自动定位
+                      HTGame.exe</span
+                    >
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -309,8 +316,18 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { type OkNteConfig } from '@/api'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
+import {
+  type OkNteConfig,
+  type OkNteConfig_Game,
+  type OkNteConfig_Info,
+  type OkNteConfig_Run,
+  type OkNteConfig_Script,
+} from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const logger = window.electronAPI.getLogger('OK-NTE脚本编辑')
@@ -333,13 +350,24 @@ const formData = reactive({
   },
 })
 
-const oknteConfig = reactive<OkNteConfig>({
+type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
+
+type OkNteFormConfig = {
+  Info: FormSection<OkNteConfig_Info>
+  Script: FormSection<OkNteConfig_Script>
+  Game: FormSection<OkNteConfig_Game>
+  Run: FormSection<OkNteConfig_Run>
+}
+
+const oknteConfig = reactive<OkNteFormConfig>({
   Info: { Name: '', RootPath: '.' },
   Script: {
     ScriptPath: '.',
     Arguments: '',
     IfTrackProcess: true,
+    TrackProcessName: '',
     TrackProcessExe: '',
+    TrackProcessCmdline: '',
     ConfigPath: '.',
     ConfigPathMode: 'Folder',
     UpdateConfigMode: 'Always',
@@ -348,14 +376,23 @@ const oknteConfig = reactive<OkNteConfig>({
     LogTimeStart: 1,
     LogTimeEnd: 23,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
+    LogHookEnabled: false,
+    LogHookRules: '',
     SuccessLog: '',
+    SuccessLogMode: 'Split',
     ErrorLog: '',
+    ErrorLogMode: 'Split',
+    PushLogEnabled: false,
+    PushLogPatterns: '',
   },
   Game: {
     Enabled: false,
     LaunchBeforeTask: false,
     Type: 'Client',
     Path: '.',
+    URL: '',
+    ProcessName: '',
+    Arguments: '',
     WaitTime: 60,
     IfForceClose: true,
     CloseOnFinish: true,
@@ -416,7 +453,13 @@ const applyRootPathDefaults = async (rootPath: string) => {
     message.warning('请先选择脚本根目录')
     return
   }
-  const { rootPath: norm, scriptPath, configPath, logPath, trackProcessExe } = buildAutoPaths(rootPath)
+  const {
+    rootPath: norm,
+    scriptPath,
+    configPath,
+    logPath,
+    trackProcessExe,
+  } = buildAutoPaths(rootPath)
   oknteConfig.Info.RootPath = norm
   oknteConfig.Script.ScriptPath = scriptPath
   oknteConfig.Script.ConfigPath = configPath
@@ -466,10 +509,11 @@ const loadScript = async () => {
       return
     }
     formData.name = detail.name
-    Object.assign(oknteConfig.Info, detail.config.Info || {})
-    Object.assign(oknteConfig.Script, detail.config.Script || {})
-    Object.assign(oknteConfig.Game, detail.config.Game || {})
-    Object.assign(oknteConfig.Run, detail.config.Run || {})
+    const config = detail.config as OkNteConfig
+    Object.assign(oknteConfig.Info, config.Info || {})
+    Object.assign(oknteConfig.Script, config.Script || {})
+    Object.assign(oknteConfig.Game, config.Game || {})
+    Object.assign(oknteConfig.Run, config.Run || {})
   } catch {
     message.error('加载脚本失败')
   } finally {
@@ -479,12 +523,15 @@ const loadScript = async () => {
 }
 
 const selectRootPath = async () => {
-  const picked = await window.electronAPI.selectFolder({ title: '选择脚本根目录' })
+  const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
   const exePath = normalized + '/ok-nte.exe'
   if (!(await window.electronAPI.fileExists(exePath))) {
-    showPathRejectModal('所选目录无效', '所选目录下未找到 ok-nte.exe，请选择包含 ok-nte.exe 的 OK-NTE 脚本根目录。')
+    showPathRejectModal(
+      '所选目录无效',
+      '所选目录下未找到 ok-nte.exe，请选择包含 ok-nte.exe 的 OK-NTE 脚本根目录。'
+    )
     return
   }
   formData.path = normalized
@@ -493,7 +540,7 @@ const selectRootPath = async () => {
 
 const selectGameRootPath = async () => {
   if (!oknteConfig.Game.Enabled) return
-  const picked = await window.electronAPI.selectFolder({ title: '选择游戏根目录（Neverness To Everness）' })
+  const picked = await window.electronAPI.selectFolder()
   if (!picked) return
 
   const normalized = picked.replace(/\\/g, '/')

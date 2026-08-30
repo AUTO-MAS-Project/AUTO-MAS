@@ -14,15 +14,29 @@
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default"
-            @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)" />
+          <a-switch
+            v-model:checked="formData.Info.IfScriptBeforeTask"
+            :disabled="loading"
+            size="default"
+            @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)"
+          />
         </a-col>
         <a-col :span="20">
           <a-input-group compact class="path-input-group">
-            <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请选择脚本文件"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" class="path-input" readonly />
-            <a-button size="large" :disabled="loading || !formData.Info.IfScriptBeforeTask" class="path-button"
-              @click="selectScriptBeforeTask">
+            <a-input
+              v-model:value="formData.Info.ScriptBeforeTask"
+              placeholder="请选择脚本文件"
+              :disabled="loading || !formData.Info.IfScriptBeforeTask"
+              size="large"
+              class="path-input"
+              readonly
+            />
+            <a-button
+              size="large"
+              :disabled="loading || !formData.Info.IfScriptBeforeTask"
+              class="path-button"
+              @click="selectScriptBeforeTask"
+            >
               <template #icon>
                 <FileOutlined />
               </template>
@@ -43,15 +57,29 @@
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default"
-            @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)" />
+          <a-switch
+            v-model:checked="formData.Info.IfScriptAfterTask"
+            :disabled="loading"
+            size="default"
+            @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)"
+          />
         </a-col>
         <a-col :span="20">
           <a-input-group compact class="path-input-group">
-            <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请选择脚本文件"
-              :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" class="path-input" readonly />
-            <a-button size="large" :disabled="loading || !formData.Info.IfScriptAfterTask" class="path-button"
-              @click="selectScriptAfterTask">
+            <a-input
+              v-model:value="formData.Info.ScriptAfterTask"
+              placeholder="请选择脚本文件"
+              :disabled="loading || !formData.Info.IfScriptAfterTask"
+              size="large"
+              class="path-input"
+              readonly
+            />
+            <a-button
+              size="large"
+              :disabled="loading || !formData.Info.IfScriptAfterTask"
+              class="path-button"
+              @click="selectScriptAfterTask"
+            >
               <template #icon>
                 <FileOutlined />
               </template>
@@ -132,28 +160,6 @@ const selectScriptAfterTask = async () => {
 .section-header {
   margin-bottom: 24px;
   padding-bottom: 12px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -190,7 +196,7 @@ const selectScriptAfterTask = async () => {
 
 .path-input-group:focus-within {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
 }
 
 .path-input {

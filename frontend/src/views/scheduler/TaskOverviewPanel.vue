@@ -1,6 +1,6 @@
 <template>
   <div class="overview-panel">
-    <div class="section-header">
+    <div class="scheduler-panel-header">
       <h3>任务总览</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
 const logger = window.electronAPI.getLogger('任务总览面板')
 
@@ -28,41 +28,10 @@ interface Script {
   user_list: User[]
 }
 
-interface WSMessage {
-  type: string
-  id: string
-  data: {
-    task_info?: any[]
-  }
-  fullMessage?: any
-}
-
-// 任务数据 - 改回ref，shallowRef对复杂数据结构支持不好
-const taskData = ref<Script[]>([])
+// 任务数据只在 WebSocket 快照实际变化时整体替换，避免深层响应式递归开销。
+const taskData = shallowRef<Script[]>([])
 const taskTreeRef = ref()
-
-// 移除消息去重机制，改用深度比较
-
-// 深度比较两个数据结构是否相同
-const deepEqual = (obj1: any, obj2: any): boolean => {
-  if (obj1 === obj2) return true
-  if (obj1 == null || obj2 == null) return false
-  if (typeof obj1 !== typeof obj2) return false
-
-  if (Array.isArray(obj1)) {
-    if (!Array.isArray(obj2) || obj1.length !== obj2.length) return false
-    return obj1.every((item, index) => deepEqual(item, obj2[index]))
-  }
-
-  if (typeof obj1 === 'object') {
-    const keys1 = Object.keys(obj1)
-    const keys2 = Object.keys(obj2)
-    if (keys1.length !== keys2.length) return false
-    return keys1.every(key => deepEqual(obj1[key], obj2[key]))
-  }
-
-  return obj1 === obj2
-}
+const lastTaskSignature = ref('')
 
 const getTaskInfoStats = (taskInfo: any[]) => {
   const scriptCount = taskInfo.length
@@ -76,39 +45,47 @@ const getScriptStats = (scripts: Script[]) => {
   return { scriptCount, userCount }
 }
 
-// 处理 WebSocket 消息
-const handleWSMessage = (message: WSMessage) => {
+const buildTaskInfoSignature = (taskInfo: any[]) => {
+  return taskInfo
+    .map((task, index) => {
+      const users = Array.isArray(task.userList)
+        ? task.userList.map((user: any) => `${user.name || ''}:${user.status || ''}`).join(',')
+        : ''
+      return `${task.script_id || index}:${task.name || ''}:${task.status || ''}[${users}]`
+    })
+    .join('|')
+}
 
-  if (message.type === 'Update') {
-    // 处理 task_info 数据（完整的脚本和用户数据）
-    if (message.data?.task_info && Array.isArray(message.data.task_info)) {
-      const { scriptCount, userCount } = getTaskInfoStats(message.data.task_info)
-      logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
+// 应用任务信息快照（来自 task.info.updated / task.completed 消息）
+const applyTaskInfo = (taskInfo: any[] | undefined) => {
+  if (!taskInfo || !Array.isArray(taskInfo)) return
 
-      // 转换后端的 task_info 格式到前端的 Script 格式
-      const newTaskData = message.data.task_info.map((task: any, index: number) => ({
-        script_id: task.script_id || `script_${index}`,
-        name: task.name || '未知脚本',
-        status: task.status || '等待',
-        user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
-      }))
-
-      // 直接比较当前数据和新数据，只有真正不同时才更新
-      if (!deepEqual(taskData.value, newTaskData)) {
-        logger.debug('数据发生实际变化，更新组件')
-        taskData.value = newTaskData
-        const { scriptCount, userCount } = getScriptStats(taskData.value)
-        logger.debug(`设置后的 taskData: 脚本数=${scriptCount}, 用户数=${userCount}`)
-      } else {
-        logger.debug('数据内容完全相同，跳过更新')
-      }
-    }
+  const signature = buildTaskInfoSignature(taskInfo)
+  if (signature === lastTaskSignature.value) {
+    return
   }
+  lastTaskSignature.value = signature
+
+  const { scriptCount, userCount } = getTaskInfoStats(taskInfo)
+  logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
+
+  // 转换后端的 task_info 格式到前端的 Script 格式
+  const newTaskData = taskInfo.map((task: any, index: number) => ({
+    script_id: task.script_id || `script_${index}`,
+    name: task.name || '未知脚本',
+    status: task.status || '等待',
+    user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
+  }))
+
+  logger.debug('数据发生实际变化，更新组件')
+  taskData.value = newTaskData
+  const stats = getScriptStats(taskData.value)
+  logger.debug(`设置后的 taskData: 脚本数=${stats.scriptCount}, 用户数=${stats.userCount}`)
 }
 
 // 暴露方法供父组件调用
 defineExpose({
-  handleWSMessage,
+  applyTaskInfo,
   expandAll: () => taskTreeRef.value?.expandAll(),
   collapseAll: () => taskTreeRef.value?.collapseAll(),
 })
@@ -119,14 +96,14 @@ defineExpose({
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
 }
 
-.section-header {
+.scheduler-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -136,7 +113,7 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.section-header h3 {
+.scheduler-panel-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
@@ -179,7 +156,7 @@ defineExpose({
     border-radius: 8px;
   }
 
-  .section-header {
+  .scheduler-panel-header {
     padding: 12px;
   }
 }

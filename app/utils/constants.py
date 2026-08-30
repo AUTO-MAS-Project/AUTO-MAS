@@ -23,9 +23,6 @@
 
 import re
 import os
-import sys
-import locale
-import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -44,6 +41,7 @@ TYPE_BOOK = {
     "OkNteConfig": "OK-NTE",
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
+    "MaaFWConfig": "MFW",
     "HSRConfig": "HSR",
 }
 """配置类型映射表"""
@@ -131,6 +129,19 @@ ARKNIGHTS_PACKAGE_NAME = {
 }
 """明日方舟包名映射表"""
 
+ARKNIGHTS_VERSION_API_SERVER = {
+    "Official": "official",
+    "Bilibili": "b",
+}
+"""明日方舟版本接口服务器标识映射表
+
+仅收录已实测可用的服务器；外服与台服未找到稳定的公开版本接口，
+不在此表中的服务器会跳过客户端版本检查。
+"""
+
+ARKNIGHTS_OFFICIAL_APK_URL = "https://ak.hypergryph.com/downloads/android_lastest"
+"""明日方舟官服安卓包下载入口（302 跳转至启动器再跳至 CDN 实际包地址）"""
+
 MAA_TASK_TRANSITION_METHOD_BOOK = {
     "NoAction": "8",
     "ExitGame": "9",
@@ -156,12 +167,14 @@ MAA_ANNIHILATION_FIGHT_BASE = {
     "EnableTargetDrop": False,
     "DropId": "",
     "DropCount": 0,
+    "IsInventoryTarget": False,
     "EnableTimesLimit": False,
     "TimesLimit": 999,
     "Series": 0,
     "StagePlan": ["Annihilation"],
     "IsDrGrandet": False,
     "UseExpiringMedicine": True,
+    "UseExpireMedicineForActivity": False,
     "UseCustomAnnihilation": True,
     "AnnihilationStage": "Annihilation",
     "HideUnavailableStage": True,
@@ -195,12 +208,14 @@ MAA_REMAIN_FIGHT_BASE = {
     "EnableTargetDrop": False,
     "DropId": "",
     "DropCount": 0,
+    "IsInventoryTarget": False,
     "EnableTimesLimit": False,
     "TimesLimit": 999,
     "Series": 0,
     "StagePlan": [""],
     "IsDrGrandet": False,
     "UseExpiringMedicine": False,
+    "UseExpireMedicineForActivity": False,
     "UseCustomAnnihilation": False,
     "AnnihilationStage": "Annihilation",
     "HideUnavailableStage": True,
@@ -1037,26 +1052,11 @@ DES_RULE = {
 """DES加密规则"""
 
 
-ENCODINGS = [
-    e
-    for e in dict.fromkeys(
-        ["utf-8", "utf-8-sig", locale.getpreferredencoding(), "gbk", "gb18030"]
-    )
-    if e
-]
-"""编码列表"""
-
-
-CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-"""创建子进程的标志"""
-
-
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 """匹配ANSI控制字符的正则表达式"""
 
 TASK_MODE_ZH = {
     "AutoProxy": "自动代理",
-    "ManualReview": "人工排查",
     "ScriptConfig": "脚本配置",
 }
 """任务模式中文映射表"""

@@ -185,15 +185,11 @@ reason        失败原因
 
 ## 最小验证
 
-按 `tests/AGENTS.md`，签到测试归 `tests/tools/`（通用工具与外部平台交互）。现有入口：
+按 `tests/AGENTS.md`，开发时在 `tests/tools/` 下编写签到测试用于本地验证（`test_game_sign.py`、`test_game_sign_notification.py`、`test_miyoushe_qr.py`、`test_miyoushe_retry.py`、`test_contracts.py` 等）。
 
-```bash
-python -m pytest tests/tools/test_game_sign.py tests/tools/test_game_sign_notification.py -q
-```
+提交或提 PR 时，功能/bug 边界测试不提交，仅提交重要公共测试或纯逻辑测试（如 `test_skland_response.py`）。
 
-其余相关入口按改动范围选择：`test_skland_response.py`、`test_skland_proxy.py`、`test_miyoushe_qr.py`、`test_miyoushe_retry.py`、`test_contracts.py`。
-
-改通知文案或分组走 `test_game_sign_notification.py`；改编排、锁或结果归一走 `test_game_sign.py`。前端改动只运行实际受影响的 `*.test.ts`。非必要不新增测试；有缺口就在结果里说明，不编造验证结果。
+前端改动只运行实际受影响的 `*.test.ts`。有缺口就在结果里说明，不编造验证结果。
 
 ## 避免
 

@@ -23,6 +23,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
+  // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
+  onSystemResume: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('system-resumed', listener)
+    return () => ipcRenderer.removeListener('system-resumed', listener)
+  },
+  onAppCloseRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('app-close-requested', listener)
+    return () => ipcRenderer.removeListener('app-close-requested', listener)
+  },
+
   // 窗口可见性/后台状态
   getWindowActivity: () => ipcRenderer.invoke('get-window-activity'),
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => {
@@ -81,6 +93,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
+  // 托盘自定义菜单项
+  updateTrayConfig: (trayItems: any) => ipcRenderer.invoke('update-tray-config', trayItems),
+
+  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出 / 重启）
+  onTrayActionRequest: (
+    callback: (request: {
+      action: 'quit' | 'restart' | 'startTask'
+      taskId?: string
+      label?: string
+    }) => void
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      request: {
+        action: 'quit' | 'restart' | 'startTask'
+        taskId?: string
+        label?: string
+      }
+    ) => {
+      callback(request)
+    }
+
+    ipcRenderer.on('tray-action-request', listener)
+    return () => ipcRenderer.removeListener('tray-action-request', listener)
+  },
+
   // 同步后端配置
   syncBackendConfig: (backendSettings: any) =>
     ipcRenderer.invoke('sync-backend-config', backendSettings),
@@ -88,6 +126,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
   exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
+  exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
   openLogWindow: () => ipcRenderer.invoke('log:openWindow'),

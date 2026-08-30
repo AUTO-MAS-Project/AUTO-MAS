@@ -24,6 +24,8 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -34,6 +36,7 @@ from app.tools.game_sign_notify import (
 )
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
+from app.tools.push_log import build_push_log_text
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -43,6 +46,7 @@ from .AutoProxy import (
     _okww_config_mode,
 )
 from .ScriptConfig import ScriptConfigTask
+from .Update import WuwaUpdateTask
 from .tools import push_notification
 
 logger = get_logger("OK-WW 调度器")
@@ -68,7 +72,7 @@ class OkwwManager(TaskExecuteBase):
         self.begin_time = ""
 
     async def check(self) -> str:
-        if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
+        if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -83,6 +87,8 @@ class OkwwManager(TaskExecuteBase):
                 or not (root_path / _OKWW_REL_APP_JSON).is_file()
             ):
                 return "请先设置有效的 OK-WW 脚本路径"
+
+        if self.task_info.mode in ("ScriptConfig", "Update"):
             target_user_id = self.task_info.user_id or "Default"
             if target_user_id != "Default":
                 try:
@@ -91,6 +97,13 @@ class OkwwManager(TaskExecuteBase):
                     return "OK-WW 用户不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
                     return "OK-WW 用户不存在，请刷新后重试"
+
+        if self.task_info.mode == "Update":
+            if not script_config.get("Game", "Enabled"):
+                return "请先在脚本配置中启用游戏配置"
+            launcher = Path(str(script_config.get("Game", "Path") or "").strip())
+            if not launcher.is_file():
+                return "请先在脚本配置中导入有效的鸣潮官方启动器"
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
@@ -122,7 +135,23 @@ class OkwwManager(TaskExecuteBase):
         if not isinstance(self.script_config, OkwwConfig):
             raise TypeError("脚本配置类型错误")
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.task_info.mode == "Update":
+            target_user_id = self.task_info.user_id or "Default"
+            target_user_name = "OK-WW 更新"
+            with suppress(ValueError):
+                target_user_uid = uuid.UUID(target_user_id)
+                if target_user_uid in self.user_config:
+                    target_user_name = self.user_config[target_user_uid].get(
+                        "Info", "Name"
+                    )
+            self.script_info.user_list = [
+                UserItem(
+                    user_id=target_user_id,
+                    name=target_user_name,
+                    status="等待",
+                )
+            ]
+        elif self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "OK-WW 设置"
             with suppress(ValueError):
@@ -204,13 +233,30 @@ class OkwwManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
-                id=self.task_info.task_id, type="Info", data={"Error": self.check_result}
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+
+        if self.task_info.mode == "Update":
+            self.script_info.current_index = 0
+            target_user_id = self.task_info.user_id or "Default"
+            resource = str(
+                self.user_config[uuid.UUID(target_user_id)].get("Info", "Resource")
+            )
+            await self.spawn(
+                WuwaUpdateTask(
+                    self.script_info,
+                    self.script_config,
+                    resource,
+                )
+            )
+            return
 
         if self.task_info.mode == "ScriptConfig":
             self.script_info.current_index = 0
@@ -244,8 +290,10 @@ class OkwwManager(TaskExecuteBase):
                 current_user = self.script_info.user_list[self.script_info.current_index]
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id, type="Info", data={"Error": sub_check}
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=sub_check),
                 )
                 continue
 
@@ -315,6 +363,15 @@ class OkwwManager(TaskExecuteBase):
                     self.task_info, self.script_info.result
                 )
                 has_game_sign_summary = task_result != self.script_info.result
+                # 聚合各用户采集的推送日志：每条节点独占一行，不附加用户名。
+                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
+                # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
+                # 为空，此处按既有逻辑自动跳过，无需再按用户过滤
+                has_uncompleted = len(error_user) + len(wait_user) > 0
+                push_log_text = build_push_log_text(
+                    self.script_info.user_list, has_uncompleted
+                )
                 result = {
                     "title": f"{task_mode}任务报告",
                     "script_name": self.script_info.name or "空白",
@@ -324,6 +381,7 @@ class OkwwManager(TaskExecuteBase):
                     "uncompleted_count": len(error_user) + len(wait_user),
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
+                    "push_log": push_log_text,
                 }
 
                 await Notify.push_plyer(
@@ -345,10 +403,13 @@ class OkwwManager(TaskExecuteBase):
                         mark_task_game_sign_summary_consumed(self.task_info)
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
+                        ),
                     )
         finally:
             if script_cfg.is_locked:
@@ -394,8 +455,8 @@ class OkwwManager(TaskExecuteBase):
                 )
 
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"OK-WW任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"OK-WW任务出现异常: {e}"),
             )

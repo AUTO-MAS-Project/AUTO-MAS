@@ -30,7 +30,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
                     user_id=None,
                     trigger_source=trigger_source,
                 )
-                task = Task(task_info)
+                task = Task(task_info, [])
                 task.prepare = AsyncMock()
 
                 with patch(
@@ -86,19 +86,23 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
         queue_id = uuid.uuid4()
         manager = _TaskManager()
         queue = MagicMock()
+        queue.set = AsyncMock()
         queue.get.side_effect = lambda group, key: {
-            ("Info", "StartUpEnabled"): True,
+            ("Info", "StartUpMode"): "Always",
             ("Info", "Name"): "启动队列",
         }[(group, key)]
 
         with patch("app.core.task_manager.Config") as config, patch(
             "app.core.task_manager.TaskManager"
         ) as task_manager, patch(
+            "app.core.task_manager.MainConnection"
+        ) as main_connection, patch(
             "app.core.task_manager.asyncio.sleep", new_callable=AsyncMock
-        ):
-            config.websocket = object()
+        ), patch("app.core.task_manager.datetime") as mocked_datetime:
+            main_connection.is_connected = True
             config.QueueConfig = {queue_id: queue}
             task_manager.add_task = AsyncMock()
+            mocked_datetime.now.return_value.strftime.return_value = "2026-08-27"
 
             await manager.start_startup_queue()
 
@@ -112,6 +116,75 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
             },
             trigger_source="startup_task",
         )
+        queue.set.assert_awaited_once_with(
+            "Data", "LastStartupTime", "2026-08-27"
+        )
+
+    async def test_startup_queue_runs_dailyfirst_queue_not_started_today(self) -> None:
+        queue_id = uuid.uuid4()
+        manager = _TaskManager()
+        queue = MagicMock()
+        queue.set = AsyncMock()
+        queue.get.side_effect = lambda group, key: {
+            ("Info", "StartUpMode"): "DailyFirst",
+            ("Info", "Name"): "启动队列",
+            ("Data", "LastStartupTime"): "2000-01-01",
+        }[(group, key)]
+
+        with patch("app.core.task_manager.Config") as config, patch(
+            "app.core.task_manager.TaskManager"
+        ) as task_manager, patch(
+            "app.core.task_manager.MainConnection"
+        ) as main_connection, patch(
+            "app.core.task_manager.asyncio.sleep", new_callable=AsyncMock
+        ), patch("app.core.task_manager.datetime") as mocked_datetime:
+            main_connection.is_connected = True
+            config.QueueConfig = {queue_id: queue}
+            task_manager.add_task = AsyncMock()
+            mocked_datetime.now.return_value.strftime.return_value = "2026-08-27"
+
+            await manager.start_startup_queue()
+
+        task_manager.add_task.assert_awaited_once_with(
+            "AutoProxy",
+            str(queue_id),
+            new_task_info={
+                "queueId": str(queue_id),
+                "taskName": "队列 - 启动队列",
+                "taskType": "启动时代理",
+            },
+            trigger_source="startup_task",
+        )
+        queue.set.assert_awaited_once_with(
+            "Data", "LastStartupTime", "2026-08-27"
+        )
+
+    async def test_startup_queue_skips_dailyfirst_queue_started_today(self) -> None:
+        queue_id = uuid.uuid4()
+        manager = _TaskManager()
+        queue = MagicMock()
+        queue.set = AsyncMock()
+        queue.get.side_effect = lambda group, key: {
+            ("Info", "StartUpMode"): "DailyFirst",
+            ("Data", "LastStartupTime"): "2026-08-27",
+        }[(group, key)]
+
+        with patch("app.core.task_manager.Config") as config, patch(
+            "app.core.task_manager.TaskManager"
+        ) as task_manager, patch(
+            "app.core.task_manager.MainConnection"
+        ) as main_connection, patch(
+            "app.core.task_manager.asyncio.sleep", new_callable=AsyncMock
+        ), patch("app.core.task_manager.datetime") as mocked_datetime:
+            main_connection.is_connected = True
+            config.QueueConfig = {queue_id: queue}
+            task_manager.add_task = AsyncMock()
+            mocked_datetime.now.return_value.strftime.return_value = "2026-08-27"
+
+            await manager.start_startup_queue()
+
+        task_manager.add_task.assert_not_awaited()
+        queue.set.assert_not_awaited()
 
 
 if __name__ == "__main__":

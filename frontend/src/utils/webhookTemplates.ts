@@ -127,4 +127,5 @@ export const TEMPLATE_VARIABLES = [
   { name: '{datetime}', description: '完整日期时间 (YYYY-MM-DD HH:MM:SS)' },
   { name: '{date}', description: '日期 (YYYY-MM-DD)' },
   { name: '{time}', description: '时间 (HH:MM:SS)' },
+  { name: '{gamedate}', description: '游戏日 (YYYY-MM-DD，东4区，与历史记录归档一致)' },
 ]

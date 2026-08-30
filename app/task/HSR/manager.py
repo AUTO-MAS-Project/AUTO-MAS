@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
@@ -39,7 +41,6 @@ from app.tools.game_sign_notify import (
     mark_task_game_sign_summary_consumed,
 )
 from .AutoProxy import HSRAutoProxyTask
-from .ManualReview import HSRManualReviewTask
 from .tools.run_model import CompletionWriteback, HSRRuntimeState
 from .task_mapping import HSR_TASK_MODULES, get_assigned_script, script_supports
 from .tools import push_notification
@@ -73,9 +74,8 @@ from .tools.external_locks import (
 
 logger = get_logger("HSR 调度器")
 
-METHOD_BOOK: dict[str, type[HSRAutoProxyTask | HSRManualReviewTask]] = {
+METHOD_BOOK: dict[str, type[HSRAutoProxyTask]] = {
     "AutoProxy": HSRAutoProxyTask,
-    "ManualReview": HSRManualReviewTask,
 }
 
 
@@ -299,9 +299,6 @@ class HSRManager(TaskExecuteBase):
 
         game_management_enabled = is_game_management_enabled(script_config)
 
-        if self.task_info.mode == "ManualReview":
-            return self._check_manual_review(script_config)
-
         m7a_path = resolve_script_path(script_config, "M7A")
         sra_path = resolve_script_path(script_config, "SRA")
 
@@ -470,37 +467,6 @@ class HSRManager(TaskExecuteBase):
 
         return "Pass"
 
-    def _check_manual_review(self, script_config: HSRConfig) -> str:
-        """校验 HSR 人工检查需要的 SRA 切号配置。"""
-
-        sra_path = resolve_script_path(script_config, "SRA")
-        if not sra_path:
-            return "人工排查需要先设置 SRA 路径"
-
-        sra_exe = Path(sra_path) / "SRA-cli.exe"
-        if not sra_exe.exists():
-            return f"SRA 路径中未找到 SRA-cli.exe：{sra_exe}"
-
-        if is_game_management_enabled(script_config):
-            game_exe_path = resolve_game_executable_path(script_config)
-            if not game_exe_path.exists():
-                return f"游戏启动文件不存在：{game_exe_path}"
-
-        has_executable_user = False
-        for _uid, user_config in script_config.UserData.items():
-            if not self._is_executable_user(user_config):
-                continue
-
-            has_executable_user = True
-
-        if not has_executable_user:
-            return "未找到任何可检查用户，请确保至少有一个启用且剩余天数不为 0 的用户"
-
-        return self._validate_sra_user_credentials(
-            script_config,
-            only_sra_needed=False,
-        )
-
     async def _apply_completion_writebacks(self) -> None:
         """在配置解锁后，把真实成功的完成态写回用户 Data。"""
 
@@ -586,10 +552,10 @@ class HSRManager(TaskExecuteBase):
         if self.check_result != "Pass":
             logger.warning(f"HSR 配置检查未通过：{self.check_result}")
             self._append_log(f"HSR 配置检查未通过：{self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -783,9 +749,7 @@ class HSRManager(TaskExecuteBase):
                     if log_item.status in ("未开始监看日志", "HSR 正常运行中"):
                         log_item.status = "未捕获到日志"
 
-                dt = start_time.replace(
-                    tzinfo=datetime.now().astimezone().tzinfo
-                ).astimezone(UTC4)
+                dt = start_time.astimezone(UTC4)
                 log_path = Config.build_history_log_path(
                     script_name=self.script_info.name,
                     user_name=user_item.name,
@@ -809,21 +773,6 @@ class HSRManager(TaskExecuteBase):
             logger.opt(exception=True).warning(f"HSR 外部脚本配置恢复失败：{e}")
             self._append_log(f"HSR 外部脚本配置恢复失败：{e}")
             return f"HSR 外部脚本配置恢复失败：{e}"
-
-    async def _sync_manual_review_user_data(self) -> None:
-        """人工检查模式下，把本轮检查结果写回真实 UserData。"""
-
-        if self.task_info.mode != "ManualReview" or self.user_config is None:
-            return
-
-        script_id = uuid.UUID(self.script_info.script_id)
-        if script_id not in Config.ScriptConfig:
-            return
-
-        script_config = Config.ScriptConfig[script_id]
-        await script_config.UserData.load(await self.user_config.toDict())
-        await Config.ScriptConfig.save()
-        logger.success("HSR 人工检查结果已写回用户配置")
 
     async def _unlock_script_config(self) -> bool:
         """解锁当前 HSR 脚本配置；配置已不存在时跳过。"""
@@ -897,10 +846,10 @@ class HSRManager(TaskExecuteBase):
         """通知失败时尽量提示前端；提示失败不影响任务收尾。"""
 
         try:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=message),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"发送 HSR 通知错误提示失败：{e}")
@@ -960,8 +909,6 @@ class HSRManager(TaskExecuteBase):
             try:
                 if self.task_info.mode == "AutoProxy":
                     await self._apply_completion_writebacks()
-                else:
-                    await self._sync_manual_review_user_data()
             except Exception as e:  # noqa: BLE001
                 msg = f"HSR 已完成模块状态写回失败：{e}"
                 logger.opt(exception=True).warning(msg)
@@ -980,8 +927,6 @@ class HSRManager(TaskExecuteBase):
         try:
             if self.task_info.mode == "AutoProxy":
                 await self._apply_completion_writebacks()
-            else:
-                await self._sync_manual_review_user_data()
         except Exception as e:
             self.script_info.status = "异常"
             logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
@@ -1003,8 +948,8 @@ class HSRManager(TaskExecuteBase):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"HSR 任务出现异常：{e}")
         self._append_log(f"HSR 任务出现异常：{e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"HSR 任务出现异常：{e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"HSR 任务出现异常：{e}"),
         )

@@ -22,7 +22,11 @@
 
 import os
 import re
-import winreg
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import winreg
 from collections import defaultdict
 from contextlib import suppress
 from pathlib import Path
@@ -176,6 +180,9 @@ def _unique_uninstall_roots_from_book() -> List[str]:
 
 def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
     """单遍枚举卸载表：每个子键只读一次 DisplayName / UninstallString，再按品牌关键词分发。"""
+
+    if not IS_WINDOWS:
+        return {}
 
     acc: Dict[str, List[str]] = defaultdict(list)
     roots = _unique_uninstall_roots_from_book()

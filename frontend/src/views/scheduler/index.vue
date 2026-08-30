@@ -124,23 +124,6 @@
       </a-tabs>
     </div>
 
-    <!-- 消息对话框 -->
-    <a-modal
-      v-model:open="messageModalVisible"
-      :title="currentMessage?.title || '系统消息'"
-      @ok="sendMessageResponse"
-      @cancel="cancelMessage"
-    >
-      <div v-if="currentMessage">
-        <p>{{ currentMessage.content }}</p>
-        <a-input
-          v-if="currentMessage.needInput"
-          v-model:value="messageResponse"
-          placeholder="请输入回复内容"
-        />
-      </div>
-    </a-modal>
-
     <!-- 电源操作倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue -->
     <OverlayRainMask
       v-model="aprilFoolsMaskVisible"
@@ -175,9 +158,6 @@ const {
   taskOptionsLoading,
   taskOptions,
   powerAction,
-  messageModalVisible,
-  currentMessage,
-  messageResponse,
 
   // Tab 管理
   addSchedulerTab,
@@ -196,10 +176,6 @@ const {
 
   // 电源操作
   onPowerActionChange,
-
-  // 消息操作
-  sendMessageResponse,
-  cancelMessage,
 
   // 初始化与清理
   initialize,
@@ -281,9 +257,7 @@ onMounted(() => {
   // 开发环境下导入调试工具
   if (process.env.NODE_ENV === 'development') {
     import('@/utils/scheduler-debug').then(() => {
-      logger.info(
-        '调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试'
-      )
+      logger.info('调度中心调试工具已加载，使用 debugScheduler() 进行调试')
     })
   }
 })
@@ -310,7 +284,7 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-layout);
+  background-color: transparent;
 }
 
 /* 页面头部样式 */
@@ -356,7 +330,7 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 8px;
   padding: 12px;
 }
@@ -365,7 +339,7 @@ onDeactivated(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: transparent;
 }
 
 /* 自定义标签页tab内容布局 */
@@ -427,7 +401,7 @@ onDeactivated(() => {
   height: 32px;
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-elevated-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   display: flex;
   align-items: center;

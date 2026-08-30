@@ -12,12 +12,7 @@
           配置完成后，点击“保存配置”结束本次会话。
         </p>
         <div class="mask-actions">
-          <a-button
-            v-if="maaEndWebsocketId"
-            type="primary"
-            size="large"
-            @click="handleSaveMaaEndConfig"
-          >
+          <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
             保存配置
           </a-button>
         </div>
@@ -25,22 +20,8 @@
     </div>
   </teleport>
 
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
-            编辑脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle" wrap>
+  <ScriptEditHeader script-type="MaaEnd" @cancel="handleCancel">
+    <template #extra-actions>
       <a-button
         type="primary"
         size="large"
@@ -53,14 +34,8 @@
         </template>
         {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
       </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </ScriptEditHeader>
 
   <div class="script-edit-content">
     <a-card title="MaaEnd 脚本配置" :loading="pageLoading" class="config-card">
@@ -112,7 +87,6 @@
                   v-model:value="formData.name"
                   placeholder="请输入脚本名称"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
                 />
               </a-form-item>
@@ -235,7 +209,6 @@
                   v-model:value="maaEndConfig.Game.Arguments"
                   placeholder="请输入启动参数"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                 />
               </a-form-item>
@@ -310,7 +283,6 @@
                   v-if="showManualEmulatorIndexInput"
                   v-model:value="maaEndConfig.Game.EmulatorIndex"
                   size="large"
-                  class="modern-input"
                   placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
                 />
@@ -441,14 +413,15 @@ import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -469,8 +442,8 @@ const isSaving = ref(false)
 const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
-const maaEndSubscriptionId = ref<string | null>(null)
-const maaEndWebsocketId = ref<string | null>(null)
+const maaEndSubscriptionIds = ref<string[]>([])
+const maaEndTaskId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 
 const formData = reactive({
@@ -717,11 +690,11 @@ const selectGamePath = async () => {
 }
 
 const cleanupConfigSession = () => {
-  if (maaEndSubscriptionId.value) {
-    unsubscribe(maaEndSubscriptionId.value)
-    maaEndSubscriptionId.value = null
+  for (const subscriptionId of maaEndSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  maaEndWebsocketId.value = null
+  maaEndSubscriptionIds.value = []
+  maaEndTaskId.value = null
   showMaaEndConfigMask.value = false
   if (maaEndConfigTimeout) {
     window.clearTimeout(maaEndConfigTimeout)
@@ -743,25 +716,20 @@ const handleMaaEndConfig = async () => {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
     }
 
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`MaaEnd 配置异常: ${data.message}`)
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         cleanupConfigSession()
-        return
-      }
+      }),
+    ]
 
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupConfigSession()
-      }
-    })
-
-    maaEndSubscriptionId.value = subscriptionId
-    maaEndWebsocketId.value = response.taskId
+    maaEndSubscriptionIds.value = subscriptionIds
+    maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
     message.success('已启动脚本级 MaaEnd 配置')
 
@@ -781,11 +749,11 @@ const handleMaaEndConfig = async () => {
 
 const handleSaveMaaEndConfig = async () => {
   try {
-    if (!maaEndWebsocketId.value) {
+    if (!maaEndTaskId.value) {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }
@@ -815,43 +783,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
 .script-edit-content {
   flex: 1;
 }
@@ -903,25 +834,6 @@ onBeforeUnmount(() => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -934,11 +846,6 @@ onBeforeUnmount(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
 }
 
 .path-input-group {
@@ -1011,12 +918,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

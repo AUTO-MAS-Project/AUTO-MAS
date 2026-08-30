@@ -12,7 +12,7 @@
       <!-- 镜像源选择 (仅Python显示) -->
       <template v-if="!checking && showMirrorSelection">
         <div class="mirror-section">
-          <div class="section-header">
+          <div class="step-section-header">
             <h4>镜像源</h4>
             <a-tag color="green">推荐使用</a-tag>
           </div>
@@ -42,7 +42,7 @@
         </div>
 
         <div class="mirror-section">
-          <div class="section-header">
+          <div class="step-section-header">
             <h4>官方源</h4>
             <a-tag color="orange">中国大陆连通性不佳</a-tag>
           </div>
@@ -148,9 +148,7 @@ const mirrorMirrors = computed(() => props.mirrors.filter(m => m.type === 'mirro
 const sortedOfficialMirrors = computed(() =>
   sortMirrorsBySpeedAndRecommendation(officialMirrors.value)
 )
-const sortedMirrorMirrors = computed(() =>
-  sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value)
-)
+const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
 
 function handleMirrorSelect(key: string) {
   emit('update:selectedMirror', key)
@@ -286,14 +284,14 @@ function getSpeedClass(speed: number | null) {
   line-height: 1.4;
 }
 
-.section-header {
+.step-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
 }
 
-.section-header h4 {
+.step-section-header h4 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;

@@ -34,7 +34,6 @@ import asyncio
 import httpx
 from datetime import datetime
 
-from typing import Dict, Any
 
 from app.core import Config
 from app.utils.constants import UTC8

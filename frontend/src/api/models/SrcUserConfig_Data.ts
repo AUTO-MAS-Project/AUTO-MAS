@@ -11,9 +11,5 @@ export type SrcUserConfig_Data = {
      * 代理次数
      */
     ProxyTimes?: (number | null);
-    /**
-     * 是否通过检查
-     */
-    IfPassCheck?: (boolean | null);
 };
 

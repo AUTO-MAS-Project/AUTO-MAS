@@ -24,18 +24,19 @@ import uuid
 import shutil
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
-from app.tools import skland_sign_in
 from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
 from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4, UTC8, MAAEND_TASKS
+from app.utils.constants import UTC4, MAAEND_TASKS
 from .tools import login, push_notification, replace_account_switch_task
 from .resource_loader import (
     load_maaend_interface_i18n,
@@ -44,13 +45,6 @@ from .resource_loader import (
 from app.task.general.tools import execute_script_task
 
 logger = get_logger("MaaEnd 自动代理")
-
-_MAAEND_STOP_PATTERNS = (
-    "任务完成: 停止任务",
-    "任务完成: ⛔ 结束进程",
-    "任务完成: __MXU_KILLPROC__",
-    "任务完成: StopTask",
-)
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -83,12 +77,12 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -152,12 +146,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -168,66 +163,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.task_dict: dict[str, dict[str, bool]] | None = None
         self.unique_task: dict[str, str] = {}
-
-        # 兼容 5.3.1 旧用户：签到工具未启用时继续使用专项内置森空岛签到。
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
-            if (
-                self.cur_user_config.get("Info", "IfSkland")
-                and self.cur_user_config.get("Info", "SklandToken")
-                and self.cur_user_config.get("Data", "LastSklandDate")
-                != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-            ):
-                self.script_info.log = "正在执行森空岛签到"
-                skland_result = await skland_sign_in(
-                    self.cur_user_config.get("Info", "SklandToken"),
-                    app_code="endfield",
-                )
-                for result_type, user_list in skland_result.items():
-                    if result_type != "总计" and len(user_list) > 0:
-                        logger.info(
-                            f"用户: {self.cur_user_uid} - 森空岛签到{result_type}: {'、'.join(user_list)}"
-                        )
-                        await Config.send_websocket_message(
-                            id=self.task_info.task_id,
-                            type="Info",
-                            data={
-                                (
-                                    "Info" if result_type != "失败" else "Error"
-                                ): f"用户 {self.cur_user_item.name} 森空岛签到{result_type}: {'、'.join(user_list)}"
-                            },
-                        )
-                if skland_result["总计"] == 0:
-                    logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
-                    await Config.send_websocket_message(
-                        id=self.task_info.task_id,
-                        type="Info",
-                        data={
-                            "Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"
-                        },
-                    )
-                if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
-                    await self.cur_user_config.set(
-                        "Data",
-                        "LastSklandDate",
-                        datetime.now(tz=UTC8).strftime("%Y-%m-%d"),
-                    )
-            elif self.cur_user_config.get(
-                "Info", "IfSkland"
-            ) and self.cur_user_config.get("Data", "LastSklandDate") != datetime.now(
-                tz=UTC8
-            ).strftime(
-                "%Y-%m-%d"
-            ):
-                logger.warning(
-                    f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
-                )
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
-                    },
-                )
 
         run_times_limit = self.script_config.get("Run", "RunTimesLimit")
         maaend_update_retry_used = False
@@ -353,10 +288,23 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.maaend_log_monitor.start_monitor_process(
                     self.maaend_process_manager.main_process, "stdout"
                 )
+                if self.maaend_log_monitor.task is not None:
+                    self.maaend_log_monitor.task.add_done_callback(
+                        lambda _: self.wait_event.set()
+                    )
             maaend_update_monitor_task = asyncio.create_task(
                 self.monitor_maaend_update_download()
             )
             await self.wait_event.wait()
+            if (
+                self.maaend_log_monitor.task is not None
+                and self.maaend_log_monitor.task.done()
+            ):
+                await self.check_log(
+                    self.maaend_log_monitor.log_contents,
+                    self.maaend_log_monitor.latest_time,
+                    if_stream_end=True,
+                )
             maaend_update_monitor_task.cancel()
             try:
                 await maaend_update_monitor_task
@@ -431,17 +379,17 @@ class AutoProxyTask(TaskExecuteBase):
 
         if e is None:
             logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": error_message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=error_message),
             )
         else:
             logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"{error_message}: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
@@ -652,10 +600,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "已跳过理智任务快速配置"
                 )
                 logger.warning(warning_message)
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Warning": warning_message},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=warning_message),
                 )
 
         # 按本轮任务表写回 MaaEnd 运行配置
@@ -780,31 +728,26 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = "检测到 MaaEnd 正在更新，正在等待更新进程退出"
                 if_maaend_updating = True
 
-            if (
-                if_maaend_updating
-                and not await self.maaend_process_manager.is_running()
-            ):
-                logger.info("MaaEnd 更新进程已退出，后台检测释放日志锁")
-                self.wait_event.set()
-                return
-
             await asyncio.sleep(5)
 
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
+    async def check_log(
+        self,
+        log_content: list[str],
+        latest_time: datetime,
+        if_stream_end: bool = False,
+    ) -> None:
         """日志回调"""
 
         if self.cur_user_log.status == "MaaEnd 正在更新":
-            log = "".join(log_content)
             if log_content:
                 self.cur_user_log.content = log_content
-            if (
-                any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
-                or not await self.maaend_process_manager.is_running()
-            ):
+            if if_stream_end:
                 logger.info("MaaEnd 更新进程已退出，日志锁已释放")
                 self.wait_event.set()
-            elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", "RunTimeLimit")
+            elif self.is_log_stalled(
+                latest_time,
+                minutes=self.script_config.get("Run", "RunTimeLimit"),
+                key="update_download",
             ):
                 logger.warning("MaaEnd 更新进程超时，日志锁已释放")
                 self.cur_user_log.status = "MaaEnd 更新超时"
@@ -829,10 +772,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.retryable = False
         elif f"任务失败: {self.account_switch_task_name}" in log:
             self.cur_user_log.status = "MaaEnd 账号切换失败"
-        elif (
-            any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
-            or not await self.maaend_process_manager.is_running()
-        ):
+        elif if_stream_end:
             if self.task_dict is None:
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
@@ -878,7 +818,8 @@ class AutoProxyTask(TaskExecuteBase):
                 except:
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "MaaEnd 进程超时"
@@ -912,7 +853,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,
@@ -966,10 +907,10 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送通知时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
                 )
 
         if self.run_book:
@@ -1007,8 +948,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )

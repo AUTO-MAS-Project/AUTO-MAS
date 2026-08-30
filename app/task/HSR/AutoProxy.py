@@ -29,7 +29,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
@@ -467,10 +468,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送 HSR 用户统计通知时出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"推送 HSR 用户统计通知时出现异常: {e}",
+                ),
             )
 
     def _queue_eow_completion_if_confirmed(
@@ -1566,8 +1570,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.error_message = str(e)
         self._mark_current_user_abnormal(f"HSR 用户任务异常: {e}")
         logger.opt(exception=True).warning(f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error",
+                message=f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}",
+            ),
         )

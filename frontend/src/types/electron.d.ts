@@ -29,6 +29,10 @@ export interface ElectronAPI {
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
 
+  // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
+  onSystemResume?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: () => void) => () => void
+
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
@@ -97,6 +101,14 @@ export interface ElectronAPI {
 
   // 托盘设置
   updateTraySettings: (uiSettings: any) => Promise<boolean>
+  updateTrayConfig: (trayItems: any) => Promise<boolean>
+  onTrayActionRequest: (
+    callback: (request: {
+      action: 'quit' | 'restart' | 'startTask'
+      taskId?: string
+      label?: string
+    }) => void
+  ) => () => void
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
@@ -107,6 +119,12 @@ export interface ElectronAPI {
     error?: string
   }>
   exportMaaEndIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportDataBackup: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string
@@ -243,5 +261,11 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    /** 调试用:由 WebSocketMessageListener 挂载的消息弹窗触发接口 */
+    __debugShowQuestion?: (questionData: Record<string, unknown>) => Promise<void>
+    /** 调试用:调度中心调试信息输出 */
+    debugScheduler?: () => void
+    /** 调试用:WebSocket 连接测试 */
+    testWebSocketConnection?: () => Promise<void>
   }
 }

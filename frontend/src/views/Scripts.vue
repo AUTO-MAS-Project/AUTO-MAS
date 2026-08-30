@@ -194,7 +194,6 @@
     @save-maa-end-config="handleSaveMaaEndConfig"
     @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
-    @pass-check-user="handlePassCheckUser"
   />
 
   <ScriptCreateDialog
@@ -320,6 +319,12 @@
                 alt="HSR"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'MaaFW'"
+                src="@/assets/maafw.png"
+                alt="MFW"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -332,23 +337,7 @@
                     'script-type-oknte': script.type === 'OkNte',
                   }"
                 >
-                  {{
-                    script.type === 'MAA'
-                      ? 'MAA脚本'
-                      : script.type === 'SRC'
-                        ? 'SRC脚本'
-                        : script.type === 'MaaEnd'
-                          ? 'MaaEnd脚本'
-                          : script.type === 'M9A'
-                            ? 'M9A脚本'
-                            : script.type === 'Okww'
-                              ? 'ok-ww脚本'
-                              : script.type === 'OkNte'
-                                ? 'ok-nte脚本'
-                                : script.type === 'HSR'
-                                  ? 'HSR脚本'
-                                  : '通用脚本'
-                  }}
+                  {{ getScriptTypeDisplayLabel(script.type) }}
                 </span>
                 <span class="script-users">
                   <UserOutlined />
@@ -587,11 +576,13 @@
                     </div>
                   </div>
 
+                  <!-- eslint-disable vue/no-v-html 模板描述来自 MAS 后端 markdown，属可信内容 -->
                   <div
                     class="template-description"
                     @click="handleTemplateDescriptionClick"
                     v-html="parseMarkdown(template.description)"
                   ></div>
+                  <!-- eslint-enable vue/no-v-html -->
                 </div>
               </div>
             </template>
@@ -603,7 +594,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -627,6 +618,12 @@ import {
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
@@ -697,15 +694,37 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   SRC: 'src',
   MaaEnd: 'maaend',
   M9A: 'm9a',
+  MaaFW: 'maafw',
   HSR: 'hsr',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
 
+// 新建脚本后的落地页。MFW 走分步引导（项目路径、控制、更新、运行四步都要配
+// 才跑得起来），其余类型仍直接进编辑页。
+const getScriptCreateRoute = (type: ScriptType, scriptId: string) =>
+  type === 'MaaFW'
+    ? `/scripts/${scriptId}/setup/maafw`
+    : `/scripts/${scriptId}/edit/${getScriptEditPath(type)}`
+
+// 复制脚本弹窗列表里的类型文案
+const scriptTypeDisplayLabelMap: Record<ScriptType, string> = {
+  MAA: 'MAA脚本',
+  General: '通用脚本',
+  Okww: 'ok-ww脚本',
+  OkNte: 'ok-nte脚本',
+  SRC: 'SRC脚本',
+  MaaEnd: 'MaaEnd脚本',
+  M9A: 'M9A脚本',
+  MaaFW: 'MFW脚本',
+  HSR: 'HSR脚本',
+}
+
+const getScriptTypeDisplayLabel = (type: ScriptType) =>
+  scriptTypeDisplayLabelMap[type] ?? '通用脚本'
+
 // WebSocket连接管理
-const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
-  new Map()
-) // scriptId -> { subscriptionId, websocketId }
+const activeConnections = ref<Map<string, { subscriptionIds: string[]; taskId: string }>>(new Map()) // scriptId -> { subscriptionIds, taskId }
 
 // 解析模板描述的markdown
 const parseMarkdown = (text: string) => {
@@ -765,6 +784,17 @@ watch(filteredTemplates, filtered => {
 onMounted(() => {
   loadScripts()
   loadCurrentPlan()
+})
+
+// 离开页面时释放全部配置会话订阅；清空 map 同时使 30 分钟超时回调的
+// has() 守卫失效，不会在其他页面弹出提示。
+onUnmounted(() => {
+  for (const connection of activeConnections.value.values()) {
+    for (const subscriptionId of connection.subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
+  }
+  activeConnections.value.clear()
 })
 
 const loadScripts = async () => {
@@ -830,7 +860,11 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    // MFW 新建后进分步引导；其余类型直接进编辑页
+    path:
+      type === 'MaaFW'
+        ? `/scripts/${scriptId}/setup/maafw`
+        : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
       ? {
           state: {
@@ -907,9 +941,8 @@ const handleConfirmScriptSelect = async () => {
     if (result) {
       scriptSelectVisible.value = false
       // 跳转到编辑页面
-      const editPath = getScriptEditPath(selectedScript.type)
       router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
+        path: getScriptCreateRoute(selectedScript.type, result.scriptId),
         state: {
           scriptData: {
             id: result.scriptId,
@@ -942,9 +975,8 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath = getScriptEditPath(selectedType.value)
       router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
+        path: getScriptCreateRoute(selectedType.value, result.scriptId),
         state: {
           scriptData: {
             id: result.scriptId,
@@ -1091,6 +1123,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/maaend`)
   } else if (script.type === 'M9A') {
     router.push(`/scripts/${script.id}/users/add/m9a`)
+  } else if (script.type === 'MaaFW') {
+    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
@@ -1115,6 +1149,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
     } else if (script.type === 'M9A') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
+    } else if (script.type === 'MaaFW') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {
@@ -1168,56 +1204,38 @@ const handleStartMAAConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        // 处理错误消息
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`MAA配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showMAAConfigMask.value = false
-          currentConfigScript.value = null
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`MAA配置失败: ${errorMsg}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            const errorMsg = data.message
+            logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+            message.error(`MAA配置失败: ${errorMsg}`)
+          }
+        }),
+        // 处理任务结束消息
+        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
+          if (data.outcome === 'success') {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
+          for (const subscriptionId of subscriptionIds) {
+            unsubscribe(subscriptionId)
+          }
           activeConnections.value.delete(script.id)
           showMAAConfigMask.value = false
           currentConfigScript.value = null
-        }
-      })
+        }),
+      ]
 
-      // 记录连接和subscriptionId
+      // 记录连接和subscriptionIds
       activeConnections.value.set(script.id, {
-        subscriptionId,
-        websocketId: response.taskId,
+        subscriptionIds,
+        taskId: response.taskId,
       })
       message.success(`已启动 ${script.name} 的MAA配置`)
 
@@ -1227,7 +1245,9 @@ const handleStartMAAConfig = async (script: Script) => {
           if (activeConnections.value.has(script.id)) {
             const connection = activeConnections.value.get(script.id)
             if (connection) {
-              unsubscribe(connection.subscriptionId)
+              for (const subscriptionId of connection.subscriptionIds) {
+                unsubscribe(subscriptionId)
+              }
             }
             activeConnections.value.delete(script.id)
             // 超时时隐藏遮罩
@@ -1258,12 +1278,14 @@ const handleSaveMAAConfig = async (script: Script) => {
 
     // 调用停止配置任务API
     const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
+      taskId: connection.taskId,
     })
 
     if (response.code === 200) {
       // 取消订阅
-      unsubscribe(connection.subscriptionId)
+      for (const subscriptionId of connection.subscriptionIds) {
+        unsubscribe(subscriptionId)
+      }
       activeConnections.value.delete(script.id)
 
       // 隐藏遮罩
@@ -1302,56 +1324,38 @@ const handleStartSRCConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        // 处理错误消息
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`SRC配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showSRCConfigMask.value = false
-          currentConfigScript.value = null
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`SRC配置失败: ${errorMsg}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            const errorMsg = data.message
+            logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+            message.error(`SRC配置失败: ${errorMsg}`)
+          }
+        }),
+        // 处理任务结束消息
+        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
+          if (data.outcome === 'success') {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
+          for (const subscriptionId of subscriptionIds) {
+            unsubscribe(subscriptionId)
+          }
           activeConnections.value.delete(script.id)
           showSRCConfigMask.value = false
           currentConfigScript.value = null
-        }
-      })
+        }),
+      ]
 
-      // 记录连接和subscriptionId
+      // 记录连接和subscriptionIds
       activeConnections.value.set(script.id, {
-        subscriptionId,
-        websocketId: response.taskId,
+        subscriptionIds,
+        taskId: response.taskId,
       })
       message.success(`已启动 ${script.name} 的SRC配置`)
 
@@ -1361,7 +1365,9 @@ const handleStartSRCConfig = async (script: Script) => {
           if (activeConnections.value.has(script.id)) {
             const connection = activeConnections.value.get(script.id)
             if (connection) {
-              unsubscribe(connection.subscriptionId)
+              for (const subscriptionId of connection.subscriptionIds) {
+                unsubscribe(subscriptionId)
+              }
             }
             activeConnections.value.delete(script.id)
             // 超时时隐藏遮罩
@@ -1392,12 +1398,14 @@ const handleSaveSRCConfig = async (script: Script) => {
 
     // 调用停止配置任务API
     const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
+      taskId: connection.taskId,
     })
 
     if (response.code === 200) {
       // 取消订阅
-      unsubscribe(connection.subscriptionId)
+      for (const subscriptionId of connection.subscriptionIds) {
+        unsubscribe(subscriptionId)
+      }
       activeConnections.value.delete(script.id)
 
       // 隐藏遮罩
@@ -1417,10 +1425,14 @@ const handleSaveSRCConfig = async (script: Script) => {
 
 const clearConfigSession = (
   targetId: string,
-  subscriptionId: string | undefined,
+  subscriptionIds: string[] | undefined,
   clearState: () => void
 ) => {
-  if (subscriptionId) unsubscribe(subscriptionId)
+  if (subscriptionIds) {
+    for (const subscriptionId of subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
+  }
   activeConnections.value.delete(targetId)
   clearState()
 }
@@ -1446,30 +1458,28 @@ const startConfigSession = async (
 
   setActiveState()
   let sessionEnded = false
-  let subscriptionId = ''
-  subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-    if (wsMessage.type === 'error') {
+  const subscriptionIds: string[] = []
+  subscriptionIds.push(
+    subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+      const data = wsMessage.data as unknown as WSTaskNoticeData
+      if (data.level === 'error') {
+        message.error(`${label} 配置失败: ${data.message}`)
+      }
+    }),
+    subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
       sessionEnded = true
-      message.error(`${label} 配置连接失败: ${String(wsMessage.data)}`)
-      clearConfigSession(targetId, subscriptionId, clearState)
-      return
-    }
-    if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-      message.error(`${label} 配置失败: ${String(wsMessage.data.Error)}`)
-      return
-    }
-    if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-      sessionEnded = true
-      clearConfigSession(targetId, subscriptionId, clearState)
-    }
-  })
+      clearConfigSession(targetId, subscriptionIds, clearState)
+    })
+  )
   if (sessionEnded) {
-    unsubscribe(subscriptionId)
+    for (const subscriptionId of subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
     return false
   }
   activeConnections.value.set(targetId, {
-    subscriptionId,
-    websocketId: response.taskId,
+    subscriptionIds,
+    taskId: response.taskId,
   })
   return true
 }
@@ -1481,12 +1491,12 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
     return false
   }
   const response = await Service.stopTaskApiDispatchStopPost({
-    taskId: connection.websocketId,
+    taskId: connection.taskId,
   })
   if (response.code !== 200) {
     throw new Error(response.message || `保存 ${label} 配置失败`)
   }
-  clearConfigSession(targetId, connection.subscriptionId, clearState)
+  clearConfigSession(targetId, connection.subscriptionIds, clearState)
   return true
 }
 
@@ -1525,7 +1535,7 @@ const handleStartMaaEndConfig = async (script: Script, user: User | null = null)
       () => {
         const connection = activeConnections.value.get(targetId)
         if (!connection) return
-        clearConfigSession(targetId, connection.subscriptionId, clearState)
+        clearConfigSession(targetId, connection.subscriptionIds, clearState)
         message.info(
           user
             ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
@@ -1628,34 +1638,6 @@ const handleToggleUserStatus = async (user: User) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
     message.error(`更新用户状态失败: ${errorMsg}`)
-  }
-}
-
-const handlePassCheckUser = async (user: User) => {
-  try {
-    // 找到该用户对应的脚本
-    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
-    if (!script) {
-      message.error('找不到对应的脚本')
-      return
-    }
-
-    // 调用 updateUser API，更新 Data.IfPassCheck 为 true
-    const result = await updateUser(script.id, user.id, {
-      Data: {
-        IfPassCheck: true,
-      },
-    })
-
-    if (result) {
-      message.success('已标记为「通过人工排查」')
-      // 刷新脚本配置
-      await loadScripts()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`更新人工排查状态失败: ${errorMsg}`)
-    message.error(`更新人工排查状态失败: ${errorMsg}`)
   }
 }
 </script>

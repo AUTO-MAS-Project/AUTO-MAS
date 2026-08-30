@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
@@ -33,8 +34,16 @@ import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
+import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
+import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
+import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
+import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
+import type { PatternDebugIn } from '../models/PatternDebugIn';
+import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
@@ -43,6 +52,7 @@ import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { PowerCountdownSnapshot } from '../models/PowerCountdownSnapshot';
 import type { PowerIn } from '../models/PowerIn';
 import type { PowerOut } from '../models/PowerOut';
 import type { QrCheckIn } from '../models/QrCheckIn';
@@ -78,6 +88,7 @@ import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { SklandLoginIn } from '../models/SklandLoginIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
@@ -89,6 +100,7 @@ import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
+import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
@@ -106,13 +118,38 @@ import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
+import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
     /**
+     * 获取后端就绪状态
+     * 返回核心 API 与后台初始化状态。
+     * @returns BackendHealthOut Successful Response
+     * @throws ApiError
+     */
+    public static getHealthApiCoreHealthGet(): CancelablePromise<BackendHealthOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/core/health',
+        });
+    }
+    /**
+     * 获取主 WebSocket 元信息
+     * 返回前端建立主 WebSocket 连接需要的元信息。
+     * @returns WebSocketMetaOut Successful Response
+     * @throws ApiError
+     */
+    public static getWsMetaApiCoreWsMetaGet(): CancelablePromise<WebSocketMetaOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/core/ws_meta',
+        });
+    }
+    /**
      * 关闭后端程序
-     * 关闭后端程序
+     * 关闭后端程序：启动清理流程，完成后经主 WS 发送 backend.shutdown.ready
      * @returns OutBase Successful Response
      * @throws ApiError
      */
@@ -724,6 +761,73 @@ export class Service {
         });
     }
     /**
+     * 预览 MFW interface
+     * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
+     * @param requestBody
+     * @returns MaaFWInterfacePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewMaafwInterfaceApiScriptsMaafwPreviewPost(
+        requestBody: MaaFWInterfacePreviewIn,
+    ): CancelablePromise<MaaFWInterfacePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查或执行 MFW 项目更新
+     * 按脚本 ``Update.*`` 配置检查或应用 MaaFW 项目目录更新。
+     *
+     * ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
+     * ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
+     * @param requestBody
+     * @returns MaaFWProjectUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMaafwProjectApiScriptsMaafwUpdatePost(
+        requestBody: MaaFWProjectUpdateIn,
+    ): CancelablePromise<MaaFWProjectUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预备 MFW 运行环境
+     * 按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
+     *
+     * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
+     * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
+     * 在请求内完成，首次冷启动可能耗时数分钟。
+     * @param requestBody
+     * @returns MaaFWAgentEnvPrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost(
+        requestBody: MaaFWAgentEnvPrepareIn,
+    ): CancelablePromise<MaaFWAgentEnvPrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/agent-env/prepare',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 M9A 可用任务列表（排除 standalone 任务）
      * 获取 M9A 可用任务列表（排除 standalone 任务）
      *
@@ -935,6 +1039,36 @@ export class Service {
             url: '/api/scripts/oknte/configs/batch-update',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取 MFW 项目内的图片资源
+     * 把 MFW 项目目录内的图片按需读给前端。
+     *
+     * 任务说明（interface 的 ``doc`` / ``description``）是 markdown，里面的图片写的是
+     * **项目内相对路径**，浏览器没法直接读本地文件，必须由后端转一手。
+     *
+     * 前端侧对应 ``buildMaaFWAssetUrl``：它已经拦掉了绝对路径、UNC、上跳与远程 URL，
+     * 但那只是省一次往返，安全边界在这里 —— 请求可以绕过前端直接打过来。
+     * @param root MFW 项目根目录
+     * @param path 项目根目录内的相对图片路径
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwAssetApiScriptsMaafwAssetGet(
+        root: string,
+        path: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maafw/asset',
+            query: {
+                'root': root,
+                'path': path,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -1450,6 +1584,30 @@ export class Service {
         });
     }
     /**
+     * 获取运行中任务初始快照
+     * 返回当前运行任务；WS 只承载后续状态、日志与完成事件。
+     * @returns TaskRuntimeSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getTaskRuntimeSnapshotApiDispatchRuntimeSnapshotGet(): CancelablePromise<TaskRuntimeSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/runtime-snapshot',
+        });
+    }
+    /**
+     * 获取电源倒计时初始快照
+     * 返回当前倒计时；WS 只承载后续逐秒更新与取消事件。
+     * @returns PowerCountdownSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getPowerCountdownSnapshotApiDispatchPowerCountdownSnapshotGet(): CancelablePromise<PowerCountdownSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/power/countdown-snapshot',
+        });
+    }
+    /**
      * 添加任务
      * @param requestBody
      * @returns TaskCreateOut Successful Response
@@ -1755,6 +1913,18 @@ export class Service {
         });
     }
     /**
+     * 导出数据备份
+     * 导出数据、配置与历史记录。
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static backupDataApiSettingBackupGet(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/backup',
+        });
+    }
+    /**
      * 查询配置
      * 查询配置
      * @returns SettingGetOut Successful Response
@@ -1796,6 +1966,29 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/test_notify',
+        });
+    }
+    /**
+     * 调试日志模式
+     * 调试单条日志模式配置，返回逐行/逐窗口匹配结果
+     *
+     * 前端调试弹窗调用此接口，由后端统一执行模式匹配，
+     * 确保调试结果与实际推送日志采集逻辑完全一致。
+     * @param requestBody
+     * @returns PatternDebugOut Successful Response
+     * @throws ApiError
+     */
+    public static debugPatternApiApiSettingDebugPatternPost(
+        requestBody: PatternDebugIn,
+    ): CancelablePromise<PatternDebugOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/debug_pattern',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -1903,6 +2096,18 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取更新下载初始快照
+     * 返回当前下载权威状态；WS 只承载后续进度与终态事件。
+     * @returns UpdateDownloadSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getUpdateDownloadStatusApiUpdateDownloadStatusGet(): CancelablePromise<UpdateDownloadSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/download/status',
         });
     }
     /**

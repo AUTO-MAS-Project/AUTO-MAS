@@ -1,51 +1,17 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts">脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/okww`" class="breadcrumb-link">
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            {{ isEdit ? '编辑用户' : '添加用户' }}
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button
-          v-if="!showOkwwConfigMask"
-          type="primary"
-          ghost
-          size="large"
-          :loading="okwwConfigLoading"
-          :disabled="pageLoading || !userId"
-          @click="handleOkwwConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          配置 ok-ww
-        </a-button>
-        <a-button v-else type="default" size="large" disabled class="configuring-button">
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          正在配置
-        </a-button>
-        <a-button size="large" class="cancel-button" @click="handleCancel">
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          返回
-        </a-button>
-      </a-space>
-    </div>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="okww"
+      config-label="配置 ok-ww"
+      :config-loading="okwwConfigLoading"
+      :config-active="showOkwwConfigMask"
+      :config-disabled="pageLoading || !userId"
+      @config="handleOkwwConfig"
+      @cancel="handleCancel"
+    />
 
     <teleport to="body">
       <div v-if="showOkwwConfigMask" class="okww-config-mask">
@@ -60,12 +26,7 @@
             完成后点击“保存设置”结束本次会话。
           </p>
           <div class="mask-actions">
-            <a-button
-              v-if="okwwWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveOkwwConfig"
-            >
+            <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
               保存设置
             </a-button>
           </div>
@@ -96,7 +57,6 @@
                     v-model:value="formData.userName"
                     placeholder="请输入用户名"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Name', formData.userName)"
                   />
                 </a-form-item>
@@ -114,7 +74,6 @@
                   <a-select
                     v-model:value="formData.Info.Status"
                     size="large"
-                    class="modern-select"
                     @change="saveField('Info.Status', formData.Info.Status)"
                   >
                     <a-select-option :value="true">是</a-select-option>
@@ -150,9 +109,29 @@
                   <a-select
                     v-model:value="formData.Info.IfQuickConfig"
                     size="large"
-                    class="modern-select"
                     :options="quickConfigOptions"
                     @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      是否采集节点详情
+                      <a-tooltip
+                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Notify.PushLogEnabled"
+                    size="large"
+                    class="modern-select"
+                    :options="quickConfigOptions"
+                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
                   />
                 </a-form-item>
               </a-col>
@@ -173,7 +152,6 @@
                     v-model:value="formData.Info.Id"
                     placeholder="请输入账号"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
                 </a-form-item>
@@ -192,7 +170,6 @@
                     v-model:value="formData.Info.Password"
                     placeholder="请输入密码"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
@@ -214,7 +191,6 @@
                     v-model:value="formData.Info.Resource"
                     placeholder="请选择资源"
                     size="large"
-                    class="modern-select"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
                   />
@@ -255,7 +231,6 @@
                 v-model:value="formData.Info.Notes"
                 placeholder="请输入备注"
                 :rows="4"
-                class="modern-input"
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
             </a-form-item>
@@ -306,12 +281,7 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input
-                    :value="currentStartupArguments"
-                    size="large"
-                    readonly
-                    class="modern-input"
-                  />
+                  <a-input :value="currentStartupArguments" size="large" readonly />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -383,7 +353,11 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <ExtraScriptSection v-model:form-data="formData" :loading="pageLoading" @save="saveField" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="pageLoading"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
 
@@ -476,12 +450,18 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Service, type OkwwUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
@@ -502,8 +482,8 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 const okwwConfigLoading = ref(false)
-const okwwSubscriptionId = ref<string | null>(null)
-const okwwWebsocketId = ref<string | null>(null)
+const okwwSubscriptionIds = ref<string[]>([])
+const okwwTaskId = ref<string | null>(null)
 const showOkwwConfigMask = ref(false)
 const stoppingOkwwConfig = ref(false)
 let okwwConfigTimeout: number | null = null
@@ -574,11 +554,17 @@ const additionalTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
+// PushLogEnabled 为本页新增开关；待后端 schema 重新生成前端 API 后，
+// 该字段会并入 OkwwUserConfig['Notify']，届时可移除本地扩展
+type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>> & {
+  PushLogEnabled: boolean
+}
+
 type OkwwUserFormData = {
   userName: string
   Info: FormSection<NonNullable<OkwwUserConfig['Info']>>
   Task: FormSection<NonNullable<OkwwUserConfig['Task']>>
-  Notify: FormSection<NonNullable<OkwwUserConfig['Notify']>>
+  Notify: OkwwNotifyForm
   Data: FormSection<NonNullable<OkwwUserConfig['Data']>>
 }
 
@@ -611,6 +597,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
+    PushLogEnabled: true,
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',
@@ -639,11 +626,11 @@ const handleConfigModeChange = async (value: boolean | string) => {
 }
 
 const clearOkwwConfigSession = () => {
-  if (okwwSubscriptionId.value) {
-    unsubscribe(okwwSubscriptionId.value)
-    okwwSubscriptionId.value = null
+  for (const subscriptionId of okwwSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  okwwWebsocketId.value = null
+  okwwSubscriptionIds.value = []
+  okwwTaskId.value = null
   showOkwwConfigMask.value = false
   if (okwwConfigTimeout) {
     window.clearTimeout(okwwConfigTimeout)
@@ -652,7 +639,7 @@ const clearOkwwConfigSession = () => {
 }
 
 const stopOkwwConfigSession = async (keepOnFailure = false): Promise<boolean> => {
-  const taskId = okwwWebsocketId.value
+  const taskId = okwwTaskId.value
   if (!taskId) {
     clearOkwwConfigSession()
     return true
@@ -772,23 +759,20 @@ const handleOkwwConfig = async () => {
     }
 
     showOkwwConfigMask.value = true
-    okwwWebsocketId.value = response.taskId
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`ok-ww 设置连接失败: ${String(wsMessage.data)}`)
-        void stopOkwwConfigSession()
-        return
-      }
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`ok-ww 设置失败: ${String(wsMessage.data.Error)}`)
-        void stopOkwwConfigSession()
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+    okwwTaskId.value = response.taskId
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`ok-ww 设置失败: ${data.message}`)
+          void stopOkwwConfigSession()
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         clearOkwwConfigSession()
-      }
-    })
-    okwwSubscriptionId.value = subscriptionId
+      }),
+    ]
+    okwwSubscriptionIds.value = subscriptionIds
     const configTarget =
       formData.Info.Mode === '直控'
         ? '脚本直控'
@@ -807,7 +791,7 @@ const handleOkwwConfig = async () => {
 }
 
 const handleSaveOkwwConfig = async () => {
-  if (!okwwWebsocketId.value) return
+  if (!okwwTaskId.value) return
   if (await stopOkwwConfigSession(true)) {
     message.success('ok-ww 设置已保存')
   } else {
@@ -878,33 +862,6 @@ onUnmounted(() => {
   background: var(--ant-color-bg-layout);
 }
 
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.configuring-button {
-  color: #52c41a;
-  border-color: #52c41a;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -914,22 +871,8 @@ onUnmounted(() => {
   padding: 32px;
 }
 
-.form-section {
-  margin-bottom: 32px;
-}
-
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
 }
 
 .form-label {
@@ -942,10 +885,6 @@ onUnmounted(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-select {
-  width: 100%;
 }
 
 .okww-config-mask {
@@ -992,12 +931,6 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .user-edit-container {
     padding: 16px;
-  }
-
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
   }
 
   .config-card :deep(.ant-card-body) {

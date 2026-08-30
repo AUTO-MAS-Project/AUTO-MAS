@@ -14,7 +14,7 @@
           </p>
           <div class="mask-actions">
             <a-button
-              v-if="maaEndWebsocketId"
+              v-if="maaEndTaskId"
               type="primary"
               size="large"
               @click="handleSaveMaaEndConfig"
@@ -69,8 +69,11 @@
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
-          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
-          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
           <NotifyConfigSection
             v-model:form-data="formData"
             :loading="loading"
@@ -96,6 +99,11 @@ import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import {
@@ -109,7 +117,6 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '@/views/MaaEndUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
@@ -139,8 +146,8 @@ const presetSupported = ref(true)
 const maaEndConfigLoading = ref(false)
 const maaEndImportLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
-const maaEndSubscriptionId = ref<string | null>(null)
-const maaEndWebsocketId = ref<string | null>(null)
+const maaEndSubscriptionIds = ref<string[]>([])
+const maaEndTaskId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
@@ -167,8 +174,6 @@ const getDefaultMaaEndUserData = () => ({
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
-    IfSkland: false,
-    SklandToken: '',
     Notes: '',
     Tag: '',
   },
@@ -207,9 +212,7 @@ const getDefaultMaaEndUserData = () => ({
   },
   Data: {
     LastProxyDate: '',
-    LastSklandDate: '',
     ProxyTimes: 0,
-    IfPassCheck: false,
   },
 })
 
@@ -410,11 +413,11 @@ const loadUserData = async () => {
 }
 
 const cleanupConfigSession = () => {
-  if (maaEndSubscriptionId.value) {
-    unsubscribe(maaEndSubscriptionId.value)
-    maaEndSubscriptionId.value = null
+  for (const subscriptionId of maaEndSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  maaEndWebsocketId.value = null
+  maaEndSubscriptionIds.value = []
+  maaEndTaskId.value = null
   showMaaEndConfigMask.value = false
   if (maaEndConfigTimeout) {
     window.clearTimeout(maaEndConfigTimeout)
@@ -437,25 +440,20 @@ const handleMaaEndConfig = async () => {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
     }
 
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(`MaaEnd 配置异常: ${data.message}`)
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         cleanupConfigSession()
-        return
-      }
+      }),
+    ]
 
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupConfigSession()
-      }
-    })
-
-    maaEndSubscriptionId.value = subscriptionId
-    maaEndWebsocketId.value = response.taskId
+    maaEndSubscriptionIds.value = subscriptionIds
+    maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
     message.success(`已启动 ${formData.Info.Mode === '简洁' ? '脚本' : '用户'} MaaEnd 配置`)
 
@@ -493,11 +491,11 @@ const handleImportMaaEndConfig = async () => {
 
 const handleSaveMaaEndConfig = async () => {
   try {
-    if (!maaEndWebsocketId.value) {
+    if (!maaEndTaskId.value) {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }

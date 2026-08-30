@@ -5,15 +5,19 @@ import {
   type MaaConfig,
   type MaaEndConfig,
   type M9AConfig,
+  type MaaFWConfig,
   type OkwwConfig,
   type OkNteConfig,
   type SrcConfig,
   type HSRConfig,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
+  type MaaFWInterfacePreviewOut,
+  type MaaFWAgentEnvPrepareOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
+  MaaFwService,
   Service,
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
@@ -29,6 +33,7 @@ type ScriptListConfig =
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
+  | MaaFWConfig
   | HSRConfig
 
 type HSRStageEngine = 'M7A' | 'SRA'
@@ -38,6 +43,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   SRC: ScriptCreateIn.type.SRC,
   MaaEnd: ScriptCreateIn.type.MAA_END,
   M9A: ScriptCreateIn.type.M9A,
+  MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
@@ -51,6 +57,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
   M9AConfig: 'M9A',
+  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
 }
 
@@ -184,8 +191,6 @@ export function useScriptApi() {
                   Stage_2: any
                   Stage_3: any
                   Stage_Remain: any
-                  IfSkland: any
-                  SklandToken: any
                 }
                 Task: {
                   IfStartUp: any
@@ -209,8 +214,6 @@ export function useScriptApi() {
                 }
                 Data: {
                   LastProxyDate: any
-                  LastSklandDate: any
-                  IfPassCheck: any
                   ProxyTimes: any
                 }
               }
@@ -343,14 +346,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Stage_Remain !== undefined
                             ? maaUserData.Info.Stage_Remain
                             : '-',
-                        IfSkland:
-                          maaUserData.Info?.IfSkland !== undefined
-                            ? maaUserData.Info.IfSkland
-                            : false,
-                        SklandToken:
-                          maaUserData.Info?.SklandToken !== undefined
-                            ? maaUserData.Info.SklandToken
-                            : '',
                         Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
@@ -440,14 +435,6 @@ export function useScriptApi() {
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
                             : '',
-                        LastSklandDate:
-                          maaUserData.Data?.LastSklandDate !== undefined
-                            ? maaUserData.Data.LastSklandDate
-                            : '',
-                        IfPassCheck:
-                          maaUserData.Data?.IfPassCheck !== undefined
-                            ? maaUserData.Data.IfPassCheck
-                            : false,
                         ProxyTimes:
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
@@ -556,10 +543,6 @@ export function useScriptApi() {
                           srcUserData.Data?.ProxyTimes !== undefined
                             ? srcUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          srcUserData.Data?.IfPassCheck !== undefined
-                            ? srcUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {
@@ -683,14 +666,6 @@ export function useScriptApi() {
                           maaEndUserData.Info?.RemainedDay !== undefined
                             ? maaEndUserData.Info.RemainedDay
                             : -1,
-                        IfSkland:
-                          maaEndUserData.Info?.IfSkland !== undefined
-                            ? maaEndUserData.Info.IfSkland
-                            : false,
-                        SklandToken:
-                          maaEndUserData.Info?.SklandToken !== undefined
-                            ? maaEndUserData.Info.SklandToken
-                            : '',
                         Notes:
                           maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
                         Tag:
@@ -825,18 +800,10 @@ export function useScriptApi() {
                           maaEndUserData.Data?.LastProxyDate !== undefined
                             ? maaEndUserData.Data.LastProxyDate
                             : '',
-                        LastSklandDate:
-                          maaEndUserData.Data?.LastSklandDate !== undefined
-                            ? maaEndUserData.Data.LastSklandDate
-                            : '',
                         ProxyTimes:
                           maaEndUserData.Data?.ProxyTimes !== undefined
                             ? maaEndUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          maaEndUserData.Data?.IfPassCheck !== undefined
-                            ? maaEndUserData.Data.IfPassCheck
-                            : false,
                         LastProxyStatus:
                           maaEndUserData.Data?.LastProxyStatus !== undefined
                             ? maaEndUserData.Data.LastProxyStatus
@@ -935,10 +902,6 @@ export function useScriptApi() {
                           m9aUserData.Data?.ProxyTimes !== undefined
                             ? m9aUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          m9aUserData.Data?.IfPassCheck !== undefined
-                            ? m9aUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   } else if (
@@ -1058,6 +1021,27 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (String(userIndex.type) === 'MaaFWUserConfig' && userData) {
+                    const maafwUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                        Status: maafwUserData.Info?.Status ?? true,
+                        RemainedDay: maafwUserData.Info?.RemainedDay ?? -1,
+                        Notes: maafwUserData.Info?.Notes ?? '',
+                        Tag: maafwUserData.Info?.Tag ?? null,
+                      },
+                      Task: maafwUserData.Task ?? {},
+                      Notify: maafwUserData.Notify ?? {},
+                      Data: {
+                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '',
+                        ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
+                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? false,
+                        LastSklandDate: '',
+                      },
+                    } as any
                   } else if (userIndex.type === 'HSRUserConfig' && userData) {
                     const hsrUserData = userData as any
                     return {
@@ -1157,10 +1141,6 @@ export function useScriptApi() {
                           hsrUserData.Data?.ProxyTimes !== undefined
                             ? hsrUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          hsrUserData.Data?.IfPassCheck !== undefined
-                            ? hsrUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   }
@@ -1262,6 +1242,33 @@ export function useScriptApi() {
       const errorMsg = err instanceof Error ? err.message : '获取 HSR 体力副本选项失败'
       error.value = errorMsg
       logger.error(`获取 HSR 体力副本选项失败: ${errorMsg}`)
+      return null
+    }
+  }
+
+  // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
+  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+    try {
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
+      return null
+    }
+  }
+
+  const prepareMaaFWAgentEnv = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWAgentEnvPrepareOut | null> => {
+    try {
+      return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
+        path,
+        scriptId,
+      })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
       return null
     }
   }
@@ -1388,6 +1395,8 @@ export function useScriptApi() {
     getScript,
     getHsrStageOptions,
     getMaaEndOptions,
+    previewMaaFWInterface,
+    prepareMaaFWAgentEnv,
     deleteScript,
     updateScript,
     reorderScript,

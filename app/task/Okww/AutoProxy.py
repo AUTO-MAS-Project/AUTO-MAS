@@ -17,26 +17,41 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import time
 import json
 import shlex
 import shutil
 import uuid
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
-from app.services.wuthering_waves import resolve_wuthering_waves_process_path
+from app.services.wuthering_waves import (
+    check_wuthering_waves_update,
+    resolve_wuthering_waves_process_path,
+)
+from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
+from app.utils.i18n import PoTranslator
+from app.log_box import log_box
 from app.task.general.tools import execute_script_task
 
+from .push_log import (
+    OKWW_PUSH_RULES,
+    OKWW_REL_I18N_PO,
+    _okww_supplement_po,
+    okww_resolve,
+)
 from .tools import push_notification
 
 logger = get_logger("OK-WW 自动代理")
@@ -165,6 +180,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkwwUserConfig = self.user_config[self.cur_user_uid]
         self.cur_user_log: LogRecord | None = None
+        self.launcher_path: Path | None = None
         self.game_process_path: Path | None = None
         self.okww_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
@@ -173,6 +189,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_target_process_info: ProcessInfo | None = None
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
+        # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
+        self.log_collect = None
+        self.log_translator = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -183,8 +202,10 @@ class AutoProxyTask(TaskExecuteBase):
             return "请设置ok-ww脚本路径"
         if not (root / _OKWW_REL_APP_JSON).is_file():
             return "请设置ok-ww脚本路径"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
-            self.script_config.get("Run", "ProxyTimesLimit") != 0
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
             and self.cur_user_config.get("Data", "ProxyTimes")
             >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
@@ -198,6 +219,7 @@ class AutoProxyTask(TaskExecuteBase):
             launcher_path = Path(
                 str(self.script_config.get("Game", "Path") or "").strip()
             )
+            self.launcher_path = launcher_path
             try:
                 self.game_process_path = resolve_wuthering_waves_process_path(
                     launcher_path
@@ -253,6 +275,26 @@ class AutoProxyTask(TaskExecuteBase):
             self.log_time_format,
             self.check_log,
         )
+
+        # ── log_box：日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
+        # 受用户级「是否采集节点详情」开关控制：关闭时不创建（不读日志、不翻译、
+        # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
+        # 为空，报告聚合时自然不含其节点详情
+        if self.cur_user_config.get("Notify", "PushLogEnabled"):
+            self.log_collect = log_box.get_collect(
+                paths=[self.script_log_path],
+                sink=self._append_push_log,
+                start_from_end=True,
+            )
+            # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
+            self.log_translator = (
+                PoTranslator()
+                .load([OKWW_REL_I18N_PO], base=self.script_root_path)
+                .load_supplement([_okww_supplement_po()])
+            )
+            self.log_collect.open(self.log_translator.translate)
+            for rule in OKWW_PUSH_RULES:
+                self.log_collect.collect(*rule)
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.okww_args = ["-t", str(self.task_index), "-e"]
@@ -318,7 +360,11 @@ class AutoProxyTask(TaskExecuteBase):
             shutil.rmtree(self.script_config_path, ignore_errors=True)
             tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
-        logger.info(f"OK-WW 运行参数配置完成: 自动代理")
+        logger.info("OK-WW 运行参数配置完成: 自动代理")
+
+    def _append_push_log(self, log_type: str, text: str) -> None:
+        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+        self.cur_user_item.push_log.append((log_type, text))
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -327,15 +373,63 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
+    async def _ensure_wuthering_waves_updated(self) -> None:
+        """确保游戏已是官方最新版，需要时由 MAS 自行下载覆写。
+
+        全程不启动官方启动器、不做界面识别：版本元数据取自官方接口，
+        包体下载、md5 校验、增量应用与覆写全部由 MAS 完成。
+
+        接口不可用属于「无法判断」，放行启动流程（旧客户端通常仍能登录，
+        不该因为查不到版本就拦住用户）；而更新已确认需要却失败，
+        则必须抛错阻断，否则会拿旧客户端撞登录失败。
+        """
+
+        if self.launcher_path is None:
+            return
+        if not self.script_config.get("Game", "IfAutoUpdate"):
+            logger.info("已关闭启动前自动更新，跳过鸣潮更新检查")
+            return
+        resource = str(self.cur_user_config.get("Info", "Resource"))
+        try:
+            update_info = await check_wuthering_waves_update(
+                self.launcher_path,
+                resource,
+            )
+        except Exception as e:
+            logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
+            return
+
+        if update_info.predownload_available:
+            logger.info(
+                "官方已开放预下载 {}，MAS 暂不接管预下载",
+                update_info.predownload_version or "未知",
+            )
+        if not update_info.update_available:
+            return
+
+        await self._push_dispatch_log(
+            f"鸣潮需更新: {update_info.current_version}"
+            f" -> {update_info.release_version}"
+        )
+        limit_gb = int(self.script_config.get("Game", "UpdateFullSyncLimit") or 0)
+        await update_wuthering_waves(
+            update_info.install_dir,
+            resource,
+            update_info.current_version,
+            on_progress=self._push_dispatch_log,
+            full_sync_limit=max(limit_gb, 1) * 1024**3,
+        )
+
     async def _mas_launch_game_before_task(self) -> None:
-        """启动鸣潮并跟踪客户端进程。"""
+        """检查并触发官方启动器更新，然后启动鸣潮客户端。"""
 
         if isinstance(self.game_manager, ProcessManager):
+            await self._ensure_wuthering_waves_updated()
             if is_process_running(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
-                        datetime.now() + timedelta(seconds=3),
+                        3.0,
                     )
                 except RuntimeError:
                     logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
@@ -399,10 +493,10 @@ class AutoProxyTask(TaskExecuteBase):
                     await self._push_dispatch_log(f"游戏启动失败: {e}")
                     self.cur_user_log.status = f"游戏启动失败: {e}"
                     self.cur_user_log.content = [f"游戏启动失败: {e}"]
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"游戏启动失败: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=f"游戏启动失败: {e}"),
                     )
                     await self.kill_managed_process(
                         kill_game=self._game_management_enabled()
@@ -517,7 +611,8 @@ class AutoProxyTask(TaskExecuteBase):
             elif not await self.okww_process_manager.is_running():
                 log_status = "OK-WW 在完成任务前退出"
                 user_item_status = "异常"
-            elif datetime.now() - latest_time > timedelta(
+            elif self.is_log_stalled(
+                latest_time,
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
                 log_status = "OK-WW 运行超时"
@@ -539,10 +634,21 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
+        # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
+        # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
+        # 开关关闭（未创建）或 prepare 未执行完时 log_collect 为 None，一并在此兜底
+        try:
+            if self.log_collect is not None:
+                self.log_collect.close(okww_resolve)
+            if self.log_translator is not None:
+                self.log_translator.clear()
+        except Exception:
+            logger.opt(exception=True).warning("OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）")
+
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         statistic_paths: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,
@@ -619,10 +725,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.wait_event is not None:
             self.wait_event.set()
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"OK-WW 自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"OK-WW 自动代理任务出现异常: {e}"),
             )
         with suppress(Exception):
             await self.kill_managed_process(
@@ -649,8 +755,8 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def _wait_okww_exit(self, *, timeout: int = 30) -> None:
         """等待 OK-WW 自然退出（-e 触发），超时后兜底强杀。"""
-        deadline = datetime.now() + timedelta(seconds=timeout)
-        while datetime.now() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             if not await self.okww_process_manager.is_running():
                 logger.info("OK-WW 已自行退出")
                 return
@@ -686,7 +792,7 @@ class AutoProxyTask(TaskExecuteBase):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
-                        datetime.now() + timedelta(seconds=1),
+                        1.0,
                     )
                 except RuntimeError:
                     logger.debug("未找到待关闭的鸣潮客户端进程")

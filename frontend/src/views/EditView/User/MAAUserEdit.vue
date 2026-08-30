@@ -14,7 +14,7 @@
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button v-if="maaWebsocketId" type="primary" size="large" @click="handleSaveMAAConfig">
+            <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
               保存配置
             </a-button>
           </div>
@@ -22,71 +22,110 @@
       </div>
     </teleport>
     <!-- 头部组件 -->
-    <MAAUserEditHeader :script-id="scriptId" :script-name="scriptName" :is-edit="isEdit" :user-mode="formData.Info.Mode"
-      :maa-config-loading="maaConfigLoading" :show-maa-config-mask="showMAAConfigMask" :loading="loading"
-      @handle-m-a-a-config="handleMAAConfig" @handle-cancel="handleCancel" />
+    <MAAUserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      :user-mode="formData.Info.Mode"
+      :maa-config-loading="maaConfigLoading"
+      :show-maa-config-mask="showMAAConfigMask"
+      :loading="loading"
+      @handle-m-a-a-config="handleMAAConfig"
+      @handle-cancel="handleCancel"
+    />
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <!-- 基本信息组件 -->
-          <BasicInfoSection v-model:form-data="formData" :loading="loading" :server-options="serverOptions"
-            :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
-            :infrastructure-options="infrastructureOptions"
-            :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
-            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
-
-          <!-- 关卡配置组件 -->
-          <StageConfigSection v-model:form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
-            :stage-options="stageOptions" :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
-            :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
-            :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
-            :display-stage3="displayStage3" :display-stage-remain="displayStageRemain"
-            :medicine-numb-tooltip="medicineNumbTooltip" :series-numb-tooltip="seriesNumbTooltip"
-            :stage-tooltip="stageTooltip" :stage1-tooltip="stage1Tooltip" :stage2-tooltip="stage2Tooltip"
-            :stage3-tooltip="stage3Tooltip" :stage-remain-tooltip="stageRemainTooltip"
-            @update-medicine-numb="updateMedicineNumb" @update-series-numb="updateSeriesNumb"
-            @update-stage="updateStage" @update-stage1="updateStage1" @update-stage2="updateStage2"
-            @update-stage3="updateStage3" @update-stage-remain="updateStageRemain"
-            @handle-add-custom-stage="addCustomStage" @handle-add-custom-stage1="addCustomStage1"
-            @handle-add-custom-stage2="addCustomStage2" @handle-add-custom-stage3="addCustomStage3"
-            @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
-
-          <!-- 任务配置组件 -->
-          <TaskConfigSection
-            v-model:activity-first="formData.Task.IfActivityFirst"
-            v-model:activity-stage-index="formData.Task.ActivityStageIndex"
+          <BasicInfoSection
             v-model:form-data="formData"
             :loading="loading"
+            :server-options="serverOptions"
+            @save="handleFieldSave"
+          />
+
+          <!-- 任务配置：明确区分剿灭与日常的两次 MAA 启动 -->
+          <TaskPipelineSection
+            v-model:form-data="formData"
+            :loading="loading"
+            :is-plan-mode="isPlanMode"
+            :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-index="displayActivityStageIndex"
+            :depot-item-options="depotItemOptions"
+            :depot-item-options-loading="depotItemOptionsLoading"
+            :depot-item-options-error="depotItemOptionsError"
+            :fight-summary="fightSummary"
+            :is-edit="isEdit"
+            :infrastructure-importing="infrastructureImporting"
+            :infrastructure-options="infrastructureOptions"
+            :infrastructure-options-loading="infrastructureOptionsLoading"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @save="handleFieldSave"
-          />
-
-          <!-- 库存保持配置组件 -->
-          <DepotMaintainConfigSection
-            v-if="!isPlanMode"
-            v-model:enabled="formData.Task.IfDepotMaintain"
-            :form-data="formData"
-            :loading="loading"
-            :stage-options="stageOptions"
-            :item-options="depotItemOptions"
-            :item-options-loading="depotItemOptionsLoading"
-            :item-options-error="depotItemOptionsError"
-            @save="handleFieldSave"
-          />
-
-          <!-- 森空岛配置组件 -->
-          <SkylandConfigSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+          >
+            <template #fight-detail>
+              <StageConfigSection
+                v-model:form-data="formData"
+                :loading="loading"
+                :stage-mode-options="stageModeOptions"
+                :stage-options="stageOptions"
+                :stage-remain-options="stageRemainOptions"
+                :is-plan-mode="isPlanMode"
+                :display-medicine-numb="displayMedicineNumb"
+                :display-series-numb="displaySeriesNumb"
+                :display-stage="displayStage"
+                :display-stage1="displayStage1"
+                :display-stage2="displayStage2"
+                :display-stage3="displayStage3"
+                :display-stage-remain="displayStageRemain"
+                :medicine-numb-tooltip="medicineNumbTooltip"
+                :series-numb-tooltip="seriesNumbTooltip"
+                :stage-tooltip="stageTooltip"
+                :stage1-tooltip="stage1Tooltip"
+                :stage2-tooltip="stage2Tooltip"
+                :stage3-tooltip="stage3Tooltip"
+                :stage-remain-tooltip="stageRemainTooltip"
+                @update-medicine-numb="updateMedicineNumb"
+                @update-series-numb="updateSeriesNumb"
+                @update-stage="updateStage"
+                @update-stage1="updateStage1"
+                @update-stage2="updateStage2"
+                @update-stage3="updateStage3"
+                @update-stage-remain="updateStageRemain"
+                @handle-add-custom-stage="addCustomStage"
+                @handle-add-custom-stage1="addCustomStage1"
+                @handle-add-custom-stage2="addCustomStage2"
+                @handle-add-custom-stage3="addCustomStage3"
+                @handle-add-custom-stage-remain="addCustomStageRemain"
+                @save="handleFieldSave"
+              />
+            </template>
+          </TaskPipelineSection>
 
           <!-- 额外脚本组件 -->
-          <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection v-model:form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
-            @save="handleFieldSave" />
+          <NotifyConfigSection
+            v-model:form-data="formData"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -103,6 +142,12 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { Service } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
@@ -115,21 +160,14 @@ const logger = window.electronAPI.getLogger('MAA用户编辑')
 import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
-import TaskConfigSection from '@/views/MAAUserEdit/TaskConfigSection.vue'
-import DepotMaintainConfigSection from '@/views/MAAUserEdit/DepotMaintainConfigSection.vue'
-import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
+import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
+import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  error: userError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -159,13 +197,12 @@ const scriptName = ref('')
 
 // MAA配置相关
 const maaConfigLoading = ref(false)
-const maaSubscriptionId = ref<string | null>(null)
-const maaWebsocketId = ref<string | null>(null)
+const maaSubscriptionIds = ref<string[]>([])
+const maaTaskId = ref<string | null>(null)
 const showMAAConfigMask = ref(false)
 let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
-const infrastructureConfigPath = ref('')
 const infrastructureImporting = ref(false)
 const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
 const infrastructureOptionsLoading = ref(false)
@@ -404,8 +441,7 @@ const getPlanCurrentConfig = (planData: any) => {
     logger.debug(`计划表周模式调试: 
       东4区星期几: ${todayWeekday},
       星期: ${today},
-      计划数据: ${JSON.stringify(planData)}`
-    )
+      计划数据: ${JSON.stringify(planData)}`)
 
     // 优先使用今天的配置，如果没有或为空则使用ALL配置
     const todayConfig = planData[today]
@@ -451,8 +487,6 @@ const getDefaultMAAUserData = () => ({
     Stage_2: '',
     Stage_3: '',
     Stage_Remain: '',
-    IfSkland: false,
-    SklandToken: '',
   },
   Task: {
     IfStartUp: true,
@@ -482,9 +516,7 @@ const getDefaultMAAUserData = () => ({
     CustomWebhooks: [],
   },
   Data: {
-    IfPassCheck: false,
     LastProxyDate: '',
-    LastSklandDate: '',
     ProxyTimes: 0,
   },
 })
@@ -504,6 +536,21 @@ const displayActivityStageIndex = computed(() => {
     ? configuredIndex
     : activityStageOptions.value[0]?.value
 })
+
+// 折叠态摘要：不展开也能确认当前生效的关卡配置
+const fightSummary = computed(() =>
+  summarizeFight({
+    enabled: formData.Task.IfFight,
+    planLabel: isPlanMode.value
+      ? stageModeOptions.value.find(option => option.value === formData.Info.StageMode)?.label ||
+        formData.Info.StageMode
+      : '',
+    stage: displayStage.value,
+    series: displaySeriesNumb.value,
+    medicine: displayMedicineNumb.value ?? 0,
+    remain: displayStageRemain.value,
+  })
+)
 
 // 表单验证规则
 const rules = computed(() => {
@@ -902,13 +949,13 @@ const loadInfrastructureOptions = async () => {
     infrastructureOptionsLoading.value = true
     const result = await Service.getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost({
       scriptId: scriptId,
-      userId: userId
+      userId: userId,
     })
 
     if (result && result.code === 200 && result.data) {
       infrastructureOptions.value = result.data.map((item: any) => ({
         label: item.label,
-        value: item.value
+        value: item.value,
       }))
     }
   } catch (error) {
@@ -920,15 +967,16 @@ const loadInfrastructureOptions = async () => {
 }
 
 const handleMAAConfig = async () => {
-
   try {
     maaConfigLoading.value = true
 
     // 如果已有连接，先断开
-    if (maaSubscriptionId.value) {
-      unsubscribe(maaSubscriptionId.value)
-      maaSubscriptionId.value = null
-      maaWebsocketId.value = null
+    if (maaSubscriptionIds.value.length > 0) {
+      for (const subscriptionId of maaSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
+      }
+      maaSubscriptionIds.value = []
+      maaTaskId.value = null
       showMAAConfigMask.value = false
       if (maaConfigTimeout) {
         window.clearTimeout(maaConfigTimeout)
@@ -946,67 +994,53 @@ const handleMAAConfig = async () => {
       const wsId = response.taskId
 
       // 订阅 websocket
-      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:${wsMessage.data}`
-          )
-          message.error(`MAA配置连接失败: ${wsMessage.data}`)
-          unsubscribe(subscriptionId)
-          maaSubscriptionId.value = null
-          maaWebsocketId.value = null
-          showMAAConfigMask.value = false
-          if (maaConfigTimeout) {
-            window.clearTimeout(maaConfigTimeout)
-            maaConfigTimeout = null
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            logger.error(
+              `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${data.message}`
+            )
+            message.error(`MAA配置失败: ${data.message}`)
           }
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${wsMessage.data.Error}`
-          )
-          message.error(`MAA配置失败: ${wsMessage.data.Error}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
-          logger.info(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`
-          )
+        }),
+        // 处理任务结束消息
+        subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
+          logger.info(`用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
+          if (data.outcome === 'success') {
             message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
           }
           // 清理连接
-          unsubscribe(subscriptionId)
-          maaSubscriptionId.value = null
-          maaWebsocketId.value = null
+          for (const subscriptionId of maaSubscriptionIds.value) {
+            unsubscribe(subscriptionId)
+          }
+          maaSubscriptionIds.value = []
+          maaTaskId.value = null
           showMAAConfigMask.value = false
           if (maaConfigTimeout) {
             window.clearTimeout(maaConfigTimeout)
             maaConfigTimeout = null
           }
-        }
-      })
+        }),
+      ]
 
-      maaSubscriptionId.value = subscriptionId
-      maaWebsocketId.value = wsId
+      maaSubscriptionIds.value = subscriptionIds
+      maaTaskId.value = wsId
       showMAAConfigMask.value = true
       message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
 
       // 设置 30 分钟超时自动断开
       maaConfigTimeout = window.setTimeout(
         () => {
-          if (maaSubscriptionId.value) {
-            unsubscribe(maaSubscriptionId.value)
-            maaSubscriptionId.value = null
-            maaWebsocketId.value = null
+          if (maaSubscriptionIds.value.length > 0) {
+            for (const subscriptionId of maaSubscriptionIds.value) {
+              unsubscribe(subscriptionId)
+            }
+            maaSubscriptionIds.value = []
+            maaTaskId.value = null
             showMAAConfigMask.value = false
             message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
           }
@@ -1028,19 +1062,19 @@ const handleMAAConfig = async () => {
 
 const handleSaveMAAConfig = async () => {
   try {
-    const websocketId = maaWebsocketId.value
-    if (!websocketId) {
+    const taskId = maaTaskId.value
+    if (!taskId) {
       message.error('未找到活动的配置会话')
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response && response.code === 200) {
-      if (maaSubscriptionId.value) {
-        unsubscribe(maaSubscriptionId.value)
-        maaSubscriptionId.value = null
+      for (const subscriptionId of maaSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
       }
-      maaWebsocketId.value = null
+      maaSubscriptionIds.value = []
+      maaTaskId.value = null
       showMAAConfigMask.value = false
       if (maaConfigTimeout) {
         window.clearTimeout(maaConfigTimeout)
@@ -1167,10 +1201,12 @@ const handleCancel = async () => {
   const pendingSave = fieldSavePromise
   if (pendingSave && !(await pendingSave)) return
 
-  if (maaSubscriptionId.value) {
-    unsubscribe(maaSubscriptionId.value)
-    maaSubscriptionId.value = null
-    maaWebsocketId.value = null
+  if (maaSubscriptionIds.value.length > 0) {
+    for (const subscriptionId of maaSubscriptionIds.value) {
+      unsubscribe(subscriptionId)
+    }
+    maaSubscriptionIds.value = []
+    maaTaskId.value = null
   }
   router.push('/scripts')
 }
@@ -1262,11 +1298,13 @@ onMounted(() => {
             fullPlanData.value = planData
             logger.debug('fullPlanData.value已更新')
 
-            logger.info(`计划配置加载成功:${JSON.stringify({
-              planId: newStageMode,
-              currentConfig: JSON.parse(JSON.stringify(currentConfig)),
-              planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
-            })}`)
+            logger.info(
+              `计划配置加载成功:${JSON.stringify({
+                planId: newStageMode,
+                currentConfig: JSON.parse(JSON.stringify(currentConfig)),
+                planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
+              })}`
+            )
 
             // 从stageModeOptions中查找对应的计划名称
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
