@@ -481,7 +481,7 @@ export default {
       'This currently works on CN servers only, and only at an unscaled 1280x720 resolution',
     accountEmailPhoneNumber: 'account / email / phone number.',
     accountEmailPhoneNumber2:
-      'account / email / phone number, separated by "|". Signing in with a password prefers the B',
+      "account / email / phone number, separated by '{'|'}'. Signing in with a password prefers the B",
     firstMaaSessionAnnihilation: 'First MAA session: annihilation',
     world3: 'World 3',
     secondMaaSessionDaily: 'Second MAA session: daily run',
@@ -1015,7 +1015,7 @@ export default {
     requiredEmptyValueDisables:
       'Required; an empty value disables the rule. A line matching this pattern opens the window (inclusive)',
     requiredEmptyValueDisables2:
-      'Required; an empty value disables the rule. Separate keywords with " | " — any match passes',
+      "Required; an empty value disables the rule. Separate keywords with ' {'|'} ' — any match passes",
     requiredEmptyValueDisables3:
       'Required; an empty value disables the rule. Matched against the whole log line as a Python regex',
     requiredEmptyValueDisables4:

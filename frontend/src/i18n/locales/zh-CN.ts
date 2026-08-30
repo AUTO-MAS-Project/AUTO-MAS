@@ -469,7 +469,7 @@ export default {
     thisCurrentlyWorksCn: '目前该功能仅支持官服，且仅支持 1280×720 实际未缩放分辨率',
     accountEmailPhoneNumber: '站账号/邮箱号/手机号。',
     accountEmailPhoneNumber2:
-      '站账号/邮箱号/手机号，中间使用「|」分隔，通过账号密码登录时将优先使用 B',
+      "站账号/邮箱号/手机号，中间使用「{'|'}」分隔，通过账号密码登录时将优先使用 B",
     firstMaaSessionAnnihilation: '第一次启动 MAA：剿灭流程',
     world3: '第三世界',
     secondMaaSessionDaily: '第二次启动 MAA：日常流程',
@@ -960,7 +960,7 @@ export default {
     logDebug: '待调试日志',
     requiredEmptyValueDisables: '必填，留空则该规则不生效；匹配到此正则的行作为窗口起始（含该行）',
     requiredEmptyValueDisables2:
-      '必填，留空则该规则不生效；多个关键字以「 | 」分隔，任一命中即通过',
+      "必填，留空则该规则不生效；多个关键字以「 {'|'} 」分隔，任一命中即通过",
     requiredEmptyValueDisables3: '必填，留空则该规则不生效；按 Python 正则匹配整行日志',
     requiredEmptyValueDisables4: '必填，留空则该规则不生效；用于过滤行的正则表达式',
     iLaunchGameMyself: '我自己启动游戏',

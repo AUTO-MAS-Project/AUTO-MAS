@@ -38,8 +38,35 @@ describe('词表', () => {
     }
   })
 
-  // vue-i18n 把 | 当复数分隔符、{x} 当占位符、@: 当链接消息。
-  // 字面量必须写成 {'|'} 这种字面插值，否则渲染时会静默丢内容。
+  // 复数消息，| 是有意的分隔符；其余词条里的 | 都必须转义
+  const PLURAL_KEYS = new Set([
+    'home.endfield.ongoing',
+    'plan.count',
+    'queue.count',
+    'scripts.userCount',
+  ])
+
+  // 这一条兜住整张词表：漏转义时 t() 会静默截断（| 后面全丢），
+  // 页面上看不出报错，只是文案短了一截。
+  it('除复数消息外，没有未转义的 | { } @', () => {
+    const literal = /\{'[^']*'\}/g
+    const param = /\{[A-Za-z_]\w*\}/g
+    const offenders: string[] = []
+    for (const [locale, entries] of [
+      ['zh-CN', zhEntries],
+      ['en-US', enEntries],
+    ] as const) {
+      for (const [key, value] of entries) {
+        if (PLURAL_KEYS.has(key)) continue
+        const rest = value.replace(literal, '').replace(param, '')
+        if (/[|{}]/.test(rest) || /@[:.]/.test(rest)) {
+          offenders.push(`${locale} ${key}: ${value}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
   it('字面量里的 | { } @ 都做了转义', () => {
     expect(t('edit.enterInstanceInfoAs')).toBe('请输入实例信息，格式：启动附加命令 | ADB地址')
     expect(t('edit.exampleTaskDoneSuccess')).toBe('例如：任务完成|成功|失败')

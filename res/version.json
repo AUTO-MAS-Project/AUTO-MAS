@@ -30,6 +30,7 @@
                 "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
+                "前端i18n 修复两条含「|」的说明文案在界面上被截断的问题——vue-i18n 把 | 当复数分隔符，字面量需要转义 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 HSR 托管任务列表中点击任务开关导致界面报错的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复系统通知标题或内容过长时推送失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
