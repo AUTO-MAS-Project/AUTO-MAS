@@ -199,35 +199,17 @@
                 <span class="launch-option-hint">选游戏本体的 exe</span>
               </div>
             </a-select-option>
-            <a-select-option value="LauncherExe">
-              <div class="launch-option">
-                <span class="launch-option-title">让 MAS 启动官方启动器</span>
-                <span class="launch-option-hint">选启动器 exe，MAS 再等游戏本体出现</span>
-              </div>
-            </a-select-option>
-            <a-select-option value="URL">
-              <div class="launch-option">
-                <span class="launch-option-title">让 MAS 用快捷链接启动</span>
-                <span class="launch-option-hint">填 steam:// 这类协议链接</span>
-              </div>
-            </a-select-option>
           </a-select>
           <div class="field-help">{{ launchModeDescription }}</div>
         </a-form-item>
 
         <a-row :gutter="24" class="control-detail-row">
-          <a-col v-if="launchMode !== 'AttachOnly' && launchMode !== 'URL'" :span="12">
+          <a-col v-if="launchMode !== 'AttachOnly'" :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip
-                  :title="
-                    launchMode === 'LauncherExe'
-                      ? 'MAS 启动的启动器 exe；实际游戏由下方检测字段单独定位'
-                      : 'MAS 直接启动的实际游戏 exe'
-                  "
-                >
+                <a-tooltip title="MAS 直接启动的实际游戏 exe">
                   <span class="form-label">
-                    {{ launchMode === 'LauncherExe' ? '启动器可执行文件' : '游戏可执行文件' }}
+                    游戏可执行文件
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -235,9 +217,7 @@
               <a-input-group compact class="path-input-group">
                 <a-input
                   v-model:value="maafwConfig.Game.LaunchPath"
-                  :placeholder="
-                    launchMode === 'LauncherExe' ? '请选择启动器 exe' : '请选择实际启动的游戏 exe'
-                  "
+                  placeholder="请选择实际启动的游戏 exe"
                   size="large"
                   class="path-input"
                   readonly
@@ -251,28 +231,7 @@
               </a-input-group>
             </a-form-item>
           </a-col>
-          <a-col v-if="launchMode === 'URL'" :span="12">
-            <a-form-item>
-              <template #label>
-                <a-tooltip
-                  title="使用系统协议处理器启动，例如 steam://、com.epicgames.launcher:// 等"
-                >
-                  <span class="form-label">
-                    协议启动 URL
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.LaunchURL"
-                placeholder="例如 steam://rungameid/123"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'LaunchURL', maafwConfig.Game.LaunchURL)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="launchMode === 'DirectExe' || launchMode === 'LauncherExe'" :span="6">
+          <a-col v-if="launchMode === 'DirectExe'" :span="6">
             <a-form-item>
               <template #label>
                 <a-tooltip title="仅 exe 启动模式会传递给启动目标的命令行参数">
@@ -437,10 +396,6 @@ const launchModeDescription = computed(() => {
   switch (launchMode.value) {
     case 'DirectExe':
       return 'MAS 会启动你选的游戏 exe，运行结束后按下方设置决定是否关闭它。'
-    case 'LauncherExe':
-      return '启动器和游戏通常不是同一个进程，所以还要在下方告诉 MAS 游戏本体叫什么，它才知道该等谁。'
-    case 'URL':
-      return '交给系统按链接启动（如 Steam）。同样要在下方告诉 MAS 游戏本体叫什么，它才知道该等谁。'
     default:
       return 'MAS 不会启动任何程序，只等你把游戏开起来后接管它。'
   }

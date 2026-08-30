@@ -21,11 +21,11 @@ from app.models.schema import MaaFWConfig_Run
 
 
 class RunEngineDtoTest(unittest.TestCase):
-    def test_dto_defaults_to_external(self) -> None:
-        self.assertEqual(MaaFWConfig_Run().Engine, "external")
+    def test_dto_defaults_to_embedded(self) -> None:
+        self.assertEqual(MaaFWConfig_Run().Engine, "embedded")
         # 顶层 DTO 的各分节是可选的（支持部分更新），给了 Run 才有 Engine
         self.assertIsNone(MaaFWConfigDTO().Run)
-        self.assertEqual(MaaFWConfigDTO(Run={}).Run.Engine, "external")
+        self.assertEqual(MaaFWConfigDTO(Run={}).Run.Engine, "embedded")
 
     def test_dto_accepts_embedded(self) -> None:
         payload = MaaFWConfigDTO.model_validate({"Run": {"Engine": "embedded"}})
@@ -58,20 +58,20 @@ class RunEnginePersistenceTest(unittest.TestCase):
             with patch("app.core.config.Path.cwd", return_value=manager_root):
                 manager = AppConfig()
                 script_uid, script = await manager.add_script("MaaFW")
-                # 新建脚本必须默认走第一层
-                self.assertEqual(script.get("Run", "Engine"), "external")
-
-                await script.update({"Run": {"Engine": "embedded"}})
+                # 新建脚本默认走内置运行
                 self.assertEqual(script.get("Run", "Engine"), "embedded")
+
+                await script.update({"Run": {"Engine": "external"}})
+                self.assertEqual(script.get("Run", "Engine"), "external")
                 persisted = await manager.ScriptConfig.toDict(if_decrypt=False)
 
             restored = GlobalConfig()
             await restored.ScriptConfig.load(persisted)
             restored_script = restored.ScriptConfig[script_uid]
             self.assertIsInstance(restored_script, MaaFWConfig)
-            self.assertEqual(restored_script.get("Run", "Engine"), "embedded")
+            self.assertEqual(restored_script.get("Run", "Engine"), "external")
 
-    def test_switching_back_to_external_round_trips(self) -> None:
+    def test_switching_back_to_embedded_round_trips(self) -> None:
         asyncio.run(self._round_trip_back())
 
     async def _round_trip_back(self) -> None:
@@ -80,14 +80,14 @@ class RunEnginePersistenceTest(unittest.TestCase):
             with patch("app.core.config.Path.cwd", return_value=manager_root):
                 manager = AppConfig()
                 script_uid, script = await manager.add_script("MaaFW")
-                await script.update({"Run": {"Engine": "embedded"}})
                 await script.update({"Run": {"Engine": "external"}})
+                await script.update({"Run": {"Engine": "embedded"}})
                 persisted = await manager.ScriptConfig.toDict(if_decrypt=False)
 
             restored = GlobalConfig()
             await restored.ScriptConfig.load(persisted)
             self.assertEqual(
-                restored.ScriptConfig[script_uid].get("Run", "Engine"), "external"
+                restored.ScriptConfig[script_uid].get("Run", "Engine"), "embedded"
             )
 
     def test_unknown_engine_on_disk_is_corrected_not_propagated(self) -> None:

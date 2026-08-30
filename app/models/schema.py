@@ -1814,7 +1814,7 @@ class MaaFWConfig_Device(BaseModel):
 
 class MaaFWConfig_Game(BaseModel):
     LaunchMode: Optional[
-        Literal["AttachOnly", "DirectExe", "LauncherExe", "URL"]
+        Literal["AttachOnly", "DirectExe"]
     ] = Field(default=None, description="游戏启动模式")
     LaunchPath: Optional[str] = Field(default=None, description="启动目标路径")
     LaunchURL: Optional[str] = Field(default=None, description="系统协议启动 URL")
@@ -1854,9 +1854,10 @@ class MaaFWConfig_Update(BaseModel):
 
 class MaaFWConfig_Run(BaseModel):
     Engine: Literal["external", "embedded"] = Field(
-        default="external",
-        description="MaaFW 运行引擎：external 启动项目自己的 UI shell；"
-        "embedded 由 MAS 进程内 runner 直接驱动（实验性，未经真机验证）",
+        default="embedded",
+        description="MaaFW 运行引擎：embedded 由 MAS 进程内 runner 直接驱动（默认）；"
+        "external 启动项目自己的 UI shell。前端不暴露该开关，"
+        "external 仅作为配置级自救通道保留",
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")

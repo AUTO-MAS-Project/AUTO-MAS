@@ -194,7 +194,7 @@ export interface M9AScriptConfig {
 export type HSRScriptConfig = HSRConfig
 
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
-export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe' | 'LauncherExe' | 'URL'
+export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
 
 export interface MaaFWScriptConfig {
   Info: {

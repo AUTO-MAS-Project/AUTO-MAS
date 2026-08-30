@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaFWConfig_Run = {
     /**
-     * MaaFW 运行引擎：external 启动项目自己的 UI shell；embedded 由 MAS 进程内 runner 直接驱动（实验性，未经真机验证）
+     * MaaFW 运行引擎：embedded 由 MAS 进程内 runner 直接驱动（默认）；external 启动项目自己的 UI shell。前端不暴露该开关，external 仅作为配置级自救通道保留
      */
     Engine?: MaaFWConfig_Run.Engine;
     /**
@@ -34,7 +34,7 @@ export type MaaFWConfig_Run = {
 };
 export namespace MaaFWConfig_Run {
     /**
-     * MaaFW 运行引擎：external 启动项目自己的 UI shell；embedded 由 MAS 进程内 runner 直接驱动（实验性，未经真机验证）
+     * MaaFW 运行引擎：embedded 由 MAS 进程内 runner 直接驱动（默认）；external 启动项目自己的 UI shell。前端不暴露该开关，external 仅作为配置级自救通道保留
      */
     export enum Engine {
         EXTERNAL = 'external',

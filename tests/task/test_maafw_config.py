@@ -105,7 +105,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
                 self.assertIsInstance(script, MaaFWConfig)
                 self.assertEqual(script.get("Info", "Name"), "新 MFW 脚本")
-                self.assertEqual(script.get("Run", "Engine"), "external")
+                self.assertEqual(script.get("Run", "Engine"), "embedded")
                 self.assertEqual(script.get("Run", "RunTimeLimit"), 30)
 
                 await script.update(
@@ -140,7 +140,7 @@ class MaaFWConfigTest(unittest.TestCase):
             self.assertEqual(
                 Path(restored_script.get("Info", "Path")), project_root
             )
-            self.assertEqual(restored_script.get("Run", "Engine"), "external")
+            self.assertEqual(restored_script.get("Run", "Engine"), "embedded")
             self.assertEqual(restored_script.get("Run", "RunTimeLimit"), 42)
             self.assertEqual(restored_script.get("Game", "LaunchMode"), "DirectExe")
             self.assertEqual(restored_script.get("Update", "Source"), "MirrorChyan")
@@ -220,7 +220,7 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
         parsed = ScriptUpdateIn(
             scriptId="s",
             data={
-                "Game": {"LaunchMode": "LauncherExe", "LaunchPath": "C:/g.exe"},
+                "Game": {"LaunchMode": "DirectExe", "LaunchPath": "C:/g.exe"},
                 "Emulator": {"Id": "abc", "Index": "0"},
             },
         )
@@ -228,7 +228,7 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
         self.assertEqual(
             parsed.data.model_dump(exclude_unset=True),
             {
-                "Game": {"LaunchMode": "LauncherExe", "LaunchPath": "C:/g.exe"},
+                "Game": {"LaunchMode": "DirectExe", "LaunchPath": "C:/g.exe"},
                 "Emulator": {"Id": "abc", "Index": "0"},
             },
         )

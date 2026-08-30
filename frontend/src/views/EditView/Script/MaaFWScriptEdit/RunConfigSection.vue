@@ -6,39 +6,6 @@
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <a-tooltip
-              title="external 启动项目自己的界面让它自运行；embedded 由 AUTO-MAS 直接驱动项目的 MaaFramework，启动更快、日志统一，但尚未经过真机验证"
-            >
-              <span class="form-label">
-                运行引擎
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            :value="maafwConfig.Run.Engine ?? 'external'"
-            size="large"
-            :options="engineOptions"
-            style="width: 100%"
-            @change="(value: unknown) => emit('change', 'Run', 'Engine', value)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <a-alert
-      v-if="(maafwConfig.Run.Engine ?? 'external') === 'embedded'"
-      class="engine-experimental-alert"
-      type="warning"
-      show-icon
-      message="内置运行为实验性功能 · 未经真机验证"
-      description="AUTO-MAS 会在自己的进程内加载该项目的 MaaFramework 直接运行，不启动项目界面。该路径尚未经过真机验证，遇到问题请切回「外部运行」。"
-    />
-
-    <a-row :gutter="24">
-      <a-col :span="8">
         <a-form-item label="用户单日代理次数上限">
           <a-input-number
             v-model:value="maafwConfig.Run.ProxyTimesLimit"
@@ -176,11 +143,6 @@ const emit = defineEmits<{
     values: string[],
   ]
 }>()
-
-const engineOptions = [
-  { label: '外部运行（推荐）', value: 'external' },
-  { label: '内置运行（实验性 · 未经真机验证）', value: 'embedded' },
-]
 </script>
 
 <style scoped>
@@ -238,9 +200,5 @@ const engineOptions = [
 
 .period-task-row {
   margin-top: 8px;
-}
-
-.engine-experimental-alert {
-  margin-bottom: 24px;
 }
 </style>

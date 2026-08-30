@@ -6,7 +6,7 @@ export type MaaFWConfig_Game = {
     /**
      * 游戏启动模式
      */
-    LaunchMode?: ('AttachOnly' | 'DirectExe' | 'LauncherExe' | 'URL' | null);
+    LaunchMode?: ('AttachOnly' | 'DirectExe' | null);
     /**
      * 启动目标路径
      */

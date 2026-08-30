@@ -25,10 +25,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class RunEngineConfigTest(unittest.TestCase):
-    def test_default_engine_is_still_external(self) -> None:
-        """第一层已真机验证、第二层没有：默认值不许动。"""
+    def test_default_engine_is_embedded(self) -> None:
+        """MaaFW 统一走内置运行；前端不再暴露该开关。"""
 
-        self.assertEqual(MaaFWConfig().get("Run", "Engine"), "external")
+        self.assertEqual(MaaFWConfig().get("Run", "Engine"), "embedded")
 
     def test_both_engines_are_accepted(self) -> None:
         config = MaaFWConfig()
@@ -51,8 +51,8 @@ class RunEngineConfigTest(unittest.TestCase):
 
 
 class RunEngineSchemaTest(unittest.TestCase):
-    def test_schema_default_is_external(self) -> None:
-        self.assertEqual(MaaFWConfig_Run().Engine, "external")
+    def test_schema_default_is_embedded(self) -> None:
+        self.assertEqual(MaaFWConfig_Run().Engine, "embedded")
 
     def test_schema_accepts_both_engines(self) -> None:
         self.assertEqual(MaaFWConfig_Run(Engine="embedded").Engine, "embedded")
@@ -136,7 +136,8 @@ class EmbeddedManagerCheckTest(unittest.TestCase):
     def test_external_engine_is_refused_by_the_embedded_manager(self) -> None:
         """走错门的配置必须被挡下，而不是被静默地按 embedded 跑。"""
 
-        config = MaaFWConfig()  # 默认 external
+        config = MaaFWConfig()
+        asyncio.run(config.set("Run", "Engine", "external"))
         manager = self._manager()
         script_uid = uuid.UUID(manager.script_info.script_id)
         with mock.patch.object(
