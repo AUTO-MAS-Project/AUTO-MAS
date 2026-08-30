@@ -51,7 +51,7 @@
             @save="handleFieldSave"
           />
 
-          <!-- 任务配置：按后端 MAA_TASKS 执行顺序排列 -->
+          <!-- 任务配置：明确区分剿灭与日常的两次 MAA 启动 -->
           <TaskPipelineSection
             v-model:form-data="formData"
             :loading="loading"

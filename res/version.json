@@ -19,6 +19,7 @@
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
                 "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
+                "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
                 "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",
                 "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
@@ -32,6 +33,7 @@
                 "修复启动时队列的「每日首次」在跨日前十秒内冷启动时，可能漏跑当天或在同一天重复运行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复日志文件在监控期间被替换或截断后，监控可能永远读不到新内容的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复系统时钟跳变（夏令时切换、NTP 校时）导致运行中任务被误判超时、模拟器等待提前放弃与历史记录归档时刻偏移一小时的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MAA专项 复用原生预设任务队列，补齐剿灭、活动关优先和库存保持并移除生息演算，同时明确剿灭与日常分两次启动",
                 "MaaFW专项 修复 Win32 项目定位游戏窗口时因超时参数类型不符而失败，导致窗口未前置、首个任务识别不到目标的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
