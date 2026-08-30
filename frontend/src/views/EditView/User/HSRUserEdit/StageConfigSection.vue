@@ -229,13 +229,13 @@ import type {
 const { t } = useI18n()
 
 const EOW_WEEKDAY_OPTIONS: { value: string; label: string }[] = [
-  { value: 'Monday', label: '周一' },
-  { value: 'Tuesday', label: '周二' },
-  { value: 'Wednesday', label: '周三' },
-  { value: 'Thursday', label: '周四' },
-  { value: 'Friday', label: '周五' },
-  { value: 'Saturday', label: '周六' },
-  { value: 'Sunday', label: '周日' },
+  { value: 'Monday', label: t('edit.mon') },
+  { value: 'Tuesday', label: t('edit.tue') },
+  { value: 'Wednesday', label: t('edit.wed') },
+  { value: 'Thursday', label: t('edit.thu') },
+  { value: 'Friday', label: t('edit.fri') },
+  { value: 'Saturday', label: t('edit.sat') },
+  { value: 'Sunday', label: t('edit.sun') },
 ]
 
 type StageSectionFormData = Pick<HSRUserConfigData, 'Stage' | 'TaskOpt'>

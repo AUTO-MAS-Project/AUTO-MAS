@@ -94,7 +94,7 @@
               { label: '4', value: '4' },
               { label: '5', value: '5' },
               { label: '6', value: '6' },
-              { label: '不切换', value: '-1' },
+              { label: t('edit.doNotSwitch'), value: '-1' },
             ]"
             :disabled="loading"
             @update:value="$emit('update-series-numb', $event)"

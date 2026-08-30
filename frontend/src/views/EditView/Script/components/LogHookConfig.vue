@@ -47,8 +47,8 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'drop', label: '丢弃行', title: '匹配正则命中的日志行整行丢弃' },
-  { key: 'replace', label: '改写行', title: '按匹配正则替换行内内容后继续交给后续规则' },
+  { key: 'drop', label: t('edit.dropLine'), title: t('edit.dropWholeLineWhen') },
+  { key: 'replace', label: t('edit.rewriteLine'), title: t('edit.rewriteLineMatchPattern') },
 ]
 
 const onAddMenuClick = ({ key }: { key: string }) => {

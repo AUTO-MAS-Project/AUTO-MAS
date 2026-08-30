@@ -405,8 +405,8 @@ const hsrStageOptionsError = ref('')
 
 const serverOptions = [{ value: 'CN-Official', label: '官服' }]
 const controlModeOptions = [
-  { value: 'managed', label: 'MAS 管控' },
-  { value: 'direct', label: '脚本直控' },
+  { value: 'managed', label: t('edit.masManaged') },
+  { value: 'direct', label: t('edit.scriptDirectControl') },
 ]
 
 type MutableRecord = Record<string, unknown>

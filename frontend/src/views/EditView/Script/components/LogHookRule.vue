@@ -76,8 +76,8 @@ const getTypeHint = (type: LogHookType): string =>
     : '按匹配正则替换命中内容后继续交给后续规则，用于脱敏与格式归一化'
 
 const typeOptions = [
-  { value: 'drop', label: '丢弃' },
-  { value: 'replace', label: '改写' },
+  { value: 'drop', label: t('edit.drop') },
+  { value: 'replace', label: t('edit.rewrite') },
 ]
 </script>
 

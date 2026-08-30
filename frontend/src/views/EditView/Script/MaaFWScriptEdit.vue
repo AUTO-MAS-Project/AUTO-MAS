@@ -209,10 +209,10 @@ const scriptId = route.params.id as string
 const isWizard = computed(() => route.name === 'MaaFWSetupWizard')
 const currentStep = ref(0)
 const stepItems = [
-  { title: '基本信息' },
-  { title: '控制配置' },
-  { title: '项目更新' },
-  { title: '运行配置' },
+  { title: t('edit.basicInfo') },
+  { title: t('edit.controlConfiguration') },
+  { title: t('edit.projectUpdate') },
+  { title: t('edit.runConfiguration') },
 ]
 // 第一步没读到 interface 就往下走，后面几步全是空的，先拦住
 const canLeaveCurrentStep = computed(() => currentStep.value !== 0 || previewData.value !== null)
@@ -310,11 +310,11 @@ const projectDisplayName = computed(() => {
 })
 
 const interfaceStats = computed(() => [
-  { label: '任务', value: previewData.value?.tasks.length ?? 0 },
-  { label: '预设', value: previewData.value?.presets.length ?? 0 },
-  { label: '控制器', value: previewData.value?.controllers.length ?? 0 },
-  { label: '资源', value: previewData.value?.resources.length ?? 0 },
-  { label: '导入', value: previewData.value?.importCount ?? 0 },
+  { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
+  { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
+  { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
+  { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
+  { label: t('edit.import2'), value: previewData.value?.importCount ?? 0 },
   { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
 ])
 

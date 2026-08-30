@@ -409,7 +409,7 @@ const NTE_GAME_ANCHOR = 'Neverness To Everness'
 const NTE_EXE_RELATIVE = 'Client/WindowsNoEditor/HT/Binaries/Win64/HTGame.exe'
 
 const showPathRejectModal = (title: string, content: string) => {
-  Modal.error({ title, content, okText: '我知道了' })
+  Modal.error({ title, content, okText: t('edit.gotIt') })
 }
 
 const handleCancel = () => router.push('/scripts')

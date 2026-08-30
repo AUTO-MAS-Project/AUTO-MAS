@@ -200,7 +200,7 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
-    sanityModeOptions: () => [{ label: '固定', value: 'Fixed' }],
+    sanityModeOptions: () => [{ label: t('edit.fixed'), value: 'Fixed' }],
     planModeConfig: null,
   }
 )

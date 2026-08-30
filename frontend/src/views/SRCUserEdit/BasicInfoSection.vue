@@ -156,8 +156,8 @@
           <a-select
             v-model:value="formData.Info.Mode"
             :options="[
-              { label: '简洁', value: '简洁' },
-              { label: '详细', value: '详细' },
+              { label: t('edit.simple'), value: '简洁' },
+              { label: t('edit.detailed'), value: '详细' },
             ]"
             :disabled="loading"
             size="large"

@@ -675,7 +675,7 @@ const handleUpdateModalCancel = () => {
 }
 
 const showPathRejectModal = (title: string, content: string) => {
-  Modal.error({ title, content, okText: '我知道了' })
+  Modal.error({ title, content, okText: t('edit.gotIt') })
 }
 
 const closeCandidateModal = () => {

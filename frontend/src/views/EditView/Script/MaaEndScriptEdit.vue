@@ -487,8 +487,8 @@ const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
 
 const booleanOptions = [
-  { label: '是', value: true },
-  { label: '否', value: false },
+  { label: t('edit.yes'), value: true },
+  { label: t('edit.no'), value: false },
 ]
 
 const accountSwitchMethodOptions = [

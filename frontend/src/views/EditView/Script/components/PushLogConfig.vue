@@ -54,9 +54,13 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'split', label: '字符串切割', title: '按关键字过滤行，再掐头去尾提取内容' },
-  { key: 'regex', label: '表达式', title: '正则匹配行后用 $() 表达式提取内容' },
-  { key: 'multiline', label: '多行聚合', title: '由起始/结束正则划定窗口后提取字段' },
+  { key: 'split', label: t('edit.stringSplitting'), title: t('edit.filterLinesByKeyword') },
+  { key: 'regex', label: t('edit.expression'), title: t('edit.matchLineRegexThen') },
+  {
+    key: 'multiline',
+    label: t('edit.multiLineAggregation'),
+    title: t('edit.extractFieldsFromWindow'),
+  },
 ]
 
 const onAddMenuClick = ({ key }: { key: string }) => {

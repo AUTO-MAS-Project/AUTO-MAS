@@ -226,7 +226,7 @@ const serverOptions = [
 ]
 
 // 关卡选项
-const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
+const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
 const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
@@ -255,7 +255,7 @@ const isCustomStage = (value: string) => {
 }
 
 // 关卡配置模式选项
-const stageModeOptions = ref<any[]>([{ label: '固定', value: 'Fixed' }])
+const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }])
 
 // 计划模式状态
 const isPlanMode = computed(() => {

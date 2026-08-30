@@ -493,8 +493,8 @@ const resourceOptions = [
 ]
 
 const quickConfigOptions = [
-  { label: '启用', value: true },
-  { label: '关闭', value: false },
+  { label: t('edit.enabled3'), value: true },
+  { label: t('edit.off'), value: false },
 ]
 
 const okwwConfigModeOptions: Array<{

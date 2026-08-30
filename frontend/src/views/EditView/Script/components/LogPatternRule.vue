@@ -95,14 +95,14 @@ const getPatternTypeLabel = (type: PushLogPatternType): string => {
 }
 
 const typeOptions = [
-  { value: 'split', label: '字符串切割' },
-  { value: 'regex', label: '表达式' },
-  { value: 'multiline', label: '多行聚合' },
+  { value: 'split', label: t('edit.stringSplitting') },
+  { value: 'regex', label: t('edit.expression') },
+  { value: 'multiline', label: t('edit.multiLineAggregation') },
 ]
 
 const logTypeOptions = [
-  { value: '普通', label: '普通', color: 'primary' },
-  { value: '失败', label: '失败', color: 'error' },
+  { value: '普通', label: t('edit.normal'), color: 'primary' },
+  { value: '失败', label: t('edit.failed'), color: 'error' },
 ]
 </script>
 

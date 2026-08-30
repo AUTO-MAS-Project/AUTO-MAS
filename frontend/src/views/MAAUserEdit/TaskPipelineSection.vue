@@ -318,7 +318,7 @@ const emitSave = (key: string, value: any) => emit('save', key, value)
 const dailyTasks = [
   { key: 'IfRecruit', label: '自动公招' },
   { key: 'IfMall', label: '信用收支' },
-  { key: 'IfAward', label: '领取奖励' },
+  { key: 'IfAward', label: t('edit.claimRewards') },
 ] as const
 
 const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')

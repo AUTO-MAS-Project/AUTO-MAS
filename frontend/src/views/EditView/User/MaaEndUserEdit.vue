@@ -155,7 +155,7 @@ let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
 const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: '固定', value: 'Fixed' },
+  { label: t('edit.fixed'), value: 'Fixed' },
 ])
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应

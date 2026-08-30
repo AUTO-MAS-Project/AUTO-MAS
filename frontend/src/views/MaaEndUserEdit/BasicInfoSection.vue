@@ -264,13 +264,13 @@ defineProps<{
 }>()
 
 const modeOptions = [
-  { label: '脚本', value: '简洁' },
-  { label: '用户', value: '详细' },
+  { label: t('edit.script'), value: '简洁' },
+  { label: t('edit.user'), value: '详细' },
 ]
 
 const quickConfigOptions = [
-  { label: '启用', value: true },
-  { label: '关闭', value: false },
+  { label: t('edit.enabled3'), value: true },
+  { label: t('edit.off'), value: false },
 ]
 
 const emitSave = (key: string, value: any) => {

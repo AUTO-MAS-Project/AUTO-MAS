@@ -132,9 +132,9 @@ const props = defineProps<{
 const emit = defineEmits<{ save: [key: string, value: any] }>()
 
 const columns: TableColumnsType = [
-  { title: '关卡', key: 'stage', width: '28%' },
-  { title: '物品', key: 'item', width: '38%' },
-  { title: '目标库存', key: 'count', width: 140 },
+  { title: t('edit.stage'), key: 'stage', width: '28%' },
+  { title: t('edit.item'), key: 'item', width: '38%' },
+  { title: t('edit.targetStock'), key: 'count', width: 140 },
   { title: '', key: 'action', width: 56, align: 'center' },
 ]
 
