@@ -92,10 +92,10 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 const bootstrap = async () => {
-  // 语言必须在挂载前定好，否则首帧会闪一次默认语言
-  await useLocale().initLocale()
-
   const frontendConfig = await getConfig()
+
+  // 语言必须在挂载前定好，否则首帧会闪一次默认语言；复用上面已读的配置，避免重复 IPC
+  await useLocale().initLocale(frontendConfig)
   configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
 
   // 挂载应用

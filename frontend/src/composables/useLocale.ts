@@ -9,7 +9,7 @@ import antdZhCN from 'ant-design-vue/es/locale/zh_CN'
 import { computed, ref, watch } from 'vue'
 
 import { i18n, normalizeLocale, type AppLocale } from '@/i18n'
-import { getConfig, saveConfig } from '@/utils/config'
+import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 
 const logger = window.electronAPI.getLogger('语言设置')
 
@@ -39,11 +39,11 @@ watch(locale, applyLocale, { immediate: true })
  * 首次启动跟随系统语言，之后以用户在设置里的选择为准。
  * 语言存在前端配置（Electron 侧）里，不经过后端。
  */
-async function initLocale(): Promise<void> {
+async function initLocale(preloadedConfig?: FrontendConfig): Promise<void> {
   if (initialized) return
   initialized = true
   try {
-    const config = await getConfig()
+    const config = preloadedConfig ?? (await getConfig())
     if (config.language) {
       locale.value = normalizeLocale(config.language)
       return
@@ -56,7 +56,8 @@ async function initLocale(): Promise<void> {
 }
 
 async function setLocale(next: AppLocale): Promise<void> {
-  if (locale.value === next) return
+  // 不在此处按当前值早退：首启跟随系统时选择器已显示该语言，
+  // 用户再显式选一次的意图是"钉住它"，必须落盘，否则日后仍会跟着系统变。
   locale.value = next
   try {
     await saveConfig({ language: next })
@@ -67,7 +68,8 @@ async function setLocale(next: AppLocale): Promise<void> {
 
 export function useLocale() {
   return {
-    locale,
+    // 只读：改语言必须走 setLocale，否则会跳过持久化
+    locale: computed(() => locale.value),
     antdLocale: computed(() => ANTD_LOCALE[locale.value]),
     initLocale,
     setLocale,
