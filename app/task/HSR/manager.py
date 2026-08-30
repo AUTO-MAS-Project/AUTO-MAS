@@ -52,6 +52,7 @@ from .tools.account_switch import (
     restore_game_resolution_if_needed,
     resolve_game_executable_path,
     stop_external_processes,
+    user_needs_account_switch,
 )
 from .tools.sra_runtime import (
     disable_sra_windows_notifications,
@@ -334,6 +335,8 @@ class HSRManager(TaskExecuteBase):
         has_direct_user = False
         m7a_needed = False
         sra_needed = False
+        managed_user_count = 0
+        managed_users_with_credentials = 0
         enabled_module_keys: set[str] = set()
 
         for uid, user_config in script_config.UserData.items():
@@ -371,6 +374,10 @@ class HSRManager(TaskExecuteBase):
                 # 直控快照包含完整原生计划，跳过 MAS 模块队列和凭证检查。
                 continue
 
+            managed_user_count += 1
+            if user_needs_account_switch(user_config):
+                managed_users_with_credentials += 1
+
             for module in HSR_TASK_MODULES:
                 if user_config.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
@@ -398,6 +405,25 @@ class HSRManager(TaskExecuteBase):
             game_exe_path = resolve_game_executable_path(script_config)
             if not game_exe_path.exists():
                 return f"游戏启动文件不存在：{game_exe_path}"
+
+        # 切号只能通过 SRA StartGame 完成（M7A 原生配置里不写账号密码）。
+        # 缺少 SRA 路径时 _build_login_plan 会直接回落到 m7a_fallback，队列里
+        # 不再插入 StartGame，而游戏已在运行时启动环节又会跳过——于是切号被
+        # 静默跳过，多个用户全跑在同一个已登录账号上，还各自写回完成态。
+        # 只在确实配了账密时才管：没配账密的用户本来就依赖当前登录态，
+        # 有没有 SRA 都是同一个账号，不该被这条拦住。
+        if not sra_available and managed_users_with_credentials:
+            if managed_user_count > 1:
+                return (
+                    f"有 {managed_users_with_credentials} 个启用的托管用户配置了账号密码，"
+                    "但未配置 SRA 路径。切换账号只能通过 SRA 完成，"
+                    "否则所有用户都会跑在同一个已登录账号上。"
+                    "请填写 SRA 路径，或只保留一个启用的托管用户"
+                )
+            self._append_log(
+                "未配置 SRA 路径，本轮不会登录到所填账号，"
+                "将直接使用游戏当前已登录的账号"
+            )
 
         try:
             if m7a_needed:
