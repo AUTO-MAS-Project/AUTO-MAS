@@ -75,8 +75,8 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
     value: 'MaaFW',
     title: 'MFW 脚本',
-    description: 'MFW 项目外部运行脚本',
-    keywords: ['maafw', 'maaframework', 'framework', '外部运行'],
+    description: '托管 MaaFramework 项目',
+    keywords: ['maafw', 'maaframework', 'framework', 'mfw'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaFW,
   },
