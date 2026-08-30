@@ -128,20 +128,47 @@ class RealTargetsTest(unittest.TestCase):
 
 
 class ResolutionOrderTest(unittest.TestCase):
-    """声明优先于探测：作者写了什么就听什么，探测只补空缺。"""
+    """探测优先于声明：我们加载的是项目自带的库，binding 必须跟它一致。
 
-    def test_declaration_is_consulted_before_the_probe(self) -> None:
+    对官方目录里 46 个 Windows 发行包的勘察表明声明不可靠：20 个没有
+    requirements.txt、4 个无版本约束、**3 个声明与实际发行的库对不上**
+    （MAAAE 声明 5.3.0 实际 5.6.0、MaaNTE 声明 v5.10.4 实际 5.10.5、
+    MaaADr 声明 5.12.2 实际 5.12.3）。
+    """
+
+    def test_probe_is_consulted_before_the_declaration(self) -> None:
         from pathlib import Path as _Path
 
         source = (
             _Path(__file__).resolve().parents[2]
             / "app/task/MaaFW/tools/core/automas_maafw_runner/environment.py"
         ).read_text(encoding="utf-8")
-        declared = source.index("_declared_project_maafw_requirement(project)")
         bundled = source.index("_bundled_project_maafw_requirement(project)")
+        declared = source.index("_declared_project_maafw_requirement(project)")
         unpinned = source.index('selected_requirement = "maafw"')
-        self.assertLess(declared, bundled, "声明必须排在探测之前")
-        self.assertLess(bundled, unpinned, "探测必须排在无约束兜底之前")
+        self.assertLess(bundled, declared, "探测必须排在声明之前")
+        self.assertLess(declared, unpinned, "声明必须排在无约束兜底之前")
+
+    def test_a_stale_declaration_loses_to_the_shipped_library(self) -> None:
+        """真实案例形状：声明 5.12.2、实际发行 5.12.3，应当钉 5.12.3。"""
+
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as td:
+            root = _Path(td) / "proj"
+            (root / "maafw").mkdir(parents=True)
+            (root / "maafw" / "MaaFramework.dll").write_bytes(b"pad v5.12.3 pad")
+            (root / "requirements.txt").write_text(
+                chr(10).join(["maafw==5.12.2", "requests==2.34.2", ""]),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                _declared_project_maafw_requirement(root), "maafw==5.12.2"
+            )
+            self.assertEqual(
+                _bundled_project_maafw_requirement(root), "maafw==5.12.3"
+            )
 
 
 if __name__ == "__main__":

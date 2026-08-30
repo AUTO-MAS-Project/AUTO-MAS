@@ -209,6 +209,13 @@ def prepare_runner_environment(
         )
     if explicit_requirements is None:
         if selected_requirement is None:
+            # 自带原生库的版本优先于 requirements.txt 的声明：我们加载的就是
+            # 项目自带的那份库，binding 必须跟它一致。实测 46 个发行包里有 3 个
+            # 声明是陈旧的（MAAAE 声明 5.3.0 实际 5.6.0、MaaNTE 声明 v5.10.4
+            # 实际 5.10.5、MaaADr 声明 5.12.2 实际 5.12.3），另有 20 个压根
+            # 没有 requirements.txt、4 个写的是无版本约束。
+            selected_requirement = _bundled_project_maafw_requirement(project)
+        if selected_requirement is None:
             selected_requirement = _declared_project_maafw_requirement(project)
         if selected_requirement is None and bound_runtime is not None:
             selected_requirement = (
@@ -219,10 +226,6 @@ def prepare_runner_environment(
                 "MaaFW runtime 未绑定且项目未声明 runtime constraint；"
                 f"请在 {PROJECT_RUNTIME_MANIFEST_NAME} 中设置 runtime.constraint"
             )
-        if selected_requirement is None:
-            # 项目没声明时，按它自带的原生库版本钉 binding —— 两者是绑定关系，
-            # 混用不报错但行为可能不同。
-            selected_requirement = _bundled_project_maafw_requirement(project)
         if selected_requirement is None:
             # Legacy projects keep the historical unpinned default. Managed
             # project-store entries must always provide a constraint or binding.
@@ -668,12 +671,23 @@ def probe_bundled_maafw_version(project_path: Path) -> str | None:
 
 
 def _bundled_project_maafw_requirement(project_path: Path) -> str | None:
-    """项目没在 requirements.txt 里声明时，按自带原生库的版本钉 binding。
+    """按项目自带原生库的版本钉 Python binding。
 
     MaaFW 的 py binding 与原生库是绑定关系，跨 minor 混用不报错但行为可能不同。
-    MaaYYs / MaaEnd 的 agent 是 Go / C++，压根不带 Python binding，也就没有
-    声明可读——它们自带 v5.13.0-beta.x 的原生库，却会被无约束的 ``maafw``
-    解析成 5.12.3，正是这种错配。
+    我们加载的就是项目自带的那份库（见 ``project_maafw_runtime_path``），
+    所以 binding 必须跟它一致——这比 ``requirements.txt`` 的声明更可靠。
+
+    对 MaaFramework 官方目录里 46 个 Windows 发行包做过远程勘察，结论：
+
+    - 涉及 10 个不同的 FW 版本（4.5.3 到 5.13.0-beta.5），**PyPI 上全都有**
+    - 20 个包没有 requirements.txt（agent 是 Go/C++ 或纯 Pipeline 的项目）
+    - 4 个写的是无版本约束的 ``maafw`` / ``MaaFw``
+    - **3 个的声明与实际发行的库对不上**：MAAAE 声明 5.3.0 实际 5.6.0、
+      MaaNTE 声明 v5.10.4 实际 5.10.5、MaaADr 声明 5.12.2 实际 5.12.3
+
+    从库二进制里读出的版本可直接对上 PyPI 的包：抽查 4.5.3 / 5.6.0 / 5.10.2 /
+    5.12.2 四个版本，项目自带的库与对应 wheel 里的**逐字节相同**；本机另验过
+    5.13.0b2 与 5.13.0b5 亦然。
     """
 
     version = probe_bundled_maafw_version(project_path)
