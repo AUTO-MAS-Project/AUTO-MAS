@@ -203,8 +203,8 @@
           <div class="field-help">{{ launchModeDescription }}</div>
         </a-form-item>
 
-        <a-row :gutter="24" class="control-detail-row">
-          <a-col v-if="launchMode !== 'AttachOnly'" :span="12">
+        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
+          <a-col :span="12">
             <a-form-item>
               <template #label>
                 <a-tooltip title="MAS 直接启动的实际游戏 exe">
@@ -231,7 +231,7 @@
               </a-input-group>
             </a-form-item>
           </a-col>
-          <a-col v-if="launchMode === 'DirectExe'" :span="6">
+          <a-col :span="6">
             <a-form-item>
               <template #label>
                 <a-tooltip title="仅 exe 启动模式会传递给启动目标的命令行参数">
@@ -250,7 +250,7 @@
               />
             </a-form-item>
           </a-col>
-          <a-col v-if="launchMode !== 'AttachOnly'" :span="6">
+          <a-col :span="6">
             <a-form-item>
               <template #label>
                 <a-tooltip title="启动目标后等待实际游戏进程/窗口出现的时间，单位秒">
@@ -272,46 +272,8 @@
           </a-col>
         </a-row>
 
-        <a-row :gutter="24" class="control-detail-row">
+        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
           <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <a-tooltip title="用于附加 MFW 的实际游戏进程；可与启动目标不同">
-                  <span class="form-label">
-                    目标进程路径
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.ProcessPath"
-                placeholder="与目标进程名称至少填写一项"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'ProcessPath', maafwConfig.Game.ProcessPath)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item>
-              <template #label>
-                <a-tooltip title="目标进程名称，例如 Game.exe；与目标进程路径二选一或同时填写">
-                  <span class="form-label">
-                    目标进程名称
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.ProcessName"
-                placeholder="与目标进程路径至少填写一项"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'ProcessName', maafwConfig.Game.ProcessName)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="launchMode !== 'AttachOnly'" :span="6">
             <a-form-item>
               <template #label>
                 <a-tooltip
@@ -332,15 +294,6 @@
             </a-form-item>
           </a-col>
         </a-row>
-
-        <a-alert
-          v-if="targetProcessMissing"
-          class="control-strategy-alert target-process-alert"
-          type="warning"
-          show-icon
-          message="请填写目标进程路径或目标进程名称"
-          description="启动目标与检测目标是两套独立设置；当前模式保存前至少需要提供一个目标进程字段，MAS 才能等待并附加实际游戏。"
-        />
       </div>
     </Transition>
   </div>
@@ -400,12 +353,6 @@ const launchModeDescription = computed(() => {
       return 'MAS 不会启动任何程序，只等你把游戏开起来后接管它。'
   }
 })
-const targetProcessMissing = computed(
-  () =>
-    launchMode.value !== 'DirectExe' &&
-    !String(props.maafwConfig.Game.ProcessPath || '').trim() &&
-    !String(props.maafwConfig.Game.ProcessName || '').trim()
-)
 </script>
 
 <style scoped>
@@ -517,10 +464,6 @@ const targetProcessMissing = computed(
 
 .control-strategy-alert {
   margin-bottom: 12px;
-}
-
-.target-process-alert {
-  margin-top: 16px;
 }
 
 .control-strategy-summary {

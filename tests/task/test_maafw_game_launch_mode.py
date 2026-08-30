@@ -137,5 +137,45 @@ class CheckOnlyDemandsExeWhenMasLaunchesTest(unittest.TestCase):
         self.assertIn("if not self._mas_manages_game_launch(): # AttachOnly", flat)
 
 
+class ProcessFieldsAreDerivedNotAskedTest(unittest.TestCase):
+    """目标进程路径/名称不该让用户填。
+
+    内置运行压根不读这两个键（runner_task 用 LaunchPath 做进程检测）；
+    只剩 AttachOnly / DirectExe 两种模式后，LauncherExe 那种「启动目标与
+    检测目标不同」的场景也没了，进程按定义就是所选 exe。保留配置键仅为第一层
+    外部运行路径的 game_lifecycle 仍能读到，因此改为选 exe 时自动推导并落盘。
+    """
+
+    def setUp(self) -> None:
+        root = Path(__file__).resolve().parents[2] / "frontend/src"
+        self.section = (
+            root
+            / "views/EditView/Script/MaaFWScriptEdit/ControlConfigSection.vue"
+        ).read_text(encoding="utf-8")
+        self.composable = (
+            root / "composables/useMaaFWScriptConfig.ts"
+        ).read_text(encoding="utf-8")
+
+    def test_no_process_inputs_remain_in_the_form(self) -> None:
+        for gone in ("ProcessPath", "ProcessName", "targetProcessMissing"):
+            self.assertNotIn(gone, self.section, gone)
+
+    def test_selecting_the_exe_derives_both_fields(self) -> None:
+        flat = " ".join(self.composable.split())
+        self.assertIn("maafwConfig.Game.ProcessPath = path", flat)
+        self.assertIn("maafwConfig.Game.ProcessName = fileName", flat)
+
+    def test_derived_fields_are_persisted_not_just_set_in_memory(self) -> None:
+        """删掉输入框就没了 @blur，必须显式落盘，否则第一层读到旧值。"""
+
+        flat = " ".join(self.composable.split())
+        for call in (
+            "await handleChange('Game', 'LaunchPath', path)",
+            "await handleChange('Game', 'ProcessPath', path)",
+            "await handleChange('Game', 'ProcessName', fileName)",
+        ):
+            self.assertIn(call, flat, call)
+
+
 if __name__ == "__main__":
     unittest.main()
