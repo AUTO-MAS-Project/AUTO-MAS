@@ -1710,8 +1710,38 @@ def _read_native_debug_log_delta(path: Path, start_offset: int) -> str:
         return _decode_subprocess_output(native_debug_log_file.read())
 
 
+_FAILURE_REASON_MAX_CHARS = 200
+
+
+def _failure_reason_for_user(result: Any) -> str:
+    """从运行结果里取一句可读的失败原因。
+
+    runner 会把异常原文放进 ``errorMessage``，但它同时也用
+    ``MaaFW 任务执行失败: {exc}`` 发一条日志——那条命中
+    ``_RAW_FAILURE_UI_LOG_MARKERS`` 会被当框架噪声过滤掉。若这里再不取，
+    Python 侧异常（如缺模块）在任务页上就只剩「任务执行失败」四个字。
+
+    框架自身的失败原文可能是整段原生 backtrace，因此只取首个非空行并截断；
+    完整内容仍在本次运行的 ``*.maafw.log`` 里。
+    """
+
+    raw = str(getattr(result, "errorMessage", "") or "").strip()
+    if not raw:
+        return ""
+    first_line = next(
+        (line.strip() for line in raw.splitlines() if line.strip()), ""
+    )
+    if not first_line:
+        return ""
+    if len(first_line) > _FAILURE_REASON_MAX_CHARS:
+        first_line = first_line[:_FAILURE_REASON_MAX_CHARS] + "…"
+    return first_line
+
+
 def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
     failed_task = str(getattr(result, "failedTask", "") or "").strip()
+    reason = _failure_reason_for_user(result)
+    suffix = f"：任务执行失败{'：' + reason if reason else ''}"
     tasks = tuple(getattr(plan, "tasks", ()) or ()) if plan is not None else ()
     if tasks:
         for task in tasks:
@@ -1719,8 +1749,8 @@ def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
             task_entry = str(getattr(task, "entry", "") or "").strip()
             if failed_task and failed_task not in {task_name, task_entry}:
                 continue
-            return f"{_task_display_name(task)}：任务执行失败"
-    return f"{failed_task or 'MaaFW 任务'}：任务执行失败"
+            return f"{_task_display_name(task)}{suffix}"
+    return f"{failed_task or 'MaaFW 任务'}{suffix}"
 
 
 def _task_display_name(task: Any) -> str:

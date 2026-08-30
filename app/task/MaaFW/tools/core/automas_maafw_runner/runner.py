@@ -1194,7 +1194,7 @@ class MaaFWRunner:
             )
 
         self.send_log(f"[Python环境] 开始准备 {len(process_agents)} 个 Agent 环境")
-        from automas_maafw_agent_env.env import prepare_agent_envs
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import prepare_agent_envs
 
         prepare_agent_envs(
             Path(self.plan.path),
@@ -2320,7 +2320,7 @@ def _prepare_maafw_agent_python_envs_from_plugin(
     send_log: Callable[[str], None] | None,
 ) -> list[Any] | None:
     try:
-        from automas_maafw_agent_env import MaaFWAgentEnvService
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env import MaaFWAgentEnvService
     except Exception:
         return None
 
