@@ -1,0 +1,75 @@
+//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+//   Copyright © 2025-2026 AUTO-MAS Team
+
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
+import 'dayjs/locale/en'
+import antdEnUS from 'ant-design-vue/es/locale/en_US'
+import antdZhCN from 'ant-design-vue/es/locale/zh_CN'
+import { computed, ref, watch } from 'vue'
+
+import { i18n, normalizeLocale, type AppLocale } from '@/i18n'
+import { getConfig, saveConfig } from '@/utils/config'
+
+const logger = window.electronAPI.getLogger('语言设置')
+
+const DAYJS_LOCALE: Record<AppLocale, string> = {
+  'zh-CN': 'zh-cn',
+  'en-US': 'en',
+}
+
+const ANTD_LOCALE = {
+  'zh-CN': antdZhCN,
+  'en-US': antdEnUS,
+}
+
+// 模块级单例，与 useTheme 保持同一模式
+const locale = ref<AppLocale>('zh-CN')
+let initialized = false
+
+/** 语言只影响展示层：vue-i18n 词表、dayjs 与 antd 组件内置文案。 */
+function applyLocale(next: AppLocale): void {
+  i18n.global.locale.value = next
+  dayjs.locale(DAYJS_LOCALE[next])
+}
+
+watch(locale, applyLocale, { immediate: true })
+
+/**
+ * 首次启动跟随系统语言，之后以用户在设置里的选择为准。
+ * 语言存在前端配置（Electron 侧）里，不经过后端。
+ */
+async function initLocale(): Promise<void> {
+  if (initialized) return
+  initialized = true
+  try {
+    const config = await getConfig()
+    if (config.language) {
+      locale.value = normalizeLocale(config.language)
+      return
+    }
+    // 未设置过则跟随系统：渲染进程的 navigator.language 即 Electron 的应用语言
+    locale.value = normalizeLocale(navigator.language)
+  } catch (error) {
+    logger.warn(`读取语言设置失败，回退中文: ${error instanceof Error ? error.message : error}`)
+  }
+}
+
+async function setLocale(next: AppLocale): Promise<void> {
+  if (locale.value === next) return
+  locale.value = next
+  try {
+    await saveConfig({ language: next })
+  } catch (error) {
+    logger.error(`保存语言设置失败: ${error instanceof Error ? error.message : error}`)
+  }
+}
+
+export function useLocale() {
+  return {
+    locale,
+    antdLocale: computed(() => ANTD_LOCALE[locale.value]),
+    initLocale,
+    setLocale,
+  }
+}
