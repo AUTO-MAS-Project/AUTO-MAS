@@ -231,8 +231,8 @@ const formData = reactive({
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 1, max: 50, message: '用户名长度应为 1-50 个字符', trigger: 'blur' },
+    { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
+    { min: 1, max: 50, message: t('edit.usernameMustBe12'), trigger: 'blur' },
   ],
 }))
 

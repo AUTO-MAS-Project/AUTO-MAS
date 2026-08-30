@@ -400,8 +400,8 @@ const oknteConfig = reactive<OkNteFormConfig>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请选择 OK-NTE 路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('edit.pickOkNtePath'), trigger: 'blur' }],
 }
 
 // 异环游戏路径预设锚点与相对路径

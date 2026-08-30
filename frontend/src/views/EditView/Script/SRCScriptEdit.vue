@@ -339,9 +339,9 @@ const srcConfig = reactive<SRCScriptConfig>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
-  path: [{ required: true, message: '请选择SRC路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  type: [{ required: true, message: t('edit.pickScriptType'), trigger: 'change' }],
+  path: [{ required: true, message: t('edit.pickSrcPath'), trigger: 'blur' }],
 }
 
 // 模拟器相关状态

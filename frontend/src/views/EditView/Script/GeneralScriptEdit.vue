@@ -1348,16 +1348,16 @@ const generalConfig = reactive<GeneralScriptConfig>({
 
 // ==================== 表单校验规则 ====================
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
-  rootPath: [{ required: true, message: '请选择脚本根目录', trigger: 'blur' }],
-  scriptPath: [{ required: true, message: '请选择主程序路径', trigger: 'blur' }],
-  configPath: [{ required: true, message: '请选择配置文件路径', trigger: 'blur' }],
-  logPath: [{ required: true, message: '请选择日志文件路径', trigger: 'blur' }],
-  logTimeStart: [{ required: true, message: '请输入日志时间戳起始位置', trigger: 'blur' }],
-  logTimeEnd: [{ required: true, message: '请输入日志时间戳结束位置', trigger: 'blur' }],
-  logTimeFormat: [{ required: true, message: '请输入日志时间戳格式', trigger: 'blur' }],
-  errorLog: [{ required: true, message: '请输入任务失败日志', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  type: [{ required: true, message: t('edit.pickScriptType'), trigger: 'change' }],
+  rootPath: [{ required: true, message: t('edit.pickScriptRootDirectory2'), trigger: 'blur' }],
+  scriptPath: [{ required: true, message: t('edit.pickMainProgramPath'), trigger: 'blur' }],
+  configPath: [{ required: true, message: t('edit.pickConfigurationFilePath'), trigger: 'blur' }],
+  logPath: [{ required: true, message: t('edit.pickLogFilePath'), trigger: 'blur' }],
+  logTimeStart: [{ required: true, message: t('edit.enterWhereLogTimestamp2'), trigger: 'blur' }],
+  logTimeEnd: [{ required: true, message: t('edit.enterWhereLogTimestamp'), trigger: 'blur' }],
+  logTimeFormat: [{ required: true, message: t('edit.enterLogTimestampFormat'), trigger: 'blur' }],
+  errorLog: [{ required: true, message: t('edit.enterFailureLog'), trigger: 'blur' }],
 }
 
 const logTimeFormatPreview = computed(() => {
@@ -2035,9 +2035,9 @@ const uploadForm = reactive({
 
 // 上传表单验证规则
 const uploadRules = {
-  config_name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
-  author: [{ required: true, message: '请输入作者名称', trigger: 'blur' }],
-  description: [{ required: true, message: '请输入描述', trigger: 'blur' }],
+  config_name: [{ required: true, message: t('edit.enterConfigurationName'), trigger: 'blur' }],
+  author: [{ required: true, message: t('edit.enterAuthorName'), trigger: 'blur' }],
+  description: [{ required: true, message: t('edit.enterDescription'), trigger: 'blur' }],
 }
 
 // 显示上传弹窗

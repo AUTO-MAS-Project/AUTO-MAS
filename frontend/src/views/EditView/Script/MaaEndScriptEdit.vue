@@ -479,8 +479,8 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('edit.pickMaaendPath'), trigger: 'blur' }],
 }
 
 const controllerOptions = ref<ComboBoxItem[]>([])

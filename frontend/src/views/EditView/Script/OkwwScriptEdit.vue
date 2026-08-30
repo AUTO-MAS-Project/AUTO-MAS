@@ -516,8 +516,8 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请选择 ok-ww 路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('edit.pickOkWwPath'), trigger: 'blur' }],
 }
 
 const WUWA_LAUNCHER_EXECUTABLE = 'launcher.exe'

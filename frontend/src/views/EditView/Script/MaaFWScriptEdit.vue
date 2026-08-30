@@ -237,7 +237,7 @@ const formData = reactive<{ type: ScriptType; name: string; path: string }>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
   path: [
     {
       validator: () =>
