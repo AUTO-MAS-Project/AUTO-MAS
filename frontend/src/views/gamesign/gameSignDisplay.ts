@@ -194,19 +194,24 @@ export const buildUserTagsMap = (
  * Tooltip 里单行游戏的账号别名。
  * 优先取结果里 'alias/uid' 形式的前半段，占位值则回退到账号组别名。
  */
-export const getSignDetailAlias = (group: AccountGroup, game: GameItem): string => {
+export const getSignDetailAlias = (
+  group: AccountGroup,
+  game: GameItem,
+  // 占位值与判断依据都是后端原文，兜底文案由调用方传词表结果进来
+  fallback = '未知用户'
+): string => {
   const account = game.account?.trim() || ''
   const alias = account.split('/', 1)[0]?.trim()
   if (alias && alias !== '未知' && alias !== '未知用户') return alias
-  return group.account_alias?.trim() || '未知用户'
+  return group.account_alias?.trim() || fallback
 }
 
-/** Tooltip 里单行游戏的状态文案 */
-export const getSignStatusText = (status: string): string => {
-  if (SIGNED_STATUSES.includes(status)) return '已签'
-  if (status === '风控') return '风控'
-  if (status === '失败') return '失败'
-  return '未签'
+/** Tooltip 里单行游戏的状态文案对应的词表 key */
+export const getSignStatusKey = (status: string): string => {
+  if (SIGNED_STATUSES.includes(status)) return 'gamesign.signStatus.signed'
+  if (status === '风控') return 'gamesign.signStatus.risk'
+  if (status === '失败') return 'gamesign.signStatus.failed'
+  return 'gamesign.signStatus.unsigned'
 }
 
 /** Tooltip 里单行游戏的状态样式类 */

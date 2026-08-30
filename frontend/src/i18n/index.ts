@@ -45,3 +45,9 @@ export const i18n = createI18n({
 
 /** 在组件外部取译文（composable 之外的工具函数里用）。 */
 export const t = i18n.global.t
+
+/**
+ * 组件外取词条：composable、工具函数，以及被单测直接调用、没有组件实例的地方。
+ * 组件内仍用 useI18n()。
+ */
+export const translate = i18n.global.t as (key: string, named?: Record<string, unknown>) => string
