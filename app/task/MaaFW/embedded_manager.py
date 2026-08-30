@@ -248,6 +248,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             if user.status in ("等待", "运行"):
                 user.status = "异常"
 
+        # 脚本终态必须在这里落定：main_task 里只置过「运行」，不置终态的话
+        # 任务结束后脚本行会一直停在「运行」（与第一层 manager.py 同一套口径）。
+        error_users = [
+            user for user in self.script_info.user_list if user.status == "异常"
+        ]
+        if self.check_result == "Pass" and not error_users:
+            self.script_info.status = "完成"
+        else:
+            self.script_info.status = "异常"
+
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")
         if self.inner_task is not None and not self._inner_finalized:

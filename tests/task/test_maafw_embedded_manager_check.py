@@ -366,6 +366,39 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
         built[1].main_task.assert_awaited_once()
         built[1].final_task.assert_awaited_once()
 
+    def _finalize_with_statuses(self, manager, statuses: list[str]) -> None:
+        """在同一个事件循环里改用户状态并收尾。
+
+        直接在循环外改 UserItem.status 会触发 TaskItem.schedule_on_change，
+        它要 create_task，没有运行中的循环就抛 RuntimeError。
+        """
+
+        async def go():
+            for user, status in zip(manager.script_info.user_list, statuses):
+                user.status = status
+            # 内层任务已在用户循环里收过尾，这里只验脚本终态
+            manager._inner_finalized = True
+            await manager.final_task()
+
+        asyncio.run(go())
+
+    def test_script_status_becomes_done_when_all_users_succeed(self) -> None:
+        manager, *_ = self._run_main_task(["用户A", "用户B"])
+        self._finalize_with_statuses(manager, ["完成", "完成"])
+        # 不置终态的话任务结束后脚本行会一直停在「运行」
+        self.assertEqual(manager.script_info.status, "完成")
+
+    def test_script_status_becomes_error_when_a_user_failed(self) -> None:
+        manager, *_ = self._run_main_task(["用户A", "用户B"])
+        self._finalize_with_statuses(manager, ["完成", "异常"])
+        self.assertEqual(manager.script_info.status, "异常")
+
+    def test_users_left_running_are_marked_error_and_fail_the_script(self) -> None:
+        manager, *_ = self._run_main_task(["用户A"])
+        self._finalize_with_statuses(manager, ["运行"])
+        self.assertEqual(manager.script_info.user_list[0].status, "异常")
+        self.assertEqual(manager.script_info.status, "异常")
+
     def test_final_task_does_not_finalize_twice(self) -> None:
         manager, built, _, _ = self._run_main_task(["用户A"])
         asyncio.run(manager.final_task())
