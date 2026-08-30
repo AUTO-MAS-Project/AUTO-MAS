@@ -1,3 +1,4 @@
+import { useI18n } from 'vue-i18n'
 import { computed, h, ref, watch } from 'vue'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -27,6 +28,8 @@ import {
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type SchedulerStatus } from './schedulerConstants'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
 // 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据
@@ -61,7 +64,7 @@ const trimLogForRender = (content: string) => {
   const trimmed = content.slice(-LOG_RENDER_MAX_CHARS)
   const firstLineBreak = trimmed.indexOf('\n')
   const tail = firstLineBreak >= 0 ? trimmed.slice(firstLineBreak + 1) : trimmed
-  return `前方日志较长，调度台仅显示最近内容；完整日志仍会写入历史记录。\n\n${tail}`
+  return `${t('scheduler.log.truncated')}\n\n${tail}`
 }
 
 const clearPendingLogUpdate = (tabKey: string) => {
@@ -124,7 +127,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
   return [
     {
       key: 'main',
-      title: '主调度台',
+      title: t('scheduler.mainTab'),
       closable: false,
       status: '空闲',
       selectedTaskId: null,
@@ -254,7 +257,7 @@ export function useSchedulerLogic() {
 
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
-      title: `调度台${tabCounter}`,
+      title: t('scheduler.tabName', { n: tabCounter }),
       status: '运行',
       taskId,
       selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
@@ -269,7 +272,7 @@ export function useSchedulerLogic() {
     subscribeToTask(newTab)
 
     logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
-    if (notifyUser) message.success(`已自动创建调度台: ${newTab.title}`)
+    if (notifyUser) message.success(t('scheduler.toast.tabAutoCreated', { title: newTab.title }))
 
     saveTabsToStorage(schedulerTabs.value)
     return newTab
@@ -316,7 +319,7 @@ export function useSchedulerLogic() {
 
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
-      title: options?.title || `调度台${tabCounter}`,
+      title: options?.title || t('scheduler.tabName', { n: tabCounter }),
       closable: true,
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.taskId || null,
@@ -382,23 +385,23 @@ export function useSchedulerLogic() {
 
     if (tab.status === '运行') {
       Modal.warning({
-        title: '无法删除调度台',
-        content: `调度台 "${tab.title}" 正在运行中，无法删除。请先停止当前任务。`,
-        okText: '知道了',
+        title: t('scheduler.modal.cannotDeleteTitle'),
+        content: t('scheduler.modal.cannotDeleteContent', { title: tab.title }),
+        okText: t('scheduler.modal.gotIt'),
       })
       return
     }
 
     if (key === 'main') {
-      message.warning('主调度台无法删除')
+      message.warning(t('scheduler.toast.mainTabUndeletable'))
       return
     }
 
     Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除调度台 "${tab.title}" 吗？`,
-      okText: '确认删除',
-      cancelText: '取消',
+      title: t('scheduler.modal.deleteTitle'),
+      content: t('scheduler.modal.deleteContent', { title: tab.title }),
+      okText: t('scheduler.modal.deleteOk'),
+      cancelText: t('common.cancel'),
       okType: 'danger',
       onOk() {
         const idx = schedulerTabs.value.findIndex(t => t.key === key)
@@ -421,7 +424,7 @@ export function useSchedulerLogic() {
           activeSchedulerTab.value = schedulerTabs.value[newActiveIndex]?.key || 'main'
         }
 
-        message.success(`调度台 "${tab.title}" 已删除`)
+        message.success(t('scheduler.toast.tabDeleted', { title: tab.title }))
       },
     })
   }
@@ -433,15 +436,15 @@ export function useSchedulerLogic() {
     )
 
     if (nonRunningTabs.length === 0) {
-      message.info('没有可删除的调度台')
+      message.info(t('scheduler.toast.noIdleTabs'))
       return
     }
 
     Modal.confirm({
-      title: '批量删除',
-      content: `确定要删除 ${nonRunningTabs.length} 个空闲的调度台吗？`,
-      okText: '确认删除',
-      cancelText: '取消',
+      title: t('scheduler.modal.batchDeleteTitle'),
+      content: t('scheduler.modal.batchDeleteContent', { count: nonRunningTabs.length }),
+      okText: t('scheduler.modal.deleteOk'),
+      cancelText: t('common.cancel'),
       okType: 'danger',
       onOk() {
         nonRunningTabs.forEach(tab => {
@@ -466,7 +469,7 @@ export function useSchedulerLogic() {
           activeSchedulerTab.value = 'main'
         }
 
-        message.success(`成功删除 ${nonRunningTabs.length} 个调度台`)
+        message.success(t('scheduler.toast.batchDeleted', { count: nonRunningTabs.length }))
       },
     })
   }
@@ -535,7 +538,7 @@ export function useSchedulerLogic() {
       logger.error(`加载恢复脚本列表失败: ${errorMsg}`)
       tab.resumeScriptOptions = []
       tab.resumeFromScriptId = null
-      message.error('加载队列脚本失败，无法按脚本ID恢复')
+      message.error(t('scheduler.toast.loadQueueScriptsFailed'))
     } finally {
       tab.resumeScriptLoading = false
     }
@@ -549,7 +552,7 @@ export function useSchedulerLogic() {
 
   const startTask = async (tab: SchedulerTab) => {
     if (!tab.selectedTaskId || !tab.selectedMode) {
-      message.error('请选择任务项和执行模式')
+      message.error(t('scheduler.toast.needTaskAndMode'))
       return
     }
 
@@ -587,15 +590,15 @@ export function useSchedulerLogic() {
         const { playSound } = useAudioPlayer()
         await playSound('task_started')
 
-        message.success('任务启动成功')
+        message.success(t('scheduler.toast.taskStarted'))
         saveTabsToStorage(schedulerTabs.value)
       } else {
-        message.error(response.message || '启动任务失败')
+        message.error(response.message || t('scheduler.toast.startTaskFailed'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`启动任务失败: ${errorMsg}`)
-      message.error('启动任务失败')
+      message.error(t('scheduler.toast.startTaskFailed'))
     }
   }
 
@@ -610,7 +613,7 @@ export function useSchedulerLogic() {
       })
 
       if (response.code !== 200) {
-        message.error(response.message || '启动任务失败')
+        message.error(response.message || t('scheduler.toast.startTaskFailed'))
         return false
       }
 
@@ -619,17 +622,17 @@ export function useSchedulerLogic() {
         selectedTaskId: taskId,
         selectedMode: TaskCreateIn.mode.AUTO_PROXY,
         taskLabel: taskLabel || taskId,
-        modeLabel: '自动代理',
+        modeLabel: t('scheduler.mode.autoProxy'),
       })
 
       const { playSound } = useAudioPlayer()
       await playSound('task_started')
-      message.success('任务已开始')
+      message.success(t('scheduler.toast.taskBegun'))
       return true
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`按任务 ID 启动失败: ${errorMsg}`)
-      message.error('启动任务失败')
+      message.error(t('scheduler.toast.startTaskFailed'))
       return false
     }
   }
@@ -662,7 +665,7 @@ export function useSchedulerLogic() {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || '停止任务失败')
+        throw new Error(response.message || t('scheduler.toast.stopTaskFailed'))
       }
 
       // 播放任务中止音频
@@ -763,7 +766,7 @@ export function useSchedulerLogic() {
     try {
       tab.overviewData = data.task_info.map((s, index) => ({
         script_id: s.script_id || `script_${index}`,
-        name: s.name || '未知脚本',
+        name: s.name || t('scheduler.overview.unknownScript'),
         status: s.status || '等待',
         user_list: (s.userList ?? []).map((user, userIndex) => ({
           user_id: user.user_id || `user_${index}_${userIndex}`,
@@ -777,7 +780,7 @@ export function useSchedulerLogic() {
     }
 
     const newTaskQueue = data.task_info.map(item => ({
-      name: item.name || '未知任务',
+      name: item.name || t('scheduler.overview.unknownTask'),
       status: item.status || '等待',
     }))
 
@@ -863,14 +866,14 @@ export function useSchedulerLogic() {
             closable: true,
             maskClosable: true,
             keyboard: true,
-            title: 'MaaEnd 任务失败',
+            title: t('scheduler.modal.maaEndFailTitle'),
             content: h('div', [
               h('p', String(data.message)),
-              h('p', '你可以立即导出问题包，并将 ZIP 原文件发送到 MAS 群协助排查。'),
+              h('p', t('scheduler.modal.maaEndFailHint')),
             ]),
             okCancel: true,
-            okText: '导出问题包',
-            cancelText: '暂不导出',
+            okText: t('scheduler.modal.maaEndExport'),
+            cancelText: t('scheduler.modal.maaEndSkip'),
             onOk: () => {
               void exportMaaEndIssueReport()
             },
@@ -880,12 +883,12 @@ export function useSchedulerLogic() {
           })
         }
       } else {
-        notification.error({ message: '任务错误', description: data.message })
+        notification.error({ message: t('scheduler.toast.taskError'), description: data.message })
       }
     } else if (data.level === 'warning') {
       // 播放异常音频
       await playSound('exception_occurred')
-      notification.warning({ message: '任务警告', description: data.message })
+      notification.warning({ message: t('scheduler.toast.taskWarning'), description: data.message })
     } else {
       const infoMsg = String(data.message).toLowerCase()
 
@@ -916,7 +919,7 @@ export function useSchedulerLogic() {
         await playSound('adb_failed')
       }
 
-      notification.info({ message: '任务信息', description: data.message })
+      notification.info({ message: t('scheduler.toast.taskInfo'), description: data.message })
     }
   }
 
@@ -961,12 +964,12 @@ export function useSchedulerLogic() {
     const { playSound } = useAudioPlayer()
     if (data.outcome === 'error') {
       await playSound('error_occurred')
-      message.error(data.error || '任务执行失败')
+      message.error(data.error || t('scheduler.toast.taskRunFailed'))
     } else if (data.outcome === 'cancelled') {
-      message.warning('任务已取消')
+      message.warning(t('scheduler.toast.taskCancelled'))
     } else {
       await playSound('task_completed')
-      message.success('任务完成')
+      message.success(t('scheduler.toast.taskDone'))
     }
     saveTabsToStorage(schedulerTabs.value)
 
@@ -1023,7 +1026,7 @@ export function useSchedulerLogic() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`设置电源操作失败: ${errorMsg}`)
-      message.error('设置电源操作失败')
+      message.error(t('scheduler.toast.powerActionFailed'))
     }
   }
 
@@ -1081,12 +1084,12 @@ export function useSchedulerLogic() {
       if (response.code === 200) {
         taskOptions.value = response.data
       } else {
-        message.error('获取任务列表失败')
+        message.error(t('scheduler.toast.fetchTaskListFailed'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取任务列表失败: ${errorMsg}`)
-      message.error('获取任务列表失败')
+      message.error(t('scheduler.toast.fetchTaskListFailed'))
     } finally {
       taskOptionsLoading.value = false
     }
