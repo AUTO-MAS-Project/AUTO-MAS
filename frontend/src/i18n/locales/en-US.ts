@@ -2634,5 +2634,6 @@ export default {
   locale: {
     'zh-CN': '简体中文',
     'en-US': 'English',
+    'ja-JP': '日本語',
   },
 }

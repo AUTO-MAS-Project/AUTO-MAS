@@ -15,10 +15,16 @@ describe('normalizeLocale', () => {
     }
   })
 
+  it('把各种日文标记归一到 ja-JP', () => {
+    for (const raw of ['ja', 'ja-JP', 'JA-jp']) {
+      expect(normalizeLocale(raw)).toBe('ja-JP')
+    }
+  })
+
   it('空值与无法识别的语言回退到英文而不是中文', () => {
     // 系统语言既非中文也非英文的人更可能看不懂中文，给英文更接近「看得懂」
     expect(UNRECOGNIZED_LOCALE).toBe('en-US')
-    for (const raw of [null, undefined, '', 'fr-FR', 'ja-JP', 'de']) {
+    for (const raw of [null, undefined, '', 'fr-FR', 'de']) {
       expect(normalizeLocale(raw)).toBe('en-US')
     }
   })
