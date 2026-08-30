@@ -19,6 +19,7 @@ MFAAvalonia 不这么做（它是 ``MaaAgentBinary/`` + ``libs/`` + ``runtimes/`
 ——它们已被 ``MFW.exe`` / ``CFA.exe`` 认出。
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,12 +27,18 @@ from pathlib import Path
 import app.core  # noqa: F401  # 初始化宿主配置
 
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+    _shell_from_mirrorchyan_rid,
     detect_maafw_project_shell_hint,
 )
 
 
-def make(root: Path, files=(), dirs=()) -> Path:
+def make(root: Path, files=(), dirs=(), rid=None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
+    if rid is not None:
+        (root / "interface.json").write_text(
+            json.dumps({"name": "demo", "mirrorchyan_rid": rid}),
+            encoding="utf-8",
+        )
     for name in files:
         (root / name).write_text("", encoding="utf-8")
     for name in dirs:
@@ -113,6 +120,52 @@ class ShellHintDetectionTest(unittest.TestCase):
         self.assertEqual(
             detect_maafw_project_shell_hint(self.base / "nope"), ""
         )
+
+
+class MirrorchyanRidIsTheAuthoritativeSignalTest(unittest.TestCase):
+    """rid 是项目自己声明的，比目录特征权威。
+
+    同一项目发布多个外壳变体时 rid 必须逐个不同（M9A 的 MFAA 包是 ``M9A``、
+    MXU 包是 ``M9A-MXU``），后缀正是 GitHub 分包名里用来区分的那一段。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+
+    def test_rid_suffix_declares_the_shell(self) -> None:
+        root = make(self.base / "a", rid="M9A-MXU")
+        self.assertEqual(_shell_from_mirrorchyan_rid(root), "MXU")
+
+    def test_rid_wins_over_directory_markers(self) -> None:
+        """rid 说 MFAA，就算目录里有 maafw/ 也听 rid 的。"""
+
+        root = make(self.base / "b", rid="M9A-MFAA", dirs=("maafw",))
+        self.assertEqual(detect_maafw_project_shell_hint(root), "MFAAvalonia")
+
+    def test_rid_without_suffix_falls_through(self) -> None:
+        root = make(self.base / "c", rid="M9A", dirs=("maafw",))
+        self.assertEqual(_shell_from_mirrorchyan_rid(root), "")
+        self.assertEqual(detect_maafw_project_shell_hint(root), "MXU")
+
+    def test_a_dash_that_is_not_a_shell_is_ignored(self) -> None:
+        """普通带横线的 rid 不该被当成外壳后缀。"""
+
+        root = make(self.base / "d", rid="Foo-Bar", files=("MFAAvalonia.dll",))
+        self.assertEqual(_shell_from_mirrorchyan_rid(root), "")
+        self.assertEqual(detect_maafw_project_shell_hint(root), "MFAAvalonia")
+
+    def test_unparsable_interface_falls_through(self) -> None:
+        """有些项目的 interface.json 是 JSON5 写法，解析不了就当没有。"""
+
+        root = make(self.base / "e", dirs=("maafw",))
+        (root / "interface.json").write_text("{ name: 'demo', }", encoding="utf-8")
+        self.assertEqual(_shell_from_mirrorchyan_rid(root), "")
+        self.assertEqual(detect_maafw_project_shell_hint(root), "MXU")
+
+    def test_missing_interface_is_not_an_error(self) -> None:
+        self.assertEqual(_shell_from_mirrorchyan_rid(self.base / "nope"), "")
 
 
 class AssetDisambiguationEndToEndTest(unittest.TestCase):
