@@ -188,6 +188,18 @@ def _is_adb_connect_success(detail: str) -> bool:
     )
 
 
+def _is_single_method(value: int) -> bool:
+    """位掩码是否只选中了一个方法。
+
+    MaaFW 的 ADB controller 收的是候选集合，原生层测速后自己挑一个；只传一个
+    位时不存在候选、也不会测速。日志文案据此区分，免得把「只有这一个」说成
+    「测速后选中的其中一个」。
+    """
+
+    raw = int(value)
+    return raw > 0 and raw & (raw - 1) == 0
+
+
 def _format_enum_methods(enum_cls: Any, value: int) -> str:
     raw_value = int(value)
     members = getattr(enum_cls, "__members__", {})
@@ -636,17 +648,28 @@ class MaaFWRunner:
             input_methods = (
                 device_config.inputMethods or MaaAdbInputMethodEnum.Default
             )
-            self.send_log(
+            screencap_single = _is_single_method(screencap_methods)
+            input_single = _is_single_method(input_methods)
+            parts = [
                 "ADB controller 最终连接: "
-                f"controller={self.plan.controllerName}; "
-                f"地址={device_config.address}; ADB 路径={device_config.adbPath}; "
-                "传入截图候选集合="
-                f"{_format_enum_methods(MaaAdbScreencapMethodEnum, screencap_methods)}; "
-                "传入输入候选集合="
-                f"{_format_enum_methods(MaaAdbInputMethodEnum, input_methods)}; "
-                "MaaFW Python binding 未公开测速后实际选中的单项方法，"
-                "如原生层有输出，可在本次运行的 MaaFW 框架日志中查看"
-            )
+                f"controller={self.plan.controllerName}",
+                f"地址={device_config.address}",
+                f"ADB 路径={device_config.adbPath}",
+                ("截图方法=" if screencap_single else "传入截图候选集合=")
+                + _format_enum_methods(
+                    MaaAdbScreencapMethodEnum, screencap_methods
+                ),
+                ("输入方法=" if input_single else "传入输入候选集合=")
+                + _format_enum_methods(MaaAdbInputMethodEnum, input_methods),
+            ]
+            # 只有真的传了多个候选才需要提测速——Python binding 不暴露选中项，
+            # 得去原生层日志里看。只传一个时没有候选也没有测速，别误导。
+            if not (screencap_single and input_single):
+                parts.append(
+                    "候选集合由原生层测速后择一，MaaFW Python binding 未公开"
+                    "选中项，可在本次运行的 MaaFW 框架日志中查看"
+                )
+            self.send_log("; ".join(parts))
         else:
             self.send_log(f"已连接 controller: {self.plan.controllerName}")
 

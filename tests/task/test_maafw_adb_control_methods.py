@@ -52,6 +52,19 @@ def load_runner_task():
     return module, patcher
 
 
+def load_core_runner():
+    patcher = mock.patch.dict(
+        sys.modules, {name: mock.MagicMock() for name in MAA_MODULES}
+    )
+    patcher.start()
+    import importlib
+
+    module = importlib.import_module(
+        "app.task.MaaFW.tools.core.automas_maafw_runner.runner"
+    )
+    return module, patcher
+
+
 class AdbScreencapMethodTest(unittest.TestCase):
     def setUp(self) -> None:
         self.module, patcher = load_runner_task()
@@ -149,6 +162,37 @@ class FirstLayerValuesUnchangedTest(unittest.TestCase):
         source = (REPO_ROOT / "app/task/MaaFW/manager.py").read_text(encoding="utf-8")
         self.assertIn('"ScreencapMethods": 64', source)
         self.assertIn('"InputMethods": 18446744073709551607', source)
+
+
+class ConnectionLogWordingTest(unittest.TestCase):
+    """连接日志要按实际位数说话。
+
+    MaaFW 的 ADB controller 收的是候选集合，原生层测速后择一，Python binding
+    不暴露选中项——所以传多个时要提示去框架日志看。但模拟器截图现在只传
+    EmulatorExtras(64) 一个，既没有候选也没有测速，再说「测速后选中」就是误导。
+    """
+
+    def setUp(self) -> None:
+        self.module, patcher = load_core_runner()
+        self.addCleanup(patcher.stop)
+
+    def test_single_method_detection(self) -> None:
+        self.assertTrue(self.module._is_single_method(FIRST_LAYER_SCREENCAP))
+        self.assertTrue(self.module._is_single_method(1))
+        # Default 是多位掩码
+        self.assertFalse(self.module._is_single_method(-57))
+        self.assertFalse(self.module._is_single_method(-9))
+        self.assertFalse(self.module._is_single_method(0))
+
+    def test_wording_switches_on_bit_count(self) -> None:
+        source = (
+            REPO_ROOT
+            / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"截图方法=" if screencap_single else "传入截图候选集合="', source)
+        self.assertIn('"输入方法=" if input_single else "传入输入候选集合="', source)
+        # 测速提示只在确实传了多个候选时才出现
+        self.assertIn("if not (screencap_single and input_single):", source)
 
 
 if __name__ == "__main__":
