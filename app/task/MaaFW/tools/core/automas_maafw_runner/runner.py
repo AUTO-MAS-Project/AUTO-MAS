@@ -87,6 +87,10 @@ except ImportError:
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 MAAFW_DEBUG_LOG_PATH = Path("debug") / "maafw.log"
+# 这些 controller 动作失败意味着游戏/设备根本没就绪。此时任务失败不该继续
+# 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
+# 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
+FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
 TASK_CONFIG_LOG_VALUE_LIMIT = 1200
 # 整行上限。留足余量低于宿主 _FRAMEWORK_UI_LOG_MAX_CHARS(1200)，
 # 免得任务配置被当成框架错误诊断截断。
@@ -539,6 +543,7 @@ class MaaFWRunner:
         self._python_env_checked: dict[str, bool] = {}
         self._stop_requested: threading.Event = threading.Event()
         self._task_failure_summaries: list[str] = []
+        self._failed_controller_actions: set[str] = set()
         self._failed_task_errors: list[tuple[str, str]] = []
 
     def _ensure_initialized(self, device_config: MaaFWDeviceConfig) -> None:
@@ -1845,9 +1850,15 @@ class MaaFWRunner:
         except Exception as exc:
             self.send_log(f"注册 MaaFW resource 日志监听失败: {exc}")
 
+    def _record_controller_action_failure(self, action: str) -> None:
+        self._failed_controller_actions.add(action)
+
     def _install_controller_sink(self, controller: Controller) -> None:
         try:
-            sink = _MaaFWControllerLogSink(self.send_log)
+            sink = _MaaFWControllerLogSink(
+                self.send_log,
+                self._record_controller_action_failure,
+            )
             if controller.add_sink(sink) is not None:
                 self.event_sinks.append(sink)
         except Exception as exc:
@@ -2415,6 +2426,7 @@ class MaaFWRunner:
             self.send_log(_format_task_config_log(task))
             self.send_log(f"正在运行任务: {display_name}")
             self._task_failure_summaries.clear()
+            self._failed_controller_actions.clear()
             try:
                 if task.pipelineOverride:
                     job = tasker.post_task(task.entry, task.pipelineOverride)
@@ -2426,6 +2438,15 @@ class MaaFWRunner:
                     raise RuntimeError("MaaFW 任务已停止") from exc
                 message = str(exc)
                 self._failed_task_errors.append((task.name, message))
+                fatal = sorted(
+                    self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS
+                )
+                if fatal:
+                    actions = "、".join(fatal)
+                    raise RuntimeError(
+                        f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
+                        f"{display_name}: {message}"
+                    ) from exc
                 # 这条现在会实时出现在任务日志里，措辞不能对最后一个
                 # 任务说「将继续后续任务」。
                 if index + 1 < total_tasks:
@@ -2615,9 +2636,14 @@ class _MaaFWResourceLogSink(ResourceEventSink):
 
 
 class _MaaFWControllerLogSink(ControllerEventSink):
-    def __init__(self, send_log: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        send_log: Callable[[str], None],
+        record_action_failure: Callable[[str], None],
+    ) -> None:
         super().__init__()
         self.send_log = send_log
+        self.record_action_failure = record_action_failure
 
     def on_controller_action(
         self,
@@ -2626,6 +2652,7 @@ class _MaaFWControllerLogSink(ControllerEventSink):
         detail: ControllerEventSink.ControllerActionDetail,
     ) -> None:
         if noti_type == NotificationType.Failed:
+            self.record_action_failure(str(detail.action or ""))
             self.send_log(
                 f"[MaaFW Controller] {_notification_label(noti_type)}: {detail.action}"
             )

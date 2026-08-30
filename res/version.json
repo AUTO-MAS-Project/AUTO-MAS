@@ -56,7 +56,8 @@
                 "修复 MaaFW 框架调试日志在运行中发生轮转时只保存到后半段的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 HSR 脚本只填写三月七路径时任务模块仍被分配给 SRA、导致无法运行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 MaaFW 单个任务失败时运行日志不即时提示、要等整轮跑完才能看到的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "修复 HSR 未配置 SRA 路径时多个用户会静默跑在同一个已登录账号上的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复 HSR 未配置 SRA 路径时多个用户会静默跑在同一个已登录账号上的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 MaaFW 游戏启动失败后仍继续投递剩余任务、空转到各自超时的问题，改为直接报错并进入下一次重试 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {

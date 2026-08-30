@@ -232,6 +232,17 @@ class FailureLineVisibilityTest(unittest.TestCase):
                 self.assertFalse(self._forward(message))
 
 
+def make_plan_task(name: str):
+    return SimpleNamespace(
+        label=name,
+        name=name,
+        entry=f"{name}Entry",
+        logOptions={},
+        overrideNodes=[],
+        pipelineOverride=None,
+    )
+
+
 class FailureWordingByPositionTest(unittest.TestCase):
     """只有后面还有任务时才说「将继续后续任务」。
 
@@ -245,25 +256,15 @@ class FailureWordingByPositionTest(unittest.TestCase):
         )
         self.addCleanup(patcher.stop)
 
-    @staticmethod
-    def _task(name: str):
-        return SimpleNamespace(
-            label=name,
-            name=name,
-            entry=f"{name}Entry",
-            logOptions={},
-            overrideNodes=[],
-            pipelineOverride=None,
-        )
-
     def _failure_logs(self, count: int) -> list[str]:
         runner = object.__new__(self.module.MaaFWRunner)
         logs: list[str] = []
         runner.send_log = logs.append
         runner._task_failure_summaries = []
+        runner._failed_controller_actions = set()
         runner._stop_requested = SimpleNamespace(is_set=lambda: False)
         runner.plan = SimpleNamespace(
-            tasks=[self._task(f"任务{i + 1}") for i in range(count)]
+            tasks=[make_plan_task(f"任务{i + 1}") for i in range(count)]
         )
 
         def always_fails(*_args):
@@ -289,6 +290,89 @@ class FailureWordingByPositionTest(unittest.TestCase):
     def test_every_failure_still_reports_where_it_stopped(self) -> None:
         for line in self._failure_logs(2):
             self.assertIn("最后停在 SomeNode", line)
+
+
+class FatalControllerFailureTest(unittest.TestCase):
+    """游戏根本没起来时，别接着把剩下的任务投递出去。
+
+    真机现场（2026-08-30 MaaYYs）：雷电模拟器卡死，第一个任务「打开游戏」在
+    收到 [MaaFW Controller] 失败: start_app 之后失败，MAS 却照常投递下一个
+    「寮三十捐材料」——后面每个任务都会在同一个空场景里空转到各自超时，白等
+    十几分钟，还可能把「本轮已做过」的完成态错误写回。
+
+    改为抛出，交给宿主 RunTimesLimit 那层重试循环（捕获后 continue 进下一次
+    尝试）。判据取 controller 级的 start_app 失败，而不是「第一个任务失败」：
+    前者是引擎级信号、跨项目通用，后者在 MaaEnd 那种由 MAS 自己启动 PC 游戏
+    的项目里会误伤。
+    """
+
+    def setUp(self) -> None:
+        self.module, patcher = load(
+            "app.task.MaaFW.tools.core.automas_maafw_runner.runner"
+        )
+        self.addCleanup(patcher.stop)
+
+    def _run(self, behaviours):
+        """behaviours: [(本任务期间记录的 controller 失败动作, 该任务是否失败), ...]"""
+
+        runner = object.__new__(self.module.MaaFWRunner)
+        logs: list[str] = []
+        started: list[str] = []
+        runner.send_log = logs.append
+        runner._task_failure_summaries = []
+        runner._failed_controller_actions = set()
+        runner._stop_requested = SimpleNamespace(is_set=lambda: False)
+        runner.plan = SimpleNamespace(
+            tasks=[make_plan_task(f"任务{i + 1}") for i in range(len(behaviours))]
+        )
+        runner._wait_job = lambda job: None
+
+        def post_task(entry, *_args):
+            actions, fails = behaviours[len(started)]
+            started.append(entry)
+            for action in actions:
+                runner._record_controller_action_failure(action)
+            if fails:
+                raise RuntimeError("最后停在 SomeNode")
+            return object()
+
+        runner.tasker = SimpleNamespace(post_task=post_task)
+        return runner, logs, started
+
+    def test_start_app_failure_stops_the_whole_run(self) -> None:
+        runner, _, started = self._run([(("start_app",), True), ((), True), ((), True)])
+        with self.assertRaises(RuntimeError) as caught:
+            runner._run_tasks()
+        text = str(caught.exception)
+        self.assertIn("游戏未能启动", text)
+        self.assertIn("start_app", text)
+        self.assertIn("本轮剩余任务已跳过", text)
+        self.assertEqual(started, ["任务1Entry"], "剩余任务不该再被投递")
+
+    def test_the_abort_still_says_which_task_and_where_it_stopped(self) -> None:
+        runner, _, _ = self._run([(("start_app",), True)])
+        with self.assertRaises(RuntimeError) as caught:
+            runner._run_tasks()
+        text = str(caught.exception)
+        self.assertIn("任务1", text)
+        self.assertIn("最后停在 SomeNode", text)
+
+    def test_other_controller_failures_keep_the_run_going(self) -> None:
+        """点击、截图之类失败是常态，不能一失败就整轮中止。"""
+
+        runner, _, started = self._run(
+            [(("click",), True), (("screencap",), True), ((), True)]
+        )
+        runner._run_tasks()
+        self.assertEqual(len(started), 3)
+
+    def test_a_recovered_start_app_does_not_poison_later_tasks(self) -> None:
+        """start_app 失败过但那个任务最终成功，后面的任务失败不该被误判为致命。"""
+
+        runner, _, started = self._run([(("start_app",), False), ((), True)])
+        completed = runner._run_tasks()
+        self.assertEqual(completed, ["任务1"])
+        self.assertEqual(len(started), 2)
 
 
 if __name__ == "__main__":
