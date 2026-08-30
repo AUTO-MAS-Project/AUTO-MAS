@@ -46,6 +46,7 @@ Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 
 [tool.ruff]
 line-length = 88
+target-version = "py312"
 extend-exclude = [
     "frontend",
     "res",
