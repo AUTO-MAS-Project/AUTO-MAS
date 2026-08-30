@@ -146,6 +146,24 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             logger.warning(f"MFW 内置运行取模拟器实例失败，将按无模拟器继续：{exc}")
             return None
 
+    @staticmethod
+    def _resolve_runtime_pool_route():
+        """解析 Runtime Pool 路由（root + poolId）。
+
+        插件形态下这一步由 `adapter.py` 查 `maafw.runtime_pool.v1` 服务契约后
+        注入；树内没有服务注册表，直接实例化服务再走同一个解析函数。
+        `_run_maafw` 缺这两个值会直接拒绝运行。
+        """
+
+        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+            MaaFWRuntimePoolService,
+        )
+        from app.task.MaaFW.tools.embedded.runtime_route import (
+            runtime_pool_route_from_service,
+        )
+
+        return runtime_pool_route_from_service(MaaFWRuntimePoolService())
+
     def _build_inner_task(self) -> "MaaFWPluginAutoProxyTask":
         # 延迟导入：runner_task 经 runner 包 import maa，导入即打开 DLL。
         from app.task.MaaFW.tools.embedded.runner_task import (
@@ -154,12 +172,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         assert self.user_config is not None
-        return MaaFWPluginAutoProxyTask(
+        task = MaaFWPluginAutoProxyTask(
             self.script_info,
             self.script_config,
             self.user_config.data,
             self.emulator_manager,
         )
+        route = self._resolve_runtime_pool_route()
+        task.maafw_runtime_pool_root = route.root
+        task.maafw_runtime_pool_id = route.pool_id
+        return task
 
     async def main_task(self) -> None:
         self.check_result = await self.check()

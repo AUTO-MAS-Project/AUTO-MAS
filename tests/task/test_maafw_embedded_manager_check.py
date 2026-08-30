@@ -22,6 +22,8 @@ from app.core.task_manager import TaskInfo
 from app.models.task import ScriptItem
 from app.task.MaaFW.embedded_manager import ENGINE_VALUE, MaaFWEmbeddedManager
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 INTERFACE = {
     "interface_version": 2,
     "name": "Demo",
@@ -368,6 +370,62 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
         manager, built, _, _ = self._run_main_task(["用户A"])
         asyncio.run(manager.final_task())
         built[-1].final_task.assert_awaited_once()
+
+
+class RuntimePoolRouteInjectionTest(unittest.TestCase):
+    """Runtime Pool 路由注入 —— 不注入 `_run_maafw` 会直接拒绝运行。
+
+    插件形态下由 `adapter.py` 查 `maafw.runtime_pool.v1` 服务契约后注入；
+    该文件依赖 app.plugins 未移植，树内改为直接实例化服务。移植期间漏过这一步，
+    表现为运行时报「缺少由 maafw.runtime_pool.v1 注入的 root/poolId」。
+    """
+
+    def test_route_resolves_to_a_root_and_pool_id(self) -> None:
+        route = MaaFWEmbeddedManager._resolve_runtime_pool_route()
+        self.assertTrue(str(route.root))
+        self.assertTrue(str(route.pool_id).strip())
+
+    def test_build_inner_task_injects_the_route(self) -> None:
+        captured = {}
+
+        class FakeAutoProxy:
+            def __init__(self, script_info, script_config, user_config, emulator):
+                captured["args"] = (script_info, script_config, user_config, emulator)
+                self.maafw_runtime_pool_root = None
+                self.maafw_runtime_pool_id = None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project = make_project(Path(tmp) / "project")
+
+            async def go():
+                manager, script_uid, config = await build_manager(project)
+                with mock.patch.object(
+                    app.core.Config, "ScriptConfig", {script_uid: config}
+                ):
+                    self.assertEqual(await manager.check(), "Pass")
+                with mock.patch(
+                    "app.task.MaaFW.tools.embedded.runner_task."
+                    "MaaFWPluginAutoProxyTask",
+                    FakeAutoProxy,
+                ):
+                    return manager._build_inner_task()
+
+            task = asyncio.run(go())
+
+        self.assertIsNotNone(task.maafw_runtime_pool_root)
+        self.assertTrue(str(task.maafw_runtime_pool_id or "").strip())
+        # 装配层传给 AutoProxy 的四个位置参数
+        self.assertEqual(len(captured["args"]), 4)
+
+    def test_run_maafw_guard_still_reads_both_fields(self) -> None:
+        """守卫还在，说明这条注入是必需的而不是可选的。"""
+
+        source = (
+            REPO_ROOT
+            / "app/task/MaaFW/tools/embedded/runner_task.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("runtime_pool_root = self.maafw_runtime_pool_root", source)
+        self.assertIn("maafw.runtime_pool.v1", source)
 
 
 class EmbeddedManagerAgainstRealProjectTest(unittest.TestCase):
