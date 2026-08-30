@@ -64,6 +64,10 @@ jobs:
         working-directory: frontend
         run: yarn format
 
+      - name: 修复前端 Markdown Lint
+        working-directory: frontend
+        run: yarn lint:md:fix
+
       - name: 提交格式化结果
         run: |
           git add --update
