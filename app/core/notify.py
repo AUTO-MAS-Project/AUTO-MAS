@@ -53,9 +53,7 @@ class NotifyPayload:
     append_signature: bool = True
     email_mode: MailMode = "网页"
     serverchan_text: str | None = None
-    webhook_text: str | None = None
     koishi_text: str | None = None
-    system_text: str | None = None
     system_ticker: str | None = None
     system_timeout: int = 5
 
@@ -90,7 +88,7 @@ class NotifyPayload:
     def webhook_content(self) -> str:
         """返回 Webhook 正文。"""
 
-        return self.webhook_text if self.webhook_text is not None else self.signed_text
+        return self.signed_text
 
     @property
     def koishi_content(self) -> str:
@@ -104,7 +102,7 @@ class NotifyPayload:
     def system_content(self) -> str:
         """返回系统通知正文。"""
 
-        return self.system_text if self.system_text is not None else self.text
+        return self.text
 
 
 @dataclass(frozen=True)
