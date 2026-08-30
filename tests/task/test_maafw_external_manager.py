@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 import tempfile
 from types import SimpleNamespace
 import uuid
@@ -1121,7 +1122,7 @@ class MaaFWExternalManagerTest(unittest.TestCase):
 
                     async def timeout_sleep(delay):
                         if delay == 5:
-                            manager.last_log_at = datetime.now() - timedelta(hours=2)
+                            manager.last_log_at = time.monotonic() - 7200
 
                 async def no_sleep(_delay):
                     return None

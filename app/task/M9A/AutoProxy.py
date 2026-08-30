@@ -23,9 +23,10 @@
 import json
 import uuid
 import asyncio
+import time
 import re
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -88,8 +89,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 初始化路径
         self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
         self.m9a_config_path = self.m9a_root_path / "config"
-        today_date = datetime.now().strftime("%Y%m%d")
-        self.m9a_log_path = self.m9a_root_path / f"logs/log-{today_date}.log"
+        self.m9a_logs_dir = self.m9a_root_path / "logs"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
@@ -106,17 +106,28 @@ class AutoProxyTask(TaskExecuteBase):
         self._m9a_failure_signal_seen = False
         self._m9a_failure_quiet_task: asyncio.Task | None = None
 
+    def _resolve_m9a_log_path(self) -> Path:
+        """按当前本地日期解析 M9A 日志路径。
+
+        M9A 每天写一个 ``logs/log-YYYYMMDD.log``。路径必须在监控循环里按需
+        重算，否则任务跨过本地午夜后 M9A 写入新文件，监控仍盯着旧文件，
+        读不到新行并最终误判为超时。
+        """
+
+        today_date = datetime.now().strftime("%Y%m%d")
+        return self.m9a_logs_dir / f"log-{today_date}.log"
+
     async def check(self) -> str:
 
         if self.is_virtual_update_user:
             return "Pass"
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -132,6 +143,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
+        self.log_start_at = time.monotonic()
 
 
     async def main_task(self):
@@ -172,6 +184,7 @@ class AutoProxyTask(TaskExecuteBase):
             self._m9a_failed_task_names.clear()
             self._m9a_failure_signal_seen = False
             self.log_start_time = datetime.now()
+            self.log_start_at = time.monotonic()
             self.cur_user_item.log_record[self.log_start_time] = (
                 self.cur_user_log
             ) = LogRecord()
@@ -273,7 +286,7 @@ class AutoProxyTask(TaskExecuteBase):
             
             logger.info("M9A 进程正常运行中...")
             await self.m9a_log_monitor.start_monitor_file(
-                self.m9a_log_path, self.log_start_time
+                self._resolve_m9a_log_path, self.log_start_time
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()
@@ -533,9 +546,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def _wait_for_failure_quiet_period(self) -> None:
         while not self.wait_event.is_set():
-            idle_seconds = (
-                datetime.now() - self.m9a_log_monitor.latest_time
-            ).total_seconds()
+            idle_seconds = self.m9a_log_monitor.seconds_since_progress()
             if idle_seconds >= M9A_FAILURE_QUIET_SECONDS:
                 failed_tasks = "、".join(sorted(self._m9a_failed_task_names)) or "未知任务"
                 self.cur_user_log.status = f"M9A 任务失败: {failed_tasks}"
@@ -615,7 +626,8 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "M9A 进程已异常结束"
             else:
                 self.cur_user_log.status = "M9A 进程已结束"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "M9A 进程超时"
@@ -687,7 +699,7 @@ class AutoProxyTask(TaskExecuteBase):
                         short_err = short_err[:77] + '...'
                     self.script_info._m9a_err_log.append(short_err)
 
-        elapsed = (datetime.now() - self.log_start_time).total_seconds()
+        elapsed = time.monotonic() - self.log_start_at
         if elapsed > 600:
             self.script_info._m9a_timeout = True
             err_log = getattr(self.script_info, '_m9a_err_log', [])
@@ -773,7 +785,7 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "M9A 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

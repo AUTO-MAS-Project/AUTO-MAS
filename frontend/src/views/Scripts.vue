@@ -1219,8 +1219,7 @@ const handleStartMAAConfig = async (script: Script) => {
           const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
-          const result = data.result
-          if (result && !result.includes('异常') && !result.includes('错误')) {
+          if (data.outcome === 'success') {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接
@@ -1340,8 +1339,7 @@ const handleStartSRCConfig = async (script: Script) => {
           const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
-          const result = data.result
-          if (result && !result.includes('异常') && !result.includes('错误')) {
+          if (data.outcome === 'success') {
             message.success(`${script.name} 配置已完成`)
           }
           // 清理连接

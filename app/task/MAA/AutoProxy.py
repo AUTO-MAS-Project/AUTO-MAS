@@ -28,7 +28,7 @@ import asyncio
 import shutil
 from copy import deepcopy
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -288,12 +288,12 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -1009,7 +1009,8 @@ class AutoProxyTask(TaskExecuteBase):
             or not await self.maa_process_manager.is_running()
         ):
             self.cur_user_log.status = "MAA 在完成任务前退出"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=(
                 # 本次开始唤醒会触发资源热更新时放宽超时，避免把正常更新误判为卡死
                 max(
@@ -1054,7 +1055,7 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "MAA 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

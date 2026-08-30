@@ -25,7 +25,9 @@ import re
 import json
 import smtplib
 import httpx
+import ipaddress
 from datetime import datetime
+from urllib.parse import urlparse
 from plyer import notification
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
@@ -35,6 +37,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.models.config import Webhook
+from app.utils.constants import UTC4
 from app.utils import LazyProxy, get_logger
 
 logger = get_logger("通知服务")
@@ -75,6 +78,24 @@ def clip_notify_text(text: str, limit: int) -> str:
     clipped = encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore")
 
     return f"{clipped}…"
+
+
+def _webhook_client_kwargs(url: str) -> dict:
+    """根据 Webhook 目标地址生成 httpx 客户端参数。
+
+    本地/内网目标（loopback、RFC1918 私网等）绕过代理并忽略环境变量中的
+    代理设置，避免 localhost 推送被系统代理劫持后返回误导性的 502；
+    外部目标沿用全局代理配置（含环境变量代理，保持历史行为）。
+    """
+    hostname = urlparse(url).hostname or ""
+    try:
+        addr = ipaddress.ip_address(hostname)
+        is_local = addr.is_loopback or addr.is_private
+    except ValueError:
+        is_local = hostname.lower() == "localhost"
+    if is_local:
+        return {"timeout": 10, "trust_env": False}
+    return {"timeout": 10, "proxy": Config.proxy}
 
 
 class Notification:
@@ -259,6 +280,9 @@ class Notification:
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "time": datetime.now().strftime("%H:%M:%S"),
+                # 游戏日（东 4 区），与历史记录归档的日期分组一致。
+                # {date} 保持本地日期语义不变。
+                "gamedate": datetime.now(tz=UTC4).strftime("%Y-%m-%d"),
             }
 
             logger.debug("开始解析 Webhook 消息模板")
@@ -318,16 +342,14 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
-        async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+        url = webhook.get("Data", "Url")
+
+        async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
-                    response = await client.post(
-                        url=webhook.get("Data", "Url"), json=data, headers=headers
-                    )
+                    response = await client.post(url=url, json=data, headers=headers)
                 elif isinstance(data, str):
-                    response = await client.post(
-                        url=webhook.get("Data", "Url"), content=data, headers=headers
-                    )
+                    response = await client.post(url=url, content=data, headers=headers)
             elif webhook.get("Data", "Method") == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
@@ -339,9 +361,7 @@ class Notification:
                             params[k] = str(v)
                 else:
                     params = {"message": str(data)}
-                response = await client.get(
-                    url=webhook.get("Data", "Url"), params=params, headers=headers
-                )
+                response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
         if response.status_code == 200:
@@ -349,7 +369,9 @@ class Notification:
                 f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
             )
         else:
-            raise Exception(f"HTTP {response.status_code}: {response.text}")
+            raise Exception(
+                f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}: {response.text}"
+            )
 
     async def send_koishi(
         self,

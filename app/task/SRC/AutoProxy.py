@@ -22,10 +22,11 @@
 
 import uuid
 import asyncio
+import time
 import re
 from pathlib import Path
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -105,11 +106,13 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
+        ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -253,7 +256,8 @@ class AutoProxyTask(TaskExecuteBase):
 
             # 静默模式隐藏 SRC 窗口
             if Config.get("Function", "IfSilence"):
-                while datetime.now() - t < timedelta(minutes=1):
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
                     if await self.src_process_manager.is_visible():
                         await self.src_process_manager.hide_window()
                         break
@@ -262,7 +266,8 @@ class AutoProxyTask(TaskExecuteBase):
             # 等待日志文件生成
             self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功\n正在等待 SRC 日志文件生成"
             if_get_file = False
-            while datetime.now() - t < timedelta(minutes=1):
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
                 for log_file in self.src_log_path.parent.iterdir():
                     if log_file.is_file():
                         with suppress(ValueError):
@@ -580,7 +585,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "SRC 启动时游戏停留在不支持的页面"
         elif _has_structured_src_log(log_content, "CRITICAL"):
             self.cur_user_log.status = "SRC 发生严重错误"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "SRC 进程超时"
@@ -634,7 +640,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

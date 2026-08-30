@@ -24,7 +24,7 @@ import shlex
 import shutil
 import uuid
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
@@ -235,8 +235,10 @@ class AutoProxyTask(TaskExecuteBase):
             return "请设置 OK-NTE 脚本路径"
 
         await self._reset_daily_proxy_count()
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
-            self.script_config.get("Run", "ProxyTimesLimit") != 0
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
             and self.cur_user_config.get("Data", "ProxyTimes")
             >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
@@ -720,7 +722,8 @@ class AutoProxyTask(TaskExecuteBase):
             elif not await self.oknte_process_manager.is_running():
                 log_status = "OK-NTE 在完成任务前退出"
                 user_item_status = "异常"
-            elif datetime.now() - latest_time > timedelta(
+            elif self.is_log_stalled(
+                latest_time,
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
                 log_status = "OK-NTE 运行超时"
@@ -752,7 +755,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

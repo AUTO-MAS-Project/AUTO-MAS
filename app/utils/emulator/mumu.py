@@ -32,6 +32,7 @@ if IS_WINDOWS:
     import win32process
 from contextlib import suppress
 from datetime import datetime, timedelta
+import time
 from pathlib import Path
 
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
@@ -261,10 +262,8 @@ class MumuManager(DeviceBase):
         from app.core import Config
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 if Config.get("Function", "IfBlockAd"):
@@ -310,10 +309,8 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if if_close_mumu_nx:
                 if_close_mumu_nx = not await self.close_mumu_nx_window()
@@ -365,10 +362,8 @@ class MumuManager(DeviceBase):
             if result.returncode != 0:
                 raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-            t = datetime.now()
-            while datetime.now() - t < timedelta(
-                seconds=self.config.get("Info", "MaxWaitTime")
-            ):
+            deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            while time.monotonic() < deadline:
                 status = await self.getStatus(idx)
                 if status == DeviceStatus.OFFLINE:
                     return DeviceStatus.OFFLINE

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import shutil
 import uuid
@@ -406,7 +407,9 @@ class MaaFWManager(TaskExecuteBase):
         self.terminal_event = asyncio.Event()
         self.terminal_kind: str | None = None
         self.last_log_text = ""
-        self.last_log_at: datetime | None = None
+        # 最近一条外壳日志的单调时钟读数。超时判定不能用墙钟差值：
+        # 时钟前跳会把健康任务立刻判成超时，回拨则让真超时被推迟。
+        self.last_log_at: float | None = None
 
         # LogRecord 的变化不触发任何前端通知（UserItem.__setattr__ 只监听
         # user_id / name / status）。这是事实而非缺陷：它在 _write_history_records
@@ -1391,7 +1394,7 @@ class MaaFWManager(TaskExecuteBase):
         self.terminal_event.clear()
         self.terminal_kind = None
         self.last_log_text = ""
-        self.last_log_at = datetime.now()
+        self.last_log_at = time.monotonic()
         self.log_start_time = datetime.now()
 
         # 自退型外壳（MXU）的运行日志走进程 stdout，故必须接管这条流。
@@ -1475,7 +1478,7 @@ class MaaFWManager(TaskExecuteBase):
 
             if runtime_limit <= 0 or (
                 self.last_log_at is not None
-                and (datetime.now() - self.last_log_at).total_seconds() >= runtime_limit
+                and time.monotonic() - self.last_log_at >= runtime_limit
             ):
                 self._mark_terminal("timeout", "MFW 进程超时")
                 break
@@ -1652,7 +1655,7 @@ class MaaFWManager(TaskExecuteBase):
             # 只改这一处：展示（script_info.log）与终态判定（下方受保护分支）
             # 仍吃完整 log_text，两路互不污染。
             if self._has_substantive_progress(self.last_log_text, log_text):
-                self.last_log_at = datetime.now()
+                self.last_log_at = time.monotonic()
             self.last_log_text = log_text
 
         # 控制器初始化失败压过完成串：外壳排空队列时照样输出完成串，但选中的任务
@@ -2335,9 +2338,9 @@ class MaaFWManager(TaskExecuteBase):
         if not adb_path or not serial:
             return
 
-        deadline = datetime.now() + timedelta(seconds=_ADB_READY_TIMEOUT_SECONDS)
+        deadline = time.monotonic() + _ADB_READY_TIMEOUT_SECONDS
         attempt = 0
-        while datetime.now() < deadline:
+        while time.monotonic() < deadline:
             attempt += 1
             try:
                 result = await ProcessRunner.run_process(
@@ -2580,7 +2583,7 @@ class MaaFWManager(TaskExecuteBase):
         if owned is None:
             return True
 
-        started = datetime.now()
+        started = time.monotonic()
         pid = owned.pid
         if spec.mode == "LauncherExe":
             client = await asyncio.to_thread(
@@ -2596,7 +2599,7 @@ class MaaFWManager(TaskExecuteBase):
 
         # 与日志等待同理，按次数计而不是墙钟 deadline：测试里 asyncio.sleep 被打成
         # 空转，墙钟写法会变成真的忙等满 wait_time 秒。
-        elapsed = (datetime.now() - started).total_seconds()
+        elapsed = time.monotonic() - started
         remaining = max(0.0, spec.wait_time - elapsed)
         attempts = max(1, int(remaining / _GAME_READY_PROBE_INTERVAL_SECONDS))
         for attempt in range(attempts):
@@ -2891,7 +2894,6 @@ class MaaFWManager(TaskExecuteBase):
             return
         self.history_written = True
 
-        local_tz = datetime.now().astimezone().tzinfo
         for user in self.script_info.user_list:
             for start_time, log_item in sorted(
                 user.log_record.items(), key=lambda item: item[0]
@@ -2904,7 +2906,7 @@ class MaaFWManager(TaskExecuteBase):
                     if not content:
                         content = ["未捕获到任何日志内容"]
                         status = "未捕获到日志"
-                    log_time = start_time.replace(tzinfo=local_tz).astimezone(UTC4)
+                    log_time = start_time.astimezone(UTC4)
                     log_path = Config.build_history_log_path(
                         script_name=self.script_info.name,
                         user_name=user.name,

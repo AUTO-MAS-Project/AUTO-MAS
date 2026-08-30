@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 import asyncio
+import time
 import weakref
 from datetime import datetime
 from abc import ABC, abstractmethod
@@ -181,6 +182,11 @@ class TaskItem(ABC):
             self._change_dirty = False
 
     @property
+    def is_queue_task(self) -> bool:
+        """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
+        return self.queue_id is not None
+
+    @property
     def asdict(self) -> list:
         """将 TaskItem 转换为字典形式"""
         return [
@@ -223,6 +229,40 @@ class TaskExecuteBase(ABC):
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
+
+    # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
+    # 不加类型注解，避免被 @dataclass 收作字段。
+    _log_progress = None
+
+    def is_log_stalled(
+        self, latest_time: datetime, minutes: float, key: str = "default"
+    ) -> bool:
+        """日志是否已停滞超过给定分钟数。
+
+        不能直接用 ``datetime.now() - latest_time``：两端都是墙钟，系统时钟
+        跳变（夏令时切换、NTP 校时）会让差值凭空增加一小时，把正常运行的
+        任务误判为超时。这里只用 ``latest_time`` 判断“是否有推进”，实际计时
+        交给单调时钟。
+
+        Args:
+            latest_time (datetime): 最近一条日志的时间戳。
+            minutes (float): 允许的最长无新日志时间，单位分钟。
+            key (str): 阶段标识。同一任务的不同阶段（如资源下载与正式运行）
+                各自独立计时，避免阶段切换时互相干扰。
+
+        Returns:
+            bool: 超过阈值返回 True。
+        """
+
+        if self._log_progress is None:
+            self._log_progress = {}
+
+        now = time.monotonic()
+        previous = self._log_progress.get(key)
+        if previous is None or previous[0] != latest_time:
+            self._log_progress[key] = (latest_time, now)
+            return False
+        return now - previous[1] > minutes * 60
 
     @abstractmethod
     async def main_task(self): ...
