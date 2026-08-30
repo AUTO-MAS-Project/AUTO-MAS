@@ -32,7 +32,8 @@
                 "修复启动时队列的「每日首次」在跨日前十秒内冷启动时，可能漏跑当天或在同一天重复运行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复日志文件在监控期间被替换或截断后，监控可能永远读不到新内容的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复系统时钟跳变（夏令时切换、NTP 校时）导致运行中任务被误判超时、模拟器等待提前放弃与历史记录归档时刻偏移一小时的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 修复 Win32 项目定位游戏窗口时因超时参数类型不符而失败，导致窗口未前置、首个任务识别不到目标的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 修复 Win32 项目定位游戏窗口时因超时参数类型不符而失败，导致窗口未前置、首个任务识别不到目标的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {

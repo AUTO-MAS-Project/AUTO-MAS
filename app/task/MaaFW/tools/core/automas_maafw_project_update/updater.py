@@ -2483,16 +2483,30 @@ def _select_github_release_asset(
 
 
 def detect_maafw_project_shell_hint(project_path: Path) -> str:
-    """Identify a local UI shell only from strong root-level file markers."""
+    """Identify a local UI shell from root-level markers.
+
+    File-name markers come first. They only work when the shell names its
+    executable after itself, which MXU does not always do: MaaYYs ships
+    ``mxu.exe`` but M9A ships ``m9a.exe`` and MaaEnd ships ``MaaEnd.exe``,
+    all three being MXU packages. Those fell through to "" and left the
+    updater unable to choose between e.g. ``M9A-...-MFAA.zip`` and
+    ``M9A-...-MXU.zip``.
+
+    So when no file marker matches, fall back to structure: MXU ships the
+    MaaFramework runtime in a root ``maafw/`` directory, and MFAAvalonia
+    does not (it ships ``MaaAgentBinary/`` + ``libs/`` + ``runtimes/``
+    alongside ``MFAAvalonia.dll``). The fallback runs **only** after the
+    file markers came up empty, so MFW/CFA packages — which also carry
+    ``maafw/`` but are already identified by ``MFW.exe`` / ``CFA.exe`` —
+    keep their own answer.
+    """
 
     try:
-        file_names = {
-            item.name.casefold()
-            for item in project_path.iterdir()
-            if item.is_file()
-        }
+        entries = list(project_path.iterdir())
     except OSError:
         return ""
+
+    file_names = {item.name.casefold() for item in entries if item.is_file()}
 
     markers = {
         "MFAAvalonia": {
@@ -2510,7 +2524,15 @@ def detect_maafw_project_shell_hint(project_path: Path) -> str:
         for shell_name, shell_markers in markers.items()
         if file_names.intersection(shell_markers)
     ]
-    return detected[0] if len(detected) == 1 else ""
+    if len(detected) == 1:
+        return detected[0]
+    if detected:
+        return ""
+
+    directory_names = {item.name.casefold() for item in entries if item.is_dir()}
+    if "maafw" in directory_names:
+        return "MXU"
+    return ""
 
 
 def _sanitize_log_message(message: str) -> str:
