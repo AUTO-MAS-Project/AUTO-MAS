@@ -88,8 +88,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 初始化路径
         self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
         self.m9a_config_path = self.m9a_root_path / "config"
-        today_date = datetime.now().strftime("%Y%m%d")
-        self.m9a_log_path = self.m9a_root_path / f"logs/log-{today_date}.log"
+        self.m9a_logs_dir = self.m9a_root_path / "logs"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
@@ -105,6 +104,17 @@ class AutoProxyTask(TaskExecuteBase):
         self._m9a_failed_task_names: set[str] = set()
         self._m9a_failure_signal_seen = False
         self._m9a_failure_quiet_task: asyncio.Task | None = None
+
+    def _resolve_m9a_log_path(self) -> Path:
+        """按当前本地日期解析 M9A 日志路径。
+
+        M9A 每天写一个 ``logs/log-YYYYMMDD.log``。路径必须在监控循环里按需
+        重算，否则任务跨过本地午夜后 M9A 写入新文件，监控仍盯着旧文件，
+        读不到新行并最终误判为超时。
+        """
+
+        today_date = datetime.now().strftime("%Y%m%d")
+        return self.m9a_logs_dir / f"log-{today_date}.log"
 
     async def check(self) -> str:
 
@@ -273,7 +283,7 @@ class AutoProxyTask(TaskExecuteBase):
             
             logger.info("M9A 进程正常运行中...")
             await self.m9a_log_monitor.start_monitor_file(
-                self.m9a_log_path, self.log_start_time
+                self._resolve_m9a_log_path, self.log_start_time
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()
