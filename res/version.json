@@ -53,7 +53,8 @@
                 "MaaFW专项 修复删除脚本或项目升级后，旧的隔离运行环境永久占用磁盘不被清理的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 修复中止任务后项目 Agent 进程残留、持续占用内存与文件句柄的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复接入词表后 MaaEnd 与 HSR 脚本编辑页、通用配置来源选择器无法加载的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "修复 MaaFW 框架调试日志在运行中发生轮转时只保存到后半段的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复 MaaFW 框架调试日志在运行中发生轮转时只保存到后半段的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 HSR 脚本只填写三月七路径时任务模块仍被分配给 SRA、导致无法运行的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {

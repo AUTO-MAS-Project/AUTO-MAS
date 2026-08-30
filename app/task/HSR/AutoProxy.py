@@ -63,7 +63,7 @@ from .tools.account_switch import (
 from .tools import push_notification
 from .tools.log_detect import detect_echo_of_war_completion
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_script_path
+from .tools.native_control import resolve_configured_engines, resolve_script_path
 from .tools.m7a_runtime import M7ARunner
 from .tools.sra_runtime import cleanup_sra_temp_config
 from .tools.stage_runtime import (
@@ -792,6 +792,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """按阶段构建队列，保持 HSR_TASK_MODULES 中的业务顺序。"""
 
         items: list[HSRRunItem] = []
+        effective_engines = resolve_configured_engines(self.script_config)
 
         for module in HSR_TASK_MODULES:
             if module.category != phase:
@@ -803,6 +804,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 module,
                 self.script_config,
                 user_config=user_cfg,
+                effective_engines=effective_engines,
             )
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True

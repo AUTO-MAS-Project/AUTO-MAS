@@ -62,6 +62,7 @@ from .tools.m7a_config import load_m7a_native_config
 from .tools.native_control import (
     get_user_direct_config,
     native_provider,
+    resolve_configured_engines,
     resolve_script_path,
     resolve_user_control,
 )
@@ -301,6 +302,7 @@ class HSRManager(TaskExecuteBase):
 
         m7a_path = resolve_script_path(script_config, "M7A")
         sra_path = resolve_script_path(script_config, "SRA")
+        effective_engines = resolve_configured_engines(script_config)
 
         if not m7a_path and not sra_path:
             return "未配置任何脚本路径，请至少填写 M7A 或 SRA 路径"
@@ -376,6 +378,7 @@ class HSRManager(TaskExecuteBase):
                         module,
                         script_config,
                         user_config=user_config,
+                        effective_engines=effective_engines,
                     )
                     if assigned == "SRA":
                         sra_needed = True
@@ -430,6 +433,7 @@ class HSRManager(TaskExecuteBase):
     def _user_needs_sra(user_config, script_config: HSRConfig) -> bool:
         """判断用户是否需要 SRA StartGame 登录/切号。"""
 
+        effective_engines = resolve_configured_engines(script_config)
         for module in HSR_TASK_MODULES:
             if not user_config.get("TaskSwitch", module.key):
                 continue
@@ -437,6 +441,7 @@ class HSRManager(TaskExecuteBase):
                 module,
                 script_config,
                 user_config=user_config,
+                effective_engines=effective_engines,
             ) == "SRA":
                 return True
         return False

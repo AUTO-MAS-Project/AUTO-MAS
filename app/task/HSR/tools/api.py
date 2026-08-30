@@ -24,13 +24,9 @@ def _normalize_engine(engine: str) -> HSREngine:
 
 
 def _configured_engines(script_config: Any) -> list[HSREngine]:
-    from .native_control import resolve_script_path
+    from .native_control import resolve_configured_engines
 
-    return [
-        engine
-        for engine in _HSR_ENGINES
-        if resolve_script_path(script_config, engine)
-    ]
+    return list(resolve_configured_engines(script_config))
 
 
 def build_stage_options(script_config: Any, engine: str) -> dict[str, Any]:
