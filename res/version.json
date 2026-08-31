@@ -4,6 +4,10 @@
         "v5.5.0-beta.3": {
             "程序优化": [
                 "启动流程 进入应用不再固定等待若干秒确认后端就绪，就绪由健康检查与 WebSocket 连接保证；首页内容不再等待启动流程完成而是在启动期间直接渲染，概览数据先展示上次成功快照并后台静默刷新，后端未就绪、冷缓存或弱网时不再出现整页空白等待 by [@1w1w11w1](https://github.com/1w1w11w1)"
+            ],
+            "修复BUG": [
+                "修复 MaaFW 运行池解释器自检不覆盖标准库、导致 Python 运行时损坏时直到任务中途才报出难以理解的错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "新增 AUTO_MAS_UV_PYTHON_INSTALL_MIRROR，受限网络下可为 MaaFW 运行池的 Python 解释器下载配置镜像 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.2": {
