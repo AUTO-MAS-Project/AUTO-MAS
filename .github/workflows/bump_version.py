@@ -33,7 +33,8 @@
     python .github/workflows/bump_version.py --check
 
     # 发版成功后推进开发版本号，由 build-app.yml 调用
-    python .github/workflows/bump_version.py --after-release v5.5.0-beta.3
+    python .github/workflows/bump_version.py --after-release v5.5.0-beta.3 \
+        --released-info <已发布版本的 res/version.json>
 
     # 手动指定版本号，用于 v5.5.1 这类特殊修复版
     python .github/workflows/bump_version.py --set v5.5.1
@@ -68,6 +69,9 @@ CONFIG_VERSION_RE = re.compile(
 PYPROJECT_VERSION_RE = re.compile(
     r'(?m)^(?P<head>version\s*=\s*")(?P<version>[^"]*)(?P<tail>")'
 )
+
+# append-version-contributor.yml 在条目末尾追加的 " by [@login](url)" 署名，可以有多个。
+CONTRIBUTOR_SUFFIX_RE = re.compile(r"\s+by \[@[^\]]+\]\([^)]*\)")
 
 
 def configure_stdio() -> None:
@@ -173,16 +177,88 @@ def replace_literal(path: Path, pattern: re.Pattern, version: str) -> None:
     path.write_text(updated, encoding="utf-8", newline="\n")
 
 
-def write_versions(version: str, *, reset_history: bool) -> None:
-    """把四处版本号写成 ``version``，并在 version_info 顶部备好新版本段。"""
+def strip_contributors(item: str) -> str:
+    """去掉条目末尾的贡献者署名，比对条目是否同一条时用。"""
+
+    return CONTRIBUTOR_SUFFIX_RE.sub("", item).strip()
+
+
+def take_unreleased_entries(
+    version_info: Dict[str, dict], released_info: Dict[str, dict]
+) -> Dict[str, list]:
+    """把已发布快照里没有的条目从各版本段中取出，按分类归拢返回。
+
+    发版到推进版本号之间合入的 PR，条目会写进当时还是最新的、但已经发布出去的版本段。
+    留在原处既与归档语义不符，也会被 app/services/update.py 的「只取高于当前版本的段」
+    过滤掉，停在该版本的用户在更新提示里看不到这些条目。
+    """
+
+    released_items = {
+        strip_contributors(item)
+        for section in released_info.values()
+        for items in section.values()
+        if isinstance(items, list)
+        for item in items
+        if isinstance(item, str)
+    }
+
+    taken: Dict[str, list] = {}
+    for section in version_info.values():
+        for category in list(section):
+            items = section[category]
+            if not isinstance(items, list):
+                continue
+
+            kept = []
+            for item in items:
+                released = (
+                    not isinstance(item, str)
+                    or strip_contributors(item) in released_items
+                )
+                if released:
+                    kept.append(item)
+                else:
+                    taken.setdefault(category, []).append(item)
+
+            if items and not kept:
+                del section[category]
+            else:
+                section[category] = kept
+
+    return {category: items for category, items in taken.items() if items}
+
+
+def write_versions(
+    version: str,
+    *,
+    reset_history: bool,
+    released_info: Optional[Dict[str, dict]] = None,
+) -> int:
+    """把四处版本号写成 ``version``，并在 version_info 顶部备好新版本段。
+
+    返回从已发布版本段迁移到新版本段的条目数。
+    """
 
     version_json = json.loads(VERSION_JSON.read_text(encoding="utf-8"))
     version_info = version_json.get("version_info", {})
 
+    if reset_history and released_info is None:
+        print("没有已发布版本的更新条目可比对，保留 version_info 历史段落")
+        reset_history = False
+
+    pending = (
+        take_unreleased_entries(version_info, released_info)
+        if released_info is not None
+        else {}
+    )
+
     if reset_history:
-        version_json["version_info"] = {version: {}}
-    elif version not in version_info:
-        version_json["version_info"] = {version: {}, **version_info}
+        version_json["version_info"] = {version: pending}
+    else:
+        section = version_info.pop(version, {})
+        for category, items in pending.items():
+            section.setdefault(category, []).extend(items)
+        version_json["version_info"] = {version: section, **version_info}
 
     version_json["version"] = version
     VERSION_JSON.write_text(
@@ -194,6 +270,8 @@ def write_versions(version: str, *, reset_history: bool) -> None:
     replace_literal(PACKAGE_JSON, PACKAGE_VERSION_RE, version)
     replace_literal(CONFIG_PY, CONFIG_VERSION_RE, version)
     replace_literal(PYPROJECT, PYPROJECT_VERSION_RE, to_pep440(version))
+
+    return sum(len(items) for items in pending.values())
 
 
 def set_output(**outputs: str) -> None:
@@ -223,7 +301,7 @@ def command_check() -> None:
     print(f"版本号一致：{current}")
 
 
-def command_after_release(released: str) -> None:
+def command_after_release(released: str, released_info_path: Optional[str]) -> None:
     """发版成功后推进开发分支的版本号。"""
 
     parse_version(released)
@@ -242,10 +320,24 @@ def command_after_release(released: str) -> None:
         set_output(changed="false", skip_reason=reason)
         return
 
+    released_info = None
+    if released_info_path is not None:
+        released_json = json.loads(Path(released_info_path).read_text(encoding="utf-8"))
+        released_info = released_json.get("version_info", {})
+
     _, _, _, beta = parse_version(released)
-    write_versions(upcoming, reset_history=beta is None)
+    moved = write_versions(
+        upcoming, reset_history=beta is None, released_info=released_info
+    )
     print(f"版本号由 {released} 推进至 {upcoming}")
-    set_output(changed="true", previous_version=released, next_version=upcoming)
+    if moved:
+        print(f"发版后合入的 {moved} 条更新条目已迁入 {upcoming} 段")
+    set_output(
+        changed="true",
+        previous_version=released,
+        next_version=upcoming,
+        moved_entries=str(moved),
+    )
 
 
 def command_set(version: str) -> None:
@@ -275,12 +367,24 @@ def main() -> None:
     group.add_argument(
         "--set", metavar="VERSION", dest="set_version", help="手动设置版本号"
     )
+    parser.add_argument(
+        "--released-info",
+        metavar="PATH",
+        help=(
+            "已发布版本的 res/version.json 路径，仅配合 --after-release 使用。"
+            "发版到推进版本号之间合入的更新条目会据此迁入新版本段；"
+            "缺少它时不会清空 version_info 历史段落。"
+        ),
+    )
     arguments = parser.parse_args()
+
+    if arguments.released_info is not None and arguments.after_release is None:
+        parser.error("--released-info 只能配合 --after-release 使用")
 
     if arguments.check:
         command_check()
-    elif arguments.after_release:
-        command_after_release(arguments.after_release)
+    elif arguments.after_release is not None:
+        command_after_release(arguments.after_release, arguments.released_info)
     else:
         command_set(arguments.set_version)
 

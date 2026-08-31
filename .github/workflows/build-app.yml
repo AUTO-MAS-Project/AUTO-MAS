@@ -383,9 +383,11 @@ jobs:
     needs: [build, release]
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
 
-    # 与 append-version-contributor.yml 共用一把锁，避免两个工作流同时改 res/version.json。
+    # 不与 append-version-contributor.yml 共用 concurrency 组：同组内新的排队运行会顶掉
+    # 旧的排队运行，共用会让本作业被静默取消。并发写 res/version.json 由下面的
+    # git pull --rebase 兜底，真出冲突时作业显式失败，不会悄无声息。
     concurrency:
-      group: version-contributors-dev
+      group: release-version-bump-dev
       cancel-in-progress: false
 
     steps:
@@ -395,24 +397,45 @@ jobs:
           ref: dev
           fetch-depth: 0
 
+      # 发版到本作业之间合入 dev 的更新条目，会写进刚刚发布出去的那个版本段里。
+      # 取出已发布版本的快照交给脚本比对，这些条目才能被迁进新版本段而不是丢掉。
+      - name: 取出已发布版本的更新条目
+        env:
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+        run: |
+          git fetch --no-tags --force origin "refs/tags/$VERSION_TAG:refs/tags/$VERSION_TAG"
+          git show "$VERSION_TAG:res/version.json" > "$RUNNER_TEMP/released-version.json"
+
       # 只有 dev 上的版本号恰好等于刚发布的版本时才推进：
       # 从 main 发修复版、或 dev 已被手动改过时自动跳过，重跑工作流也不会重复推进。
       - name: 推进版本号
         id: bump
         env:
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
-        run: python .github/workflows/bump_version.py --after-release "$VERSION_TAG"
+        run: |
+          python .github/workflows/bump_version.py \
+            --after-release "$VERSION_TAG" \
+            --released-info "$RUNNER_TEMP/released-version.json"
 
       - name: 提交版本号
         if: steps.bump.outputs.changed == 'true'
         env:
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
           NEXT_VERSION: ${{ steps.bump.outputs.next_version }}
+          MOVED_ENTRIES: ${{ steps.bump.outputs.moved_entries }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add res/version.json frontend/package.json app/core/config.py pyproject.toml
-          git commit -m "chore(version): 发布 $VERSION_TAG 后推进开发版本号至 $NEXT_VERSION"
+
+          MESSAGE="chore(version): 发布 $VERSION_TAG 后推进开发版本号至 $NEXT_VERSION"
+          if [ "$MOVED_ENTRIES" != "0" ]; then
+            MESSAGE="$MESSAGE
+
+          发版后合入的 $MOVED_ENTRIES 条更新条目已迁入 $NEXT_VERSION 段。"
+          fi
+
+          git commit -m "$MESSAGE"
           git pull --rebase origin dev
           git push origin HEAD:dev
 
