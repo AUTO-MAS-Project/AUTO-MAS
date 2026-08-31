@@ -83,7 +83,7 @@ export type HSRUserConfigData = {
   TaskSwitch: HSRUserConfig_TaskSwitch
   TaskOpt: HSRUserConfig_TaskOpt
   Data: HSRUserConfig_Data
-  Notify?: HSRUserConfig_Notify
+  Notify: HSRUserConfig_Notify
   Control: HSRUserControl
   Managed: HSRUserManagedConfig
   Direct: HSRUserDirectConfig

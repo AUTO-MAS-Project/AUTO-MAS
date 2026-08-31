@@ -27,9 +27,5 @@ export type MaaFWUserConfig_Notify = {
      * Server 酱密钥
      */
     ServerChanKey?: (string | null);
-    /**
-     * 自定义 Webhook
-     */
-    CustomWebhooks?: null;
 };
 

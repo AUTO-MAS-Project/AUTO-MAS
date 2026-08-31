@@ -77,9 +77,13 @@
             @save="handleFieldSave"
           />
 
-          <NotifyConfigSection :form-data="formData" @save="handleFieldSave" />
-
-          <WebhookManager v-if="userId" mode="user" :script-id="scriptId" :user-id="userId" />
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -103,7 +107,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
-import WebhookManager from '@/components/WebhookManager.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
@@ -112,7 +116,6 @@ import { getScriptIcon, maafwScriptIcon } from '@/utils/scriptIcon'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
-import NotifyConfigSection from './MaaFWUserEdit/NotifyConfigSection.vue'
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
@@ -252,7 +255,6 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     ToAddress: '',
     IfServerChan: false,
     ServerChanKey: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',

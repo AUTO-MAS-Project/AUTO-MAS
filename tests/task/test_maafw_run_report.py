@@ -4,7 +4,7 @@ from contextlib import ExitStack
 from unittest.mock import patch
 
 import app.core  # noqa: F401
-
+import app.core.notify as core_notify
 from app.task.MaaFW.tools.notify import report
 
 
@@ -29,6 +29,17 @@ class _FakeConfig:
         return self.settings.get((group, name), False)
 
 
+class _FakeWebhook:
+    """Webhook 配置项的最小实现（config 契约: get(group, key)）。"""
+
+    def get(self, group, key):
+        assert group == "Info"
+        if key == "Name":
+            return "值班群"
+        assert key == "Enabled"
+        return True
+
+
 class _FakeNotify:
     def __init__(self):
         self.mail_calls = []
@@ -36,8 +47,8 @@ class _FakeNotify:
         self.webhook_calls = []
         self.koishi_calls = []
 
-    async def send_mail(self, kind, title, content, to_address):
-        self.mail_calls.append((kind, title, content, to_address))
+    async def send_mail(self, mode, title, content, to_address):
+        self.mail_calls.append((mode, title, content, to_address))
 
     async def ServerChanPush(self, title, content, send_key):
         self.serverchan_calls.append((title, content, send_key))
@@ -67,7 +78,8 @@ class MaafwRunReportGateTest(unittest.TestCase):
     def _push(self, config, notify, mode="代理结果", message=None):
         with ExitStack() as stack:
             stack.enter_context(patch.object(report, "Config", config))
-            stack.enter_context(patch.object(report, "Notify", notify))
+            stack.enter_context(patch.object(core_notify, "Config", config))
+            stack.enter_context(patch.object(core_notify, "Notify", notify))
             asyncio.run(
                 report.push_notification(
                     mode, "标题", message if message is not None else _message()
@@ -120,7 +132,7 @@ class MaafwRunReportGateTest(unittest.TestCase):
                 ("Notify", "ServerChanKey"): "key",
                 ("Notify", "IfKoishiSupport"): True,
             },
-            webhooks={"w1": object()},
+            webhooks={"w1": _FakeWebhook()},
         )
         self._push(config, notify, message=_message(uncompleted=0))
         self.assertEqual(notify.mail_calls, [])
@@ -131,9 +143,15 @@ class MaafwRunReportGateTest(unittest.TestCase):
         self.assertEqual(len(notify.koishi_calls), 1)
 
     def test_other_modes_send_nothing(self) -> None:
+        """未知模式一律不发。
+
+        这里原本用「统计信息」当未知模式，它现在是真模式了
+        （见 test_maafw_statistics_push.py），换成一个确实没实现的。
+        """
+
         notify = _FakeNotify()
         config = _FakeConfig({("Notify", "SendTaskResultTime"): "任何时刻"})
-        self._push(config, notify, mode="统计信息")
+        self._push(config, notify, mode="版本更新")
         self.assertEqual(notify.serverchan_calls, [])
         self.assertEqual(notify.webhook_calls, [])
 

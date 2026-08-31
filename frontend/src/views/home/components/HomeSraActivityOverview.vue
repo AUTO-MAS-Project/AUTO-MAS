@@ -35,6 +35,7 @@
         :src="versionCover"
         :alt="overview.versionName"
         class="version-cover"
+        referrerpolicy="no-referrer"
         :style="{ objectPosition: coverPosition }"
         @error="failedVersionCover = true"
       />
@@ -110,6 +111,7 @@
           :src="getActivityImage(activity)"
           :alt="activity.name"
           class="activity-image"
+          referrerpolicy="no-referrer"
           @error="handleImageError(activity.name)"
         />
         <div class="activity-overlay" />
