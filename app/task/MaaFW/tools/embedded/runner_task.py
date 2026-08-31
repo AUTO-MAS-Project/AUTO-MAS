@@ -96,6 +96,18 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 _RELAY_YIELD_EVERY_LINES = 50
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
+
+# 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
+# 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
+# 判据取消息标记而不是异常类型：这些错误跨了 runtime_pool 与 runner 两个包，
+# 而 runner_task 有意不在模块层导入 runtime_pool（那会让所有请求都付出导入成本）。
+_UNRETRYABLE_ENVIRONMENT_MARKERS = (
+    "MaaFW runtime Python 自检失败",
+    "MaaFW runtime ABI 探测失败",
+    "runtime Python identity could not be verified",
+    "MaaFW Runner 环境准备失败",
+    "MaaFW Runner 环境准备超时",
+)
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERBOSE_FRAMEWORK_LOG_MARKERS = (
     "Transceiver::send] send canceled",
@@ -414,6 +426,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     message = f"MaaFW 运行异常: {exc}"
                     self._append_log(message)
                     self._record_attempt(index + 1, [], message)
+                    unretryable = any(
+                        marker in message
+                        for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS
+                    )
+                    if unretryable:
+                        self._append_log(
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮"
+                        )
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     await Publisher.send(
@@ -421,6 +441,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(level="error", message=message),
                     )
+                    if unretryable:
+                        break
                     continue
                 finally:
                     if self.cur_user_config.get("Info", "IfScriptAfterTask"):
