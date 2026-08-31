@@ -130,9 +130,7 @@ def activate_window(hwnd: int) -> bool:
     try:
         foreground_hwnd = win32gui.GetForegroundWindow()
         if foreground_hwnd:
-            foreground_tid, _ = win32process.GetWindowThreadProcessId(
-                foreground_hwnd
-            )
+            foreground_tid, _ = win32process.GetWindowThreadProcessId(foreground_hwnd)
         current_tid = win32api.GetCurrentThreadId()
         if foreground_tid not in (0, current_tid):
             win32process.AttachThreadInput(current_tid, foreground_tid, True)

@@ -18,7 +18,7 @@
       <p class="countdown-message">{{ message }}</p>
       <div class="countdown-timer">
         <span class="countdown-number">{{ remaining }}</span>
-        <span class="countdown-unit">秒</span>
+        <span class="countdown-unit">{{ t('comp.seconds') }}</span>
       </div>
       <a-progress
         :percent="Math.max(0, Math.min(100, ((60 - remaining) / 60) * 100))"
@@ -29,7 +29,7 @@
       />
       <div class="countdown-actions">
         <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
-          取消操作
+          {{ t('comp.cancel2') }}
         </a-button>
       </div>
     </div>
@@ -37,9 +37,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { Service } from '@/api'
 import { useAppLifecycle } from '@/composables/useAppLifecycle'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('全局电源倒计时')
 
 // 电源操作显示名

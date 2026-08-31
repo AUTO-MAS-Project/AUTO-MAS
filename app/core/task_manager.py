@@ -26,6 +26,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
+
 from typing import Dict, Literal
 
 from .config import (
@@ -38,6 +39,7 @@ from .config import (
     OkwwConfig,
     OkNteConfig,
     HSRConfig,
+    MaaFWConfig,
 )
 
 # 延迟加载 System，避免 app.services 初始化期间触发循环导入；
@@ -125,7 +127,9 @@ class _ScriptTaskReservations:
 
         for key in keys:
             self._owners[key] = owner
-        self._owner_keys.setdefault(owner, {}).setdefault(script_uid, set()).update(keys)
+        self._owner_keys.setdefault(owner, {}).setdefault(script_uid, set()).update(
+            keys
+        )
         if root_key is not None and resolved_root_path is not None:
             self._src_root_paths[root_key] = resolved_root_path
         return True
@@ -169,7 +173,6 @@ def _get_src_root_path(script_config: object) -> Path | None:
 
 
 class TaskInfo(TaskItem):
-
     async def on_change(self):
         await Publisher.send(
             id=self.task_id,
@@ -180,14 +183,11 @@ class TaskInfo(TaskItem):
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
-                data=WSTaskLogUpdatedData(
-                    log=self.script_list[self.current_index].log
-                ),
+                data=WSTaskLogUpdatedData(log=self.script_list[self.current_index].log),
             )
 
 
 class Task(TaskExecuteBase):
-
     def __init__(
         self,
         task_info: TaskInfo,
@@ -287,8 +287,8 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            self.task_info.game_sign_results = (
-                await MainTimer.try_game_sign_for_task(source=sign_source)
+            self.task_info.game_sign_results = await MainTimer.try_game_sign_for_task(
+                source=sign_source
             )
 
         await self.prepare()
@@ -387,12 +387,12 @@ class Task(TaskExecuteBase):
                     task_item = task.SrcManager(
                         script_item,
                         reserved_src_root_path=src_root_path,
-                        reserve_src_root=lambda root_path,
-                        script_uid=current_script_uid,
-                        owner=reservation_owner: self.script_reservations.try_acquire(
-                            script_uid,
-                            owner,
-                            src_root_path=root_path,
+                        reserve_src_root=lambda root_path, script_uid=current_script_uid, owner=reservation_owner: (
+                            self.script_reservations.try_acquire(
+                                script_uid,
+                                owner,
+                                src_root_path=root_path,
+                            )
                         ),
                     )
                 elif isinstance(script_config, GeneralConfig):
@@ -407,14 +407,14 @@ class Task(TaskExecuteBase):
                     task_item = task.M9AManager(script_item)
                 elif isinstance(script_config, HSRConfig):
                     task_item = task.HSRManager(script_item)
+                elif isinstance(script_config, MaaFWConfig):
+                    task_item = task.MaaFWEmbeddedManager(script_item)
                 else:
                     script_item.status = "异常"
                     self._record_error(
                         f"不支持的脚本类型: {type(script_config).__name__}"
                     )
-                    logger.error(
-                        f"不支持的脚本类型: {type(script_config).__name__}"
-                    )
+                    logger.error(f"不支持的脚本类型: {type(script_config).__name__}")
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
@@ -447,7 +447,6 @@ class Task(TaskExecuteBase):
             and self.task_info.mode == "AutoProxy"
             and self.task_info.queue_id is not None
         ):
-
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
@@ -497,9 +496,7 @@ class _TaskManager:
         return [
             uuid.UUID(script_id)
             for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
-            if (
-                script_id := str(queue_item.get("Info", "ScriptId") or "").strip()
-            )
+            if (script_id := str(queue_item.get("Info", "ScriptId") or "").strip())
             and script_id != "-"
         ]
 
@@ -521,8 +518,7 @@ class _TaskManager:
             if not queue.get("Info", "TimeEnabled"):
                 continue
             if not any(
-                time_set.get("Info", "Enabled")
-                and time_set.get("Info", "Days")
+                time_set.get("Info", "Enabled") and time_set.get("Info", "Days")
                 for time_set in queue.TimeSet.values()
             ):
                 continue
@@ -573,9 +569,7 @@ class _TaskManager:
                 return
             exc = done_task.exception()
             if exc is not None:
-                logger.error(
-                    f"任务收尾异常({task_uid}): {type(exc).__name__}: {exc}"
-                )
+                logger.error(f"任务收尾异常({task_uid}): {type(exc).__name__}: {exc}")
 
         clean_task.add_done_callback(_on_done)
 
@@ -635,7 +629,9 @@ class _TaskManager:
         target_script_ids = (
             self._queue_script_ids(queue_id)
             if queue_id is not None
-            else [script_uid] if script_uid is not None else []
+            else [script_uid]
+            if script_uid is not None
+            else []
         )
         script_identities = [
             self._script_identity(script_id)
@@ -784,7 +780,6 @@ class _TaskManager:
             return
 
         self._startup_queue_running = True
-        curday = datetime.now().strftime("%Y-%m-%d")
 
         try:
             await asyncio.sleep(10)
@@ -793,10 +788,13 @@ class _TaskManager:
                 logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
                 return
 
+            # 必须在等待之后取值：若在等待前取，冷启动恰好落在跨日前 10 秒时，
+            # 比较和写入的都是前一天，会漏跑新的一天或在同一天跑两次。
+            curday = datetime.now().strftime("%Y-%m-%d")
+
             self._startup_queue_started = True
             logger.info("开始运行启动时任务")
             for uid, queue in Config.QueueConfig.items():
-
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
                     logger.info(f"启动时需要运行的队列：{uid}")
@@ -821,9 +819,7 @@ class _TaskManager:
                 elif StartUpMode == "DailyFirst":
                     # 检查 DailyFirst 模式是否已在今日运行过
                     if queue.get("Data", "LastStartupTime") == curday:
-                        logger.info(
-                            f"队列 {uid} 已在今日运行过，跳过该次运行"
-                        )
+                        logger.info(f"队列 {uid} 已在今日运行过，跳过该次运行")
                         continue
 
                     logger.info(f"启动时需要运行的队列：{uid}")
@@ -842,7 +838,7 @@ class _TaskManager:
                         logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
                         continue
                     await queue.set("Data", "LastStartupTime", curday)
-                
+
         finally:
             self._startup_queue_running = False
 

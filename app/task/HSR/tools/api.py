@@ -24,13 +24,9 @@ def _normalize_engine(engine: str) -> HSREngine:
 
 
 def _configured_engines(script_config: Any) -> list[HSREngine]:
-    from .native_control import resolve_script_path
+    from .native_control import resolve_configured_engines
 
-    return [
-        engine
-        for engine in _HSR_ENGINES
-        if resolve_script_path(script_config, engine)
-    ]
+    return list(resolve_configured_engines(script_config))
 
 
 def build_stage_options(script_config: Any, engine: str) -> dict[str, Any]:
@@ -100,7 +96,9 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         adapters.append(
             {
                 "engine": engine,
-                "display_name": "三月七助手" if engine == "M7A" else "StarRailAssistant",
+                "display_name": "三月七助手"
+                if engine == "M7A"
+                else "StarRailAssistant",
                 "version": None,
                 "supported_modes": ["managed", "direct"],
                 "capabilities": {
@@ -116,9 +114,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     tasks: list[dict[str, Any]] = []
     for module in HSR_TASK_MODULES:
         task_engines = [
-            engine
-            for engine in module.supported_scripts
-            if engine in effective_set
+            engine for engine in module.supported_scripts if engine in effective_set
         ]
         if not task_engines:
             continue
@@ -175,9 +171,7 @@ def build_managed_config(
     task_mapping: dict[str, HSREngine] = {}
     for module in HSR_TASK_MODULES:
         task_engines = [
-            engine
-            for engine in module.supported_scripts
-            if engine in effective_set
+            engine for engine in module.supported_scripts if engine in effective_set
         ]
         if not task_engines:
             continue
@@ -191,9 +185,7 @@ def build_managed_config(
     tasks: list[dict[str, Any]] = []
     for module in HSR_TASK_MODULES:
         task_engines = [
-            engine
-            for engine in module.supported_scripts
-            if engine in effective_set
+            engine for engine in module.supported_scripts if engine in effective_set
         ]
         if not task_engines:
             continue

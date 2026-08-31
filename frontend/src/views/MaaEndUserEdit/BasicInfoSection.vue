@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>基本信息</h3>
+      <h3>{{ t('edit.basicInfo') }}</h3>
     </div>
 
     <a-row :gutter="24">
@@ -9,15 +9,15 @@
         <a-form-item name="userName" required>
           <template #label>
             <span class="form-label">
-              用户名
-              <a-tooltip title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计">
+              {{ t('edit.username') }}
+              <a-tooltip :title="t('edit.nameUsedTellUsers')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-input
             v-model:value="formData.userName"
-            placeholder="请输入用户名"
+            :placeholder="t('edit.enterUsername')"
             :disabled="loading"
             size="large"
             class="modern-input"
@@ -29,8 +29,8 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              启用状态
-              <a-tooltip title="是否启用该用户">
+              {{ t('edit.enabled') }}
+              <a-tooltip :title="t('edit.whetherThisUserEnabled')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -40,8 +40,8 @@
             size="large"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
-            <a-select-option :value="true">是</a-select-option>
-            <a-select-option :value="false">否</a-select-option>
+            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -52,17 +52,15 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              账号ID
-              <a-tooltip
-                title="用于切换账号，官服输入手机号，两种方式均按账号末四位匹配，无需切换则留空"
-              >
+              {{ t('edit.accountId') }}
+              <a-tooltip :title="t('edit.usedSwitchAccountsCn2')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-input
             v-model:value="formData.Info.Id"
-            placeholder="请输入账号ID"
+            :placeholder="t('edit.enterAccountId')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Id', formData.Info.Id)"
@@ -73,15 +71,15 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              密码
-              <a-tooltip title="用户密码，仅用于存储以防遗忘，此外无任何作用">
+              {{ t('edit.password') }}
+              <a-tooltip :title="t('edit.userSPasswordStored')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            placeholder="密码仅用于存储以防遗忘，此外无任何作用"
+            :placeholder="t('edit.passwordStoredOnlySo2')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -95,8 +93,8 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              配置文件来源
-              <a-tooltip title="脚本使用全局配置文件，用户使用当前用户的配置文件">
+              {{ t('edit.configurationSource') }}
+              <a-tooltip :title="t('edit.scriptUsesGlobalConfiguration')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -119,7 +117,7 @@
               <template #icon>
                 <EditOutlined />
               </template>
-              编辑脚本设定
+              {{ t('edit.editScriptSettings') }}
             </a-button>
             <a-button
               v-else
@@ -146,7 +144,7 @@
               <template #icon>
                 <ImportOutlined />
               </template>
-              导入
+              {{ t('edit.import2') }}
             </a-button>
           </div>
         </a-form-item>
@@ -155,10 +153,8 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              接管具体任务配置
-              <a-tooltip
-                title="开启后运行前会用本页高频配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置"
-              >
+              {{ t('edit.takeOverTaskConfiguration') }}
+              <a-tooltip :title="t('edit.whenHighTrafficSettings')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -179,15 +175,15 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              游戏资源
-              <a-tooltip title="选择当前用户使用的游戏资源">
+              {{ t('edit.gameResource') }}
+              <a-tooltip :title="t('edit.pickGameResourceThis')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-select
             v-model:value="formData.Info.Resource"
-            placeholder="请选择资源"
+            :placeholder="t('edit.pickResource')"
             :disabled="loading"
             size="large"
             :options="resourceOptions"
@@ -199,8 +195,8 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              剩余天数
-              <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+              {{ t('edit.daysLeft') }}
+              <a-tooltip :title="t('edit.daysLeftAccount1')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -221,15 +217,15 @@
     <a-form-item>
       <template #label>
         <span class="form-label">
-          备注
-          <a-tooltip title="为用户添加备注信息">
+          {{ t('edit.note') }}
+          <a-tooltip :title="t('edit.addNoteAboutThis')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </span>
       </template>
       <a-textarea
         v-model:value="formData.Info.Notes"
-        placeholder="请输入备注"
+        :placeholder="t('edit.enterNote')"
         :rows="4"
         :disabled="loading"
         class="modern-input"
@@ -240,12 +236,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   EditOutlined,
   ImportOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 const emit = defineEmits<{
   save: [key: string, value: any]
   configure: []
@@ -265,13 +264,13 @@ defineProps<{
 }>()
 
 const modeOptions = [
-  { label: '脚本', value: '简洁' },
-  { label: '用户', value: '详细' },
+  { label: t('edit.script'), value: '简洁' },
+  { label: t('edit.user'), value: '详细' },
 ]
 
 const quickConfigOptions = [
-  { label: '启用', value: true },
-  { label: '关闭', value: false },
+  { label: t('edit.enabled3'), value: true },
+  { label: t('edit.off'), value: false },
 ]
 
 const emitSave = (key: string, value: any) => {

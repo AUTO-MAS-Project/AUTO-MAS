@@ -205,7 +205,7 @@ class M9ALogAnalyzer:
             if in_drops and current_task:
                 if "MonitorMarkdown" in line:
                     idx = line.find("MonitorMarkdown")
-                    raw = line[idx + len("MonitorMarkdown"):].lstrip("] ")
+                    raw = line[idx + len("MonitorMarkdown") :].lstrip("] ")
                     drop_text = M9ALogAnalyzer._strip_html(raw.strip())
                     if drop_text and drop_text not in M9ALogAnalyzer.DROP_KEYWORDS:
                         drops.append(drop_text)
@@ -345,8 +345,7 @@ async def _send_to_all_global_channels(
 
 
 async def _send_to_user_channels(
-    title: str, message_text: str, message_html: str,
-    user_config: M9AUserConfig
+    title: str, message_text: str, message_html: str, user_config: M9AUserConfig
 ) -> None:
     """向用户配置的独立通知渠道推送消息
 
@@ -435,8 +434,10 @@ async def push_version_update(title: str, message: dict) -> None:
 async def _push_proxy_result(title: str, message: dict) -> None:
     """推送全局代理结果通知"""
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
-    if not message.get("game_sign_summary", False) and result_time_setting != "任何时刻" and (
-        result_time_setting != "仅失败时" or message["uncompleted_count"] == 0
+    if (
+        not message.get("game_sign_summary", False)
+        and result_time_setting != "任何时刻"
+        and (result_time_setting != "仅失败时" or message["uncompleted_count"] == 0)
     ):
         logger.debug("当前 SendTaskResultTime 配置不满足推送条件，跳过")
         return

@@ -28,6 +28,9 @@ from .sra_runtime import (
 
 HSREngine = Literal["SRA", "M7A"]
 
+# 引擎回落顺序与 HSRTaskModule.supported_scripts 保持一致
+_HSR_ENGINE_ORDER: tuple[HSREngine, ...] = ("M7A", "SRA")
+
 
 @dataclass(frozen=True, slots=True)
 class HSRNativeControlSnapshot:
@@ -104,6 +107,17 @@ def resolve_script_path(config: Any, engine: HSREngine) -> str:
     """Public path resolver shared by old HSR manager/tools and API adapters."""
 
     return _script_path(config, engine)
+
+
+def resolve_configured_engines(config: Any) -> tuple[HSREngine, ...]:
+    """Resolve ``effective_engines``: the engines whose root path is configured.
+
+    The capability snapshot, ``HSRManager.check`` and the auto-proxy queue all
+    read this one contract, so the engine badge shown by the edit pages stays
+    the engine that actually runs.
+    """
+
+    return tuple(engine for engine in _HSR_ENGINE_ORDER if _script_path(config, engine))
 
 
 def resolve_user_control(
@@ -397,6 +411,7 @@ __all__ = [
     "SRANativeControlProvider",
     "get_user_direct_config",
     "native_provider",
+    "resolve_configured_engines",
     "resolve_script_path",
     "resolve_user_control",
 ]

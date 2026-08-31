@@ -113,7 +113,9 @@ class OkwwManager(TaskExecuteBase):
                 and self.script_info.user_list[0].name == "暂未加载"
             ):
                 self.script_info.user_list = [
-                    UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+                    UserItem(
+                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+                    )
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
@@ -192,8 +194,7 @@ class OkwwManager(TaskExecuteBase):
 
         if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
             self.script_config_path = (
-                Path(self.script_config.get("Info", "RootPath"))
-                / _OKWW_REL_CONFIG_DIR
+                Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             shutil.rmtree(self.temp_path, ignore_errors=True)
@@ -213,7 +214,9 @@ class OkwwManager(TaskExecuteBase):
         ):
             return
         if not self.had_original_script_config:
-            logger.info(f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}")
+            logger.info(
+                f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}"
+            )
             shutil.rmtree(self.script_config_path, ignore_errors=True)
         else:
             logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
@@ -287,7 +290,9 @@ class OkwwManager(TaskExecuteBase):
             sub_check = await method.check()
             if sub_check != "Pass":
                 self.check_result = sub_check
-                current_user = self.script_info.user_list[self.script_info.current_index]
+                current_user = self.script_info.user_list[
+                    self.script_info.current_index
+                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
                 await Publisher.send(
@@ -320,8 +325,7 @@ class OkwwManager(TaskExecuteBase):
                 await script_cfg.unlock()
 
             if self.check_result != "Pass" and not any(
-                user.status in ("完成", "跳过")
-                for user in self.script_info.user_list
+                user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await script_cfg.UserData.load(await self.user_config.toDict())
@@ -363,8 +367,8 @@ class OkwwManager(TaskExecuteBase):
                 # 多账号任务时各用户节点归属清晰，不再全部平铺。
                 # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
-                # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
-                # 为空，自然只有结果行。
+                # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，
+                # push_log 为空，自然只有结果行。
                 has_uncompleted = len(error_user) + len(wait_user) > 0
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted

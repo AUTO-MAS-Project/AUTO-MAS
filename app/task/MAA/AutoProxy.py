@@ -26,8 +26,9 @@ import re
 import uuid
 import asyncio
 import shutil
+from copy import deepcopy
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -143,13 +144,92 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     return False
 
 
+def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
+    """继承 MAA 原生配置，并以基础任务覆盖 MAS 托管字段。"""
+
+    return {**deepcopy(source_task), **deepcopy(managed_task)}
+
+
+def _find_task_source(task_queue: list[dict], name: str, task_type: str) -> dict | None:
+    """优先按任务名称取原生配置，兼容旧配置中只有任务类型的情况。"""
+
+    for task in task_queue:
+        if (
+            isinstance(task, dict)
+            and task.get("TaskType") == task_type
+            and task.get("Name") == name
+        ):
+            return deepcopy(task)
+    for task in task_queue:
+        if isinstance(task, dict) and task.get("TaskType") == task_type:
+            return deepcopy(task)
+    return None
+
+
+def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
+    """复用 MAA 原生预设队列，补充 MAS 合成任务并移除生息演算。"""
+
+    source_tasks = [deepcopy(task) for task in source_queue if isinstance(task, dict)]
+
+    def source_or_default(name: str, task_type: str) -> dict:
+        task = _find_task_source(source_tasks, name, task_type) or {
+            "$type": f"{task_type}Task",
+            "IsEnable": True,
+        }
+        task.update({"Name": name, "TaskType": task_type})
+        return task
+
+    fight_source = _find_task_source(source_tasks, "理智作战", "Fight") or {}
+    annihilation = _merge_fight_task(
+        _find_task_source(source_tasks, "剿灭作战", "Fight") or fight_source,
+        MAA_ANNIHILATION_FIGHT_BASE,
+    )
+    activity = _build_activity_priority_fight(
+        _find_task_source(source_tasks, "活动关优先", "Fight") or fight_source,
+        "",
+        0,
+    )
+    remain = _find_task_source(source_tasks, "剩余理智", "Fight")
+    if remain is None:
+        remain = _merge_fight_task(fight_source, MAA_REMAIN_FIGHT_BASE)
+    remain.update({"Name": "剩余理智", "TaskType": "Fight", "IsEnable": True})
+    depot = _find_task_source(source_tasks, "库存保持", "DepotMaintain")
+    if depot is None:
+        depot = _build_depot_maintain_task("[]")
+    depot.update({"Name": "库存保持", "TaskType": "DepotMaintain", "IsEnable": True})
+
+    queue = [
+        source_or_default("开始唤醒", "StartUp"),
+        annihilation,
+        source_or_default("自动公招", "Recruit"),
+        source_or_default("基建换班", "Infrast"),
+        activity,
+        depot,
+        source_or_default("理智作战", "Fight"),
+        remain,
+        source_or_default("信用收支", "Mall"),
+        source_or_default("领取奖励", "Award"),
+    ]
+
+    known_names = {task["Name"] for task in queue}
+    queue.extend(
+        deepcopy(task)
+        for task in source_tasks
+        if task.get("TaskType") != "Reclamation" and task.get("Name") not in known_names
+    )
+    return queue
+
+
 def _build_depot_maintain_task(
     plans_json: str,
-    skip_during_activity: bool = False,
-    skip_during_resource_collection: bool = False,
+    source_task: dict | None = None,
 ) -> dict:
     """生成 MAA 库存保持任务配置。"""
 
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
     plans = []
     for plan in json.loads(plans_json):
         if (
@@ -162,28 +242,41 @@ def _build_depot_maintain_task(
             and not isinstance(plan.get("DropCount"), bool)
             and plan["DropCount"] > 0
         ):
+            source_plan = next(
+                (
+                    item
+                    for item in source_plans
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                {},
+            )
             plans.append(
                 {
-                    "Stage": plan["Stage"],
-                    "DropId": plan["DropId"],
-                    "DropCount": plan["DropCount"],
+                    **deepcopy(source_plan),
                     "UseMedicine": False,
                     "MedicineCount": 0,
                     "UseStone": False,
                     "StoneCount": 0,
+                    "Stage": plan["Stage"],
+                    "DropId": plan["DropId"],
+                    "DropCount": plan["DropCount"],
                 }
             )
 
     return {
-        "$type": "DepotMaintainTask",
+        "$type": source_task.get("$type", "DepotMaintainTask"),
         "Name": "库存保持",
         "IsEnable": True,
         "TaskType": "DepotMaintain",
-        "UpdateDepot": True,
-        "IsStageManually": False,
-        "SkipDuringActivity": skip_during_activity,
-        "SkipDuringResourceCollection": skip_during_resource_collection,
-        "UseAutoSeries": True,
+        "UpdateDepot": source_task.get("UpdateDepot", True),
+        "IsStageManually": source_task.get("IsStageManually", False),
+        "SkipDuringActivity": source_task.get("SkipDuringActivity", False),
+        "SkipDuringResourceCollection": source_task.get(
+            "SkipDuringResourceCollection", False
+        ),
+        "UseAutoSeries": source_task.get("UseAutoSeries", True),
         "PlanList": plans,
     }
 
@@ -202,7 +295,9 @@ def _resolve_activity_stage(
     ]
     if not stages:
         return None
-    return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
+    return (
+        stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
+    )
 
 
 def _build_activity_priority_fight(
@@ -214,7 +309,7 @@ def _build_activity_priority_fight(
     额度（Task.ActivityMedicineNumb 与计划表 MedicineNumb），互不转移。
     """
 
-    activity_fight = fight_task.copy()
+    activity_fight = deepcopy(fight_task)
     activity_fight.update(
         {
             "Name": "活动关优先",
@@ -230,10 +325,9 @@ def _build_activity_priority_fight(
             "EnableTimesLimit": False,
             "UseMedicine": medicine_numb > 0,
             "MedicineCount": medicine_numb,
-            "UseExpiringMedicine": False,
-            "UseExpireMedicineForActivity": False,
         }
     )
+    activity_fight.setdefault("$type", "FightTask")
     return activity_fight
 
 
@@ -265,12 +359,12 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -405,7 +499,9 @@ class AutoProxyTask(TaskExecuteBase):
                         ],
                     )
                 except Exception as e:
-                    logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                    logger.opt(exception=True).warning(
+                        f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}"
+                    )
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
@@ -559,6 +655,9 @@ class AutoProxyTask(TaskExecuteBase):
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         task_set = {}
+        source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
+        if not isinstance(source_queue, list):
+            source_queue = []
         activity_stage = None
         if (
             self.mode == "Routine"
@@ -575,35 +674,27 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config.get("Task", "ActivityStageIndex"),
             )
 
-        # 每个任务类型匹配第一个配置作为配置基础
+        # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-
             # 默认关闭时不写入新任务，兼容尚未支持库存保持的 MAA 版本
             if en_task == "DepotMaintain" and not self.task_dict[en_task]:
                 continue
 
-            for task_item in gui_new_set["Configurations"]["Default"]["TaskQueue"]:
-                if task_item.get("TaskType", "") == en_task:
-                    task_set[en_task] = task_item
-                    task_set[en_task]["Name"] = zh_task
-                    break
-            else:
-                task_set[en_task] = {
-                    "$type": f"{en_task}Task",
-                    "Name": zh_task,
-                    "IsEnable": False,
-                    "TaskType": en_task,
-                }
+            task_set[en_task] = _find_task_source(source_queue, zh_task, en_task) or {
+                "$type": f"{en_task}Task",
+                "Name": zh_task,
+                "IsEnable": False,
+                "TaskType": en_task,
+            }
+
+        annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
+        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
+        remain_source = _find_task_source(source_queue, "剩余理智", "Fight")
 
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
                 self.cur_user_config.get("Task", "DepotMaintainPlans"),
-                skip_during_activity=task_set["DepotMaintain"].get(
-                    "SkipDuringActivity", False
-                ),
-                skip_during_resource_collection=task_set["DepotMaintain"].get(
-                    "SkipDuringResourceCollection", False
-                ),
+                source_task=task_set["DepotMaintain"],
             )
 
         # 关闭所有定时
@@ -663,12 +754,6 @@ class AutoProxyTask(TaskExecuteBase):
         gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = True
         gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
 
-        # 理智作战强制配置项
-        task_set["Fight"]["IsDrGrandet"] = False
-        task_set["Fight"]["HideSeries"] = False
-        task_set["Fight"]["UseStoneAllowSave"] = False
-        task_set["Fight"]["UseOptionalStage"] = True
-
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
             global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
@@ -688,9 +773,7 @@ class AutoProxyTask(TaskExecuteBase):
             "Default", {}
         ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})[
             "ClientType"
-        ] = _MAA_CLIENT_TYPE_TO_INT.get(
-            self.cur_user_config.get("Info", "Server"), 0
-        )
+        ] = _MAA_CLIENT_TYPE_TO_INT.get(self.cur_user_config.get("Info", "Server"), 0)
         if self.cur_user_config.get("Info", "Server") == "Official":
             task_set["StartUp"]["AccountName"] = (
                 f"{self.cur_user_config.get('Info', 'Id')[:3]}****{self.cur_user_config.get('Info', 'Id')[7:]}"
@@ -715,10 +798,14 @@ class AutoProxyTask(TaskExecuteBase):
                 for stage_key in MAA_STAGE_KEY
             }
 
+        fight_source = deepcopy(task_set["Fight"])
+
         # 理智作战相关配置项
         if self.mode == "Annihilation":
             # 关卡配置
-            task_set["Fight"] = MAA_ANNIHILATION_FIGHT_BASE.copy()
+            task_set["Fight"] = _merge_fight_task(
+                annihilation_source or fight_source, MAA_ANNIHILATION_FIGHT_BASE
+            )
             task_set["Fight"]["UseMedicine"] = bool(
                 plan_data.get("MedicineNumb", 0) != 0
             )
@@ -752,6 +839,7 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_config.get("Info", "Mode") == "简洁":
                 task_set["Fight"]["EnableTimesLimit"] = False
                 task_set["Fight"]["EnableTargetDrop"] = False
+                fight_source = deepcopy(task_set["Fight"])
 
             # 基建配置
             if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
@@ -808,14 +896,13 @@ class AutoProxyTask(TaskExecuteBase):
                 "Task", "ActivityMedicineNumb"
             )
             activity_fight = _build_activity_priority_fight(
-                task_set["Fight"], activity_stage, activity_medicine_numb
+                activity_source or fight_source, activity_stage, activity_medicine_numb
             )
 
         # 导出任务配置
         self.task_dict["StartUp"] = True
         task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
         for task_type in MAA_TASKS:
-
             if task_type not in task_set:
                 continue
 
@@ -832,7 +919,9 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.task_dict["Fight"]
                 and plan_data.get("Stage_Remain", "-") != "-"
             ):
-                remain_fight = MAA_REMAIN_FIGHT_BASE.copy()
+                remain_fight = _merge_fight_task(
+                    remain_source or fight_source, MAA_REMAIN_FIGHT_BASE
+                )
                 remain_fight["StagePlan"] = [
                     (
                         ""
@@ -840,6 +929,7 @@ class AutoProxyTask(TaskExecuteBase):
                         else plan_data.get("Stage_Remain", "-")
                     )
                 ]
+                remain_fight["Series"] = int(plan_data.get("SeriesNumb", "0"))
                 task_queue.append(remain_fight)
 
         (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
@@ -956,12 +1046,8 @@ class AutoProxyTask(TaskExecuteBase):
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
-
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-                if (
-                    f"完成任务: {zh_task}" in log
-                    or f"{zh_task} 任务跳过" in log
-                ):
+                if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
                     self.task_dict[en_task] = False
 
             if self.mode == "Routine" and (
@@ -989,7 +1075,8 @@ class AutoProxyTask(TaskExecuteBase):
             or not await self.maa_process_manager.is_running()
         ):
             self.cur_user_log.status = "MAA 在完成任务前退出"
-        elif datetime.now() - latest_time > timedelta(
+        elif self.is_log_stalled(
+            latest_time,
             minutes=(
                 # 本次开始唤醒会触发资源热更新时放宽超时，避免把正常更新误判为卡死
                 max(
@@ -998,7 +1085,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 if self.if_game_hot_update
                 else self.script_config.get("Run", f"{self.mode}TimeLimit")
-            )
+            ),
         ):
             self.cur_user_log.status = "MAA 进程超时"
         else:
@@ -1030,11 +1117,10 @@ class AutoProxyTask(TaskExecuteBase):
         user_logs_list = []
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
-
             if log_item.status == "MAA 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,
@@ -1076,7 +1162,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送统计通知时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送统计通知时出现异常: {e}"
+                    ),
                 )
 
         # 六星通知独立处理，避免单个通知异常阻断掉落统计。
@@ -1093,7 +1181,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送六星通知时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送六星通知时出现异常: {e}"
+                    ),
                 )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:

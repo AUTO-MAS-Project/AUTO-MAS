@@ -186,9 +186,7 @@ class GeneralManager(TaskExecuteBase):
         user_id = self.script_info.user_list[self.script_info.current_index].user_id
         if user_id == "Default":
             return True
-        return bool(
-            self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig")
-        )
+        return bool(self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig"))
 
     async def prepare(self):
         """运行前准备"""
@@ -264,9 +262,7 @@ class GeneralManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             use_mas_config = self._user_uses_mas_config()
-            user_id = self.script_info.user_list[
-                self.script_info.current_index
-            ].user_id
+            user_id = self.script_info.user_list[self.script_info.current_index].user_id
             logger.info(
                 f"用户 {user_id} 配置来源: "
                 f"{'MAS 独立配置' if use_mas_config else '脚本直控配置'}"
@@ -311,7 +307,6 @@ class GeneralManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode == "AutoProxy":
-
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -367,7 +362,9 @@ class GeneralManager(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送代理结果时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         self.script_info.status = "完成"
@@ -380,9 +377,7 @@ class GeneralManager(TaskExecuteBase):
             self._restore_external_config()
             self._cleanup_external_config_snapshot()
         except Exception as restore_error:
-            logger.opt(exception=True).warning(
-                f"恢复脚本直控配置失败: {restore_error}"
-            )
+            logger.opt(exception=True).warning(f"恢复脚本直控配置失败: {restore_error}")
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,

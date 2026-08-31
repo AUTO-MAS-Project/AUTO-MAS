@@ -137,8 +137,7 @@ class HSRRuntimeState:
             item
             for item in self.module_results
             if not (
-                item.user_id == result.user_id
-                and item.module_key == result.module_key
+                item.user_id == result.user_id and item.module_key == result.module_key
             )
         ]
         self.module_results.append(result)

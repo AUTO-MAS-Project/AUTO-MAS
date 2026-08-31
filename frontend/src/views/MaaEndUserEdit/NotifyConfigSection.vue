@@ -1,11 +1,11 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>通知配置</h3>
+      <h3>{{ t('edit.notificationSettings') }}</h3>
     </div>
     <a-row :gutter="24" align="middle">
       <a-col :span="6">
-        <span style="font-weight: 500">启用通知</span>
+        <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
       </a-col>
       <a-col :span="18">
         <a-switch
@@ -18,7 +18,7 @@
 
     <a-row :gutter="24" style="margin-top: 16px">
       <a-col :span="6">
-        <span style="font-weight: 500">通知内容</span>
+        <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
       </a-col>
       <a-col :span="18">
         <a-checkbox
@@ -26,7 +26,7 @@
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
         >
-          统计信息
+          {{ t('edit.statistics') }}
         </a-checkbox>
       </a-col>
     </a-row>
@@ -38,13 +38,13 @@
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfSendMail', formData.Notify.IfSendMail)"
         >
-          邮件通知
+          {{ t('edit.emailNotification') }}
         </a-checkbox>
       </a-col>
       <a-col :span="18">
         <a-input
           v-model:value="formData.Notify.ToAddress"
-          placeholder="请输入收件邮箱"
+          :placeholder="t('edit.enterRecipientAddress')"
           :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
           size="large"
           @blur="emitSave('Notify.ToAddress', formData.Notify.ToAddress)"
@@ -59,13 +59,13 @@
           :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfServerChan', formData.Notify.IfServerChan)"
         >
-          Server酱
+          {{ t('edit.serverchan') }}
         </a-checkbox>
       </a-col>
       <a-col :span="18">
         <a-input
           v-model:value="formData.Notify.ServerChanKey"
-          placeholder="请输入 SENDKEY"
+          :placeholder="t('edit.enterSendkey')"
           :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
           size="large"
           @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
@@ -80,7 +80,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import WebhookManager from '@/components/WebhookManager.vue'
+
+const { t } = useI18n()
 
 const formData = defineModel<any>('formData', { required: true })
 

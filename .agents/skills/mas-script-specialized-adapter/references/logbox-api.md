@@ -38,7 +38,7 @@
 ## 顶层入口
 
 ```python
-from mas_script import log_box, LogType
+from app.log_box import log_box, LogType
 ```
 
 `log_box` 同时是「包名」与「工厂对象名」：`app/log_box/` 为代码组织，工厂对象
@@ -50,14 +50,14 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 - **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text)`
   直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
-- **宿主 = 用户脚本子进程**（`from mas_script import log_box`）：不注入 sink，
+- **宿主 = 用户脚本子进程**（`from app.log_box import log_box`）：不注入 sink，
   box 把处理结果渲染为 `@@LOGBOX@@` 受控 stdout 标记回传，MAS 侧
   `check_log` 嗅探后写入 `cur_user_item.push_log`。
 
 > ⚠️ **脚本宿主目前是能力预留，尚未端到端接通**：box 的 `@@LOGBOX@@` 标记渲染/
 > 解析、MAS 侧 `check_log` 单行嗅探逻辑均已就位，但 MAS 尚未把「用户脚本进程
 > stdout」接入 `check_log`（脚本 stdout 现为 DEVNULL 丢弃，`check_log` 只读
-> `LogPath` 日志文件），也未设置 `MAS_SCRIPT_LOG_PATH` 与 `import mas_script`
+> `LogPath` 日志文件），也未设置 `MAS_SCRIPT_LOG_PATH` 与 `import app.log_box`
 > 所需的 PYTHONPATH。接通需增强 general 自动代理的进程启动（stdout PIPE 逐行
 > 喂 `check_log` + 启动前注入 env），不改核心框架。**在接通之前，脚本宿主请勿
 > 作为可交付使用**；有真实脚本宿主需求时再落地该改造。
@@ -134,7 +134,7 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 - **通用脚本**：`PushLogEnabled`（web UI 配置）控制是否采集并聚合推送日志。
 - **OK-WW专项**：用户级 `Notify.PushLogEnabled`（用户编辑页「是否采集节点详情」，与快速配置同排）
   ——关闭时 **AutoProxy 侧不创建 log_box**（不读日志、不翻译、不匹配），该用户 push_log 为空，
-  报告聚合（`build_user_result_text`）自然不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
+  报告聚合（`build_user_result_text`）自然只有结果行、不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
   的 `prepare()` 按开关启停 + `final_task()` 判空收尾。
 
 **给未来适配器的模式**：开关 = 专项自己的配置项，在专项**是否创建/启用 log_box** 的
@@ -180,7 +180,7 @@ col.collect(r"current_stamina (\d+)", r'$((\d+)).suffix(" 剩余电量")')
 后置状态解析；其余全由 box 完成（参见 okww 的 `app/task/Okww/`）：
 
 ```python
-from mas_script import log_box, LogType
+from app.log_box import log_box, LogType
 
 self.log_collect = log_box.get_collect(
     paths=[self.script_log_path],  # 相对 RootPath 派生，不硬编码绝对路径
@@ -231,27 +231,22 @@ push_log 落进 `cur_user_item.push_log`（`list[(log_type, text)]`）后，后�
 追加统一走 `app/tools/push_log.py`，专项**不要**自行拼接实现：
 
 - `build_user_result_text(users, has_uncompleted)`：按用户交错组装「用户结果行 +
-  该用户节点详情」为报告正文，多账号任务时各用户节点归属清晰；「失败」类型条目
-  仅在任务存在未完成用户时纳入（与 MAS 原生推送策略一致），无节点的用户只输出
-  结果行。
+  该用户节点详情」报告文本——每个用户先输出 `用户名: 用户result` 结果行，随后
+  紧跟该用户采集的节点（每条独占一行），多账号任务时各用户节点归属清晰；
+  「失败」类型条目仅在任务存在未完成用户时纳入（与 MAS 原生推送策略一致）。
+  专项在 `manager.final_task` 汇总时**用它替代原 result 拼接**（节点并入 result，
+  `push_log` 字段置空），不要再单独平铺所有用户节点。
 - `append_push_log(message_text, push_log, separator="\n")`：把推送日志追加到通知
-  正文，**默认以单个换行分隔**；push_log 为空时原样返回正文。
-
-> ⚠️ **报告注入是硬约束，采完必须注入**：仅采集（log_box→`cur_user_item.push_log`）
-> 不会让节点出现在报告里，必须把聚合结果放进最终报告正文。当前报告契约把节点
-> **按用户交错并入 result 正文**（`build_user_result_text`），不再走独立的
-> `push_log` 通知字段；多账号时各用户节点必须保留归属，用户级开关关闭的用户应
-> 无节点。注入的具体端点（管理器汇总 / 通知正文追加）现场反查参考实现，不照抄
-> 固定路径。完成专项后自检：任务报告应能实际看到节点行；若整体结果有、节点缺失，
-> 优先复查注入端是否接通，而不是怀疑采集规则。
+  正文，**默认以单个换行分隔**；专项（如 `tools/notify.py`）按默认调用即可，无需
+  传 `separator`，push_log 为空时原样返回正文（节点并入 result 后此处自然为空）。
 
 ```python
-# 管理器汇总：按用户交错组装「结果行 + 节点详情」为报告正文
+# manager.final_task：按用户交错组装（节点并入 result，push_log 置空）
 has_uncompleted = len(error_user) + len(wait_user) > 0
 user_result_text = build_user_result_text(self.script_info.user_list, has_uncompleted)
-result = {"result": task_result, ...}  # 节点已并入 result，不再单独推送 push_log
+message = {"result": user_result_text, "push_log": "", ...}
 
-# 通知正文追加（通用工具；push_log 为空时原样返回）
+# tools/notify.py：追加（push_log 为空，append_push_log 原样返回正文）
 message_text = append_push_log(message_text, message.get("push_log"))
 ```
 
@@ -261,7 +256,7 @@ message_text = append_push_log(message_text, message.get("push_log"))
 > 接入 MAS 的 `check_log`。以下仅为将来接通后的用法示意，当前不可交付。
 
 ```python
-from mas_script import log_box, LogType
+from app.log_box import log_box, LogType
 
 col = log_box.get_collect(paths=["workdir/logs/xxx.log"])
 col.open()                        # 记录起始位置（可选，close 收尾会自动兜底）

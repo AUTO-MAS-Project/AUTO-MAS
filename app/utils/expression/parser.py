@@ -27,6 +27,7 @@ from typing import Union
 
 # ==================== AST 节点 ====================
 
+
 @dataclass
 class FunctionCall:
     """函数调用：名称 + 参数列表（str 或 int）"""
@@ -55,11 +56,13 @@ Segment = Union[LiteralSegment, RegexSegment]
 
 # ==================== 异常 ====================
 
+
 class ExpressionError(Exception):
     """表达式语法或编译错误"""
 
 
 # ==================== 解析器 ====================
+
 
 def parse(expr_str: str) -> list[list[Segment]]:
     """将表达式字符串解析为「行 → 片段」二维列表。
@@ -116,7 +119,7 @@ class _Parser:
             else:
                 raise ExpressionError(
                     f"位置 {self.pos}：非法字符 '{ch}'，"
-                    f"表达式片段必须以 $() 或 \"\" 开头"
+                    f'表达式片段必须以 $() 或 "" 开头'
                 )
 
         if current_line:
@@ -161,7 +164,7 @@ class _Parser:
             else:
                 chars.append(ch)
                 self.pos += 1
-        raise ExpressionError("字面量缺少闭合的 \"")
+        raise ExpressionError('字面量缺少闭合的 "')
 
     # ---------- 正则作用域 ----------
 
@@ -214,21 +217,15 @@ class _Parser:
             self.pos += 1  # 跳过 .
             name = self._parse_identifier()
             if not name:
-                raise ExpressionError(
-                    f"位置 {self.pos}：'.' 后需要函数名"
-                )
+                raise ExpressionError(f"位置 {self.pos}：'.' 后需要函数名")
             # 跳过空白
             self._skip_spaces()
             if self.pos >= self.length or self.text[self.pos] != "(":
-                raise ExpressionError(
-                    f"函数 '{name}' 后需要 ()"
-                )
+                raise ExpressionError(f"函数 '{name}' 后需要 ()")
             self.pos += 1  # 跳过 (
             args = self._parse_args()
             if self.pos >= self.length or self.text[self.pos] != ")":
-                raise ExpressionError(
-                    f"函数 '{name}' 的参数列表缺少闭合的 )"
-                )
+                raise ExpressionError(f"函数 '{name}' 的参数列表缺少闭合的 )")
             self.pos += 1  # 跳过 )
             functions.append(FunctionCall(name=name, args=args))
         return functions
@@ -265,8 +262,7 @@ class _Parser:
                 args.append(num)
             else:
                 raise ExpressionError(
-                    f"位置 {self.pos}：参数必须为 \"字符串\" 或数字，"
-                    f"得到 '{ch}'"
+                    f"位置 {self.pos}：参数必须为 \"字符串\" 或数字，得到 '{ch}'"
                 )
             self._skip_spaces()
             if self.pos < self.length and self.text[self.pos] == ",":

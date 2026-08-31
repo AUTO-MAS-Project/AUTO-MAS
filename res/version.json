@@ -3,20 +3,62 @@
     "version_info": {
         "v5.5.0-beta.2": {
             "新增功能": [
+                "前端i18n 新增日本語词表，界面语言可选日本語，首次启动跟随系统语言；日文词表缺 key 时先回退英文再回退中文 by [@qiyinxi](https://github.com/qiyinxi)",
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
-                "OK-NTE专项 将运行日志关键节点注入任务报告，支持用户级节点详情开关并展示日常子任务状态与剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)"
+                "OK-NTE专项 将运行日志关键节点注入任务报告，支持用户级节点详情开关并展示日常子任务状态与剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "MaaFW专项 新增 MaaFW 脚本类型，可直接托管 MaaFramework 项目：编辑页读取项目 interface.json 后选择控制器、资源与任务，支持 ADB 模拟器与 Win32 PC 游戏两条控制链路；运行时由 AUTO-MAS 进程内的 runner 在独立子进程中驱动项目的 MaaFramework，不启动项目自带界面，也不占用项目自身的配置文件；已在 M9A、MaaYYs、Maa_bbb、MaaEnd 五个项目包上真机验证，覆盖项目自带解释器、项目自带二进制、隔离虚拟环境与双 Agent 四类运行环境 by [@qiyinxi](https://github.com/qiyinxi)",
+                "自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日 by [@qiyinxi](https://github.com/qiyinxi)",
+                "前端i18n 新增语言选项，首次启动跟随系统语言，英文界面将逐步补全 by [@qiyinxi](https://github.com/qiyinxi)",
+                "前端i18n 任务与调度台的状态标签跟随界面语言显示，判定逻辑不变 by [@qiyinxi](https://github.com/qiyinxi)",
+                "前端i18n 主要页面（首页、脚本、计划、模拟器、队列、调度中心、历史记录、工具、游戏签到、设置与各脚本/用户编辑页）的界面文案接入词表，切到英文后即时生效；参与判断的中文（状态枚举、后端返回值、搜索别名、游戏内关卡与材料名）保持原样 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
                 "回滚启动时的遮罩 by [@HarcoChen](https://github.com/HarcoChen)",
                 "匿名遥测 接入 Electron 主进程与渲染进程错误上报，增加应用启动、后端启动和任务执行的性能指标，抑制无异常的日志事件并遮蔽上报内容中的本机用户名，并关联 Sentry 发布提交与生产部署信息 by [@ClozyA](https://github.com/ClozyA)",
-                "清理无用前端资源、依赖及后端冗余代码 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "清理无用前端资源、依赖及后端冗余代码 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "MaaFW项目 interface 解析接上闲置的两级缓存，并对 .json 文件先按严格 JSON 解析、失败再回退 JSON5（json5 是纯 Python 实现，比标准库慢三个数量级）：用户页与脚本页进入耗时由约 5.5 秒降至约 0.12 秒 by [@qiyinxi](https://github.com/qiyinxi)",
+                "任务调度 单独运行脚本任务不再受单日代理次数上限约束，该限制仅对计划队列生效 by [@qiyinxi](https://github.com/qiyinxi)",
+                "配置任务的成败判定改用协议中的机器可读字段，不再匹配结果文本 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 运行日志改为记录实际加载的 MaaFramework 版本与来源，并在原生库与 Python 绑定版本不一致时给出警告 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
-            "开发流程": [],
+            "开发流程": [
+                "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
+                "前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，保持既有规则与格式配置兼容，并由每周自动格式化工作流执行 Markdown lint 修复 by [@Craun718](https://github.com/Craun718)",
+                "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
+                "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理 MaaFW 配置复用模块：能力未接入任何界面，留着只会让人以为可用，需要时可从上游重新取用 by [@qiyinxi](https://github.com/qiyinxi)"
+            ],
             "修复BUG": [
+                "前端i18n 修复两条含「|」的说明文案在界面上被截断的问题——vue-i18n 把 | 当复数分隔符，字面量需要转义 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 HSR 托管任务列表中点击任务开关导致界面报错的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "修复系统通知标题或内容过长时推送失败的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复系统通知标题或内容过长时推送失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MAA专项 修复任务生成时无条件覆盖用户原生高级配置的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "通知服务 自定义 Webhook 推送本地/内网目标绕过代理 by [@ArmedHelicopter](https://github.com/ArmedHelicopter)",
+                "修复 M9A 任务跨过本地午夜后日志监控仍读取前一天文件、导致任务被误判超时的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复启动时队列的「每日首次」在跨日前十秒内冷启动时，可能漏跑当天或在同一天重复运行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复日志文件在监控期间被替换或截断后，监控可能永远读不到新内容的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复系统时钟跳变（夏令时切换、NTP 校时）导致运行中任务被误判超时、模拟器等待提前放弃与历史记录归档时刻偏移一小时的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MAA专项 复用原生预设任务队列，补齐剿灭、活动关优先和库存保持并移除生息演算，同时明确剿灭与日常分两次启动",
+                "MaaFW专项 修复 Win32 项目定位游戏窗口时因超时参数类型不符而失败，导致窗口未前置、首个任务识别不到目标的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复内置运行未加载项目自带的 MaaFramework 而回落到 AUTO-MAS 运行环境中同版本号但二进制不同的一份的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复内置运行装上与项目自带 MaaFramework 版本不符的 Python 绑定的问题，改为按项目实际发行的运行库版本安装 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复运行期间界面日志停止更新、点击停止无响应的问题，原因是转发脚本输出时独占事件循环 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复删除脚本或项目升级后，旧的隔离运行环境永久占用磁盘不被清理的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaFW专项 修复中止任务后项目 Agent 进程残留、持续占用内存与文件句柄的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复接入词表后 MaaEnd 与 HSR 脚本编辑页、通用配置来源选择器无法加载的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 MaaFW 框架调试日志在运行中发生轮转时只保存到后半段的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 HSR 脚本只填写三月七路径时任务模块仍被分配给 SRA、导致无法运行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 MaaFW 单个任务失败时运行日志不即时提示、要等整轮跑完才能看到的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 HSR 未配置 SRA 路径时多个用户会静默跑在同一个已登录账号上的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 MaaFW 游戏启动失败后仍继续投递剩余任务、空转到各自超时的问题，改为直接报错并进入下一次重试 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {
@@ -41,7 +83,8 @@
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复开机自启动后台任务异常未记录问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)"
+                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "日志采集 修复多账号任务各用户节点详情被合并推送的问题，报告按用户分开展示节点归属 by [@AthenaHibou](https://github.com/AthenaHibou)"
             ]
         },
         "v5.4.0": {

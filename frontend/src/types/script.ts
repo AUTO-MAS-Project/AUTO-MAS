@@ -18,7 +18,16 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
+export type ScriptType =
+  | 'MAA'
+  | 'General'
+  | 'Okww'
+  | 'OkNte'
+  | 'SRC'
+  | 'MaaEnd'
+  | 'M9A'
+  | 'MaaFW'
+  | 'HSR'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
@@ -184,6 +193,290 @@ export interface M9AScriptConfig {
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
 
+// MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
+export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
+
+export interface MaaFWScriptConfig {
+  Info: {
+    Name: string
+    ProjectLabel?: string
+    Path: string
+    Controller: string
+    Resource: string
+  }
+  Emulator: {
+    Id: string
+    Index: string
+  }
+  Device: {
+    AdbPath: string
+    AdbAddress: string
+    AdbScreencapMethods: number
+    AdbInputMethods: number
+    HWnd: number
+    Win32ScreencapMethod: number
+    Win32MouseMethod: number
+    Win32KeyboardMethod: number
+    GamepadType: number
+    PlayCoverAddress: string
+    PlayCoverUuid: string
+  }
+  Game: {
+    LaunchMode: MaaFWLaunchMode
+    LaunchPath: string
+    Arguments: string
+    WaitTime: number
+    CloseOnFinish: boolean
+  }
+  Update: {
+    IfAutoUpdate: boolean
+    Source: '' | 'MirrorChyan' | 'GitHub'
+    Channel: '' | 'stable' | 'beta'
+    MirrorChyanCDK: string
+    GitHubRepo: string
+    GitHubTag: string
+    GitHubAssetPattern: string
+  }
+  Managed: {
+    Enabled: boolean
+    ProjectId: string
+    StoreId: string
+    Version: string
+    RuntimeConstraint: string
+    ProjectManifest: string
+    CheckoutPath: string
+    PendingUpgrade: string
+    LastOperation: string
+  }
+  ManagedRuntime: {
+    RuntimeId: string
+    PoolId: string
+    PythonExecutable: string
+    VenvPath: string
+    RuntimeBinding: string
+  }
+  ManagedRemote: {
+    Source: 'MirrorChyan' | 'GitHub'
+    Channel: 'stable' | 'beta'
+    MirrorChyanRID: string
+    MirrorChyanCDK: string
+    GitHubRepo: string
+    GitHubTag: string
+    GitHubAssetPattern: string
+  }
+  Run: {
+    ProxyTimesLimit: number
+    RunTimesLimit: number
+    RunTimeLimit: number
+    DailyOnceTasks: string | string[]
+    WeeklyOnceTasks: string | string[]
+    MonthlyOnceTasks: string | string[]
+  }
+  /**
+   * 阶段性保留：manager.py 仍从 Selection.* 读取运行范围。
+   * 回收版前端写入 Info.* / 用户任务配置，此字段仅用于兼容旧简版脚本编辑页读取。
+   */
+  Selection?: {
+    Controller?: string | string[] | null
+    Resource?: string | string[] | null
+    Tasks?: string | string[] | null
+  }
+}
+
+export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
+
+export interface MaaFWTaskSnapshot {
+  taskOrder: string[]
+  taskChecked: Record<string, boolean>
+  taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+}
+
+export interface MaaFWUserConfig {
+  Info: {
+    Name: string
+    Status: boolean
+    RemainedDay: number
+    IfScriptBeforeTask: boolean
+    ScriptBeforeTask: string
+    IfScriptAfterTask: boolean
+    ScriptAfterTask: string
+    Notes: string
+    Tag?: string | null
+    Account: string
+    Password: string
+  }
+  Task: {
+    SelectedPreset: string
+    TaskSnapshot: string | MaaFWTaskSnapshot
+  }
+  Notify: {
+    Enabled: boolean
+    IfSendStatistic: boolean
+    IfSendMail: boolean
+    ToAddress: string
+    IfServerChan: boolean
+    ServerChanKey: string
+    CustomWebhooks?: Array<{
+      id: string
+      name: string
+      url: string
+      template: string
+      enabled: boolean
+      headers?: Record<string, string>
+      method?: 'POST' | 'GET'
+    }>
+  }
+  Data: {
+    LastProxyDate: string
+    ProxyTimes: number
+    IfPassCheck: boolean
+    LastProxyStatus: string
+    PeriodTaskRecords: string | Record<string, Record<string, string>>
+  }
+}
+
+export interface MaaFWProjectInfo {
+  name: string
+  label?: string | null
+  title?: string | null
+  version?: string | null
+  github?: string | null
+  mirrorchyanRid?: string | null
+  mirrorchyanMultiplatform?: boolean | null
+  description?: string | null
+  icon?: string | null
+}
+
+export const MAAFW_SUPPORTED_CONTROLLER_TYPES = ['Adb', 'Win32', 'Gamepad', 'PlayCover'] as const
+
+export const isSupportedMaaFWControllerType = (type: string) =>
+  (MAAFW_SUPPORTED_CONTROLLER_TYPES as readonly string[]).includes(type)
+
+export interface MaaFWControllerInfo {
+  name: string
+  label?: string | null
+  type: string
+  description?: string | null
+  icon?: string | null
+  option: string[]
+  permissionRequired: boolean
+}
+
+export interface MaaFWResourceInfo {
+  name: string
+  label?: string | null
+  description?: string | null
+  icon?: string | null
+  path: string[]
+  controller: string[]
+  option: string[]
+}
+
+export interface MaaFWGroupInfo {
+  name: string
+  label?: string | null
+  description?: string | null
+  icon?: string | null
+  defaultExpand: boolean
+}
+
+export interface MaaFWSettingInfo {
+  name: string
+  label?: string | null
+  description?: string | null
+  icon?: string | null
+  option: string[]
+  defaultExpand: boolean
+}
+
+export interface MaaFWTaskInfo {
+  name: string
+  label?: string | null
+  entry: string
+  description?: string | null
+  icon?: string | null
+  group: string[]
+  controller: string[]
+  resource: string[]
+  option: string[]
+  defaultCheck: boolean
+}
+
+export interface MaaFWOptionCaseInfo {
+  name: string
+  label?: string | null
+  description?: string | null
+  icon?: string | null
+  option: string[]
+}
+
+export interface MaaFWOptionInputInfo {
+  name: string
+  label?: string | null
+  description?: string | null
+  icon?: string | null
+  default?: string | null
+  pipelineType?: string | null
+  verify?: string | null
+  verifyError?: string | null
+  patternMsg?: string | null
+}
+
+export interface MaaFWOptionInfo {
+  name: string
+  type: string
+  label?: string | null
+  description?: string | null
+  icon?: string | null
+  controller: string[]
+  resource: string[]
+  cases: MaaFWOptionCaseInfo[]
+  inputs: MaaFWOptionInputInfo[]
+  hotkeys: Array<{
+    name: string
+    label?: string | null
+    description?: string | null
+    default?: string | null
+  }>
+  defaultCase?: string | string[] | null
+}
+
+export interface MaaFWAdbEmulatorExtraCapabilityInfo {
+  screencap: boolean
+  input: boolean
+}
+
+export interface MaaFWControlCapabilitiesInfo {
+  emulatorExtras: Record<string, MaaFWAdbEmulatorExtraCapabilityInfo>
+}
+
+export interface MaaFWPresetInfo {
+  name: string
+  label?: string | null
+  description?: string | null
+  taskCount: number
+  checkedCount: number
+  snapshot: MaaFWTaskSnapshot
+  controller?: string[]
+  resource?: string[]
+}
+
+export interface MaaFWInterfacePreviewData {
+  path: string
+  project: MaaFWProjectInfo
+  globalOption: string[]
+  controlCapabilities: MaaFWControlCapabilitiesInfo
+  controllers: MaaFWControllerInfo[]
+  resources: MaaFWResourceInfo[]
+  groups: MaaFWGroupInfo[]
+  settings: MaaFWSettingInfo[]
+  tasks: MaaFWTaskInfo[]
+  options: MaaFWOptionInfo[]
+  presets: MaaFWPresetInfo[]
+  importCount: number
+  agentCount: number
+}
+
 // HSR TaskMapping 默认值（Daily / ReceiveRewards / DivergentUniverse / CurrencyWars 默认走 SRA）
 export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
   Daily: 'SRA',
@@ -221,6 +514,7 @@ export interface Script {
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
+    | MaaFWScriptConfig
     | HSRConfig
   users: User[]
 }
@@ -322,6 +616,7 @@ export interface AddScriptResponse {
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
+    | MaaFWScriptConfig
     | HSRScriptConfig
 }
 
@@ -336,6 +631,7 @@ export interface ScriptIndexItem {
     | 'SrcConfig'
     | 'MaaEndConfig'
     | 'M9AConfig'
+    | 'MaaFWConfig'
     | 'HSRConfig'
 }
 
@@ -354,6 +650,7 @@ export interface GetScriptsResponse {
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
+    | MaaFWScriptConfig
     | HSRScriptConfig
   >
 }
@@ -371,6 +668,7 @@ export interface ScriptDetail {
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
+    | MaaFWScriptConfig
     | HSRConfig
   users?: User[]
   createTime?: string

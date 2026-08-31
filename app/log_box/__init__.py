@@ -8,7 +8,7 @@ log_box 只对日志本身负责：调用方提供「日志源 + 规则 + 处理
 hooks 是采集管线入口的日志处理钩子层：按配置规则丢弃/改写日志行，供
 LogMonitor（line_hook）与 LogCollect（open 前置处理器）共用同一份规则。
 
-顶层入口：``from mas_script import log_box, LogType``。
+顶层入口：``from app.log_box import log_box, LogType``。
 """
 
 from .collect import LogCollect

@@ -36,25 +36,28 @@ export const getQueueStatusColor = (status: string): string => {
 }
 
 // 任务模式选项（直接复用后端枚举值）
-export const TASK_MODE_OPTIONS = [{ label: '自动代理', value: TaskCreateIn.mode.AUTO_PROXY }]
+export const TASK_MODE_OPTIONS = [
+  { labelKey: 'scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
+]
 
 export const getTaskModeOptions = (supportedModes?: string[] | null) => {
   if (!supportedModes) return TASK_MODE_OPTIONS
   return TASK_MODE_OPTIONS.filter(option => supportedModes.includes(option.value))
 }
 
-// 电源操作映射
-export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
-  [PowerIn.signal.NO_ACTION]: '无动作',
-  [PowerIn.signal.SHUTDOWN]: '关机',
-  [PowerIn.signal.SHUTDOWN_FORCE]: '强制关机',
-  [PowerIn.signal.REBOOT]: '重启',
-  [PowerIn.signal.HIBERNATE]: '休眠',
-  [PowerIn.signal.SLEEP]: '睡眠',
-  [PowerIn.signal.KILL_SELF]: '退出软件',
-  [PowerIn.signal.LOGOFF]: '注销此账户',
+// 电源操作 -> 词表 key（信号值本身是后端枚举，不动）
+export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
+  [PowerIn.signal.NO_ACTION]: 'scheduler.power.noAction',
+  [PowerIn.signal.SHUTDOWN]: 'scheduler.power.shutdown',
+  [PowerIn.signal.SHUTDOWN_FORCE]: 'scheduler.power.shutdownForce',
+  [PowerIn.signal.REBOOT]: 'scheduler.power.reboot',
+  [PowerIn.signal.HIBERNATE]: 'scheduler.power.hibernate',
+  [PowerIn.signal.SLEEP]: 'scheduler.power.sleep',
+  [PowerIn.signal.KILL_SELF]: 'scheduler.power.killSelf',
+  [PowerIn.signal.LOGOFF]: 'scheduler.power.logoff',
 }
-export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
+export const getPowerActionLabelKey = (action: PowerIn.signal) =>
+  POWER_ACTION_LABEL_KEY[action] || 'scheduler.power.noAction'
 
 // 日志相关
 export const LOG_MAX_LENGTH = 2000 // 最多保留日志条数

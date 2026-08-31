@@ -51,6 +51,9 @@ export const WS_UPDATE_COMPLETED = 'update.completed'
 export const WS_UPDATE_FAILED = 'update.failed'
 export const WS_UPDATE_CANCELLED = 'update.cancelled'
 
+// MFW 运行环境准备（id=<scriptId>）
+export const WS_MAAFW_ENV_PREPARE_PROGRESS = 'maafw.env-prepare.progress'
+
 // 游戏签到结果（id=GameSign）
 export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 
@@ -125,6 +128,18 @@ export interface WSPowerSignData {
   signal: string
 }
 
+/** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */
+export interface WSMaaFWEnvPrepareProgressData {
+  /** resolving / creating_runtime / installing_runtime / runtime_ready / reused / log / ready / failed */
+  stage: string
+  /** running / success / failed */
+  status: string
+  message: string
+  percent?: number | null
+  /** 本次事件附带的新增日志行 */
+  log?: string | null
+}
+
 /** 更新下载进度数据 (id=Update, type=update.progress) */
 export interface WSUpdateProgressData {
   downloaded_size: number
@@ -165,6 +180,7 @@ export interface WSMessageDataMap {
   [WS_UPDATE_COMPLETED]: WSUpdateCompletedData
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
+  [WS_MAAFW_ENV_PREPARE_PROGRESS]: WSMaaFWEnvPrepareProgressData
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_TOOLKIT_NOTICE]: WSTaskNoticeData

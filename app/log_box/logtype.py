@@ -15,4 +15,4 @@ class LogType:
     """
 
     NORMAL = LOG_TYPE_NORMAL  # "普通"
-    FAIL = LOG_TYPE_ERROR     # "失败"
+    FAIL = LOG_TYPE_ERROR  # "失败"

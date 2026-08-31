@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/electron/renderer'
 import * as VueSentry from '@sentry/vue'
 import type { App } from 'vue'
 import type { Router } from 'vue-router'
+import { getBackendTracePropagationTarget } from '@/utils/backendEndpoint'
 
 import { sanitizeSentryEvent } from './sentryPrivacy'
 
@@ -50,7 +51,7 @@ const startSentry = () => {
       // 显式建立 enabled，避免开关判断依赖 SDK 默认值。
       enabled: true,
       tracesSampleRate: 0.05,
-      tracePropagationTargets: [/^http:\/\/(?:localhost|127\.0\.0\.1):36163\//],
+      tracePropagationTargets: [getBackendTracePropagationTarget()],
       beforeSend: sanitizeSentryEvent,
       beforeSendTransaction: sanitizeSentryEvent,
     },

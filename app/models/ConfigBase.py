@@ -610,7 +610,6 @@ class URLValidator(ValidatorBase):
 
 
 class ArgumentValidator(ValidatorBase):
-
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -626,7 +625,6 @@ class ArgumentValidator(ValidatorBase):
 
 
 class AdvancedArgumentValidator(ValidatorBase):
-
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -999,9 +997,7 @@ class ConfigBase(ABC):
 
         return self._config_item_index[group][name].getValue()
 
-    async def set(
-        self, group: str, name: str, value: Any, commit: bool = True
-    ) -> bool:
+    async def set(self, group: str, name: str, value: Any, commit: bool = True) -> bool:
         """
         设置配置项的值
 

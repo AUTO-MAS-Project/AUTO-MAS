@@ -1,13 +1,13 @@
 <template>
   <div class="task-queue-section">
     <div class="section-header">
-      <h3>任务队列配置</h3>
+      <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
     </div>
 
     <a-row :gutter="24" class="task-queue-layout">
       <a-col :span="12" class="left-column">
         <div class="column-header">
-          <span>任务队列</span>
+          <span>{{ t('edit.taskQueue') }}</span>
           <a-dropdown v-model:visible="addTaskDropdownVisible" trigger="click">
             <a-button type="primary" size="middle" :loading="loading">
               <template #icon><PlusOutlined /></template>
@@ -67,7 +67,7 @@
                     一键添加 {{ matchedCount }} 个任务
                   </a-button>
                   <p v-if="matchedCount < dailyPreset.taskNames.length" class="preset-hint">
-                    部分任务未找到对应脚本，已自动跳过
+                    {{ t('edit.someTasksHadNo') }}
                   </p>
                 </div>
               </div>
@@ -120,7 +120,7 @@
 
       <a-col :span="12" class="right-column">
         <div class="column-header">
-          <span>任务配置</span>
+          <span>{{ t('edit.taskConfiguration') }}</span>
         </div>
 
         <div v-if="selectedTaskIndex !== null && taskQueue[selectedTaskIndex]" class="task-config">
@@ -135,20 +135,20 @@
           />
 
           <a-popconfirm
-            title="确定要删除这个任务吗？"
-            ok-text="确定"
-            cancel-text="取消"
+            :title="t('edit.deleteThisTask2')"
+            :ok-text="t('edit.ok')"
+            :cancel-text="t('edit.cancel')"
             @confirm="deleteSelectedTask"
           >
             <a-button danger block style="margin-top: 24px; height: 40px; font-size: 14px">
               <template #icon><DeleteOutlined /></template>
-              删除此任务
+              {{ t('edit.deleteThisTask') }}
             </a-button>
           </a-popconfirm>
         </div>
 
         <div v-else class="no-selection">
-          <Empty description="请从左侧选择一个任务进行配置" />
+          <Empty :description="t('edit.pickTaskLeftConfigure')" />
         </div>
       </a-col>
     </a-row>
@@ -156,6 +156,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import {
   PlusOutlined,
@@ -171,6 +172,8 @@ import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import type { M9ATaskQueueItem, M9ATaskOption } from '@/types/script'
 import TaskOptionRenderer from './TaskOptionRenderer.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('M9A任务队列')
 
@@ -194,7 +197,7 @@ const isDragging = ref(false)
 // 预设模板常量
 const dailyPreset = {
   name: '日常-长草',
-  description: '无活动或换完商店时使用，进行常规刷取',
+  description: t('edit.usedWhenThereNo'),
   taskNames: [
     '收取荒原',
     '每日心相（意志解析）',
@@ -348,7 +351,7 @@ const loadAvailableTasks = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载可用任务失败: ${errorMsg}`)
-    message.error('加载可用任务失败')
+    message.error(t('edit.couldNotLoadAvailable'))
   }
 }
 
@@ -387,7 +390,7 @@ const addFromPreset = () => {
     }
 
     emit('update:taskQueue', newQueue)
-    message.success(`成功添加 ${validTasks.length} 个任务`)
+    message.success(t('edit.addedP0Tasks', { p0: validTasks.length }))
   } finally {
     addingFromPreset.value = false
   }

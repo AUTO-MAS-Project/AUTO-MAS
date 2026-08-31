@@ -143,7 +143,11 @@ def get_assigned_script(
         assigned = module.default_script
     if effective_engines and assigned not in effective_engines:
         assigned = next(
-            (engine for engine in module.supported_scripts if engine in effective_engines),
+            (
+                engine
+                for engine in module.supported_scripts
+                if engine in effective_engines
+            ),
             assigned,
         )
     return "SRA" if assigned == "SRA" else "M7A"

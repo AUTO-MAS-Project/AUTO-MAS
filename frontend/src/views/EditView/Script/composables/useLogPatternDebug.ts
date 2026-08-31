@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { ActionService, type PatternDebugIn, type PushLogPattern as ApiPushLogPattern } from '@/api'
@@ -94,23 +95,23 @@ export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
   const loadLog = async () => {
     const logPath = resolveLogPath()
     if (!logPath || logPath === '.') {
-      message.warning('请先在脚本配置中设置日志文件路径')
+      message.warning(t('edit.setLogFilePath'))
       return
     }
     try {
       loadingLog.value = true
       const content = await window.electronAPI.readFile(logPath)
       if (!content) {
-        message.warning('日志文件为空或无法读取')
+        message.warning(t('edit.logFileEmptyCould'))
         return
       }
       const allLines = content.split('\n')
       const n = logLines.value
       const lines = n < 0 ? allLines : allLines.slice(Math.max(0, allLines.length - n))
       input.value = lines.join('\n')
-      message.success(`已加载 ${lines.length} 行日志（共 ${allLines.length} 行）`)
+      message.success(t('edit.loadedP0P1Log', { p0: lines.length, p1: allLines.length }))
     } catch (error) {
-      message.error('加载日志文件失败: ' + (error as Error).message)
+      message.error(t('edit.couldNotLoadLog') + (error as Error).message)
     } finally {
       loadingLog.value = false
     }

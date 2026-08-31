@@ -26,9 +26,10 @@ const filenameToScriptType: Record<string, ScriptType> = {
   'ok-ww.ico': 'Okww',
   'ok-nte.ico': 'OkNte',
   'hsr.png': 'HSR',
+  'maafw.png': 'MaaFW',
 }
 
-const iconFilenames: ScriptType[] = ['MAA', 'SRC', 'M9A', 'MaaEnd', 'Okww', 'OkNte', 'HSR']
+const iconFilenames: ScriptType[] = ['MAA', 'SRC', 'M9A', 'MaaEnd', 'Okww', 'OkNte', 'HSR', 'MaaFW']
 
 export const satelliteModules: SatelliteModule[] = iconFilenames
   .map(type => {

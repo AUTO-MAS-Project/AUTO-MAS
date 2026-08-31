@@ -53,10 +53,10 @@ _CODECS: dict[str, tuple[Any, Any]] = {
         lambda data: json5.loads(decode_bytes(data)),
     ),
     ".jsonl": (
-        lambda d, encoding: "\n".join(
-            json.dumps(i, ensure_ascii=False) for i in d
-        ).encode(encoding)
-        + b"\n",
+        lambda d, encoding: (
+            "\n".join(json.dumps(i, ensure_ascii=False) for i in d).encode(encoding)
+            + b"\n"
+        ),
         lambda data: [
             json.loads(d) for d in decode_bytes(data).splitlines() if d.strip()
         ],

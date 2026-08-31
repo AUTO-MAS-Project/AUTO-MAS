@@ -125,14 +125,16 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
 
     if not token or not token.strip():
         logger.warning("库街区 Token 为空")
-        return [{
-            "account": "未知/库街区",
-            "game": "库街区",
-            "platform": "库街区",
-            "status": "失败",
-            "reward": "",
-            "reason": "Token 为空",
-        }]
+        return [
+            {
+                "account": "未知/库街区",
+                "game": "库街区",
+                "platform": "库街区",
+                "status": "失败",
+                "reward": "",
+                "reason": "Token 为空",
+            }
+        ]
 
     token = token.strip()
     dev_code = str(uuid.uuid4())
@@ -145,14 +147,16 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
             user_info = await _get_user_info(token, dev_code, distinct_id, client)
         except Exception as e:
             reason = _log_kuro_exception("获取库街区用户信息失败", e)
-            return [{
-                "account": "未知/库街区",
-                "game": "库街区",
-                "platform": "库街区",
-                "status": "失败",
-                "reward": "",
-                "reason": reason,
-            }]
+            return [
+                {
+                    "account": "未知/库街区",
+                    "game": "库街区",
+                    "platform": "库街区",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": reason,
+                }
+            ]
 
         user_id = user_info.get("userId", "")
         nick_name = user_info.get("nickName", user_id)
@@ -162,14 +166,16 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
             roles = await _get_role_list(token, dev_code, distinct_id, user_id, client)
         except Exception as e:
             reason = _log_kuro_exception("获取库街区游戏角色失败", e)
-            return [{
-                "account": f"{nick_name}/库街区",
-                "game": "库街区",
-                "platform": "库街区",
-                "status": "失败",
-                "reward": "",
-                "reason": reason,
-            }]
+            return [
+                {
+                    "account": f"{nick_name}/库街区",
+                    "game": "库街区",
+                    "platform": "库街区",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": reason,
+                }
+            ]
 
         signable_roles = [
             role for role in roles if str(role.get("gameId", "")) in GAME_CONFIG
@@ -187,7 +193,11 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
             game_cfg = GAME_CONFIG[game_id]
 
             # account 格式: 别名/角色名(角色ID)
-            account = f"{nick_name}/{role_name}({role_id})" if role_id else f"{nick_name}/库街区"
+            account = (
+                f"{nick_name}/{role_name}({role_id})"
+                if role_id
+                else f"{nick_name}/库街区"
+            )
 
             # 执行签到
             try:
@@ -208,14 +218,16 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
                     f"{game_cfg['name']}签到失败",
                     e,
                 )
-                results.append({
-                    "account": account,
-                    "game": game_cfg["name"],
-                    "platform": "库街区",
-                    "status": "失败",
-                    "reward": "",
-                    "reason": reason,
-                })
+                results.append(
+                    {
+                        "account": account,
+                        "game": game_cfg["name"],
+                        "platform": "库街区",
+                        "status": "失败",
+                        "reward": "",
+                        "reason": reason,
+                    }
+                )
 
             if index < len(signable_roles) - 1:
                 await asyncio.sleep(3)
@@ -307,7 +319,9 @@ async def _do_sign(
 
     headers = GAME_HEADERS.copy()
     headers["token"] = token
-    headers["devcode"] = f"{dev_code}, Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) "
+    headers["devcode"] = (
+        f"{dev_code}, Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) "
+    )
 
     # 库街区服务端按北京时间计月，本地时区可能不同，统一使用 UTC+8
     req_month = datetime.now(tz=UTC8).strftime("%m")

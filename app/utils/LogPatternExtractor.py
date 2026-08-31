@@ -55,7 +55,11 @@ from app.utils.expression import CompiledExpression, ExpressionError, compile_ex
 PATTERN_TYPE_SPLIT = "split"
 PATTERN_TYPE_REGEX = "regex"
 PATTERN_TYPE_MULTILINE = "multiline"
-SUPPORTED_PATTERN_TYPES = (PATTERN_TYPE_SPLIT, PATTERN_TYPE_REGEX, PATTERN_TYPE_MULTILINE)
+SUPPORTED_PATTERN_TYPES = (
+    PATTERN_TYPE_SPLIT,
+    PATTERN_TYPE_REGEX,
+    PATTERN_TYPE_MULTILINE,
+)
 
 # 规则日志类型：普通 = 任何推送报告均包含；失败 = 仅在存在未完成用户的报告中包含
 LOG_TYPE_NORMAL = "普通"
@@ -68,6 +72,7 @@ def _clean_log_type(value: object) -> str:
     if value == LOG_TYPE_ERROR:
         return LOG_TYPE_ERROR
     return LOG_TYPE_NORMAL
+
 
 # 多行聚合默认最大跨行数
 _MULTILINE_DEFAULT_MAX_LINES = 50
@@ -435,7 +440,7 @@ def apply_patterns(
 
 
 def flush_patterns(
-    matchers: Optional[list[CompiledMatcher]] = None
+    matchers: Optional[list[CompiledMatcher]] = None,
 ) -> list[tuple[str, str]]:
     """对所有匹配器调用 flush，收集所有非 None 的 (日志类型, 残留结果)
 
@@ -642,7 +647,13 @@ def debug_pattern(
             )
         if not results:
             results.append(
-                {"idx": 0, "hit": False, "extracted": "", "line": "", "error": "未匹配到任何窗口"}
+                {
+                    "idx": 0,
+                    "hit": False,
+                    "extracted": "",
+                    "line": "",
+                    "error": "未匹配到任何窗口",
+                }
             )
         return (None, is_multiline, results)
 

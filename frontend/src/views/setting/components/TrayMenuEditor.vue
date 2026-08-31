@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Modal, message, type TableColumnsType } from 'ant-design-vue'
 import {
   DeleteOutlined,
@@ -20,17 +21,19 @@ interface TaskOption {
   value: string
 }
 
+const { t } = useI18n()
+
 const items = ref<TrayMenuItem[]>([])
 const actionOptions = TRAY_ACTION_OPTIONS
 // 可启动的任务列表（队列 + 未锁定的脚本），供「启动任务」动作选择
 const taskOptions = ref<TaskOption[]>([])
 const logger = window.electronAPI?.getLogger?.('托盘菜单')
 
-const columns: TableColumnsType = [
-  { title: '菜单文本', key: 'label', width: 240 },
-  { title: '动作', key: 'action', width: 260 },
-  { title: '操作', key: 'ops', width: 140, align: 'center' },
-]
+const columns = computed<TableColumnsType>(() => [
+  { title: t('setting.tray.colLabel'), key: 'label', width: 240 },
+  { title: t('setting.tray.colAction'), key: 'action', width: 260 },
+  { title: t('setting.tray.colOps'), key: 'ops', width: 140, align: 'center' },
+])
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -128,12 +131,12 @@ const save = async () => {
     }))
     const ok = await window.electronAPI?.updateTrayConfig(payload)
     if (!ok) {
-      message.error('托盘菜单保存失败')
+      message.error(t('setting.toast.trayMenuSaveFailed'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger?.error(`托盘菜单保存失败: ${errorMsg}`)
-    message.error('托盘菜单保存失败')
+    message.error(t('setting.toast.trayMenuSaveFailed'))
   }
 }
 
@@ -170,13 +173,13 @@ const reset = () => {
 
 const confirmReset = () => {
   Modal.confirm({
-    title: '恢复默认托盘菜单',
-    content: '将用默认菜单项（显示窗口 / 隐藏窗口 / 退出）替换当前自定义配置。',
-    okText: '恢复默认',
-    cancelText: '取消',
+    title: t('setting.tray.resetTitle'),
+    content: t('setting.tray.resetContent'),
+    okText: t('setting.tray.reset'),
+    cancelText: t('common.cancel'),
     onOk: () => {
       reset()
-      message.success('已恢复默认托盘菜单')
+      message.success(t('setting.toast.trayMenuReset'))
     },
   })
 }
@@ -194,16 +197,14 @@ onBeforeUnmount(() => {
   <div class="tray-menu-editor">
     <div class="tray-menu-section-head">
       <div class="tray-menu-section-title">
-        <span class="tray-menu-label">托盘菜单自定义</span>
-        <a-tooltip
-          title="右键托盘图标时的菜单项，可增删与排序；「启动任务」可一键启动指定队列/脚本，「重启应用」会停止当前正在运行的任务"
-        >
+        <span class="tray-menu-label">{{ t('setting.tray.section') }}</span>
+        <a-tooltip :title="t('setting.tray.sectionTip')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </div>
       <a-space :size="8">
-        <a-button size="small" @click="add">添加选项</a-button>
-        <a-button size="small" @click="confirmReset">恢复默认</a-button>
+        <a-button size="small" @click="add">{{ t('setting.tray.add') }}</a-button>
+        <a-button size="small" @click="confirmReset">{{ t('setting.tray.reset') }}</a-button>
       </a-space>
     </div>
 
@@ -220,7 +221,7 @@ onBeforeUnmount(() => {
             v-if="column.key === 'label'"
             v-model:value="record.label"
             size="small"
-            placeholder="菜单文本"
+            :placeholder="t('setting.tray.colLabel')"
             :maxlength="30"
             style="width: 100%"
             @change="schedulePersist"
@@ -241,7 +242,7 @@ onBeforeUnmount(() => {
               v-model:value="record.taskId"
               size="small"
               style="width: 100%"
-              placeholder="选择要启动的任务"
+              :placeholder="t('setting.tray.taskPlaceholder')"
               show-search
               option-filter-prop="label"
               :options="taskOptions"
@@ -253,7 +254,7 @@ onBeforeUnmount(() => {
               size="small"
               type="text"
               :disabled="index === 0"
-              aria-label="上移"
+              :aria-label="t('setting.tray.moveUp')"
               @click="move(index, -1)"
             >
               <UpOutlined />
@@ -262,12 +263,18 @@ onBeforeUnmount(() => {
               size="small"
               type="text"
               :disabled="index === items.length - 1"
-              aria-label="下移"
+              :aria-label="t('setting.tray.moveDown')"
               @click="move(index, 1)"
             >
               <DownOutlined />
             </a-button>
-            <a-button size="small" type="text" danger aria-label="删除" @click="remove(index)">
+            <a-button
+              size="small"
+              type="text"
+              danger
+              :aria-label="t('setting.tray.remove')"
+              @click="remove(index)"
+            >
               <DeleteOutlined />
             </a-button>
           </a-space>

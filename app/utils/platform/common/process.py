@@ -75,6 +75,39 @@ def is_process_running(process_name: str) -> bool:
     return False
 
 
+def has_visible_window(pid: int) -> bool:
+    """指定进程是否已经拥有可见窗口。
+
+    用作「程序起来了没有」的就绪判据：进程创建远早于窗口出现，只看进程在不在
+    会把还在加载的游戏当成已就绪。
+    """
+
+    for hwnd in window.get_window_handles(pid):
+        with suppress(Exception):
+            if window.is_visible(hwnd):
+                return True
+    return False
+
+
+def activate_window_by_pid(
+    pid: int, window_title: str | None = None, window_class_name: str | None = None
+) -> bool:
+    """按 pid 把窗口置前。
+
+    给「只有 pid、不该为此造一个 ProcessManager」的调用方用：ProcessManager 代表
+    「本次由我方启动并持有的进程」，为了点一下窗口就 new 一个，会让持有关系失真
+    （也会污染按实例计数的测试）。
+    """
+
+    hwnd = window.get_main_window_handle(pid, window_title, window_class_name)
+    if hwnd is None:
+        return False
+    try:
+        return window.activate_window(hwnd)
+    except Exception:
+        return False
+
+
 def get_window_handles(pid: int) -> list[int]:
     """获取指定进程的所有窗口句柄"""
 
@@ -212,10 +245,9 @@ class ProcessManager:
                     self._drain_tasks.append(asyncio.create_task(self._drain(stream)))
 
         if target_process is not None:
-
             await self.search_process(
                 target_process,
-                datetime.now() + timedelta(seconds=60),
+                60.0,
                 min_create_time=time.time(),
             )
 
@@ -254,26 +286,27 @@ class ProcessManager:
 
         await self.search_process(
             target_process,
-            datetime.now() + timedelta(seconds=60),
+            60.0,
             min_create_time=time.time(),
         )
 
     async def search_process(
         self,
         target_process: ProcessInfo,
-        search_end_time: datetime,
+        timeout_seconds: float = 60.0,
         min_create_time: float | None = None,
     ) -> None:
         """查找目标进程
 
         Args:
             target_process: 期望目标进程信息
-            search_end_time: 搜索截止时间
+            timeout_seconds: 搜索超时秒数，按单调时钟计量，不受系统时钟跳变影响
             min_create_time: 进程创建时间下限（epoch 秒），早于该时刻创建的同名进程视为
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
         """
 
-        while datetime.now() < search_end_time:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
             for proc in psutil.process_iter(
                 ["pid", "name", "exe", "cmdline", "create_time"]
             ):

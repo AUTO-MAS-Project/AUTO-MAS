@@ -82,6 +82,19 @@ const routes = [
     meta: { title: '编辑M9A脚本' },
   },
   {
+    path: '/scripts/:id/edit/maafw',
+    name: 'MaaFWScriptEdit',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: '编辑MFW脚本' },
+  },
+  {
+    // 新建 MFW 脚本后的分步引导；与编辑页同一个组件，按路由名切换形态
+    path: '/scripts/:id/setup/maafw',
+    name: 'MaaFWSetupWizard',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: 'MaaFramework项目引导' },
+  },
+  {
     path: '/scripts/:id/edit/hsr',
     name: 'HSRScriptEdit',
     component: () => import('../views/EditView/Script/HSRScriptEdit.vue'),
@@ -136,6 +149,12 @@ const routes = [
     meta: { title: '添加M9A用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/maafw',
+    name: 'MaaFWUserAdd',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '添加 MFW 用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/hsr',
     name: 'HSRUserAdd',
     component: () => import('../views/EditView/User/HSRUserEdit.vue'),
@@ -158,6 +177,12 @@ const routes = [
     name: 'M9AUserEdit',
     component: () => import('../views/EditView/User/M9AUserEdit.vue'),
     meta: { title: '编辑M9A用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/maafw',
+    name: 'MaaFWUserEdit',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '编辑 MFW 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/hsr',
