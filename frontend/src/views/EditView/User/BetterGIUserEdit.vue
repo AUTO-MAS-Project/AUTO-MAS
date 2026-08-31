@@ -4,7 +4,7 @@
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts">脚本管理</router-link>
+            <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="`/scripts/${scriptId}/edit/bettergi`" class="breadcrumb-link">
@@ -12,7 +12,7 @@
             </router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
-            {{ isEdit ? '编辑用户' : '添加用户' }}
+            {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
           </a-breadcrumb-item>
         </a-breadcrumb>
       </div>
@@ -24,7 +24,7 @@
         >
           <template #title>
             <span style="white-space: normal">
-              独立配置模式：将打开 BetterGI，请在「一条龙」页面编辑「MAS独立配置」，保存退出后自动回读到该用户。
+              {{ t('edit.bettergiMasConfigTooltip') }}
             </span>
           </template>
           <a-button
@@ -38,7 +38,7 @@
             <template #icon>
               <SettingOutlined />
             </template>
-            配置 BetterGI
+            {{ t('edit.bettergiConfigure') }}
           </a-button>
         </a-tooltip>
         <a-button
@@ -53,19 +53,19 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          配置 BetterGI
+          {{ t('edit.bettergiConfigure') }}
         </a-button>
         <a-button v-else type="default" size="large" disabled class="configuring-button">
           <template #icon>
             <SettingOutlined />
           </template>
-          正在配置
+          {{ t('edit.configuring') }}
         </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
-          返回
+          {{ t('edit.back') }}
         </a-button>
       </a-space>
     </div>
@@ -76,11 +76,11 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
           </div>
-          <h2 class="mask-title">正在进行 BetterGI 设置</h2>
+          <h2 class="mask-title">{{ t('edit.bettergiConfiguringTitle') }}</h2>
           <p class="mask-description">
-            请在 BetterGI 界面完成设置。
+            {{ t('edit.bettergiConfiguringDesc') }}
             <br />
-            完成后点击“保存设置”结束本次会话。
+            {{ t('edit.bettergiConfiguringDesc2') }}
           </p>
           <div class="mask-actions">
             <a-button
@@ -89,7 +89,7 @@
               size="large"
               @click="handleSaveBettergiConfig"
             >
-              保存设置
+              {{ t('edit.saveSettings') }}
             </a-button>
           </div>
         </div>
@@ -101,7 +101,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>基本信息</h3>
+              <h3>{{ t('edit.basicInfo') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -109,15 +109,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      用户名
-                      <a-tooltip title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计">
+                      {{ t('edit.username') }}
+                      <a-tooltip :title="t('edit.bettergiUserNameHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.userName"
-                    placeholder="请输入用户名"
+                    :placeholder="t('edit.enterUsername')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Name', formData.userName)"
@@ -128,8 +128,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      启用状态
-                      <a-tooltip title="是否启用该用户">
+                      {{ t('edit.enabled') }}
+                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -140,8 +140,8 @@
                     class="modern-select"
                     @change="saveField('Info.Status', formData.Info.Status)"
                   >
-                    <a-select-option :value="true">是</a-select-option>
-                    <a-select-option :value="false">否</a-select-option>
+                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -152,17 +152,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      账户
-                      <a-tooltip
-                        title="用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式"
-                      >
+                      {{ t('edit.bettergiAccount') }}
+                      <a-tooltip :title="t('edit.bettergiAccountHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    placeholder="请输入账户"
+                    :placeholder="t('edit.bettergiEnterAccount')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Id', formData.Info.Id)"
@@ -173,17 +171,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      账号 UID
-                      <a-tooltip
-                        title="可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作"
-                      >
+                      {{ t('edit.bettergiAccountUid') }}
+                      <a-tooltip :title="t('edit.bettergiUidHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Switch.Uid"
-                    placeholder="请输 UID（切换账号建议填写）"
+                    :placeholder="t('edit.bettergiEnterUid')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Switch.Uid', formData.Switch.Uid)"
@@ -194,17 +190,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      密码
-                      <a-tooltip
-                        title="没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码"
-                      >
+                      {{ t('edit.password') }}
+                      <a-tooltip :title="t('edit.bettergiPasswordHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    placeholder="请输入密码（没有填写密码时，默认为下拉列表切换账号）"
+                    :placeholder="t('edit.bettergiEnterPasswordPlaceholder')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Password', formData.Info.Password)"
@@ -218,8 +212,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      游戏服务器
-                      <a-tooltip title="账号所在服务器：官服 / B服 / 亚服 / 欧服 / 美服 / 港澳台服">
+                      {{ t('edit.bettergiGameServer') }}
+                      <a-tooltip :title="t('edit.bettergiGameServerHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -230,12 +224,14 @@
                     class="modern-select"
                     @change="saveField('Switch.Resource', formData.Switch.Resource)"
                   >
-                    <a-select-option value="官服">官服</a-select-option>
-                    <a-select-option value="B服">B服</a-select-option>
-                    <a-select-option value="亚服">亚服</a-select-option>
-                    <a-select-option value="欧服">欧服</a-select-option>
-                    <a-select-option value="美服">美服</a-select-option>
-                    <a-select-option value="港澳台服">港澳台服</a-select-option>
+                    <a-select-option value="官服">{{ t('edit.bettergiServerCn') }}</a-select-option>
+                    <a-select-option value="B服">{{ t('edit.bettergiServerBili') }}</a-select-option>
+                    <a-select-option value="亚服">{{ t('edit.bettergiServerAsia') }}</a-select-option>
+                    <a-select-option value="欧服">{{ t('edit.bettergiServerEurope') }}</a-select-option>
+                    <a-select-option value="美服">{{ t('edit.bettergiServerAmerica') }}</a-select-option>
+                    <a-select-option value="港澳台服">
+                      {{ t('edit.bettergiServerTwHkMo') }}
+                    </a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -243,8 +239,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      剩余天数
-                      <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                      {{ t('edit.daysLeft') }}
+                      <a-tooltip :title="t('edit.daysLeftAccount1')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -275,15 +271,15 @@
             <a-form-item>
               <template #label>
                 <span class="form-label">
-                  备注
-                  <a-tooltip title="为用户添加备注信息">
+                  {{ t('edit.note') }}
+                  <a-tooltip :title="t('edit.addNoteAboutThis')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </span>
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
-                placeholder="请输入备注"
+                :placeholder="t('edit.enterNote')"
                 :rows="4"
                 class="modern-input"
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
@@ -298,10 +294,8 @@
           <div class="form-section">
             <div class="section-header">
               <h3>
-                任务配置
-                <a-tooltip
-                  title="勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑"
-                >
+                {{ t('edit.taskConfiguration') }}
+                <a-tooltip :title="t('edit.bettergiTaskConfigHint')">
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
               </h3>
@@ -315,8 +309,7 @@
             >
               <template #message>
                 <span class="mode-guide-message">
-                  当前为「脚本直控配置」，任务配置项不可编辑。请切换到「用户独立配置」，以在本页为该
-                  用户配置独立的一条龙任务。
+                  {{ t('edit.bettergiDirectModeAlert') }}
                 </span>
               </template>
               <template #action>
@@ -326,7 +319,7 @@
                   :loading="configModeSaving"
                   @click="handleConfigModeChange(true)"
                 >
-                  切换到用户独立配置
+                  {{ t('edit.bettergiSwitchToMasConfig') }}
                 </a-button>
               </template>
             </a-alert>
@@ -338,20 +331,16 @@
               class="mode-guide-alert config-flow-hint"
             >
               <template #message>
-                <span class="config-flow-title">如何使用「用户独立配置」</span>
+                <span class="config-flow-title">{{ t('edit.bettergiMasConfigHowTo') }}</span>
               </template>
               <template #description>
                 <p class="config-flow-desc config-flow-p">
-                  该用户的一条龙已走独立配置：MAS 会以「MAS独立配置」这条龙槽位启动。想调整
-                  具体任务，点击右上角「配置 BetterGI」打开 BGI，在其「一条龙」页面选择并编辑名为
-                  <b>「MAS独立配置」</b> 的配置，保存退出后 MAS 会自动回读到该用户。
-                  请不要修改你原有的一龙实配（如「默认配置」）——独立配置读取的是「MAS独立配置」
-                  槽位，同名实配不会被读取、也不受这里编辑影响。
+                  {{ t('edit.bettergiMasConfigHowTo1a') }}
+                  <b>{{ t('edit.bettergiMasConfigSlotName') }}</b>
+                  {{ t('edit.bettergiMasConfigHowTo1b') }}
                 </p>
                 <p class="config-flow-desc config-flow-p">
-                  下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍
-                  自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、
-                  自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。
+                  {{ t('edit.bettergiMasConfigHowTo2') }}
                 </p>
               </template>
             </a-alert>
@@ -362,10 +351,8 @@
                   <template #label>
                     <span class="form-label">
                       <span class="required-mark">*</span>
-                      一条龙名称
-                      <a-tooltip
-                        title="必填。对应 BetterGI 一条龙页面中已保存/将保存的一条龙配置名称，默认为「默认配置」"
-                      >
+                      {{ t('edit.bettergiOneDragonName') }}
+                      <a-tooltip :title="t('edit.bettergiOneDragonNameHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -373,7 +360,7 @@
                   <a-select
                     v-model:value="formData.Task.OneDragonConfigName"
                     :options="oneDragonConfigOptions"
-                    placeholder="请选择一条龙配置名称"
+                    :placeholder="t('edit.bettergiPickOneDragonName')"
                     size="large"
                     show-search
                     option-filter-prop="label"
@@ -393,8 +380,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      领取奖励队伍
-                      <a-tooltip title="留空则不覆盖 BetterGI 现有设置">
+                      {{ t('edit.bettergiDailyRewardParty') }}
+                      <a-tooltip :title="t('edit.bettergiKeepExistingHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -402,7 +389,7 @@
                   <a-input
                     v-model:value="formData.OneDragon.DailyRewardPartyName"
                     :disabled="!formData.Info.IfUseMasConfig"
-                    placeholder="请输入领取奖励队伍"
+                    :placeholder="t('edit.bettergiEnterDailyRewardParty')"
                     size="large"
                     class="modern-input"
                     @blur="
@@ -421,8 +408,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      通用战斗队伍
-                      <a-tooltip title="留空则不覆盖 BetterGI 现有设置">
+                      {{ t('edit.bettergiBattleParty') }}
+                      <a-tooltip :title="t('edit.bettergiKeepExistingHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -430,7 +417,7 @@
                   <a-input
                     v-model:value="formData.OneDragon.PartyName"
                     :disabled="!formData.Info.IfUseMasConfig"
-                    placeholder="请输入通用战斗队伍"
+                    :placeholder="t('edit.bettergiEnterBattleParty')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('OneDragon.PartyName', formData.OneDragon.PartyName)"
@@ -441,8 +428,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      通用战斗策略
-                      <a-tooltip title="留空则默认为【根据队伍自动选择】">
+                      {{ t('edit.bettergiBattleStrategy') }}
+                      <a-tooltip :title="t('edit.bettergiBattleStrategyHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -450,7 +437,7 @@
                   <a-select
                     v-model:value="formData.OneDragon.AutoBossStrategyName"
                     :disabled="!formData.Info.IfUseMasConfig"
-                    placeholder="请输入通用战斗策略"
+                    :placeholder="t('edit.bettergiEnterBattleStrategy')"
                     size="large"
                     :options="strategyOptions"
                     allow-clear
@@ -474,8 +461,8 @@
             </a-row>
 
             <p class="config-group-hint">
-                胶囊是「任务配置组」开关：勾选的任务才会执行，未勾选的不执行。
-              </p>
+              {{ t('edit.bettergiGroupCapsuleHint') }}
+            </p>
 
             <div class="config-group-grid">
               <div
@@ -498,25 +485,24 @@
             <div class="custom-groups-section">
               <div class="custom-groups-header">
                 <h3>
-                  自定义配置组
+                  {{ t('edit.bettergiCustomGroups') }}
                   <a-tooltip placement="top">
                     <template #title>
                       <div style="max-width: 320px; white-space: normal">
-                        来源：BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组（在
-                        BetterGI 一条龙界面添加），不是下方的「任务配置组」开关。
+                        {{ t('edit.bettergiCustomGroupsTip1') }}
                         <br /><br />
-                        用法（本表只是一个开关）：一条龙里存在但本表未列出的配置组
-                        <b>默认执行</b>；已加入本表的组按行的开关执行——开启则执行、关闭则不执行。
+                        {{ t('edit.bettergiCustomGroupsTip2a') }}
+                        <b>{{ t('edit.bettergiCustomGroupsDefaultRun') }}</b>
+                        {{ t('edit.bettergiCustomGroupsTip2b') }}
                         <br /><br />
-                        「添加配置组」从 BetterGI 现有配置（独立配置模式下读取「MAS独立配置」槽位）
-                        选取要纳入控制的组；未入表的组仍保留在一条龙里，不会因本表而丢失。
+                        {{ t('edit.bettergiCustomGroupsTip3') }}
                       </div>
                     </template>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </h3>
                 <div class="custom-groups-toggle">
-                  <span class="custom-groups-toggle-label">启用</span>
+                  <span class="custom-groups-toggle-label">{{ t('edit.enabled2') }}</span>
                   <div
                     class="config-group-item-capsule custom-groups-capsule"
                     :class="{
@@ -531,8 +517,7 @@
               </div>
 
               <p class="section-desc custom-groups-desc">
-                来源是 BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组；本表只是一个开关——
-                一条龙里有但表里没有的组默认执行，入表的组按行的开关执行（开启执行、关闭不执行）。
+                {{ t('edit.bettergiCustomGroupsDesc') }}
               </p>
 
               <div
@@ -541,15 +526,15 @@
               >
                 <div class="custom-groups-toolbar">
                   <a-button size="small" type="primary" ghost @click="openCustomGroupModal">
-                    添加配置组
+                    {{ t('edit.bettergiAddGroup') }}
                   </a-button>
                   <a-popconfirm
-                    title="确定删除选中的配置组吗？"
+                    :title="t('edit.bettergiDeleteGroupConfirm')"
                     :disabled="selectedCustomGroupKeys.length === 0"
                     @confirm="deleteSelectedCustomGroups"
                   >
                     <a-button size="small" danger :disabled="selectedCustomGroupKeys.length === 0">
-                      删除选中
+                      {{ t('edit.deleteSelected') }}
                     </a-button>
                   </a-popconfirm>
                 </div>
@@ -581,8 +566,10 @@
           <!-- 添加配置组弹窗 -->
           <a-modal
             v-model:open="customGroupModal.open"
-            title="添加配置组"
-            :ok-text="customGroupModal.saving ? '添加中...' : '添加'"
+            :title="t('edit.bettergiAddGroup')"
+            :ok-text="
+              customGroupModal.saving ? t('edit.bettergiAdding') : t('edit.bettergiAddAction')
+            "
             :ok-button-props="{ disabled: customGroupModal.saving }"
             @ok="confirmAddCustomGroup"
             @cancel="customGroupModal.open = false"
@@ -590,7 +577,7 @@
             <a-select
               v-model:value="customGroupModal.name"
               :options="customGroupModal.addOptions"
-              placeholder="选择 BGI 现有的配置组（添加后默认启用）"
+              :placeholder="t('edit.bettergiPickExistingGroup')"
               show-search
               allow-clear
               style="width: 100%"
@@ -610,11 +597,11 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>通知配置</h3>
+              <h3>{{ t('edit.notificationSettings') }}</h3>
             </div>
             <a-row :gutter="24" align="middle">
               <a-col :span="6">
-                <span style="font-weight: 500">启用通知</span>
+                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
               </a-col>
               <a-col :span="18">
                 <a-switch
@@ -626,7 +613,7 @@
 
             <a-row :gutter="24" style="margin-top: 16px">
               <a-col :span="6">
-                <span style="font-weight: 500">通知内容</span>
+                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
               </a-col>
               <a-col :span="18">
                 <a-checkbox
@@ -634,7 +621,7 @@
                   :disabled="!formData.Notify.Enabled"
                   @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
                 >
-                  统计信息
+                  {{ t('edit.notifyStatistics') }}
                 </a-checkbox>
               </a-col>
             </a-row>
@@ -646,13 +633,13 @@
                   :disabled="!formData.Notify.Enabled"
                   @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
                 >
-                  邮件通知
+                  {{ t('edit.notifyMail') }}
                 </a-checkbox>
               </a-col>
               <a-col :span="18">
                 <a-input
                   v-model:value="formData.Notify.ToAddress"
-                  placeholder="请输入收件邮箱"
+                  :placeholder="t('edit.enterRecipientAddress')"
                   :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
                   size="large"
                   @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
@@ -667,13 +654,13 @@
                   :disabled="!formData.Notify.Enabled"
                   @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
                 >
-                  Server酱
+                  {{ t('edit.notifyServerChan') }}
                 </a-checkbox>
               </a-col>
               <a-col :span="18">
                 <a-input
                   v-model:value="formData.Notify.ServerChanKey"
-                  placeholder="请输入 SENDKEY"
+                  :placeholder="t('edit.enterSendkey')"
                   :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
                   size="large"
                   @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
@@ -692,8 +679,9 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { BettergiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
@@ -705,6 +693,7 @@ import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
 const route = useRoute()
 const router = useRouter()
@@ -714,7 +703,7 @@ const { getScript } = useScriptApi()
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
-const scriptName = ref('BetterGI脚本')
+const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
@@ -731,17 +720,23 @@ type BetterGIUserFormData = {
   Notify: FormSection<NonNullable<BetterGIUserConfig['Notify']>>
 }
 
-// 一条龙内置配置组（与后端 BetterGIUserConfig.OneDragon.Groups 的默认项保持一致）
-const oneDragonGroupOptions = [
-  { label: '领取邮件', value: '领取邮件' },
-  { label: '合成树脂', value: '合成树脂' },
-  { label: '自动地脉花', value: '自动地脉花' },
-  { label: '自动秘境', value: '自动秘境' },
-  { label: '自动首领讨伐', value: '自动首领讨伐' },
-  { label: '自动幽境危战', value: '自动幽境危战' },
-  { label: '领取每日奖励', value: '领取每日奖励' },
-  { label: '领取尘歌壶奖励', value: '领取尘歌壶奖励' },
+// 一条龙内置配置组（与后端 BetterGIUserConfig.OneDragon.Groups 的默认项保持一致）。
+// value 参与后端判定，保持中文原样；只有显示名接词表。
+const ONE_DRAGON_GROUPS = [
+  { value: '领取邮件', labelKey: 'edit.bettergiGroupMail' },
+  { value: '合成树脂', labelKey: 'edit.bettergiGroupResin' },
+  { value: '自动地脉花', labelKey: 'edit.bettergiGroupLeyLine' },
+  { value: '自动秘境', labelKey: 'edit.bettergiGroupDomain' },
+  { value: '自动首领讨伐', labelKey: 'edit.bettergiGroupBoss' },
+  { value: '自动幽境危战', labelKey: 'edit.bettergiGroupStygian' },
+  { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
+  { value: '领取尘歌壶奖励', labelKey: 'edit.bettergiGroupTeapot' },
 ]
+
+// 切换语言时标签要跟着变，故必须是 computed 而非常量数组
+const oneDragonGroupOptions = computed(() =>
+  ONE_DRAGON_GROUPS.map(group => ({ label: t(group.labelKey), value: group.value }))
+)
 
 const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Info: {
@@ -766,7 +761,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Uid: '',
   },
   OneDragon: {
-    Groups: oneDragonGroupOptions.map(option => option.value),
+    Groups: ONE_DRAGON_GROUPS.map(group => group.value),
     DailyRewardPartyName: '',
     PartyName: '',
     AutoBossStrategyName: '根据队伍自动选择',
@@ -792,7 +787,7 @@ const formData = reactive<BetterGIUserFormData>({
 const createUserImmediately = async (): Promise<boolean> => {
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    message.error(userApiError.value || '创建用户失败')
+    message.error(userApiError.value || t('edit.couldNotCreateUser'))
     handleCancel()
     return false
   }
@@ -856,7 +851,7 @@ const toggleGroup = (value: string) => {
     set.add(value)
   }
   // 按内置顺序排序，保持后端一条龙 TaskOrder 稳定
-  const groups = oneDragonGroupOptions.map(o => o.value).filter(v => set.has(v))
+  const groups = ONE_DRAGON_GROUPS.map(g => g.value).filter(v => set.has(v))
   formData.OneDragon.Groups = groups
   void saveField('OneDragon.Groups', groups)
 }
@@ -973,7 +968,7 @@ const handleCancel = async () => {
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'BetterGI') {
-    message.error('BetterGI 脚本不存在或加载失败')
+    message.error(t('edit.bettergiScriptNotFound'))
     handleCancel()
     return false
   }
@@ -1018,7 +1013,7 @@ const loadUser = async () => {
     }
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error('加载用户失败')
+    message.error(t('edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
