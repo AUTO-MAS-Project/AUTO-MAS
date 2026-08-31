@@ -21,6 +21,14 @@
 name: 检查版本信息
 
 on:
+  # 直推 dev / main 破坏版本号一致性时当场报错，而不是等到别人开 PR 才发现。
+  push:
+    branches: [dev, main]
+    paths:
+      - res/version.json
+      - frontend/package.json
+      - app/core/config.py
+      - pyproject.toml
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -29,8 +37,8 @@ permissions:
   pull-requests: read
 
 jobs:
-  check-version-json:
-    name: 检查 version.json 变更
+  check-version-consistency:
+    name: 检查版本号一致性
     runs-on: ubuntu-latest
 
     steps:
@@ -40,59 +48,16 @@ jobs:
       - name: 检查 version.json 语法
         run: python -m json.tool res/version.json > /dev/null
 
+      # 四处版本号的位置由 bump_version.py 统一定义，改版本号也走同一个脚本。
       - name: 检查版本号一致性
-        run: |
-          python - <<'PY'
-          import ast
-          import json
-          from pathlib import Path
+        run: python .github/workflows/bump_version.py --check
 
-          with Path("res/version.json").open(encoding="utf-8") as file:
-              version_json = json.load(file)
+  check-version-json:
+    name: 检查 version.json 变更
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
-          with Path("frontend/package.json").open(encoding="utf-8") as file:
-              package_json = json.load(file)
-
-          config_path = Path("app/core/config.py")
-          config_module = ast.parse(
-              config_path.read_text(encoding="utf-8"),
-              filename=str(config_path),
-          )
-
-          app_config_version = None
-          for node in config_module.body:
-              if not isinstance(node, ast.ClassDef) or node.name != "AppConfig":
-                  continue
-
-              for statement in node.body:
-                  if not isinstance(statement, ast.Assign):
-                      continue
-                  if any(
-                      isinstance(target, ast.Name) and target.id == "VERSION"
-                      for target in statement.targets
-                  ):
-                      app_config_version = ast.literal_eval(statement.value)
-                      break
-              break
-
-          if app_config_version is None:
-              raise SystemExit("未在 app/core/config.py 的 AppConfig 中找到 VERSION")
-
-          versions = {
-              "res/version.json": version_json["version"],
-              "frontend/package.json": package_json["version"],
-              "app/core/config.py": app_config_version,
-          }
-
-          if len(set(versions.values())) != 1:
-              details = "\n".join(
-                  f"- {path}: {version}" for path, version in versions.items()
-              )
-              raise SystemExit(f"三处版本号不一致：\n{details}")
-
-          print(f"版本号一致: {app_config_version}")
-          PY
-
+    steps:
       - name: 检查 PR 文件列表
         uses: actions/github-script@v9.0.0
         with:

@@ -377,6 +377,45 @@ jobs:
           }
         shell: pwsh
 
+  bump:
+    name: 推进开发版本号
+    runs-on: ubuntu-latest
+    needs: [build, release]
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
+
+    # 与 append-version-contributor.yml 共用一把锁，避免两个工作流同时改 res/version.json。
+    concurrency:
+      group: version-contributors-dev
+      cancel-in-progress: false
+
+    steps:
+      - name: 签出 dev
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      # 只有 dev 上的版本号恰好等于刚发布的版本时才推进：
+      # 从 main 发修复版、或 dev 已被手动改过时自动跳过，重跑工作流也不会重复推进。
+      - name: 推进版本号
+        id: bump
+        env:
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+        run: python .github/workflows/bump_version.py --after-release "$VERSION_TAG"
+
+      - name: 提交版本号
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          NEXT_VERSION: ${{ steps.bump.outputs.next_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add res/version.json frontend/package.json app/core/config.py pyproject.toml
+          git commit -m "chore(version): 发布 $VERSION_TAG 后推进开发版本号至 $NEXT_VERSION"
+          git pull --rebase origin dev
+          git push origin HEAD:dev
+
   cnb:
     name: 发布 CNB 发行版
     runs-on: ubuntu-latest
