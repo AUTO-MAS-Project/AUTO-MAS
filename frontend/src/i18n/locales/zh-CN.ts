@@ -1351,7 +1351,7 @@ export default {
       privacyNotice:
         '账密获取 Token 不保存任何账号密码；本次登录使用的账号密码仅存在于当前登录请求的内存中，登录完成或失败后立即清理，不写入配置、日志或通知。',
       enable: '启用签到工具',
-      enableDesc: '启用后按 MAS 任务调度执行签到，手动签到不受每日自动签到限制',
+      enableDesc: '启用后按 MAS 任务调度执行签到',
       notify: '结果通知',
       notifyDesc: '签到完成后通过已配置的通知渠道推送结果',
       runOnStartup: '启动时签到',

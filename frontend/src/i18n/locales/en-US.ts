@@ -1430,7 +1430,7 @@ export default {
         'Signing in with a username and password stores neither. The credentials live only in memory for that one login request and are cleared as soon as it finishes or fails — they never reach the config, the logs, or a notification.',
       enable: 'Enable the check-in tool',
       enableDesc:
-        'Runs check-ins on the MAS schedule. Manual check-ins ignore the once-a-day limit.',
+        'Runs check-ins on the MAS schedule.',
       notify: 'Notify on completion',
       notifyDesc: 'Push the result through your configured notification channels',
       runOnStartup: 'Check in at startup',
