@@ -984,6 +984,8 @@ export default {
     controlMode: '控制方式',
     controlModeGameResource: '控制方式与游戏资源',
     pushSettings: '推送配置',
+    expandRulesArea: '点击以展开规则编辑区',
+    collapseRulesArea: '点击以折叠规则编辑区',
     pushCollectionOffRules: '推送配置已停用，规则不会参与采集。',
     description: '描述',
     tipFAcceptsBoth: '提示：%f 同时支持 3 位毫秒（如 123）和 6 位微秒（如',

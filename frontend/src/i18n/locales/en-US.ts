@@ -1045,6 +1045,8 @@ export default {
     controlMode: 'Control mode',
     controlModeGameResource: 'Control mode and game resource',
     pushSettings: 'Push settings',
+    expandRulesArea: 'Click to expand the rule editing area',
+    collapseRulesArea: 'Click to collapse the rule editing area',
     pushCollectionOffRules: 'Push collection is off; the rules will not run.',
     description: 'Description',
     tipFAcceptsBoth:

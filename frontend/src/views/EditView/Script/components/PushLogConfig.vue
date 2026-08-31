@@ -76,9 +76,9 @@ const onRuleUpdate = (idx: number, value: PushLogPattern) => {
   onPatternFieldChange()
 }
 
-// 拖拽排序
+// 拖拽排序（结构性操作，不做缺必填字段提示）
 const onDragEnd = () => {
-  save()
+  save({ warn: false })
 }
 
 // 调试弹窗
@@ -100,13 +100,24 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   docsActiveKey.value = key
   docsOpen.value = true
 }
+
+// 标题栏支持点击折叠/展开，默认展开；鼠标悬停标题时提示
+const collapsed = ref(false)
+const toggleCollapsed = () => {
+  collapsed.value = !collapsed.value
+}
 </script>
 
 <template>
-  <div class="push-log-config">
+  <div class="push-log-config" :class="{ collapsed }">
     <div class="push-config-header">
       <h3>
-        {{ t('edit.pushSettings') }}
+        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
+          <span class="push-config-title-text" @click="toggleCollapsed">
+            {{ t('edit.pushSettings') }}
+            <DownOutlined class="push-config-title-arrow" :class="{ collapsed }" />
+          </span>
+        </a-tooltip>
         <a-tooltip :title="t('edit.whenTaskProgressCollected')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
@@ -129,7 +140,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
       </div>
     </div>
 
-    <div class="push-config-body">
+    <div v-show="!collapsed" class="push-config-body">
       <div v-if="!enabled" class="push-config-disabled-tip">
         {{ t('edit.pushCollectionOffRules') }}
       </div>
@@ -201,17 +212,54 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
 }
 
 .push-config-header h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--ant-color-text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+}
+
+.push-config-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
+}
+
+.push-config-title-text {
+  cursor: pointer;
+  color: inherit;
+  transition: color 0.2s ease;
+}
+
+.push-config-title-text:hover {
+  color: var(--ant-color-primary);
+}
+
+.push-config-title-arrow {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  vertical-align: middle;
+  transition: transform 0.2s ease;
+}
+
+.push-config-title-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
+.push-log-config.collapsed .push-config-header {
+  margin-bottom: 24px;
 }
 
 .push-config-actions {

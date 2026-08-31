@@ -1046,6 +1046,8 @@ export default {
     controlMode: '制御方式',
     controlModeGameResource: '制御方式とゲームリソース',
     pushSettings: '送信の設定',
+    expandRulesArea: 'クリックしてルール編集エリアを展開',
+    collapseRulesArea: 'クリックしてルール編集エリアを折りたたみ',
     pushCollectionOffRules: '送信の収集は無効です。ルールは実行されません。',
     description: '説明',
     tipFAcceptsBoth: 'ヒント：%f は 3 桁のミリ秒（例 123）と 6 桁のマイクロ秒（例',
