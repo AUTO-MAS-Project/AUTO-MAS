@@ -16,38 +16,36 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-import uuid
 import shutil
+import uuid
 from contextlib import suppress
 from datetime import datetime
-
 from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.services import Notify
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
-from app.utils import get_logger, ProcessManager
-from app.utils.constants import TASK_MODE_ZH
 from app.tools.push_log import build_user_result_text
+from app.utils import ProcessManager, get_logger
+from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import (
-    AutoProxyTask,
     _OKWW_REL_APP_JSON,
     _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
+    AutoProxyTask,
     _okww_config_mode,
 )
 from .ScriptConfig import ScriptConfigTask
-from .Update import WuwaUpdateTask
 from .tools import push_notification
+from .Update import WuwaUpdateTask
 
 logger = get_logger("OK-WW 调度器")
 
@@ -386,25 +384,18 @@ class OkwwManager(TaskExecuteBase):
                     "uncompleted_count": len(error_user) + len(wait_user),
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
-                    "push_log": "",  # 节点已并入 result，不再单独推送
                 }
 
-                await Notify.push_plyer(
-                    title.replace("报告", "已完成！"),
-                    (
-                        f"已完成用户数: {len(over_user)}, "
-                        f"未完成用户数: {len(error_user) + len(wait_user)}"
-                    ),
-                    (
-                        f"已完成用户数: {len(over_user)}, "
-                        f"未完成用户数: {len(error_user) + len(wait_user)}"
-                    ),
-                    10,
-                )
                 try:
-                    await push_notification("代理结果", title, result)
-                    if has_game_sign_summary:
-                        mark_task_game_sign_summary_consumed(self.task_info)
+                    push_result = await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        task_info=self.task_info,
+                    )
+                    finalize_task_game_sign_notification(
+                        self.task_info, has_game_sign_summary, push_result
+                    )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Publisher.send(
