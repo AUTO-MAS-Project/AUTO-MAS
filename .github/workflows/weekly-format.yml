@@ -5,7 +5,7 @@ name: Scheduled formatting
 
 on:
   schedule:
-    # GitHub Actions 使用 UTC，此处对应北京时间每周一 03:00。
+    # GitHub Actions 使用 UTC，此处对应北京时间每周二 03:00。
     # 避开 0 点的 github runner 高峰时段。
     - cron: '0 19 * * 1'
   workflow_dispatch:
@@ -63,6 +63,10 @@ jobs:
       - name: 格式化前端代码
         working-directory: frontend
         run: yarn format
+
+      - name: 修复前端 Markdown Lint
+        working-directory: frontend
+        run: yarn lint:md:fix
 
       - name: 提交格式化结果
         run: |
