@@ -308,6 +308,7 @@ def install_python_runtime(
         )
         dependency_installer = "pip"
         resolved_requirements = _resolved_requirements(python_executable)
+    _verify_maafw_importable(python_executable)
     version = _installed_maafw_version(python_executable)
     installer_name = "uv" if uv_executable is not None else "pip"
     installer_metadata = {
@@ -1043,6 +1044,37 @@ def _uv_install_environment(
     env["UV_CACHE_DIR"] = str(cache_dir)
     env["UV_LINK_MODE"] = link_mode
     return env
+
+
+def _verify_maafw_importable(python_executable: Path) -> None:
+    """装完必须真的 import 得动 maa，而不是「元数据里有」。
+
+    ``importlib.metadata.version('maafw')`` 只读包元数据，装了一半、或者解释器
+    自己的标准库坏掉时它照样报得出版本号——真机上就出过这种事：运行池认为环境
+    就绪，worker 起来才在 ``maa/library.py`` 第 1 行的 ``import ctypes`` 处炸掉。
+    这里在写 manifest 之前拦一次，坏环境就不会被记成好的。
+    """
+
+    try:
+        result = subprocess.run(
+            [str(python_executable), "-c", "import maa"],
+            capture_output=True,
+            timeout=60,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_clean_install_environment(python_executable.parent.parent),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"MaaFW runtime 校验失败：无法执行 {python_executable}"
+        ) from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            "MaaFW runtime 校验失败：依赖已安装但 import maa 不成功，"
+            f"该环境不可用。原始错误：{detail[-400:]}"
+        )
 
 
 def _installed_maafw_version(python_executable: Path) -> str | None:
