@@ -74,7 +74,9 @@ def _emulator_brand_keyword_rows() -> List[Tuple[str, List[str]]]:
     ]
 
 
-def _find_manager_exe_in_dir(directory: Path, executable_names: List[str]) -> Optional[Path]:
+def _find_manager_exe_in_dir(
+    directory: Path, executable_names: List[str]
+) -> Optional[Path]:
     for name in executable_names:
         if not name:
             continue
@@ -215,7 +217,10 @@ def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
                                     if not isinstance(dn, str):
                                         continue
                                     matched: List[str] = []
-                                    for emulator_type, kw in _emulator_brand_keyword_rows():
+                                    for (
+                                        emulator_type,
+                                        kw,
+                                    ) in _emulator_brand_keyword_rows():
                                         if _match_registry_display_keywords(dn, kw):
                                             matched.append(emulator_type)
                                     if not matched:

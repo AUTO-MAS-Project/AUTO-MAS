@@ -1,7 +1,7 @@
 <template>
   <div class="overview-panel">
     <div class="scheduler-panel-header">
-      <h3>任务总览</h3>
+      <h3>{{ t('scheduler.overview.title') }}</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
     <div class="overview-content">
@@ -11,8 +11,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, shallowRef } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('任务总览面板')
 
 interface User {
@@ -72,7 +75,7 @@ const applyTaskInfo = (taskInfo: any[] | undefined) => {
   // 转换后端的 task_info 格式到前端的 Script 格式
   const newTaskData = taskInfo.map((task: any, index: number) => ({
     script_id: task.script_id || `script_${index}`,
-    name: task.name || '未知脚本',
+    name: task.name || t('scheduler.overview.unknownScript'),
     status: task.status || '等待',
     user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
   }))

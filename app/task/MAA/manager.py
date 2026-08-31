@@ -200,7 +200,6 @@ class MaaManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
@@ -250,7 +249,9 @@ class MaaManager(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送代理结果时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         # 还原配置

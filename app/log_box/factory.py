@@ -1,6 +1,6 @@
 """log_box 采集工厂
 
-顶层入口：``from mas_script import log_box``。
+顶层入口：``from app.log_box import log_box``。
 """
 
 from __future__ import annotations

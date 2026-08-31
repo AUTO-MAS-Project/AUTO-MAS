@@ -71,18 +71,26 @@ def is_admin() -> bool:
             return False
     return True
 
+
 def restart_as_admin():
     """以管理员权限重启当前进程"""
     if IS_WINDOWS:
-        executable = sys.executable.removesuffix('.exe')
-        executable += '.exe'
+        executable = sys.executable.removesuffix(".exe")
+        executable += ".exe"
         result = ctypes.windll.shell32.ShellExecuteW(
-            None, 'runas', 'wt.exe', f'"{executable}" "{os.path.realpath(sys.argv[0])}"', None, 1)
+            None,
+            "runas",
+            "wt.exe",
+            f'"{executable}" "{os.path.realpath(sys.argv[0])}"',
+            None,
+            1,
+        )
         if result > 32:
             sys.exit(0)
         else:
             result = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", executable, os.path.realpath(sys.argv[0]), None, 1)
+                None, "runas", executable, os.path.realpath(sys.argv[0]), None, 1
+            )
             sys.exit(result)
 
 
@@ -139,7 +147,7 @@ def main():
     development_environment = is_development_environment()
     if development_environment:
         os.environ["AUTO_MAS_ENV"] = "development"
-    
+
     if not (is_admin() or is_hosted_launch() or development_environment):
         restart_as_admin()
 
@@ -149,6 +157,7 @@ def main():
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+
     # 开发环境不上报遥测数据
     init_sentry(
         release=Config.VERSION,
@@ -206,6 +215,7 @@ def main():
 
                 await Config.get_stage()
                 await Config.clean_old_history()
+                await Config.clean_maafw_agent_venvs()
 
                 if IS_WINDOWS:
                     for adapter in (
@@ -376,6 +386,7 @@ def main():
         await server.serve()
 
     asyncio.run(run_server())
+
 
 if __name__ == "__main__":
     main()

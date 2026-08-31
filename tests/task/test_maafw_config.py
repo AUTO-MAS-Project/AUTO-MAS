@@ -26,8 +26,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
         script = MaaFWConfig()
         script_groups = {
-            group: len(names)
-            for group, names in script._config_item_index.items()
+            group: len(names) for group, names in script._config_item_index.items()
         }
         self.assertEqual(
             script_groups,
@@ -35,18 +34,18 @@ class MaaFWConfigTest(unittest.TestCase):
                 "Info": 5,
                 "Emulator": 2,
                 "Device": 11,
-                "Game": 9,
+                "Game": 5,
                 "Update": 7,
                 "Managed": 9,
                 "ManagedRuntime": 5,
                 "ManagedRemote": 7,
-                "Run": 7,
+                "Run": 6,
                 "Selection": 3,
             },
         )
-        # 61 个回收字段 + Run.Engine + Selection.{Controller,Resource,Tasks}
-        self.assertEqual(_item_count(script), 65)
-        self.assertIn("Engine", script._config_item_index["Run"])
+        # 第一层删除后少了 Run.Engine 与 Game.{Path,LaunchURL,ProcessPath,ProcessName}
+        self.assertEqual(_item_count(script), 60)
+        self.assertNotIn("Engine", script._config_item_index["Run"])
         self.assertIn("DailyOnceTasks", script._config_item_index["Run"])
         self.assertIn("WeeklyOnceTasks", script._config_item_index["Run"])
         self.assertIn("MonthlyOnceTasks", script._config_item_index["Run"])
@@ -105,7 +104,6 @@ class MaaFWConfigTest(unittest.TestCase):
 
                 self.assertIsInstance(script, MaaFWConfig)
                 self.assertEqual(script.get("Info", "Name"), "新 MFW 脚本")
-                self.assertEqual(script.get("Run", "Engine"), "external")
                 self.assertEqual(script.get("Run", "RunTimeLimit"), 30)
 
                 await script.update(
@@ -137,10 +135,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
             self.assertIsInstance(restored_script, MaaFWConfig)
             self.assertEqual(restored_script.get("Info", "Name"), "本地 MFW 项目")
-            self.assertEqual(
-                Path(restored_script.get("Info", "Path")), project_root
-            )
-            self.assertEqual(restored_script.get("Run", "Engine"), "external")
+            self.assertEqual(Path(restored_script.get("Info", "Path")), project_root)
             self.assertEqual(restored_script.get("Run", "RunTimeLimit"), 42)
             self.assertEqual(restored_script.get("Game", "LaunchMode"), "DirectExe")
             self.assertEqual(restored_script.get("Update", "Source"), "MirrorChyan")
@@ -220,7 +215,7 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
         parsed = ScriptUpdateIn(
             scriptId="s",
             data={
-                "Game": {"LaunchMode": "LauncherExe", "LaunchPath": "C:/g.exe"},
+                "Game": {"LaunchMode": "DirectExe", "LaunchPath": "C:/g.exe"},
                 "Emulator": {"Id": "abc", "Index": "0"},
             },
         )
@@ -228,7 +223,7 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
         self.assertEqual(
             parsed.data.model_dump(exclude_unset=True),
             {
-                "Game": {"LaunchMode": "LauncherExe", "LaunchPath": "C:/g.exe"},
+                "Game": {"LaunchMode": "DirectExe", "LaunchPath": "C:/g.exe"},
                 "Emulator": {"Id": "abc", "Index": "0"},
             },
         )

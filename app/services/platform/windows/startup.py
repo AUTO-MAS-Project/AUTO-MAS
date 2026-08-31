@@ -66,7 +66,7 @@ class WindowsStartupManager:
                 </Settings>
                 <Actions Context="Author">
                     <Exec>
-                        <Command>{Path.cwd() / 'AUTO-MAS.exe'}</Command>
+                        <Command>{Path.cwd() / "AUTO-MAS.exe"}</Command>
                         <Arguments>--auto-start</Arguments>
                     </Exec>
                 </Actions>

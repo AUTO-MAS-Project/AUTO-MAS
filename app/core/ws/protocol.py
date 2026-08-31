@@ -67,6 +67,9 @@ POWER_SIGN_UPDATED = "power.sign.updated"
 
 # 更新下载（id=Update）
 UPDATE_PROGRESS = "update.progress"
+
+# MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用脚本 ID
+MAAFW_ENV_PREPARE_PROGRESS = "maafw.env-prepare.progress"
 UPDATE_COMPLETED = "update.completed"
 UPDATE_FAILED = "update.failed"
 UPDATE_CANCELLED = "update.cancelled"

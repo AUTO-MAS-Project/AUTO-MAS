@@ -95,7 +95,9 @@ def _owned_state_path(path: Path, state_dir: Path) -> Path:
     candidate = path.expanduser().resolve(strict=False)
     base = state_dir.expanduser().resolve(strict=False)
     if not candidate.is_absolute() or not candidate.is_relative_to(base):
-        raise UpdateApplyError("MaaFW update state path is outside operation-owned state")
+        raise UpdateApplyError(
+            "MaaFW update state path is outside operation-owned state"
+        )
     return candidate
 
 
@@ -152,7 +154,9 @@ def apply_package_transaction(
         raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
     expected = str(expected_fingerprint or "").strip().lower()
     if expected and before != expected:
-        raise UpdateApplyError("MaaFW project changed after update plan; apply rejected")
+        raise UpdateApplyError(
+            "MaaFW project changed after update plan; apply rejected"
+        )
 
     store = operation or UpdateOperationStore.create(
         root=operation_root or DEFAULT_OPERATION_ROOT,
@@ -248,7 +252,11 @@ def apply_package_transaction(
                     str(previous_manifest_path) if manifest_path.is_file() else ""
                 ),
             )
-            _emit(progress, "plan_validated", {"planId": effective_plan_id, "packageType": plan.package_type})
+            _emit(
+                progress,
+                "plan_validated",
+                {"planId": effective_plan_id, "packageType": plan.package_type},
+            )
 
             backup_dir.mkdir(parents=True, exist_ok=True)
             backup_entries: dict[str, bool] = {}
@@ -271,7 +279,9 @@ def apply_package_transaction(
 
             store.update("applying")
             _emit(progress, "applying", {"planId": effective_plan_id})
-            for relative in sorted(stale, key=lambda item: len(Path(item).parts), reverse=True):
+            for relative in sorted(
+                stale, key=lambda item: len(Path(item).parts), reverse=True
+            ):
                 _remove_path(_project_target(root, relative))
             for relative, source in plan.files.items():
                 target = _project_target(root, relative)
@@ -283,10 +293,9 @@ def apply_package_transaction(
             _validate_project_interface(root)
             actual_version = _read_interface_version(root, strict=True).strip()
             expected_version = str(plan.target_version or target_version or "").strip()
-            if (
-                expected_version
-                and actual_version.lstrip("vV") != expected_version.lstrip("vV")
-            ):
+            if expected_version and actual_version.lstrip(
+                "vV"
+            ) != expected_version.lstrip("vV"):
                 raise UpdateApplyError(
                     "updated MaaFW interface version does not match the planned target"
                 )
@@ -299,7 +308,9 @@ def apply_package_transaction(
 
             after = project_fingerprint(root)
             if after is None:
-                raise UpdateApplyError("cannot calculate updated MaaFW project fingerprint")
+                raise UpdateApplyError(
+                    "cannot calculate updated MaaFW project fingerprint"
+                )
             manifest = {
                 "schemaVersion": 1,
                 "version": plan.target_version or target_version or "",
@@ -309,7 +320,9 @@ def apply_package_transaction(
                 # 旧 manifest 里已有的 .pyc 条目也借这次重写自然清出。
                 "files": {
                     relative: _sha256_file(_project_target(root, relative))
-                    for relative in sorted(set(plan.files) | (set(old_manifest.get("files", {})) - stale))
+                    for relative in sorted(
+                        set(plan.files) | (set(old_manifest.get("files", {})) - stale)
+                    )
                     if _project_target(root, relative).is_file()
                     and not _is_bytecode_artifact(relative)
                 },
@@ -326,8 +339,12 @@ def apply_package_transaction(
                 # locked backup/staging file must not relabel a successful
                 # update as failed or trigger a second application attempt.
                 cleanup_warning = str(cleanup_error)[:500]
-                store.update("committed", cleanupPending=True, cleanupError=cleanup_warning)
-                send_update_log("MaaFW update committed; deferred state cleanup is required")
+                store.update(
+                    "committed", cleanupPending=True, cleanupError=cleanup_warning
+                )
+                send_update_log(
+                    "MaaFW update committed; deferred state cleanup is required"
+                )
             return {
                 "operationId": store.operation_id,
                 "planId": effective_plan_id,
@@ -379,9 +396,16 @@ def build_package_plan(
 ) -> PackagePlan:
     changes_path = _find_changes_file(package_root, extract_dir)
     changes = _load_json(changes_path) if changes_path else {}
-    declared_type = str(
-        changes.get("packageType") or changes.get("type") or changes.get("kind") or ""
-    ).strip().lower()
+    declared_type = (
+        str(
+            changes.get("packageType")
+            or changes.get("type")
+            or changes.get("kind")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     package_type: ArtifactType = "delta" if changes_path else "full"
     if declared_type in {"full", "delta"}:
         package_type = declared_type  # type: ignore[assignment]
@@ -390,7 +414,9 @@ def build_package_plan(
             f"update package type mismatch: expected {expected_package_type}, got {package_type}"
         )
 
-    base_version = _first_text(changes, "baseVersion", "fromVersion", "from", "sourceVersion")
+    base_version = _first_text(
+        changes, "baseVersion", "fromVersion", "from", "sourceVersion"
+    )
     base_fingerprint = _first_text(
         changes,
         "baseFingerprint",
@@ -399,7 +425,9 @@ def build_package_plan(
         "sourceFingerprint",
     )
     declared_target = _first_text(changes, "targetVersion", "version", "toVersion")
-    payload_root = _resolve_payload_root(package_root, changes_path, changes, extract_dir)
+    payload_root = _resolve_payload_root(
+        package_root, changes_path, changes, extract_dir
+    )
     files: dict[str, Path] = {}
     hashes: dict[str, str] = {}
     for source in payload_root.rglob("*"):
@@ -420,7 +448,11 @@ def build_package_plan(
             if source.is_file():
                 files[relative] = source
             if isinstance(raw_meta, Mapping):
-                digest = str(raw_meta.get("sha256") or raw_meta.get("hash") or "").strip().lower()
+                digest = (
+                    str(raw_meta.get("sha256") or raw_meta.get("hash") or "")
+                    .strip()
+                    .lower()
+                )
             else:
                 digest = str(raw_meta or "").strip().lower()
             if digest:
@@ -474,14 +506,18 @@ def recover_update_operation(
         )
     root = Path(raw_project).expanduser().resolve(strict=False)
     state_dir = Path(raw_state_root).expanduser().resolve(strict=False)
-    host_state_root = (operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME).resolve(strict=False)
+    host_state_root = (
+        operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME
+    ).resolve(strict=False)
     expected_key = hashlib.sha256(str(root).casefold().encode("utf-8")).hexdigest()[:24]
     if (
         not state_dir.is_absolute()
         or not state_dir.is_relative_to(host_state_root)
         or state_dir.name != expected_key
     ):
-        operation.mark_recovery_required("update journal state root is outside host state")
+        operation.mark_recovery_required(
+            "update journal state root is outside host state"
+        )
         raise UpdateApplyError(
             "MaaFW update journal state root is outside host state",
             unsafe_to_continue=True,
@@ -492,11 +528,15 @@ def recover_update_operation(
         operation.mark_recovery_required(str(exc))
         raise UpdateApplyError(str(exc), unsafe_to_continue=True) from exc
     if not root.is_dir():
-        return operation.update("recovery_required", recoveryRequired=True, error="project path is missing")
+        return operation.update(
+            "recovery_required", recoveryRequired=True, error="project path is missing"
+        )
     try:
         _rollback_from_state(root, state, state_dir=state_dir)
     except Exception as exc:
-        operation.update("recovery_required", recoveryRequired=True, rollbackError=str(exc)[:500])
+        operation.update(
+            "recovery_required", recoveryRequired=True, rollbackError=str(exc)[:500]
+        )
         raise UpdateApplyError(str(exc), unsafe_to_continue=True) from exc
     if send_log:
         send_log(f"MaaFW update operation recovered: {operation.operation_id}")
@@ -513,7 +553,9 @@ def _validate_plan_base(
     if plan.package_type != "delta":
         return
     recorded = str(plan.base_fingerprint or "").strip().lower()
-    manifest_fingerprint = str(old_manifest.get("projectFingerprint") or "").strip().lower()
+    manifest_fingerprint = (
+        str(old_manifest.get("projectFingerprint") or "").strip().lower()
+    )
     if recorded:
         if recorded != current_fingerprint:
             raise UpdateApplyError("delta baseFingerprint does not match project")
@@ -521,10 +563,14 @@ def _validate_plan_base(
         if manifest_fingerprint != current_fingerprint:
             raise UpdateApplyError("delta base manifest does not match project")
     else:
-        raise UpdateApplyError("legacy delta has no trusted base fingerprint; full package required")
+        raise UpdateApplyError(
+            "legacy delta has no trusted base fingerprint; full package required"
+        )
     if plan.base_version:
         current_version = _read_interface_version(project_path)
-        if current_version and plan.base_version.strip().lstrip("vV") != current_version.strip().lstrip("vV"):
+        if current_version and plan.base_version.strip().lstrip(
+            "vV"
+        ) != current_version.strip().lstrip("vV"):
             raise UpdateApplyError(
                 f"delta baseVersion does not match project: {plan.base_version} != {current_version}"
             )
@@ -561,7 +607,9 @@ def _verify_owned_files(project_path: Path, manifest: Mapping[str, Any]) -> None
             continue
         expected = str(raw_hash or "").strip().lower().removeprefix("sha256:")
         if expected and target.is_file() and _sha256_file(target) != expected:
-            raise UpdateApplyError(f"managed project file was modified locally: {relative}")
+            raise UpdateApplyError(
+                f"managed project file was modified locally: {relative}"
+            )
 
 
 def _rollback_from_state(
@@ -582,7 +630,11 @@ def _rollback_from_state(
     touched = state.get("touchedPaths")
     if not isinstance(touched, list):
         touched = []
-    for raw_path in sorted((str(item) for item in touched), key=lambda item: len(Path(item).parts), reverse=True):
+    for raw_path in sorted(
+        (str(item) for item in touched),
+        key=lambda item: len(Path(item).parts),
+        reverse=True,
+    ):
         _remove_path(_project_target(project_path, raw_path))
     backup_entries = state.get("backupEntries")
     if not isinstance(backup_entries, Mapping):
@@ -608,7 +660,10 @@ def _rollback_from_state(
 
 
 def _find_package_root(extract_dir: Path) -> Path:
-    candidates = [extract_dir, *[item for item in extract_dir.iterdir() if item.is_dir()]]
+    candidates = [
+        extract_dir,
+        *[item for item in extract_dir.iterdir() if item.is_dir()],
+    ]
     for candidate in candidates:
         if _has_interface_file(candidate) or (candidate / "changes.json").is_file():
             return candidate
@@ -617,7 +672,9 @@ def _find_package_root(extract_dir: Path) -> Path:
             return interface.parent
     for changes in extract_dir.rglob("changes.json"):
         return changes.parent
-    raise UpdateApplyError("update package does not contain interface.json or changes.json")
+    raise UpdateApplyError(
+        "update package does not contain interface.json or changes.json"
+    )
 
 
 def _zip_expanded_size(package_path: Path) -> int:
@@ -645,7 +702,9 @@ def _owned_backup_size(project_path: Path, touched: list[str]) -> int:
         elif target.is_dir():
             for child in target.rglob("*"):
                 if child.is_symlink():
-                    raise UpdateApplyError("project contains a symlink in a managed path")
+                    raise UpdateApplyError(
+                        "project contains a symlink in a managed path"
+                    )
                 if child.is_file():
                     total += child.stat().st_size
     return total
@@ -683,17 +742,23 @@ def _safe_extract_zip(package_path: Path, extract_dir: Path) -> None:
         with zipfile.ZipFile(package_path, "r") as archive:
             members = archive.infolist()
             if len(members) > ZIP_MAX_ENTRIES:
-                raise UpdateApplyError(f"update package contains too many entries: {len(members)}")
+                raise UpdateApplyError(
+                    f"update package contains too many entries: {len(members)}"
+                )
             expanded = sum(max(0, int(item.file_size)) for item in members)
             if expanded > ZIP_MAX_EXPANDED_BYTES:
                 raise UpdateApplyError("update package expanded size exceeds limit")
             for member in members:
                 target = (extract_dir / member.filename).resolve()
                 if not is_within(target, extract_dir):
-                    raise UpdateApplyError(f"update package contains unsafe path: {member.filename}")
+                    raise UpdateApplyError(
+                        f"update package contains unsafe path: {member.filename}"
+                    )
                 mode = (member.external_attr >> 16) & 0o170000
                 if mode == 0o120000:
-                    raise UpdateApplyError(f"update package contains symlink: {member.filename}")
+                    raise UpdateApplyError(
+                        f"update package contains symlink: {member.filename}"
+                    )
             archive.extractall(extract_dir)
     except zipfile.BadZipFile as exc:
         raise UpdateApplyError("update package is not a valid zip file") from exc
@@ -729,7 +794,15 @@ def _find_changes_file(package_root: Path, extract_dir: Path) -> Path | None:
 
 def _deleted_paths(changes: Mapping[str, Any]) -> list[str]:
     result: list[str] = []
-    for key in ("delete", "deleted", "deleted_dir", "remove", "removed", "unlink", "unlinks"):
+    for key in (
+        "delete",
+        "deleted",
+        "deleted_dir",
+        "remove",
+        "removed",
+        "unlink",
+        "unlinks",
+    ):
         value = changes.get(key)
         if isinstance(value, list):
             result.extend(str(item) for item in value if isinstance(item, str))
@@ -786,7 +859,9 @@ def _read_interface_version(project_path: Path, *, strict: bool = False) -> str:
                 value = json5.loads(path.read_text(encoding="utf-8"))
             except Exception as exc:
                 if strict:
-                    raise UpdateApplyError("updated MaaFW interface is not valid JSON/JSONC") from exc
+                    raise UpdateApplyError(
+                        "updated MaaFW interface is not valid JSON/JSONC"
+                    ) from exc
                 return ""
         if not isinstance(value, Mapping):
             if strict:
@@ -838,7 +913,9 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{uuid.uuid4().hex[:8]}.tmp")
     try:
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
         with temporary.open("r+b") as handle:
             os.fsync(handle.fileno())
         temporary.replace(path)
@@ -854,7 +931,11 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _emit(progress: Callable[[str, dict[str, Any]], None] | None, stage: str, payload: dict[str, Any]) -> None:
+def _emit(
+    progress: Callable[[str, dict[str, Any]], None] | None,
+    stage: str,
+    payload: dict[str, Any],
+) -> None:
     if progress is None:
         return
     try:

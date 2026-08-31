@@ -45,7 +45,9 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
     MaaFWProjectUpdateError,
     discover_maafw_project_update,
 )
-from app.task.MaaFW.tools.external import ShellFamily, detect_shell_family
+from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+    detect_maafw_project_shell_hint,
+)
 from app.task.MaaFW.tools.project_updater import update_maafw_project_if_needed
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -86,11 +88,7 @@ def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
 
 def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
     file_path = Path(filename)
-    if (
-        file_path.name != filename
-        or file_path.is_absolute()
-        or ".." in file_path.parts
-    ):
+    if file_path.name != filename or file_path.is_absolute() or ".." in file_path.parts:
         raise ValueError("配置文件名非法")
     return config_dir / filename
 
@@ -112,9 +110,9 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
 
     额外注入 ``project_shell_hint``：GitHub 发行版常按 UI 外壳分包
     （如 M9A 同版本同时发 ``*-MFAA.zip`` 与 ``*-MXU.zip``），选包实现
-    在项目名/平台收窄后需要外壳家族才能消歧。``fdde4d51`` 经服务层
-    ``MaaFWProjectUpdateService.discover_update`` 注入该提示，当前 API
-    直连 ``discover_maafw_project_update``，故在此按项目根目录识别。
+    在项目名/平台收窄后需要外壳家族才能消歧。本 API 直连
+    ``discover_maafw_project_update``，而该函数**自身不做兜底识别**
+    （兜底在 ``update_maafw_project_if_needed`` 里），故必须在此补上。
     """
 
     source = str(script_config.get("Update", "Source") or "").strip()
@@ -131,9 +129,9 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     }
     project_path = str(script_config.get("Info", "Path") or "").strip()
     if project_path:
-        shell_family = detect_shell_family(project_path)
-        if shell_family is not ShellFamily.UNKNOWN:
-            config["project_shell_hint"] = shell_family.value
+        shell_hint = detect_maafw_project_shell_hint(Path(project_path))
+        if shell_hint:
+            config["project_shell_hint"] = shell_hint
     return config
 
 
@@ -697,9 +695,7 @@ async def preview_maafw_interface(
             root_path,
             interface,
         )
-        data = MaaFWInterfacePreviewData.model_validate(
-            preview.model_dump(mode="json")
-        )
+        data = MaaFWInterfacePreviewData.model_validate(preview.model_dump(mode="json"))
     except MaaFWInterfaceLoadError as exc:
         return MaaFWInterfacePreviewOut(
             code=400,
@@ -802,7 +798,9 @@ async def update_maafw_project(
             if discovery.candidate is not None
             else discovery.source
         )
-        message = f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+        message = (
+            f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+        )
         if not discovery.installable and discovery.unavailable_reason:
             message = f"{message}（暂无可安装更新包: {discovery.unavailable_reason}）"
         return MaaFWProjectUpdateOut(
@@ -855,6 +853,188 @@ async def update_maafw_project(
 
 
 @router.post(
+    "/maafw/agent-env/prepare",
+    tags=["MaaFW"],
+    summary="预备 MFW 运行环境",
+    response_model=MaaFWAgentEnvPrepareOut,
+    status_code=200,
+)
+async def prepare_maafw_agent_env(
+    payload: MaaFWAgentEnvPrepareIn = Body(...),
+) -> MaaFWAgentEnvPrepareOut:
+    """按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
+
+    在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
+    成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
+    在请求内完成，首次冷启动可能耗时数分钟。
+    """
+
+    # 这些模块会拉起 runtime_pool 与 agent_env，放在函数内延迟导入，
+    # 避免所有 API 请求都为它们付出导入成本。
+    from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+        MaaFWRunnerService,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.embedded.project_path import (
+        release_project_path,
+        try_reserve_project_path,
+    )
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
+
+    logs: list[str] = []
+    # 准备过程可能持续数分钟（首次要下载 MaaFramework），全程把阶段、百分比
+    # 与新增日志行推给前端。progress_id 留空时只落日志、不推送。
+    progress_id = str(payload.scriptId or "").strip()
+    loop = asyncio.get_running_loop()
+
+    def publish_progress(event: dict) -> None:
+        if not progress_id:
+            return
+        data = WSMaaFWEnvPrepareProgressData(
+            stage=str(event.get("stage") or ""),
+            status=str(event.get("status") or "running"),
+            message=str(event.get("message") or ""),
+            percent=event.get("percent"),
+            log=event.get("log"),
+        )
+        # 准备跑在工作线程里，回调要跨回事件循环才能发 WS
+        asyncio.run_coroutine_threadsafe(
+            Publisher.send(
+                id=progress_id,
+                type=ws_protocol.MAAFW_ENV_PREPARE_PROGRESS,
+                data=data,
+            ),
+            loop,
+        )
+
+    def append_log(line: str) -> None:
+        logs.append(line)
+        publish_progress(
+            {
+                "stage": "log",
+                "status": "running",
+                "message": line,
+                "log": line,
+            }
+        )
+
+    project_value = str(payload.path or "").strip()
+    if not project_value:
+        return MaaFWAgentEnvPrepareOut(
+            code=400, status="error", message="请先设置 MFW 项目路径"
+        )
+    root_path = Path(project_value).resolve()
+    if not root_path.is_dir():
+        return MaaFWAgentEnvPrepareOut(
+            code=400,
+            status="error",
+            message="MFW 项目路径不是有效目录，请检查项目目录",
+        )
+
+    # 与运行、更新共用同一把项目锁：同一目录同时准备/运行会互相踩。
+    reservation_key = await try_reserve_project_path(root_path)
+    if reservation_key is None:
+        return MaaFWAgentEnvPrepareOut(
+            code=409,
+            status="error",
+            message="该 MFW 项目正在运行、更新或准备环境，请稍后重试",
+            data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
+        )
+
+    try:
+        try:
+            interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        except MaaFWInterfaceLoadError as exc:
+            return MaaFWAgentEnvPrepareOut(
+                code=400,
+                status="error",
+                message=f"MFW interface 读取失败: {exc}",
+                data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
+            )
+
+        route = await asyncio.to_thread(
+            lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
+        )
+        try:
+            result = await asyncio.to_thread(
+                MaaFWRunnerService().prepare_project_environment,
+                root_path,
+                interface,
+                runtime_pool_root=route.root,
+                runtime_pool_id=route.pool_id,
+                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
+                import_paths=[Path.cwd()],
+                send_log=append_log,
+                progress=publish_progress,
+            )
+        except Exception as exc:
+            publish_progress(
+                {
+                    "stage": "failed",
+                    "status": "failed",
+                    "message": f"MFW 运行环境准备失败: {exc}",
+                }
+            )
+            return MaaFWAgentEnvPrepareOut(
+                code=500,
+                status="error",
+                message=f"MFW 运行环境准备失败: {exc}",
+                data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
+            )
+    finally:
+        await release_project_path(reservation_key)
+
+    runtime = result.get("runtime")
+    runtime = runtime if isinstance(runtime, dict) else {}
+    agent_payload = result.get("agents")
+    agent_payload = agent_payload if isinstance(agent_payload, dict) else {}
+    raw_plans = agent_payload.get("plans")
+    raw_plans = raw_plans if isinstance(raw_plans, list) else []
+
+    agents = [
+        MaaFWAgentEnvInfo(
+            childExec=str(plan.get("childExec") or ""),
+            executable=str(plan.get("executable") or ""),
+            runtimeKind=plan.get("runtimeKind"),
+            isolatedVenvPath=plan.get("isolatedVenvPath"),
+            fallbackReason=plan.get("fallbackReason"),
+        )
+        for plan in raw_plans
+        if isinstance(plan, dict)
+    ]
+
+    publish_progress(
+        {
+            "stage": "ready",
+            "status": "success",
+            "message": "MFW 运行环境已就绪",
+            "percent": 100.0,
+        }
+    )
+    return MaaFWAgentEnvPrepareOut(
+        message="MFW 运行环境已就绪",
+        data=MaaFWAgentEnvPrepareData(
+            path=str(root_path),
+            agentCount=len(agents),
+            agents=agents,
+            logs=logs,
+            runtimeId=runtime.get("runtimeId"),
+            poolId=runtime.get("poolId"),
+            pythonExecutable=runtime.get("pythonExecutable"),
+            venvPath=runtime.get("venvPath"),
+            maafwVersion=runtime.get("maafwVersion"),
+        ),
+    )
+
+
+@router.post(
     "/m9a/tasks/available",
     tags=["M9A"],
     summary="获取 M9A 可用任务列表（排除 standalone 任务）",
@@ -880,28 +1060,28 @@ async def get_m9a_available_tasks(script_id: str):
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
         loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
-        
+
         # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
         available_tasks = loader.get_available_tasks()
         result_tasks = []
-        
+
         for task in available_tasks:
             full_def = loader.get_full_definition(task["name"])
             if full_def:
                 result_tasks.append(full_def)
-        
+
         return {
             "code": 200,
             "status": "success",
             "message": f"共 {len(result_tasks)} 个可用任务",
-            "data": result_tasks
+            "data": result_tasks,
         }
     except Exception as e:
         return {
             "code": 500,
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
-            "data": []
+            "data": [],
         }
 
 
@@ -937,9 +1117,7 @@ async def get_hsr_stage_options_api(
             _hsr_user_config(script_config, userId)
         from app.task.HSR.tools.api import build_stage_options
 
-        data = HSRStageOptionsData(
-            **build_stage_options(script_config, engine)
-        )
+        data = HSRStageOptionsData(**build_stage_options(script_config, engine))
         option_count = sum(len(category.options) for category in data.categories)
         return HSRStageOptionsOut(
             message=f"共 {option_count} 个 HSR 体力副本选项",
@@ -976,7 +1154,9 @@ async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabiliti
     except Exception as e:
         return HSRCapabilitiesOut(
             code=400
-            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1006,14 +1186,14 @@ async def get_hsr_managed_config_api(
             user_config = _hsr_user_config(script_config, userId)
         from app.task.HSR.tools.api import build_managed_config
 
-        data = HSRManagedConfigData(
-            **build_managed_config(script_config, user_config)
-        )
+        data = HSRManagedConfigData(**build_managed_config(script_config, user_config))
         return HSRManagedConfigOut(data=data)
     except Exception as e:
         return HSRManagedConfigOut(
             code=400
-            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1116,7 +1296,9 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
                 root = Path(root_path)
                 packaged_dir = root / "data" / "apps" / "ok-nte" / "working" / "configs"
                 source_dir = root / "configs"
-                oknte_configs_dir = packaged_dir if packaged_dir.is_dir() else source_dir
+                oknte_configs_dir = (
+                    packaged_dir if packaged_dir.is_dir() else source_dir
+                )
 
         # 自动初始化：用户目录为空时从旧版共享目录或 ok-nte configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
@@ -1142,11 +1324,13 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
 
             fields = build_fields_for_config(filename, current_data, option_labels)
 
-            result.append({
-                **info,
-                "fields": fields,
-                "currentData": current_data,
-            })
+            result.append(
+                {
+                    **info,
+                    "fields": fields,
+                    "currentData": current_data,
+                }
+            )
 
         return {
             "code": 200,

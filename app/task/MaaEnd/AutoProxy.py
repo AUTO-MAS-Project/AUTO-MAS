@@ -24,7 +24,7 @@ import uuid
 import shutil
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -77,12 +77,12 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -385,7 +385,9 @@ class AutoProxyTask(TaskExecuteBase):
                 data=WSTaskNoticeData(level="error", message=error_message),
             )
         else:
-            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -546,9 +548,7 @@ class AutoProxyTask(TaskExecuteBase):
         sanity_task_type = ""
         target_task_name = ""
         if if_quick_config:
-            sanity_task_key, _ = (
-                self.cur_user_config.get_effective_sanity_task_key()
-            )
+            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
             sanity_task_type = sanity_task_key["SanityTaskType"]
             target_task_name = (
                 "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
@@ -744,8 +744,10 @@ class AutoProxyTask(TaskExecuteBase):
             if if_stream_end:
                 logger.info("MaaEnd 更新进程已退出，日志锁已释放")
                 self.wait_event.set()
-            elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", "RunTimeLimit")
+            elif self.is_log_stalled(
+                latest_time,
+                minutes=self.script_config.get("Run", "RunTimeLimit"),
+                key="update_download",
             ):
                 logger.warning("MaaEnd 更新进程超时，日志锁已释放")
                 self.cur_user_log.status = "MaaEnd 更新超时"
@@ -762,10 +764,7 @@ class AutoProxyTask(TaskExecuteBase):
         elif "resolution check failed" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
             self.retryable = False
-        elif (
-            self.color_match_failed_message
-            and self.color_match_failed_message in log
-        ):
+        elif self.color_match_failed_message and self.color_match_failed_message in log:
             self.cur_user_log.status = "MaaEnd 颜色识别失败，请关闭滤镜或 HDR"
             self.retryable = False
         elif f"任务失败: {self.account_switch_task_name}" in log:
@@ -816,8 +815,8 @@ class AutoProxyTask(TaskExecuteBase):
                 except:
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
-        elif datetime.now() - latest_time > timedelta(
-            minutes=self.script_config.get("Run", "RunTimeLimit")
+        elif self.is_log_stalled(
+            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "MaaEnd 进程超时"
         else:
@@ -850,7 +849,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,
@@ -907,7 +906,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送通知时出现异常: {e}"
+                    ),
                 )
 
         if self.run_book:

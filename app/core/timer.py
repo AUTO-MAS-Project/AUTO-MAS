@@ -69,7 +69,6 @@ def _all_game_sign_accounts_signed(accounts, today: str) -> bool:
 
 
 class _MainTimer:
-
     def __init__(self):
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
@@ -87,11 +86,8 @@ class _MainTimer:
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.started = True
 
-        if (
-            Config.ToolsConfig.get("GameSign", "Enabled")
-            and (
-                Config.ToolsConfig.get("GameSign", "RunOnStartup")
-            )
+        if Config.ToolsConfig.get("GameSign", "Enabled") and (
+            Config.ToolsConfig.get("GameSign", "RunOnStartup")
         ):
             self.schedule_game_sign_for_startup()
 
@@ -126,13 +122,9 @@ class _MainTimer:
         logger.info("每秒定期任务启动")
 
         while True:
-
             await self.timed_start()
 
-            if (
-                IS_WINDOWS
-                and Config.ToolsConfig.get("ArknightsPC", "Enabled")
-            ):
+            if IS_WINDOWS and Config.ToolsConfig.get("ArknightsPC", "Enabled"):
                 from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
 
                 await ArknightWin32Toolkit.scheduled_task()
@@ -145,7 +137,6 @@ class _MainTimer:
         logger.info("每小时定期任务启动")
 
         while True:
-
             if (
                 datetime.strptime(
                     Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
@@ -174,7 +165,6 @@ class _MainTimer:
         curday = datetime.now().strftime("%A")
 
         for uid, queue in Config.QueueConfig.items():
-
             if not queue.get("Info", "TimeEnabled"):
                 continue
 
@@ -206,9 +196,7 @@ class _MainTimer:
 
         if not (
             Config.ToolsConfig.get("GameSign", "Enabled")
-            and (
-                Config.ToolsConfig.get("GameSign", "RunOnStartup")
-            )
+            and (Config.ToolsConfig.get("GameSign", "RunOnStartup"))
         ):
             return
 
@@ -258,9 +246,7 @@ class _MainTimer:
                     if _all_game_sign_accounts_signed(
                         Config.ToolsConfig.GameSign_Accounts, today
                     ):
-                        await Config.ToolsConfig.set(
-                            "GameSign", "LastSignDate", today
-                        )
+                        await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
                     return []
 
                 # 格式化并合并结果
@@ -276,9 +262,8 @@ class _MainTimer:
             logger.success("游戏社区签到执行完成")
 
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-            if (
-                source not in _TASK_GAME_SIGN_SOURCES
-                and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+            if source not in _TASK_GAME_SIGN_SOURCES and Config.ToolsConfig.get(
+                "GameSign", "NotifyEnabled"
             ):
                 from app.tools.game_sign_notify import push_game_sign_notification
 
@@ -323,9 +308,7 @@ class _MainTimer:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         # 快速检查：是否没有待处理账号
-        if _all_game_sign_accounts_signed(
-            Config.ToolsConfig.GameSign_Accounts, today
-        ):
+        if _all_game_sign_accounts_signed(Config.ToolsConfig.GameSign_Accounts, today):
             return []
 
         return await self._execute_game_sign(source=source)

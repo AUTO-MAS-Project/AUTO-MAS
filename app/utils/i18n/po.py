@@ -102,9 +102,7 @@ def parse_po(path: Path) -> dict[str, str]:
             if line.startswith("msgstr["):
                 if line.startswith("msgstr[0]"):
                     phase = "str"
-                    value = _unescape(
-                        _parse_string_literal(line[len("msgstr[0]") :])
-                    )
+                    value = _unescape(_parse_string_literal(line[len("msgstr[0]") :]))
                 continue
             if line.startswith("msgid "):
                 # 新条目：登记上一条完整条目

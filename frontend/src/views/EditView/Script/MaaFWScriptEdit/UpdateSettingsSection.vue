@@ -2,24 +2,22 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>项目更新</h3>
+      <h3>{{ t('edit.projectUpdate') }}</h3>
     </div>
     <a-alert
       v-if="isAutoUpdateDisabled"
       class="update-alert"
       type="warning"
       show-icon
-      message="当前脚本未声明版本，无法判断更新"
+      :message="t('edit.thisScriptDeclaresNo')"
     />
     <a-row :gutter="24" class="update-config-row">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              title="版本检查统一使用 Mirror酱；此选项只决定安装包下载位置。选择 GitHub 时按 Mirror酱目标版本精确查找同版本 Release，不使用 GitHub latest。"
-            >
+            <a-tooltip :title="t('edit.versionChecksAlwaysGo')">
               <span class="form-label">
-                安装包来源
+                {{ t('edit.packageSource') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -33,7 +31,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="渠道">
+        <a-form-item :label="t('edit.channel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
             size="large"
@@ -45,18 +43,16 @@
       <a-col v-if="maafwConfig.Update.Source !== 'GitHub'" :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              title="填写后优先使用脚本自己的 Mirror 酱 CDK；留空时使用 MAS 全局更新配置中的 CDK"
-            >
+            <a-tooltip :title="t('edit.whenSetScriptS')">
               <span class="form-label">
-                Mirror 酱 CDK
+                {{ t('edit.mirrorchyanCdk') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-input-password
             v-model:value="maafwConfig.Update.MirrorChyanCDK"
-            placeholder="留空时使用全局 Mirror 酱 CDK"
+            :placeholder="t('edit.leaveEmptyUseGlobal')"
             size="large"
             class="modern-input"
             autocomplete="off"
@@ -65,65 +61,13 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-collapse v-if="maafwConfig.Update.Source === 'GitHub'" ghost class="update-advanced">
-      <a-collapse-panel
-        key="github"
-        header="GitHub 高级选项（留空按 interface 与 Mirror酱目标版本解析）"
-      >
-        <a-row :gutter="24" class="update-config-row">
-          <a-col :xs="24" :md="8">
-            <a-form-item label="GitHub 仓库">
-              <a-input
-                v-model:value="maafwConfig.Update.GitHubRepo"
-                placeholder="owner/repository（可留空，读取 interface）"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Update', 'GitHubRepo', maafwConfig.Update.GitHubRepo)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="8">
-            <a-form-item label="GitHub 版本标签">
-              <a-input
-                v-model:value="maafwConfig.Update.GitHubTag"
-                placeholder="按 Mirror酱目标版本精确匹配"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Update', 'GitHubTag', maafwConfig.Update.GitHubTag)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="8">
-            <a-form-item label="资产匹配规则">
-              <a-input
-                v-model:value="maafwConfig.Update.GitHubAssetPattern"
-                placeholder="例如 \.zip$"
-                size="large"
-                class="modern-input"
-                @blur="
-                  emit(
-                    'change',
-                    'Update',
-                    'GitHubAssetPattern',
-                    maafwConfig.Update.GitHubAssetPattern
-                  )
-                "
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-collapse-panel>
-    </a-collapse>
-
     <a-row :gutter="24" class="update-action-row">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              title="尚未接入运行流程：当前版本开启后运行前也不会自动检查更新，请用右侧的手动更新"
-            >
+            <a-tooltip :title="t('edit.notWiredIntoRun')">
               <span class="form-label">
-                运行前自动更新
+                {{ t('edit.updateAutomaticallyBeforeRun') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -131,23 +75,25 @@
           <a-switch
             :checked="maafwConfig.Update.IfAutoUpdate"
             :disabled="isAutoUpdateDisabled"
-            checked-children="开启"
-            un-checked-children="关闭"
+            :checked-children="t('edit.on2')"
+            :un-checked-children="t('edit.off')"
             @change="handleAutoUpdateChange"
           />
         </a-form-item>
       </a-col>
       <a-col :span="16">
-        <a-form-item label="手动更新">
+        <a-form-item :label="t('edit.updateNow')">
           <a-space wrap>
-            <a-button :loading="updateChecking" @click="emit('check-update')">检查更新</a-button>
+            <a-button :loading="updateChecking" @click="emit('check-update')">{{
+              t('edit.checkUpdates2')
+            }}</a-button>
             <a-button
               v-if="updateResult && updateResult.installable"
               type="primary"
               :loading="updateApplying"
               @click="emit('apply-update')"
             >
-              执行更新
+              {{ t('edit.update') }}
             </a-button>
           </a-space>
         </a-form-item>
@@ -171,7 +117,7 @@
 
     <div v-if="previewData" class="update-info-grid">
       <div class="update-info-item">
-        <div class="update-info-label">当前版本</div>
+        <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
         <div class="update-info-value">{{ previewData.project.version || '未声明' }}</div>
       </div>
       <div class="update-info-item">
@@ -185,7 +131,7 @@
         </div>
       </div>
       <div class="update-info-item">
-        <div class="update-info-label">多平台</div>
+        <div class="update-info-label">{{ t('edit.multiPlatform') }}</div>
         <div class="update-info-value">
           {{ previewData.project.mirrorchyanMultiplatform ? '是' : '否' }}
         </div>
@@ -195,11 +141,14 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
@@ -231,10 +180,10 @@ const handleAutoUpdateChange = (checked: boolean) => {
     return
   }
   Modal.confirm({
-    title: '开启运行前自动更新？',
+    title: t('edit.updateAutomaticallyBeforeEvery'),
     content: `每次运行前会检查并更新本地目录 ${props.maafwConfig.Info.Path || '（尚未选择）'}。更新失败时旧版本保持可用。`,
-    okText: '开启',
-    cancelText: '保持关闭',
+    okText: t('edit.on'),
+    cancelText: t('edit.keepClosed'),
     onOk: () => emit('change', 'Update', 'IfAutoUpdate', true),
   })
 }
@@ -292,10 +241,6 @@ const handleAutoUpdateChange = (checked: boolean) => {
 
 .update-config-row {
   margin-top: 4px;
-}
-
-.update-advanced {
-  margin-bottom: 8px;
 }
 
 .update-action-row {

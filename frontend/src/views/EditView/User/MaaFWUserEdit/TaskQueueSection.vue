@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <div class="section-header section-header-with-action">
-      <h3>任务队列配置</h3>
+      <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
       <a-space>
         <a-button
           :loading="interfaceLoading"
@@ -11,26 +11,30 @@
           <template #icon>
             <FileSearchOutlined />
           </template>
-          读取 interface
+          {{ t('edit.readInterface') }}
         </a-button>
       </a-space>
     </div>
 
     <div v-if="interfaceLoading" class="task-loading">
-      <a-spin tip="正在读取 interface.json…">
+      <a-spin :tip="t('edit.readingInterfaceJson')">
         <a-alert
           type="info"
           show-icon
-          message="正在加载 MaaFW 项目接口"
-          description="请稍候，正在解析任务、选项和预设定义"
+          :message="t('edit.loadingMaafwProjectInterface')"
+          :description="t('edit.readingTaskOptionPreset')"
         />
       </a-spin>
     </div>
-    <a-empty v-else-if="!previewData" description="尚未读取 interface.json" class="task-empty" />
+    <a-empty
+      v-else-if="!previewData"
+      :description="t('edit.interfaceJsonHasNot')"
+      class="task-empty"
+    />
     <a-row v-else :gutter="24" class="task-editor-layout">
       <a-col :xs="24" :lg="12" class="task-list-column">
         <div class="column-header">
-          <span>任务队列</span>
+          <span>{{ t('edit.taskQueue') }}</span>
           <a-space>
             <a-button
               v-if="presetTemplates.length > 0 && orderedTasks.length > 0"
@@ -38,13 +42,13 @@
               size="small"
               @click="showPresetModalModel = true"
             >
-              预设模板
+              {{ t('edit.presetTemplate') }}
             </a-button>
             <a-cascader
               v-model:value="addTaskCascaderValueModel"
               :options="addTaskCascaderOptions"
               :show-search="{ filter: filterAddTaskOption }"
-              placeholder="添加任务"
+              :placeholder="t('edit.addTask')"
               expand-trigger="hover"
               class="add-task-cascader"
               :disabled="interfaceDependentDisabled || availableTasks.length === 0"
@@ -109,7 +113,7 @@
           </div>
           <a-empty
             v-else-if="orderedTasks.length === 0"
-            description="请从上方添加任务"
+            :description="t('edit.addTaskAbove')"
             class="task-queue-empty"
           />
           <draggable
@@ -164,7 +168,7 @@
                     :disabled="
                       interfaceDependentDisabled || !canMoveTaskByOffset(taskName, index, -1)
                     "
-                    aria-label="上移任务"
+                    :aria-label="t('edit.moveTaskUp')"
                     @click="emit('moveTask', taskName, -1)"
                   >
                     <template #icon>
@@ -177,7 +181,7 @@
                     :disabled="
                       interfaceDependentDisabled || !canMoveTaskByOffset(taskName, index, 1)
                     "
-                    aria-label="下移任务"
+                    :aria-label="t('edit.moveTaskDown')"
                     @click="emit('moveTask', taskName, 1)"
                   >
                     <template #icon>
@@ -192,7 +196,7 @@
       </a-col>
       <a-col :xs="24" :lg="12" class="task-option-column">
         <div class="column-header">
-          <span>任务配置</span>
+          <span>{{ t('edit.taskConfiguration') }}</span>
         </div>
         <div v-if="selectedTask" class="task-option-panel">
           <div class="selected-task-header">
@@ -228,9 +232,9 @@
             class="selected-task-description"
           />
           <a-popconfirm
-            title="确定要删除这个任务吗？"
-            ok-text="确定"
-            cancel-text="取消"
+            :title="t('edit.deleteThisTask2')"
+            :ok-text="t('edit.ok')"
+            :cancel-text="t('edit.cancel')"
             :disabled="interfaceDependentDisabled"
             @confirm="emit('deleteSelectedTask')"
           >
@@ -243,19 +247,19 @@
               <template #icon>
                 <DeleteOutlined />
               </template>
-              删除此任务
+              {{ t('edit.deleteThisTask') }}
             </a-button>
           </a-popconfirm>
         </div>
         <div v-else class="task-option-empty">
-          <a-empty description="请从左侧选择一个任务进行配置" />
+          <a-empty :description="t('edit.pickTaskLeftConfigure')" />
         </div>
       </a-col>
     </a-row>
 
     <a-modal
       v-model:open="showPresetModalModel"
-      title="预设模板"
+      :title="t('edit.presetTemplate')"
       :footer="null"
       width="720px"
       class="preset-template-modal"
@@ -291,26 +295,27 @@
                   :disabled="template.taskNames.length === 0"
                   @click="emit('appendPresetTemplate', template.preset.name)"
                 >
-                  追加任务
+                  {{ t('edit.appendTask') }}
                 </a-button>
                 <a-button
                   type="primary"
                   :disabled="template.taskNames.length === 0"
                   @click="emit('applyPresetTemplate', template.preset.name)"
                 >
-                  应用预设
+                  {{ t('edit.applyPreset2') }}
                 </a-button>
               </a-space>
             </div>
           </div>
         </div>
       </div>
-      <a-empty v-else description="暂无预设模板" />
+      <a-empty v-else :description="t('edit.noPresetTemplates')" />
     </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import draggable from 'vuedraggable'
 import {
@@ -332,6 +337,8 @@ import type {
   MaaFWTaskOptionValue,
   MaaFWTaskSnapshot,
 } from '@/types/script'
+
+const { t } = useI18n()
 
 type DisplayItem = {
   name: string

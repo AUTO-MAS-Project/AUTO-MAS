@@ -6,7 +6,7 @@
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedTaskId"
-            placeholder="选择任务项"
+            :placeholder="t('scheduler.control.taskPlaceholder')"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
@@ -18,7 +18,7 @@
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedMode"
-            placeholder="选择模式"
+            :placeholder="t('scheduler.control.modePlaceholder')"
             style="width: 120px"
             :disabled="disabled"
             size="large"
@@ -29,17 +29,17 @@
               :key="option.value"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ t(option.labelKey) }}
             </a-select-option>
           </a-select>
           <div v-else class="running-info">
             <span class="info-item">
-              <span class="label">任务：</span>
+              <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
             </span>
             <span class="divider">|</span>
             <span class="info-item">
-              <span class="label">模式：</span>
+              <span class="label">{{ t('scheduler.control.modeLabel') }}</span>
               <span class="value">{{ runningModeLabel }}</span>
             </span>
           </div>
@@ -49,7 +49,7 @@
           <a-select
             v-if="status !== '运行' && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
-            placeholder="从指定脚本继续（默认第一个）"
+            :placeholder="t('scheduler.control.resumePlaceholder')"
             style="width: 260px"
             :loading="resumeScriptLoading"
             :options="resumeScriptOptions || []"
@@ -72,7 +72,7 @@
               <StopOutlined v-if="status === '运行'" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? '停止任务' : '开始执行' }}
+            {{ status === '运行' ? t('scheduler.control.stop') : t('scheduler.control.start') }}
           </a-button>
         </a-space>
       </div>
@@ -81,11 +81,14 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+
+const { t } = useI18n()
 
 interface Props {
   selectedTaskId: string | null
@@ -162,7 +165,7 @@ watch(
       emit('update:runningTaskLabel', taskLabel)
 
       const modeOption = modeOptions.value.find(opt => opt.value === props.selectedMode)
-      const modeLabel = modeOption?.label || props.selectedMode || ''
+      const modeLabel = modeOption ? t(modeOption.labelKey) : props.selectedMode || ''
       emit('update:runningModeLabel', modeLabel)
     }
   }

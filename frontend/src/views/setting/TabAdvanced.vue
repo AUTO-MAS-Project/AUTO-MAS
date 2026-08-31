@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { DownloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
+
+const { t } = useI18n()
 
 const { openDevTools } = defineProps<{
   openDevTools: () => void
@@ -21,23 +24,23 @@ const exportLogsZip = async () => {
   try {
     const result = await window.electronAPI?.exportLogs?.()
     if (!result) {
-      message.error('导出功能未响应，请检查程序')
+      message.error(t('setting.toast.exportNoResponse'))
       logger.error('导出日志失败: 未收到响应')
       return
     }
     if (result.success) {
-      message.success(result.message || '日志压缩包导出成功')
+      message.success(result.message || t('setting.toast.logExported'))
       logger.info(`日志导出成功: ${result.zipPath}`)
       if (result.zipPath) await window.electronAPI?.showItemInFolder?.(result.zipPath)
     } else {
-      const errorMsg = result.error || '日志导出失败'
+      const errorMsg = result.error || t('setting.toast.logExportFailed')
       logger.error(`导出日志失败: ${errorMsg}`)
       message.error(errorMsg)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`导出日志失败: ${errorMsg}`)
-    message.error(`导出日志异常: ${errorMsg}`)
+    message.error(t('setting.toast.logExportError', { error: errorMsg }))
   } finally {
     exportingLogs.value = false
   }
@@ -48,23 +51,23 @@ const exportDataBackup = async () => {
   try {
     const result = await window.electronAPI?.exportDataBackup?.()
     if (!result) {
-      message.error('备份功能未响应，请检查程序')
+      message.error(t('setting.toast.backupNoResponse'))
       logger.error('导出数据备份失败: 未收到响应')
       return
     }
     if (result.success) {
-      message.success(result.message || '数据备份导出成功')
+      message.success(result.message || t('setting.toast.backupExported'))
       logger.info(`数据备份导出成功: ${result.zipPath || '路径未知'}`)
       if (result.zipPath) await window.electronAPI?.showItemInFolder?.(result.zipPath)
     } else if (result.error !== '用户取消') {
-      const errorMsg = result.error || '数据备份导出失败'
+      const errorMsg = result.error || t('setting.toast.backupExportFailed')
       logger.error(`导出数据备份失败: ${errorMsg}`)
       message.error(errorMsg)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`导出数据备份失败: ${errorMsg}`)
-    message.error(`导出数据备份异常: ${errorMsg}`)
+    message.error(t('setting.toast.backupExportError', { error: errorMsg }))
   } finally {
     exportingDataBackup.value = false
   }
@@ -74,7 +77,7 @@ const exportDataBackup = async () => {
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>数据备份</h3>
+        <h3>{{ t('setting.advanced.backupSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
@@ -83,12 +86,9 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              导出数据备份
+              {{ t('setting.advanced.exportBackup') }}
             </a-button>
-            <span class="backup-description">
-              当 MAS
-              遇到无法恢复的问题时，可先导出此备份。保存后即可放心重装软件，重要数据不会因重装而丢失。
-            </span>
+            <span class="backup-description">{{ t('setting.advanced.backupDesc') }}</span>
           </div>
         </a-col>
       </a-row>
@@ -96,7 +96,7 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>MAS 本体日志导出</h3>
+        <h3>{{ t('setting.advanced.logSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
@@ -104,7 +104,7 @@ const exportDataBackup = async () => {
             <template #icon>
               <DownloadOutlined />
             </template>
-            导出日志压缩包
+            {{ t('setting.advanced.exportLog') }}
           </a-button>
         </a-col>
       </a-row>
@@ -112,7 +112,7 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>MaaEnd 日志包导出</h3>
+        <h3>{{ t('setting.advanced.maaEndSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
@@ -120,7 +120,7 @@ const exportDataBackup = async () => {
             <template #icon>
               <DownloadOutlined />
             </template>
-            导出 MaaEnd 问题包
+            {{ t('setting.advanced.exportMaaEnd') }}
           </a-button>
         </a-col>
       </a-row>
@@ -144,12 +144,14 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>开发者选项</h3>
+        <h3>{{ t('setting.advanced.devSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
           <a-space size="large">
-            <a-button size="large" @click="openDevTools"> 打开开发者工具 </a-button>
+            <a-button size="large" @click="openDevTools">
+              {{ t('setting.advanced.openDevTools') }}
+            </a-button>
           </a-space>
         </a-col>
       </a-row>

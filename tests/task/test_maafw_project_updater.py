@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, patch
 import app.core  # noqa: F401  (initialise app before importing task modules)
 
 from app.task.MaaFW.tools import project_updater as pu
-from app.task.MaaFW.tools.core.automas_maafw_project_update import updater as core_updater
+from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+    updater as core_updater,
+)
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     MaaFWProjectUpdateCandidate,
     MaaFWProjectUpdateDiscovery,
@@ -15,7 +17,6 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _select_github_release_asset,
     discover_maafw_project_update,
 )
-from app.task.MaaFW.tools.external.shell import ShellFamily
 
 
 class _FakeInterface:
@@ -52,8 +53,13 @@ class RecycledVersionCompareTest(unittest.TestCase):
 
 class RecycledRepoParseTest(unittest.TestCase):
     def test_parse_full_url(self):
-        self.assertEqual(pu._parse_github_repo("https://github.com/Owner/Repo"), ("Owner", "Repo"))
-        self.assertEqual(pu._parse_github_repo("https://github.com/Owner/Repo.git"), ("Owner", "Repo"))
+        self.assertEqual(
+            pu._parse_github_repo("https://github.com/Owner/Repo"), ("Owner", "Repo")
+        )
+        self.assertEqual(
+            pu._parse_github_repo("https://github.com/Owner/Repo.git"),
+            ("Owner", "Repo"),
+        )
 
     def test_parse_short_form(self):
         self.assertEqual(pu._parse_github_repo("Owner/Repo"), ("Owner", "Repo"))
@@ -66,7 +72,10 @@ class RecycledRepoParseTest(unittest.TestCase):
 class RecycledAssetSelectionTest(unittest.TestCase):
     def _assets(self):
         return [
-            {"name": "Demo-linux-x64.zip", "browser_download_url": "https://x/linux.zip"},
+            {
+                "name": "Demo-linux-x64.zip",
+                "browser_download_url": "https://x/linux.zip",
+            },
             {"name": "Demo-win-x64.zip", "browser_download_url": "https://x/win.zip"},
             {"name": "notes.txt", "browser_download_url": "https://x/notes.txt"},
         ]
@@ -111,17 +120,17 @@ class ShellFamilyAssetDisambiguationTest(unittest.TestCase):
         )
 
     def test_mfaavalonia_family_selects_mfaa_package(self):
-        url, reason = self._select(ShellFamily.MFAAVALONIA.value)
+        url, reason = self._select("MFAAvalonia")
         self.assertEqual(url, "https://x/M9A-MFAA.zip")
         self.assertEqual(reason, "")
 
     def test_mxu_family_selects_mxu_package(self):
-        url, reason = self._select(ShellFamily.MXU.value)
+        url, reason = self._select("MXU")
         self.assertEqual(url, "https://x/M9A-MXU.zip")
         self.assertEqual(reason, "")
 
     def test_unknown_family_stays_ambiguous(self):
-        url, reason = self._select(ShellFamily.UNKNOWN.value)
+        url, reason = self._select("unknown")
         self.assertIsNone(url)
         self.assertIn("ambiguous", reason)
         self.assertIn("MFAA.zip", reason)
@@ -150,7 +159,7 @@ class ShellFamilyAssetDisambiguationTest(unittest.TestCase):
             release,
             r"\.zip$",
             project_name="M9A",
-            project_shell_hint=ShellFamily.MXU.value,
+            project_shell_hint="MXU",
             prefer_windows_x64=True,
         )
         self.assertEqual(url, "https://x/m9a.zip")
@@ -161,21 +170,33 @@ class ProviderSelectionTest(unittest.TestCase):
     def test_compat_source_config_normalises_provider(self):
         self.assertEqual(
             pu._compat_source_config(
-                "", mirror_cdk="", channel="", github_repo="", github_tag="",
+                "",
+                mirror_cdk="",
+                channel="",
+                github_repo="",
+                github_tag="",
                 github_asset_pattern="",
             )["source"],
             "mirrorchyan",
         )
         self.assertEqual(
             pu._compat_source_config(
-                "MirrorChyan", mirror_cdk="c", channel="stable", github_repo="",
-                github_tag="", github_asset_pattern="",
+                "MirrorChyan",
+                mirror_cdk="c",
+                channel="stable",
+                github_repo="",
+                github_tag="",
+                github_asset_pattern="",
             )["source"],
             "mirrorchyan",
         )
         gh = pu._compat_source_config(
-            "GitHub", mirror_cdk="", channel="beta", github_repo="a/b",
-            github_tag="v1", github_asset_pattern="*.zip",
+            "GitHub",
+            mirror_cdk="",
+            channel="beta",
+            github_repo="a/b",
+            github_tag="v1",
+            github_asset_pattern="*.zip",
         )
         self.assertEqual(gh["source"], "github_release")
         self.assertEqual(gh["repo"], "a/b")
@@ -200,12 +221,16 @@ class DiscoveryRoutingTest(unittest.IsolatedAsyncioTestCase):
         mirror_discovery = MaaFWProjectUpdateDiscovery(
             source="mirrorchyan", version="2.0.0", candidate=candidate
         )
-        with patch.object(
-            core_updater, "_check_mirrorchyan_update",
-            AsyncMock(return_value=mirror_discovery),
-        ), patch.object(
-            core_updater, "_check_github_release_update", AsyncMock()
-        ) as github_mock:
+        with (
+            patch.object(
+                core_updater,
+                "_check_mirrorchyan_update",
+                AsyncMock(return_value=mirror_discovery),
+            ),
+            patch.object(
+                core_updater, "_check_github_release_update", AsyncMock()
+            ) as github_mock,
+        ):
             result = await discover_maafw_project_update(
                 _FakeInterface(),
                 current_version="1.0.0",
@@ -215,24 +240,34 @@ class DiscoveryRoutingTest(unittest.IsolatedAsyncioTestCase):
         github_mock.assert_not_awaited()
 
     async def test_github_source_resolves_exact_mirror_target(self):
-        mirror_discovery = MaaFWProjectUpdateDiscovery(source="mirrorchyan", version="2.0.0")
+        mirror_discovery = MaaFWProjectUpdateDiscovery(
+            source="mirrorchyan", version="2.0.0"
+        )
         github_candidate = MaaFWProjectUpdateCandidate(
             source="github_release", version="v2.0.0", download_url="https://x/gh.zip"
         )
         github_discovery = MaaFWProjectUpdateDiscovery(
             source="github_release", version="v2.0.0", candidate=github_candidate
         )
-        with patch.object(
-            core_updater, "_check_mirrorchyan_update",
-            AsyncMock(return_value=mirror_discovery),
-        ), patch.object(
-            core_updater, "_check_github_release_update",
-            AsyncMock(return_value=github_discovery),
-        ) as github_mock:
+        with (
+            patch.object(
+                core_updater,
+                "_check_mirrorchyan_update",
+                AsyncMock(return_value=mirror_discovery),
+            ),
+            patch.object(
+                core_updater,
+                "_check_github_release_update",
+                AsyncMock(return_value=github_discovery),
+            ) as github_mock,
+        ):
             result = await discover_maafw_project_update(
                 _FakeInterface(github="owner/repo"),
                 current_version="1.0.0",
-                source_config={"package_source": "github_release", "repo": "owner/repo"},
+                source_config={
+                    "package_source": "github_release",
+                    "repo": "owner/repo",
+                },
             )
         github_mock.assert_awaited_once()
         self.assertEqual(github_mock.await_args.kwargs["target_version"], "2.0.0")

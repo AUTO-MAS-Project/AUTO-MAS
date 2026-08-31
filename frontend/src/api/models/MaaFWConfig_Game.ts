@@ -6,31 +6,15 @@ export type MaaFWConfig_Game = {
     /**
      * 游戏启动模式
      */
-    LaunchMode?: ('AttachOnly' | 'DirectExe' | 'LauncherExe' | 'URL' | null);
+    LaunchMode?: ('AttachOnly' | 'DirectExe' | null);
     /**
-     * 启动目标路径
+     * DirectExe 模式下 MAS 启动的游戏 exe
      */
     LaunchPath?: (string | null);
-    /**
-     * 系统协议启动 URL
-     */
-    LaunchURL?: (string | null);
-    /**
-     * 桌面控制器使用的实际游戏可执行文件路径
-     */
-    Path?: (string | null);
     /**
      * 游戏启动参数
      */
     Arguments?: (string | null);
-    /**
-     * 实际客户端可执行文件路径
-     */
-    ProcessPath?: (string | null);
-    /**
-     * 实际客户端进程名
-     */
-    ProcessName?: (string | null);
     /**
      * 游戏启动后等待窗口就绪的时间（秒）
      */

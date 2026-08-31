@@ -105,9 +105,7 @@ class HSRM7AControl:
         """执行一条 M7A 命令并同步调度台日志。"""
 
         await self._account_switcher.wait_before_external_script("M7A", user_name)
-        self._append_log(
-            f"用户「{user_name}」开始执行 M7A {module_name}（{command}）"
-        )
+        self._append_log(f"用户「{user_name}」开始执行 M7A {module_name}（{command}）")
         result = await m7a_runner.run_task(command, timeout=timeout_seconds or 600)
         if getattr(result, "success", False):
             self._append_log(
@@ -133,9 +131,9 @@ class HSRM7AControl:
         effective_whitelist = (
             whitelist if whitelist is not None else m7a.M7A_DAILY_PATCH_WHITELIST
         ) | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
-        current_config = yaml.safe_load(
-            config_path.read_text(encoding="utf-8-sig")
-        ) or {}
+        current_config = (
+            yaml.safe_load(config_path.read_text(encoding="utf-8-sig")) or {}
+        )
         if not isinstance(current_config, dict):
             raise ValueError(f"M7A config.yaml 顶层必须是对象: {config_path}")
         patched_config = m7a.merge_whitelist(
@@ -302,14 +300,14 @@ class HSRM7AControl:
                 timeout_seconds=timeout_seconds,
                 run=run_m7a_daily,
                 on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    daily_eow_enabled=daily_eow_enabled:
-                    self._queue_eow_completion(
-                        uid,
-                        user_name,
-                        daily_eow_enabled,
-                        result,
-                        "M7A",
+                    lambda result, uid=uid, user_name=user_name, daily_eow_enabled=daily_eow_enabled: (
+                        self._queue_eow_completion(
+                            uid,
+                            user_name,
+                            daily_eow_enabled,
+                            result,
+                            "M7A",
+                        )
                     )
                 ),
             )
@@ -353,16 +351,16 @@ class HSRM7AControl:
                 commands=list(module.m7a_tasks),
                 description=f"M7A divergent：{module.description}",
                 on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    module_name=module.name, module_key=module.key:
-                    _on_m7a_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
+                    lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
+                        _on_m7a_weekly_success(
+                            result,
+                            uid,
+                            user_name,
+                            module_name,
+                            module_key,
+                            self._queue_weekly_completion,
+                            self._record_module_result,
+                        )
                     )
                 ),
             )
@@ -386,16 +384,16 @@ class HSRM7AControl:
                 commands=list(module.m7a_tasks),
                 description=f"M7A currencywars：{module.description}",
                 on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    module_name=module.name, module_key=module.key:
-                    _on_m7a_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
+                    lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
+                        _on_m7a_weekly_success(
+                            result,
+                            uid,
+                            user_name,
+                            module_name,
+                            module_key,
+                            self._queue_weekly_completion,
+                            self._record_module_result,
+                        )
                     )
                 ),
             )

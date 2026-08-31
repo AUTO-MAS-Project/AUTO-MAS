@@ -354,7 +354,10 @@ class QueueConfig(ConfigBase):
         )
         ## 是否在启动时自动运行
         self.Info_StartUpMode = ConfigItem(
-            "Info", "StartUpMode", "Never", OptionsValidator(["Never", "Always", "DailyFirst"])
+            "Info",
+            "StartUpMode",
+            "Never",
+            OptionsValidator(["Never", "Always", "DailyFirst"]),
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -403,9 +406,7 @@ class QueueConfig(ConfigBase):
         if isinstance(info_data, dict) and "StartUpMode" not in info_data:
             StartUpEnabled = info_data.get("StartUpEnabled")
             if isinstance(StartUpEnabled, bool):
-                info_data["StartUpMode"] = (
-                    "Always" if StartUpEnabled else "Never"
-                )
+                info_data["StartUpMode"] = "Always" if StartUpEnabled else "Never"
 
         return await super().load(data)
 
@@ -669,7 +670,6 @@ class MaaUserConfig(ConfigBase):
             return "-1"
 
         for i, plan in enumerate(infrast_data.get("plans", [])):
-
             for t in plan.get("period", []):
                 if (
                     datetime.strptime(t[0], "%H:%M").time()
@@ -1018,10 +1018,7 @@ class MaaEndUserConfig(ConfigBase):
         mode = self.get("Info", "SanityMode")
         if mode == "Fixed":
             return normalize_maaend_plan_key(
-                {
-                    field: self.get("Task", field)
-                    for field in MAAEND_SANITY_TASK_FIELDS
-                }
+                {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS}
             ), mode
 
         try:
@@ -2442,25 +2439,19 @@ class MaaFWConfig(ConfigBase):
         self.Device_PlayCoverUuid = ConfigItem("Device", "PlayCoverUuid", "")
 
         ## Game ------------------------------------------------------------
-        ## 游戏生命周期模式。旧配置只保存 Game.Path，运行时会按兼容规则解释。
+        ## 游戏生命周期模式
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
             "AttachOnly",
-            OptionsValidator(["AttachOnly", "DirectExe", "LauncherExe", "URL"]),
+            # 只保留两种：我自己启动游戏（AttachOnly）/ 让 MAS 启动并按设置关闭
+            # （DirectExe）。LauncherExe 与 URL 已下线，旧配置由校验器纠正回默认值。
+            OptionsValidator(["AttachOnly", "DirectExe"]),
         )
-        ## 启动目标路径（DirectExe 为客户端，LauncherExe 为启动器）
+        ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
-        ## URL 协议启动目标
-        self.Game_LaunchURL = ConfigItem("Game", "LaunchURL", "", URLValidator())
-        ## 旧版桌面控制器路径，仅用于读取兼容；新配置优先使用 LaunchPath
-        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
-        ## 启动后用于检测实际客户端的可执行文件路径
-        self.Game_ProcessPath = ConfigItem("Game", "ProcessPath", "", FileValidator())
-        ## 启动后用于检测实际客户端的进程名（仅精确匹配）
-        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         ## 游戏启动后等待窗口就绪的时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 任务结束后是否关闭由 MAS 启动的游戏
@@ -2493,9 +2484,7 @@ class MaaFWConfig(ConfigBase):
         ## GitHub release tag 覆盖
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
         ## GitHub release asset 文件名匹配模式
-        self.Update_GitHubAssetPattern = ConfigItem(
-            "Update", "GitHubAssetPattern", ""
-        )
+        self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
         ## Managed --------------------------------------------------------
         ## 是否由 Project Store 和 Runtime Pool 托管项目资源
@@ -2549,10 +2538,7 @@ class MaaFWConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
-        ## 运行引擎，当前仅支持外部运行（manager.py 的启动前校验依赖该值）
-        self.Run_Engine = ConfigItem(
-            "Run", "Engine", "external", OptionsValidator(["external"])
-        )
+        ## 运行引擎，决定「谁来跑」：
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -2645,7 +2631,6 @@ class MaaPlanConfig(ConfigBase):
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-
             today = datetime.now(tz=UTC4).strftime("%A")
 
             if today in self.config_item_dict:
@@ -2706,9 +2691,7 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
         for group in ["ALL", *calendar.day_name]:
             group_data = normalized_data.get(group)
             if isinstance(group_data, dict):
-                normalized_data[group] = {
-                    "Key": normalize_maaend_plan_key(group_data)
-                }
+                normalized_data[group] = {"Key": normalize_maaend_plan_key(group_data)}
         return await super().load(normalized_data)
 
 
@@ -2887,9 +2870,7 @@ class OkwwUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", OkwwConfigModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         # 是否启用 MAS 快速配置覆盖高频任务字段
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
@@ -3361,7 +3342,9 @@ class OkwwConfig(ConfigBase):
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 任务前是否由 MAS 检查并接管更新游戏
-        self.Game_IfAutoUpdate = ConfigItem("Game", "IfAutoUpdate", True, BoolValidator())
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", True, BoolValidator()
+        )
         ## 整文件同步体积上限（GB），超过则中止并提示手动处理
         self.Game_UpdateFullSyncLimit = ConfigItem(
             "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
@@ -3931,7 +3914,6 @@ class GlobalConfig(ConfigBase):
                             )
 
                             if "SSReopen" not in stage["Display"]:
-
                                 if stage["Drop"] in MATERIALS_MAP:
                                     drop_id = stage["Drop"]
                                 elif "玉" in stage["Drop"]:

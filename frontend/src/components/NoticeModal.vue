@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    title="系统公告"
+    :title="t('comp.announcement')"
     :width="800"
     :footer="null"
     :closable="false"
@@ -48,7 +48,7 @@
             class="confirm-button"
             @click="confirmNotices"
           >
-            我知道了
+            {{ t('comp.gotIt') }}
           </a-button>
         </div>
       </div>
@@ -57,11 +57,14 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('公告模态框')
 
@@ -122,7 +125,7 @@ const confirmNotices = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`确认公告失败: ${errorMsg}`)
-    message.error('确认公告失败，请重试')
+    message.error(t('comp.couldNotConfirmAnnouncement'))
   } finally {
     confirming.value = false
   }
@@ -141,7 +144,7 @@ const handleLinkClick = async (event: MouseEvent) => {
           const result = await window.electronAPI.openUrl(url)
           if (!result.success) {
             logger.error(`打开链接失败: ${String(result.error)}`)
-            message.error('打开链接失败，请手动复制链接地址')
+            message.error(t('comp.couldNotOpenLink'))
           }
         } else {
           // 如果不在Electron环境中，使用普通的window.open
@@ -150,7 +153,7 @@ const handleLinkClick = async (event: MouseEvent) => {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`打开链接失败: ${errorMsg}`)
-        message.error('打开链接失败，请手动复制链接地址')
+        message.error(t('comp.couldNotOpenLink'))
       }
     }
   }

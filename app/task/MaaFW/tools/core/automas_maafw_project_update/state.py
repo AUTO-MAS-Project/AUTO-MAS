@@ -136,11 +136,16 @@ class DurableFileLock:
     def acquire(self) -> "DurableFileLock":
         self.path = self.path.expanduser().resolve(strict=False)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._local_key = str(self.path).casefold() if os.name == "nt" else str(self.path)
+        self._local_key = (
+            str(self.path).casefold() if os.name == "nt" else str(self.path)
+        )
         if self.acquired:
             with _LOCAL_LOCK_GUARD:
                 local = _LOCAL_LOCKS.get(self._local_key)
-                if local is not None and local.get("ownerThread") == threading.get_ident():
+                if (
+                    local is not None
+                    and local.get("ownerThread") == threading.get_ident()
+                ):
                     local["count"] = int(local.get("count") or 0) + 1
                     self._object_count += 1
                     self.token = str(local.get("token") or self.token)
@@ -149,9 +154,7 @@ class DurableFileLock:
             raise RuntimeError("update lock object is already owned by another thread")
         self.token = uuid.uuid4().hex
         deadline = (
-            None
-            if self.timeout is None
-            else time.monotonic() + max(0.0, self.timeout)
+            None if self.timeout is None else time.monotonic() + max(0.0, self.timeout)
         )
         owner = {
             "token": self.token,
@@ -178,7 +181,9 @@ class DurableFileLock:
                     local_busy = True
             if local_busy:
                 if deadline is not None and time.monotonic() >= deadline:
-                    raise TimeoutError(f"update lock busy: {self.path} (local owner thread)")
+                    raise TimeoutError(
+                        f"update lock busy: {self.path} (local owner thread)"
+                    )
                 time.sleep(0.05)
                 continue
             handle = None
@@ -231,9 +236,7 @@ class DurableFileLock:
                     return self
                 if deadline is not None and time.monotonic() >= deadline:
                     details = self._owner_details()
-                    raise TimeoutError(
-                        f"update lock busy: {self.path} ({details})"
-                    )
+                    raise TimeoutError(f"update lock busy: {self.path} ({details})")
                 time.sleep(0.05)
 
     def release(self) -> None:
@@ -382,8 +385,13 @@ class UpdateOperationStore:
         return store
 
     @classmethod
-    def open(cls, operation_id: str, *, root: Path | None = None) -> "UpdateOperationStore":
-        store = cls(_safe_id(str(operation_id).strip(), label="operation id"), root or DEFAULT_OPERATION_ROOT)
+    def open(
+        cls, operation_id: str, *, root: Path | None = None
+    ) -> "UpdateOperationStore":
+        store = cls(
+            _safe_id(str(operation_id).strip(), label="operation id"),
+            root or DEFAULT_OPERATION_ROOT,
+        )
         if not store.state_path.is_file():
             raise FileNotFoundError(f"update operation does not exist: {operation_id}")
         return store
@@ -397,9 +405,13 @@ class UpdateOperationStore:
         try:
             value = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"update operation state is unreadable: {self.operation_id}") from exc
+            raise RuntimeError(
+                f"update operation state is unreadable: {self.operation_id}"
+            ) from exc
         if not isinstance(value, dict) or value.get("operationId") != self.operation_id:
-            raise RuntimeError(f"update operation state is invalid: {self.operation_id}")
+            raise RuntimeError(
+                f"update operation state is invalid: {self.operation_id}"
+            )
         return value
 
     def _validate_journal(self) -> None:
@@ -408,14 +420,23 @@ class UpdateOperationStore:
         try:
             lines = self.journal_path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeDecodeError) as exc:
-            raise RuntimeError(f"update operation journal is unreadable: {self.operation_id}") from exc
+            raise RuntimeError(
+                f"update operation journal is unreadable: {self.operation_id}"
+            ) from exc
         for line in lines:
             try:
                 record = json.loads(line)
             except (TypeError, ValueError) as exc:
-                raise RuntimeError(f"update operation journal is corrupt: {self.operation_id}") from exc
-            if not isinstance(record, dict) or record.get("operationId") != self.operation_id:
-                raise RuntimeError(f"update operation journal is invalid: {self.operation_id}")
+                raise RuntimeError(
+                    f"update operation journal is corrupt: {self.operation_id}"
+                ) from exc
+            if (
+                not isinstance(record, dict)
+                or record.get("operationId") != self.operation_id
+            ):
+                raise RuntimeError(
+                    f"update operation journal is invalid: {self.operation_id}"
+                )
 
     def update(self, status: str | None = None, **fields: Any) -> dict[str, Any]:
         with operation_lock(self.root, self.operation_id, timeout=None):
@@ -430,12 +451,13 @@ class UpdateOperationStore:
             self._append_unlocked(str(state.get("status") or "updated"), state)
             return state
 
-
     def append(self, event: str, payload: dict[str, Any] | None = None) -> None:
         with operation_lock(self.root, self.operation_id, timeout=None):
             self._append_unlocked(event, payload)
 
-    def _append_unlocked(self, event: str, payload: dict[str, Any] | None = None) -> None:
+    def _append_unlocked(
+        self, event: str, payload: dict[str, Any] | None = None
+    ) -> None:
         self.journal_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
             "at": time.time(),
@@ -448,7 +470,9 @@ class UpdateOperationStore:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def request(self, *, pause: bool | None = None, cancel: bool | None = None) -> dict[str, Any]:
+    def request(
+        self, *, pause: bool | None = None, cancel: bool | None = None
+    ) -> dict[str, Any]:
         fields: dict[str, Any] = {}
         if pause is not None:
             fields["pauseRequested"] = bool(pause)
@@ -535,7 +559,9 @@ class UpdatePlanStore:
         try:
             value = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"update plan state is unreadable: {self.plan_id}") from exc
+            raise RuntimeError(
+                f"update plan state is unreadable: {self.plan_id}"
+            ) from exc
         if not isinstance(value, dict) or value.get("planId") != self.plan_id:
             raise RuntimeError(f"update plan state is invalid: {self.plan_id}")
         return value
@@ -552,7 +578,9 @@ class UpdatePlanStore:
             return state
 
 
-def operation_lock(root: Path, operation_id: str, *, timeout: float | None = None) -> DurableFileLock:
+def operation_lock(
+    root: Path, operation_id: str, *, timeout: float | None = None
+) -> DurableFileLock:
     safe_operation_id = _safe_id(operation_id, label="operation id")
     operation_root = root.expanduser().resolve(strict=False)
     path = (operation_root / safe_operation_id / "operation.lock").resolve(strict=False)
@@ -564,7 +592,9 @@ def operation_lock(root: Path, operation_id: str, *, timeout: float | None = Non
     )
 
 
-def plan_lock(root: Path, plan_id: str, *, timeout: float | None = None) -> DurableFileLock:
+def plan_lock(
+    root: Path, plan_id: str, *, timeout: float | None = None
+) -> DurableFileLock:
     safe_plan_id = _safe_id(plan_id, label="plan id")
     plan_root = root.expanduser().resolve(strict=False)
     path = (plan_root / safe_plan_id / "plan.lock").resolve(strict=False)
@@ -573,7 +603,9 @@ def plan_lock(root: Path, plan_id: str, *, timeout: float | None = None) -> Dura
     return DurableFileLock(path, timeout=timeout)
 
 
-def artifact_lock(root: Path, artifact_id: str, *, timeout: float | None = None) -> DurableFileLock:
+def artifact_lock(
+    root: Path, artifact_id: str, *, timeout: float | None = None
+) -> DurableFileLock:
     safe_artifact_id = _safe_id(artifact_id, label="artifact id", minimum_hex=24)
     artifact_root = root.expanduser().resolve(strict=False)
     path = (artifact_root / safe_artifact_id / "artifact.lock").resolve(strict=False)
@@ -600,12 +632,16 @@ def project_lock(
     )
 
 
-def request_update_pause(operation_id: str, *, root: Path | None = None) -> dict[str, Any]:
+def request_update_pause(
+    operation_id: str, *, root: Path | None = None
+) -> dict[str, Any]:
     return UpdateOperationStore.open(operation_id, root=root).request(pause=True)
 
 
 def resume_update(operation_id: str, *, root: Path | None = None) -> dict[str, Any]:
-    return UpdateOperationStore.open(operation_id, root=root).request(pause=False, cancel=False)
+    return UpdateOperationStore.open(operation_id, root=root).request(
+        pause=False, cancel=False
+    )
 
 
 def cancel_update(operation_id: str, *, root: Path | None = None) -> dict[str, Any]:
@@ -697,4 +733,3 @@ __all__ = [
     "request_update_pause",
     "resume_update",
 ]
-

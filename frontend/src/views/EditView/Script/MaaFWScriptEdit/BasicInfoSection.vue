@@ -2,22 +2,22 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>基本信息</h3>
+      <h3>{{ t('edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item name="name">
           <template #label>
-            <a-tooltip title="为项目设置一个易于识别的名称">
+            <a-tooltip :title="t('edit.giveProjectNameYou')">
               <span class="form-label">
-                脚本名称
+                {{ t('edit.scriptName') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.name"
-            placeholder="请输入脚本名称"
+            :placeholder="t('edit.enterScriptName')"
             size="large"
             class="modern-input"
             @blur="emit('change', 'Info', 'Name', formData.name)"
@@ -27,11 +27,9 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip
-              title="选择包含 interface.json 的 MFW 项目目录；目前仅支持 MFAAvalonia 与 MXU 两类外壳"
-            >
+            <a-tooltip :title="t('edit.pickMfwProjectDirectory')">
               <span class="form-label">
-                本地项目目录
+                {{ t('edit.localProjectDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -39,7 +37,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.path"
-              placeholder="请选择 MFW 项目实际目录"
+              :placeholder="t('edit.pickActualMfwProject')"
               size="large"
               class="path-input"
               readonly
@@ -54,7 +52,7 @@
               <template #icon>
                 <FolderOpenOutlined />
               </template>
-              选择本地目录
+              {{ t('edit.pickLocalDirectory') }}
             </a-button>
             <a-button
               size="large"
@@ -66,7 +64,7 @@
               <template #icon>
                 <FileSearchOutlined />
               </template>
-              读取 interface
+              {{ t('edit.readInterface') }}
             </a-button>
           </a-input-group>
         </a-form-item>
@@ -91,23 +89,19 @@
       </div>
     </div>
     <div v-else-if="interfaceLoading" class="interface-loading">
-      <a-spin tip="正在读取 interface.json…">
+      <a-spin :tip="t('edit.readingInterfaceJson')">
         <a-alert
           type="info"
           show-icon
-          message="正在加载 MFW 接口"
-          description="请稍候，正在解析 interface.json 中的控制器、资源、任务和选项定义"
+          :message="t('edit.loadingMfwInterface')"
+          :description="t('edit.readingControllersResourcesTasks')"
         />
       </a-spin>
     </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
-      <h3>选择 MFW 项目</h3>
-      <p>选择包含 interface.json 的项目目录，读取控制器、资源和任务。</p>
-      <p class="interface-guide-note">
-        目前仅支持 MFAAvalonia（如 M9A、MaaKes）与 MXU（如 MaaEnd、MaaYYs）两类外壳，
-        其余外壳尚未接入。
-      </p>
+      <h3>{{ t('edit.pickMfwProject') }}</h3>
+      <p>{{ t('edit.pickProjectDirectoryContaining') }}</p>
       <a-button
         type="primary"
         size="large"
@@ -117,13 +111,14 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        选择项目目录
+        {{ t('edit.pickProjectDirectory') }}
       </a-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   FileSearchOutlined,
   FolderOpenOutlined,
@@ -131,6 +126,8 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
+
+const { t } = useI18n()
 
 defineProps<{
   maafwConfig: MaaFWScriptConfig
@@ -316,11 +313,6 @@ const emit = defineEmits<{
   margin: 0;
   color: var(--ant-color-text-secondary);
   line-height: 1.6;
-}
-
-.interface-guide-note {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
 }
 
 .interface-guide-icon {

@@ -75,7 +75,7 @@ async def get_git_version() -> VersionOut:
     status_code=200,
 )
 async def get_stage_combox(
-    stage: GetStageIn = Body(..., description="关卡号类型")
+    stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
     try:

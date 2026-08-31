@@ -2,19 +2,19 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>通知</h3>
+      <h3>{{ t('edit.notifications') }}</h3>
     </div>
     <div class="notify-channel-list">
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <div class="notify-channel-info">
-            <span class="notify-channel-name">启用通知</span>
-            <span class="notify-channel-desc">控制所有通知渠道的总开关</span>
+            <span class="notify-channel-name">{{ t('edit.enableNotifications') }}</span>
+            <span class="notify-channel-desc">{{ t('edit.masterSwitchEveryNotification') }}</span>
           </div>
           <a-switch
             v-model:checked="formData.Notify.Enabled"
-            checked-children="启用"
-            un-checked-children="关闭"
+            :checked-children="t('edit.enabled3')"
+            :un-checked-children="t('edit.off')"
             @change="emitSave('Notify.Enabled', formData.Notify.Enabled)"
           />
         </div>
@@ -22,8 +22,10 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <div class="notify-channel-info">
-            <span class="notify-channel-name">发送统计</span>
-            <span class="notify-channel-desc">在通知内容中附带运行统计信息</span>
+            <span class="notify-channel-name">{{ t('edit.sendStatistics') }}</span>
+            <span class="notify-channel-desc">{{
+              t('edit.includeRunStatisticsNotification')
+            }}</span>
           </div>
           <a-switch
             v-model:checked="formData.Notify.IfSendStatistic"
@@ -34,8 +36,8 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <div class="notify-channel-info">
-            <span class="notify-channel-name">邮件通知</span>
-            <span class="notify-channel-desc">发送运行结果到邮箱</span>
+            <span class="notify-channel-name">{{ t('edit.emailNotification') }}</span>
+            <span class="notify-channel-desc">{{ t('edit.emailRunResult') }}</span>
           </div>
           <a-switch
             v-model:checked="formData.Notify.IfSendMail"
@@ -44,13 +46,13 @@
         </div>
         <Transition name="notify-expand">
           <div v-if="formData.Notify.IfSendMail" class="notify-channel-config">
-            <a-form-item label="收件地址">
+            <a-form-item :label="t('edit.recipient')">
               <a-input
                 v-model:value="formData.Notify.ToAddress"
                 type="email"
                 inputmode="email"
                 autocomplete="email"
-                placeholder="邮件收件地址…"
+                :placeholder="t('edit.recipientAddress')"
                 size="large"
                 :disabled="!formData.Notify.IfSendMail"
                 @blur="emitSave('Notify.ToAddress', formData.Notify.ToAddress)"
@@ -62,8 +64,8 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <div class="notify-channel-info">
-            <span class="notify-channel-name">Server 酱</span>
-            <span class="notify-channel-desc">通过 Server 酱推送运行结果</span>
+            <span class="notify-channel-name">{{ t('edit.serverchan2') }}</span>
+            <span class="notify-channel-desc">{{ t('edit.pushRunResultThrough') }}</span>
           </div>
           <a-switch
             v-model:checked="formData.Notify.IfServerChan"
@@ -72,11 +74,11 @@
         </div>
         <Transition name="notify-expand">
           <div v-if="formData.Notify.IfServerChan" class="notify-channel-config">
-            <a-form-item label="Server 酱密钥">
+            <a-form-item :label="t('edit.serverchanKey')">
               <a-input-password
                 v-model:value="formData.Notify.ServerChanKey"
                 autocomplete="off"
-                placeholder="Server 酱 SendKey…"
+                :placeholder="t('edit.serverchanSendkey')"
                 size="large"
                 :disabled="!formData.Notify.IfServerChan"
                 @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
@@ -90,7 +92,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { MaaFWUserConfig } from '@/types/script'
+
+const { t } = useI18n()
 
 defineProps<{
   formData: MaaFWUserConfig

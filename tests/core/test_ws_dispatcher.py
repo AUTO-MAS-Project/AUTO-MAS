@@ -106,7 +106,9 @@ class WSDispatcherTest(unittest.IsolatedAsyncioTestCase):
 
 class WSProtocolTest(unittest.TestCase):
     def test_parse_envelope_accepts_valid_message(self):
-        envelope = parse_envelope({"id": "Main", "type": "test.event", "data": {"choice": True}})
+        envelope = parse_envelope(
+            {"id": "Main", "type": "test.event", "data": {"choice": True}}
+        )
         self.assertIsNotNone(envelope)
         assert envelope is not None
         self.assertEqual(envelope.id, "Main")

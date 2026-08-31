@@ -43,7 +43,7 @@ def _maafw_emulator_extras_runtime_available() -> bool:
     ``from maa.tasker import Tasker`` 并在导入时实例化单例，而 ``app.core`` 是全应用
     公共入口，进程里实际早已完成原生初始化。那是上游基线既有的第二层原生集成，
     与本层无关，也不要顺手去改它。
-    
+
     """
 
     if os.name != "nt":
@@ -287,7 +287,11 @@ def resolve_description(root_path: Path, description: str | None) -> str | None:
         return description
 
     raw_description = description.strip()
-    if not raw_description or "\n" in raw_description or raw_description.startswith("<"):
+    if (
+        not raw_description
+        or "\n" in raw_description
+        or raw_description.startswith("<")
+    ):
         return description
     if raw_description.startswith(("http://", "https://")):
         return description

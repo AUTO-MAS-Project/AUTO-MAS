@@ -3,7 +3,7 @@
     <template #title>
       <div class="plan-title-container">
         <div v-if="!isEditingPlanName" class="plan-title-display">
-          <span class="plan-title-text">{{ currentPlanName || '计划配置' }}</span>
+          <span class="plan-title-text">{{ currentPlanName || t('plan.configTitle') }}</span>
           <a-button
             type="text"
             size="small"
@@ -19,7 +19,7 @@
           <a-input
             ref="planNameInputRef"
             :value="currentPlanName"
-            placeholder="请输入计划名称"
+            :placeholder="t('plan.namePlaceholder')"
             class="plan-title-input"
             :maxlength="50"
             @update:value="$emit('update:current-plan-name', $event)"
@@ -31,21 +31,21 @@
     </template>
     <template #extra>
       <a-space>
-        <span class="mode-label">执行模式：</span>
+        <span class="mode-label">{{ t('plan.modeLabel') }}</span>
         <a-segmented
           :value="currentMode"
           :options="[
-            { label: '全局模式', value: 'ALL' },
-            { label: '周计划模式', value: 'Weekly' },
+            { label: t('plan.modeAll'), value: 'ALL' },
+            { label: t('plan.modeWeekly'), value: 'Weekly' },
           ]"
           @change="handleModeChange"
         />
-        <span class="view-label">视图：</span>
+        <span class="view-label">{{ t('plan.viewLabel') }}</span>
         <a-segmented
           :value="viewMode"
           :options="[
-            { label: '配置视图', value: 'config' },
-            { label: '简化视图', value: 'simple' },
+            { label: t('plan.viewConfig'), value: 'config' },
+            { label: t('plan.viewSimple'), value: 'simple' },
           ]"
           @change="$emit('update:view-mode', $event)"
         />
@@ -60,7 +60,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 interface Props {
   currentPlanName: string

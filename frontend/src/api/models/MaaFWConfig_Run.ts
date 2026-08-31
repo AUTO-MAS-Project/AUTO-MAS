@@ -4,10 +4,6 @@
 /* eslint-disable */
 export type MaaFWConfig_Run = {
     /**
-     * MaaFW 运行引擎
-     */
-    Engine?: string;
-    /**
      * 代理次数限制
      */
     ProxyTimesLimit?: (number | null);

@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
+import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
@@ -46,6 +48,30 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预备 MFW 运行环境
+     * 按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
+     *
+     * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
+     * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
+     * 在请求内完成，首次冷启动可能耗时数分钟。
+     * @param requestBody
+     * @returns MaaFWAgentEnvPrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost(
+        requestBody: MaaFWAgentEnvPrepareIn,
+    ): CancelablePromise<MaaFWAgentEnvPrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/agent-env/prepare',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

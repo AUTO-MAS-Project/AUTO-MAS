@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
@@ -13,6 +14,7 @@ import {
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
+  type MaaFWAgentEnvPrepareOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
@@ -1256,6 +1258,22 @@ export function useScriptApi() {
     }
   }
 
+  const prepareMaaFWAgentEnv = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWAgentEnvPrepareOut | null> => {
+    try {
+      return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
+        path,
+        scriptId,
+      })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
+      return null
+    }
+  }
+
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
@@ -1265,7 +1283,7 @@ export function useScriptApi() {
       const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
       error.value = errorMsg
       logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
-      message.error('MaaEnd 文件不完整，请卸载后重新安装 MaaEnd')
+      message.error(t('misc.maaendIncompleteUninstallIt'))
       return null
     }
   }
@@ -1379,6 +1397,7 @@ export function useScriptApi() {
     getHsrStageOptions,
     getMaaEndOptions,
     previewMaaFWInterface,
+    prepareMaaFWAgentEnv,
     deleteScript,
     updateScript,
     reorderScript,

@@ -62,15 +62,11 @@ SKLAND_GRANT_CODE_URL = "https://as.hypergryph.com/user/oauth2/v2/grant"
 SKLAND_PASSWORD_LOGIN_URL = (
     "https://as.hypergryph.com/user/auth/v1/token_by_phone_password"
 )
-SKLAND_CRED_CODE_URL = (
-    "https://zonai.skland.com/web/v1/user/auth/generate_cred_by_code"
-)
+SKLAND_CRED_CODE_URL = "https://zonai.skland.com/web/v1/user/auth/generate_cred_by_code"
 SKLAND_REFRESH_URL = "https://zonai.skland.com/web/v1/auth/refresh"
 SKLAND_BINDING_URL = "https://zonai.skland.com/api/v1/game/player/binding"
 SKLAND_ARKNIGHTS_SIGN_URL = "https://zonai.skland.com/api/v1/game/attendance"
-SKLAND_ENDFIELD_SIGN_URL = (
-    "https://zonai.skland.com/web/v1/game/endfield/attendance"
-)
+SKLAND_ENDFIELD_SIGN_URL = "https://zonai.skland.com/web/v1/game/endfield/attendance"
 SKLAND_SIGN_INTERVAL = 1.0
 
 logger = get_logger("森空岛签到任务")
@@ -152,7 +148,7 @@ def validate_skland_credential(raw: str | dict[str, Any]) -> dict[str, str]:
         raw_value = str(raw or "").strip()
         if not raw_value:
             raise ValueError("森空岛凭据不能为空")
-        if raw_value[:1] in {'{', '[', '"'}:
+        if raw_value[:1] in {"{", "[", '"'}:
             try:
                 parsed = json.loads(raw_value)
             except json.JSONDecodeError as exc:
@@ -407,7 +403,11 @@ async def get_cached_device_id(
     global _cached_device_id, _cache_time
 
     now = datetime.now()
-    if _cached_device_id is None or _cache_time is None or (now - _cache_time) > timedelta(hours=1):
+    if (
+        _cached_device_id is None
+        or _cache_time is None
+        or (now - _cache_time) > timedelta(hours=1)
+    ):
         async with _device_id_lock:
             now = datetime.now()
             if (
@@ -769,9 +769,7 @@ async def _run_skland_sign_in(
                 binding_groups = [data]
             elif binding_groups is None and isinstance(data.get("bindingList"), list):
                 # 兼容部分版本直接返回单个 app 的绑定列表。
-                binding_groups = [
-                    {"appCode": code, "bindingList": data["bindingList"]}
-                ]
+                binding_groups = [{"appCode": code, "bindingList": data["bindingList"]}]
             elif binding_groups is None and isinstance(data.get("binding_list"), list):
                 binding_groups = [
                     {"appCode": code, "binding_list": data["binding_list"]}
@@ -837,7 +835,9 @@ async def _run_skland_sign_in(
 
     async def sign_for_arknights(cred, sign_token) -> dict:
         """方舟签到"""
-        characters = await get_binding_list(cred, sign_token, app_code_override="arknights")
+        characters = await get_binding_list(
+            cred, sign_token, app_code_override="arknights"
+        )
         result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
 
         attendance_states = await asyncio.gather(
@@ -857,7 +857,11 @@ async def _run_skland_sign_in(
             channel_name = character.get("channelName", "森空岛")
             uid = character.get("uid", "")
             # 统一 account 格式: 别名/昵称(uid)
-            character_name = f"{nick_name}/{nick_name}({uid})" if uid else f"{nick_name}/{channel_name}"
+            character_name = (
+                f"{nick_name}/{nick_name}({uid})"
+                if uid
+                else f"{nick_name}/{channel_name}"
+            )
             game_id = _get_arknights_game_id(character)
 
             if attendance_states[index]:
@@ -892,7 +896,9 @@ async def _run_skland_sign_in(
                         logger.info(f"{character_name} 重复签到")
                     else:
                         result["失败"].append(character_name)
-                        logger.warning(f"{character_name} 签到失败: {rsp.get('message')}")
+                        logger.warning(
+                            f"{character_name} 签到失败: {rsp.get('message')}"
+                        )
                 else:
                     result["成功"].append(character_name)
                     logger.info(f"{character_name} 签到成功")
@@ -917,7 +923,7 @@ async def _run_skland_sign_in(
         headers.update(
             {
                 "Content-Type": "application/json",
-                "sk-game-role": f'3_{role["roleId"]}_{role["serverId"]}',
+                "sk-game-role": f"3_{role['roleId']}_{role['serverId']}",
                 "referer": "https://game.skland.com/",
                 "origin": "https://game.skland.com/",
             }
@@ -929,7 +935,9 @@ async def _run_skland_sign_in(
 
     async def sign_for_endfield(cred, sign_token) -> dict:
         """终末地签到"""
-        characters = await get_binding_list(cred, sign_token, app_code_override="endfield")
+        characters = await get_binding_list(
+            cred, sign_token, app_code_override="endfield"
+        )
         role_items = []
         for character in characters:
             roles = character.get("roles") or []
@@ -942,13 +950,18 @@ async def _run_skland_sign_in(
                 nickname = str(role.get("nickname") or "").strip()
                 role_id = role.get("roleId", "")
                 # 统一 account 格式: 别名/昵称(角色ID)
-                character_name = f"{nickname}/{nickname}({role_id})" if role_id else f"{nickname}/{channel_name}"
+                character_name = (
+                    f"{nickname}/{nickname}({role_id})"
+                    if role_id
+                    else f"{nickname}/{channel_name}"
+                )
                 role_items.append((character, role, character_name, game_name))
 
         result = {"成功": [], "重复": [], "失败": [], "总计": len(role_items)}
 
-        for index, (_character, role, character_name, game_name) in enumerate(role_items):
-
+        for index, (_character, role, character_name, game_name) in enumerate(
+            role_items
+        ):
             try:
                 rsp = await do_sign_for_endfield(cred, sign_token, role)
                 if rsp.get("code") != 0:
@@ -980,7 +993,7 @@ async def _run_skland_sign_in(
                             resource = resource_map[award_id]
                             if isinstance(resource, dict) and resource.get("name"):
                                 awards.append(
-                                    f'{resource["name"]}x{resource.get("count", 1)}'
+                                    f"{resource['name']}x{resource.get('count', 1)}"
                                 )
                     if awards:
                         logger.info(

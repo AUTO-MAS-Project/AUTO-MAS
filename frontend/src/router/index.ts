@@ -88,6 +88,13 @@ const routes = [
     meta: { title: '编辑MFW脚本' },
   },
   {
+    // 新建 MFW 脚本后的分步引导；与编辑页同一个组件，按路由名切换形态
+    path: '/scripts/:id/setup/maafw',
+    name: 'MaaFWSetupWizard',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: 'MaaFramework项目引导' },
+  },
+  {
     path: '/scripts/:id/edit/hsr',
     name: 'HSRScriptEdit',
     component: () => import('../views/EditView/Script/HSRScriptEdit.vue'),

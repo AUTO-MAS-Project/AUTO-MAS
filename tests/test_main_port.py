@@ -27,7 +27,9 @@ class ResolveHttpPortTest(unittest.TestCase):
         for raw in ("0", "70000", "abc"):
             with self.subTest(raw=raw):
                 with patch.dict(os.environ, {"AUTO_MAS_HTTP_PORT": raw}):
-                    self.assertEqual(main.resolve_http_port(False), main.DEFAULT_HTTP_PORT)
+                    self.assertEqual(
+                        main.resolve_http_port(False), main.DEFAULT_HTTP_PORT
+                    )
 
 
 if __name__ == "__main__":

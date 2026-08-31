@@ -4,11 +4,11 @@
     <!-- 页面头部 -->
     <div class="scheduler-header">
       <div class="header-left">
-        <h1 class="page-title">调度中心</h1>
+        <h1 class="page-title">{{ t('scheduler.title') }}</h1>
       </div>
       <div class="header-actions">
         <a-space size="middle">
-          <span class="power-label">任务完成后电源操作：</span>
+          <span class="power-label">{{ t('scheduler.powerLabel') }}</span>
           <a-select
             v-model:value="powerAction"
             style="width: 140px"
@@ -16,11 +16,11 @@
             @change="onPowerActionChange"
           >
             <a-select-option
-              v-for="(text, signal) in POWER_ACTION_TEXT"
+              v-for="(labelKey, signal) in POWER_ACTION_LABEL_KEY"
               :key="signal"
               :value="signal"
             >
-              {{ text }}
+              {{ t(labelKey) }}
             </a-select-option>
           </a-select>
         </a-space>
@@ -37,14 +37,14 @@
       >
         <template #tabBarExtraContent>
           <div class="tab-actions">
-            <a-tooltip title="添加新的调度台" placement="top">
+            <a-tooltip :title="t('scheduler.addTab')" placement="top">
               <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">
                 <template #icon>
                   <PlusOutlined />
                 </template>
               </a-button>
             </a-tooltip>
-            <a-tooltip title="删除所有空闲的调度台" placement="top">
+            <a-tooltip :title="t('scheduler.removeIdleTabs')" placement="top">
               <a-button
                 class="tab-action-btn tab-remove-btn"
                 size="middle"
@@ -69,7 +69,7 @@
             <div class="tab-content">
               <span class="tab-title">{{ tab.title }}</span>
               <a-tag :color="TAB_STATUS_COLOR[tab.status]" size="small" class="tab-status">
-                {{ tab.status }}
+                {{ statusLabel(tab.status) }}
               </a-tag>
             </div>
           </template>
@@ -118,7 +118,7 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-tab-content">
-            <a-empty description="暂无调度台" />
+            <a-empty :description="t('scheduler.emptyTabs')" />
           </div>
         </template>
       </a-tabs>
@@ -135,20 +135,26 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref } from 'vue'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import { POWER_ACTION_TEXT, TAB_STATUS_COLOR } from './schedulerConstants'
+import { POWER_ACTION_LABEL_KEY, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
 import OverlayRainMask from '@/components/OverlayRainMask.vue'
+import { useStatusLabel } from '@/i18n/status'
 import type { SchedulerTab } from './schedulerConstants'
+
+const { t } = useI18n()
 
 // 用于 keep-alive 识别
 defineOptions({ name: 'SchedulerPage' })
 
 const logger = window.electronAPI.getLogger('调度中心')
+
+const statusLabel = useStatusLabel()
 
 // 使用业务逻辑层
 const {

@@ -139,7 +139,9 @@ async def _shutdown_backend() -> None:
     try:
         await ShutdownCoordinator.run_teardown()
     except Exception as e:
-        logger.error(f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(
+            f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True
+        )
         return
 
     # 清理完成后通过主 WS 通知前端可以退出

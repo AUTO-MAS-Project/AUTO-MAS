@@ -57,7 +57,9 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
         serve_task = await self._serve(websocket)
 
         self.assertTrue(self.manager.is_connected)
-        self.assertTrue(await self.manager.send({"id": "Main", "type": "t", "data": {}}))
+        self.assertTrue(
+            await self.manager.send({"id": "Main", "type": "t", "data": {}})
+        )
         self.assertEqual(len(websocket.sent), 1)
 
         await websocket.disconnect()
@@ -65,7 +67,9 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.manager.is_connected)
 
     async def test_send_returns_false_when_not_connected(self):
-        self.assertFalse(await self.manager.send({"id": "Main", "type": "t", "data": {}}))
+        self.assertFalse(
+            await self.manager.send({"id": "Main", "type": "t", "data": {}})
+        )
 
     async def test_second_connection_replaces_first(self):
         first = FakeWebSocket()
@@ -80,7 +84,9 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.manager.is_connected)
 
         # 旧连接的断开清理不得清掉新连接
-        self.assertTrue(await self.manager.send({"id": "Main", "type": "t", "data": {}}))
+        self.assertTrue(
+            await self.manager.send({"id": "Main", "type": "t", "data": {}})
+        )
         self.assertEqual(len(second.sent), 1)
         self.assertEqual(len(first.sent), 0)
 

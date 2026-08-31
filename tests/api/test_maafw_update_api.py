@@ -80,7 +80,12 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         script_uid = uuid.uuid4()
         config = MaaFWConfig()
         await config.update(
-            {"Info": {"Name": "u", "Path": str(Path(tempfile.gettempdir()) / "no-such-dir-xyz")}}
+            {
+                "Info": {
+                    "Name": "u",
+                    "Path": str(Path(tempfile.gettempdir()) / "no-such-dir-xyz"),
+                }
+            }
         )
         runtime = _FakeRuntime(script_uid, config)
         with patch.object(scripts_module, "Config", runtime):
@@ -94,10 +99,13 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script_uid, config = await self._make_script(Path(tmp))
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module,
-                "load_interface_model_cached",
-                side_effect=scripts_module.MaaFWInterfaceLoadError("坏了"),
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    side_effect=scripts_module.MaaFWInterfaceLoadError("坏了"),
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -110,12 +118,18 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script_uid, config = await self._make_script(Path(tmp))
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface()
-            ), patch.object(
-                scripts_module,
-                "discover_maafw_project_update",
-                AsyncMock(side_effect=MaaFWProjectUpdateError("CDK 无效")),
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface(),
+                ),
+                patch.object(
+                    scripts_module,
+                    "discover_maafw_project_update",
+                    AsyncMock(side_effect=MaaFWProjectUpdateError("CDK 无效")),
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -127,12 +141,18 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script_uid, config = await self._make_script(Path(tmp))
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface()
-            ), patch.object(
-                scripts_module,
-                "update_maafw_project_if_needed",
-                AsyncMock(side_effect=MaaFWProjectUpdateError("下载失败")),
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface(),
+                ),
+                patch.object(
+                    scripts_module,
+                    "update_maafw_project_if_needed",
+                    AsyncMock(side_effect=MaaFWProjectUpdateError("下载失败")),
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="apply")
@@ -146,12 +166,18 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script_uid, config = await self._make_script(Path(tmp))
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface("2.0.0")
-            ), patch.object(
-                scripts_module,
-                "discover_maafw_project_update",
-                AsyncMock(return_value=None),
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface("2.0.0"),
+                ),
+                patch.object(
+                    scripts_module,
+                    "discover_maafw_project_update",
+                    AsyncMock(return_value=None),
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -171,12 +197,18 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script_uid, config = await self._make_script(Path(tmp))
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface("1.0.0")
-            ), patch.object(
-                scripts_module,
-                "discover_maafw_project_update",
-                AsyncMock(return_value=discovery),
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface("1.0.0"),
+                ),
+                patch.object(
+                    scripts_module,
+                    "discover_maafw_project_update",
+                    AsyncMock(return_value=discovery),
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -196,12 +228,18 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script_uid, config = await self._make_script(Path(tmp))
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface("1.0.0")
-            ), patch.object(
-                scripts_module,
-                "discover_maafw_project_update",
-                AsyncMock(return_value=discovery),
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface("1.0.0"),
+                ),
+                patch.object(
+                    scripts_module,
+                    "discover_maafw_project_update",
+                    AsyncMock(return_value=discovery),
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -233,10 +271,16 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 },
             )
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface()
-            ), patch.object(
-                scripts_module, "discover_maafw_project_update", _fake_discover
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface(),
+                ),
+                patch.object(
+                    scripts_module, "discover_maafw_project_update", _fake_discover
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -266,10 +310,16 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 root, update={"Source": "GitHub", "GitHubRepo": "owner/repo"}
             )
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface()
-            ), patch.object(
-                scripts_module, "discover_maafw_project_update", _fake_discover
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface(),
+                ),
+                patch.object(
+                    scripts_module, "discover_maafw_project_update", _fake_discover
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -291,10 +341,16 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 Path(tmp), update={"Source": "GitHub", "GitHubRepo": "owner/repo"}
             )
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface()
-            ), patch.object(
-                scripts_module, "discover_maafw_project_update", _fake_discover
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface(),
+                ),
+                patch.object(
+                    scripts_module, "discover_maafw_project_update", _fake_discover
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="check")
@@ -323,10 +379,16 @@ class MaaFWUpdateApiTest(unittest.IsolatedAsyncioTestCase):
                 Path(tmp), update={"Source": "MirrorChyan", "MirrorChyanCDK": "cdk-1"}
             )
             runtime = _FakeRuntime(script_uid, config)
-            with patch.object(scripts_module, "Config", runtime), patch.object(
-                scripts_module, "load_interface_model_cached", return_value=_FakeInterface("1.0.0")
-            ), patch.object(
-                scripts_module, "update_maafw_project_if_needed", _fake_apply
+            with (
+                patch.object(scripts_module, "Config", runtime),
+                patch.object(
+                    scripts_module,
+                    "load_interface_model_cached",
+                    return_value=_FakeInterface("1.0.0"),
+                ),
+                patch.object(
+                    scripts_module, "update_maafw_project_if_needed", _fake_apply
+                ),
             ):
                 out = await update_maafw_project(
                     MaaFWProjectUpdateIn(scriptId=str(script_uid), action="apply")

@@ -2,16 +2,16 @@
 <template>
   <div class="form-section form-section-alt">
     <div class="section-header">
-      <h3>控制方式与游戏资源</h3>
+      <h3>{{ t('edit.controlModeGameResource') }}</h3>
     </div>
 
     <a-row :gutter="24" class="controller-resource-row">
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择 MFW Controller，决定使用 ADB、Win32 等控制方式">
+            <a-tooltip :title="t('edit.pickMfwControllerThat')">
               <span class="form-label">
-                控制方式
+                {{ t('edit.controlMode') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -19,7 +19,7 @@
           <a-select
             v-model:value="maafwConfig.Info.Controller"
             size="large"
-            placeholder="自动选择"
+            :placeholder="t('edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
             @change="emit('controller-change')"
@@ -31,7 +31,9 @@
               :disabled="!isDirectControllerType(item.type)"
             >
               {{ item.label || item.name }} · {{ item.type }}
-              <span v-if="!isDirectControllerType(item.type)"> · 建议使用原 UI</span>
+              <span v-if="!isDirectControllerType(item.type)">{{
+                t('edit.originalUiRecommended')
+              }}</span>
             </a-select-option>
           </a-select>
         </a-form-item>
@@ -39,9 +41,9 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择 MFW Resource，留空时自动选择匹配当前控制方式的第一个 Resource">
+            <a-tooltip :title="t('edit.pickMfwResourceLeave')">
               <span class="form-label">
-                游戏资源
+                {{ t('edit.gameResource') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -49,7 +51,7 @@
           <a-select
             v-model:value="maafwConfig.Info.Resource"
             size="large"
-            placeholder="自动选择"
+            :placeholder="t('edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
             @change="emit('resource-change')"
@@ -75,9 +77,9 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip title="MFW ADB controller 运行时使用该模拟器配置">
+                <a-tooltip :title="t('edit.mfwAdbControllerUses')">
                   <span class="form-label">
-                    模拟器
+                    {{ t('edit.emulator') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -85,12 +87,12 @@
               <a-select
                 v-model:value="maafwConfig.Emulator.Id"
                 size="large"
-                placeholder="请选择模拟器"
+                :placeholder="t('edit.pickEmulator')"
                 :loading="emulatorLoading"
                 :disabled="!emulatorOptionsReady"
                 @change="(value: string | number) => emit('emulator-select-change', String(value))"
               >
-                <a-select-option value="-">不指定</a-select-option>
+                <a-select-option value="-">{{ t('edit.unspecified') }}</a-select-option>
                 <a-select-option
                   v-for="item in emulatorOptions"
                   :key="item.value"
@@ -104,9 +106,9 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip title="选择模拟器的具体实例，运行时会传递给 MFW ADB controller">
+                <a-tooltip :title="t('edit.pickEmulatorInstancePassed')">
                   <span class="form-label">
-                    模拟器实例
+                    {{ t('edit.emulatorInstance') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -120,7 +122,7 @@
                 "
                 v-model:value="maafwConfig.Emulator.Index"
                 size="large"
-                placeholder="请输入模拟器实例索引"
+                :placeholder="t('edit.enterEmulatorInstanceIndex')"
                 class="modern-input"
                 :disabled="!emulatorOptionsReady"
                 @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
@@ -129,7 +131,7 @@
                 v-else
                 v-model:value="maafwConfig.Emulator.Index"
                 size="large"
-                placeholder="请先选择模拟器"
+                :placeholder="t('edit.pickEmulatorFirst')"
                 :loading="emulatorDeviceLoading"
                 :disabled="
                   !emulatorOptionsReady ||
@@ -139,7 +141,7 @@
                 "
                 @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
               >
-                <a-select-option value="-">不指定</a-select-option>
+                <a-select-option value="-">{{ t('edit.unspecified') }}</a-select-option>
                 <a-select-option
                   v-for="item in emulatorDeviceOptions"
                   :key="item.value"
@@ -174,12 +176,12 @@
           class="control-strategy-alert"
           type="info"
           show-icon
-          message="Win32 控制方式支持启动与检测分离：启动目标只负责拉起程序，检测目标负责定位实际游戏窗口。"
+          :message="t('edit.win32ControlMethodCan')"
         />
 
         <a-form-item>
           <template #label>
-            <span class="form-label">PC 游戏启动方式</span>
+            <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
           </template>
           <a-select
             v-model:value="maafwConfig.Game.LaunchMode"
@@ -189,45 +191,27 @@
           >
             <a-select-option value="AttachOnly">
               <div class="launch-option">
-                <span class="launch-option-title">我自己启动游戏</span>
-                <span class="launch-option-hint">MAS 只接管已经运行的游戏</span>
+                <span class="launch-option-title">{{ t('edit.iLaunchGameMyself') }}</span>
+                <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
               </div>
             </a-select-option>
             <a-select-option value="DirectExe">
               <div class="launch-option">
-                <span class="launch-option-title">让 MAS 启动游戏</span>
-                <span class="launch-option-hint">选游戏本体的 exe</span>
-              </div>
-            </a-select-option>
-            <a-select-option value="LauncherExe">
-              <div class="launch-option">
-                <span class="launch-option-title">让 MAS 启动官方启动器</span>
-                <span class="launch-option-hint">选启动器 exe，MAS 再等游戏本体出现</span>
-              </div>
-            </a-select-option>
-            <a-select-option value="URL">
-              <div class="launch-option">
-                <span class="launch-option-title">让 MAS 用快捷链接启动</span>
-                <span class="launch-option-hint">填 steam:// 这类协议链接</span>
+                <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
+                <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
               </div>
             </a-select-option>
           </a-select>
           <div class="field-help">{{ launchModeDescription }}</div>
         </a-form-item>
 
-        <a-row :gutter="24" class="control-detail-row">
-          <a-col v-if="launchMode !== 'AttachOnly' && launchMode !== 'URL'" :span="12">
+        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
+          <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip
-                  :title="
-                    launchMode === 'LauncherExe'
-                      ? 'MAS 启动的启动器 exe；实际游戏由下方检测字段单独定位'
-                      : 'MAS 直接启动的实际游戏 exe'
-                  "
-                >
+                <a-tooltip :title="t('edit.actualGameExeMas')">
                   <span class="form-label">
-                    {{ launchMode === 'LauncherExe' ? '启动器可执行文件' : '游戏可执行文件' }}
+                    {{ t('edit.gameExecutable') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -235,9 +219,7 @@
               <a-input-group compact class="path-input-group">
                 <a-input
                   v-model:value="maafwConfig.Game.LaunchPath"
-                  :placeholder="
-                    launchMode === 'LauncherExe' ? '请选择启动器 exe' : '请选择实际启动的游戏 exe'
-                  "
+                  :placeholder="t('edit.pickGameExeThat')"
                   size="large"
                   class="path-input"
                   readonly
@@ -246,57 +228,36 @@
                   <template #icon>
                     <FolderOpenOutlined />
                   </template>
-                  选择 exe
+                  {{ t('edit.pickExe') }}
                 </a-button>
               </a-input-group>
             </a-form-item>
           </a-col>
-          <a-col v-if="launchMode === 'URL'" :span="12">
+          <a-col :span="6">
             <a-form-item>
               <template #label>
-                <a-tooltip
-                  title="使用系统协议处理器启动，例如 steam://、com.epicgames.launcher:// 等"
-                >
+                <a-tooltip :title="t('edit.commandLineArgumentsPassed')">
                   <span class="form-label">
-                    协议启动 URL
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.LaunchURL"
-                placeholder="例如 steam://rungameid/123"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'LaunchURL', maafwConfig.Game.LaunchURL)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="launchMode === 'DirectExe' || launchMode === 'LauncherExe'" :span="6">
-            <a-form-item>
-              <template #label>
-                <a-tooltip title="仅 exe 启动模式会传递给启动目标的命令行参数">
-                  <span class="form-label">
-                    启动参数
+                    {{ t('edit.launchArguments') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="maafwConfig.Game.Arguments"
-                placeholder="可选"
+                :placeholder="t('edit.optional')"
                 size="large"
                 class="modern-input"
                 @blur="emit('change', 'Game', 'Arguments', maafwConfig.Game.Arguments)"
               />
             </a-form-item>
           </a-col>
-          <a-col v-if="launchMode !== 'AttachOnly'" :span="6">
+          <a-col :span="6">
             <a-form-item>
               <template #label>
-                <a-tooltip title="启动目标后等待实际游戏进程/窗口出现的时间，单位秒">
+                <a-tooltip :title="t('edit.howLongWaitReal')">
                   <span class="form-label">
-                    等待时间
+                    {{ t('edit.waitTime') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -313,81 +274,33 @@
           </a-col>
         </a-row>
 
-        <a-row :gutter="24" class="control-detail-row">
+        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip title="用于附加 MFW 的实际游戏进程；可与启动目标不同">
+                <a-tooltip :title="t('edit.onlyProcessesStartedBy')">
                   <span class="form-label">
-                    目标进程路径
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.ProcessPath"
-                placeholder="与目标进程名称至少填写一项"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'ProcessPath', maafwConfig.Game.ProcessPath)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item>
-              <template #label>
-                <a-tooltip title="目标进程名称，例如 Game.exe；与目标进程路径二选一或同时填写">
-                  <span class="form-label">
-                    目标进程名称
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.ProcessName"
-                placeholder="与目标进程路径至少填写一项"
-                size="large"
-                class="modern-input"
-                @blur="emit('change', 'Game', 'ProcessName', maafwConfig.Game.ProcessName)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="launchMode !== 'AttachOnly'" :span="6">
-            <a-form-item>
-              <template #label>
-                <a-tooltip
-                  title="只关闭由本次任务启动且归 MAS 所有的目标进程，不会误杀用户手动打开的进程"
-                >
-                  <span class="form-label">
-                    结束后关闭启动进程
+                    {{ t('edit.closeLaunchedProcessAfterwards') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
               </template>
               <a-switch
                 v-model:checked="maafwConfig.Game.CloseOnFinish"
-                checked-children="开启"
-                un-checked-children="关闭"
+                :checked-children="t('edit.on2')"
+                :un-checked-children="t('edit.off')"
                 @change="emit('change', 'Game', 'CloseOnFinish', maafwConfig.Game.CloseOnFinish)"
               />
             </a-form-item>
           </a-col>
         </a-row>
-
-        <a-alert
-          v-if="targetProcessMissing"
-          class="control-strategy-alert target-process-alert"
-          type="warning"
-          show-icon
-          message="请填写目标进程路径或目标进程名称"
-          description="启动目标与检测目标是两套独立设置；当前模式保存前至少需要提供一个目标进程字段，MAS 才能等待并附加实际游戏。"
-        />
       </div>
     </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
@@ -399,6 +312,8 @@ import type {
   MaaFWLaunchMode,
   MaaFWScriptConfig,
 } from '@/types/script'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
@@ -437,20 +352,10 @@ const launchModeDescription = computed(() => {
   switch (launchMode.value) {
     case 'DirectExe':
       return 'MAS 会启动你选的游戏 exe，运行结束后按下方设置决定是否关闭它。'
-    case 'LauncherExe':
-      return '启动器和游戏通常不是同一个进程，所以还要在下方告诉 MAS 游戏本体叫什么，它才知道该等谁。'
-    case 'URL':
-      return '交给系统按链接启动（如 Steam）。同样要在下方告诉 MAS 游戏本体叫什么，它才知道该等谁。'
     default:
       return 'MAS 不会启动任何程序，只等你把游戏开起来后接管它。'
   }
 })
-const targetProcessMissing = computed(
-  () =>
-    launchMode.value !== 'DirectExe' &&
-    !String(props.maafwConfig.Game.ProcessPath || '').trim() &&
-    !String(props.maafwConfig.Game.ProcessName || '').trim()
-)
 </script>
 
 <style scoped>
@@ -562,10 +467,6 @@ const targetProcessMissing = computed(
 
 .control-strategy-alert {
   margin-bottom: 12px;
-}
-
-.target-process-alert {
-  margin-top: 16px;
 }
 
 .control-strategy-summary {

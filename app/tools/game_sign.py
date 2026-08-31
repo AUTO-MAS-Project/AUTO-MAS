@@ -312,9 +312,7 @@ async def _run_taygedo_provider(
     has_community = bool(
         credential.get("refreshToken") or credential.get("accessToken")
     )
-    has_cloud = bool(
-        credential.get("cloudToken") and credential.get("cloudUserId")
-    )
+    has_cloud = bool(credential.get("cloudToken") and credential.get("cloudUserId"))
     if not has_community and not has_cloud:
         raise ValueError(
             "塔吉多凭据缺少 refreshToken/accessToken 或 cloudToken/cloudUserId"
@@ -392,8 +390,7 @@ def has_game_sign_credentials(account: object) -> bool:
     """判断账号是否至少配置一个已注册社区凭据。"""
 
     return any(
-        _read_game_sign_token(account, field)
-        for field in GAME_SIGN_TOKEN_FIELDS
+        _read_game_sign_token(account, field) for field in GAME_SIGN_TOKEN_FIELDS
     )
 
 
@@ -562,15 +559,11 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 continue
 
         tokens = {
-            provider.token_field: _read_game_sign_token(
-                account, provider.token_field
-            )
+            provider.token_field: _read_game_sign_token(account, provider.token_field)
             for provider in providers
         }
         configured = [
-            provider
-            for provider in providers
-            if tokens.get(provider.token_field)
+            provider for provider in providers if tokens.get(provider.token_field)
         ]
         if not configured:
             continue
@@ -648,7 +641,8 @@ def merge_sign_results(existing: dict, formatted: dict, replace: bool = False) -
             new_uids = {g.get("account_uid") for g in accounts if g.get("account_uid")}
             if new_uids:
                 existing[platform] = [
-                    g for g in existing[platform]
+                    g
+                    for g in existing[platform]
                     if g.get("account_uid") not in new_uids
                 ]
             existing[platform].extend(accounts)
@@ -686,13 +680,15 @@ def format_sign_results(results: list[dict]) -> dict:
                 "games": [],
             }
 
-        platforms[platform][group_key]["games"].append({
-            "account": account,
-            "game": item.get("game", "未知"),
-            "status": item.get("status", "失败"),
-            "reward": item.get("reward", ""),
-            "reason": item.get("reason", ""),
-        })
+        platforms[platform][group_key]["games"].append(
+            {
+                "account": account,
+                "game": item.get("game", "未知"),
+                "status": item.get("status", "失败"),
+                "reward": item.get("reward", ""),
+                "reason": item.get("reason", ""),
+            }
+        )
 
     # 转为列表格式
     result = {}

@@ -1,0 +1,66 @@
+[project]
+name = "auto-mas"
+version = "5.5.0b2"
+description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "AUTO-MAS Team" }]
+dependencies = [
+    "loguru==0.7.3",
+    "fastapi==0.116.1",
+    "pydantic==2.11.7",
+    "uvicorn==0.35.0",
+    "websockets==15.0.1",
+    "aiofiles==24.1.0",
+    "aiohttp==3.13.3",
+    "httpx[socks]==0.28.1",
+    "gitpython==3.1.45",
+    "plyer==2.1.0",
+    "psutil==7.0.0",
+    "jinja2==3.1.6",
+    "pywin32==310; sys_platform == 'win32'",
+    "keyboard==0.13.5; sys_platform == 'win32'",
+    "pycryptodome==3.23.0",
+    "truststore==0.10.1",
+    "pillow==12.1.1",
+    "packaging==25.0",
+    "rapidocr_onnxruntime==1.2.3",
+    "pygetwindow==0.0.9",
+    "pyautogui==0.9.54",
+    "pynput==1.8.1",
+    "numpy==2.3.4",
+    "opencv-python==4.10.0.84",
+    "maafw>=5.12,<6.0",
+    "mss==9.0.2",
+    "fastapi-mcp==0.4.0",
+    "json5==0.14.0",
+    "pyyaml==6.0.3",
+    "sentry-sdk==2.66.1",
+    "tomli_w==1.2.0",
+    "tzdata==2026.3",
+]
+
+[project.urls]
+Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-exclude = [
+    "frontend",
+    "res",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# 将项目内部模块与第三方依赖正确分组。
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

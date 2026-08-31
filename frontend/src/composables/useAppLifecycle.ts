@@ -3,6 +3,7 @@
 // 异常断开后的后端自动重启与恢复失败兜底。
 // 连接层（services/websocket）只负责连接与分发，后端进程管理与退出决策集中在这里。
 
+import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { Service } from '@/api'
@@ -376,9 +377,9 @@ const showRestartFailureModal = (): void => {
   stopReconnect()
 
   Modal.error({
-    title: '后端服务恢复失败',
-    content: '后端服务多次重启后仍无法建立连接，请重启整个应用后再试。',
-    okText: '重启应用',
+    title: t('misc.couldNotRecoverBackend'),
+    content: t('misc.backendStillCannotConnect'),
+    okText: t('misc.restartApp'),
     onOk: () => {
       const { showClosingOverlay } = useAppClosing()
       showClosingOverlay()
@@ -468,9 +469,9 @@ const showDisconnectIncident = (event: WSDisconnectEvent): void => {
   disconnectIncidentShown = true
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
   const modal = Modal.warning({
-    title: '与后端的连接已中断',
-    content: '正在检查后端状态并自动恢复。任务状态会在连接恢复后从 HTTP 快照重新同步。',
-    okText: '知道了',
+    title: t('misc.lostConnectionBackend'),
+    content: t('misc.checkingBackendRecoveringAutomatically'),
+    okText: t('misc.gotIt'),
   })
   if (modal && typeof modal.destroy === 'function') {
     closeDisconnectModal = () => modal.destroy()

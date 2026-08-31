@@ -3,6 +3,7 @@
 // 按 id + type 分发、请求响应关联、断开事件通知生命周期协调器。
 // 不持有业务处理逻辑，不管理后端进程。
 
+import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
 import { OpenAPI } from '@/api'
 import { dispatchMessage, subscribe, unsubscribe } from './subscriptions'
@@ -513,7 +514,7 @@ export function request(
     const subscriptionIds: string[] = []
     const timer = window.setTimeout(() => {
       cleanup()
-      reject(new Error(`请求超时: ${id}/${requestType}`))
+      reject(new Error(t('misc.requestTimedOutP0', { p0: id, p1: requestType })))
     }, timeoutMs)
 
     const cleanup = (): void => {
@@ -536,7 +537,7 @@ export function request(
 
     if (!send(id, requestType, { ...(data ?? {}), requestId })) {
       cleanup()
-      reject(new Error(`请求发送失败: ${id}/${requestType}`))
+      reject(new Error(t('misc.requestFailedP0P1', { p0: id, p1: requestType })))
     }
   })
 }

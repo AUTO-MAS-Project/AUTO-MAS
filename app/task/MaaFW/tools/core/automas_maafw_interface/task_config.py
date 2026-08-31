@@ -114,15 +114,11 @@ def normalize_snapshot(
     raw_snapshot = _normalize_raw_snapshot(snapshot)
 
     raw_task_order = [
-        task_id
-        for task_id in raw_snapshot["taskOrder"]
-        if task_id in valid_task_ids
+        task_id for task_id in raw_snapshot["taskOrder"] if task_id in valid_task_ids
     ]
     partitioned_task_order = [
         task_id for task_id in raw_task_order if is_pretask_task_name(task_id)
-    ] + [
-        task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)
-    ]
+    ] + [task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)]
     for task_id in partitioned_task_order:
         if task_id in valid_task_ids and task_id not in seen_task_ids:
             normalized_order.append(task_id)
@@ -323,7 +319,9 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
     }
 
 
-def _normalize_raw_task_options(value: Any) -> dict[str, dict[str, MaaFWTaskOptionValue]]:
+def _normalize_raw_task_options(
+    value: Any,
+) -> dict[str, dict[str, MaaFWTaskOptionValue]]:
     normalized: dict[str, dict[str, MaaFWTaskOptionValue]] = {}
     if not isinstance(value, dict):
         return normalized
@@ -470,17 +468,20 @@ def _build_option_defaults(
                 else set()
             )
             defaults[option_name] = [
-                case.name
-                for case in option.cases or []
-                if case.name in selected_values
+                case.name for case in option.cases or [] if case.name in selected_values
             ]
             value_types[option_name] = "string_list"
             continue
 
         if option.type == "input":
+            # input 的 default 是**给用户看的预填提示**，不是「没配时该执行的值」。
+            # M9A 的 自定义兑换码 default 就是字面量「占位」，该选项又直接挂在
+            # 任务上永远生效；把它当值注入会真提交一个无效兑换码，任务卡死。
+            # MFAAvalonia 自己的实例配置里，未填写的输入存的也是空串。
+            # default 改由前端作为 placeholder 展示，不进入执行值。
             input_defaults: dict[str, str] = {}
             for input_case in option.inputs or []:
-                input_defaults[input_case.name] = input_case.default or ""
+                input_defaults[input_case.name] = ""
             defaults[option_name] = input_defaults
             value_types[option_name] = "object"
             continue

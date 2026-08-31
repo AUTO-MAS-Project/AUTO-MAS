@@ -35,6 +35,7 @@ def _okww_supplement_po() -> Path:
     """
     return Path.cwd() / "res" / "i18n" / "okww.po"
 
+
 # 推送规则：(匹配正则, 提取表达式 [, 日志类型])；匹配与提取均在翻译后行。
 # 提取表达式输出状态标记（裸节点名 / "状态: 节点"），由 okww_resolve 解析。
 # 顺序敏感：先约电台失败须在成功前（"先约电台已结束" 含 "先约电台"）。
@@ -79,7 +80,10 @@ OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     (r"先约电台", r'"先约电台"'),
     (r"乐园任务完成", r'"✅ 成功: 每周乐园"'),
     # 体力刷本：结束日志（must_use completed 带剩余体力）
-    (r"must_use completed", r'"✅ 成功: 体力刷本 剩余" + $((?:current stamina: )(\d+))'),
+    (
+        r"must_use completed",
+        r'"✅ 成功: 体力刷本 剩余" + $((?:current stamina: )(\d+))',
+    ),
     (r"体力已用尽", r'"✅ 成功: 体力刷本（体力已用尽）"'),
     (r"体力不足以继续", r'"✅ 成功: 体力刷本（体力已用尽）"'),
     (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
@@ -92,9 +96,7 @@ OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 
-def okww_resolve(
-    results: list[tuple[str, str]]
-) -> list[tuple[str, str]]:
+def okww_resolve(results: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
     输入/输出均为 ``(log_type, text)`` 元组（与 log_box `_PostProcessor` 契约
@@ -119,7 +121,4 @@ def okww_resolve(
             states[node] = (rank, status)
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
-    return [
-        (LogType.NORMAL, f"{states[node][1]}: {node}")
-        for node in order
-    ]
+    return [(LogType.NORMAL, f"{states[node][1]}: {node}") for node in order]
