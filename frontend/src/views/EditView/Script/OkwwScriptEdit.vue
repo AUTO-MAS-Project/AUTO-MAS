@@ -129,6 +129,28 @@
                 </a-select>
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换">
+                    <span class="form-label">
+                      运行前强制切换账号
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="okwwConfig.Game.AccountSwitch"
+                  size="large"
+                  class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @change="handleChange('Game', 'AccountSwitch', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
           </a-row>
 
           <a-row :gutter="24" class="game-control-row">
@@ -471,6 +493,7 @@ interface OkwwInfoForm {
 
 interface OkwwGameForm {
   Enabled: boolean
+  AccountSwitch: boolean
   Path: string
   Arguments: string
   WaitTime: number
@@ -506,6 +529,7 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
   Script: {},
   Game: {
     Enabled: false,
+    AccountSwitch: false,
     Path: '.',
     Arguments: '',
     WaitTime: 60,

@@ -156,27 +156,6 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.password') }}
-                      <a-tooltip :title="t('edit.requiredWhenSwitchingAccounts')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input-password
-                    v-model:value="formData.Info.Password"
-                    :placeholder="t('edit.enterPassword')"
-                    size="large"
-                    @blur="saveField('Info.Password', formData.Info.Password)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
                       {{ t('edit.gameResource') }}
                       <a-tooltip :title="t('edit.pickGameResourceThis')">
                         <QuestionCircleOutlined class="help-icon" />
@@ -572,7 +551,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Name: '',
     Status: true,
     Id: '',
-    Password: '',
     IfUseMasConfig: true,
     Mode: '脚本',
     IfQuickConfig: true,

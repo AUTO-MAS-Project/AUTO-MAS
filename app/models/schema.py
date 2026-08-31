@@ -700,7 +700,6 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     """OK-WW 用户信息（复用通用字段）"""
 
     Id: Optional[str] = Field(default=None, description="账号")
-    Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None,
         description="配置来源（脚本共享、用户独立、直控优先读取脚本原配置）",
@@ -901,6 +900,9 @@ class OkwwConfig_Game(BaseModel):
     )
     UpdateFullSyncLimit: Optional[int] = Field(
         default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
+    )
+    AccountSwitch: Optional[bool] = Field(
+        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
     )
 
 

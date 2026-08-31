@@ -44,7 +44,7 @@ from app.utils.LogPatternExtractor import (
 )
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
-from app.log_box import log_box
+from app.log_box import LogType, log_box
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,
@@ -451,7 +451,7 @@ class AutoProxyTask(TaskExecuteBase):
                 mas_config_dir / self.script_config_path.name,
                 self.script_config_path,
             )
-        logger.info(f"OK-NTE 运行参数配置完成: 自动代理")
+        logger.info("OK-NTE 运行参数配置完成: 自动代理")
 
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
