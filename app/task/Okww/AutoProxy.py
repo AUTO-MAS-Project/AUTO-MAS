@@ -59,6 +59,11 @@ logger = get_logger("OK-WW 自动代理")
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 
+# 多用户切换时等待旧游戏完全退出的上限（秒）：
+# ok-ww 恒带 `-e` 自退游戏，客户端进程退出不是瞬时的；若不等待完全退出，
+# 下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
+_GAME_EXIT_WAIT_SECONDS = 90
+
 
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # 对齐 MaaEnd：专项内置日志片段，Okww 不向用户暴露成功/失败日志关键词配置。
@@ -774,6 +779,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self._persist_user_run_result()
 
+        # 多用户切换：等上一用户游戏完全退出（见 _wait_game_exit_before_next_user）
+        await self._wait_game_exit_before_next_user()
+
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:
             return
@@ -902,3 +910,23 @@ class AutoProxyTask(TaskExecuteBase):
         await self._kill_okww_process()
         if kill_game:
             await self._kill_game_process()
+
+    async def _wait_game_exit_before_next_user(self) -> None:
+        """多用户切换：等上一用户的游戏完全退出后再进下个用户。
+
+        鸣潮客户端进程退出不是瞬时的（ok-ww 恒带 `-e` 自退）。若不等其完全退出，
+        下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄
+        失效后任务被中止。仅在还有下一个用户时等待；最后一个用户不等待。
+        游戏管理开启时 MAS 已同步 taskkill，本方法即为 no-op。
+        """
+        if self.script_info.current_index >= len(self.script_info.user_list) - 1:
+            return
+        deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            if not is_process_running(_WUWA_CLIENT_PROCESS):
+                logger.info("鸣潮客户端进程已完全退出，继续下一用户")
+                return
+            await asyncio.sleep(1)
+        logger.warning(
+            f"等待鸣潮客户端进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一用户"
+        )
