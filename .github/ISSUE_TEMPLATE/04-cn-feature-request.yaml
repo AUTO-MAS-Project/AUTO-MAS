@@ -1,0 +1,45 @@
+name: 需求建议（使用中文）
+description: 新功能、改进建议等
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 在提问之前...
+      options:
+        - label: 我确认这是需求建议，而不是 Bug 反馈
+          required: true
+        - label: 我已搜索过活跃议题与已关闭议题，确认该需求未被提出过
+          required: true
+
+  - type: textarea
+    id: describe
+    attributes:
+      label: 需求描述
+      description: 你希望 AUTO-MAS 增加或改进什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 想解决什么问题
+      description: 描述你的使用场景，以及现在是怎么绕过这个问题的
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 你设想的方案
+      description: 若你已有具体想法，可以在这里描述交互方式或实现思路
+    validations:
+      required: false
+
+  - type: textarea
+    id: others
+    attributes:
+      label: 补充
+      description: 参考资料、其他软件的类似实现、示意图等
+    validations:
+      required: false
