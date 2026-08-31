@@ -118,7 +118,7 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
         order.append(node)
-        if rank > states.get(node, (0, ""))[0]:
+        if rank >= states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
             ts_of[node] = ts
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；

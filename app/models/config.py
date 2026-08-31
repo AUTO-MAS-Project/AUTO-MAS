@@ -2849,8 +2849,30 @@ class OkwwConfigModeValidator(OptionsValidator):
         return self.LEGACY_MODE_MAP.get(value, super().correct(value))
 
 
+def _migrate_push_log_mode(data: dict) -> None:
+    """兼容旧版 Notify.PushLogEnabled 布尔开关 → 三态 PushLogMode
+
+    旧值 False（关闭）迁移为「关闭」，保留用户之前的关闭选择；旧值 True 交由
+    新默认「汇总」生效；随后清理旧键，避免其作为未知字段残留。
+    """
+    notify = data.get("Notify")
+    if (
+        isinstance(notify, dict)
+        and "PushLogEnabled" in notify
+        and "PushLogMode" not in notify
+    ):
+        if notify.get("PushLogEnabled") is False:
+            notify["PushLogMode"] = "关闭"
+        notify.pop("PushLogEnabled", None)
+
+
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
+
+    async def load(self, data: dict):
+        """加载用户配置前迁移旧版推送模式字段。"""
+        _migrate_push_log_mode(data)
+        await super().load(data)
 
     # 用户卡 Tag 仅展示中文简称（与编辑页下拉的 English（中文） 区分）
     OKWW_TASK_BOOK: dict[int, str] = {
@@ -3039,6 +3061,11 @@ class OkwwUserConfig(ConfigBase):
 
 class OkNteUserConfig(ConfigBase):
     """OK-NTE 用户配置（ok-script 线）"""
+
+    async def load(self, data: dict):
+        """加载用户配置前迁移旧版推送模式字段。"""
+        _migrate_push_log_mode(data)
+        await super().load(data)
 
     OKNTE_TASK_BOOK: dict[int, str] = {
         1: "启动游戏",

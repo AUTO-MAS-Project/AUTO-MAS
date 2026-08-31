@@ -402,11 +402,11 @@ let oknteConfigTimeout: number | null = null
 const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
-// 节点详情推送模式（取值与后端 Notify.PushLogMode 一致，驱动逻辑需保持原样）
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: '关闭', value: '关闭' },
-  { label: '逐条', value: '逐条' },
-  { label: '汇总', value: '汇总' },
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const oknteTaskOptions = [
