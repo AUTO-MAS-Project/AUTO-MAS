@@ -95,9 +95,15 @@ class OkNteResolveTest(unittest.TestCase):
             [(LogType.NORMAL, "⏭ 跳过: 节点A", T)],
         )
 
-    def test_missing_cur_or_tgt_yields_no_stamina_line(self) -> None:
-        # 仅 CUR 或仅 TGT：不追加剩余体力行
-        self.assertEqual(oknte_resolve([(LogType.NORMAL, "CUR:120", T)]), [])
+    def test_cur_only_shows_current_as_remaining(self) -> None:
+        # 仅 CUR（如体力不足被中止、未设消耗目标）：直接展示当前体力
+        self.assertEqual(
+            oknte_resolve([(LogType.NORMAL, "CUR:30", T)]),
+            [(LogType.NORMAL, "⚡ 剩余体力: 30", T)],
+        )
+
+    def test_tgt_only_yields_no_stamina_line(self) -> None:
+        # 仅 TGT：没有当前体力作基数，不追加剩余体力行
         self.assertEqual(oknte_resolve([(LogType.NORMAL, "TGT:60", T)]), [])
 
     def test_stamina_uses_last_cur_and_tgt(self) -> None:
@@ -108,7 +114,7 @@ class OkNteResolveTest(unittest.TestCase):
         ]
         self.assertEqual(
             oknte_resolve(results),
-            [(LogType.NORMAL, "⚡️ 剩余体力: 30", T)],
+            [(LogType.NORMAL, "⚡ 剩余体力: 30", T)],
         )
 
     def test_stamina_clamps_to_zero(self) -> None:
@@ -118,7 +124,7 @@ class OkNteResolveTest(unittest.TestCase):
         ]
         self.assertEqual(
             oknte_resolve(results),
-            [(LogType.NORMAL, "⚡️ 剩余体力: 0", T)],
+            [(LogType.NORMAL, "⚡ 剩余体力: 0", T)],
         )
 
     def test_unknown_text_and_bad_stamina_are_dropped(self) -> None:

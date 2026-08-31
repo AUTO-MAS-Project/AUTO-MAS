@@ -46,7 +46,7 @@ def _render_scatter(entries: list[tuple]) -> list[str]:
 def _render_aggregate(entries: list[tuple]) -> list[str]:
     """汇总式渲染：按状态前缀分组合并节点名，同一状态合并为一行
 
-    不具状态前缀的条目（如「⚡️ 剩余体力」）原样独占一行；分组顺序按状态首次
+    不具状态前缀的条目（如「⚡ 剩余体力: 30」）原样独占一行；分组顺序按状态首次
     出现排列。
     """
     groups: dict[str, list[str]] = {}
