@@ -188,6 +188,19 @@ def mark_task_game_sign_summary_consumed(task_info: object) -> None:
     setattr(task_info, "game_sign_summary_consumed", True)
 
 
+def finalize_task_game_sign_notification(
+    task_info: object,
+    has_summary: bool,
+    failed_channels: list[str],
+) -> None:
+    """记录部分失败，并在全部渠道成功后消费签到汇总。"""
+
+    if failed_channels:
+        logger.warning(f"推送代理结果部分失败: {'、'.join(failed_channels)}")
+    if has_summary and not failed_channels:
+        mark_task_game_sign_summary_consumed(task_info)
+
+
 def append_task_game_sign_summary(task_info: object, result: str) -> str:
     """将尚未发送的签到汇总附加到任务报告。"""
 

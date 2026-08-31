@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import patch
 
 from app.core.notify import NotifyPayload, NotifyTarget, dispatch
+from app.tools.game_sign_notify import finalize_task_game_sign_notification
 
 
 class _Webhook:
@@ -42,7 +43,10 @@ def test_dispatch_isolates_false_result_and_names_webhook() -> None:
 
     with patch("app.core.notify.Notify", notify):
         failed = asyncio.run(
-            dispatch(NotifyPayload("标题", "正文", "<p>正文</p>"), [target])
+            dispatch(
+                NotifyPayload(title="标题", text="正文", html="<p>正文</p>"),
+                [target],
+            )
         )
 
     assert failed == ["测试邮件"]
@@ -56,7 +60,7 @@ def test_dispatch_retries_false_result() -> None:
     with patch("app.core.notify.Notify", notify):
         failed = asyncio.run(
             dispatch(
-                NotifyPayload("标题", "正文", "<p>正文</p>"),
+                NotifyPayload(title="标题", text="正文", html="<p>正文</p>"),
                 [target],
                 attempts=2,
             )
@@ -78,6 +82,21 @@ def test_dispatch_reports_named_webhook_failure() -> None:
     )
 
     with patch("app.core.notify.Notify", notify):
-        failed = asyncio.run(dispatch(NotifyPayload("标题", "正文"), [target]))
+        failed = asyncio.run(
+            dispatch(NotifyPayload(title="标题", text="正文"), [target])
+        )
 
     assert failed == ["全局 Webhook 值班群"]
+
+
+def test_finalize_task_game_sign_notification_consumes_only_after_success() -> None:
+    class _Task:
+        game_sign_summary_consumed = False
+
+    failed_task = _Task()
+    finalize_task_game_sign_notification(failed_task, True, ["全局邮件"])
+    assert failed_task.game_sign_summary_consumed is False
+
+    success_task = _Task()
+    finalize_task_game_sign_notification(success_task, True, [])
+    assert success_task.game_sign_summary_consumed is True

@@ -25,7 +25,6 @@ from app.core.notify import (
     user_statistic_targets,
 )
 from app.models.config import OkwwUserConfig
-from app.tools.push_log import append_push_log
 from app.utils import get_logger
 
 logger = get_logger("OK-WW 通知工具")
@@ -74,8 +73,6 @@ async def push_notification(
         f"未完成数: {message['uncompleted_count']}\n\n"
         f"{message['result']}"
     )
-    # 通知详情追加采集的推送日志（任务进程信息，与 HTML 模板的 push_log 区块一致）
-    message_text = append_push_log(message_text, message.get("push_log"))
     message_html = Config.notify_env.get_template("general_result.html").render(message)
 
     return await dispatch(

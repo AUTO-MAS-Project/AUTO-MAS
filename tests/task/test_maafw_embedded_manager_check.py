@@ -16,9 +16,8 @@ from pathlib import Path
 from unittest import mock
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
-from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.core.task_manager import TaskInfo
+from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.task import ScriptItem
 from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
 
@@ -383,6 +382,47 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
         # 不置终态的话任务结束后脚本行会一直停在「运行」
         self.assertEqual(manager.script_info.status, "完成")
 
+    def test_final_task_sends_aggregate_report(self) -> None:
+        manager, *_ = self._run_main_task(["用户A", "用户B"])
+
+        async def go():
+            for user in manager.script_info.user_list:
+                user.status = "完成"
+            manager._inner_finalized = True
+            with mock.patch(
+                "app.task.MaaFW.embedded_manager.push_notification",
+                new=mock.AsyncMock(return_value=[]),
+            ) as push:
+                await manager.final_task()
+            return push
+
+        push = asyncio.run(go())
+        push.assert_awaited_once()
+        mode, title, message = push.await_args.args
+        self.assertEqual(mode, "代理结果")
+        self.assertIn("自动代理任务报告", title)
+        self.assertEqual(message["completed_count"], 2)
+        self.assertEqual(message["uncompleted_count"], 0)
+
+    def test_final_task_does_not_count_skipped_users_as_completed(self) -> None:
+        manager, *_ = self._run_main_task(["用户A", "用户B"])
+
+        async def go():
+            manager.script_info.user_list[0].status = "完成"
+            manager.script_info.user_list[1].status = "跳过"
+            manager._inner_finalized = True
+            with mock.patch(
+                "app.task.MaaFW.embedded_manager.push_notification",
+                new=mock.AsyncMock(return_value=[]),
+            ) as push:
+                await manager.final_task()
+            return push
+
+        push = asyncio.run(go())
+        _, _, message = push.await_args.args
+        self.assertEqual(message["completed_count"], 1)
+        self.assertEqual(message["uncompleted_count"], 0)
+
     def test_script_status_becomes_error_when_a_user_failed(self) -> None:
         manager, *_ = self._run_main_task(["用户A", "用户B"])
         self._finalize_with_statuses(manager, ["完成", "异常"])
@@ -396,8 +436,18 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
 
     def test_final_task_does_not_finalize_twice(self) -> None:
         manager, built, _, _ = self._run_main_task(["用户A"])
-        asyncio.run(manager.final_task())
+        async def go():
+            with mock.patch(
+                "app.task.MaaFW.embedded_manager.push_notification",
+                new=mock.AsyncMock(return_value=[]),
+            ) as push:
+                await manager.final_task()
+                await manager.final_task()
+            return push
+
+        push = asyncio.run(go())
         built[-1].final_task.assert_awaited_once()
+        push.assert_awaited_once()
 
 
 class RuntimePoolRouteInjectionTest(unittest.TestCase):

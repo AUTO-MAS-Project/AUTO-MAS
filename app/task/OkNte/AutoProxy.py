@@ -29,12 +29,15 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
+from app.log_box import LogType, log_box
 from app.models.config import OkNteConfig, OkNteUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
+from app.task.general.tools import execute_script_task
+from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
+from app.utils.constants import UTC4
 from app.utils.io import read_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.LogPatternExtractor import (
@@ -42,13 +45,13 @@ from app.utils.LogPatternExtractor import (
     LogSignMatcher,
     compile_log_signs,
 )
-from app.utils.constants import UTC4
-from app.task.general.tools import execute_script_task
+
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,
     ensure_oknte_daily_routine_configs,
 )
+from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
 
 logger = get_logger("OK-NTE 自动代理")
@@ -221,6 +224,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
+        self.log_collect = None
 
     async def _reset_daily_proxy_count(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -332,6 +336,16 @@ class AutoProxyTask(TaskExecuteBase):
                 "OK-NTE ErrorLog 去掉过宽容词后为空，已回退为内置默认失败关键词"
             )
 
+        if self.cur_user_config.get("Notify", "PushLogEnabled"):
+            self.log_collect = log_box.get_collect(
+                paths=[self._resolve_log_path()],
+                sink=self._append_push_log,
+                start_from_end=True,
+            )
+            self.log_collect.open()
+            for rule in OKNTE_PUSH_RULES:
+                self.log_collect.collect(*rule)
+
         # 当前用户配置
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
@@ -420,7 +434,7 @@ class AutoProxyTask(TaskExecuteBase):
                 mas_config_dir / self.script_config_path.name,
                 self.script_config_path,
             )
-        logger.info(f"OK-NTE 运行参数配置完成: 自动代理")
+        logger.info("OK-NTE 运行参数配置完成: 自动代理")
 
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
@@ -456,6 +470,11 @@ class AutoProxyTask(TaskExecuteBase):
         prev = self.script_info.log
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
+
+    def _append_push_log(self, log_type: str, text: str) -> None:
+        """把 log_box 采集结果写入当前用户的推送日志。"""
+
+        self.cur_user_item.push_log.append((log_type, text))
 
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
@@ -751,6 +770,13 @@ class AutoProxyTask(TaskExecuteBase):
                 else self._mas_should_close_game_on_retry()
             )
             await self.kill_managed_process(kill_game=kill_game)
+
+        try:
+            if self.log_collect is not None:
+                self.log_collect.close(oknte_resolve)
+        except Exception:
+            logger.opt(exception=True).warning("OK-NTE log_box 收尾推送失败")
+            self.cur_user_item.push_log.append((LogType.NORMAL, "⚠️ 节点采集失败"))
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         user_logs_list = []

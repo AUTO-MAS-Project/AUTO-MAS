@@ -20,28 +20,28 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import shutil
-from pathlib import Path
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
-from .tools import push_notification
+from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
+
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-
+from .tools import push_notification
 
 logger = get_logger("MAA 调度器")
 
@@ -243,13 +243,9 @@ class MaaManager(TaskExecuteBase):
             )
             try:
                 failed_channels = await push_notification("代理结果", title, result, None)
-                if failed_channels:
-                    logger.warning(
-                        f"推送代理结果部分失败: {'、'.join(failed_channels)}"
-                    )
-                # 有渠道失败时不消费签到汇总, 留给下一份报告重发, 避免静默丢失
-                if has_game_sign_summary and not failed_channels:
-                    mark_task_game_sign_summary_consumed(self.task_info)
+                finalize_task_game_sign_notification(
+                    self.task_info, has_game_sign_summary, failed_channels
+                )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Publisher.send(

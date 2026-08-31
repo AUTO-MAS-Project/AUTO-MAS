@@ -21,46 +21,46 @@
 
 
 import asyncio
-import uuid
 import shutil
-from pathlib import Path
+import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
-from app.utils import get_logger, ProcessManager
-from app.utils.constants import TASK_MODE_ZH
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
+from app.utils import ProcessManager, get_logger
+from app.utils.constants import TASK_MODE_ZH
+
+from .AutoProxy import AutoProxyTask
+from .ScriptConfig import ScriptConfigTask
 from .tools import (
+    SrcConfigSnapshotState,
+    SrcProcessState,
     has_committed_src_user_config_transaction,
-    kill_src_processes,
     is_src_config_available,
+    kill_src_processes,
     push_notification,
     read_src_config_snapshot_state,
     read_src_installation_id,
+    read_src_process_state,
     recover_interrupted_src_config_swap,
     recover_src_user_config,
-    read_src_process_state,
     save_src_user_config,
-    SrcProcessState,
-    SrcConfigSnapshotState,
-    validate_src_installation,
     validate_src_cleanup_paths,
+    validate_src_installation,
     write_src_config_snapshot_state,
     write_src_process_state,
 )
-from .AutoProxy import AutoProxyTask
-from .ScriptConfig import ScriptConfigTask
-
 
 logger = get_logger("SRC 调度器")
 
@@ -920,13 +920,9 @@ class SrcManager(TaskExecuteBase):
                 push_notification("代理结果", title, result, None),
                 timeout=_NOTIFICATION_TIMEOUT_SECONDS,
             )
-            if failed_channels:
-                logger.warning(
-                    f"推送代理结果部分失败: {'、'.join(failed_channels)}"
-                )
-            # 有渠道失败时不消费签到汇总, 留给下一份报告重发, 避免静默丢失
-            if has_game_sign_summary and not failed_channels:
-                mark_task_game_sign_summary_consumed(self.task_info)
+            finalize_task_game_sign_notification(
+                self.task_info, has_game_sign_summary, failed_channels
+            )
         except Exception as e:
             await self._report_notification_error("推送代理结果", e)
 
