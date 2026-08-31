@@ -71,6 +71,14 @@
             <template v-if="envReady && envAgents.length" #description>
               已就绪的 Agent：{{ envAgents.map(a => a.runtimeKind || '未知').join('、') }}
             </template>
+            <template v-if="envFailed" #description>
+              运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。
+            </template>
+            <template v-if="envFailed" #action>
+              <a-button size="small" :loading="envPreparing" @click="retryAgentEnvPrepare">
+                重试
+              </a-button>
+            </template>
           </a-alert>
         </div>
 
@@ -214,8 +222,13 @@ const stepItems = [
   { title: t('edit.projectUpdate') },
   { title: t('edit.runConfiguration') },
 ]
-// 第一步没读到 interface 就往下走，后面几步全是空的，先拦住
-const canLeaveCurrentStep = computed(() => currentStep.value !== 0 || previewData.value !== null)
+// 第一步没读到 interface 就往下走，后面几步全是空的，先拦住。
+// 运行环境同理：没装完就往下配，配完了也跑不起来——首次要下载 MaaFramework，
+// 失败时（离线、镜像不通、解释器坏）后面每一步都是白填。失败不是死路，
+// 提示条里有「重试」。
+const canLeaveCurrentStep = computed(
+  () => currentStep.value !== 0 || (previewData.value !== null && envReady.value),
+)
 const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
@@ -498,6 +511,12 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
   } finally {
     envPreparing.value = false
   }
+}
+
+// 重试要清掉「这个路径已经备好过」的记忆，否则 runAgentEnvPrepare 会直接跳过。
+const retryAgentEnvPrepare = async () => {
+  envPreparedPath.value = ''
+  await runAgentEnvPrepare()
 }
 
 const selectMaaFWPath = async () => {
