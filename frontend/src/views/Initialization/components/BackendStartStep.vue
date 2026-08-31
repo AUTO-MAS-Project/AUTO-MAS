@@ -207,10 +207,8 @@ async function startBackend() {
     progress.value = 85
 
     // 第四步：等待后端完全就绪
+    // 后端就绪由 backendStart 的健康检查与已建立的 WebSocket 连接保证，无需额外等待
     statusMessage.value = t('init.backend.waitingReady')
-
-    // 等待额外的时间确保后端完全启动
-    await new Promise(resolve => setTimeout(resolve, 2000))
 
     progress.value = 95
 
@@ -241,10 +239,10 @@ async function startBackend() {
       `后端服务启动完成 - PID: ${backendPid.value}, WebSocket: ${wsConnected.value ? '已连接' : '未连接'}, 版本检查: ${pollingStarted.value ? '已启动' : '未启动'}`
     )
 
-    // 延迟1秒后通知完成，让用户看到成功状态
+    // 短暂停顿让用户看到成功状态
     setTimeout(() => {
       emit('complete')
-    }, 1000)
+    }, 300)
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
     logger.error(`后端启动失败: ${errMsg}`)

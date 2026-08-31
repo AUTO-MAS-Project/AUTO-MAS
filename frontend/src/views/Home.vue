@@ -46,7 +46,7 @@
       @scroll-hint-change="setScrollHintHidden"
     />
 
-    <div v-if="layoutReady && !isBootstrapping" class="home-content">
+    <div v-if="layoutReady" class="home-content">
       <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
@@ -212,6 +212,7 @@ const {
 const {
   loading,
   error,
+  hasSnapshot,
   activityData,
   resourceData,
   proxyData,
@@ -253,7 +254,10 @@ onMounted(async () => {
   await loadHomeLayout()
 
   if (isBootstrapping.value) {
-    loading.value = true
+    // 已有快照时直接展示内容，刷新不再用骨架遮挡；无快照时显示加载态
+    if (!hasSnapshot.value) {
+      loading.value = true
+    }
     noticeLoading.value = true
 
     const stopWatching = watch(isBootstrapping, bootstrapping => {
