@@ -690,7 +690,6 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     """OK-WW 用户信息（复用通用字段）"""
 
     Id: Optional[str] = Field(default=None, description="账号")
-    Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None, description="配置来源（脚本共享、用户独立、直控优先读取脚本原配置）"
     )

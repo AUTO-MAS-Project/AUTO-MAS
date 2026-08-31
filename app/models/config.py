@@ -2881,7 +2881,6 @@ class OkwwUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_Id = ConfigItem("Info", "Id", "")
-        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Resource = ConfigItem(
             "Info", "Resource", "官服", OptionsValidator(["官服", "国际服"])
         )

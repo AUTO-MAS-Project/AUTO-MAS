@@ -160,27 +160,6 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      密码
-                      <a-tooltip title="PC 端需要切换账号时必须填写">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input-password
-                    v-model:value="formData.Info.Password"
-                    placeholder="请输入密码"
-                    size="large"
-                    @blur="saveField('Info.Password', formData.Info.Password)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
                       游戏资源
                       <a-tooltip title="选择当前用户使用的游戏资源">
                         <QuestionCircleOutlined class="help-icon" />
@@ -573,7 +552,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Name: '',
     Status: true,
     Id: '',
-    Password: '',
     IfUseMasConfig: true,
     Mode: '脚本',
     IfQuickConfig: true,
