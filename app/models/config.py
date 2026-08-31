@@ -2864,7 +2864,6 @@ class OkwwUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_Id = ConfigItem("Info", "Id", "")
-        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Resource = ConfigItem(
             "Info", "Resource", "官服", OptionsValidator(["官服", "国际服"])
         )
@@ -3118,6 +3117,10 @@ class OkNteUserConfig(ConfigBase):
 
         ## Notify ----------------------------------------------------------
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否在任务报告中推送该用户的节点详情（log_box 采集的关键节点）
+        self.Notify_PushLogEnabled = ConfigItem(
+            "Notify", "PushLogEnabled", True, BoolValidator()
+        )
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
@@ -3349,6 +3352,10 @@ class OkwwConfig(ConfigBase):
         ## 整文件同步体积上限（GB），超过则中止并提示手动处理
         self.Game_UpdateFullSyncLimit = ConfigItem(
             "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
+        )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
         )
         ## Run -------------------------------------------------------------
         ## 每日代理次数上限

@@ -119,11 +119,12 @@
           />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection
-            v-model:form-data="formData"
+          <UserNotifyConfig
+            v-model="formData.Notify"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
+            show-six-star
             @save="handleFieldSave"
           />
         </a-form>
@@ -163,7 +164,7 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
-import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const { t } = useI18n()
@@ -516,7 +517,6 @@ const getDefaultMAAUserData = () => ({
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',

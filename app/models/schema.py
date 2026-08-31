@@ -21,7 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
 from typing import (
     Annotated,
     Any,
@@ -33,6 +32,8 @@ from typing import (
     TypeVar,
     Union,
 )
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -700,7 +701,6 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     """OK-WW 用户信息（复用通用字段）"""
 
     Id: Optional[str] = Field(default=None, description="账号")
-    Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None,
         description="配置来源（脚本共享、用户独立、直控优先读取脚本原配置）",
@@ -775,6 +775,11 @@ class OkNteUserConfig_Data(GeneralUserConfig_Data):
 
 class OkNteUserConfig_Notify(GeneralUserConfig_Notify):
     """OK-NTE 用户通知（复用通用字段）"""
+
+    PushLogEnabled: Optional[bool] = Field(
+        default=None,
+        description="任务报告中是否推送该用户的节点详情（log_box 采集的关键节点）",
+    )
 
 
 class OkNteUserConfig(BaseModel):
@@ -897,6 +902,9 @@ class OkwwConfig_Game(BaseModel):
     UpdateFullSyncLimit: Optional[int] = Field(
         default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
     )
+    AccountSwitch: Optional[bool] = Field(
+        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
+    )
 
 
 class OkwwConfig_Run(GeneralConfig_Run):
@@ -914,8 +922,42 @@ class OkNteConfig_Info(GeneralConfig_Info):
     """OK-NTE 脚本基础信息（复用通用字段）"""
 
 
-class OkNteConfig_Script(GeneralConfig_Script):
-    """OK-NTE 脚本配置（复用通用字段）"""
+class OkNteConfig_Script(BaseModel):
+    """OK-NTE 脚本配置（仅暴露运行期存在的字段；LogHook/PushLog 等通用脚本字段不适用于 OK-NTE）"""
+
+    ScriptPath: Optional[str] = Field(default=None, description="脚本可执行文件路径")
+    Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
+    IfTrackProcess: Optional[bool] = Field(
+        default=None, description="是否追踪脚本子进程"
+    )
+    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
+    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
+    TrackProcessCmdline: Optional[str] = Field(
+        default=None, description="追踪进程启动命令行参数"
+    )
+    ConfigPath: Optional[str] = Field(default=None, description="配置文件路径")
+    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
+        default=None, description="配置文件类型: 单个文件, 文件夹"
+    )
+    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
+        Field(
+            default=None,
+            description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
+        )
+    )
+    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
+    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
+    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
+    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
+    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
+    SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
+    SuccessLogMode: Optional[Literal["Split", "Regex"]] = Field(
+        default=None, description="成功时日志匹配模式: 关键字子串包含, 正则表达式"
+    )
+    ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+    ErrorLogMode: Optional[Literal["Split", "Regex"]] = Field(
+        default=None, description="错误时日志匹配模式: 关键字子串包含, 正则表达式"
+    )
 
 
 class OkNteConfig_Game(BaseModel):
@@ -1454,7 +1496,6 @@ class HSRUserConfig_Notify(BaseModel):
     ToAddress: Optional[str] = Field(default=None, description="收件地址")
     IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-    CustomWebhooks: Optional[Any] = Field(default=None, description="自定义 Webhook")
 
 
 class HSRUserConfig(BaseModel):
@@ -1805,7 +1846,6 @@ class MaaFWUserConfig_Notify(BaseModel):
     ToAddress: Optional[str] = Field(default=None, description="收件地址")
     IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-    CustomWebhooks: Optional[Any] = Field(default=None, description="自定义 Webhook")
 
 
 class MaaFWUserConfig(BaseModel):

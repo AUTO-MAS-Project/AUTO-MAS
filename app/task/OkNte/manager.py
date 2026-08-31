@@ -16,30 +16,29 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-import uuid
 import shutil
+import uuid
 from contextlib import suppress
 from datetime import datetime
-
 from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.services import Notify
-from app.utils import get_logger, ProcessManager
-from app.utils.constants import TASK_MODE_ZH
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
+from app.tools.push_log import build_user_result_text
+from app.utils import ProcessManager, get_logger
+from app.utils.constants import TASK_MODE_ZH
 
-from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -295,10 +294,20 @@ class OkNteManager(TaskExecuteBase):
                 ]
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-                task_result = append_task_game_sign_summary(
-                    self.task_info, self.script_info.result
+                # 按用户交错组装「用户结果行 + 该用户节点详情」：
+                # 多账号任务时各用户节点归属清晰，不再全部平铺。
+                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐 ok-ww/通用脚本）。
+                # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
+                # 为空，自然只有结果行。
+                has_uncompleted = len(error_user) + len(wait_user) > 0
+                user_result_text = build_user_result_text(
+                    self.script_info.user_list, has_uncompleted
                 )
-                has_game_sign_summary = task_result != self.script_info.result
+                task_result = append_task_game_sign_summary(
+                    self.task_info, user_result_text
+                )
+                has_game_sign_summary = task_result != user_result_text
                 result = {
                     "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                     "script_name": self.script_info.name or "空白",
@@ -310,16 +319,17 @@ class OkNteManager(TaskExecuteBase):
                     "game_sign_summary": has_game_sign_summary,
                 }
 
-                await Notify.push_plyer(
-                    title.replace("报告", "已完成！"),
-                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                    10,
-                )
                 try:
-                    await push_notification("代理结果", title, result, None)
-                    if has_game_sign_summary:
-                        mark_task_game_sign_summary_consumed(self.task_info)
+                    push_result = await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                    )
+                    finalize_task_game_sign_notification(
+                        self.task_info, has_game_sign_summary, push_result
+                    )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Publisher.send(

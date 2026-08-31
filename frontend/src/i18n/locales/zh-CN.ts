@@ -721,7 +721,8 @@ export default {
     readingInterfaceJson: '正在读取 interface.json…',
     maaendConfigurationProgress: '正在进行 MaaEnd 配置',
     addRule: '添加规则',
-    usedSwitchAccountsLeave: '用于切换账号，无需切换则留空。官服输入 11 位手机号',
+    usedSwitchAccountsLeave:
+      '用于切换账号，无需切换则留空。官服输入 11 位手机号；开启「运行前强制切换账号」时按手机号后 4 位匹配游戏内已保存账号登录',
     nameUsedTellUsers: '用于区分用户的名称，相同名称的用户将被视为同一用户进行统计',
     user: '用户',
     directControl: '直控',

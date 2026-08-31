@@ -744,7 +744,7 @@ export default {
     maaendConfigurationProgress: 'MaaEnd configuration in progress',
     addRule: 'Add a rule',
     usedSwitchAccountsLeave:
-      'Used to switch accounts; leave empty if you do not switch. On CN servers, enter the 11-digit phone number',
+      'Used to switch accounts; leave empty if you do not switch. On CN servers, enter the 11-digit phone number. When "Force-switch account before run" is enabled, a game account is matched by the last 4 digits of the phone number',
     nameUsedTellUsers: 'Name used to tell users apart; users with the same name are counted as one',
     user: 'User',
     directControl: 'Direct control',

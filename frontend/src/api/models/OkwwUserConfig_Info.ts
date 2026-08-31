@@ -51,10 +51,6 @@ export type OkwwUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 密码
-     */
-    Password?: (string | null);
-    /**
      * 配置来源（脚本共享、用户独立、直控优先读取脚本原配置）
      */
     Mode?: ('脚本' | '用户' | '直控' | null);

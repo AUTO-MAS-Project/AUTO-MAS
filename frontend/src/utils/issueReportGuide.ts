@@ -3,13 +3,16 @@ import { Modal } from 'ant-design-vue'
 
 import { MAS_QQ_GROUP_URL, openExternalUrl } from './openExternal'
 
-const getZipFileName = (zipPath?: string): string => {
-  if (!zipPath) return 'MaaEnd-logs-*.zip'
-  return zipPath.split(/[\\/]/).pop() || 'MaaEnd-logs-*.zip'
+const getZipFileName = (zipPath: string | undefined, fallbackName: string): string => {
+  if (!zipPath) return fallbackName
+  return zipPath.split(/[\\/]/).pop() || fallbackName
 }
 
-export function showMaaEndIssueReportGuide(zipPath?: string): void {
-  const fileName = getZipFileName(zipPath)
+export function showIssueReportGuide(
+  zipPath: string | undefined,
+  fallbackName: string
+): void {
+  const fileName = getZipFileName(zipPath, fallbackName)
 
   Modal.info({
     title: t('misc.sendIssueBundleMas'),

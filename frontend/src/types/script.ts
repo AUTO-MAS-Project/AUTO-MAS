@@ -316,15 +316,6 @@ export interface MaaFWUserConfig {
     ToAddress: string
     IfServerChan: boolean
     ServerChanKey: string
-    CustomWebhooks?: Array<{
-      id: string
-      name: string
-      url: string
-      template: string
-      enabled: boolean
-      headers?: Record<string, string>
-      method?: 'POST' | 'GET'
-    }>
   }
   Data: {
     LastProxyDate: string
@@ -559,15 +550,6 @@ export interface User {
     Enabled: boolean
     IfSendMail: boolean
     IfSendSixStar: boolean
-    CustomWebhooks: Array<{
-      id: string
-      name: string
-      url: string
-      template: string
-      enabled: boolean
-      headers?: Record<string, string>
-      method?: 'POST' | 'GET'
-    }>
     IfSendStatistic: boolean
     IfServerChan: boolean
     ServerChanChannel: string

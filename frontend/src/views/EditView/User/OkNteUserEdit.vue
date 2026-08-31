@@ -164,6 +164,30 @@
               </a-col>
             </a-row>
 
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      是否采集节点详情
+                      <a-tooltip
+                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Notify.PushLogEnabled"
+                    size="large"
+                    class="modern-select"
+                    :options="quickConfigOptions"
+                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
             <a-form-item>
               <template #label>
                 <span class="form-label">
@@ -244,83 +268,13 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.notificationSettings') }}</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  {{ t('edit.statistics') }}
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  {{ t('edit.emailNotification') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  :placeholder="t('edit.enterRecipientAddress')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  {{ t('edit.serverchan') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  :placeholder="t('edit.enterSendkey')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="activeUserId"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
     </div>
@@ -345,7 +299,7 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import UserEditHeader from '@/components/UserEditHeader.vue'
-import WebhookManager from '@/components/WebhookManager.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 
 const { t } = useI18n()
@@ -377,6 +331,10 @@ let oknteConfigTimeout: number | null = null
 const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
+const quickConfigOptions = [
+  { label: '启用', value: true },
+  { label: '关闭', value: false },
+]
 
 const oknteTaskOptions = [
   { label: '1 - LauncherTask（启动游戏）', value: 1 },
@@ -433,6 +391,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
+    PushLogEnabled: true,
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

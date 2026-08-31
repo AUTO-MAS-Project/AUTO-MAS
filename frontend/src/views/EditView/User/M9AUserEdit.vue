@@ -35,8 +35,8 @@
             @save="handleFieldSave"
           />
 
-          <NotifyConfigSection
-            v-model:form-data="formData"
+          <UserNotifyConfig
+            v-model="formData.Notify"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
@@ -63,7 +63,7 @@ const logger = window.electronAPI.getLogger('M9A用户编辑')
 import M9AUserEditHeader from '../../M9AUserEdit/M9AUserEditHeader.vue'
 import BasicInfoSection from '../../M9AUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from '../../M9AUserEdit/TaskQueueSection.vue'
-import NotifyConfigSection from '../../M9AUserEdit/NotifyConfigSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const { t } = useI18n()
@@ -113,7 +113,6 @@ const getDefaultM9AUserData = () => ({
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',
