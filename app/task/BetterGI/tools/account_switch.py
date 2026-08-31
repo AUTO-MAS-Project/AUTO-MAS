@@ -19,11 +19,11 @@
 """BetterGI 切换账号专项适配。
 
 通过 BetterGI 的脚本仓库（ScriptRepoUpdater）管理「切换账号多模式」脚本，不再随
-MAS 内置冻结副本：MAS 只写订阅清单并开启「命令行运行前自动更新」，由 BetterGI
-在每次启动（``--startGroups`` 切号 / 一条龙）时自行从仓库拉取/更新脚本到
-``User/JsScript/SwitchAccountMultipleMode``，更新完成后再执行任务（BetterGI
-``StartGameTask`` 会等待仓库更新 Task 结束）。MAS 据此按当前用户配置生成一个独立的
-配置组 ``MAS切换账号``，供 ``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
+MAS 内置冻结副本：MAS 只写订阅清单，由 BetterGI 把脚本更新到
+``User/JsScript/SwitchAccountMultipleMode``。切号/一条龙的「运行前先同步更新、更新完成
+再执行」特性当前已冻结（见 ``_UPDATE_REPO_BEFORE_RUN``，仅保留后台自动更新与误删恢复）。
+MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，供
+``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
 
 - 订阅清单: ``{RootPath}/User/Subscriptions/bettergi-scripts-list.json`` = 路径数组
 - 自动更新: ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 三个开关（两个自动更新开关 +
@@ -176,11 +176,20 @@ def _ensure_script_subscription(root_path: Path) -> Path:
     return sub_path
 
 
+# 「命令行运行前先同步更新脚本仓库、更新完成后再执行任务」特性开关。
+# 暂时冻结：当前发现该特性已无必要——每次 CLI 启动前的同步更新会拖慢启动，
+# 且切号脚本已能通过后台自动更新（autoUpdateSubscribedScripts）与误删恢复补位。
+# 若日后出现脚本缺失却未被后台拉回等真实 bug，再把本常量置 True 重新启用。
+_UPDATE_REPO_BEFORE_RUN = False
+
+
 def _ensure_auto_update_on_cli(root_path: Path) -> Path:
-    """开启 BetterGI 命令行运行前自动更新并把脚本仓库渠道固定为 CNB，返回主配置文件路径。
+    """配置 BetterGI 脚本仓库自动更新并把渠道固定为 CNB，返回主配置文件路径。
 
     ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 置：
-    - ``autoUpdateBeforeCommandLineRun = true``：命令行启动（切号/一条龙）先更新仓库脚本再执行
+    - ``autoUpdateBeforeCommandLineRun = _UPDATE_REPO_BEFORE_RUN``：命令行启动
+      （切号/一条龙）是否先同步更新仓库脚本再执行。当前冻结停用（False），
+      届时若重新启用改回 True。
     - ``autoUpdateSubscribedScripts = true``：普通启动时也后台更新已订阅脚本（兜底）
     - ``selectedChannelName = "CNB"``：脚本仓库固定从 BetterGI 官方 cnb.cool 镜像
       ``https://cnb.cool/bettergi/bettergi-scripts-list`` 拉取/更新。CNB 本就是
@@ -197,14 +206,15 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
         if not isinstance(script_cfg, dict):
             legacy = config.get("ScriptConfig")  # 兼容历史 PascalCase 键，合并后弃用
             script_cfg = legacy if isinstance(legacy, dict) else {}
-        script_cfg["autoUpdateBeforeCommandLineRun"] = True
+        script_cfg["autoUpdateBeforeCommandLineRun"] = _UPDATE_REPO_BEFORE_RUN
         script_cfg["autoUpdateSubscribedScripts"] = True
         script_cfg["selectedChannelName"] = "CNB"
         config.pop("ScriptConfig", None)
         config["scriptConfig"] = script_cfg
         write_file(config_path, config)
     logger.info(
-        f"已开启 BetterGI 脚本仓库自动更新并把渠道固定为 CNB(cnb.cool): {config_path}"
+        f"已配置 BetterGI 脚本仓库自动更新(运行时预更新={'启用' if _UPDATE_REPO_BEFORE_RUN else '已冻结'})"
+        f"，渠道 CNB: {config_path}"
     )
     return config_path
 
@@ -212,8 +222,8 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
 def ensure_switch_subscription(root_path: Path) -> bool:
     """确保切换账号脚本被订阅，缺失时强制重建，返回脚本本地是否已就绪。
 
-    BGI 会在下次命令行启动时先更新仓库脚本、再执行 ``--startGroups`` 配置组
-    （顺序由 BetterGI ``StartGameTask`` 保证），故这里只需保证订阅就绪即可，
+    BGI 负责按订阅更新仓库脚本（运行前同步更新已冻结，改走后台
+    ``autoUpdateSubscribedScripts``），故这里只需保证订阅就绪即可，
     删除/初次使用两种情况都会被 BGI 自动重新检出：
 
     - 覆盖式写入订阅清单（``js/SwitchAccountMultipleMode``）并开启自动更新，

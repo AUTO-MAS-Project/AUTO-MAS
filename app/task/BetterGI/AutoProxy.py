@@ -36,6 +36,7 @@ from app.task.general.tools import execute_script_task
 from .tools import push_notification
 from .tools import account_switch
 from .tools import one_dragon
+from .tools.one_dragon_report import _parse_one_dragon_report
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -735,9 +736,18 @@ class AutoProxyTask(TaskExecuteBase):
             await Config.save_general_log(log_path, log_item.content, log_item.status)
             statistic_paths.append(log_path.with_suffix(".json"))
 
+        # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
+        # 无一条龙任务（仅配置组/未捕获到日志）时自动省略该区块。
+        combined_log = "".join(
+            ln for item in self.cur_user_item.log_record.values() for ln in item.content
+        )
+        one_dragon_report = _parse_one_dragon_report(combined_log)
+
         if statistic_paths:
             try:
                 statistics = await Config.merge_statistic_info(statistic_paths)
+                if one_dragon_report:
+                    statistics["one_dragon_steps"] = one_dragon_report
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -754,7 +764,9 @@ class AutoProxyTask(TaskExecuteBase):
                     self.cur_user_config,
                 )
             except Exception as e:
-                logger.opt(exception=True).warning(
+                # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志，让用户能看到推送为何失败
+                await self._push_dispatch_log(f"推送用户统计通知失败: {e}")
+                logger.opt(exception=True).error(
                     f"推送 BetterGI 用户统计通知时出现异常: {e}"
                 )
 
