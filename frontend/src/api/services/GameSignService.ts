@@ -16,8 +16,8 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GameSignService {
     /**
-     * 获取所有游戏签到账号组
-     * 获取所有游戏签到账号组
+     * 获取所有游戏社区账号组
+     * 获取所有游戏社区账号组
      * @returns GameSignAccountsListOut Successful Response
      * @throws ApiError
      */
@@ -28,8 +28,8 @@ export class GameSignService {
         });
     }
     /**
-     * 添加游戏签到账号组
-     * 添加游戏签到账号组
+     * 添加游戏社区账号组
+     * 添加游戏社区账号组
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
      */
@@ -40,8 +40,8 @@ export class GameSignService {
         });
     }
     /**
-     * 获取游戏签到账号组详情
-     * 获取游戏签到账号组详情
+     * 获取游戏社区账号组详情
+     * 获取游戏社区账号组详情
      * @param requestBody
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
@@ -60,8 +60,8 @@ export class GameSignService {
         });
     }
     /**
-     * 更新游戏签到账号组配置
-     * 更新游戏签到账号组配置
+     * 更新游戏社区账号组配置
+     * 更新游戏社区账号组配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -80,8 +80,8 @@ export class GameSignService {
         });
     }
     /**
-     * 删除游戏签到账号组
-     * 删除游戏签到账号组
+     * 删除游戏社区账号组
+     * 删除游戏社区账号组
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -100,8 +100,8 @@ export class GameSignService {
         });
     }
     /**
-     * 调整游戏签到账号组顺序
-     * 调整游戏签到账号组顺序
+     * 调整游戏社区账号组顺序
+     * 调整游戏社区账号组顺序
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

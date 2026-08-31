@@ -42,9 +42,12 @@ from app.tools.community_activity_transport import (
     CommunityActivityTransportError,
     collect_community_activity,
 )
-from app.tools.game_sign_contract import ActivityState, CommunityActivitySnapshot
+from app.tools.community_contract import ActivityState, CommunityActivitySnapshot
 
-__all__ = ["collect_configured_community_activity"]
+__all__ = [
+    "build_configured_community_activity_failures",
+    "collect_configured_community_activity",
+]
 
 
 logger = get_logger("游戏社区活动")
@@ -100,6 +103,68 @@ def _targets_for_roles(
     )
 
 
+def _selected_accounts(
+    account_ids: Sequence[str] | None,
+) -> tuple[tuple[str, object], ...]:
+    from app.core import Config
+
+    requested_ids = {
+        str(account_id).strip()
+        for account_id in (account_ids or ())
+        if account_id
+    }
+    selected: list[tuple[str, object]] = []
+    matched_ids: set[str] = set()
+    for raw_uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+        account_uid = str(raw_uid)
+        if requested_ids and account_uid not in requested_ids:
+            continue
+        selected.append((account_uid, account))
+        matched_ids.add(account_uid)
+    if requested_ids and matched_ids != requested_ids:
+        raise ValueError("未找到指定的游戏社区账号组")
+    return tuple(selected)
+
+
+def build_configured_community_activity_failures(
+    account_ids: Sequence[str] | None = None,
+    *,
+    reason: str = "游戏社区日常查询失败",
+) -> tuple[CommunityActivitySnapshot, ...]:
+    """为已配置社区构造分游戏失败结果，不执行任何上游请求。"""
+
+    from app.tools.game_sign import (
+        get_community_token_field,
+        read_community_token,
+    )
+
+    snapshots: list[CommunityActivitySnapshot] = []
+    for account_uid, account in _selected_accounts(account_ids):
+        if not _account_value(account, "Enabled", False):
+            continue
+        account_name = str(_account_value(account, "Name", "用户") or "用户")
+        for definition in ACTIVITY_COMMUNITY_DEFINITIONS:
+            token_field = get_community_token_field(definition.platform)
+            try:
+                configured = bool(read_community_token(account, token_field))
+            except Exception:
+                configured = True
+            if not configured:
+                continue
+            snapshots.extend(
+                _empty_game_snapshot(
+                    account_uid=account_uid,
+                    account_name=account_name,
+                    definition=definition,
+                    game=game,
+                    status="failed",
+                    reason=reason,
+                )
+                for game in definition.games
+            )
+    return tuple(snapshots)
+
+
 async def collect_configured_community_activity(
     account_ids: Sequence[str] | None = None,
     *,
@@ -114,25 +179,31 @@ async def collect_configured_community_activity(
         read_community_token,
     )
 
-    requested_ids = {
-        str(account_id).strip() for account_id in (account_ids or ()) if account_id
-    }
     resolved_proxy = proxy if proxy is not None else Config.proxy
     snapshots: list[CommunityActivitySnapshot] = []
-    matched_ids: set[str] = set()
 
-    for raw_uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-        account_uid = str(raw_uid)
-        if requested_ids and account_uid not in requested_ids:
-            continue
-        matched_ids.add(account_uid)
+    for account_uid, account in _selected_accounts(account_ids):
         account_name = str(_account_value(account, "Name", "用户") or "用户")
         if not _account_value(account, "Enabled", False):
             continue
 
         for definition in ACTIVITY_COMMUNITY_DEFINITIONS:
             token_field = get_community_token_field(definition.platform)
-            token = read_community_token(account, token_field)
+            try:
+                token = read_community_token(account, token_field)
+            except Exception:
+                snapshots.extend(
+                    _empty_game_snapshot(
+                        account_uid=account_uid,
+                        account_name=account_name,
+                        definition=definition,
+                        game=game,
+                        status="failed",
+                        reason="社区凭据无法读取",
+                    )
+                    for game in definition.games
+                )
+                continue
             if not token:
                 continue
 
@@ -191,6 +262,4 @@ async def collect_configured_community_activity(
                         )
                     )
 
-    if requested_ids and matched_ids != requested_ids:
-        raise ValueError("未找到指定的游戏社区账号组")
     return tuple(snapshots)

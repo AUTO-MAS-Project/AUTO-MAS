@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -34,8 +35,8 @@ from urllib.parse import urlencode
 
 from app.utils.constants import UTC8
 
-from .game_sign_activity import parse_activity_snapshot
-from .game_sign_contract import ActivityState, CommunityActivitySnapshot
+from .community_activity_parser import parse_activity_snapshot
+from .community_contract import ActivityState, CommunityActivitySnapshot
 
 __all__ = [
     "CommunityActivityRequest",
@@ -244,12 +245,13 @@ def build_community_activity_requests(
 
     role_uid = _required(target.role_uid, "角色 UID")
     if target.platform == "森空岛" and target.game == "明日方舟":
+        query_timestamp = timestamp if timestamp is not None else int(time.time())
         return (
             CommunityActivityRequest(
                 target=target,
                 source=f"{SKLAND_BASE_URL}/api/v1/game/player/info",
                 method="GET",
-                params=_pairs(("uid", role_uid)),
+                params=_pairs(("uid", role_uid), ("ts", query_timestamp)),
                 headers=_skland_headers(target),
                 auth_scope="skland",
                 signature_profile="skland_widget",
@@ -262,14 +264,13 @@ def build_community_activity_requests(
         return (
             CommunityActivityRequest(
                 target=target,
-                source=f"{SKLAND_BASE_URL}/api/v1/game/endfield/card/detail",
+                source=f"{SKLAND_BASE_URL}/web/v1/game/endfield/card/detail",
                 method="GET",
                 params=_pairs(
                     ("roleId", role_uid),
                     ("serverId", server),
-                    # 已确认成功记录只携带 roleId/serverId；userId 仅在绑定
-                    # 响应明确提供时附加，不能作为终末地查询的强制字段。
-                    ("userId", target.user_id),
+                    # 已确认成功记录只携带 roleId/serverId；userId 不属于
+                    # 当前角色卡合同，不能混入签名查询串。
                 ),
                 headers=_headers(
                     target,
@@ -361,9 +362,26 @@ def build_community_activity_requests(
         )
 
     if target.game == "绝区零":
-        raise CommunityActivityTransportError(
-            "参考项目未确认绝区零稳定实时便笺接口，当前不发起请求",
-            status="limited",
+        return (
+            CommunityActivityRequest(
+                target=target,
+                source=(
+                    f"{MIYOUSHE_RECORD_BASE_URL}"
+                    "/event/game_record_zzz/api/zzz/note"
+                ),
+                method="GET",
+                params=role_params,
+                headers=_miyoushe_bbs_headers(
+                    target,
+                    tool_version="v4.51.1",
+                    page="v4.51.1_#/zzz",
+                ),
+                auth_scope="miyoushe",
+                signature_profile="miyoushe_params",
+                requires_ds=True,
+                requires_device_id=True,
+                requires_device_fingerprint=True,
+            ),
         )
 
     raise ValueError(f"米游社{target.game}尚未登记活动请求")

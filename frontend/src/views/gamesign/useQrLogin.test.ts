@@ -140,6 +140,22 @@ describe('useQrLogin', () => {
     expect(qr.status.value).toBe('idle')
   })
 
+  it('完整长 Cookie 不经截断传入原保存链路', async () => {
+    const longCookie = `stoken_v2=v2_${'x'.repeat(4096)}.CAE=; mid=mid-value`
+    createQr.mockReturnValueOnce(cancelable(CREATED))
+    checkQr.mockReturnValueOnce(
+      cancelable({ code: 200, status: 'Confirmed', cookies_str: longCookie })
+    )
+    saveQr.mockReturnValueOnce(cancelable({ code: 200, status: 'ok' }))
+    const qr = setup()
+
+    await qr.start()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(saveQr).toHaveBeenCalledWith('acc-1', longCookie)
+    expect(qr.onSaved).toHaveBeenCalledWith('acc-1', longCookie, expect.any(Function))
+  })
+
   it('取不到账号时跳过保存，直接进入成功态', async () => {
     createQr.mockReturnValueOnce(cancelable(CREATED))
     checkQr.mockReturnValueOnce(cancelable({ code: 200, status: 'Confirmed', cookies_str: 'ck' }))
@@ -162,7 +178,7 @@ describe('useQrLogin', () => {
     await vi.advanceTimersByTimeAsync(2000)
 
     expect(qr.status.value).toBe('error')
-    expect(qr.statusText.value).toContain('未获取到有效认证 Cookie')
+    expect(qr.statusText.value).toContain('登录链路未返回完整凭据')
     expect(saveQr).not.toHaveBeenCalled()
   })
 

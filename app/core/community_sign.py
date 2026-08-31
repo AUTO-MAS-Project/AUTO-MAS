@@ -33,8 +33,8 @@ from app.tools.game_sign import (
     read_community_token,
     run_community_provider,
 )
-from app.tools.game_sign_contract import CommunitySignInProgressError
-from app.tools.game_sign_credentials import is_community_credential_configured
+from app.tools.community_contract import CommunitySignInProgressError
+from app.tools.community_credentials import is_community_credential_configured
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 

@@ -1,29 +1,18 @@
-import axios from 'axios'
-import { OpenAPI } from '@/api/core/OpenAPI'
+import {
+  ApiError,
+  CommunityService,
+  type CommunityActivityResourceOut,
+  type CommunityActivitySnapshotOut,
+  type CommunityActivityTaskOut,
+} from '@/api'
 
-export type ActivityStatus = 'success' | 'empty' | 'limited' | 'unavailable' | 'failed'
-
-export interface ActivityTask {
-  name: string
-  completed: number
-  target: number
-  status: string
-  period: string
-}
-
-export interface ActivityResource {
-  name: string
-  current: number
-  target: number
-  status: string
-}
-
-export interface ActivitySnapshot {
-  account: string
-  accountUid: string
-  game: string
-  platform: string
-  status: ActivityStatus
+export type ActivityStatus = CommunityActivitySnapshotOut['status']
+export type ActivityTask = CommunityActivityTaskOut & { period: string }
+export type ActivityResource = CommunityActivityResourceOut
+export type ActivitySnapshot = Omit<
+  CommunityActivitySnapshotOut,
+  'completed' | 'target' | 'tasks' | 'resources'
+> & {
   completed: number | null
   target: number | null
   tasks: ActivityTask[]
@@ -36,30 +25,45 @@ export interface ActivitySnapshot {
   source: string
 }
 
-interface ActivityEnvelope {
-  code?: number
-  status?: string
-  message?: string
-  data?: ActivitySnapshot[]
-}
+const normalizeSnapshot = (snapshot: CommunityActivitySnapshotOut): ActivitySnapshot => ({
+  ...snapshot,
+  completed: snapshot.completed ?? null,
+  target: snapshot.target ?? null,
+  tasks: (snapshot.tasks ?? []).map(task => ({
+    ...task,
+    period: task.period ?? 'daily',
+  })),
+  resources: snapshot.resources ?? [],
+  reason: snapshot.reason ?? '',
+  updatedAt: snapshot.updatedAt ?? '',
+  roleName: snapshot.roleName ?? '',
+  roleUid: snapshot.roleUid ?? '',
+  server: snapshot.server ?? '',
+  source: snapshot.source ?? '',
+})
 
-const activityUrl = () => `${OpenAPI.BASE.replace(/\/+$/, '')}/api/tools/community/activity/query`
+const responseMessage = (error: ApiError): string => {
+  const body = error.body as { message?: unknown } | undefined
+  return typeof body?.message === 'string' ? body.message : error.message
+}
 
 export function useCommunityActivityApi() {
   const queryActivity = async (accountIds: string[] | null = null): Promise<ActivitySnapshot[]> => {
     try {
-      const response = await axios.post<ActivityEnvelope>(activityUrl(), { accountIds })
-      const payload = response.data
+      const payload =
+        await CommunityService.queryCommunityActivityApiToolsCommunityActivityQueryPost({
+          accountIds,
+        })
       if (payload.code !== undefined && payload.code !== 200) {
         throw new Error(payload.message || '日常便笺查询失败')
       }
       if (!Array.isArray(payload.data)) {
         throw new Error('日常便笺响应格式无效')
       }
-      return payload.data
+      return payload.data.map(normalizeSnapshot)
     } catch (error) {
-      if (axios.isAxiosError<ActivityEnvelope>(error) && error.response?.data?.message) {
-        throw new Error(String(error.response.data.message))
+      if (error instanceof ApiError) {
+        throw new Error(responseMessage(error))
       }
       throw error instanceof Error ? error : new Error('日常便笺查询失败')
     }

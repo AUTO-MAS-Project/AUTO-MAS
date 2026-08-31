@@ -237,8 +237,10 @@ async def query_community_activity(
 ) -> CommunityActivityOut:
     """查询游戏社区日常活动，不占用签到流程锁。"""
 
+    snapshots = ()
     try:
         from app.core.community_activity import (
+            build_configured_community_activity_failures,
             collect_configured_community_activity,
         )
 
@@ -252,13 +254,23 @@ async def query_community_activity(
     except ValueError as exc:
         return CommunityActivityOut(code=400, status="error", message=str(exc))
     except Exception:
-        return CommunityActivityOut(
-            code=500,
-            status="error",
-            message="游戏社区日常查询失败",
+        snapshots = build_configured_community_activity_failures(
+            query.accountIds,
         )
+        if not snapshots:
+            return CommunityActivityOut(
+                code=500,
+                status="error",
+                message="游戏社区日常查询失败",
+            )
 
     return CommunityActivityOut(
+        status="warning" if any(
+            snapshot.status != "success" for snapshot in snapshots
+        ) else "success",
+        message="部分游戏日常查询失败" if any(
+            snapshot.status == "failed" for snapshot in snapshots
+        ) else "",
         data=[
             CommunityActivitySnapshotOut(
                 account=snapshot.account,

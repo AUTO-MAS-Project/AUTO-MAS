@@ -1,6 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { HolderOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, ref, type Component, type CSSProperties } from 'vue'
+import { useI18n } from 'vue-i18n'
+import {
+  AimOutlined,
+  ApiOutlined,
+  AppstoreOutlined,
+  CompassOutlined,
+  HolderOutlined,
+  ReloadOutlined,
+  RocketOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import {
   useCommunityActivityApi,
@@ -8,6 +18,13 @@ import {
   type ActivityStatus,
 } from './useCommunityActivityApi'
 
+interface GameVisual {
+  accent: string
+  icon: Component
+  labelKey: string
+}
+
+const { t, locale } = useI18n()
 const snapshots = ref<ActivitySnapshot[]>([])
 const loading = ref(false)
 const hasLoaded = ref(false)
@@ -17,22 +34,84 @@ let requestId = 0
 
 const { queryActivity } = useCommunityActivityApi()
 
+// 这些中文值是后端稳定游戏枚举，只用于映射，不参与界面翻译。
+const GAME_VISUALS: Record<string, GameVisual> = {
+  明日方舟: {
+    accent: 'var(--ant-color-primary)',
+    icon: AimOutlined,
+    labelKey: 'gamesign.activity.game.arknights',
+  },
+  终末地: {
+    accent: 'var(--ant-color-success)',
+    icon: ApiOutlined,
+    labelKey: 'gamesign.activity.game.endfield',
+  },
+  原神: {
+    accent: '#8fe3b0',
+    icon: CompassOutlined,
+    labelKey: 'gamesign.activity.game.genshin',
+  },
+  星穹铁道: {
+    accent: '#62c4e7',
+    icon: RocketOutlined,
+    labelKey: 'gamesign.activity.game.starrail',
+  },
+  绝区零: {
+    accent: '#ffd24a',
+    icon: ThunderboltOutlined,
+    labelKey: 'gamesign.activity.game.zenless',
+  },
+}
+
+const DEFAULT_GAME_VISUAL: GameVisual = {
+  accent: 'var(--ant-color-primary)',
+  icon: AppstoreOutlined,
+  labelKey: '',
+}
+
+const gameVisual = (game: string) => GAME_VISUALS[game] || DEFAULT_GAME_VISUAL
+
+const gameLabel = (game: string) => {
+  const labelKey = gameVisual(game).labelKey
+  return labelKey ? t(labelKey) : game
+}
+
+const platformLabel = (platform: string) => {
+  if (platform === '森空岛') return t('gamesign.activity.platform.skland')
+  if (platform === '米游社') return t('gamesign.activity.platform.miyoushe')
+  return platform
+}
+
+const activityCardStyle = (game: string) =>
+  ({
+    '--activity-accent': gameVisual(game).accent,
+  }) as CSSProperties
+
 const statusMeta = (status: ActivityStatus) => {
   switch (status) {
     case 'success':
-      return { label: '已获取', color: 'success' }
+      return { label: t('gamesign.activity.status.success'), color: 'success' }
     case 'empty':
-      return { label: '暂无角色', color: 'default' }
+      return { label: t('gamesign.activity.status.empty'), color: 'default' }
     case 'limited':
-      return { label: '受限', color: 'warning' }
+      return { label: t('gamesign.activity.status.limited'), color: 'warning' }
     case 'unavailable':
-      return { label: '不可用', color: 'orange' }
+      return { label: t('gamesign.activity.status.unavailable'), color: 'orange' }
     case 'failed':
-      return { label: '失败', color: 'error' }
+      return { label: t('gamesign.activity.status.failed'), color: 'error' }
     default:
-      return { label: '未知', color: 'default' }
+      return { label: t('gamesign.activity.status.unknown'), color: 'default' }
   }
 }
+
+const statusAlertType = (status: ActivityStatus): 'error' | 'warning' | 'info' => {
+  if (status === 'failed') return 'error'
+  if (status === 'limited' || status === 'unavailable') return 'warning'
+  return 'info'
+}
+
+const progressStatus = (status: ActivityStatus): 'normal' | 'exception' =>
+  status === 'failed' ? 'exception' : 'normal'
 
 const progressPercent = (snapshot: ActivitySnapshot) => {
   if (
@@ -54,7 +133,7 @@ const formatTime = (value: string) => {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleTimeString('zh-CN', {
+  return date.toLocaleTimeString(locale.value, {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -81,7 +160,7 @@ const loadActivity = async () => {
     lastUpdated.value = updatedValues.at(-1) || new Date().toISOString()
   } catch (error) {
     if (currentRequestId !== requestId) return
-    errorMessage.value = error instanceof Error ? error.message : '日常便笺查询失败'
+    errorMessage.value = error instanceof Error ? error.message : t('gamesign.activity.queryFailed')
   } finally {
     if (currentRequestId === requestId) {
       hasLoaded.value = true
@@ -98,20 +177,24 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="activity-view" aria-label="日常便笺">
+  <section class="activity-view" :aria-label="t('gamesign.activity.title')">
     <header class="activity-toolbar">
       <div class="activity-heading">
-        <h2 class="activity-title">日常便笺</h2>
+        <h2 class="activity-title">{{ t('gamesign.activity.title') }}</h2>
         <span v-if="lastUpdated" class="activity-updated">
-          查询于 {{ formatTime(lastUpdated) }}
+          {{
+            t('gamesign.activity.queriedAt', {
+              time: formatTime(lastUpdated),
+            })
+          }}
         </span>
       </div>
-      <a-tooltip title="刷新日常便笺">
+      <a-tooltip :title="t('gamesign.activity.refresh')">
         <a-button
           type="text"
           shape="circle"
           :loading="loading"
-          aria-label="刷新日常便笺"
+          :aria-label="t('gamesign.activity.refresh')"
           @click="loadActivity"
         >
           <ReloadOutlined />
@@ -131,7 +214,11 @@ onMounted(() => {
       <a-spin size="large" />
     </div>
 
-    <a-empty v-else-if="isEmpty" description="暂无可展示的日常便笺" class="activity-state" />
+    <a-empty
+      v-else-if="isEmpty"
+      :description="t('gamesign.activity.empty')"
+      class="activity-state"
+    />
 
     <a-spin v-else-if="snapshots.length" :spinning="loading" class="activity-spin">
       <draggable
@@ -144,15 +231,22 @@ onMounted(() => {
         class="activity-grid"
       >
         <template #item="{ element }">
-          <article class="activity-card-wrap">
+          <article class="activity-card-wrap" :style="activityCardStyle(element.game)">
             <a-card :bordered="false" class="activity-card">
               <div class="activity-card-header">
-                <span class="activity-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                <span
+                  class="activity-drag-handle"
+                  :title="t('gamesign.activity.drag')"
+                  :aria-label="t('gamesign.activity.drag')"
+                >
                   <HolderOutlined />
                 </span>
+                <span class="activity-game-mark" aria-hidden="true">
+                  <component :is="gameVisual(element.game).icon" />
+                </span>
                 <div class="activity-card-title">
-                  <strong>{{ element.game }}</strong>
-                  <span>{{ element.platform }}</span>
+                  <strong>{{ gameLabel(element.game) }}</strong>
+                  <span>{{ platformLabel(element.platform) }}</span>
                 </div>
                 <a-tag :color="statusMeta(element.status).color">
                   {{ statusMeta(element.status).label }}
@@ -160,65 +254,84 @@ onMounted(() => {
               </div>
 
               <div class="activity-identity">
-                <span>{{ element.account }}</span>
+                <strong>{{ element.account }}</strong>
                 <span v-if="element.roleName">{{ element.roleName }}</span>
                 <span v-if="element.server">{{ element.server }}</span>
               </div>
 
-              <div class="activity-details">
+              <div class="activity-summary">
                 <div class="activity-progress-heading">
-                  <span>日常完成</span>
+                  <span>{{ t('gamesign.activity.dailyProgress') }}</span>
                   <strong v-if="hasProgress(element)">
                     {{ element.completed }} / {{ element.target }}
                   </strong>
-                  <span v-else class="activity-muted">暂无进度</span>
+                  <span v-else class="activity-muted">
+                    {{ t('gamesign.activity.noProgress') }}
+                  </span>
                 </div>
                 <a-progress
                   v-if="hasProgress(element)"
                   :percent="progressPercent(element)"
                   :show-info="false"
+                  :status="progressStatus(element.status)"
+                  :stroke-color="gameVisual(element.game).accent"
                   size="small"
                 />
+              </div>
 
-                <div class="activity-section-label">每日任务</div>
-                <div v-if="element.tasks.length" class="activity-task-list">
-                  <div
-                    v-for="task in element.tasks"
-                    :key="`${task.name}-${task.period}`"
-                    class="activity-row"
-                  >
-                    <span class="activity-row-name">{{ task.name }}</span>
-                    <span>{{ task.completed }} / {{ task.target }}</span>
+              <div class="activity-section-grid">
+                <section class="activity-section">
+                  <h3>{{ t('gamesign.activity.tasks') }}</h3>
+                  <div v-if="element.tasks.length" class="activity-list">
+                    <div
+                      v-for="task in element.tasks"
+                      :key="`${task.name}-${task.period}`"
+                      class="activity-row"
+                    >
+                      <span class="activity-row-name">{{ task.name }}</span>
+                      <strong>{{ task.completed }} / {{ task.target }}</strong>
+                    </div>
                   </div>
-                </div>
-                <span v-else class="activity-muted">暂无可识别任务</span>
+                  <span v-else class="activity-muted">
+                    {{ t('gamesign.activity.noTasks') }}
+                  </span>
+                </section>
 
-                <template v-if="element.resources.length">
-                  <div class="activity-section-label">可用资源</div>
-                  <div class="activity-resource-list">
+                <section class="activity-section">
+                  <h3>{{ t('gamesign.activity.resources') }}</h3>
+                  <div v-if="element.resources.length" class="activity-list">
                     <div
                       v-for="resource in element.resources"
                       :key="resource.name"
                       class="activity-row"
                     >
                       <span class="activity-row-name">{{ resource.name }}</span>
-                      <span>{{ resource.current }} / {{ resource.target }}</span>
+                      <strong>{{ resource.current }} / {{ resource.target }}</strong>
                     </div>
                   </div>
-                </template>
-
-                <div v-if="element.reason" class="activity-reason">
-                  {{ element.reason }}
-                </div>
+                  <span v-else class="activity-muted">
+                    {{ t('gamesign.activity.noResources') }}
+                  </span>
+                </section>
               </div>
 
-              <div class="activity-card-footer">
-                <span v-if="element.roleUid">UID {{ element.roleUid }}</span>
-                <span v-else>未绑定角色</span>
+              <a-alert
+                v-if="element.reason"
+                :type="statusAlertType(element.status)"
+                :message="element.reason"
+                show-icon
+                class="activity-reason"
+              />
+
+              <footer class="activity-card-footer">
+                <span v-if="element.roleUid">
+                  {{ t('gamesign.activity.roleUid', { uid: element.roleUid }) }}
+                </span>
+                <span v-else>{{ t('gamesign.activity.noRole') }}</span>
                 <span v-if="formatTime(element.updatedAt)">
                   {{ formatTime(element.updatedAt) }}
                 </span>
-              </div>
+              </footer>
             </a-card>
           </article>
         </template>
@@ -254,9 +367,9 @@ onMounted(() => {
 
 .activity-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .activity-updated,
@@ -283,22 +396,32 @@ onMounted(() => {
 .activity-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: 280px;
-  gap: 12px;
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  gap: 16px;
   min-width: 0;
 }
 
 .activity-card-wrap {
   min-width: 0;
-  min-height: 0;
+  min-height: 320px;
 }
 
 .activity-card {
   height: 100%;
-  overflow: hidden;
   border: 1px solid var(--ant-color-border-secondary);
+  border-top: 3px solid var(--activity-accent);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.activity-card:hover {
+  border-color: var(--activity-accent);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .activity-card :deep(.ant-card-body) {
@@ -307,13 +430,12 @@ onMounted(() => {
   height: 100%;
   box-sizing: border-box;
   padding: 16px;
-  min-height: 0;
 }
 
 .activity-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -331,6 +453,20 @@ onMounted(() => {
   cursor: grabbing;
 }
 
+.activity-game-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 55%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--activity-accent) 14%, transparent);
+  color: var(--activity-accent);
+  font-size: 19px;
+}
+
 .activity-card-title {
   display: flex;
   flex: 1;
@@ -339,12 +475,8 @@ onMounted(() => {
   line-height: 1.35;
 }
 
-.activity-card-title strong,
-.activity-card-title span,
-.activity-identity span,
-.activity-row-name,
-.activity-reason {
-  overflow-wrap: anywhere;
+.activity-card-title strong {
+  font-size: 16px;
 }
 
 .activity-card-title span {
@@ -352,20 +484,32 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.activity-card-title strong,
+.activity-card-title span,
+.activity-identity span,
+.activity-row-name {
+  overflow-wrap: anywhere;
+}
+
 .activity-identity {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 10px;
-  margin: 10px 0;
+  margin: 12px 0;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
 
-.activity-details {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 3px;
+.activity-identity strong {
+  color: var(--ant-color-text);
+  font-size: 13px;
+}
+
+.activity-summary {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
 }
 
 .activity-progress-heading,
@@ -378,25 +522,36 @@ onMounted(() => {
 }
 
 .activity-progress-heading {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-size: 13px;
 }
 
-.activity-section-label {
-  margin: 12px 0 6px;
+.activity-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.activity-section {
+  min-width: 0;
+}
+
+.activity-section h3 {
+  margin: 0 0 8px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
 
-.activity-task-list,
-.activity-resource-list {
+.activity-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 .activity-row {
+  min-width: 0;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
@@ -405,19 +560,26 @@ onMounted(() => {
   min-width: 0;
 }
 
-.activity-reason {
-  margin-top: 12px;
-  padding: 8px 10px;
-  border-left: 3px solid var(--ant-color-warning);
-  background: var(--ant-color-warning-bg);
-  color: var(--ant-color-text-secondary);
+.activity-row strong {
+  flex: 0 0 auto;
+  color: var(--ant-color-text);
   font-size: 12px;
-  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-reason {
+  margin-top: 14px;
+}
+
+.activity-reason :deep(.ant-alert-message) {
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .activity-card-footer {
   flex: 0 0 auto;
-  margin-top: 10px;
+  margin-top: auto;
+  padding-top: 12px;
   color: var(--ant-color-text-tertiary);
   font-size: 11px;
 }
@@ -428,6 +590,12 @@ onMounted(() => {
 
 .activity-card-chosen {
   box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
+}
+
+@media (max-width: 1100px) {
+  .activity-section-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
@@ -443,7 +611,6 @@ onMounted(() => {
 
   .activity-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: 280px;
   }
 }
 </style>

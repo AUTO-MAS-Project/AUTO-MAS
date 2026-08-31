@@ -20,22 +20,29 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""历史游戏签到结果契约兼容入口。"""
+"""游戏社区账号组的纯逻辑辅助函数。"""
 
-from .community_contract import (
-    ActivityState,
-    CommunityActivitySnapshot,
-    CommunitySignInProgressError,
-    CommunitySignResult,
-    CredentialState,
-    CredentialStatus,
-)
+import re
+from collections.abc import Iterable
 
-__all__ = [
-    "ActivityState",
-    "CommunityActivitySnapshot",
-    "CommunitySignInProgressError",
-    "CommunitySignResult",
-    "CredentialState",
-    "CredentialStatus",
-]
+
+_DEFAULT_ACCOUNT_NAME_PATTERN = re.compile(r"^用户\s*(\d+)$")
+
+
+def next_community_account_name(existing_names: Iterable[object]) -> str:
+    """返回首个未占用的默认账号组名称。
+
+    历史版本同时出现过 ``用户1`` 和 ``用户 1``，两种写法视为同一编号。
+    自定义名称不参与默认编号占用。
+    """
+
+    occupied: set[int] = set()
+    for value in existing_names:
+        match = _DEFAULT_ACCOUNT_NAME_PATTERN.fullmatch(str(value or "").strip())
+        if match is not None:
+            occupied.add(int(match.group(1)))
+
+    index = 1
+    while index in occupied:
+        index += 1
+    return f"用户 {index}"

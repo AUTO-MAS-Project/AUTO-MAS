@@ -166,9 +166,9 @@ async def _supplement_stoken(
 ) -> None:
     """用 login_ticket 补全缺失的 stoken，失败时保持原有字段不变。
 
-    Passport 扫码返回的 Cookie 字段并不稳定：同一条链路有时下发 stoken，
-    有时只给 cookie_token/ltoken。缺少 stoken 时活跃度查询只能退回实时便笺
-    并必然触发验证码风控，因此在这里做一次补全。
+    Passport 扫码返回的 Cookie 字段并不稳定：同一条链路有时只下发 v1
+    stoken，有时只给 cookie_token/ltoken。缺少 stoken_v2 时活跃度查询只能
+    退回实时便笺并触发验证码风控，因此在这里做一次补全。
 
     Args:
         cookie_parts: 已从扫码响应解析出的 Cookie 字段，就地补全。
@@ -243,8 +243,10 @@ async def _supplement_stoken(
             if name == "ltoken_v2":
                 cookie_parts.setdefault("ltoken_v2", token)
     # 上游可能返回空列表，只有确实补到 stoken 才记成功，避免误导排查。
-    if cookie_parts.get("stoken"):
-        logger.info("已通过 login_ticket 补全 stoken")
+    if cookie_parts.get("stoken_v2"):
+        logger.info("已通过 login_ticket 补全 stoken_v2")
+    elif cookie_parts.get("stoken"):
+        logger.warning("login_ticket 仅返回 stoken_v1，未补全 stoken_v2")
     else:
         logger.warning("补全 stoken 未获得可用 Token")
 
@@ -271,6 +273,26 @@ def _has_qr_uid_cookie(cookie_parts: dict[str, str]) -> bool:
     )
 
 
+def _has_complete_qr_credential(cookie_parts: dict[str, str]) -> bool:
+    """确认便笺所需的 v2 会话 Token 与配套 mid 均已取得。"""
+
+    return bool(
+        cookie_parts.get("stoken_v2")
+        and any(
+            cookie_parts.get(key)
+            for key in ("mid", "mid_v2", "ltmid_v2", "account_mid_v2")
+        )
+    )
+
+
+def _serialize_cookie_parts(cookie_parts: dict[str, str]) -> str:
+    """完整序列化 Cookie 字段，不裁剪字段和值。"""
+
+    return "; ".join(
+        f"{key}={value}" for key, value in cookie_parts.items() if value
+    )
+
+
 def _qr_headers(device: str) -> dict:
     """构建带 device_id 的请求头"""
     headers = QR_HEADERS.copy()
@@ -288,10 +310,15 @@ def _game_token_qr_data(payload: object) -> tuple[str, str] | None:
         return None
     parsed = urlparse(qr_url)
     path = parsed.path.lower()
-    if (
-        parsed.scheme.lower() != "https"
-        or parsed.netloc.lower() != "hk4e-sdk.mihoyo.com"
-        or not ("/qrcode/" in path or path.endswith("/qrcode.html"))
+    host = parsed.netloc.lower()
+    known_sdk_qr = host == "hk4e-sdk.mihoyo.com" and (
+        "/qrcode/" in path or path.endswith("/qrcode.html")
+    )
+    known_account_qr = (
+        host == "user.mihoyo.com" and path == "/qr_code_in_game.html"
+    )
+    if parsed.scheme.lower() != "https" or not (
+        known_sdk_qr or known_account_qr
     ):
         return None
 
@@ -524,10 +551,17 @@ async def _check_game_token_qr_status(
     if not isinstance(cookies_str, str) or not cookies_str:
         return {"status": "Error", "error": "未获取到完整登录凭据"}
     cookie_parts = _parse_cookie_string(cookies_str)
+    _add_qr_cookie_aliases(cookie_parts)
     if not _has_qr_auth_cookie(cookie_parts):
         return {"status": "Error", "error": "完整登录凭据缺少认证字段"}
     if not _has_qr_uid_cookie(cookie_parts):
         return {"status": "Error", "error": "完整登录凭据缺少用户 UID"}
+    if not _has_complete_qr_credential(cookie_parts):
+        return {
+            "status": "Error",
+            "error": "完整登录凭据缺少 stoken_v2 或配套 mid",
+        }
+    cookies_str = _serialize_cookie_parts(cookie_parts)
     logger.info("GameToken QR 确认成功，已换取完整凭据")
     return {"status": "Confirmed", "cookies_str": cookies_str}
 
@@ -603,18 +637,18 @@ async def check_qr_status(
             # Confirmed — 从响应头或确认响应体提取 cookies
             cookies_str = _extract_cookies_from_headers(resp, qr_data)
             cookie_parts = _parse_cookie_string(cookies_str)
-            # 缺少 stoken 时先补全，再重建 cookie 字符串，避免活跃度查询
-            # 退回实时便笺而触发验证码风控。
-            if not cookie_parts.get("stoken") and not cookie_parts.get(
-                "stoken_v2"
-            ):
+            # 缺少 stoken_v2 时先补全；已有 v1 stoken 也不能满足便笺认证。
+            if not cookie_parts.get("stoken_v2"):
                 await _supplement_stoken(cookie_parts, proxy)
             _add_qr_cookie_aliases(cookie_parts)
             # login_ticket 只用于换取 stoken，不参与签到请求，保存前移除。
             cookie_parts.pop("login_ticket", None)
-            cookies_str = "; ".join(
-                f"{key}={value}" for key, value in cookie_parts.items() if value
-            )
+            if not _has_complete_qr_credential(cookie_parts):
+                return {
+                    "status": "Error",
+                    "error": "扫码凭据缺少 stoken_v2 或配套 mid，登录链路未完成",
+                }
+            cookies_str = _serialize_cookie_parts(cookie_parts)
             if not _has_qr_auth_cookie(cookie_parts):
                 return {
                     "status": "Error",
@@ -697,9 +731,10 @@ def _extract_cookie_payload(
             for cookie_key, value in _parse_cookie_string(raw_value).items():
                 cookie_parts.setdefault(cookie_key, value)
         elif isinstance(raw_value, dict):
-            for cookie_key in _QR_COOKIE_FIELDS:
-                value = raw_value.get(cookie_key)
-                if isinstance(value, str) and value:
+            # 已知 Cookie 封套中的字符串字段均原样保留，避免后续新增字段
+            # 因本地白名单未更新而在“全量”返回中丢失。
+            for cookie_key, value in raw_value.items():
+                if isinstance(cookie_key, str) and isinstance(value, str) and value:
                     cookie_parts.setdefault(cookie_key, value)
     if include_nested and _depth < 2:
         # Passport 的不同确认响应会把同一份 Cookie 放入已知业务封套中。
@@ -899,11 +934,7 @@ async def exchange_stoken(
                         cookie_parts["cookie_token_v2"] = cookie_token
 
             return {
-                "cookies_str": "; ".join(
-                    f"{key}={value}"
-                    for key, value in cookie_parts.items()
-                    if value
-                )
+                "cookies_str": _serialize_cookie_parts(cookie_parts)
             }
     finally:
         request_body["game_token"] = ""

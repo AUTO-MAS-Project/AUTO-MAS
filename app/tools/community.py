@@ -36,8 +36,8 @@ from .game_sign import (
     format_community_sign_results,
     has_community_credentials,
 )
-from .game_sign_contract import CommunitySignInProgressError
-from .game_sign_activity import parse_activity_snapshot
+from .community_contract import CommunitySignInProgressError
+from .community_activity_parser import parse_activity_snapshot
 from .community_activity_provider import (
     CommunityActivityProvider,
     build_community_activity_requester,

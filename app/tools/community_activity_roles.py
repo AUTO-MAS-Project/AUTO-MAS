@@ -142,9 +142,30 @@ def _binding_entries(
             isinstance(data.get("bindingList"), list)
             or isinstance(data.get("binding_list"), list)
         ):
-            # 本次请求没有按 appCode 过滤，不能把无标签的同一列表同时
-            # 解释为明日方舟和终末地，避免把角色映射到错误游戏。
-            raise ValueError("森空岛角色列表缺少 appCode，无法安全识别游戏")
+            binding_list = data.get("bindingList")
+            if binding_list is None:
+                binding_list = data.get("binding_list")
+            assert isinstance(binding_list, list)
+            # 部分版本直接返回一个无 appCode 的绑定列表。仅按两款游戏互斥的
+            # 角色字段筛选，不把同一条记录同时解释为两个游戏。
+            if app_code == "arknights":
+                return tuple(
+                    entry
+                    for entry in binding_list
+                    if isinstance(entry, Mapping)
+                    and bool(_text(entry, "uid"))
+                    and not bool(_text(entry, "roleId", "role_id"))
+                    and not isinstance(entry.get("roles"), list)
+                )
+            return tuple(
+                entry
+                for entry in binding_list
+                if isinstance(entry, Mapping)
+                and (
+                    bool(_text(entry, "roleId", "role_id"))
+                    or isinstance(entry.get("roles"), list)
+                )
+            )
     else:
         groups = None
 

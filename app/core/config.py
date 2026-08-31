@@ -82,6 +82,7 @@ from app.utils.constants import (
 )
 from app.utils import get_logger
 from app.utils.io import write_file
+from app.utils.community import next_community_account_name
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
@@ -284,6 +285,7 @@ class AppConfig(GlobalConfig):
         self.temp_task: List[asyncio.Task] = []
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
+        self._community_account_add_lock = asyncio.Lock()
 
         self._inject_truststore()
 
@@ -1709,8 +1711,19 @@ class AppConfig(GlobalConfig):
 
         logger.info("添加游戏社区账号组")
 
-        uid, config = await self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
-        return uid, config
+        async with self._community_account_add_lock:
+            existing_names = []
+            for account in self.ToolsConfig.GameSign_Accounts.values():
+                try:
+                    existing_names.append(account.get("GameSignAccount", "Name"))
+                except (AttributeError, KeyError):
+                    continue
+            account_name = next_community_account_name(existing_names)
+            uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+                GameSignAccountGroup
+            )
+            await config.set("GameSignAccount", "Name", account_name)
+            return uid, config
 
     async def get_game_sign_account(
         self, account_id: str, *, if_decrypt: bool = True

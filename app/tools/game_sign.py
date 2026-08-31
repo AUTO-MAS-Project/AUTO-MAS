@@ -30,12 +30,12 @@ import httpx
 from app.core import Config
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
-from .game_sign_credentials import (
+from .community_credentials import (
     is_community_credential_configured,
     parse_community_credential,
     validate_community_credential,
 )
-from .game_sign_contract import CommunitySignInProgressError, CommunitySignResult
+from .community_contract import CommunitySignInProgressError, CommunitySignResult
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")

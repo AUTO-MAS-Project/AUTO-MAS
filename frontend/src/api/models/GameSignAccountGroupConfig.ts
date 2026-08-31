@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 游戏签到账号组配置
+ * 游戏社区账号组配置
  */
 export type GameSignAccountGroupConfig = {
     /**

@@ -2,10 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { CommunityActivitySnapshotOut } from './CommunityActivitySnapshotOut';
 /**
- * 游戏社区账号组列表响应
+ * 游戏社区日常活动查询响应。
  */
-export type GameSignAccountsListOut = {
+export type CommunityActivityOut = {
     /**
      * 状态码
      */
@@ -19,8 +20,8 @@ export type GameSignAccountsListOut = {
      */
     message?: string;
     /**
-     * 账号组列表
+     * 按账号和游戏拆分的活动快照
      */
-    data?: Record<string, any>;
+    data?: Array<CommunityActivitySnapshotOut>;
 };
 

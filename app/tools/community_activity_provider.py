@@ -32,7 +32,7 @@
 """森空岛和米游社的只读活动请求适配器。
 
 该模块只负责把凭据暂存于本次查询的内存、完成 provider 请求和返回 JSON。
-活动解析仍由 ``game_sign_activity`` 负责，签到编排和配置保存不在本模块内。
+活动解析由 ``community_activity_parser`` 负责，签到编排和配置保存不在本模块内。
 """
 
 from __future__ import annotations

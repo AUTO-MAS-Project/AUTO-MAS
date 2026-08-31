@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ToolsConfig_GameSign = {
     /**
-     * 是否启用游戏签到
+     * 是否启用游戏社区
      */
     Enabled?: (boolean | null);
     /**
