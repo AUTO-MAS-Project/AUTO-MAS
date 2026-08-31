@@ -1,0 +1,37 @@
+name: Issue in English
+description: Report a bug, request a feature, or ask a question — in English
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AUTO-MAS is maintained primarily in Chinese. English issues are welcome,
+        but replies may be delayed. If you can write Chinese, the templates above
+        collect more information up front and will usually get a faster answer.
+
+  - type: textarea
+    id: describe
+    attributes:
+      label: Description
+      description: What happened, what you expected to happen, and how to reproduce it.
+    validations:
+      required: true
+
+  - type: input
+    id: mas_version
+    attributes:
+      label: AUTO-MAS version
+      description: See Settings → About
+      placeholder: v5.5.0-beta.3
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Export the AUTO-MAS log archive from Settings → Log Management → Export log archive.
+        If a managed script is involved, attach that script's own logs as well.
+      options:
+        - label: I understand I need to attach the log archive in a comment after submitting this issue.
+          required: true
