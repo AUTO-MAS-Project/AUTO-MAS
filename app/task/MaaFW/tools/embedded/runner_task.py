@@ -46,6 +46,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
+from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
 
 from .project_path import release_project_path, try_reserve_project_path
@@ -458,7 +459,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         await self._close_emulator()
         await self._close_game()
-        await self._save_user_logs()
+        statistic_paths = await self._save_user_logs()
         if self.run_complete:
             if (
                 self.cur_user_config.get("Data", "ProxyTimes") == 0
@@ -482,6 +483,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.cur_user_item.status == "运行":
                 self.cur_user_item.status = "异常"
 
+        await self._push_user_statistics(statistic_paths)
         await self._release_project_path()
 
     async def on_crash(self, e: Exception) -> None:
@@ -1672,7 +1674,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await release_project_path(self.project_lock_key)
         self.project_lock_key = None
 
-    async def _save_user_logs(self) -> None:
+    async def _save_user_logs(self) -> list[Path]:
+        """保存本轮各次尝试的日志，返回对应的统计文件路径。
+
+        路径给用户级统计推送用——``save_general_log`` 会在 ``.log`` 旁边
+        同名写一份 ``.json``，``merge_statistic_info`` 读的就是它。
+        """
+
+        statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
             dt = timestamp.replace(
                 tzinfo=datetime.now().astimezone().tzinfo
@@ -1686,6 +1695,61 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if log_item.status == "未开始监看日志":
                 log_item.status = "MaaFW 任务被中止"
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+            statistic_paths.append(log_path.with_suffix(".json"))
+        return statistic_paths
+
+    async def _push_user_statistics(self, statistic_paths: list[Path]) -> None:
+        """按通知设置推送用户级统计信息。
+
+        与 M9A 专项同形（``M9A/AutoProxy.py`` 的「统计信息」分支）：合并本轮各次
+        尝试的统计文件，补上用户名 / 起止时间 / 结果，再发往全局与该用户自己的
+        渠道。``MaaFWUserConfig`` 的 Notify 组一直都在、编辑页也能配，但在此之前
+        没有任何代码往它发——脚本级「代理结果」是唯一会发出去的报告。
+
+        放在状态落定之后：``user_result`` 要读最终的 ``run_complete``。
+        """
+
+        try:
+            statistics = await Config.merge_statistic_info(statistic_paths)
+            statistics["user_info"] = self.cur_user_item.name
+            statistics["start_time"] = (
+                self.cur_user_log_started_at.strftime("%Y-%m-%d %H:%M:%S")
+                if self.cur_user_log_started_at is not None
+                else ""
+            )
+            statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            statistics["user_result"] = (
+                "代理任务全部完成"
+                if self.run_complete
+                else (
+                    self.cur_user_log.status
+                    if self.cur_user_log is not None
+                    else "代理任务未完成"
+                )
+            )
+            mark = "√" if self.run_complete else "X"
+            await push_notification(
+                mode="统计信息",
+                title=(
+                    f"{datetime.now().strftime('%m-%d')} |{mark}|  "
+                    f"{self.cur_user_item.name} 的自动代理统计报告"
+                ),
+                message=statistics,
+                user_config=self.cur_user_config,
+            )
+        except Exception as exc:
+            logger.opt(exception=True).warning(
+                f"推送 MaaFW 统计信息时出现异常: {exc}"
+            )
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"推送 MaaFW 统计信息时出现异常: {exc}",
+                    ),
+                )
 
     async def _send_success_notify(self) -> None:
         try:

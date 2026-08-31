@@ -143,9 +143,15 @@ class MaafwRunReportGateTest(unittest.TestCase):
         self.assertEqual(len(notify.koishi_calls), 1)
 
     def test_other_modes_send_nothing(self) -> None:
+        """未知模式一律不发。
+
+        这里原本用「统计信息」当未知模式，它现在是真模式了
+        （见 test_maafw_statistics_push.py），换成一个确实没实现的。
+        """
+
         notify = _FakeNotify()
         config = _FakeConfig({("Notify", "SendTaskResultTime"): "任何时刻"})
-        self._push(config, notify, mode="统计信息")
+        self._push(config, notify, mode="版本更新")
         self.assertEqual(notify.serverchan_calls, [])
         self.assertEqual(notify.webhook_calls, [])
 
