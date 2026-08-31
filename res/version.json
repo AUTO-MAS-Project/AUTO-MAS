@@ -5,6 +5,7 @@
             "新增功能": [
                 "前端i18n 新增日本語词表，界面语言可选日本語，首次启动跟随系统语言；日文词表缺 key 时先回退英文再回退中文 by [@qiyinxi](https://github.com/qiyinxi)",
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
+                "OK-NTE专项 将运行日志关键节点注入任务报告，支持用户级节点详情开关并展示日常子任务状态与剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "MaaFW专项 新增 MaaFW 脚本类型，可直接托管 MaaFramework 项目：编辑页读取项目 interface.json 后选择控制器、资源与任务，支持 ADB 模拟器与 Win32 PC 游戏两条控制链路；运行时由 AUTO-MAS 进程内的 runner 在独立子进程中驱动项目的 MaaFramework，不启动项目自带界面，也不占用项目自身的配置文件；已在 M9A、MaaYYs、Maa_bbb、MaaEnd 五个项目包上真机验证，覆盖项目自带解释器、项目自带二进制、隔离虚拟环境与双 Agent 四类运行环境 by [@qiyinxi](https://github.com/qiyinxi)",
                 "自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日 by [@qiyinxi](https://github.com/qiyinxi)",
                 "前端i18n 新增语言选项，首次启动跟随系统语言，英文界面将逐步补全 by [@qiyinxi](https://github.com/qiyinxi)",

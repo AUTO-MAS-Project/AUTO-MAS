@@ -19,6 +19,7 @@
 from app.core import Config
 from app.models.config import OkNteUserConfig
 from app.services import Notify
+from app.tools.push_log import append_push_log
 from app.utils import get_logger
 
 logger = get_logger("OK-NTE 通知工具")
@@ -44,6 +45,8 @@ async def push_notification(
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
+        # 通知详情追加采集的节点推送日志（任务进程信息，与 HTML 模板的 push_log 区块一致）
+        message_text = append_push_log(message_text, message.get("push_log"))
         template = Config.notify_env.get_template("general_result.html")
         message_html = template.render(message)
         serverchan_message = message_text.replace("\n", "\n\n")
