@@ -40,13 +40,9 @@ from .config import (
     BetterGIConfig,
 )
 
-def __getattr__(name: str) -> object:
-    """延迟导入 System，避免 app.services 初始化期间的循环导入。"""
-    if name == "System":
-        from app.services import System
-        return System
-    raise AttributeError(name)
-
+# 延迟加载 System，避免 app.services 初始化期间触发循环导入；
+# 绑定为模块级 LazyProxy（真实对象引用），函数体裸名 System 才能经
+# LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
 from app.models.task import (
     ScriptItem,
     TaskExecuteBase,
@@ -54,7 +50,7 @@ from app.models.task import (
     TaskTriggerSource,
     UserItem,
 )
-from app.utils import get_logger
+from app.utils import LazyProxy, get_logger
 from app.task import (
     MaaManager,
     SrcManager,
@@ -67,6 +63,8 @@ from app.task import (
     BetterGIManager,
 )
 from app.utils.constants import POWER_SIGN_MAP
+
+System = LazyProxy("app.services", "System")
 
 
 logger = get_logger("业务调度")
