@@ -29,6 +29,10 @@ export interface ElectronAPI {
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
 
+  // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
+  onSystemResume?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: () => void) => () => void
+
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
@@ -115,6 +119,18 @@ export interface ElectronAPI {
     error?: string
   }>
   exportMaaEndIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportOkwwIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportDataBackup: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string

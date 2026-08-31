@@ -22,7 +22,11 @@
 
 import os
 import re
-import winreg
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import winreg
 from collections import defaultdict
 from contextlib import suppress
 from pathlib import Path
@@ -70,7 +74,9 @@ def _emulator_brand_keyword_rows() -> List[Tuple[str, List[str]]]:
     ]
 
 
-def _find_manager_exe_in_dir(directory: Path, executable_names: List[str]) -> Optional[Path]:
+def _find_manager_exe_in_dir(
+    directory: Path, executable_names: List[str]
+) -> Optional[Path]:
     for name in executable_names:
         if not name:
             continue
@@ -177,6 +183,9 @@ def _unique_uninstall_roots_from_book() -> List[str]:
 def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
     """单遍枚举卸载表：每个子键只读一次 DisplayName / UninstallString，再按品牌关键词分发。"""
 
+    if not IS_WINDOWS:
+        return {}
+
     acc: Dict[str, List[str]] = defaultdict(list)
     roots = _unique_uninstall_roots_from_book()
     if not roots:
@@ -208,7 +217,10 @@ def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
                                     if not isinstance(dn, str):
                                         continue
                                     matched: List[str] = []
-                                    for emulator_type, kw in _emulator_brand_keyword_rows():
+                                    for (
+                                        emulator_type,
+                                        kw,
+                                    ) in _emulator_brand_keyword_rows():
                                         if _match_registry_display_keywords(dn, kw):
                                             matched.append(emulator_type)
                                     if not matched:

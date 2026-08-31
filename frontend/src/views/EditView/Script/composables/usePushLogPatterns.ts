@@ -1,4 +1,5 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { translate as t } from '@/i18n'
+import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 
 export type PushLogPatternType = 'split' | 'regex' | 'multiline'
@@ -259,50 +260,76 @@ export interface UsePushLogPatternsOptions {
 
 export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
   const { patternsJson, onChange } = options
-  const patterns = ref<PushLogPattern[]>([defaultSplitPattern()])
+  // 默认不展示任何规则卡片，首次点击「添加规则」后才出现，避免未开启推送采集时看到空卡片
+  const patterns = ref<PushLogPattern[]>([])
 
   const syncFromJson = () => {
     const parsed = parsePushLogPatterns(patternsJson.value || '')
-    patterns.value = parsed.length > 0 ? parsed : [defaultSplitPattern()]
+    patterns.value = parsed
   }
 
-  const save = () => {
-    const json = serializePushLogPatterns(patterns.value)
-    // 启用中的规则缺少必填字段（后端编译时会跳过），保存配置与运行采集不一致，
-    // 这里给出可见提示而非静默失效
-    const dropped = patterns.value
-      .map((p, i) => ({ p, i }))
-      .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
-      .map(({ p, i }) => ruleDisplayName(p, i))
-    if (dropped.length > 0) {
-      message.warning(
-        `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`
-      )
-    }
+  // 标记本次 patternsJson 回写来自本地 save，watcher 需跳过以防已添加的空规则被立即移除
+  let localEcho = false
+  const emitJson = (json: string) => {
+    localEcho = true
     onChange?.(json)
+    nextTick(() => {
+      localEcho = false
+    })
   }
 
-  watch(patternsJson, syncFromJson, { immediate: true })
+  /**
+   * 保存当前规则到 json。结构性操作（新增/删除/排序）时传入 { warn: false }，
+   * 避免新建空规则或删空规则在用户尚未编辑时立即弹出「缺必填字段」的提示；
+   * 仅在实际字段编辑时对缺必填字段的启用规则给出可见提示。
+   */
+  const save = (options: { warn?: boolean } = {}) => {
+    const json = serializePushLogPatterns(patterns.value)
+    if (options.warn !== false) {
+      // 启用中的规则缺少必填字段（后端编译时会跳过），保存配置与运行采集不一致，
+      // 这里给出可见提示而非静默失效
+      const dropped = patterns.value
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
+        .map(({ p, i }) => ruleDisplayName(p, i))
+      if (dropped.length > 0) {
+        message.warning(t('edit.p0MissingRequiredField', { p0: dropped.join('、') }))
+      }
+    }
+    emitJson(json)
+  }
+
+  watch(
+    patternsJson,
+    () => {
+      // 本次回写来自本地 save 同步写回的 v-model（nextTick 内），跳过防止刚添加的空规则被立即移除
+      if (localEcho) return
+      // 异步保存后父组件 refreshScript 会回写后端序列化结果：若该值与当前本地规则的序列化结果
+      // 等价（空/待编辑规则会被 serialize 暂时剔除），说明仅是本地 save 的回显而非外部改动，
+      // 应保留本地尚未落盘的空规则卡片，避免刚添加的空规则被异步刷新清掉
+      if ((patternsJson.value || '') === serializePushLogPatterns(patterns.value)) {
+        return
+      }
+      syncFromJson()
+    },
+    { immediate: true }
+  )
 
   const addPattern = (type: PushLogPatternType) => {
     patterns.value.push(createPattern(type))
-    save()
+    save({ warn: false })
   }
 
   const removePattern = (idx: number) => {
     patterns.value.splice(idx, 1)
-    // 删除后若为空，保留一个空 split 规则作为占位，避免用户困惑
-    if (patterns.value.length === 0) {
-      patterns.value.push(defaultSplitPattern())
-    }
-    save()
+    save({ warn: false })
   }
 
   const updatePatternType = (idx: number, newType: PushLogPatternType) => {
     const old = patterns.value[idx]
     if (!old || old.type === newType) return
     patterns.value[idx] = migratePatternOnTypeChange(old, newType)
-    save()
+    save({ warn: false })
   }
 
   const onPatternFieldChange = () => {
@@ -311,7 +338,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
 
   const reorderPatterns = (newOrder: PushLogPattern[]) => {
     patterns.value = newOrder
-    save()
+    save({ warn: false })
   }
 
   const activePatternCount = computed(() => patterns.value.filter(p => p.enabled !== false).length)

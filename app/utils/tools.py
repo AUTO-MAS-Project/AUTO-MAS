@@ -22,30 +22,7 @@
 
 import time
 
-
-from .constants import ENCODINGS
-
-
-def decode_bytes(data: bytes) -> str:
-    """
-    尝试用多种编码解码 bytes, 全部失败则使用 latin1 保底
-
-    Args:
-        data(bytes): 要解码的字节串
-
-    Returns:
-        str: 解码后的字符串
-    """
-    if not data:
-        return ""
-
-    for encoding in ENCODINGS:
-        try:
-            return data.decode(encoding, errors="strict")
-        except (UnicodeDecodeError, LookupError):
-            continue
-    else:
-        return data.decode("latin1", errors="replace")
+from app.utils.platform.common.process_runner import decode_bytes
 
 
 def busy_wait(ms: float) -> None:

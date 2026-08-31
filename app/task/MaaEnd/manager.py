@@ -25,20 +25,22 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config, EmulatorManager
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
-from .tools import push_notification
+from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
+
 from .AutoProxy import AutoProxyTask
-from .ScriptConfig import ScriptConfigTask
 from .resource_loader import load_maaend_controller_protocol
+from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -46,6 +48,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
     "ScriptConfig": ScriptConfigTask,
 }
+
 
 class MaaEndManager(TaskExecuteBase):
     """MaaEnd 控制器"""
@@ -86,18 +89,22 @@ class MaaEndManager(TaskExecuteBase):
             or script_config.get("Game", "EmulatorIndex") in ["", "-"]
         ):
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-        elif self.controller_protocol == "Win32" and not Path(
-            script_config.get("Game", "Path")
-        ).exists():
+        elif (
+            self.controller_protocol == "Win32"
+            and not Path(script_config.get("Game", "Path")).exists()
+        ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
-        if self.task_info.mode == "AutoProxy" and not (
-            Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Info", "Path"
+        if (
+            self.task_info.mode == "AutoProxy"
+            and not (
+                Path(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                        "Info", "Path"
+                    )
                 )
-            )
-            / "config/mxu-MaaEnd.json"
-        ).exists():
+                / "config/mxu-MaaEnd.json"
+            ).exists()
+        ):
             return "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成！"
 
         return "Pass"
@@ -153,10 +160,10 @@ class MaaEndManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -186,7 +193,6 @@ class MaaEndManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-
             if self.emulator_manager is not None:
                 await self.emulator_manager.close(
                     self.script_config.get("Game", "EmulatorIndex")
@@ -222,22 +228,25 @@ class MaaEndManager(TaskExecuteBase):
                 "game_sign_summary": has_game_sign_summary,
             }
 
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                10,
-            )
             try:
-                await push_notification("代理结果", title, result, None)
-                if has_game_sign_summary:
-                    mark_task_game_sign_summary_consumed(self.task_info)
+                push_result = await push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
+                )
+                finalize_task_game_sign_notification(
+                    self.task_info, has_game_sign_summary, push_result
+                )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         # 还原配置
@@ -251,8 +260,8 @@ class MaaEndManager(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"MaaEnd任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"MaaEnd任务出现异常: {e}"),
         )

@@ -20,8 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-
-
 import asyncio
 import uuid
 from contextlib import suppress
@@ -29,7 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
@@ -62,7 +61,7 @@ from .tools.account_switch import (
 from .tools import push_notification
 from .tools.log_detect import detect_echo_of_war_completion
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_script_path
+from .tools.native_control import resolve_configured_engines, resolve_script_path
 from .tools.m7a_runtime import M7ARunner
 from .tools.sra_runtime import cleanup_sra_temp_config
 from .tools.stage_runtime import (
@@ -81,9 +80,7 @@ PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
 }
 
 MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
-    phase: tuple(
-        module.key for module in HSR_TASK_MODULES if module.category == phase
-    )
+    phase: tuple(module.key for module in HSR_TASK_MODULES if module.category == phase)
     for phase in ("daily", "weekly")
 }
 
@@ -92,8 +89,7 @@ def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
     """判断用户是否启用了指定周期的任一 HSR 模块。"""
 
     return any(
-        bool(user_config.get("TaskSwitch", key))
-        for key in MODULE_KEYS_BY_PHASE[phase]
+        bool(user_config.get("TaskSwitch", key)) for key in MODULE_KEYS_BY_PHASE[phase]
     )
 
 
@@ -177,7 +173,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if self._current_user_log is not None:
             if self._current_user_log.status in ("未开始监看日志", ""):
                 self._current_user_log.status = "HSR 正常运行中"
-            self._current_user_log.content.extend(f"{line}\n" for line in appended_lines)
+            self._current_user_log.content.extend(
+                f"{line}\n" for line in appended_lines
+            )
 
     def _start_user_log(
         self,
@@ -259,17 +257,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.game_session_clean = False
             self.runtime.last_external_script = None
             self._append_log(
-                f"用户「{user_name}」{reason}，"
-                "MAS 未管理游戏，跳过游戏重启并继续执行"
+                f"用户「{user_name}」{reason}，MAS 未管理游戏，跳过游戏重启并继续执行"
             )
             return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         process_name = HSR_GAME_PROCESS_NAME
 
-        self._append_log(
-            f"用户「{user_name}」{reason}，正在由 MAS 重启游戏"
-        )
+        self._append_log(f"用户「{user_name}」{reason}，正在由 MAS 重启游戏")
 
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
@@ -282,8 +277,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             await System.kill_process(game_exe_path)
             await self._game_process_manager.clear()
             self._append_log(
-                f"已请求关闭游戏，等待 "
-                f"{HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
+                f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
             )
             await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
             if process_name and is_process_running(process_name):
@@ -342,9 +336,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 fields=fields,
             )
         )
-        logger.info(
-            f"用户「{user_name}」已登记 HSR 完成态写回：{reason}"
-        )
+        logger.info(f"用户「{user_name}」已登记 HSR 完成态写回：{reason}")
 
     @staticmethod
     def _build_daily_proxy_writeback_fields(
@@ -467,10 +459,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送 HSR 用户统计通知时出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"推送 HSR 用户统计通知时出现异常: {e}",
+                ),
             )
 
     def _queue_eow_completion_if_confirmed(
@@ -552,8 +547,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """解析本周历战余响任务，不写用户 Data。"""
 
         weekday_options = [
-            "Monday", "Tuesday", "Wednesday", "Thursday",
-            "Friday", "Saturday", "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
         ]
         eow_target = user_config.get("TaskOpt", "EchoOfWarWeekday") or "Monday"
         if eow_target not in weekday_options:
@@ -564,11 +564,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
-        last_reset_week = user_config.get("Data", "EchoOfWarLastResetWeek") or "2000-W01"
+        last_reset_week = (
+            user_config.get("Data", "EchoOfWarLastResetWeek") or "2000-W01"
+        )
         eow_is_new_week = last_reset_week != now_week
-        eow_completed_this_week = (
-            not eow_is_new_week
-            and bool(user_config.get("Data", "EchoOfWarCompletedThisWeek"))
+        eow_completed_this_week = not eow_is_new_week and bool(
+            user_config.get("Data", "EchoOfWarCompletedThisWeek")
         )
 
         today = now_dt.strftime("%A")
@@ -599,12 +600,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
-        last_reset_week = (
-            user_config.get("Data", "WeeklyLastResetWeek") or "2000-W01"
-        )
-        weekly_done_stored = bool(
-            user_config.get("Data", "WeeklyCompletedThisWeek")
-        )
+        last_reset_week = user_config.get("Data", "WeeklyLastResetWeek") or "2000-W01"
+        weekly_done_stored = bool(user_config.get("Data", "WeeklyCompletedThisWeek"))
 
         if last_reset_week != now_week:
             is_new_week_in_mem = True
@@ -662,7 +659,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._managed_options_cache[cache_key] = {}
         return {}
 
-    def _daily_native_modes(self, *, assigned_script: str, user_cfg) -> tuple[bool, bool]:
+    def _daily_native_modes(
+        self, *, assigned_script: str, user_cfg
+    ) -> tuple[bool, bool]:
         values = self._managed_module_values(
             assigned_script=assigned_script,
             module_key="Daily",
@@ -704,7 +703,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
         try:
-            only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
+            only_when_changed = self.script_config.get(
+                "Game", "RedeemCodesOnlyWhenChanged"
+            )
         except (AttributeError, KeyError, TypeError):
             only_when_changed = True
         if only_when_changed is False:
@@ -712,11 +713,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         try:
             fingerprint = redeem_code_fingerprint(engine, self.script_config)
         except (OSError, ValueError, TypeError) as exc:
-            logger.warning(f"用户「{user_name}」读取 {engine} 兑换码版本失败，保守执行：{exc}")
+            logger.warning(
+                f"用户「{user_name}」读取 {engine} 兑换码版本失败，保守执行：{exc}"
+            )
             return True, None
         previous = str(user_cfg.get("Data", f"{engine}RedeemCodeFingerprint") or "")
         if previous == fingerprint:
-            self._append_log(f"用户「{user_name}」{engine} 兑换码未变化，本轮跳过兑换码领取")
+            self._append_log(
+                f"用户「{user_name}」{engine} 兑换码未变化，本轮跳过兑换码领取"
+            )
             return False, fingerprint
         return True, fingerprint
 
@@ -788,6 +793,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """按阶段构建队列，保持 HSR_TASK_MODULES 中的业务顺序。"""
 
         items: list[HSRRunItem] = []
+        effective_engines = resolve_configured_engines(self.script_config)
 
         for module in HSR_TASK_MODULES:
             if module.category != phase:
@@ -799,6 +805,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 module,
                 self.script_config,
                 user_config=user_cfg,
+                effective_engines=effective_engines,
             )
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True
@@ -827,10 +834,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     )
                     continue
             elif module.key == "ReceiveRewards":
-                redeem_codes_enabled, redeem_code_fingerprint = self._resolve_redeem_code_policy(
-                    engine=assigned,
-                    user_cfg=user_cfg,
-                    user_name=user_name,
+                redeem_codes_enabled, redeem_code_fingerprint = (
+                    self._resolve_redeem_code_policy(
+                        engine=assigned,
+                        user_cfg=user_cfg,
+                        user_name=user_name,
+                    )
                 )
 
             if assigned == "SRA":
@@ -1149,8 +1158,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """按用户构建本轮 HSR 执行队列。"""
 
         daily_eow_enabled, eow_is_new_week = self._resolve_daily_params(user_cfg)
-        weekly_skip, weekly_skip_reason, weekly_is_new_week = (
-            self._resolve_weekly_skip(user_cfg)
+        weekly_skip, weekly_skip_reason, weekly_is_new_week = self._resolve_weekly_skip(
+            user_cfg
         )
         logger.debug(
             f"用户「{user_name}」resolver: "
@@ -1219,11 +1228,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> list[HSRRunItem]:
         """返回当前项之后尚未执行且尚未标记失败的队列项。"""
 
-        remaining = list(phase_items[item_index + 1:])
-        for later_phase in phases[phase_index + 1:]:
+        remaining = list(phase_items[item_index + 1 :])
+        for later_phase in phases[phase_index + 1 :]:
             remaining.extend(item for item in items if item.phase == later_phase)
         return [
-            candidate for candidate in remaining
+            candidate
+            for candidate in remaining
             if all(candidate is not failed for failed in failures)
         ]
 
@@ -1494,11 +1504,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             # 只要日常阶段有模块执行成功，就登记代理日期；
             # 后续周常失败不影响日常已完成的事实。
             _daily_items = [
-                i for i in current_items
+                i
+                for i in current_items
                 if i.phase == "daily" and i.module_key != "StartGame"
             ]
             _daily_failed = [
-                i for i in failed_items
+                i
+                for i in failed_items
                 if i.phase == "daily" and i.module_key != "StartGame"
             ]
             if _daily_items and len(_daily_failed) < len(_daily_items):
@@ -1565,9 +1577,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.crashed = True
         self.error_message = str(e)
         self._mark_current_user_abnormal(f"HSR 用户任务异常: {e}")
-        logger.opt(exception=True).warning(f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}")
-        await Config.send_websocket_message(
+        logger.opt(exception=True).warning(
+            f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}"
+        )
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error",
+                message=f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}",
+            ),
         )

@@ -1,0 +1,14 @@
+{
+  "config": {
+    "default": true,
+    "line-length": false,
+    "first-line-h1": false,
+    "no-inline-html": false,
+    "fenced-code-language": false,
+    "no-blanks-blockquote": false,
+    "no-emphasis-as-heading": false,
+    "no-space-in-code": false,
+    "no-trailing-punctuation": false,
+  },
+  "ignores": ["node_modules/**", "dist/**", "dist-electron/**", "src/api/**"],
+}

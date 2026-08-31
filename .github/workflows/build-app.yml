@@ -43,6 +43,8 @@ jobs:
     steps:
       - name: 签出代码
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v7.0.0
@@ -336,6 +338,44 @@ jobs:
             [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
           files: artifacts/*
           prerelease: ${{ needs.build.outputs.is_prerelease }}
+
+      - name: 标记 Sentry 生产部署
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if (-not $env:SENTRY_AUTH_TOKEN -or -not $env:SENTRY_ORG -or -not $env:SENTRY_PROJECT) {
+            Write-Warning '缺少 Sentry 配置，跳过部署登记。'
+            exit 0
+          }
+          $releaseVersion = "auto-mas@$env:VERSION_TAG"
+          $encodedOrg = [Uri]::EscapeDataString($env:SENTRY_ORG)
+          $encodedRelease = [Uri]::EscapeDataString($releaseVersion)
+          $releaseUrl = "https://github.com/$env:REPOSITORY/releases/tag/$env:VERSION_TAG"
+          $payload = @{
+            environment = 'production'
+            name = "GitHub Release $env:VERSION_TAG"
+            url = $releaseUrl
+            projects = @($env:SENTRY_PROJECT)
+          } | ConvertTo-Json
+          $headers = @{
+            Authorization = "Bearer $env:SENTRY_AUTH_TOKEN"
+          }
+          # 登记部署失败不应影响已经发布的 Release。
+          try {
+            Invoke-RestMethod `
+              -Method Post `
+              -Uri "https://sentry.io/api/0/organizations/$encodedOrg/releases/$encodedRelease/deploys/" `
+              -Headers $headers `
+              -ContentType 'application/json' `
+              -Body $payload | Out-Null
+          } catch {
+            Write-Warning "登记 Sentry 部署失败，不影响发布：$($_.Exception.Message)"
+          }
+        shell: pwsh
 
   cnb:
     name: 发布 CNB 发行版

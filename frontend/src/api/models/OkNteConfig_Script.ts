@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * OK-NTE 脚本配置（复用通用字段）
+ * OK-NTE 脚本配置（仅暴露运行期存在的字段；LogHook/PushLog 等通用脚本字段不适用于 OK-NTE）
  */
 export type OkNteConfig_Script = {
     /**
@@ -67,16 +67,16 @@ export type OkNteConfig_Script = {
      */
     SuccessLog?: (string | null);
     /**
+     * 成功时日志匹配模式: 关键字子串包含, 正则表达式
+     */
+    SuccessLogMode?: ('Split' | 'Regex' | null);
+    /**
      * 错误时日志
      */
     ErrorLog?: (string | null);
     /**
-     * 推送日志采集启用开关
+     * 错误时日志匹配模式: 关键字子串包含, 正则表达式
      */
-    PushLogEnabled?: (boolean | null);
-    /**
-     * 推送日志高级模式匹配(JSON 数组，每项形如 {"type":"regex|multiline","pattern":"..."})
-     */
-    PushLogPatterns?: (string | null);
+    ErrorLogMode?: ('Split' | 'Regex' | null);
 };
 

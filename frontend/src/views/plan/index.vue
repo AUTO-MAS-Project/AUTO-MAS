@@ -2,7 +2,7 @@
   <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" tip="加载中，请稍候..." />
+      <a-spin size="large" :tip="t('plan.loading')" />
     </div>
 
     <!-- 主要内容 -->
@@ -19,11 +19,11 @@
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
-            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+            <img src="@/assets/NoData.png" :alt="t('plan.noData')" class="empty-image" />
           </div>
           <div class="empty-text-content">
-            <h3 class="empty-title">暂无计划</h3>
-            <p class="empty-description">您还没有创建任何计划</p>
+            <h3 class="empty-title">{{ t('plan.emptyTitle') }}</h3>
+            <p class="empty-description">{{ t('plan.emptyDesc') }}</p>
           </div>
         </div>
       </div>
@@ -67,12 +67,17 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
 import type { PlanIndexItem } from '@/api'
-import { generateUniquePlanName, getPlanTypeLabel, validatePlanName } from '@/utils/planNameUtils'
+import {
+  generateUniquePlanName,
+  getPlanTypeLabelKey,
+  validatePlanName,
+} from '@/utils/planNameUtils'
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
@@ -84,6 +89,8 @@ import {
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
+
+const { t } = useI18n()
 
 defineOptions({
   name: 'PlanManagementView',
@@ -128,7 +135,7 @@ const currentPlanDescriptor = computed(() => {
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
-const clonePlanData = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const clonePlanData = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   const planData = planDataMap.value[planId]
@@ -197,11 +204,19 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
-        `已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"，建议您修改为更有意义的名称`,
+        t('plan.toast.createdHint', {
+          type: t(getPlanTypeLabelKey(planType)),
+          name: uniqueName,
+        }),
         4
       )
     } else {
-      message.success(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"`)
+      message.success(
+        t('plan.toast.created', {
+          type: t(getPlanTypeLabelKey(planType)),
+          name: uniqueName,
+        })
+      )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -362,7 +377,9 @@ const finishEditPlanName = async () => {
 
       if (!validation.isValid) {
         // 如果验证失败，显示错误消息并恢复原名称
-        message.error(validation.message || '计划表名称无效')
+        message.error(
+          validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid')
+        )
         currentPlanName.value = currentPlan.name
       } else {
         // 如果验证成功，更新名称并保存到后端
@@ -413,7 +430,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.code !== 200) {
-      throw new Error(response.message || '获取计划表失败')
+      throw new Error(response.message || t('plan.toast.fetchFailed'))
     }
 
     const nextPlanDataMap: Record<string, PlanConfigData> = {}
@@ -517,8 +534,9 @@ onMounted(() => {
   align-items: center;
   min-height: 500px;
   padding: 60px 20px;
-  background: linear-gradient(135deg, var(--ant-color-primary-bg), transparent);
-  border-radius: 16px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
   margin: 20px 0;
 }
 

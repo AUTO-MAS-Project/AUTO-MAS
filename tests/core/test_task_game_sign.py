@@ -30,7 +30,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
                     user_id=None,
                     trigger_source=trigger_source,
                 )
-                task = Task(task_info)
+                task = Task(task_info, [])
                 task.prepare = AsyncMock()
 
                 with patch(
@@ -59,9 +59,11 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
         }[(group, key)]
         queue.TimeSet.values.return_value = [time_set]
 
-        with patch("app.core.timer.Config") as config, patch(
-            "app.core.timer.TaskManager"
-        ) as task_manager, patch("app.core.timer.datetime") as mocked_datetime:
+        with (
+            patch("app.core.timer.Config") as config,
+            patch("app.core.timer.TaskManager") as task_manager,
+            patch("app.core.timer.datetime") as mocked_datetime,
+        ):
             config.QueueConfig = {queue_id: queue}
             task_manager.add_task = AsyncMock()
             mocked_datetime.now.return_value.strftime.side_effect = lambda fmt: {
@@ -92,12 +94,14 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
             ("Info", "Name"): "启动队列",
         }[(group, key)]
 
-        with patch("app.core.task_manager.Config") as config, patch(
-            "app.core.task_manager.TaskManager"
-        ) as task_manager, patch(
-            "app.core.task_manager.asyncio.sleep", new_callable=AsyncMock
-        ), patch("app.core.task_manager.datetime") as mocked_datetime:
-            config.websocket = object()
+        with (
+            patch("app.core.task_manager.Config") as config,
+            patch("app.core.task_manager.TaskManager") as task_manager,
+            patch("app.core.task_manager.MainConnection") as main_connection,
+            patch("app.core.task_manager.asyncio.sleep", new_callable=AsyncMock),
+            patch("app.core.task_manager.datetime") as mocked_datetime,
+        ):
+            main_connection.is_connected = True
             config.QueueConfig = {queue_id: queue}
             task_manager.add_task = AsyncMock()
             mocked_datetime.now.return_value.strftime.return_value = "2026-08-27"
@@ -114,9 +118,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
             },
             trigger_source="startup_task",
         )
-        queue.set.assert_awaited_once_with(
-            "Data", "LastStartupTime", "2026-08-27"
-        )
+        queue.set.assert_awaited_once_with("Data", "LastStartupTime", "2026-08-27")
 
     async def test_startup_queue_runs_dailyfirst_queue_not_started_today(self) -> None:
         queue_id = uuid.uuid4()
@@ -129,12 +131,14 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
             ("Data", "LastStartupTime"): "2000-01-01",
         }[(group, key)]
 
-        with patch("app.core.task_manager.Config") as config, patch(
-            "app.core.task_manager.TaskManager"
-        ) as task_manager, patch(
-            "app.core.task_manager.asyncio.sleep", new_callable=AsyncMock
-        ), patch("app.core.task_manager.datetime") as mocked_datetime:
-            config.websocket = object()
+        with (
+            patch("app.core.task_manager.Config") as config,
+            patch("app.core.task_manager.TaskManager") as task_manager,
+            patch("app.core.task_manager.MainConnection") as main_connection,
+            patch("app.core.task_manager.asyncio.sleep", new_callable=AsyncMock),
+            patch("app.core.task_manager.datetime") as mocked_datetime,
+        ):
+            main_connection.is_connected = True
             config.QueueConfig = {queue_id: queue}
             task_manager.add_task = AsyncMock()
             mocked_datetime.now.return_value.strftime.return_value = "2026-08-27"
@@ -151,9 +155,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
             },
             trigger_source="startup_task",
         )
-        queue.set.assert_awaited_once_with(
-            "Data", "LastStartupTime", "2026-08-27"
-        )
+        queue.set.assert_awaited_once_with("Data", "LastStartupTime", "2026-08-27")
 
     async def test_startup_queue_skips_dailyfirst_queue_started_today(self) -> None:
         queue_id = uuid.uuid4()
@@ -165,12 +167,14 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
             ("Data", "LastStartupTime"): "2026-08-27",
         }[(group, key)]
 
-        with patch("app.core.task_manager.Config") as config, patch(
-            "app.core.task_manager.TaskManager"
-        ) as task_manager, patch(
-            "app.core.task_manager.asyncio.sleep", new_callable=AsyncMock
-        ), patch("app.core.task_manager.datetime") as mocked_datetime:
-            config.websocket = object()
+        with (
+            patch("app.core.task_manager.Config") as config,
+            patch("app.core.task_manager.TaskManager") as task_manager,
+            patch("app.core.task_manager.MainConnection") as main_connection,
+            patch("app.core.task_manager.asyncio.sleep", new_callable=AsyncMock),
+            patch("app.core.task_manager.datetime") as mocked_datetime,
+        ):
+            main_connection.is_connected = True
             config.QueueConfig = {queue_id: queue}
             task_manager.add_task = AsyncMock()
             mocked_datetime.now.return_value.strftime.return_value = "2026-08-27"

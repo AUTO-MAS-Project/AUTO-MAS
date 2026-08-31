@@ -28,9 +28,11 @@ from pathlib import Path
 from typing import Dict, Literal
 
 from .config import Config
+from .ws import Publisher, protocol
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
+from app.models.schema import WSTaskNoticeData
 from app.utils import ProcessRunner, EMULATOR_TYPE_BOOK
 from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
 
@@ -51,7 +53,6 @@ class _EmulatorManager:
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
         if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
-
             # 设置模拟器广告
             with suppress(Exception):
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
@@ -103,10 +104,12 @@ class _EmulatorManager:
             elif operate == "show":
                 await temp_emulator.setVisible(index, True)
         except Exception as e:
-            await Config.send_websocket_message(
-                id="EmulatorManager",
-                type="Info",
-                data={"error": f"模拟器操作失败: {str(e)}"},
+            await Publisher.send(
+                id=protocol.ID_EMULATOR_MANAGER,
+                type=protocol.EMULATOR_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error", message=f"模拟器操作失败: {str(e)}"
+                ),
             )
 
     async def get_status(

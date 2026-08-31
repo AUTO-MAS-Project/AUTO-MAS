@@ -9,6 +9,7 @@ import { app } from 'electron'
 import { spawn } from 'child_process'
 import AdmZip = require('adm-zip')
 import { MirrorService } from './mirrorService'
+import { isDevelopmentEnvironment } from './instanceConfig'
 import { SmartDownloader, ProgressCallback } from './downloadService'
 import { MirrorRotationService, NetworkOperationCallback } from './mirrorRotationService'
 
@@ -17,14 +18,8 @@ const logger = getLogger('环境服务')
 
 // ==================== 工具函数 ====================
 
-// 判断是否处于开发环境
-export function isDevelopmentEnvironment(): boolean {
-  if (process.env.NODE_ENV === 'development' || Boolean(process.env.VITE_DEV_SERVER_URL)) {
-    return true
-  }
-
-  return Boolean(app) && !app.isPackaged
-}
+// 运行环境判定统一由 instanceConfig 提供，此处保留导出以兼容既有引用
+export { isDevelopmentEnvironment }
 
 // 获取应用根目录
 export function getAppRoot(): string {

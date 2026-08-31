@@ -8,6 +8,7 @@ import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
+import maafwIcon from '@/assets/maafw.png'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
 export const SCRIPT_LOGOS: Record<ScriptType, string> = {
@@ -17,6 +18,7 @@ export const SCRIPT_LOGOS: Record<ScriptType, string> = {
   M9A: m9aIcon,
   MAA: maaIcon,
   MaaEnd: maaEndIcon,
+  MaaFW: maafwIcon,
   OkNte: okNteIcon,
   Okww: okwwIcon,
   SRC: srcIcon,
@@ -30,6 +32,7 @@ export const SCRIPT_LABELS: Record<ScriptType, string> = {
   M9A: 'M9A',
   MAA: 'MAA',
   MaaEnd: 'MaaEnd',
+  MaaFW: 'MFW',
   OkNte: 'OK-NTE',
   Okww: 'ok-ww',
   SRC: 'SRC',

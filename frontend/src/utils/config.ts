@@ -1,3 +1,4 @@
+import type { AppLocale } from '@/i18n'
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeLayoutConfig } from '@/types/home'
@@ -10,6 +11,9 @@ export interface FrontendConfig {
   themeColor: ThemeColor
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
+
+  // 界面语言；未设置时跟随系统
+  language?: AppLocale
 
   // 镜像源设置
   selectedGitMirror: string

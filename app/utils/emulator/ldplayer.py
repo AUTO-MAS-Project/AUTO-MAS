@@ -23,9 +23,14 @@
 import json
 import psutil
 import asyncio
-import win32gui
-import keyboard
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32gui
+    import keyboard
 from datetime import datetime, timedelta
+import time
 from pydantic import BaseModel
 from pathlib import Path
 
@@ -36,9 +41,7 @@ from app.utils import ProcessRunner, get_logger
 logger = get_logger("雷电模拟器管理")
 
 _CONFIG_GUARD_DELAY_SECONDS = 3.0
-_INSTANCE_LOCKS: dict[
-    tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock
-] = {}
+_INSTANCE_LOCKS: dict[tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock] = {}
 _INSTANCE_CONFIG_SNAPSHOTS: dict[tuple[str, str], bytes] = {}
 
 
@@ -87,10 +90,7 @@ class LDManager(DeviceBase):
             logger.warning(f"无法保护雷电模拟器配置，实例索引无效: {idx}")
             return None
         return (
-            self.emulator_path.parent
-            / "vms"
-            / "config"
-            / f"leidian{idx_text}.config"
+            self.emulator_path.parent / "vms" / "config" / f"leidian{idx_text}.config"
         )
 
     @staticmethod
@@ -176,10 +176,8 @@ class LDManager(DeviceBase):
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
@@ -206,10 +204,8 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 await asyncio.sleep(
@@ -254,10 +250,8 @@ class LDManager(DeviceBase):
 
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
                 await self._verify_and_restore_instance_config(idx)
@@ -317,6 +311,9 @@ class LDManager(DeviceBase):
         return {idx: info.title for idx, info in data.items()}
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
+
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
@@ -324,10 +321,8 @@ class LDManager(DeviceBase):
 
         result = (await self.get_device_info(idx))[idx]
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             # 检查窗口可见性是否符合预期
             if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
                 return status
@@ -391,6 +386,10 @@ class LDManager(DeviceBase):
 
     # ?wk雷电你都返回了什么啊
 
+    def get_adb_path(self) -> Path | None:
+        adb_path = self.emulator_path.parent / "adb.exe"
+        return adb_path if adb_path.exists() else None
+
     async def _block_ads_via_adb(self, idx: str) -> None:
         adb_path = self.emulator_path.parent / "adb.exe"
         adb_serial = f"emulator-{5554 + int(idx) * 2}"  # 雷电模拟器 ADB 设备名固定格式
@@ -411,7 +410,9 @@ class LDManager(DeviceBase):
             if result.returncode == 0:
                 logger.success(f"已禁用广告包: {package}")
             else:
-                logger.warning(f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}")
+                logger.warning(
+                    f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+                )
 
     async def get_adb_ports(self, pid: int) -> int:
         """使用psutil获取adb端口"""

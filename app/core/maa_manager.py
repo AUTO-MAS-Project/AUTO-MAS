@@ -51,7 +51,6 @@ logger = get_logger("MaaFW管理")
 
 
 class _MaaFWManager:
-
     def __init__(self):
 
         self.resource = Resource()
@@ -298,7 +297,6 @@ MaaFWManager = _MaaFWManager()
 
 @MaaFWManager.resource.custom_action("DisableLog")
 class DisableLog(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         """
         自定义动作: 临时禁用日志输出
@@ -318,7 +316,6 @@ class DisableLog(CustomAction):
 
 @MaaFWManager.resource.custom_action("EnableLog")
 class EnableLog(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         """
         自定义动作: 启用日志输出

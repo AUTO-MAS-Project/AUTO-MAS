@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
@@ -6,6 +7,8 @@ import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
+
+const { t } = useI18n()
 
 defineOptions({ name: 'ToolsPage' })
 
@@ -47,7 +50,7 @@ const editingConfig = reactive<ToolsConfig>({
 // 使用通用的状态标签解析
 const arknightsPCStatusTag = useStatusTag(
   () => toolsConfig.ArknightsPC?.Status,
-  createStatusTag('未启用', 'default')
+  createStatusTag(t('tools.statusDisabled'), 'default')
 )
 
 // 轮询定时器
@@ -64,7 +67,7 @@ const updateStatus = async () => {
     const response = await Service.getToolsApiToolsGetPost()
     if (!isMounted) return
     if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || '工具状态响应无效')
+      throw new Error(response.message || t('tools.statusInvalid'))
     }
     const data = response.data
     statusPollFailed = false
@@ -228,14 +231,14 @@ onUnmounted(() => {
 <template>
   <div class="settings-container">
     <div class="settings-header">
-      <h1 class="page-title">工具</h1>
+      <h1 class="page-title">{{ t('tools.title') }}</h1>
     </div>
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="arknightspc">
           <template #tab>
             <span style="display: flex; align-items: center; gap: 8px">
-              <span>明日方舟PC端</span>
+              <span>{{ t('tools.arknightsPC') }}</span>
               <a-tag
                 v-if="arknightsPCStatusTag"
                 :color="arknightsPCStatusTag.color"

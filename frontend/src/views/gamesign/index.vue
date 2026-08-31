@@ -1,11 +1,19 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_GAMESIGN_RESULT_UPDATED,
+  WS_ID_GAME_SIGN,
+  type WSGameSignResultData,
+} from '@/services/websocket/types'
 import TabGameSign from './TabGameSign.vue'
+
+const { t } = useI18n()
 
 defineOptions({ name: 'GameSignPage' })
 
@@ -62,7 +70,7 @@ const updateStatus = async () => {
     const response = await Service.getToolsApiToolsGetPost()
     if (!isMounted) return
     if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || '签到状态响应无效')
+      throw new Error(response.message || t('gamesign.statusInvalid'))
     }
     statusPollFailed = false
     const data = response.data
@@ -85,7 +93,7 @@ const refreshGameSignConfig = async () => {
     const response = await Service.getToolsApiToolsGetPost()
     if (!isMounted) return
     if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || '签到结果响应无效')
+      throw new Error(response.message || t('gamesign.resultInvalid'))
     }
     const data = response.data
     if (data.GameSign?.Status) {
@@ -169,10 +177,13 @@ useEventListener(document, 'visibilitychange', () => {
 })
 
 onMounted(async () => {
-  gameSignSubscriptionId = subscribe({ id: 'GameSign', type: 'Update' }, message => {
-    const data = message.data as { Result?: unknown } | undefined
-    syncGameSignResult(data?.Result)
-  })
+  gameSignSubscriptionId = subscribe(
+    { id: WS_ID_GAME_SIGN, type: WS_GAMESIGN_RESULT_UPDATED },
+    wsMessage => {
+      const data = wsMessage.data as unknown as WSGameSignResultData
+      syncGameSignResult(data.result)
+    }
+  )
   await loadTools()
   startStatusPolling()
 })
@@ -190,7 +201,7 @@ onUnmounted(() => {
 <template>
   <div class="gamesign-container">
     <div class="gamesign-header">
-      <h1 class="page-title">游戏签到</h1>
+      <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
       <TabGameSign

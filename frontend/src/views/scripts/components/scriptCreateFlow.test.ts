@@ -21,6 +21,7 @@ describe('scriptCreateFlow', () => {
       'SRC',
       'MaaEnd',
       'M9A',
+      'MaaFW',
       'Okww',
       'OkNte',
       'HSR',

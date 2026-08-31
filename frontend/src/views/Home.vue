@@ -14,7 +14,7 @@
           <template #icon>
             <EditOutlined />
           </template>
-          编辑布局
+          {{ t('home.editLayout') }}
         </a-button>
         <a-button
           type="primary"
@@ -26,7 +26,7 @@
           <template #icon>
             <BellOutlined />
           </template>
-          查看公告
+          {{ t('home.viewNotice') }}
         </a-button>
       </div>
     </div>
@@ -46,7 +46,7 @@
       @scroll-hint-change="setScrollHintHidden"
     />
 
-    <div v-if="layoutReady && !isBootstrapping" class="home-content">
+    <div v-if="layoutReady" class="home-content">
       <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
@@ -93,9 +93,9 @@
 
           <HomeSraActivityOverview
             v-else-if="moduleKey === 'starrail'"
-            title="崩坏：星穹铁道活动信息"
+            :title="t('home.module.starrail')"
             accent="#62c4e7"
-            empty-text="暂无进行中的星穹铁道活动"
+            :empty-text="t('home.empty.starrail')"
             :loading="loading"
             :overview="starRailData"
             @refresh="fetchOverviewData"
@@ -103,9 +103,9 @@
 
           <HomeSraActivityOverview
             v-else-if="moduleKey === 'genshin'"
-            title="原神活动信息"
+            :title="t('home.module.genshin')"
             accent="#8fe3b0"
-            empty-text="暂无进行中的原神活动"
+            :empty-text="t('home.empty.genshin')"
             :loading="loading"
             :overview="genshinData"
             @refresh="fetchOverviewData"
@@ -113,9 +113,9 @@
 
           <HomeSraActivityOverview
             v-else-if="moduleKey === 'zenless'"
-            title="绝区零活动信息"
+            :title="t('home.module.zenless')"
             accent="#ffd24a"
-            empty-text="暂无进行中的绝区零活动"
+            :empty-text="t('home.empty.zenless')"
             :loading="loading"
             :overview="zenlessZoneZeroData"
             @refresh="fetchOverviewData"
@@ -123,9 +123,9 @@
 
           <HomeSraActivityOverview
             v-else-if="moduleKey === 'wutheringwaves'"
-            title="鸣潮活动信息"
+            :title="t('home.module.wutheringwaves')"
             accent="#7aa2ff"
-            empty-text="暂无进行中的鸣潮活动"
+            :empty-text="t('home.empty.wutheringwaves')"
             :loading="loading"
             :overview="wutheringWavesData"
             @refresh="fetchOverviewData"
@@ -133,9 +133,9 @@
 
           <HomeSraActivityOverview
             v-else-if="moduleKey === 'nte'"
-            title="异环活动信息"
+            :title="t('home.module.nte')"
             accent="#c9a7ff"
-            empty-text="暂无进行中的异环活动"
+            :empty-text="t('home.empty.nte')"
             :loading="loading"
             :overview="nevernessToEvernessData"
             @refresh="fetchOverviewData"
@@ -156,6 +156,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, watch } from 'vue'
 import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
@@ -211,6 +212,7 @@ const {
 const {
   loading,
   error,
+  hasSnapshot,
   activityData,
   resourceData,
   proxyData,
@@ -225,18 +227,20 @@ const {
   fetchOverviewData,
 } = useHomeOverview()
 
+const { t } = useI18n()
+
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) {
-    return '早上好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.morning')
   } else if (hour >= 11 && hour < 14) {
-    return '中午好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.noon')
   } else if (hour >= 14 && hour < 18) {
-    return '下午好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.afternoon')
   } else if (hour >= 18 && hour < 23) {
-    return '晚上好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.evening')
   } else {
-    return '夜深了，欢迎使用 AUTO-MAS'
+    return t('home.greeting.night')
   }
 })
 
@@ -250,7 +254,10 @@ onMounted(async () => {
   await loadHomeLayout()
 
   if (isBootstrapping.value) {
-    loading.value = true
+    // 已有快照时直接展示内容，刷新不再用骨架遮挡；无快照时显示加载态
+    if (!hasSnapshot.value) {
+      loading.value = true
+    }
     noticeLoading.value = true
 
     const stopWatching = watch(isBootstrapping, bootstrapping => {

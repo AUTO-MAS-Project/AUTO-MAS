@@ -3,12 +3,12 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="../../../assets/ok-nte.ico" alt="OK-NTE" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -19,13 +19,13 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
   <div class="script-edit-content">
-    <a-card title="OK-NTE 脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="t('edit.okNteScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">OK-NTE</a-tag>
       </template>
@@ -33,22 +33,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    脚本名称
-                    <a-tooltip title="用于区分不同的 OK-NTE 脚本实例">
+                    {{ t('edit.scriptName') }}
+                    <a-tooltip :title="t('edit.tellsOkNteScript')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -59,8 +59,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    OK-NTE 路径
-                    <a-tooltip title="选择 ok-nte.exe 所在目录">
+                    {{ t('edit.okNtePath') }}
+                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk3')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -68,7 +68,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="请选择 ok-nte.exe 所在目录"
+                    :placeholder="t('edit.pickDirectoryHoldingOk')"
                     size="large"
                     class="path-input"
                     readonly
@@ -77,7 +77,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -87,17 +87,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>游戏配置</h3>
+            <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭"
-                  >
+                  <a-tooltip :title="t('edit.masterSwitchGameManagement')">
                     <span class="form-label">
-                      启用游戏配置
+                      {{ t('edit.enableGameConfiguration') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -108,17 +106,17 @@
                   class="modern-input"
                   @change="handleGameEnabledChange"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="任务开始前是否由 MAS 启动游戏并等待">
+                  <a-tooltip :title="t('edit.whetherMasLaunchesGame')">
                     <span class="form-label">
-                      任务前启动游戏
+                      {{ t('edit.launchGameBeforeTask') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -130,19 +128,17 @@
                   :disabled="!oknteConfig.Game.Enabled"
                   @change="handleChange('Game', 'LaunchBeforeTask', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭"
-                  >
+                  <a-tooltip :title="t('edit.whetherMasClosesGame')">
                     <span class="form-label">
-                      任务后关闭游戏
+                      {{ t('edit.closeGameAfterTask') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -154,8 +150,8 @@
                   :disabled="!oknteConfig.Game.Enabled"
                   @change="handleChange('Game', 'CloseOnFinish', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -166,7 +162,7 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    游戏根目录
+                    {{ t('edit.gameRootDirectory') }}
                     <span class="label-hint"
                       >选择包含 <strong>Neverness To Everness</strong> 的任意目录，自动定位
                       HTGame.exe</span
@@ -176,7 +172,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="oknteConfig.Game.Path"
-                    placeholder="请选择游戏根目录（自动匹配到 HTGame.exe）"
+                    :placeholder="t('edit.pickGameRootDirectory')"
                     size="large"
                     class="path-input"
                     readonly
@@ -191,7 +187,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -200,15 +196,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动参数
-                    <a-tooltip title="游戏启动参数（非 OK-NTE 启动参数）">
+                    {{ t('edit.launchArguments') }}
+                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="oknteConfig.Game.Arguments"
-                  placeholder="请输入游戏启动参数"
+                  :placeholder="t('edit.enterGameLaunchArguments')"
                   size="large"
                   class="modern-input"
                   :disabled="!oknteConfig.Game.Enabled"
@@ -220,8 +216,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动等待时间
-                    <a-tooltip title="拉起游戏后的等待时间（秒）">
+                    {{ t('edit.startupWait') }}
+                    <a-tooltip :title="t('edit.howLongWaitAfter')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -242,15 +238,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    单日代理次数上限
-                    <a-tooltip title="阈值为 0 时表示不限制">
+                    {{ t('edit.runsPerDay') }}
+                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -269,8 +265,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    重试次数限制
-                    <a-tooltip title="超过该次数仍失败则终止">
+                    {{ t('edit.retryLimit2') }}
+                    <a-tooltip :title="t('edit.giveUpAfterThis')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -289,8 +285,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    代理超时限制（分钟）
-                    <a-tooltip title="日志长期无变化将判定超时">
+                    {{ t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -313,6 +309,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
@@ -329,6 +326,8 @@ import {
   type OkNteConfig_Script,
 } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('OK-NTE脚本编辑')
 const route = useRoute()
@@ -377,9 +376,9 @@ const oknteConfig = reactive<OkNteFormConfig>({
     LogTimeEnd: 23,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
     SuccessLog: '',
+    SuccessLogMode: 'Split',
     ErrorLog: '',
-    PushLogEnabled: false,
-    PushLogPatterns: '',
+    ErrorLogMode: 'Split',
   },
   Game: {
     Enabled: false,
@@ -397,8 +396,8 @@ const oknteConfig = reactive<OkNteFormConfig>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请选择 OK-NTE 路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('edit.pickOkNtePath'), trigger: 'blur' }],
 }
 
 // 异环游戏路径预设锚点与相对路径
@@ -406,7 +405,7 @@ const NTE_GAME_ANCHOR = 'Neverness To Everness'
 const NTE_EXE_RELATIVE = 'Client/WindowsNoEditor/HT/Binaries/Win64/HTGame.exe'
 
 const showPathRejectModal = (title: string, content: string) => {
-  Modal.error({ title, content, okText: '我知道了' })
+  Modal.error({ title, content, okText: t('edit.gotIt') })
 }
 
 const handleCancel = () => router.push('/scripts')
@@ -446,7 +445,7 @@ const buildAutoPaths = (rootPath: string) => {
 
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
-    message.warning('请先选择脚本根目录')
+    message.warning(t('edit.pickScriptRootDirectory'))
     return
   }
   const {
@@ -482,7 +481,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
       },
     })
     if (success) {
-      message.success('OK-NTE 路径已自动匹配')
+      message.success(t('edit.okNtePathMatched'))
     }
   } finally {
     isSaving.value = false
@@ -495,12 +494,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'OkNte') {
-      message.error('脚本类型不是 OK-NTE')
+      message.error(t('edit.scriptTypeNotOk'))
       handleCancel()
       return
     }
@@ -511,7 +510,7 @@ const loadScript = async () => {
     Object.assign(oknteConfig.Game, config.Game || {})
     Object.assign(oknteConfig.Run, config.Run || {})
   } catch {
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -571,7 +570,7 @@ const selectGameRootPath = async () => {
         Type: 'Client',
       },
     })
-    message.success('已自动匹配游戏路径至 HTGame.exe')
+    message.success(t('edit.gamePathMatchedHtgame'))
   } finally {
     isSaving.value = false
   }
