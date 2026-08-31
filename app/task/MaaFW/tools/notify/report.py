@@ -32,7 +32,8 @@ async def push_notification(
         message: 各模式所需字段不同：
             - "代理结果": start_time, end_time, completed_count,
               uncompleted_count, result
-            - "统计信息": start_time, end_time, user_info, user_result
+            - "统计信息": start_time, end_time, user_info, user_result,
+              task_details
         task_info: 任务信息，代理结果模式用于签到汇总的渠道级重试。
         user_config: 用户配置，统计信息模式用于发送用户独立通知。
     """
@@ -95,17 +96,20 @@ async def _push_statistics(
     用户自己配置的邮箱 / Server 酱。``MaaFWUserConfig`` 的 Notify 组一直都在、
     编辑页也能配，但在此之前没有任何代码往它发。
 
-    模板用引擎无关的 ``general_statistics.html``——与「代理结果」用
-    ``general_result.html`` 的理由相同：MaaFW 是通用外部运行，没有专项脚本
-    那样的固定任务集。
+    模板 ``MaaFW_statistics.html`` 与 M9A 的同形：多一个「任务详情」块。
+    任务集由项目 interface.json 决定、每个项目都不同，所以详情文本由
+    ``runner_task`` 按各次尝试的结构化结果拼好后传进来。
     """
 
+    task_details = message.get("task_details", "")
+    detail_str = f"\n{task_details}\n" if task_details else ""
     message_text = (
         f"开始时间: {message['start_time']}\n"
         f"结束时间: {message['end_time']}\n"
-        f"MaaFW 运行结果: {message['user_result']}\n"
+        f"MaaFW 运行结果: {message['user_result']}"
+        f"{detail_str}\n"
     )
-    template = Config.notify_env.get_template("general_statistics.html")
+    template = Config.notify_env.get_template("MaaFW_statistics.html")
 
     return await dispatch(
         NotifyPayload(

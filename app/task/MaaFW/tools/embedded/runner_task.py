@@ -266,6 +266,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_plan: MaaFWRunPlan | None = None
         self.cur_user_log: LogRecord | None = None
         self.cur_user_log_started_at: datetime | None = None
+        # 每次尝试的结构化结果，供用户级统计的「任务详情」用。MaaFW 不像
+        # M9A 那样只能正则解析日志文本——这里本来就有 completedTasks 与
+        # 失败摘要，直接记下来即可。
+        self._attempt_reports: list[dict[str, Any]] = []
         self.check_result = "-"
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.run_complete = False
@@ -409,6 +413,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 except Exception as exc:
                     message = f"MaaFW 运行异常: {exc}"
                     self._append_log(message)
+                    self._record_attempt(index + 1, [], message)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     await Publisher.send(
@@ -436,11 +441,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(
                         "MaaFW 任务完成: " + ", ".join(completed_task_labels)
                     )
+                    self._record_attempt(index + 1, completed_task_labels, None)
                 else:
                     message = _failed_task_user_summary(result, self.run_plan)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     self._append_log(message)
+                    self._record_attempt(
+                        index + 1,
+                        _format_completed_task_labels(
+                            self.run_plan, result.completedTasks
+                        ),
+                        message,
+                    )
                     await self._refresh_run_plan_after_period_update()
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
@@ -1698,6 +1711,62 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             statistic_paths.append(log_path.with_suffix(".json"))
         return statistic_paths
 
+    def _record_attempt(
+        self, attempt: int, completed_labels: list[str], failure: str | None
+    ) -> None:
+        """记下本次尝试的结果，供统计通知的「任务详情」用。"""
+
+        self._attempt_reports.append(
+            {
+                "attempt": attempt,
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "completed": list(completed_labels),
+                "failure": failure,
+            }
+        )
+
+    def _build_task_details(self) -> str:
+        """汇总各次尝试的任务详情。
+
+        与 M9A 专项同形（多次尝试分块列出、最终成功时并集去重），但数据来源
+        不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，MaaFW 手里本来
+        就有 ``completedTasks`` 与失败摘要，直接用结构化结果，不必反解日志。
+        """
+
+        if not self._attempt_reports:
+            return ""
+
+        def block(report: dict[str, Any]) -> str:
+            lines = []
+            if report["completed"]:
+                lines.append("已完成: " + "、".join(report["completed"]))
+            else:
+                lines.append("已完成: 无")
+            if report["failure"]:
+                lines.append("未完成: " + report["failure"])
+            return "\n".join(lines)
+
+        if len(self._attempt_reports) == 1:
+            return block(self._attempt_reports[0])
+
+        if self.run_complete:
+            # 多次尝试最终成功时，逐次罗列意义不大，合并成一份去重清单。
+            merged: list[str] = []
+            for report in self._attempt_reports:
+                for label in report["completed"]:
+                    if label not in merged:
+                        merged.append(label)
+            return "已完成: " + ("、".join(merged) if merged else "无")
+
+        blocks = []
+        for report in self._attempt_reports:
+            blocks.append(
+                f"第 {report['attempt']} 次尝试（{report['time']}）"
+                + "\n"
+                + block(report)
+            )
+        return ("\n\n").join(blocks)
+
     async def _push_user_statistics(self, statistic_paths: list[Path]) -> None:
         """按通知设置推送用户级统计信息。
 
@@ -1718,6 +1787,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 else ""
             )
             statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            statistics["task_details"] = self._build_task_details()
             statistics["user_result"] = (
                 "代理任务全部完成"
                 if self.run_complete

@@ -173,12 +173,12 @@ class StatisticsDispatchTest(unittest.TestCase):
         self._push(config, notify)
         self.assertEqual(len(notify.serverchan_calls), 1)
 
-    def test_engine_agnostic_template(self) -> None:
-        """MaaFW 是通用外部运行，用 general_statistics 而不是某个专项模板。"""
+    def test_uses_the_maafw_template_with_task_details(self) -> None:
+        """要用带「任务详情」块的模板，general_statistics 没有那个块。"""
 
         config = _FakeConfig({("Notify", "IfSendStatistic"): True})
         self._push(config, _FakeNotify())
-        self.assertEqual(config.notify_env.requested, ["general_statistics.html"])
+        self.assertEqual(config.notify_env.requested, ["MaaFW_statistics.html"])
 
 
 class StatisticsWiringTest(unittest.TestCase):
@@ -196,6 +196,14 @@ class StatisticsWiringTest(unittest.TestCase):
         )
         task.cur_user_log_started_at = None
         task.saved_paths = [Path("history/a.json")]
+        task._attempt_reports = [
+            {
+                "attempt": 1,
+                "time": "23:54:32",
+                "completed": ["打开游戏", "寮三十捐材料"],
+                "failure": None if run_complete else "日常奖励领取：最后停在 A → B",
+            }
+        ]
 
         async def noop():
             return None
@@ -253,6 +261,9 @@ class StatisticsWiringTest(unittest.TestCase):
         self.assertEqual(call["message"]["user_info"], "用户A")
         self.assertEqual(call["message"]["user_result"], "MaaFW 任务运行超时")
         self.assertIn("X", call["title"])
+        details = call["message"]["task_details"]
+        self.assertIn("已完成: 打开游戏、寮三十捐材料", details)
+        self.assertIn("未完成: 日常奖励领取：最后停在 A → B", details)
 
     def test_successful_run_reports_completion(self) -> None:
         task = self._task(run_complete=True)
@@ -275,6 +286,71 @@ class StatisticsWiringTest(unittest.TestCase):
             stack.enter_context(patch.object(runner_task.Publisher, "send", boom))
             asyncio.run(task.final_task())
         self.assertEqual(task.cur_user_item.status, "完成")
+
+
+class TaskDetailsTest(unittest.TestCase):
+    """任务详情的拼装：单次直出、多次分块、最终成功时并集去重。
+
+    数据来源与 M9A 不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，
+    MaaFW 手里本来就有 ``completedTasks`` 与失败摘要，按尝试记下来即可。
+    """
+
+    def _task(self, reports, *, run_complete=False):
+        task = object.__new__(runner_task.MaaFWPluginAutoProxyTask)
+        task._attempt_reports = reports
+        task.run_complete = run_complete
+        return task
+
+    @staticmethod
+    def _report(attempt, completed, failure=None, time="10:00:00"):
+        return {
+            "attempt": attempt,
+            "time": time,
+            "completed": completed,
+            "failure": failure,
+        }
+
+    def test_no_attempt_yields_empty(self) -> None:
+        self.assertEqual(self._task([])._build_task_details(), "")
+
+    def test_single_attempt_needs_no_attempt_header(self) -> None:
+        details = self._task(
+            [self._report(1, ["打开游戏"], "日常奖励领取：最后停在 A → B")]
+        )._build_task_details()
+        self.assertNotIn("第 1 次尝试", details)
+        self.assertEqual(
+            details, "已完成: 打开游戏\n未完成: 日常奖励领取：最后停在 A → B"
+        )
+
+    def test_nothing_completed_still_says_so(self) -> None:
+        details = self._task(
+            [self._report(1, [], "游戏未能启动（start_app 失败）")]
+        )._build_task_details()
+        self.assertIn("已完成: 无", details)
+
+    def test_repeated_failures_are_blocked_per_attempt(self) -> None:
+        details = self._task(
+            [
+                self._report(1, ["打开游戏"], "寮三十捐材料失败", time="10:00:00"),
+                self._report(2, [], "打开游戏失败", time="10:05:00"),
+            ]
+        )._build_task_details()
+        self.assertIn("第 1 次尝试（10:00:00）", details)
+        self.assertIn("第 2 次尝试（10:05:00）", details)
+        self.assertIn("寮三十捐材料失败", details)
+
+    def test_final_success_merges_and_dedupes(self) -> None:
+        """多次尝试最终成功时，逐次罗列意义不大，合并成一份去重清单。"""
+
+        details = self._task(
+            [
+                self._report(1, ["打开游戏"], "寮三十捐材料失败"),
+                self._report(2, ["打开游戏", "寮三十捐材料"]),
+            ],
+            run_complete=True,
+        )._build_task_details()
+        self.assertEqual(details, "已完成: 打开游戏、寮三十捐材料")
+        self.assertNotIn("第 1 次尝试", details)
 
 
 if __name__ == "__main__":
