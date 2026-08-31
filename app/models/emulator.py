@@ -44,7 +44,6 @@ class DeviceStatus(IntEnum):
 
 @dataclass
 class DeviceInfo:
-
     title: str
     status: DeviceStatus
     adb_address: str

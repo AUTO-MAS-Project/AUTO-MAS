@@ -9,10 +9,7 @@ import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
-import {
-  getSatelliteModuleStatuses,
-  type SatelliteModuleStatus,
-} from '@/composables/useSatelliteStatus'
+import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
@@ -82,6 +79,9 @@ interface SatelliteState {
   errorGlowSprite: THREE.Sprite | null
   status: SatelliteModuleStatus
 }
+// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
+const { statuses: satelliteStatuses, refresh: refreshSatelliteStatuses } = useSatelliteStatus()
+
 let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
 let glowTexture: THREE.CanvasTexture | null = null
@@ -150,7 +150,8 @@ function startStatusPolling() {
     return
   }
 
-  updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
+  // 周期性 HTTP 快照兜底：WS 断开期间也能拉回权威状态
+  updateInterval = setInterval(() => void refreshSatelliteStatuses(), CONFIG.statusUpdateInterval)
 }
 
 function showCardsImmediately() {
@@ -1021,7 +1022,7 @@ async function initSceneInternal(): Promise<void> {
       status: {
         queued: false,
         running: false,
-        errorVisible: false,
+        lastFailed: false,
       },
     })
   }
@@ -1138,7 +1139,7 @@ function animate(): void {
       )
 
       const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
-      if (state.status.errorVisible) {
+      if (state.status.lastFailed) {
         state.activityGlowSprite.material.opacity = 0
       } else if (state.status.running) {
         const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
@@ -1162,7 +1163,7 @@ function animate(): void {
         sat.position.z + CONFIG.errorGlowZOffset
       )
 
-      if (state.status.errorVisible) {
+      if (state.status.lastFailed) {
         const faintPulse = state.status.running
           ? 0.5 + 0.5 * Math.sin(time * 0.003)
           : 0.5 + 0.5 * Math.sin(time * 0.0016)
@@ -1229,26 +1230,25 @@ watch(isDark, () => {
   if (performanceStore.isLowPower) renderCurrentFrame()
 })
 
-async function updateSatelliteStates() {
-  try {
-    const statusByType = await getSatelliteModuleStatuses()
-    if (isUnmounted) return
+function updateSatelliteStates() {
+  if (isUnmounted) return
 
-    satelliteStates.forEach(state => {
-      state.status = statusByType.get(state.type) ?? {
-        queued: false,
-        running: false,
-        errorVisible: false,
-      }
-    })
-
-    if (performanceStore.isLowPower && !performanceStore.isBackgrounded) {
-      renderCurrentFrame()
+  const statusByType = satelliteStatuses.value
+  satelliteStates.forEach(state => {
+    state.status = statusByType.get(state.type) ?? {
+      queued: false,
+      running: false,
+      lastFailed: false,
     }
-  } catch (error) {
-    logger.error(`更新状态失败: ${String(error)}`)
+  })
+
+  if (performanceStore.isLowPower && !performanceStore.isBackgrounded) {
+    renderCurrentFrame()
   }
 }
+
+// 常驻订阅推送新状态时同步刷新展示
+watch(satelliteStatuses, () => updateSatelliteStates())
 
 watch(
   () => performanceStore.lowPerformanceMode,
@@ -1296,7 +1296,8 @@ watch(
       createGlowRenderer()
       startAnimation()
     }
-    void updateSatelliteStates()
+    updateSatelliteStates()
+    void refreshSatelliteStatuses()
     startStatusPolling()
   }
 )
@@ -1317,7 +1318,8 @@ onMounted(async () => {
   }
   window.addEventListener('resize', handleResize)
 
-  void updateSatelliteStates()
+  updateSatelliteStates()
+  void refreshSatelliteStatuses()
   startStatusPolling()
 
   // 检查更新状态

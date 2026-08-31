@@ -48,9 +48,9 @@ async def push_notification(
             f"结束时间: {message['end_time']}\n"
             f"执行结果: {message['user_result']}"
         )
-        message_html = Config.notify_env.get_template(
-            "general_statistics.html"
-        ).render(message)
+        message_html = Config.notify_env.get_template("general_statistics.html").render(
+            message
+        )
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if user_config.get("Notify", "IfSendMail"):
@@ -75,9 +75,7 @@ async def push_notification(
                 logger.warning("用户ServerChan密钥为空, 无法发送 OK-WW 用户通知")
 
         for webhook in user_config.Notify_CustomWebhooks.values():
-            await Notify.WebhookPush(
-                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-            )
+            await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
         return
 
     if mode != "代理结果":
@@ -86,10 +84,7 @@ async def push_notification(
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
     if not message.get("game_sign_summary", False) and (
         result_time_setting != "任何时刻"
-        and (
-            result_time_setting != "仅失败时"
-            or message["uncompleted_count"] == 0
-        )
+        and (result_time_setting != "仅失败时" or message["uncompleted_count"] == 0)
     ):
         return
 
@@ -101,9 +96,7 @@ async def push_notification(
     )
     # 通知详情追加采集的推送日志（任务进程信息，与 HTML 模板的 push_log 区块一致）
     message_text = append_push_log(message_text, message.get("push_log"))
-    message_html = Config.notify_env.get_template("general_result.html").render(
-        message
-    )
+    message_html = Config.notify_env.get_template("general_result.html").render(message)
     serverchan_message = message_text.replace("\n", "\n\n")
 
     if Config.get("Notify", "IfSendMail"):
@@ -119,11 +112,7 @@ async def push_notification(
         )
 
     for webhook in Config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(
-            title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-        )
+        await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
 
     if Config.get("Notify", "IfKoishiSupport"):
-        await Notify.send_koishi(
-            f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
-        )
+        await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")

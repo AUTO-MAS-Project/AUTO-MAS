@@ -31,6 +31,19 @@ from app.models.schema import *
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
 
 
+@router.get(
+    "/download/status",
+    tags=["Get"],
+    summary="获取更新下载初始快照",
+    response_model=UpdateDownloadSnapshot,
+    status_code=200,
+)
+async def get_update_download_status() -> UpdateDownloadSnapshot:
+    """返回当前下载权威状态；WS 只承载后续进度与终态事件。"""
+
+    return Updater.get_download_snapshot()
+
+
 @router.post(
     "/check",
     tags=["Get"],
@@ -66,13 +79,11 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     status_code=200,
 )
 async def download_update(
-    target_version: str | None = Query(default=None, alias="version")
+    target_version: str | None = Query(default=None, alias="version"),
 ) -> OutBase:
 
     try:
-        if target_version:
-            Updater.remote_version = target_version
-        if not await Updater.start_download():
+        if not await Updater.start_download(target_version=target_version):
             return OutBase(
                 code=409,
                 status="error",
@@ -96,7 +107,9 @@ async def cancel_update_download() -> OutBase:
 
     try:
         if not await Updater.cancel_download():
-            return OutBase(code=409, status="error", message="当前没有正在进行中的下载任务")
+            return OutBase(
+                code=409, status="error", message="当前没有正在进行中的下载任务"
+            )
     except Exception as e:
         return OutBase(
             code=500,

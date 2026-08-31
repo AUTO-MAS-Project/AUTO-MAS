@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 
@@ -292,9 +293,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
         .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
         .map(({ p, i }) => ruleDisplayName(p, i))
       if (dropped.length > 0) {
-        message.warning(
-          `${dropped.join('、')}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则`
-        )
+        message.warning(t('edit.p0MissingRequiredField', { p0: dropped.join('、') }))
       }
     }
     emitJson(json)

@@ -118,17 +118,13 @@ def discover_sra_managed_options(
         predicate = lambda key: key not in {"enabled", "redeemCodes"}
     else:
         if module_key == "DivergentUniverse":
-            predicate = (
-                lambda key: (
-                    key == "pointRewards.enabled"
-                    or key.startswith("divergentUniverse.")
-                )
+            predicate = lambda key: (
+                (key == "pointRewards.enabled" or key.startswith("divergentUniverse."))
                 and key != "divergentUniverse.enabled"
             )
         else:
-            predicate = (
-                lambda key: key.startswith("currencyWars.")
-                and key != "currencyWars.enabled"
+            predicate = lambda key: (
+                key.startswith("currencyWars.") and key != "currencyWars.enabled"
             )
     section = payload.get(section_name)
     if not isinstance(section, dict):

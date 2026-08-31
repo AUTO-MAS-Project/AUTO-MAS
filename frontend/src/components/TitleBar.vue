@@ -11,7 +11,7 @@
           {{ version }}
           <span v-if="isBootstrapping" class="startup-status">
             <LoadingOutlined />
-            后端启动中
+            {{ t('comp.backendStarting') }}
           </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
@@ -28,7 +28,7 @@
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
-            检测到后端更新，点击以更新后端
+            {{ t('comp.backendUpdateAvailableClick') }}
           </span>
         </span>
       </div>
@@ -40,7 +40,11 @@
     <!-- 右侧：窗口控制按钮 -->
     <div class="title-bar-right">
       <div class="window-controls">
-        <button class="control-button minimize-button" title="最小化" @click="minimizeWindow">
+        <button
+          class="control-button minimize-button"
+          :title="t('comp.minimize')"
+          @click="minimizeWindow"
+        >
           <MinusOutlined />
         </button>
         <button
@@ -53,7 +57,7 @@
         <button
           v-if="!hideCloseButton"
           class="control-button close-button"
-          title="关闭"
+          :title="t('comp.close')"
           @click="closeWindow"
         >
           <CloseOutlined />
@@ -64,7 +68,8 @@
 </template>
 
 <script setup lang="ts">
-import { useAppClosing } from '@/composables/useAppClosing'
+import { useI18n } from 'vue-i18n'
+import { closeApp } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
@@ -81,6 +86,8 @@ import {
 import { Modal } from 'ant-design-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
@@ -127,7 +134,6 @@ const hasRunningTasks = (): boolean => {
 }
 
 const { isDark } = useTheme()
-const { showClosingOverlay } = useAppClosing()
 const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
@@ -143,10 +149,10 @@ const handleAppUpdateClick = () => {
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
   Modal.confirm({
-    title: '重启后端以更新',
-    content: '即将更新后端，这需要重启后端程序，您当前正在运行的任务将会被中断。确认继续？',
-    okText: '确认',
-    cancelText: '取消',
+    title: t('comp.restartBackendUpdate'),
+    content: t('comp.backendAboutUpdateWhich'),
+    okText: t('comp.confirm'),
+    cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
       try {
@@ -205,17 +211,11 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作
+// 执行实际的关闭操作：交给生命周期协调器执行"退出并关闭后端"流程
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-
-    // 显示关闭遮罩
-    showClosingOverlay()
-
-    // 直接关闭窗口，后台清理由主进程处理
-    logger.info('正在退出应用...')
-    await window.electronAPI?.appQuit()
+    await closeApp()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
@@ -226,10 +226,10 @@ const closeWindow = async () => {
   // 检查是否有运行中的队列任务
   if (hasRunningTasks()) {
     Modal.confirm({
-      title: '确认关闭',
-      content: '队列正在运行中，确认关闭AUTO-MAS吗？',
-      okText: '确认关闭',
-      cancelText: '取消',
+      title: t('comp.confirmExit'),
+      content: t('comp.queueStillRunningClose'),
+      okText: t('comp.confirmExit'),
+      cancelText: t('comp.cancel'),
       okType: 'danger',
       centered: true,
       onOk: () => {
@@ -248,10 +248,10 @@ const handleTrayQuit = () => {
     // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
     window.electronAPI?.windowFocus?.()
     Modal.confirm({
-      title: '确认关闭',
-      content: '队列正在运行中，确认关闭AUTO-MAS吗？',
-      okText: '确认关闭',
-      cancelText: '取消',
+      title: t('comp.confirmExit'),
+      content: t('comp.queueStillRunningClose'),
+      okText: t('comp.confirmExit'),
+      cancelText: t('comp.cancel'),
       okType: 'danger',
       centered: true,
       onOk: () => {
@@ -268,10 +268,10 @@ const handleTrayRestart = () => {
   // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
   window.electronAPI?.windowFocus?.()
   Modal.confirm({
-    title: '确认重启',
-    content: '重启 AUTO-MAS 会停止当前正在运行的任务，确认重启吗？',
-    okText: '确认重启',
-    cancelText: '取消',
+    title: t('comp.confirmRestart'),
+    content: t('comp.restartingAutoMasStops'),
+    okText: t('comp.confirmRestart'),
+    cancelText: t('comp.cancel'),
     okType: 'danger',
     centered: true,
     onOk: async () => {

@@ -1,6 +1,6 @@
 <template>
   <div class="step-panel">
-    <h3>启动应用</h3>
+    <h3>{{ t('init.backend.title') }}</h3>
 
     <div class="install-section">
       <!-- 启动中 -->
@@ -11,26 +11,26 @@
 
       <!-- 后端状态显示 -->
       <div v-else-if="status === 'running'" class="backend-status">
-        <a-card title="后端服务状态" size="small">
+        <a-card :title="t('init.backend.statusCard')" size="small">
           <div class="status-grid">
             <div class="status-item">
-              <span class="label">运行状态:</span>
-              <a-tag color="success">运行中</a-tag>
+              <span class="label">{{ t('init.check.runState') }}:</span>
+              <a-tag color="success">{{ t('init.backend.running') }}</a-tag>
             </div>
             <div class="status-item">
-              <span class="label">进程 PID:</span>
+              <span class="label">{{ t('init.backend.pid') }}:</span>
               <span class="value">{{ backendPid || '-' }}</span>
             </div>
             <div class="status-item">
               <span class="label">WebSocket:</span>
               <a-tag :color="wsConnected ? 'success' : 'warning'">
-                {{ wsConnected ? '已连接' : '连接中...' }}
+                {{ wsConnected ? t('init.backend.wsConnected') : t('init.backend.wsConnecting') }}
               </a-tag>
             </div>
             <div class="status-item">
-              <span class="label">版本检查:</span>
+              <span class="label">{{ t('init.backend.versionCheck') }}:</span>
               <a-tag :color="pollingStarted ? 'success' : 'default'">
-                {{ pollingStarted ? '已启动' : '准备中...' }}
+                {{ pollingStarted ? t('init.backend.started') : t('init.msg.preparing') }}
               </a-tag>
             </div>
           </div>
@@ -41,8 +41,8 @@
       <div v-else-if="status === 'success'" class="completed-status">
         <a-result
           status="success"
-          title="后端启动成功"
-          sub-title="应用已准备就绪，即将进入主界面"
+          :title="t('init.backend.successTitle')"
+          :sub-title="t('init.backend.successSubtitle')"
         />
       </div>
 
@@ -50,16 +50,18 @@
       <div v-else-if="status === 'failed'" class="failed-status">
         <div class="failed-summary">
           <div class="failed-copy">
-            <h4 class="failed-title">后端启动失败</h4>
-            <p class="help-message rgb-text">如果需要帮助，请截图下方完整日志寻求帮助</p>
+            <h4 class="failed-title">{{ t('init.backend.failedTitle') }}</h4>
+            <p class="help-message rgb-text">{{ t('init.backend.helpMessage') }}</p>
           </div>
 
           <a-space class="failed-actions">
-            <a-button type="primary" danger class="doc-button" @click="handleOpenDocumentation"
-              >点此查看文档</a-button
-            >
-            <a-button v-if="showSkipButton" @click="emit('skip')">跳过此步骤</a-button>
-            <a-button type="primary" @click="handleRetry">重试</a-button>
+            <a-button type="primary" danger class="doc-button" @click="handleOpenDocumentation">{{
+              t('init.backend.viewDocs')
+            }}</a-button>
+            <a-button v-if="showSkipButton" @click="emit('skip')">{{
+              t('init.step.skip')
+            }}</a-button>
+            <a-button type="primary" @click="handleRetry">{{ t('init.step.retry') }}</a-button>
           </a-space>
         </div>
 
@@ -72,8 +74,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { connectAfterBackendStart } from '@/composables/useWebSocket'
+import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 const logger = window.electronAPI.getLogger('后端启动步骤')
 
@@ -95,7 +99,9 @@ const emit = defineEmits<{
 
 // ==================== 状态管理 ====================
 const status = ref<'waiting' | 'starting' | 'running' | 'success' | 'failed'>('waiting')
-const statusMessage = ref('准备启动后端服务...')
+const { t } = useI18n()
+
+const statusMessage = ref(t('init.backend.preparing'))
 const progress = ref(0)
 const progressStatus = ref<'normal' | 'exception' | 'success'>('normal')
 const errorMessage = ref('')
@@ -151,14 +157,14 @@ async function startBackend() {
 
   try {
     // 第一步：启动后端进程
-    statusMessage.value = '正在启动后端进程...'
+    statusMessage.value = t('init.backend.starting')
     progress.value = 10
 
     const result = await window.electronAPI.backendStart()
 
     if (!result.success) {
       backendLogs.value = result.logs || ''
-      throw new Error(result.error || '后端启动失败')
+      throw new Error(result.error || t('init.backend.failedTitle'))
     }
 
     // 获取后端状态
@@ -170,10 +176,15 @@ async function startBackend() {
     progress.value = 30
 
     // 第二步：建立WebSocket连接
-    statusMessage.value = '正在建立WebSocket连接...'
+    statusMessage.value = t('init.backend.connectingWs')
     progress.value = 40
 
-    const connected = await connectAfterBackendStart()
+    // 连接建立前注册常驻订阅：向导阶段停留超过启动队列延迟时，
+    // task.created 与生命周期消息不会因订阅晚于连接而丢失
+    bootstrapRealtimeResidents()
+    initializeAppLifecycle()
+
+    const connected = await connectWithRetry()
 
     if (!connected) {
       logger.warn('WebSocket连接建立失败')
@@ -187,7 +198,7 @@ async function startBackend() {
     progress.value = 60
 
     // 第三步：启动版本检查定时任务
-    statusMessage.value = '正在启动版本检查任务...'
+    statusMessage.value = t('init.backend.startingVersionCheck')
     progress.value = 70
 
     await startPolling()
@@ -196,7 +207,7 @@ async function startBackend() {
     progress.value = 85
 
     // 第四步：等待后端完全就绪
-    statusMessage.value = '等待后端服务完全就绪...'
+    statusMessage.value = t('init.backend.waitingReady')
 
     // 等待额外的时间确保后端完全启动
     await new Promise(resolve => setTimeout(resolve, 2000))
@@ -204,13 +215,13 @@ async function startBackend() {
     progress.value = 95
 
     // 第五步：验证后端连接
-    statusMessage.value = '验证后端连接...'
+    statusMessage.value = t('init.backend.verifying')
 
     try {
       // 尝试获取后端状态来验证连接
       const finalStatus = await window.electronAPI.backendStatus()
       if (!finalStatus.isRunning) {
-        throw new Error('后端服务未在运行状态')
+        throw new Error(t('init.backend.notRunning'))
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
@@ -220,7 +231,7 @@ async function startBackend() {
     progress.value = 100
 
     // 完成
-    statusMessage.value = '后端服务已完全就绪'
+    statusMessage.value = t('init.backend.ready')
     status.value = 'success'
     emit('update:status', 'success')
     progressStatus.value = 'success'

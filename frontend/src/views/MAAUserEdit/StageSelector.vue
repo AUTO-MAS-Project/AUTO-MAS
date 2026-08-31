@@ -12,7 +12,7 @@
         <a-input
           ref="inputRef"
           v-model:value="customStageName"
-          placeholder="输入自定义关卡，如: 11-8"
+          :placeholder="t('edit.enterCustomStageE')"
           style="flex: 1"
           size="small"
           @keyup.enter="addCustomStage"
@@ -21,7 +21,7 @@
           <template #icon>
             <PlusOutlined />
           </template>
-          添加关卡
+          {{ t('edit.addStage') }}
         </a-button>
       </a-space>
     </template>
@@ -40,7 +40,7 @@
           size="small"
           style="margin-left: 8px"
         >
-          自定义
+          {{ t('edit.custom') }}
         </a-tag>
       </template>
     </a-select-option>
@@ -48,9 +48,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, defineComponent, type PropType, type VNode } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+
+const { t } = useI18n()
 
 // VNodes 组件定义
 const VNodes = defineComponent({
@@ -96,7 +99,7 @@ const validateStageName = (stageName: string): boolean => {
 // 添加自定义关卡
 const addCustomStage = () => {
   if (!validateStageName(customStageName.value)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -105,7 +108,7 @@ const addCustomStage = () => {
   // 检查是否已存在
   const exists = props.options.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(`关卡 "${trimmedName}" 已存在`)
+    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
     return
   }
 

@@ -5,15 +5,18 @@
         <div class="startup-spinner">
           <LoadingOutlined />
         </div>
-        <div class="startup-text">正在启动后端服务...</div>
-        <div class="startup-subtitle">请稍候，马上进入主界面</div>
+        <div class="startup-text">{{ t('comp.startingBackend') }}</div>
+        <div class="startup-subtitle">{{ t('comp.pleaseWaitMainWindow') }}</div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { LoadingOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 defineProps<{
   visible: boolean

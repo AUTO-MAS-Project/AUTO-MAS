@@ -8,6 +8,7 @@
 - `tests/core/`：核心流程与生命周期
 - `tests/models/`：配置模型与数据约束
 - `tests/services/`：服务层行为
+- `tests/platform/`：平台识别、能力声明与不支持能力错误
 - `tests/task/`：任务调度和专项适配的最小回归测试
 - `tests/tools/`：通用工具和外部平台交互
 - `tests/` 根目录：跨模块、启动环境或无法归入单一边界的兼容测试

@@ -57,7 +57,9 @@ async def push_notification(
                 "网页", title, message_html, Config.get("Notify", "ToAddress")
             )
 
-        if Config.get("Notify", "IfServerChan") and Config.get("Notify", "ServerChanKey"):
+        if Config.get("Notify", "IfServerChan") and Config.get(
+            "Notify", "ServerChanKey"
+        ):
             await Notify.ServerChanPush(
                 title,
                 f"{serverchan_message}\n\nAUTO-MAS 敬上",
@@ -87,7 +89,9 @@ async def push_notification(
                     "网页", title, message_html, Config.get("Notify", "ToAddress")
                 )
 
-            if Config.get("Notify", "IfServerChan") and Config.get("Notify", "ServerChanKey"):
+            if Config.get("Notify", "IfServerChan") and Config.get(
+                "Notify", "ServerChanKey"
+            ):
                 await Notify.ServerChanPush(
                     title,
                     f"{serverchan_message}\n\nAUTO-MAS 敬上",
@@ -126,7 +130,9 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.warning("用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知")
+                    logger.warning(
+                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
+                    )
 
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(

@@ -23,10 +23,15 @@
 import re
 import json
 import shlex
-import win32gui
 import asyncio
-import keyboard
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import win32gui
+    import keyboard
 from datetime import datetime, timedelta
+import time
 from pathlib import Path
 from typing import Dict, Any
 
@@ -89,10 +94,8 @@ class GeneralDeviceManager(DeviceBase):
         await self.process_managers[idx].kill()
 
         # 等待进程完全停止
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             if not await self.process_managers[idx].is_running():
                 return DeviceStatus.OFFLINE
 
@@ -128,16 +131,16 @@ class GeneralDeviceManager(DeviceBase):
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
 
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
+
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
-
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             # 检查窗口可见性是否符合预期
             if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)

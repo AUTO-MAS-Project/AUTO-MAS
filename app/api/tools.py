@@ -63,9 +63,7 @@ def _track_game_sign_notification(task: asyncio.Task) -> None:
         logger.warning(f"后台游戏签到通知发送失败: {exc}")
         return
     if failed_channels:
-        logger.warning(
-            f"后台游戏签到通知部分失败: {'、'.join(failed_channels)}"
-        )
+        logger.warning(f"后台游戏签到通知部分失败: {'、'.join(failed_channels)}")
 
 
 async def _dispatch_game_sign_notification(results: list[dict]) -> list[str] | None:

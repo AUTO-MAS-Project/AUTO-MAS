@@ -30,5 +30,9 @@ export type OkwwUserConfig_Notify = {
      * ServerChanKey
      */
     ServerChanKey?: (string | null);
+    /**
+     * 任务报告中是否推送该用户的节点详情（log_box 采集的关键节点）
+     */
+    PushLogEnabled?: (boolean | null);
 };
 

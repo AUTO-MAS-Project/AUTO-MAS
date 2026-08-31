@@ -1,3 +1,4 @@
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import type { HomeLayoutConfig, HomeModuleDescriptor, HomeModuleKey } from '@/types/home'
@@ -18,21 +19,6 @@ export const defaultHomeModuleOrder: HomeModuleKey[] = [
   'reverse1999',
   'arknights',
 ]
-
-export const moduleTitleMap: Record<HomeModuleKey, string> = {
-  command: '快速开始',
-  quick: '常用入口',
-  satellite: '卫星环绕',
-  proxy: '代理状态',
-  endfield: '终末地活动信息',
-  starrail: '崩坏：星穹铁道活动信息',
-  genshin: '原神活动信息',
-  zenless: '绝区零活动信息',
-  wutheringwaves: '鸣潮活动信息',
-  nte: '异环活动信息',
-  reverse1999: '重返未来：1999活动信息',
-  arknights: '明日方舟活动信息',
-}
 
 const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
   return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
@@ -87,6 +73,7 @@ export const useHomeLayout = () => {
     const snapshot: HomeLayoutConfig = {
       moduleOrder: [...layout.moduleOrder],
       hiddenModules: [...layout.hiddenModules],
+      hideScrollHint: layout.hideScrollHint === true,
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
     saveQueue = saveTask.catch(error => {
@@ -155,10 +142,12 @@ export const useHomeLayout = () => {
     return queueLayoutSave(currentLayout())
   }
 
+  const { t } = useI18n()
+
   const homeModules = computed<HomeModuleDescriptor[]>(() =>
     homeModuleOrder.value.map(key => ({
       key,
-      title: moduleTitleMap[key],
+      title: t(`home.module.${key}`),
       visible: isHomeModuleShown(key),
     }))
   )

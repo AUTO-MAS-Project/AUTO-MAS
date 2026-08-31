@@ -177,13 +177,14 @@ def parse_taygedo_credential(raw: str) -> dict[str, Any]:
 
     if isinstance(credential.get("roleIds"), str):
         credential["roleIds"] = [
-            part.strip()
-            for part in credential["roleIds"].split(",")
-            if part.strip()
+            part.strip() for part in credential["roleIds"].split(",") if part.strip()
         ]
 
     # 丢弃不在已知游戏集合中的旧元数据，避免刷新凭据时复用未知角色名。
-    if credential.get("gameId") not in (None, "") and credential["gameId"] not in TAYGEDO_GAME_IDS:
+    if (
+        credential.get("gameId") not in (None, "")
+        and credential["gameId"] not in TAYGEDO_GAME_IDS
+    ):
         credential.pop("gameId", None)
         credential.pop("roleName", None)
         credential.pop("roleIds", None)
@@ -239,9 +240,7 @@ async def login_taygedo_with_password(
         # 新登录成功后会覆盖旧凭据，旧的损坏 JSON 不应阻断重新登录。
         credential = {}
     login_device_id = str(
-        device_id
-        or credential.get("deviceId")
-        or _stable_device_id(phone_value)
+        device_id or credential.get("deviceId") or _stable_device_id(phone_value)
     ).strip()
 
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
@@ -309,7 +308,12 @@ async def _laohu_password_login(
     if isinstance(result, dict):
         token = str(result.get("token") or "").strip()
         user_id = str(result.get("userId") or "").strip()
-    if not response.is_success or not _is_code(payload.get("code"), 0) or not token or not user_id:
+    if (
+        not response.is_success
+        or not _is_code(payload.get("code"), 0)
+        or not token
+        or not user_id
+    ):
         raise _login_api_error("塔吉多账号密码登录", response, payload)
     return token, user_id
 
@@ -344,7 +348,11 @@ async def _user_center_login(
 
     response, payload = attempt
     data = payload.get("data")
-    if not response.is_success or not _is_code(payload.get("code"), 0) or not isinstance(data, dict):
+    if (
+        not response.is_success
+        or not _is_code(payload.get("code"), 0)
+        or not isinstance(data, dict)
+    ):
         raise _login_api_error("塔吉多用户中心登录", response, payload)
     access_token = str(data.get("accessToken") or "").strip()
     refresh_token = str(data.get("refreshToken") or "").strip()
@@ -430,9 +438,9 @@ def _signed_laohu_data(data: Mapping[str, str]) -> dict[str, str]:
 def _aes_base64_encode(value: str) -> str:
     key = LAOHU_SECRET[-16:].encode("utf-8")
     cipher = AES.new(key, AES.MODE_ECB)
-    return base64.b64encode(cipher.encrypt(pad(value.encode("utf-8"), AES.block_size))).decode(
-        "ascii"
-    )
+    return base64.b64encode(
+        cipher.encrypt(pad(value.encode("utf-8"), AES.block_size))
+    ).decode("ascii")
 
 
 def _make_login_ds() -> str:
@@ -451,7 +459,9 @@ def _read_login_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
     try:
         data = response.json()
     except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{endpoint}返回了无效 JSON（HTTP {response.status_code}）") from exc
+        raise ValueError(
+            f"{endpoint}返回了无效 JSON（HTTP {response.status_code}）"
+        ) from exc
     if not isinstance(data, dict):
         raise ValueError(f"{endpoint}返回格式无效（HTTP {response.status_code}）")
     return data
@@ -471,7 +481,9 @@ def _login_api_error(
     # 不带响应正文，防止上游错误内容回显用户身份或认证数据。
     message = str(data.get("msg") or data.get("message") or "请求失败").strip()
     code = data.get("code", "unknown")
-    return ValueError(f"{endpoint}失败（HTTP {response.status_code}，code={code}）：{message}")
+    return ValueError(
+        f"{endpoint}失败（HTTP {response.status_code}，code={code}）：{message}"
+    )
 
 
 async def refresh_taygedo_credential(
@@ -606,9 +618,7 @@ async def sign_taygedo(
                 proxy=proxy,
                 roles=cached_roles,
                 lookup_complete=(
-                    bool(cached_lookup_complete)
-                    if cached_roles is not None
-                    else None
+                    bool(cached_lookup_complete) if cached_roles is not None else None
                 ),
             )
         )
@@ -764,9 +774,7 @@ async def _sign_taygedo_games(
         if lookup_complete:
             logger.info("塔吉多未绑定应用内游戏，跳过游戏签到")
             return []
-        logger.warning(
-            "塔吉多游戏角色接口未完成，应用内游戏签到跳过"
-        )
+        logger.warning("塔吉多游戏角色接口未完成，应用内游戏签到跳过")
         return [
             {
                 "account": f"{account}/应用内游戏",
@@ -824,7 +832,9 @@ async def _sign_taygedo_games(
             }
 
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
-        results = list(await asyncio.gather(*(sign_role(role, client) for role in roles)))
+        results = list(
+            await asyncio.gather(*(sign_role(role, client) for role in roles))
+        )
 
     if not lookup_complete:
         results.append(
@@ -878,7 +888,9 @@ async def _get_taygedo_game_roles_with_status(
             )
             data = _read_json(response, "塔吉多游戏角色卡")
             raw_cards = data.get("data")
-            if not _is_code(data.get("code"), 0) or not _is_game_record_cards_payload(raw_cards):
+            if not _is_code(data.get("code"), 0) or not _is_game_record_cards_payload(
+                raw_cards
+            ):
                 raise ValueError("角色卡响应格式无效")
             roles = [
                 role
@@ -911,10 +923,12 @@ async def _get_taygedo_game_roles_with_status(
                 roles = [
                     role
                     for raw_role in _extract_role_records(data.get("data"))
-                    if (role := _normalise_game_role(
-                        raw_role,
-                        expected_game_id=game_id,
-                    ))
+                    if (
+                        role := _normalise_game_role(
+                            raw_role,
+                            expected_game_id=game_id,
+                        )
+                    )
                 ]
                 return roles, True
             except Exception as exc:
@@ -957,7 +971,9 @@ def _is_game_record_cards_payload(value: Any) -> bool:
     )
 
 
-def _extract_role_records(value: Any, fallback_game_id: str = "") -> list[dict[str, Any]]:
+def _extract_role_records(
+    value: Any, fallback_game_id: str = ""
+) -> list[dict[str, Any]]:
     """兼容角色卡、roles、cards、list 和 bindRoleInfo 的返回结构。"""
 
     if isinstance(value, list):
@@ -969,7 +985,10 @@ def _extract_role_records(value: Any, fallback_game_id: str = "") -> list[dict[s
         return []
 
     game_id = str(
-        value.get("gameId") or value.get("game_id") or value.get("gameID") or fallback_game_id
+        value.get("gameId")
+        or value.get("game_id")
+        or value.get("gameID")
+        or fallback_game_id
     ).strip()
     records: list[dict[str, Any]] = []
     bind_role = value.get("bindRoleInfo")
@@ -1027,7 +1046,10 @@ def _normalise_game_role(
         return None
     game_id = str(expected_game_id or reported_game_id or fallback_game_id).strip()
     role_id = str(
-        raw_role.get("roleId") or raw_role.get("role_id") or raw_role.get("roleID") or ""
+        raw_role.get("roleId")
+        or raw_role.get("role_id")
+        or raw_role.get("roleID")
+        or ""
     ).strip()
     if game_id not in TAYGEDO_GAME_IDS or not role_id:
         return None
@@ -1096,14 +1118,25 @@ async def _get_game_sign_state(
 def _is_game_signed(state: Mapping[str, Any]) -> bool:
     """读取不同版本接口返回的“今日已签到”字段。"""
 
-    for key in ("todaySign", "todaySigned", "isSign", "isSigned", "signed", "alreadySigned"):
+    for key in (
+        "todaySign",
+        "todaySigned",
+        "isSign",
+        "isSigned",
+        "signed",
+        "alreadySigned",
+    ):
         value = state.get(key)
         if isinstance(value, bool):
             return value
         if isinstance(value, (int, float)):
             return value != 0
         if isinstance(value, str) and value.strip().lower() in {
-            "1", "true", "yes", "signed", "already",
+            "1",
+            "true",
+            "yes",
+            "signed",
+            "already",
         }:
             return True
     return False
@@ -1298,6 +1331,7 @@ async def _community_sign(
     """并发执行塔吉多应用社区和异环社区签到。"""
 
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+
         async def sign_community(community_id: str) -> tuple[str, str, str, str]:
             community_name = TAYGEDO_COMMUNITY_NAMES.get(community_id, community_id)
             try:
@@ -1317,7 +1351,12 @@ async def _community_sign(
                     return community_name, "成功", "", ""
                 if _is_already_signed(message):
                     return community_name, "已签到", "", ""
-                return community_name, "失败", message or f"HTTP {response.status_code}", ""
+                return (
+                    community_name,
+                    "失败",
+                    message or f"HTTP {response.status_code}",
+                    "",
+                )
             except Exception as exc:
                 reason = _log_taygedo_exception(
                     f"{community_name}签到异常",
@@ -1325,26 +1364,39 @@ async def _community_sign(
                 )
                 return community_name, "失败", reason, ""
 
-        return list(await asyncio.gather(*(sign_community(community_id) for community_id in TAYGEDO_COMMUNITY_IDS)))
+        return list(
+            await asyncio.gather(
+                *(
+                    sign_community(community_id)
+                    for community_id in TAYGEDO_COMMUNITY_IDS
+                )
+            )
+        )
 
 
 def _read_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
     try:
         data = response.json()
     except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{endpoint}返回了无效 JSON（HTTP {response.status_code}）") from exc
+        raise ValueError(
+            f"{endpoint}返回了无效 JSON（HTTP {response.status_code}）"
+        ) from exc
     if not isinstance(data, dict):
         raise ValueError(f"{endpoint}返回格式无效（HTTP {response.status_code}）")
     return data
 
 
-def _api_error(endpoint: str, response: httpx.Response, data: Mapping[str, Any]) -> ValueError:
+def _api_error(
+    endpoint: str, response: httpx.Response, data: Mapping[str, Any]
+) -> ValueError:
     message = str(data.get("msg") or data.get("message") or "请求失败").strip()
     return ValueError(f"{endpoint}失败（HTTP {response.status_code}）：{message}")
 
 
 def _is_already_signed(message: str) -> bool:
-    return any(marker in message for marker in ("已签到", "已经签到", "签到过", "重复签到"))
+    return any(
+        marker in message for marker in ("已签到", "已经签到", "签到过", "重复签到")
+    )
 
 
 def _format_duration(duration: Mapping[str, int | None]) -> str:

@@ -29,6 +29,10 @@
 3. 多行聚合（multiline）：由起始/结束正则划定多行窗口，再用提取表达式
    从窗口内容中提取字段并拼接，适合跨行关联日志的采集
 
+另提供成功/失败标志匹配（LogSignMatcher）：把 ``Script.SuccessLog`` /
+``Script.ErrorLog`` 按显式模式（Split 子串包含 / Regex 正则）编译为匹配器，
+供各专项适配器的日志回调判定任务成败。
+
 提取表达式语法（详见 app.utils.expression）::
 
     $(正则)              正则提取作用域
@@ -51,7 +55,11 @@ from app.utils.expression import CompiledExpression, ExpressionError, compile_ex
 PATTERN_TYPE_SPLIT = "split"
 PATTERN_TYPE_REGEX = "regex"
 PATTERN_TYPE_MULTILINE = "multiline"
-SUPPORTED_PATTERN_TYPES = (PATTERN_TYPE_SPLIT, PATTERN_TYPE_REGEX, PATTERN_TYPE_MULTILINE)
+SUPPORTED_PATTERN_TYPES = (
+    PATTERN_TYPE_SPLIT,
+    PATTERN_TYPE_REGEX,
+    PATTERN_TYPE_MULTILINE,
+)
 
 # 规则日志类型：普通 = 任何推送报告均包含；失败 = 仅在存在未完成用户的报告中包含
 LOG_TYPE_NORMAL = "普通"
@@ -64,6 +72,7 @@ def _clean_log_type(value: object) -> str:
     if value == LOG_TYPE_ERROR:
         return LOG_TYPE_ERROR
     return LOG_TYPE_NORMAL
+
 
 # 多行聚合默认最大跨行数
 _MULTILINE_DEFAULT_MAX_LINES = 50
@@ -431,7 +440,7 @@ def apply_patterns(
 
 
 def flush_patterns(
-    matchers: Optional[list[CompiledMatcher]] = None
+    matchers: Optional[list[CompiledMatcher]] = None,
 ) -> list[tuple[str, str]]:
     """对所有匹配器调用 flush，收集所有非 None 的 (日志类型, 残留结果)
 
@@ -455,6 +464,78 @@ def flush_patterns(
         if result is not None:
             flushed_all.append((matcher.log_type, result))
     return flushed_all
+
+
+# ==================== 成功/失败标志匹配 ====================
+# 标志匹配模式：Split = 「|」分隔关键字子串包含（存量语义）；Regex = 整条正则
+SIGN_MODE_SPLIT = "Split"
+SIGN_MODE_REGEX = "Regex"
+SUPPORTED_SIGN_MODES = (SIGN_MODE_SPLIT, SIGN_MODE_REGEX)
+
+
+@dataclass
+class LogSignMatcher:
+    """成功/失败标志匹配器
+
+    Split 模式保持存量语义：按「|」分隔多个关键字做子串包含，任一命中即匹配。
+    Regex 模式把整条配置按 Python 正则搜索，命中返回匹配到的文本，供任务状态
+    描述展示（如「异常日志: xxx」）。
+
+    正则非法时 pattern 为 None 而 configured 仍为 True，即「已配置但永不命中」：
+    既不会把非法正则误当作未配置放宽结束判定，也不会中断任务执行。
+    """
+
+    mode: str
+    keywords: list[str] = field(default_factory=list)
+    pattern: Optional[Pattern[str]] = None
+    # 用户是否配置了标志（配置原文非空）；与「能否命中」无关
+    configured: bool = False
+
+    @property
+    def invalid(self) -> bool:
+        """Regex 模式下正则语法非法（已配置但永不命中），供调用方告警"""
+        return self.configured and self.mode == SIGN_MODE_REGEX and self.pattern is None
+
+    def search(self, log: str) -> Optional[str]:
+        """在整段日志中查找标志
+
+        Args:
+            log: 日志全文
+
+        Returns:
+            命中的标志文本（Split 为关键字，Regex 为匹配片段）；未命中返回 None
+        """
+        if self.mode == SIGN_MODE_REGEX:
+            if self.pattern is None:
+                return None
+            found = self.pattern.search(log)
+            return found.group(0) if found else None
+        for keyword in self.keywords:
+            if keyword in log:
+                return keyword
+        return None
+
+
+def compile_log_signs(raw: object, mode: str = SIGN_MODE_SPLIT) -> LogSignMatcher:
+    """把成功/失败标志配置编译为匹配器
+
+    Args:
+        raw: 标志配置原文；Split 模式为「|」分隔关键字，Regex 模式为整条正则
+        mode: 匹配模式，取值 Split / Regex；未知值按 Split 处理（向后兼容）
+
+    Returns:
+        LogSignMatcher；配置原文为空（或 Split 模式下清洗后无关键字）时
+        configured 为 False，等价于未配置该标志
+    """
+    text = str(raw or "").strip()
+    if mode != SIGN_MODE_REGEX:
+        mode = SIGN_MODE_SPLIT
+    if not text:
+        return LogSignMatcher(mode=mode)
+    if mode == SIGN_MODE_REGEX:
+        return LogSignMatcher(mode=mode, pattern=compile_regex(text), configured=True)
+    keywords = [item for token in text.split("|") if (item := token.strip())]
+    return LogSignMatcher(mode=mode, keywords=keywords, configured=bool(keywords))
 
 
 # ==================== 调试 ====================
@@ -566,7 +647,13 @@ def debug_pattern(
             )
         if not results:
             results.append(
-                {"idx": 0, "hit": False, "extracted": "", "line": "", "error": "未匹配到任何窗口"}
+                {
+                    "idx": 0,
+                    "hit": False,
+                    "extracted": "",
+                    "line": "",
+                    "error": "未匹配到任何窗口",
+                }
             )
         return (None, is_multiline, results)
 

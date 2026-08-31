@@ -36,10 +36,16 @@ from typing import Any
 
 import cv2
 import numpy as np
-import pyautogui
-import win32api
-import win32con
-import win32gui
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    # pyautogui 在无图形会话(如无 DISPLAY 的 Linux)导入即失败，
+    # 且下方使用它的函数均为 Windows 专属路径，随 win32 一并惰性导入
+    import pyautogui
+    import win32api
+    import win32con
+    import win32gui
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
@@ -77,20 +83,25 @@ OCRItem = tuple[str, Box]
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 _LOGIN_FORM_ROI: Box = (480, 270, 1440, 810)
-# 多显示器适配
-_user32 = ctypes.windll.user32
-_user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-_user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+
+
+@lru_cache(maxsize=1)
+def _user32_dpi_api():
+    user32 = ctypes.windll.user32
+    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    return user32
 
 
 @contextmanager
 def _per_monitor_dpi():
-    previous = _user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    user32 = _user32_dpi_api()
+    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     try:
         yield
     finally:
         if previous:
-            _user32.SetThreadDpiAwarenessContext(previous)
+            user32.SetThreadDpiAwarenessContext(previous)
 
 
 @lru_cache(maxsize=1)
@@ -113,7 +124,9 @@ def _activate_window(hwnd: int) -> None:
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+        else win32con.SW_SHOW
+        if not win32gui.IsWindowVisible(hwnd)
+        else None
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
@@ -288,7 +301,12 @@ async def _open_login_form(hwnd: int) -> None:
 
         for name, confirm, message, error in (
             ("logout", "logout_confirm", "正在登出当前终末地账号", "确认登出超时"),
-            ("main_out", "main_out_confirm", "正在退出终末地主界面", "确认退出终末地主界面超时"),
+            (
+                "main_out",
+                "main_out_confirm",
+                "正在退出终末地主界面",
+                "确认退出终末地主界面超时",
+            ),
         ):
             if (match := _find_template(frame, name)) is None:
                 continue
@@ -322,12 +340,8 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
                 (0, account_list_top, _FRAME_WIDTH, _FRAME_HEIGHT),
             )
         else:
-            ocr_items = await asyncio.to_thread(
-                _read_text, frame, _LOGIN_FORM_ROI
-            )
-            recent = next(
-                (box for text, box in ocr_items if "最近" in text), None
-            )
+            ocr_items = await asyncio.to_thread(_read_text, frame, _LOGIN_FORM_ROI)
+            recent = next((box for text, box in ocr_items if "最近" in text), None)
             if recent is not None:
                 account_list_top = recent[1] + recent[3]
 
@@ -338,17 +352,12 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
                 if account_id[-4:] in text
                 and (
                     not selector_expanded
-                    or (
-                        account_list_top is not None
-                        and box[1] >= account_list_top
-                    )
+                    or (account_list_top is not None and box[1] >= account_list_top)
                 )
             ),
             None,
         )
-        login_button = next(
-            (box for text, box in ocr_items if text == "登录"), None
-        )
+        login_button = next((box for text, box in ocr_items if text == "登录"), None)
 
         if selector_expanded and target is not None:
             logger.info(f"在登录下拉框中选择账号: {masked_id}")
@@ -358,9 +367,7 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
 
         if not selector_expanded and target is not None and login_button is not None:
             logger.info(f"登录表单已选中目标账号: {masked_id}")
-            await asyncio.to_thread(
-                _click_box, hwnd, login_button, activate=False
-            )
+            await asyncio.to_thread(_click_box, hwnd, login_button, activate=False)
             logger.info("已点击终末地登录按钮")
             return
 
@@ -376,6 +383,8 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
 
 async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
     """切换到终末地客户端已保存的最近账号。"""
+    if not IS_WINDOWS:
+        raise RuntimeError("终末地账号切换仅支持 Windows 平台")
     if emulator_info is not None:
         raise RuntimeError("终末地模拟器登录暂未实现")
     if len(id) < 4:

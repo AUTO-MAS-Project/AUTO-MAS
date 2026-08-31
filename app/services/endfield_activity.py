@@ -194,10 +194,7 @@ class EndfieldActivityService:
         self._load_cache()
 
     async def get_overview(self) -> dict[str, Any]:
-        if (
-            time.monotonic() >= self._next_manifest_check
-            and self._refresh_task is None
-        ):
+        if time.monotonic() >= self._next_manifest_check and self._refresh_task is None:
             self._refresh_task = asyncio.create_task(self._refresh_if_needed())
         return self._build_overview()
 

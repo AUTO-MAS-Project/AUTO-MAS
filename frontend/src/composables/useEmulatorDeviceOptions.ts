@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service, type ComboBoxItem } from '@/api'
@@ -50,7 +51,7 @@ export const useEmulatorDeviceOptions = () => {
       if (requestId !== requestSequence) return
 
       const errorMessage = error instanceof Error ? error.message : String(error)
-      message.error(`加载模拟器实例选项失败: ${errorMessage}`)
+      message.error(t('misc.couldNotLoadEmulator', { p0: errorMessage }))
     } finally {
       if (requestId === requestSequence) {
         emulatorDeviceLoading.value = false

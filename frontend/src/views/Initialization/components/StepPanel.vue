@@ -18,21 +18,25 @@
           v-if="checkInfo && (checkInfo.exeExists !== undefined || checkInfo.canRun !== undefined)"
           class="info-section"
         >
-          <div class="info-title">环境检查</div>
+          <div class="info-title">{{ t('init.check.envTitle') }}</div>
           <div class="info-items">
             <a-tag
               v-if="checkInfo.exeExists !== undefined"
               :color="checkInfo.exeExists ? 'green' : 'orange'"
             >
-              可执行文件: {{ checkInfo.exeExists ? '存在' : '不存在' }}
+              {{ t('init.check.executable') }}:
+              {{ checkInfo.exeExists ? t('init.value.exists') : t('init.value.notExists') }}
             </a-tag>
             <a-tag
               v-if="checkInfo.canRun !== undefined"
               :color="checkInfo.canRun ? 'green' : 'orange'"
             >
-              运行状态: {{ checkInfo.canRun ? '正常' : '异常' }}
+              {{ t('init.check.runState') }}:
+              {{ checkInfo.canRun ? t('init.value.normal') : t('init.value.abnormal') }}
             </a-tag>
-            <a-tag v-if="checkInfo.version" color="blue"> 版本: {{ checkInfo.version }} </a-tag>
+            <a-tag v-if="checkInfo.version" color="blue">
+              {{ t('init.check.version') }}: {{ checkInfo.version }}
+            </a-tag>
           </div>
         </div>
 
@@ -41,28 +45,31 @@
           v-if="checkInfo && (checkInfo.exists !== undefined || checkInfo.isGitRepo !== undefined)"
           class="info-section"
         >
-          <div class="info-title">仓库检查</div>
+          <div class="info-title">{{ t('init.check.repoTitle') }}</div>
           <div class="info-items">
             <a-tag
               v-if="checkInfo.exists !== undefined"
               :color="checkInfo.exists ? 'green' : 'orange'"
             >
-              本地仓库: {{ checkInfo.exists ? '存在' : '不存在' }}
+              {{ t('init.check.localRepo') }}:
+              {{ checkInfo.exists ? t('init.value.exists') : t('init.value.notExists') }}
             </a-tag>
             <a-tag
               v-if="checkInfo.isGitRepo !== undefined"
               :color="checkInfo.isGitRepo ? 'green' : 'orange'"
             >
-              Git仓库: {{ checkInfo.isGitRepo ? '是' : '否' }}
+              {{ t('init.check.gitRepo') }}:
+              {{ checkInfo.isGitRepo ? t('init.value.yes') : t('init.value.no') }}
             </a-tag>
             <a-tag
               v-if="checkInfo.isHealthy !== undefined"
               :color="checkInfo.isHealthy ? 'green' : 'orange'"
             >
-              健康状态: {{ checkInfo.isHealthy ? '健康' : '异常' }}
+              {{ t('init.check.health') }}:
+              {{ checkInfo.isHealthy ? t('init.value.healthy') : t('init.value.abnormal') }}
             </a-tag>
             <a-tag v-if="checkInfo.currentBranch" color="blue">
-              当前分支: {{ checkInfo.currentBranch }}
+              {{ t('init.check.branch') }}: {{ checkInfo.currentBranch }}
             </a-tag>
           </div>
         </div>
@@ -75,65 +82,77 @@
           "
           class="info-section"
         >
-          <div class="info-title">依赖检查</div>
+          <div class="info-title">{{ t('init.check.depTitle') }}</div>
           <div class="info-items">
             <a-tag
               v-if="checkInfo.requirementsExists !== undefined"
               :color="checkInfo.requirementsExists ? 'green' : 'orange'"
             >
-              requirements.txt: {{ checkInfo.requirementsExists ? '存在' : '不存在' }}
+              requirements.txt:
+              {{
+                checkInfo.requirementsExists ? t('init.value.exists') : t('init.value.notExists')
+              }}
             </a-tag>
             <a-tag
               v-if="checkInfo.needsInstall !== undefined"
               :color="checkInfo.needsInstall ? 'orange' : 'green'"
             >
-              需要安装: {{ checkInfo.needsInstall ? '是' : '否' }}
+              {{ t('init.check.needsInstall') }}:
+              {{ checkInfo.needsInstall ? t('init.value.yes') : t('init.value.no') }}
             </a-tag>
           </div>
         </div>
 
         <!-- 镜像源信息 -->
         <div v-if="currentMirror || mirrorProgress" class="info-section">
-          <div class="info-title">镜像源信息</div>
+          <div class="info-title">{{ t('init.check.mirrorTitle') }}</div>
           <div class="info-items">
-            <a-tag v-if="currentMirror" color="blue"> 当前镜像源: {{ currentMirror }} </a-tag>
+            <a-tag v-if="currentMirror" color="blue">
+              {{ t('init.check.currentMirrorTag') }}: {{ currentMirror }}
+            </a-tag>
             <a-tag v-if="mirrorProgress" color="purple">
-              尝试进度: {{ mirrorProgress.current }}/{{ mirrorProgress.total }}
+              {{ t('init.check.attemptProgress') }}: {{ mirrorProgress.current }}/{{
+                mirrorProgress.total
+              }}
             </a-tag>
           </div>
         </div>
 
         <!-- 下载信息 -->
         <div v-if="downloadSpeed || downloadSize" class="info-section">
-          <div class="info-title">下载信息</div>
+          <div class="info-title">{{ t('init.check.downloadTitle') }}</div>
           <div class="info-items">
-            <a-tag v-if="downloadSpeed" color="green"> 下载速度: {{ downloadSpeed }} </a-tag>
-            <a-tag v-if="downloadSize" color="cyan"> 已下载: {{ downloadSize }} </a-tag>
+            <a-tag v-if="downloadSpeed" color="green">
+              {{ t('init.check.downloadSpeed') }}: {{ downloadSpeed }}
+            </a-tag>
+            <a-tag v-if="downloadSize" color="cyan">
+              {{ t('init.check.downloaded') }}: {{ downloadSize }}
+            </a-tag>
           </div>
         </div>
 
         <!-- 安装信息 -->
         <div v-if="installMessage" class="info-section">
-          <div class="info-title">安装进度</div>
+          <div class="info-title">{{ t('init.check.installTitle') }}</div>
           <div class="info-items">
             <a-tag color="blue">
               {{ installMessage }}
             </a-tag>
             <a-tag v-if="installProgress !== undefined" color="cyan">
-              进度: {{ installProgress }}%
+              {{ t('init.check.progress') }}: {{ installProgress }}%
             </a-tag>
           </div>
         </div>
 
         <!-- 部署信息 -->
         <div v-if="deployMessage" class="info-section">
-          <div class="info-title">部署进度</div>
+          <div class="info-title">{{ t('init.check.deployTitle') }}</div>
           <div class="info-items">
             <a-tag color="purple">
               {{ deployMessage }}
             </a-tag>
             <a-tag v-if="deployProgress !== undefined" color="magenta">
-              进度: {{ deployProgress }}%
+              {{ t('init.check.progress') }}: {{ deployProgress }}%
             </a-tag>
           </div>
         </div>
@@ -147,14 +166,18 @@
 
     <!-- 成功状态 -->
     <div v-else-if="status === 'success'" class="success-state">
-      <a-result status="success" :title="`${title}完成`" :sub-title="message" />
+      <a-result
+        status="success"
+        :title="t('init.step.succeeded', { title })"
+        :sub-title="message"
+      />
     </div>
 
     <!-- 失败状态 - 显示镜像源选择 -->
     <div v-else-if="status === 'failed' && showMirrorSelection" class="failed-state">
       <a-alert
         type="error"
-        :message="`${title}失败`"
+        :message="t('init.step.failed', { title })"
         :description="message"
         show-icon
         style="margin-bottom: 20px"
@@ -162,13 +185,13 @@
 
       <!-- 镜像源选择 -->
       <div class="mirror-selection">
-        <h4>请选择镜像源重试</h4>
+        <h4>{{ t('init.step.chooseMirrorRetry') }}</h4>
 
         <!-- 镜像源 -->
         <div v-if="mirrorMirrors.length > 0" class="mirror-section">
           <div class="step-section-header">
-            <h4>镜像源</h4>
-            <a-tag color="green">推荐使用</a-tag>
+            <h4>{{ t('init.env.mirrorSection') }}</h4>
+            <a-tag color="green">{{ t('init.env.recommendedUse') }}</a-tag>
           </div>
           <div class="mirror-grid">
             <div
@@ -181,7 +204,9 @@
               <div class="mirror-header">
                 <div class="mirror-title">
                   <h4>{{ mirror.name }}</h4>
-                  <a-tag v-if="mirror.recommended" color="gold" size="small">推荐</a-tag>
+                  <a-tag v-if="mirror.recommended" color="gold" size="small">{{
+                    t('init.env.recommended')
+                  }}</a-tag>
                 </div>
               </div>
               <div class="mirror-description">{{ mirror.description }}</div>
@@ -192,8 +217,8 @@
         <!-- 官方源 -->
         <div v-if="officialMirrors.length > 0" class="mirror-section">
           <div class="step-section-header">
-            <h4>官方源</h4>
-            <a-tag color="orange">中国大陆连通性不佳</a-tag>
+            <h4>{{ t('init.env.officialSection') }}</h4>
+            <a-tag color="orange">{{ t('init.env.officialWarning') }}</a-tag>
           </div>
           <div class="mirror-grid">
             <div
@@ -216,24 +241,28 @@
         <div class="retry-actions">
           <a-space size="large">
             <a-button v-if="showSkipButton" size="large" @click="$emit('skip')">
-              跳过此步骤
+              {{ t('init.step.skip') }}
             </a-button>
             <a-button type="primary" size="large" @click="$emit('retry')">
-              使用选中的镜像源重试
+              {{ t('init.step.retryWithMirror') }}
             </a-button>
           </a-space>
-          <div v-if="countdown > 0" class="countdown-text">{{ countdown }} 秒后自动重试</div>
+          <div v-if="countdown > 0" class="countdown-text">
+            {{ t('init.step.autoRetryIn', { seconds: countdown }) }}
+          </div>
         </div>
       </div>
     </div>
 
     <!-- 简单失败状态 -->
     <div v-else-if="status === 'failed'" class="simple-failed-state">
-      <a-result status="error" :title="`${title}失败`" :sub-title="message">
+      <a-result status="error" :title="t('init.step.failed', { title })" :sub-title="message">
         <template #extra>
           <a-space>
-            <a-button v-if="showSkipButton" @click="$emit('skip')">跳过此步骤</a-button>
-            <a-button type="primary" @click="$emit('retry')">重试</a-button>
+            <a-button v-if="showSkipButton" @click="$emit('skip')">{{
+              t('init.step.skip')
+            }}</a-button>
+            <a-button type="primary" @click="$emit('retry')">{{ t('init.step.retry') }}</a-button>
           </a-space>
         </template>
       </a-result>
@@ -242,6 +271,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import type { MirrorConfig } from '@/types/mirror'
 
@@ -289,6 +319,8 @@ interface Props {
   checkInfo?: CheckInfo
   mirrorProgress?: MirrorProgress
 }
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<Props>(), {
   progress: 0,

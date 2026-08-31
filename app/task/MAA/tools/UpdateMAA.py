@@ -24,7 +24,6 @@ from pathlib import Path
 
 from app.services import System
 from app.utils import ProcessRunner, get_logger
-from app.utils.constants import MAA_TASKS
 from app.utils.io import read_file, write_file
 
 logger = get_logger("MAA 更新工具")

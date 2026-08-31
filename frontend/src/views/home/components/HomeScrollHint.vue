@@ -3,16 +3,19 @@
     <button
       v-if="visible"
       class="scroll-hint"
-      aria-label="向下滚动查看更多内容"
+      :aria-label="t('home.scrollHint.aria')"
       @click="scrollDown"
     >
-      <span class="scroll-hint-text">下方还有更多内容</span>
+      <span class="scroll-hint-text">{{ t('home.scrollHint.text') }}</span>
       <DownOutlined class="scroll-hint-arrow" />
     </button>
   </Transition>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 
@@ -54,7 +57,7 @@ onBeforeUnmount(() => {
 .scroll-hint {
   position: fixed;
   bottom: 0;
-  left: 50%;
+  left: calc(50% + 80px);
   transform: translateX(-50%);
   z-index: 100;
   display: flex;

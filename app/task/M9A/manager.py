@@ -21,13 +21,14 @@
 
 
 import uuid
-import json
 import shutil
 import asyncio
 from pathlib import Path
 from datetime import datetime
 
 from app.core import Config, EmulatorManager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import M9AConfig, M9AUserConfig
@@ -46,9 +47,7 @@ from .task_loader import M9ATaskLoader
 
 logger = get_logger("M9A 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
-    "AutoProxy": AutoProxyTask
-}
+METHOD_BOOK: dict[str, type[AutoProxyTask]] = {"AutoProxy": AutoProxyTask}
 
 
 class M9AManager(TaskExecuteBase):
@@ -145,7 +144,9 @@ class M9AManager(TaskExecuteBase):
             config["ShouldMinimizeToTray"] = is_silent
             write_file(config_json, config)
             status = "开启" if is_silent else "关闭"
-            logger.info(f"已{status} M9A 静默模式（AutoMinimize={is_silent}, AutoHide={is_silent}, ShouldMinimizeToTray={is_silent}）")
+            logger.info(
+                f"已{status} M9A 静默模式（AutoMinimize={is_silent}, AutoHide={is_silent}, ShouldMinimizeToTray={is_silent}）"
+            )
         except Exception as e:
             logger.warning(f"读写 M9A config.json 失败，跳过静默模式配置: {e}")
 
@@ -188,12 +189,9 @@ class M9AManager(TaskExecuteBase):
 
         # 构建用户列表
         self.script_info.user_list = [
-            UserItem(
-                user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-            )
+            UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
             for uid, config in self.user_config.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
+            if config.get("Info", "Status") and config.get("Info", "RemainedDay") != 0
         ]
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
@@ -205,7 +203,9 @@ class M9AManager(TaskExecuteBase):
         await self._set_m9a_auto_update(False)
         await self._set_m9a_silent_mode()
 
-        self.auto_update_fix_enabled = self.script_config.get("Run", "IfAutoUpdateAfterQueue")
+        self.auto_update_fix_enabled = self.script_config.get(
+            "Run", "IfAutoUpdateAfterQueue"
+        )
         if self.auto_update_fix_enabled:
             logger.success("已开启队列结束后自动更新，将在批量任务后统一处理")
         else:
@@ -216,10 +216,10 @@ class M9AManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -243,9 +243,13 @@ class M9AManager(TaskExecuteBase):
             await self.spawn(task)
 
             if self.auto_update_fix_enabled and self.script_info.current_index == 0:
-                self.has_new_version = getattr(self.script_info, '_m9a_has_new_version', False)
+                self.has_new_version = getattr(
+                    self.script_info, "_m9a_has_new_version", False
+                )
                 if not self.has_new_version:
-                    logger.info("首个用户未检测到 M9A 新版本，批量任务完成后将跳过自动更新")
+                    logger.info(
+                        "首个用户未检测到 M9A 新版本，批量任务完成后将跳过自动更新"
+                    )
 
         if self.auto_update_fix_enabled and self.has_new_version:
             logger.info("检测到 M9A 有新版本，将启动虚拟用户执行自动更新")
@@ -257,9 +261,7 @@ class M9AManager(TaskExecuteBase):
             virtual_uid = str(virtual_uid_uuid)
 
             virtual_user = UserItem(
-                user_id=virtual_uid,
-                name="M9A自动更新",
-                status="等待"
+                user_id=virtual_uid, name="M9A自动更新", status="等待"
             )
             self.script_info.user_list.append(virtual_user)
 
@@ -268,9 +270,7 @@ class M9AManager(TaskExecuteBase):
             await virtual_user_config_data.set("Info", "Status", True)
             await virtual_user_config_data.set("Info", "RemainedDay", 999)
             await virtual_user_config_data.set("Notify", "Enabled", False)
-            virtual_user_config = {
-                virtual_uid_uuid: virtual_user_config_data
-            }
+            virtual_user_config = {virtual_uid_uuid: virtual_user_config_data}
 
             self.script_info.current_index = len(self.script_info.user_list) - 1
 
@@ -285,13 +285,19 @@ class M9AManager(TaskExecuteBase):
 
             await self.spawn(virtual_task)
 
-            self._virtual_user_old_version = getattr(self.script_info, '_m9a_current_version', '未知')
-            self._virtual_user_new_version = getattr(self.script_info, '_m9a_latest_version', '未知')
+            self._virtual_user_old_version = getattr(
+                self.script_info, "_m9a_current_version", "未知"
+            )
+            self._virtual_user_new_version = getattr(
+                self.script_info, "_m9a_latest_version", "未知"
+            )
 
             virtual_user_item = self.script_info.user_list[-1]
             if virtual_user_item.status == "完成":
                 await self._refresh_m9a_task_cache_after_update()
-                logger.success(f"M9A 自动更新完成: v{self._virtual_user_old_version} → v{self._virtual_user_new_version}")
+                logger.success(
+                    f"M9A 自动更新完成: v{self._virtual_user_old_version} → v{self._virtual_user_new_version}"
+                )
             else:
                 logger.warning(f"虚拟用户未正常完成，状态: {virtual_user_item.status}")
 
@@ -307,7 +313,6 @@ class M9AManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
@@ -354,10 +359,12 @@ class M9AManager(TaskExecuteBase):
                     mark_task_game_sign_summary_consumed(self.task_info)
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
             # 延迟 2 秒再推版本更新，避免与代理结果通知在同一毫秒内连发，
@@ -374,7 +381,7 @@ class M9AManager(TaskExecuteBase):
 
     async def _refresh_m9a_task_cache_after_update(self):
         """资源更新成功后预热 M9A 任务缓存。"""
-        if not getattr(self.script_info, '_m9a_update_success', False):
+        if not getattr(self.script_info, "_m9a_update_success", False):
             return
 
         try:
@@ -391,7 +398,7 @@ class M9AManager(TaskExecuteBase):
     async def _notify_version_update_result(self):
 
         if (
-            getattr(self.script_info, '_m9a_update_success', False)
+            getattr(self.script_info, "_m9a_update_success", False)
             and self._virtual_user_new_version
             and self._virtual_user_old_version
         ):
@@ -401,7 +408,9 @@ class M9AManager(TaskExecuteBase):
                 f"更新至 v{self._virtual_user_new_version}"
             )
             try:
-                await Notify.push_plyer(update_title, update_message, update_message, 10)
+                await Notify.push_plyer(
+                    update_title, update_message, update_message, 10
+                )
             except Exception as e:
                 logger.opt(exception=True).warning(f"版本更新桌面通知发送失败: {e}")
 
@@ -421,11 +430,14 @@ class M9AManager(TaskExecuteBase):
             except Exception as e:
                 logger.opt(exception=True).warning(f"版本更新通知发送失败: {e}")
 
-        elif not getattr(self.script_info, '_m9a_update_success', False) and self._virtual_user_old_version:
-            err_log = getattr(self.script_info, '_m9a_err_log', [])
+        elif (
+            not getattr(self.script_info, "_m9a_update_success", False)
+            and self._virtual_user_old_version
+        ):
+            err_log = getattr(self.script_info, "_m9a_err_log", [])
             virtual_status = "未知错误"
             full_reason = err_log[-1] if err_log else "无"
-            if getattr(self.script_info, '_m9a_timeout', False):
+            if getattr(self.script_info, "_m9a_timeout", False):
                 virtual_status = "更新超时"
             elif err_log:
                 last_err = err_log[-1]
@@ -462,14 +474,16 @@ class M9AManager(TaskExecuteBase):
                 await push_version_update(fail_title, fail_result)
             except Exception as e:
                 logger.opt(exception=True).warning(f"版本更新失败通知发送失败: {e}")
-            logger.warning(f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）")
+            logger.warning(
+                f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）"
+            )
 
     async def on_crash(self, e: Exception):
 
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"M9A任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"M9A任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"M9A任务出现异常: {e}"),
         )

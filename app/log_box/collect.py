@@ -83,9 +83,11 @@ class LogCollect:
         """
         self._open_sources()
         if processor is None:
+
             def _register(fn: _PreProcessor) -> _PreProcessor:
                 self._preprocessors.append(fn)
                 return fn
+
             return _register  # type: ignore[return-value]
         self._preprocessors.append(processor)
         return self
@@ -105,9 +107,11 @@ class LogCollect:
         退出（atexit）触发。
         """
         if processor is None:
+
             def _register(fn: _PostProcessor) -> _PostProcessor:
                 self._postprocessors.append(fn)
                 return fn
+
             return _register
         self._postprocessors.append(processor)
         return processor

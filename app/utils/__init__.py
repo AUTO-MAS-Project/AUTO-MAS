@@ -34,7 +34,6 @@ from .security import (
 )
 
 _LAZY_EXPORTS = {
-    "ImageUtils": (".ImageUtils", "ImageUtils"),
     "LogMonitor": (".LogMonitor", "LogMonitor"),
     "strptime": (".LogMonitor", "strptime"),
     "ProcessManager": (".ProcessManager", "ProcessManager"),
@@ -42,6 +41,8 @@ _LAZY_EXPORTS = {
     "ProcessInfo": (".ProcessManager", "ProcessInfo"),
     "ProcessResult": (".ProcessManager", "ProcessResult"),
     "is_process_running": (".ProcessManager", "is_process_running"),
+    "activate_window_by_pid": (".ProcessManager", "activate_window_by_pid"),
+    "has_visible_window": (".ProcessManager", "has_visible_window"),
     "RegexMatcher": (".LogPatternExtractor", "RegexMatcher"),
     "MultiLineAggregator": (".LogPatternExtractor", "MultiLineAggregator"),
     "compile_regex": (".LogPatternExtractor", "compile_regex"),
@@ -49,6 +50,8 @@ _LAZY_EXPORTS = {
     "apply_patterns": (".LogPatternExtractor", "apply_patterns"),
     "flush_patterns": (".LogPatternExtractor", "flush_patterns"),
     "debug_pattern": (".LogPatternExtractor", "debug_pattern"),
+    "LogSignMatcher": (".LogPatternExtractor", "LogSignMatcher"),
+    "compile_log_signs": (".LogPatternExtractor", "compile_log_signs"),
     "MumuManager": (".emulator", "MumuManager"),
     "LDManager": (".emulator", "LDManager"),
     "search_all_emulators": (".emulator", "search_all_emulators"),

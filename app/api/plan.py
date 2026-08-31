@@ -41,7 +41,9 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
         uid, config = await Config.add_plan(plan.type)
-        data = PLAN_BOOK[type(config).__name__]["schema_class"](**(await config.toDict()))
+        data = PLAN_BOOK[type(config).__name__]["schema_class"](
+            **(await config.toDict())
+        )
     except Exception as e:
         plan_schema_class = next(
             item["schema_class"]

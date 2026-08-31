@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { onScopeDispose, ref } from 'vue'
 import { Service } from '@/api/services/Service'
 import {
@@ -107,7 +108,7 @@ export const useHomeOverview = () => {
           pendingRetryCount = 0
         }
       } else {
-        error.value = response.message || '获取数据失败'
+        error.value = response.message || t('home.overview.fetchFailed')
         logger.warn(`获取首页概览失败: ${error.value}`)
       }
     } catch (requestError) {
@@ -117,7 +118,7 @@ export const useHomeOverview = () => {
       const errorMessage =
         requestError instanceof Error ? requestError.message : String(requestError)
       logger.error(`获取首页概览失败: ${errorMessage}`)
-      error.value = '网络请求失败，请检查连接'
+      error.value = t('home.overview.networkFailed')
     } finally {
       if (version === fetchVersion && !quiet) {
         loading.value = false
