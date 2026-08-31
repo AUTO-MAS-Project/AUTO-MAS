@@ -1,6 +1,7 @@
 // BetterGI 原生设置会话（原生 GUI 直控）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -14,6 +15,7 @@ const logger = window.electronAPI.getLogger('BetterGI配置会话')
  * （WebSocket 订阅、遮罩、30 分钟超时自动保存、卸载清理）全部收敛于此。
  */
 export function useBettergiGuiSession() {
+  const { t } = useI18n()
   const { subscribe, unsubscribe } = useWebSocket()
 
   const bettergiConfigLoading = ref(false)
@@ -58,7 +60,7 @@ export function useBettergiGuiSession() {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || '停止 BetterGI 设置失败')
+        throw new Error(response.message || t('edit.bettergiStopFailed'))
       }
       clearSession()
       return true
@@ -80,19 +82,19 @@ export function useBettergiGuiSession() {
         mode: TaskCreateIn.mode.SCRIPT_CONFIG,
       })
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || '启动 BetterGI 设置失败')
+        throw new Error(response.message || t('edit.bettergiStartFailed'))
       }
 
       showBettergiConfigMask.value = true
       bettergiWebsocketId.value = response.taskId
       const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
-          message.error(`BetterGI 设置连接失败: ${String(wsMessage.data)}`)
+          message.error(t('edit.bettergiConnectFailed', { p0: String(wsMessage.data) }))
           void stopSession()
           return
         }
         if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-          message.error(`BetterGI 设置失败: ${String(wsMessage.data.Error)}`)
+          message.error(t('edit.bettergiSessionFailed', { p0: String(wsMessage.data.Error) }))
           void stopSession()
           return
         }
@@ -101,14 +103,14 @@ export function useBettergiGuiSession() {
         }
       })
       bettergiSubscriptionId.value = subscriptionId
-      message.success('已打开 BetterGI 设置')
+      message.success(t('edit.bettergiSessionOpened'))
       bettergiConfigWarningTimeout = window.setTimeout(() => {
-        message.warning('BetterGI 设置会话即将超时，30 秒后自动保存')
+        message.warning(t('edit.bettergiSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
       bettergiConfigTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : '启动 BetterGI 设置失败')
+      message.error(e instanceof Error ? e.message : t('edit.bettergiStartFailed'))
       clearSession()
     } finally {
       bettergiConfigLoading.value = false
@@ -118,9 +120,9 @@ export function useBettergiGuiSession() {
   const saveSession = async () => {
     if (!bettergiWebsocketId.value) return
     if (await stopSession(true)) {
-      message.success('BetterGI 设置已保存')
+      message.success(t('edit.bettergiSettingsSaved'))
     } else {
-      message.error('保存 BetterGI 设置失败')
+      message.error(t('edit.bettergiSettingsSaveFailed'))
     }
   }
 
