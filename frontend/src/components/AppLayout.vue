@@ -28,7 +28,6 @@
         />
         <a-menu
           v-model:selected-keys="selectedKeys"
-          v-model:open-keys="bottomOpenKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="bottom-menu"
@@ -56,18 +55,16 @@ import {
   BugOutlined,
   CalendarOutlined,
   CarryOutOutlined,
-  CheckCircleOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
-  ProfileOutlined,
   SettingOutlined,
   ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h, ref, watch } from 'vue'
+import { computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
@@ -117,23 +114,7 @@ const devMenuItems = computed(() => [
 ])
 
 const bottomMenuItems = computed(() => [
-  {
-    key: '/gamesign',
-    label: t('comp.checkIns'),
-    icon: icon(CarryOutOutlined),
-    children: [
-      {
-        key: '/gamesign/sign',
-        label: t('gamesign.nav.sign'),
-        icon: icon(CheckCircleOutlined),
-      },
-      {
-        key: '/gamesign/activity',
-        label: t('gamesign.nav.activity'),
-        icon: icon(ProfileOutlined),
-      },
-    ],
-  },
+  { key: '/gamesign', label: t('comp.checkIns'), icon: icon(CarryOutOutlined) },
   { key: '/history', label: t('comp.history'), icon: icon(HistoryOutlined) },
   { key: '/tools', label: t('comp.tools'), icon: icon(ToolOutlined) },
   { key: '/settings', label: t('comp.settings'), icon: icon(SettingOutlined) },
@@ -165,7 +146,7 @@ const allItems = computed(() => [
 
 const flatItems = computed(() => flattenMenuItems(allItems.value))
 
-// 选中项：优先精确匹配子菜单，再按路径边界匹配父菜单。
+// 选中项：优先精确匹配，再按路径边界匹配当前菜单。
 const selectedKeys = computed(() => {
   const path = route.path
   const matched = flatItems.value
@@ -177,20 +158,6 @@ const selectedKeys = computed(() => {
     .sort((left, right) => String(right.key).length - String(left.key).length)[0]
   return [matched?.key || '/home']
 })
-
-const bottomOpenKeys = ref<string[]>([])
-watch(
-  () => route.path,
-  path => {
-    if (
-      (path === '/gamesign' || path.startsWith('/gamesign/')) &&
-      !bottomOpenKeys.value.includes('/gamesign')
-    ) {
-      bottomOpenKeys.value = [...bottomOpenKeys.value, '/gamesign']
-    }
-  },
-  { immediate: true }
-)
 
 const onMenuClick: MenuProps['onClick'] = info => {
   const target = String(info.key)
@@ -215,8 +182,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
     })
   }
 
-  const destination = target === '/gamesign' ? '/gamesign/sign' : target
-  if (route.path !== destination) router.push(destination)
+  if (route.path !== target) router.push(target)
 }
 </script>
 

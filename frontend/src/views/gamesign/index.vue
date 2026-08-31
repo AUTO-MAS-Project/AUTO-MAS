@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, onUnmounted, reactive } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
@@ -21,7 +21,21 @@ defineOptions({ name: 'GameSignPage' })
 
 const logger = window.electronAPI.getLogger('游戏社区')
 const route = useRoute()
-const isActivityView = computed(() => route.params.section === 'activity')
+const router = useRouter()
+
+type CommunityTab = 'sign' | 'activity'
+
+const activeTab = computed<CommunityTab>(() =>
+  route.query.tab === 'activity' ? 'activity' : 'sign'
+)
+
+const handleTabChange = (key: string | number) => {
+  const tab: CommunityTab = key === 'activity' ? 'activity' : 'sign'
+  void router.replace({
+    path: '/gamesign',
+    query: tab === 'activity' ? { tab: 'activity' } : {},
+  })
+}
 
 const { loading, getTools, updateTools } = useToolsApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -113,7 +127,7 @@ const refreshGameSignConfig = async () => {
 const startStatusPolling = () => {
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = setInterval(() => {
-    updateStatus()
+    if (activeTab.value === 'sign') void updateStatus()
   }, 1000)
 }
 
@@ -174,16 +188,19 @@ const handleGameSignFieldChange = async (key: string, value: any) => {
 }
 
 useEventListener(window, 'focus', () => {
-  if (!isActivityView.value) void updateStatus()
+  if (activeTab.value === 'sign') void updateStatus()
 })
 useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'visible' && !isActivityView.value) {
+  if (document.visibilityState === 'visible' && activeTab.value === 'sign') {
     void updateStatus()
   }
 })
 
+watch(activeTab, tab => {
+  if (tab === 'sign' && isMounted) void updateStatus()
+})
+
 onMounted(async () => {
-  if (isActivityView.value) return
   gameSignSubscriptionId = subscribe(
     { id: WS_ID_GAME_SIGN, type: WS_GAMESIGN_RESULT_UPDATED },
     wsMessage => {
@@ -211,14 +228,26 @@ onUnmounted(() => {
       <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
-      <CommunityActivityView v-if="isActivityView" />
-      <TabGameSign
-        v-else-if="editingConfig.GameSign"
-        :config="editingConfig.GameSign"
-        :disabled="loading"
-        :on-field-change="handleGameSignFieldChange"
-        :on-refresh-config="refreshGameSignConfig"
-      />
+      <a-tabs
+        :active-key="activeTab"
+        type="card"
+        :loading="loading"
+        class="community-tabs"
+        @change="handleTabChange"
+      >
+        <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
+          <TabGameSign
+            v-if="editingConfig.GameSign"
+            :config="editingConfig.GameSign"
+            :disabled="loading"
+            :on-field-change="handleGameSignFieldChange"
+            :on-refresh-config="refreshGameSignConfig"
+          />
+        </a-tab-pane>
+        <a-tab-pane key="activity" :tab="t('gamesign.nav.activity')">
+          <CommunityActivityView />
+        </a-tab-pane>
+      </a-tabs>
     </div>
   </div>
 </template>
@@ -260,38 +289,72 @@ onUnmounted(() => {
   width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.community-tabs {
+  margin: 0;
+  padding: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.community-tabs :deep(.ant-tabs-nav) {
+  margin: 0;
+  padding: 0;
+}
+
+.community-tabs :deep(.ant-tabs-content-holder) {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
+.community-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
+  margin-right: 8px;
+  background: transparent;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px 8px 0 0;
+}
+
+.community-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
+  background: var(--ant-color-bg-container);
+  border-bottom-color: var(--ant-color-bg-container);
+}
+
 /* 内容区滚动条样式（与工具页统一） */
-.gamesign-content::-webkit-scrollbar {
+.community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.gamesign-content::-webkit-scrollbar-track {
+.community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
   background: var(--ant-color-bg-container);
   border-radius: 4px;
 }
 
-.gamesign-content::-webkit-scrollbar-thumb {
+.community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 4px;
 }
 
-.gamesign-content::-webkit-scrollbar-thumb:hover {
+.community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.25);
 }
 
-:root.dark .gamesign-content::-webkit-scrollbar-track {
+:root.dark .community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
   background: var(--ant-color-bg-elevated);
 }
 
-:root.dark .gamesign-content::-webkit-scrollbar-thumb {
+:root.dark .community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
 }
 
-:root.dark .gamesign-content::-webkit-scrollbar-thumb:hover {
+:root.dark .community-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
 
