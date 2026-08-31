@@ -82,7 +82,8 @@
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复开机自启动后台任务异常未记录问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)"
+                "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "日志采集 修复多账号任务各用户节点详情被合并推送的问题，报告按用户分开展示节点归属"
             ]
         },
         "v5.4.0": {

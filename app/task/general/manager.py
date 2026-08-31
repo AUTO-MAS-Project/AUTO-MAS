@@ -38,7 +38,7 @@ from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
     mark_task_game_sign_summary_consumed,
 )
-from app.tools.push_log import build_push_log_text
+from app.tools.push_log import build_user_result_text
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -323,17 +323,18 @@ class GeneralManager(TaskExecuteBase):
             ]
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            task_result = append_task_game_sign_summary(
-                self.task_info, self.script_info.result
-            )
-            has_game_sign_summary = task_result != self.script_info.result
-            # 聚合各用户采集的推送日志：每条进程信息独占一行，不附加用户名。
-            # 「失败」类型的条目仅在本次任务存在未完成用户时纳入报告，
+            # 按用户交错组装「用户结果行 + 该用户进程信息」：
+            # 多账号任务时各用户信息归属清晰，不再全部平铺。
+            # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
             # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
             has_uncompleted = len(error_user) + len(wait_user) > 0
-            push_log_text = build_push_log_text(
+            user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
+            task_result = append_task_game_sign_summary(
+                self.task_info, user_result_text
+            )
+            has_game_sign_summary = task_result != user_result_text
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -343,7 +344,7 @@ class GeneralManager(TaskExecuteBase):
                 "uncompleted_count": len(error_user) + len(wait_user),
                 "result": task_result,
                 "game_sign_summary": has_game_sign_summary,
-                "push_log": push_log_text,
+                "push_log": "",  # 进程信息已并入 result，不再单独推送
             }
 
             await Notify.push_plyer(
