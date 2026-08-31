@@ -38,6 +38,7 @@
     "files": [
       "dist/index.html",
       "dist/assets/**",
+      "!dist/assets/**/*.map",
       "dict/AUTO-MAS.ico",
       "dict/logo.png",
       "dict/prts.png",

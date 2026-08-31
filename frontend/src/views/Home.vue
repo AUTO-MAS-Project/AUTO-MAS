@@ -96,9 +96,9 @@
             :title="t('home.module.starrail')"
             accent="#62c4e7"
             :empty-text="t('home.empty.starrail')"
-            :loading="loading"
-            :overview="starRailData"
-            @refresh="fetchOverviewData"
+            :loading="starRailSource.loading.value"
+            :overview="starRailSource.overview.value"
+            @refresh="starRailSource.refresh"
           />
 
           <HomeSraActivityOverview
@@ -106,9 +106,9 @@
             :title="t('home.module.genshin')"
             accent="#8fe3b0"
             :empty-text="t('home.empty.genshin')"
-            :loading="loading"
-            :overview="genshinData"
-            @refresh="fetchOverviewData"
+            :loading="genshinSource.loading.value"
+            :overview="genshinSource.overview.value"
+            @refresh="genshinSource.refresh"
           />
 
           <HomeSraActivityOverview
@@ -116,9 +116,9 @@
             :title="t('home.module.zenless')"
             accent="#ffd24a"
             :empty-text="t('home.empty.zenless')"
-            :loading="loading"
-            :overview="zenlessZoneZeroData"
-            @refresh="fetchOverviewData"
+            :loading="zenlessSource.loading.value"
+            :overview="zenlessSource.overview.value"
+            @refresh="zenlessSource.refresh"
           />
 
           <HomeSraActivityOverview
@@ -126,9 +126,9 @@
             :title="t('home.module.wutheringwaves')"
             accent="#7aa2ff"
             :empty-text="t('home.empty.wutheringwaves')"
-            :loading="loading"
-            :overview="wutheringWavesData"
-            @refresh="fetchOverviewData"
+            :loading="wutheringWavesSource.loading.value"
+            :overview="wutheringWavesSource.overview.value"
+            @refresh="wutheringWavesSource.refresh"
           />
 
           <HomeSraActivityOverview
@@ -136,15 +136,15 @@
             :title="t('home.module.nte')"
             accent="#c9a7ff"
             :empty-text="t('home.empty.nte')"
-            :loading="loading"
-            :overview="nevernessToEvernessData"
-            @refresh="fetchOverviewData"
+            :loading="nevernessToEvernessSource.loading.value"
+            :overview="nevernessToEvernessSource.overview.value"
+            @refresh="nevernessToEvernessSource.refresh"
           />
 
           <HomeReverse1999Overview
             v-else-if="moduleKey === 'reverse1999'"
-            :loading="loading"
-            :overview="reverse1999Data"
+            :loading="reverse1999Source.loading.value"
+            :overview="reverse1999Source.overview.value"
           />
         </section>
       </template>
@@ -175,6 +175,8 @@ import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
+import { useSraActivitySource } from '@/views/home/useSraActivitySource'
+import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 
@@ -217,17 +219,19 @@ const {
   resourceData,
   proxyData,
   endfieldData,
-  starRailData,
-  genshinData,
-  zenlessZoneZeroData,
-  wutheringWavesData,
-  nevernessToEvernessData,
-  reverse1999Data,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()
 
 const { t } = useI18n()
+
+// 首页全前端化：SRA 五张活动卡直连公开接口，独立快照/失败态，不再依赖聚合接口
+const starRailSource = useSraActivitySource('sr', t('home.module.starrail'))
+const genshinSource = useSraActivitySource('ys', t('home.module.genshin'))
+const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
+const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
+const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
+const reverse1999Source = useReverse1999ActivitySource()
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
