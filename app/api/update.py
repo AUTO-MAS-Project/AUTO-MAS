@@ -79,7 +79,7 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     status_code=200,
 )
 async def download_update(
-    target_version: str | None = Query(default=None, alias="version")
+    target_version: str | None = Query(default=None, alias="version"),
 ) -> OutBase:
 
     try:
@@ -107,7 +107,9 @@ async def cancel_update_download() -> OutBase:
 
     try:
         if not await Updater.cancel_download():
-            return OutBase(code=409, status="error", message="当前没有正在进行中的下载任务")
+            return OutBase(
+                code=409, status="error", message="当前没有正在进行中的下载任务"
+            )
     except Exception as e:
         return OutBase(
             code=500,

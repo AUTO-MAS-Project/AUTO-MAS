@@ -19,9 +19,7 @@ from app.task.MaaFW.tools.embedded.managed import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MANAGED_DIR = (
-    REPO_ROOT / "app" / "task" / "MaaFW" / "tools" / "embedded" / "managed"
-)
+MANAGED_DIR = REPO_ROOT / "app" / "task" / "MaaFW" / "tools" / "embedded" / "managed"
 
 
 def plugin_framework_imports(path: Path) -> list[str]:
@@ -43,7 +41,10 @@ def plugin_framework_imports(path: Path) -> list[str]:
             )
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if module.startswith("app.plugins") or module.split(".")[0] == "auto_mas_core":
+            if (
+                module.startswith("app.plugins")
+                or module.split(".")[0] == "auto_mas_core"
+            ):
                 found.append(module)
         elif isinstance(node, ast.Attribute) and node.attr == "get_service":
             found.append("ctx.get_service")

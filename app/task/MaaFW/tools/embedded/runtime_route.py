@@ -62,9 +62,7 @@ def runtime_pool_route_from_service(service: Any) -> MaaFWRuntimePoolRoute:
                 )
             identity_pool_id = identity_pool_id.strip()
         else:
-            raise MaaFWRuntimeRouteError(
-                "MaaFW Runtime Pool rootIdentity 缺少 poolId"
-            )
+            raise MaaFWRuntimeRouteError("MaaFW Runtime Pool rootIdentity 缺少 poolId")
         if not identity_pool_id:
             raise MaaFWRuntimeRouteError(
                 "MaaFW Runtime Pool rootIdentity.poolId 不能为空"
@@ -106,9 +104,7 @@ def managed_execution_route(
     )
     binding_pool_id = _required_text(runtime_binding, "poolId", "Runtime Pool ID")
     if expected_pool_id is not None and not isinstance(expected_pool_id, str):
-        raise MaaFWRuntimeRouteError(
-            "MaaFW Managed 宿主 Runtime Pool ID 必须是字符串"
-        )
+        raise MaaFWRuntimeRouteError("MaaFW Managed 宿主 Runtime Pool ID 必须是字符串")
     normalized_expected_pool_id = (
         expected_pool_id.strip() if isinstance(expected_pool_id, str) else ""
     )
@@ -155,8 +151,7 @@ def managed_execution_route(
     )
     if manifest_requirement != maafw_requirement:
         raise MaaFWRuntimeRouteError(
-            "MaaFW Managed Store manifest 与 runtime DTO 的 "
-            "maafwRequirement 不一致"
+            "MaaFW Managed Store manifest 与 runtime DTO 的 maafwRequirement 不一致"
         )
     manifest_pool_id = _required_text(
         manifest_binding,
@@ -180,13 +175,11 @@ def managed_execution_route(
             raise MaaFWRuntimeRouteError(
                 "MaaFW Managed Store manifest runtime.python 必须是对象"
             )
-        implementation = str(
-            python_runtime.get("implementation") or ""
-        ).strip().casefold()
+        implementation = (
+            str(python_runtime.get("implementation") or "").strip().casefold()
+        )
         python_constraint = str(
-            python_runtime.get("constraint")
-            or python_runtime.get("requires")
-            or ""
+            python_runtime.get("constraint") or python_runtime.get("requires") or ""
         ).strip()
         if implementation != "cpython" or not python_constraint:
             raise MaaFWRuntimeRouteError(
@@ -232,14 +225,10 @@ def _required_runtime_pool_text(
 ) -> str:
     raw = value.get(key)
     if raw is not None and not isinstance(raw, str):
-        raise MaaFWRuntimeRouteError(
-            f"MaaFW Runtime Pool {label}必须是字符串"
-        )
+        raise MaaFWRuntimeRouteError(f"MaaFW Runtime Pool {label}必须是字符串")
     normalized = raw.strip() if isinstance(raw, str) else ""
     if not normalized:
-        raise MaaFWRuntimeRouteError(
-            f"MaaFW Runtime Pool storage_info 缺少{label}"
-        )
+        raise MaaFWRuntimeRouteError(f"MaaFW Runtime Pool storage_info 缺少{label}")
     return normalized
 
 
@@ -286,10 +275,8 @@ def _managed_python_agent_indexes(raw_agents: Any) -> tuple[int, ...]:
         if (
             type(index) is not int
             or index < 0
-            or str(raw_agent.get("classification") or "").casefold()
-            != "python"
-            or str(raw_agent.get("projectedChildExec") or "").casefold()
-            != "python"
+            or str(raw_agent.get("classification") or "").casefold() != "python"
+            or str(raw_agent.get("projectedChildExec") or "").casefold() != "python"
         ):
             raise MaaFWRuntimeRouteError(
                 "MaaFW Managed Store manifest 的 managed-python Agent 声明无效"

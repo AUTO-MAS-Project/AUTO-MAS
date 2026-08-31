@@ -1,7 +1,7 @@
 <template>
   <div class="log-panel">
     <div class="scheduler-panel-header">
-      <h3>日志</h3>
+      <h3>{{ t('scheduler.log.title') }}</h3>
       <div class="log-controls">
         <a-space size="small">
           <a-button
@@ -9,7 +9,7 @@
             :type="logMode === 'follow' ? 'primary' : 'default'"
             @click="toggleLogMode"
           >
-            {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
+            {{ logMode === 'follow' ? t('scheduler.log.follow') : t('scheduler.log.browse') }}
           </a-button>
         </a-space>
       </div>
@@ -18,7 +18,7 @@
       <div v-if="!logContent" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
-            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
           </div>
         </div>
       </div>
@@ -40,9 +40,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, nextTick, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
+
+const { t } = useI18n()
 
 interface Props {
   logContent: string

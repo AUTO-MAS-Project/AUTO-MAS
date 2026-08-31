@@ -61,9 +61,7 @@ def route_managed_python_agents_to_shared_runtime(
         ) = _shared_agent_route_metadata(project)
     else:
         shared_dependencies_complete = dependencies_complete is True
-        trusted_agent_indexes = _normalize_agent_indexes(
-            managed_python_agent_indexes
-        )
+        trusted_agent_indexes = _normalize_agent_indexes(managed_python_agent_indexes)
     if not shared_dependencies_complete:
         if trusted_agent_indexes:
             raise MaaFWSharedAgentRouteError(
@@ -92,10 +90,13 @@ def route_managed_python_agents_to_shared_runtime(
                 continue
             if not _is_bare_python_command(getattr(plan, "childExec", None)):
                 continue
-            if _safe_python_entrypoint(
-                project,
-                getattr(plan, "childArgs", None),
-            ) is None:
+            if (
+                _safe_python_entrypoint(
+                    project,
+                    getattr(plan, "childArgs", None),
+                )
+                is None
+            ):
                 continue
         else:
             continue
@@ -113,9 +114,7 @@ def route_managed_python_agents_to_shared_runtime(
         shared_reason = "managed project reuses the shared MaaFW runtime"
         previous_reason = str(getattr(plan, "fallbackReason", None) or "").strip()
         plan.fallbackReason = (
-            f"{previous_reason}; {shared_reason}"
-            if previous_reason
-            else shared_reason
+            f"{previous_reason}; {shared_reason}" if previous_reason else shared_reason
         )
         routed.append(plan)
     return routed
@@ -156,10 +155,8 @@ def _managed_python_agent_indexes(raw_agents: Any) -> frozenset[int]:
         if (
             type(index) is not int
             or index < 0
-            or str(raw_agent.get("classification") or "").casefold()
-            != "python"
-            or str(raw_agent.get("projectedChildExec") or "").casefold()
-            != "python"
+            or str(raw_agent.get("classification") or "").casefold() != "python"
+            or str(raw_agent.get("projectedChildExec") or "").casefold() != "python"
         ):
             raise MaaFWSharedAgentRouteError(
                 "Managed Store manifest contains an invalid managed-python "
@@ -192,8 +189,7 @@ def _validate_managed_python_plans(
     for index in trusted_agent_indexes:
         if index >= len(plans):
             raise MaaFWSharedAgentRouteError(
-                "Managed Python Agent index is outside the current interface: "
-                f"{index}"
+                f"Managed Python Agent index is outside the current interface: {index}"
             )
         plan = plans[index]
         if (
@@ -202,8 +198,7 @@ def _validate_managed_python_plans(
             # Project Store canonicalizes every stripped interpreter to this
             # exact command. A different bare alias means the checkout no
             # longer matches the authoritative projection.
-            or str(getattr(plan, "childExec", None) or "").casefold()
-            != "python"
+            or str(getattr(plan, "childExec", None) or "").casefold() != "python"
             or _safe_python_entrypoint(
                 project_path,
                 getattr(plan, "childArgs", None),

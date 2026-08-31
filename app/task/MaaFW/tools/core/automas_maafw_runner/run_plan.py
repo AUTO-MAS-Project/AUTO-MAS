@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import json5
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import build_maafw_agent_command_plans
+from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
+    build_maafw_agent_command_plans,
+)
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWController,
@@ -101,10 +103,14 @@ def build_maafw_run_plan(
         task_options=task_options,
     )
     selected_pretask_names = [
-        task_name for task_name in selected_task_names if is_pretask_task_name(task_name)
+        task_name
+        for task_name in selected_task_names
+        if is_pretask_task_name(task_name)
     ]
     selected_common_task_names = [
-        task_name for task_name in selected_task_names if not is_pretask_task_name(task_name)
+        task_name
+        for task_name in selected_task_names
+        if not is_pretask_task_name(task_name)
     ]
     task_map = {task.name: task for task in interface.task}
     controller_names = {controller.name}
@@ -120,7 +126,9 @@ def build_maafw_run_plan(
     for task_name in selected_common_task_names:
         task = task_map.get(task_name)
         if task is None:
-            skipped_tasks.append(MaaFWSkippedTaskPlan(name=task_name, reason="任务不存在"))
+            skipped_tasks.append(
+                MaaFWSkippedTaskPlan(name=task_name, reason="任务不存在")
+            )
             continue
 
         compatible, reason = _check_task_compatible(
@@ -187,11 +195,15 @@ def build_maafw_run_plan(
     )
 
 
-def _coerce_interface(interface_model: MaaFWInterface | dict[str, Any]) -> MaaFWInterface:
+def _coerce_interface(
+    interface_model: MaaFWInterface | dict[str, Any],
+) -> MaaFWInterface:
     if isinstance(interface_model, MaaFWInterface):
         return interface_model
     if hasattr(interface_model, "model_dump"):
-        return MaaFWInterface.model_validate(interface_model.model_dump(mode="json", by_alias=True))
+        return MaaFWInterface.model_validate(
+            interface_model.model_dump(mode="json", by_alias=True)
+        )
     return MaaFWInterface.model_validate(interface_model)
 
 
@@ -200,7 +212,14 @@ def _select_controller(
     controller_name: str | None,
 ) -> MaaFWController:
     if controller_name:
-        controller = next((item for item in interface_model.controller if item.name == controller_name), None)
+        controller = next(
+            (
+                item
+                for item in interface_model.controller
+                if item.name == controller_name
+            ),
+            None,
+        )
         if controller is None:
             raise MaaFWRunPlanError(f"未找到 controller: {controller_name}")
         _ensure_direct_controller(controller)
@@ -209,11 +228,17 @@ def _select_controller(
     if not interface_model.controller:
         raise MaaFWRunPlanError("interface 未声明 controller")
     controller = next(
-        (item for item in interface_model.controller if item.type in MAAFW_DIRECT_CONTROLLER_TYPES),
+        (
+            item
+            for item in interface_model.controller
+            if item.type in MAAFW_DIRECT_CONTROLLER_TYPES
+        ),
         None,
     )
     if controller is None:
-        declared_types = ", ".join(f"{item.name}({item.type})" for item in interface_model.controller)
+        declared_types = ", ".join(
+            f"{item.name}({item.type})" for item in interface_model.controller
+        )
         raise MaaFWRunPlanError(
             "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
             f"controllers; use the project UI for: {declared_types}"
@@ -236,7 +261,10 @@ def _select_resource(
     controller: MaaFWController,
 ) -> MaaFWResource:
     if resource_name:
-        resource = next((item for item in interface_model.resource if item.name == resource_name), None)
+        resource = next(
+            (item for item in interface_model.resource if item.name == resource_name),
+            None,
+        )
         if resource is None:
             raise MaaFWRunPlanError(f"未找到 resource: {resource_name}")
         if resource.controller and controller.name not in resource.controller:
@@ -304,7 +332,10 @@ def _resolve_snapshot(
         return normalize_snapshot(task_snapshot, interface_model)
 
     if selected_preset:
-        preset = next((item for item in interface_model.preset if item.name == selected_preset), None)
+        preset = next(
+            (item for item in interface_model.preset if item.name == selected_preset),
+            None,
+        )
         if preset is None:
             raise MaaFWRunPlanError(f"未找到 preset: {selected_preset}")
         return normalize_snapshot(
@@ -321,7 +352,9 @@ def _resolve_snapshot(
     return normalize_snapshot(
         {
             "taskOrder": [task.name for task in interface_model.task],
-            "taskChecked": {task.name: bool(task.default_check) for task in interface_model.task},
+            "taskChecked": {
+                task.name: bool(task.default_check) for task in interface_model.task
+            },
             "taskOptions": {},
         },
         interface_model,
@@ -424,9 +457,15 @@ def _collect_pretask_option_values(
         result[option_name] = copy.deepcopy(value)
 
         next_lineage = {*lineage, option_name}
-        if option.type in {"select", "scan_select", "switch"} and isinstance(value, str):
-            active_case = next((case for case in option.cases or [] if case.name == value), None)
-            for nested_name in active_case.option if active_case and active_case.option else []:
+        if option.type in {"select", "scan_select", "switch"} and isinstance(
+            value, str
+        ):
+            active_case = next(
+                (case for case in option.cases or [] if case.name == value), None
+            )
+            for nested_name in (
+                active_case.option if active_case and active_case.option else []
+            ):
                 collect(nested_name, next_lineage)
         elif option.type == "checkbox" and isinstance(value, list):
             selected_names = set(value)
@@ -628,8 +667,12 @@ def _build_pi_env(
         "PI_CLIENT_LANGUAGE": PI_CLIENT_LANGUAGE,
         "PI_CLIENT_MAAFW_VERSION": _load_maafw_version(),
         "PI_VERSION": interface_model.version or "",
-        "PI_CONTROLLER": json.dumps(controller_payload, ensure_ascii=False, separators=(",", ":")),
-        "PI_RESOURCE": json.dumps(resource_payload, ensure_ascii=False, separators=(",", ":")),
+        "PI_CONTROLLER": json.dumps(
+            controller_payload, ensure_ascii=False, separators=(",", ":")
+        ),
+        "PI_RESOURCE": json.dumps(
+            resource_payload, ensure_ascii=False, separators=(",", ":")
+        ),
     }
 
 
@@ -650,12 +693,16 @@ def _load_maafw_version() -> str:
         return ""
 
 
-def _resolve_i18n_payload(payload: Any, base_dir: Path, interface_model: MaaFWInterface) -> Any:
+def _resolve_i18n_payload(
+    payload: Any, base_dir: Path, interface_model: MaaFWInterface
+) -> Any:
     mapping = _load_i18n_mapping(base_dir, interface_model)
     return _resolve_i18n_value(payload, mapping)
 
 
-def _load_i18n_mapping(base_dir: Path, interface_model: MaaFWInterface) -> dict[str, Any]:
+def _load_i18n_mapping(
+    base_dir: Path, interface_model: MaaFWInterface
+) -> dict[str, Any]:
     if not interface_model.languages:
         return {}
     language_file = interface_model.languages.get(PI_CLIENT_LANGUAGE)

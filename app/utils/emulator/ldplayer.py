@@ -41,9 +41,7 @@ from app.utils import ProcessRunner, get_logger
 logger = get_logger("雷电模拟器管理")
 
 _CONFIG_GUARD_DELAY_SECONDS = 3.0
-_INSTANCE_LOCKS: dict[
-    tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock
-] = {}
+_INSTANCE_LOCKS: dict[tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock] = {}
 _INSTANCE_CONFIG_SNAPSHOTS: dict[tuple[str, str], bytes] = {}
 
 
@@ -92,10 +90,7 @@ class LDManager(DeviceBase):
             logger.warning(f"无法保护雷电模拟器配置，实例索引无效: {idx}")
             return None
         return (
-            self.emulator_path.parent
-            / "vms"
-            / "config"
-            / f"leidian{idx_text}.config"
+            self.emulator_path.parent / "vms" / "config" / f"leidian{idx_text}.config"
         )
 
     @staticmethod
@@ -415,7 +410,9 @@ class LDManager(DeviceBase):
             if result.returncode == 0:
                 logger.success(f"已禁用广告包: {package}")
             else:
-                logger.warning(f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}")
+                logger.warning(
+                    f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+                )
 
     async def get_adb_ports(self, pid: int) -> int:
         """使用psutil获取adb端口"""

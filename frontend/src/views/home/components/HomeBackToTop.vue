@@ -1,12 +1,20 @@
 <template>
   <Transition name="back-to-top">
-    <button v-if="visible" class="back-to-top" aria-label="返回顶部" @click="scrollToTop">
+    <button
+      v-if="visible"
+      class="back-to-top"
+      :aria-label="t('home.backToTop')"
+      @click="scrollToTop"
+    >
       <UpOutlined class="back-to-top-icon" />
     </button>
   </Transition>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { UpOutlined } from '@ant-design/icons-vue'
 

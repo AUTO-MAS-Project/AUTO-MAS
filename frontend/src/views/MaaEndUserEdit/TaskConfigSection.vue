@@ -1,10 +1,10 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>任务配置</h3>
+      <h3>{{ t('edit.taskConfiguration') }}</h3>
       <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
         <template #icon><CalendarOutlined /></template>
-        跳转到计划表
+        {{ t('edit.goPlan') }}
       </a-button>
     </div>
 
@@ -58,10 +58,10 @@
 
     <a-row v-if="showSanityDetail" :gutter="24">
       <a-col :span="optionColumnSpan">
-        <a-form-item label="理智任务配置模式">
+        <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
-            :options="sanityModeOptions"
+            :options="resolvedSanityModeOptions"
             :disabled="loading"
             size="large"
             @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
@@ -72,16 +72,16 @@
       <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择当前执行的理智任务类型">
+            <a-tooltip :title="t('edit.pickSanityTaskType')">
               <span class="form-label">
-                理智任务
+                {{ t('edit.sanityTask') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displaySanityTaskType }}</span>
-            <span class="plan-source">来自计划表</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -106,7 +106,7 @@
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayCurrentTask }}</span>
-            <span class="plan-source">来自计划表</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -125,16 +125,16 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="协议空间奖励任务可在这里选择奖励组">
+            <a-tooltip :title="t('edit.rewardGroupsProtocolSpace')">
               <span class="form-label">
-                可选奖励组
+                {{ t('edit.rewardGroup') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayRewardsSet }}</span>
-            <span class="plan-source">来自计划表</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -151,6 +151,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
@@ -174,6 +175,8 @@ import {
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
+const { t } = useI18n()
+
 interface FieldChange {
   key: string
   value: any
@@ -188,6 +191,9 @@ const props = withDefaults(
     optionsLoading?: boolean
     optionsLoaded?: boolean
     isPlanMode?: boolean
+    // 默认值不写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+    // 引用不到 useI18n() 的 t。兜底见下方 resolvedSanityModeOptions。
+    // oxlint-disable-next-line vue/require-default-prop
     sanityModeOptions?: Array<{ label: string; value: string }>
     planModeConfig?: MaaEndSanityConfig | null
   }>(),
@@ -197,9 +203,14 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
-    sanityModeOptions: () => [{ label: '固定', value: 'Fixed' }],
     planModeConfig: null,
   }
+)
+
+// 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+// 引用不到 useI18n() 返回的 t，编译期直接报错。改成在这里兜底。
+const resolvedSanityModeOptions = computed(
+  () => props.sanityModeOptions ?? [{ label: t('edit.fixed'), value: 'Fixed' }]
 )
 
 const emit = defineEmits<{

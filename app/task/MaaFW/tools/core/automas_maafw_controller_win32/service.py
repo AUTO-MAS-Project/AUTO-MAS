@@ -118,7 +118,9 @@ class MaaFWWin32ControllerService:
         }
 
 
-def _controller_window_regex(controller: MaaFWController) -> tuple[str | None, str | None]:
+def _controller_window_regex(
+    controller: MaaFWController,
+) -> tuple[str | None, str | None]:
     if controller.type == "Win32" and controller.win32 is not None:
         return controller.win32.class_regex, controller.win32.window_regex
     return None, None

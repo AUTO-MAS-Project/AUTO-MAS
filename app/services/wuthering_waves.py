@@ -31,12 +31,8 @@ from app.utils import get_logger
 logger = get_logger("鸣潮更新检查")
 
 
-_CLIENT_RELATIVE_PATH = Path(
-    "Client/Binaries/Win64/Client-Win64-Shipping.exe"
-)
-_LAUNCHER_PREFERENCE_RELATIVE_PATH = Path(
-    "kr_game_cache/kr_game_temp.bin"
-)
+_CLIENT_RELATIVE_PATH = Path("Client/Binaries/Win64/Client-Win64-Shipping.exe")
+_LAUNCHER_PREFERENCE_RELATIVE_PATH = Path("kr_game_cache/kr_game_temp.bin")
 _LAUNCHER_STATE_RELATIVE_PATH = Path("launcherDownloadConfig.json")
 
 # 官方启动器的版本元数据入口。除这两个 URL 外不要硬编码任何 CDN 路径，

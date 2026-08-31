@@ -39,7 +39,9 @@ class MaaFWConfigSnapshot:
 
 
 def _digest(payload: dict) -> str:
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -88,11 +90,15 @@ def atomic_write_maafw_config(
     except MaaFWConfigCorruptionError:
         # Never overwrite an unreadable live record; an operator must recover it.
         raise
-    if expected_revision is not None and (current is None or current.revision != expected_revision):
+    if expected_revision is not None and (
+        current is None or current.revision != expected_revision
+    ):
         raise RuntimeError("MaaFW 配置版本已变化，请刷新后重试")
 
     serialized = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    fd, temporary = tempfile.mkstemp(prefix=f".{os.path.basename(target)}.", suffix=".tmp", dir=parent)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{os.path.basename(target)}.", suffix=".tmp", dir=parent
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(serialized)
@@ -122,7 +128,9 @@ def atomic_write_maafw_config(
         except OSError:
             pass
         raise
-    return MaaFWConfigSnapshot(path=target, revision=_digest(payload), payload=dict(payload))
+    return MaaFWConfigSnapshot(
+        path=target, revision=_digest(payload), payload=dict(payload)
+    )
 
 
 @asynccontextmanager

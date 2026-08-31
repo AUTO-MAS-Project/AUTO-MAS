@@ -22,7 +22,7 @@
 """统一通知编排。
 
 脚本和业务模块负责生成正文，本模块负责读取通知配置、选择目标渠道、失败隔离与重试；
-`app.services.notification` 只保留具体渠道的传输实现。
+``app.services.notification`` 只保留具体渠道的传输实现。
 """
 
 import asyncio
@@ -54,6 +54,8 @@ class NotifyPayload:
     email_mode: MailMode = "网页"
     serverchan_text: str | None = None
     koishi_text: str | None = None
+    system_title: str | None = None
+    system_message: str | None = None
     system_ticker: str | None = None
     system_timeout: int = 5
 
@@ -118,10 +120,28 @@ class NotifyTarget:
     empty_policy: EmptyPolicy = "send"
 
 
-def _webhooks(config: Any) -> tuple[tuple[str, Any], ...]:
-    """读取配置中的 Webhook，并保留可识别的 ID。"""
+@dataclass(frozen=True)
+class DispatchResult:
+    """一次通知分发的明确结果。
 
-    return tuple((str(uid), webhook) for uid, webhook in config.items())
+    ``attempted`` 是本次实际尝试投递的渠道数（被跳过的渠道不计入）；
+    ``succeeded`` / ``failed`` 分别是成功与失败的渠道名。零目标或全跳过时
+    ``attempted`` 为 0，切勿把该状态当作「已送达」。
+    """
+
+    attempted: int = 0
+    succeeded: tuple[str, ...] = ()
+    failed: tuple[str, ...] = ()
+
+
+def _webhooks(config: Any) -> tuple[tuple[str, Any], ...]:
+    """读取配置中已启用的 Webhook，并保留可识别的 ID。"""
+
+    return tuple(
+        (str(uid), webhook)
+        for uid, webhook in config.items()
+        if bool(webhook.get("Info", "Enabled"))
+    )
 
 
 def global_target(
@@ -209,6 +229,37 @@ def statistic_targets(
     return targets
 
 
+def _webhook_name(uid: str, webhook: Any) -> str:
+    """返回便于定位失败配置的 Webhook 名称。"""
+
+    try:
+        return str(webhook.get("Info", "Name") or uid)
+    except (AttributeError, KeyError):
+        return uid
+
+
+def target_channel_names(target: NotifyTarget) -> tuple[str, ...]:
+    """目标可能覆盖的渠道名（与 ``dispatch`` 实际发送时命名的格式一致）。
+
+    供按渠道跳过（如签到汇总只重试失败渠道）时枚举与过滤使用。
+    """
+
+    names = []
+    if target.system:
+        names.append(f"{target.name}系统")
+    if target.mail_to is not None:
+        names.append(f"{target.name}邮件")
+    if target.serverchan_key is not None:
+        names.append(f"{target.name} ServerChan")
+    names.extend(
+        f"{target.name} Webhook {_webhook_name(uid, webhook)}"
+        for uid, webhook in target.webhooks
+    )
+    if target.koishi:
+        names.append(f"{target.name} Koishi")
+    return tuple(names)
+
+
 async def _send(
     channel: str,
     send: Callable[[], Awaitable[Any]],
@@ -251,43 +302,58 @@ def _recipient_action(
     return False, False
 
 
-def _webhook_name(uid: str, webhook: Any) -> str:
-    """返回便于定位失败配置的 Webhook 名称。"""
-
-    try:
-        return str(webhook.get("Info", "Name") or uid)
-    except (AttributeError, KeyError):
-        return uid
-
-
 async def dispatch(
     payload: NotifyPayload,
     targets: Iterable[NotifyTarget],
     *,
     attempts: int = 1,
     retry_delay: float = 0,
-) -> list[str]:
-    """向所有目标分发通知，并返回发送失败的渠道名。"""
+    skip_channels: Iterable[str] = (),
+) -> DispatchResult:
+    """向所有目标分发通知，返回实际尝试/成功/失败渠道。
+
+    ``skip_channels`` 中的渠道不会被发送（也不计入尝试次数），用于签到汇总
+    等场景只向尚未送达的渠道重试，避免已成功渠道收到重复内容。
+    """
 
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
 
+    skip = set(skip_channels)
+    succeeded: list[str] = []
     failed: list[str] = []
+    attempted = 0
+
+    async def attempt(channel: str, send: Callable[[], Awaitable[Any]]) -> None:
+        nonlocal attempted
+        if channel in skip:
+            return
+        attempted += 1
+        if await _send(
+            channel, send, attempts=attempts, retry_delay=retry_delay
+        ):
+            succeeded.append(channel)
+        else:
+            failed.append(channel)
+
+    def miss(channel: str) -> None:
+        nonlocal attempted
+        if channel in skip:
+            return
+        attempted += 1
+        failed.append(channel)
+
     for target in targets:
         if target.system:
-            channel = f"{target.name}系统"
-            if not await _send(
-                channel,
+            await attempt(
+                f"{target.name}系统",
                 lambda: Notify.push_plyer(
-                    title=payload.title,
-                    message=payload.system_content,
+                    title=payload.system_title or payload.title,
+                    message=payload.system_message or payload.system_content,
                     ticker=payload.system_ticker or payload.title,
                     t=payload.system_timeout,
                 ),
-                attempts=attempts,
-                retry_delay=retry_delay,
-            ):
-                failed.append(channel)
+            )
 
         if target.mail_to is not None:
             channel = f"{target.name}邮件"
@@ -298,19 +364,17 @@ async def dispatch(
                 hint=f"{target.name}邮箱地址",
             )
             if missing:
-                failed.append(channel)
-            if should_send and not await _send(
-                channel,
-                lambda t=target: Notify.send_mail(
-                    mode=payload.email_mode,
-                    title=payload.title,
-                    content=payload.email_content,
-                    to_address=t.mail_to,
-                ),
-                attempts=attempts,
-                retry_delay=retry_delay,
-            ):
-                failed.append(channel)
+                miss(channel)
+            if should_send:
+                await attempt(
+                    channel,
+                    lambda t=target: Notify.send_mail(
+                        mode=payload.email_mode,
+                        title=payload.title,
+                        content=payload.email_content,
+                        to_address=t.mail_to,
+                    ),
+                )
 
         if target.serverchan_key is not None:
             channel = f"{target.name} ServerChan"
@@ -321,47 +385,41 @@ async def dispatch(
                 hint=f"{target.name}ServerChan 密钥",
             )
             if missing:
-                failed.append(channel)
-            if should_send and not await _send(
-                channel,
-                lambda t=target: Notify.ServerChanPush(
-                    title=payload.title,
-                    content=payload.serverchan_content,
-                    send_key=t.serverchan_key,
-                ),
-                attempts=attempts,
-                retry_delay=retry_delay,
-            ):
-                failed.append(channel)
+                miss(channel)
+            if should_send:
+                await attempt(
+                    channel,
+                    lambda t=target: Notify.ServerChanPush(
+                        title=payload.title,
+                        content=payload.serverchan_content,
+                        send_key=t.serverchan_key,
+                    ),
+                )
 
         for uid, webhook in target.webhooks:
-            channel = f"{target.name} Webhook {_webhook_name(uid, webhook)}"
-            if not await _send(
-                channel,
+            await attempt(
+                f"{target.name} Webhook {_webhook_name(uid, webhook)}",
                 lambda w=webhook: Notify.WebhookPush(
                     title=payload.title,
                     content=payload.webhook_content,
                     webhook=w,
                 ),
-                attempts=attempts,
-                retry_delay=retry_delay,
-            ):
-                failed.append(channel)
+            )
 
         if target.koishi:
-            channel = f"{target.name} Koishi"
-            if not await _send(
-                channel,
+            await attempt(
+                f"{target.name} Koishi",
                 lambda: Notify.send_koishi(payload.koishi_content),
-                attempts=attempts,
-                retry_delay=retry_delay,
-            ):
-                failed.append(channel)
+            )
 
-    return failed
+    return DispatchResult(
+        attempted=attempted,
+        succeeded=tuple(succeeded),
+        failed=tuple(failed),
+    )
 
 
-async def send_test_notification() -> list[str]:
+async def send_test_notification() -> DispatchResult:
     """向全部已启用的全局渠道发送测试通知。"""
 
     text = (

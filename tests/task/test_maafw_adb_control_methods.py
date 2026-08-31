@@ -191,10 +191,11 @@ class ConnectionLogWordingTest(unittest.TestCase):
 
     def test_wording_switches_on_bit_count(self) -> None:
         source = (
-            REPO_ROOT
-            / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
+            REPO_ROOT / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('"截图方法=" if screencap_single else "传入截图候选集合="', source)
+        self.assertIn(
+            '"截图方法=" if screencap_single else "传入截图候选集合="', source
+        )
         self.assertIn('"输入方法=" if input_single else "传入输入候选集合="', source)
         # 测速提示只在确实传了多个候选时才出现
         self.assertIn("if not (screencap_single and input_single):", source)
@@ -203,8 +204,7 @@ class ConnectionLogWordingTest(unittest.TestCase):
         """连接前那条「传入」日志也得按位数措辞，两处不能互相打架。"""
 
         source = (
-            REPO_ROOT
-            / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
+            REPO_ROOT / "app/task/MaaFW/tools/core/automas_maafw_runner/runner.py"
         ).read_text(encoding="utf-8")
         # 折叠空白，免得断言绑死在换行与缩进上
         flat = " ".join(source.split())

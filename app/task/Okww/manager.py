@@ -28,7 +28,6 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
     finalize_task_game_sign_notification,
@@ -112,7 +111,9 @@ class OkwwManager(TaskExecuteBase):
                 and self.script_info.user_list[0].name == "暂未加载"
             ):
                 self.script_info.user_list = [
-                    UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+                    UserItem(
+                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+                    )
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
@@ -191,8 +192,7 @@ class OkwwManager(TaskExecuteBase):
 
         if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
             self.script_config_path = (
-                Path(self.script_config.get("Info", "RootPath"))
-                / _OKWW_REL_CONFIG_DIR
+                Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             shutil.rmtree(self.temp_path, ignore_errors=True)
@@ -212,7 +212,9 @@ class OkwwManager(TaskExecuteBase):
         ):
             return
         if not self.had_original_script_config:
-            logger.info(f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}")
+            logger.info(
+                f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}"
+            )
             shutil.rmtree(self.script_config_path, ignore_errors=True)
         else:
             logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
@@ -286,7 +288,9 @@ class OkwwManager(TaskExecuteBase):
             sub_check = await method.check()
             if sub_check != "Pass":
                 self.check_result = sub_check
-                current_user = self.script_info.user_list[self.script_info.current_index]
+                current_user = self.script_info.user_list[
+                    self.script_info.current_index
+                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
                 await Publisher.send(
@@ -319,8 +323,7 @@ class OkwwManager(TaskExecuteBase):
                 await script_cfg.unlock()
 
             if self.check_result != "Pass" and not any(
-                user.status in ("完成", "跳过")
-                for user in self.script_info.user_list
+                user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await script_cfg.UserData.load(await self.user_config.toDict())
@@ -358,8 +361,12 @@ class OkwwManager(TaskExecuteBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                # 按用户交错组装「用户结果行 + 该用户节点详情」，避免多账号
-                # 任务的节点详情失去归属；失败条目仅在存在未完成用户时纳入报告。
+                # 按用户交错组装「用户结果行 + 该用户节点详情」：
+                # 多账号任务时各用户节点归属清晰，不再全部平铺。
+                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
+                # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，
+                # push_log 为空，自然只有结果行。
                 has_uncompleted = len(error_user) + len(wait_user) > 0
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
@@ -379,22 +386,15 @@ class OkwwManager(TaskExecuteBase):
                     "game_sign_summary": has_game_sign_summary,
                 }
 
-                await Notify.push_plyer(
-                    title.replace("报告", "已完成！"),
-                    (
-                        f"已完成用户数: {len(over_user)}, "
-                        f"未完成用户数: {len(error_user) + len(wait_user)}"
-                    ),
-                    (
-                        f"已完成用户数: {len(over_user)}, "
-                        f"未完成用户数: {len(error_user) + len(wait_user)}"
-                    ),
-                    10,
-                )
                 try:
-                    failed_channels = await push_notification("代理结果", title, result)
+                    push_result = await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        task_info=self.task_info,
+                    )
                     finalize_task_game_sign_notification(
-                        self.task_info, has_game_sign_summary, failed_channels
+                        self.task_info, has_game_sign_summary, push_result
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

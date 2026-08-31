@@ -1,3 +1,5 @@
+import { translate as t } from '@/i18n'
+
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const ISO_MONTH_RE = /^\d{4}-\d{2}$/
 const ISO_WEEK_RE = /^(\d{4})-W(\d{2})$/
@@ -52,9 +54,14 @@ export const formatBackendDateTime = (value: string): string => {
   const date = parseBackendDateTime(value)
   if (!date) return value
 
-  return `${date.getFullYear()}年${pad2(date.getMonth() + 1)}月${pad2(date.getDate())}日 ${pad2(
-    date.getHours()
-  )}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
+  return t('misc.dateTime', {
+    y: date.getFullYear(),
+    mo: pad2(date.getMonth() + 1),
+    d: pad2(date.getDate()),
+    h: pad2(date.getHours()),
+    mi: pad2(date.getMinutes()),
+    s: pad2(date.getSeconds()),
+  })
 }
 
 export const formatHistoryGroupLabel = (value: string): string => {
@@ -62,18 +69,18 @@ export const formatHistoryGroupLabel = (value: string): string => {
 
   if (ISO_DATE_RE.test(value)) {
     const [year, month, day] = value.split('-')
-    return `${year}年${month}月${day}日`
+    return t('misc.dateGroup', { y: year, mo: month, d: day })
   }
 
   if (ISO_MONTH_RE.test(value)) {
     const [year, month] = value.split('-')
-    return `${year}年${month}月`
+    return t('misc.monthGroup', { y: year, mo: month })
   }
 
   const weekMatch = value.match(ISO_WEEK_RE)
   if (weekMatch) {
     const [, year, week] = weekMatch
-    return `${year}年 第${week}周`
+    return t('misc.weekGroup', { y: year, w: week })
   }
 
   return value

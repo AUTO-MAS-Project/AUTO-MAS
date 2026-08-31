@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
+          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/src`" class="breadcrumb-link">
@@ -28,7 +28,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        SRC配置
+        {{ t('edit.srcConfiguration') }}
       </a-button>
       <a-button
         v-if="userMode !== '简洁' && showSrcConfigMask"
@@ -40,20 +40,23 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        正在配置
+        {{ t('edit.configuring') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 defineProps<{
   scriptId: string

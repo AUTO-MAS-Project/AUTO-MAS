@@ -2,40 +2,40 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>基本信息</h3>
+      <h3>{{ t('edit.basicInfo') }}</h3>
     </div>
 
     <a-row :gutter="24">
       <a-col :xs="24" :md="8">
         <a-form-item name="userName">
           <template #label>
-            <a-tooltip title="为当前配置设置一个易于识别的名称">
+            <a-tooltip :title="t('edit.giveThisConfigurationName')">
               <span class="form-label">
-                用户名称
+                {{ t('edit.userName') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.userName"
-            placeholder="请输入用户名称…"
+            :placeholder="t('edit.enterUserName')"
             size="large"
             @blur="emitSave('Info.Name', formData.Info.Name)"
           />
         </a-form-item>
       </a-col>
       <a-col :xs="12" :md="4">
-        <a-form-item label="启用">
+        <a-form-item :label="t('edit.enabled2')">
           <a-switch
             v-model:checked="formData.Info.Status"
-            checked-children="启用"
-            un-checked-children="禁用"
+            :checked-children="t('edit.enabled3')"
+            :un-checked-children="t('edit.disabled')"
             @change="emitSave('Info.Status', formData.Info.Status)"
           />
         </a-form-item>
       </a-col>
       <a-col :xs="12" :md="6">
-        <a-form-item label="剩余天数">
+        <a-form-item :label="t('edit.daysLeft')">
           <a-input-number
             v-model:value="formData.Info.RemainedDay"
             :min="-1"
@@ -47,7 +47,7 @@
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="6">
-        <a-form-item label="一键切换预设">
+        <a-form-item :label="t('edit.applyPreset')">
           <a-dropdown
             trigger="click"
             :disabled="interfaceDependentDisabled || presetOptions.length === 0"
@@ -82,7 +82,7 @@
           <template #label>
             <a-tooltip :title="accountRecordTooltip">
               <span class="form-label">
-                账号
+                {{ t('edit.account') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -91,7 +91,7 @@
             v-model:value="formData.Info.Account"
             size="large"
             autocomplete="off"
-            placeholder="仅用于本地记录…"
+            :placeholder="t('edit.localNoteOnly')"
             @blur="emitSave('Info.Account', formData.Info.Account)"
           />
         </a-form-item>
@@ -101,7 +101,7 @@
           <template #label>
             <a-tooltip :title="accountRecordTooltip">
               <span class="form-label">
-                密码
+                {{ t('edit.password') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -110,17 +110,17 @@
             v-model:value="formData.Info.Password"
             size="large"
             autocomplete="off"
-            placeholder="仅用于本地记录…"
+            :placeholder="t('edit.localNoteOnly')"
             @blur="emitSave('Info.Password', formData.Info.Password)"
           />
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="8">
-        <a-form-item label="备注">
+        <a-form-item :label="t('edit.note')">
           <a-input
             v-model:value="formData.Info.Notes"
             allow-clear
-            placeholder="请输入备注…"
+            :placeholder="t('edit.enterNote2')"
             size="large"
             @blur="emitSave('Info.Notes', formData.Info.Notes)"
           />
@@ -132,9 +132,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface'
 import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWPresetInfo, MaaFWUserConfig } from '@/types/script'
+
+const { t } = useI18n()
 
 type MaaFWUserFormData = MaaFWUserConfig & {
   userName: string

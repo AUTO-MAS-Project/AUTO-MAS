@@ -51,7 +51,9 @@ class MaaFWProjectUpdateService:
         return list_update_providers()
 
     @staticmethod
-    def _script_id(script_id: str | None, host_context: Mapping[str, Any] | None) -> str:
+    def _script_id(
+        script_id: str | None, host_context: Mapping[str, Any] | None
+    ) -> str:
         return str(
             script_id
             or (host_context or {}).get("scriptId")
@@ -154,7 +156,10 @@ class MaaFWProjectUpdateService:
                     operation.mark_recovery_required(str(exc))
                 except Exception:
                     pass
-                state = {"operationId": operation.operation_id, "status": "recovery_required"}
+                state = {
+                    "operationId": operation.operation_id,
+                    "status": "recovery_required",
+                }
             if str(state.get("status") or "") not in terminal and (
                 not script_id or str(state.get("scriptId") or "") == script_id
             ):
@@ -220,9 +225,8 @@ class MaaFWProjectUpdateService:
                     state = operation.mark_recovery_required(str(exc))
                 except Exception:
                     continue
-            if (
-                str(state.get("planId") or "") == str(latest.get("planId") or "")
-                and (not wanted or str(state.get("scriptId") or "") == wanted)
+            if str(state.get("planId") or "") == str(latest.get("planId") or "") and (
+                not wanted or str(state.get("scriptId") or "") == wanted
             ):
                 linked_candidates.append(state)
         if linked_candidates:
@@ -235,7 +239,10 @@ class MaaFWProjectUpdateService:
             try:
                 result["operation"] = self.operation_status(linked_operation)
             except Exception:
-                result["operation"] = {"operationId": linked_operation, "status": "recovery_required"}
+                result["operation"] = {
+                    "operationId": linked_operation,
+                    "status": "recovery_required",
+                }
         return result
 
     def recover_operation(
@@ -259,7 +266,9 @@ class MaaFWProjectUpdateService:
                 str(Path(project_path).resolve(strict=False))
             )
             if not expected_path or expected_path != supplied_path:
-                raise MaaFWProjectUpdateError("update operation project binding changed")
+                raise MaaFWProjectUpdateError(
+                    "update operation project binding changed"
+                )
         return self._public_operation_state(recover_update_operation(operation))
 
     def dispatch_operation_action(
@@ -317,8 +326,7 @@ class MaaFWProjectUpdateService:
         resolved_current = str(
             current_version
             if current_version is not None
-            else getattr(self._coerce_interface(interface), "version", "")
-            or ""
+            else getattr(self._coerce_interface(interface), "version", "") or ""
         )
         package_source = _normalise_package_source(
             effective_config.get("package_source")
@@ -344,7 +352,8 @@ class MaaFWProjectUpdateService:
                 "source": package_source,
                 "metadataSource": "mirrorchyan",
                 "packageSource": package_source,
-                "error": discovery.unavailable_reason or "update package is unavailable",
+                "error": discovery.unavailable_reason
+                or "update package is unavailable",
             }
         expected = discovery.project_fingerprint or await asyncio.to_thread(
             project_fingerprint,
@@ -478,7 +487,9 @@ class MaaFWProjectUpdateService:
         planned = str(state.get("projectFingerprint") or "").strip()
         supplied = str(expected_fingerprint or "").strip()
         if planned and not supplied:
-            raise MaaFWProjectUpdateError("update plan fingerprint confirmation is required")
+            raise MaaFWProjectUpdateError(
+                "update plan fingerprint confirmation is required"
+            )
         if planned and supplied and planned != supplied:
             raise MaaFWProjectUpdateError("update plan fingerprint confirmation failed")
         expected_script = str(state.get("scriptId") or "").strip()
@@ -532,9 +543,10 @@ class MaaFWProjectUpdateService:
         send_log: Any = None,
     ) -> MaaFWProjectUpdateDiscovery | None:
         effective_source_config = dict(source_config or {})
-        if project_path is not None and not str(
-            effective_source_config.get("project_shell_hint") or ""
-        ).strip():
+        if (
+            project_path is not None
+            and not str(effective_source_config.get("project_shell_hint") or "").strip()
+        ):
             shell_hint = await asyncio.to_thread(
                 detect_maafw_project_shell_hint,
                 Path(project_path).resolve(),
@@ -679,15 +691,31 @@ class MaaFWProjectUpdateService:
             ).strip()
             or None,
             sha256=str(data.get("sha256") or "").strip() or None,
-            artifact_id=str(data.get("artifact_id") or data.get("artifactId") or "").strip() or None,
-            package_type=str(data.get("package_type") or data.get("packageType") or "").strip() or None,
-            from_version=str(data.get("from_version") or data.get("fromVersion") or "").strip() or None,
-            to_version=str(data.get("to_version") or data.get("toVersion") or "").strip() or None,
+            artifact_id=str(
+                data.get("artifact_id") or data.get("artifactId") or ""
+            ).strip()
+            or None,
+            package_type=str(
+                data.get("package_type") or data.get("packageType") or ""
+            ).strip()
+            or None,
+            from_version=str(
+                data.get("from_version") or data.get("fromVersion") or ""
+            ).strip()
+            or None,
+            to_version=str(
+                data.get("to_version") or data.get("toVersion") or ""
+            ).strip()
+            or None,
             size=_optional_int(data.get("size")),
             etag=str(data.get("etag") or "").strip() or None,
-            last_modified=str(data.get("last_modified") or data.get("lastModified") or "").strip() or None,
+            last_modified=str(
+                data.get("last_modified") or data.get("lastModified") or ""
+            ).strip()
+            or None,
             range_supported=data.get("range_supported", data.get("rangeSupported")),
-            plan_id=str(data.get("plan_id") or data.get("planId") or "").strip() or None,
+            plan_id=str(data.get("plan_id") or data.get("planId") or "").strip()
+            or None,
             project_fingerprint=str(
                 data.get("project_fingerprint") or data.get("projectFingerprint") or ""
             ).strip()
@@ -746,14 +774,27 @@ class MaaFWProjectUpdateService:
             path=path,
             size=size,
             sha256=sha256,
-            artifact_id=str(data.get("artifact_id") or data.get("artifactId") or "").strip() or None,
-            resumed_from=_optional_int(data.get("resumed_from", data.get("resumedFrom"))) or 0,
+            artifact_id=str(
+                data.get("artifact_id") or data.get("artifactId") or ""
+            ).strip()
+            or None,
+            resumed_from=_optional_int(
+                data.get("resumed_from", data.get("resumedFrom"))
+            )
+            or 0,
             total_bytes=_optional_int(data.get("total_bytes", data.get("totalBytes"))),
             etag=str(data.get("etag") or "").strip() or None,
-            last_modified=str(data.get("last_modified") or data.get("lastModified") or "").strip() or None,
+            last_modified=str(
+                data.get("last_modified") or data.get("lastModified") or ""
+            ).strip()
+            or None,
             range_supported=data.get("range_supported", data.get("rangeSupported")),
-            operation_id=str(data.get("operation_id") or data.get("operationId") or "").strip() or None,
-            plan_id=str(data.get("plan_id") or data.get("planId") or "").strip() or None,
+            operation_id=str(
+                data.get("operation_id") or data.get("operationId") or ""
+            ).strip()
+            or None,
+            plan_id=str(data.get("plan_id") or data.get("planId") or "").strip()
+            or None,
         )
 
     @staticmethod

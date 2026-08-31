@@ -4,8 +4,8 @@
 重复实现相同逻辑；接入 log_box 的适配器直接复用本模块即可。
 
 - ``build_user_result_text``：按用户交错组装「用户结果行 + 该用户节点详情」
-  报告文本，多账号任务时各用户节点归属清晰；「失败」类型仅在任务存在未
-  完成用户时纳入（与 MAS 原生推送策略一致）。
+  报告文本，多账号任务时各用户节点归属清晰；「失败」类型条目仅在任务存在
+  未完成用户时纳入（与 MAS 原生推送策略一致）。
 """
 
 from __future__ import annotations
@@ -17,6 +17,11 @@ from app.utils.LogPatternExtractor import LOG_TYPE_ERROR
 
 def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:
     """按用户交错组装「用户结果行 + 该用户节点详情」报告文本
+
+    每个用户先输出 ``用户名: 用户result`` 结果行，随后紧跟该用户采集的
+    节点详情（每条独占一行），用户块之间以空行分隔；没有采集到节点的
+    用户只输出结果行。多账号任务时各用户节点归属清晰，避免全部平铺在
+    一起无法区分。
 
     Args:
         users: 用户列表（元素需有 ``name``、``result``、``push_log`` 属性：
@@ -38,4 +43,3 @@ def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:
         )
         for user in users
     )
-

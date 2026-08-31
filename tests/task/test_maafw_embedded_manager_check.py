@@ -16,8 +16,9 @@ from pathlib import Path
 from unittest import mock
 
 import app.core  # noqa: F401  # 初始化宿主配置
-from app.core.task_manager import TaskInfo
 from app.models.config import MaaFWConfig, MaaFWUserConfig
+from app.core.task_manager import TaskInfo
+from app.core.notify import DispatchResult
 from app.models.task import ScriptItem
 from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
 
@@ -238,7 +239,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                         "Controller": "桌面端",
                         "Resource": "简中",
                     },
-                                    }
+                }
             )
             for name in user_names:
                 _, user_cfg = await config.UserData.add(MaaFWUserConfig)
@@ -276,9 +277,12 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                 built.append(task)
                 return task
 
-            with mock.patch.object(
-                app.core.Config, "ScriptConfig", {script_uid: config}
-            ), mock.patch.object(manager, "_build_inner_task", fake_build):
+            with (
+                mock.patch.object(
+                    app.core.Config, "ScriptConfig", {script_uid: config}
+                ),
+                mock.patch.object(manager, "_build_inner_task", fake_build),
+            ):
                 await manager.main_task()
             return manager
 
@@ -318,7 +322,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                         "Controller": "桌面端",
                         "Resource": "简中",
                     },
-                                    }
+                }
             )
             for name in ("用户A", "用户B"):
                 _, user_cfg = await config.UserData.add(MaaFWUserConfig)
@@ -333,7 +337,10 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                 user_id=None,
             )
             item = ScriptItem(
-                script_id=str(script_uid), name="测试 MaaFW", status="运行", user_list=[]
+                script_id=str(script_uid),
+                name="测试 MaaFW",
+                status="运行",
+                user_list=[],
             )
             task_info.script_list = [item]
             manager = MaaFWEmbeddedManager(item)
@@ -348,9 +355,12 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                 built.append(task)
                 return task
 
-            with mock.patch.object(
-                app.core.Config, "ScriptConfig", {script_uid: config}
-            ), mock.patch.object(manager, "_build_inner_task", fake_build):
+            with (
+                mock.patch.object(
+                    app.core.Config, "ScriptConfig", {script_uid: config}
+                ),
+                mock.patch.object(manager, "_build_inner_task", fake_build),
+            ):
                 await manager.main_task()
 
         asyncio.run(go())
@@ -391,15 +401,16 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
             manager._inner_finalized = True
             with mock.patch(
                 "app.task.MaaFW.embedded_manager.push_notification",
-                new=mock.AsyncMock(return_value=[]),
+                new=mock.AsyncMock(return_value=DispatchResult()),
             ) as push:
                 await manager.final_task()
             return push
 
         push = asyncio.run(go())
         push.assert_awaited_once()
-        mode, title, message = push.await_args.args
-        self.assertEqual(mode, "代理结果")
+        self.assertEqual(push.await_args.kwargs["mode"], "代理结果")
+        title = push.await_args.kwargs["title"]
+        message = push.await_args.kwargs["message"]
         self.assertIn("自动代理任务报告", title)
         self.assertEqual(message["completed_count"], 2)
         self.assertEqual(message["uncompleted_count"], 0)
@@ -413,13 +424,13 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
             manager._inner_finalized = True
             with mock.patch(
                 "app.task.MaaFW.embedded_manager.push_notification",
-                new=mock.AsyncMock(return_value=[]),
+                new=mock.AsyncMock(return_value=DispatchResult()),
             ) as push:
                 await manager.final_task()
             return push
 
         push = asyncio.run(go())
-        _, _, message = push.await_args.args
+        message = push.await_args.kwargs["message"]
         self.assertEqual(message["completed_count"], 1)
         self.assertEqual(message["uncompleted_count"], 0)
 
@@ -439,7 +450,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
         async def go():
             with mock.patch(
                 "app.task.MaaFW.embedded_manager.push_notification",
-                new=mock.AsyncMock(return_value=[]),
+                new=mock.AsyncMock(return_value=DispatchResult()),
             ) as push:
                 await manager.final_task()
                 await manager.final_task()
@@ -498,10 +509,9 @@ class RuntimePoolRouteInjectionTest(unittest.TestCase):
     def test_run_maafw_guard_still_reads_both_fields(self) -> None:
         """守卫还在，说明这条注入是必需的而不是可选的。"""
 
-        source = (
-            REPO_ROOT
-            / "app/task/MaaFW/tools/embedded/runner_task.py"
-        ).read_text(encoding="utf-8")
+        source = (REPO_ROOT / "app/task/MaaFW/tools/embedded/runner_task.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("runtime_pool_root = self.maafw_runtime_pool_root", source)
         self.assertIn("maafw.runtime_pool.v1", source)
 
@@ -527,7 +537,7 @@ class EmbeddedManagerAgainstRealProjectTest(unittest.TestCase):
                         "Controller": "PC",
                         "Resource": "官服",
                     },
-                                    }
+                }
             )
             _, user_cfg = await config.UserData.add(MaaFWUserConfig)
             tasks = ["收取荒原"]

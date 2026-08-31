@@ -34,8 +34,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Literal, TextIO
 
+from packaging.version import InvalidVersion, Version
+
 import maa as maa_package
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
+from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    describe_runtime_architecture_mismatch,
+    project_maafw_runtime_path,
+)
 from maa.agent_client import AgentClient
 from maa.controller import (
     AdbController,
@@ -81,6 +87,10 @@ except ImportError:
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 MAAFW_DEBUG_LOG_PATH = Path("debug") / "maafw.log"
+# 这些 controller 动作失败意味着游戏/设备根本没就绪。此时任务失败不该继续
+# 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
+# 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
+FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
 TASK_CONFIG_LOG_VALUE_LIMIT = 1200
 # 整行上限。留足余量低于宿主 _FRAMEWORK_UI_LOG_MAX_CHARS(1200)，
 # 免得任务配置被当成框架错误诊断截断。
@@ -135,19 +145,8 @@ MAAFW_FAILURE_EVENT_MESSAGES = {
     "Tasker.Task.Failed",
 }
 MAAFW_FAILURE_SUMMARY_LIMIT = 8
-
-
-def _project_maafw_runtime_path(project_path: Path | None) -> Path | None:
-    if project_path is None:
-        return None
-
-    for candidate in (
-        project_path / "maafw",
-        project_path / "runtimes" / "win-x64",
-    ):
-        if (candidate / "MaaFramework.dll").is_file():
-            return candidate
-    return None
+# 失败消息里最多回溯几个节点。再往前是正常走过的路径，列出来只会淹没重点。
+FAILURE_NODE_NAME_LIMIT = 3
 
 
 def decode_bytes(data: bytes) -> str:
@@ -162,9 +161,7 @@ def decode_bytes(data: bytes) -> str:
 
 
 def _should_adb_connect(address: str, attempt: int) -> bool:
-    return _is_network_adb_address(address) and (
-        attempt == 0 or (attempt + 1) % 5 == 0
-    )
+    return _is_network_adb_address(address) and (attempt == 0 or (attempt + 1) % 5 == 0)
 
 
 def _is_network_adb_address(address: str) -> bool:
@@ -186,9 +183,8 @@ def _is_adb_connect_success(detail: str) -> bool:
         return False
     failed_markers = ("failed", "unable", "cannot", "refused", "timed out")
     return (
-        ("connected to" in normalized or "already connected" in normalized)
-        and not any(marker in normalized for marker in failed_markers)
-    )
+        "connected to" in normalized or "already connected" in normalized
+    ) and not any(marker in normalized for marker in failed_markers)
 
 
 def _is_single_method(value: int) -> bool:
@@ -329,7 +325,9 @@ def _venv_python_path(venv_path: Path) -> Path:
 
 
 def _is_valid_venv_path(venv_path: Path) -> bool:
-    return _venv_python_path(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    return (
+        _venv_python_path(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    )
 
 
 def _venv_bootstrap_python() -> str:
@@ -339,14 +337,146 @@ def _venv_bootstrap_python() -> str:
     return sys.executable
 
 
-def _ensure_maafw_global_init(project_path: Path | None = None) -> None:
+def describe_loaded_maafw() -> tuple[str, str]:
+    """返回实际加载的 MaaFramework 版本与 Python binding 的版本。
+
+    两者未必相同：原生库来自项目自带目录，binding 来自 runner venv。MaaFW 的
+    py binding 与原生库是绑定关系，跨 minor 混用**不会报错**，但行为可能不同，
+    真机上表现为「资源能导入、识别却不对」这类只在生产复现的问题。
+    """
+
+    try:
+        loaded = str(Library.version() or "").strip()
+    except Exception:  # pragma: no cover - 取不到就当未知，不能因此挡住运行
+        loaded = ""
+    try:
+        from importlib.metadata import version as _dist_version
+
+        binding = str(_dist_version("maafw") or "").strip()
+    except Exception:  # pragma: no cover
+        binding = ""
+    return loaded, binding
+
+
+def _file_fingerprint(path: Path) -> tuple[int, str] | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return len(data), hashlib.sha256(data).hexdigest()
+
+
+def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
+    """项目自带的原生库是否与 binding 附带的那份不是同一个二进制。
+
+    版本号相同不等于二进制相同。按版本钉 binding 只能保证「官方发布的同版本」，
+    挡不住项目塞进来一份自己改的构建——它报的版本串照样是 X，版本一致性检查
+    看不出任何异常。
+
+    两份文件此时都在本地（一份在项目目录，一份在 runner venv 的 ``maa/bin``），
+    直接比字节即可，**不需要联网**。这是版本号抓不到、又能廉价拿到的那层证据。
+
+    对 MaaFramework 官方目录里 46 个 Windows 发行包做过全量比对：能确定版本的
+    44 个**全部与对应 PyPI wheel 逐字节相同**，无人自带改过的构建。所以这个
+    检查平时不会响；它是给「哪天真有人这么干」留的。
+
+    Returns:
+        True 表示确实是另一个二进制；False 表示同一份；无法判断时返回 None。
+    """
+
+    if runtime_path is None:
+        # 没有项目自带的库，本来就直接用 binding 那份，不存在分歧
+        return False
+
+    project_dll = runtime_path / "MaaFramework.dll"
+    binding_dll = (
+        Path(maa_package.__file__).resolve().parent / "bin" / "MaaFramework.dll"
+    )
+    try:
+        if project_dll.resolve() == binding_dll:
+            return False  # 同一个文件，谈不上分歧
+    except OSError:
+        return None
+
+    project_print = _file_fingerprint(project_dll)
+    binding_print = _file_fingerprint(binding_dll)
+    if project_print is None or binding_print is None:
+        return None
+    return project_print != binding_print
+
+
+def _normalize_maafw_version(value: str) -> str:
+    """把版本串归一到可比较的形式。
+
+    两边的写法本来就不同：原生库报的是语义化版本（``v5.13.0-beta.2``），
+    PyPI 包报的是 PEP 440（``5.13.0b2``）。只剥 ``v`` 前缀不够——那样
+    同一个预发布版会被判成不一致，真机上就误报过一次。
+    """
+
+    raw = value.strip().lstrip("vV")
+    try:
+        return str(Version(raw))
+    except InvalidVersion:
+        return raw
+
+
+def _display_maafw_version(value: str) -> str:
+    """展示用：保证恰好一个 ``v`` 前缀，不重不缺。"""
+
+    raw = value.strip()
+    return "v" + raw.lstrip("vV") if raw else "未知"
+
+
+def _ensure_maafw_global_init(
+    project_path: Path | None = None,
+    send_log: Callable[[str], None] | None = None,
+) -> None:
     global _MAAFW_INITIALIZED
     if _MAAFW_INITIALIZED:
         return
     with _MAAFW_INIT_LOCK:
         if _MAAFW_INITIALIZED:
             return
-        _ensure_maafw_client_library_mode(_project_maafw_runtime_path(project_path))
+        runtime_path = project_maafw_runtime_path(project_path)
+        # 架构不符时 Library.open 必然失败，但原生层的报错定位不到「装错了包」。
+        # 提前判断只是把同一个失败说清楚，不会挡下原本能跑的情况。
+        architecture_error = describe_runtime_architecture_mismatch(runtime_path)
+        if architecture_error:
+            raise RuntimeError(architecture_error)
+        _ensure_maafw_client_library_mode(runtime_path)
+        if send_log is not None:
+            loaded, binding = describe_loaded_maafw()
+            source = str(runtime_path) if runtime_path else "runner 运行环境自带"
+            send_log(
+                "MaaFramework 实际加载: "
+                f"{_display_maafw_version(loaded)}; 来源={source}"
+            )
+            versions_differ = (
+                loaded
+                and binding
+                and _normalize_maafw_version(loaded)
+                != _normalize_maafw_version(binding)
+            )
+            if versions_differ:
+                # 只警告不拦截：现有项目正是这么跑起来的，贸然拦下会让原本能跑的
+                # 直接失败。但必须让人看见——这类不一致不会报错，只会行为不同。
+                send_log(
+                    "⚠ MaaFramework 版本不一致: 原生库 "
+                    f"{_display_maafw_version(loaded)} 与 Python binding "
+                    f"{_display_maafw_version(binding)} 不是同一版本。"
+                    "MaaFW 的 binding 与原生库"
+                    "是绑定关系，跨版本混用不报错但行为可能不同，"
+                    "识别异常时请优先怀疑这里"
+                )
+            elif detect_custom_maafw_build(runtime_path):
+                # 版本号相同但二进制不同：项目自带的是改过的构建。按版本钉
+                # binding 只保证「官方发布的同版本」，挡不住这种情况，而版本
+                # 一致性检查同样看不出来——只有比字节能发现。
+                send_log(
+                    "MaaFramework 原生库为项目自带的非官方构建（版本同为 "
+                    f"{_display_maafw_version(loaded)}，二进制与官方发行版不同）。"
+                    "这是项目的选择，MAS 按其自带的库运行"
+                )
         user_path = (project_path or Path.cwd()).resolve()
         option_path = user_path / "config" / "maa_option.json"
         option_path.parent.mkdir(parents=True, exist_ok=True)
@@ -412,13 +542,14 @@ class MaaFWRunner:
         self._python_env_checked: dict[str, bool] = {}
         self._stop_requested: threading.Event = threading.Event()
         self._task_failure_summaries: list[str] = []
+        self._failed_controller_actions: set[str] = set()
         self._failed_task_errors: list[tuple[str, str]] = []
 
     def _ensure_initialized(self, device_config: MaaFWDeviceConfig) -> None:
         if self._initialized:
             return
 
-        _ensure_maafw_global_init(Path(self.plan.path))
+        _ensure_maafw_global_init(Path(self.plan.path), self.send_log)
         # 先确认设备真的连得上，再去加载原生插件与资源。
         # 这两步对 M9A 这类项目要几秒并会载入 DLL，设备没起来时全是白做的功，
         # 失败还要再逐个拆掉。冷启动的模拟器可能要等几分钟，更不该让它压在
@@ -449,14 +580,12 @@ class MaaFWRunner:
             # loadable DLLs while preserving explicit file entries in a
             # project manifest.
             if path_info.isFile:
-                candidates = [plugin_path] if plugin_path.suffix.casefold() == ".dll" else []
+                candidates = (
+                    [plugin_path] if plugin_path.suffix.casefold() == ".dll" else []
+                )
             elif path_info.isDir:
                 candidates = sorted(
-                    (
-                        item
-                        for item in plugin_path.rglob("*.dll")
-                        if item.is_file()
-                    ),
+                    (item for item in plugin_path.rglob("*.dll") if item.is_file()),
                     key=lambda item: str(item).casefold(),
                 )
             else:
@@ -476,9 +605,7 @@ class MaaFWRunner:
                 else:
                     loaded = Tasker.load_plugin(str(candidate))
                 if loaded is False:
-                    raise RuntimeError(
-                        f"MaaFW native plugin 加载失败: {candidate}"
-                    )
+                    raise RuntimeError(f"MaaFW native plugin 加载失败: {candidate}")
                 self.send_log(f"已加载 MaaFW native plugin: {candidate}")
 
     def run(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
@@ -488,12 +615,19 @@ class MaaFWRunner:
             completed_tasks = self._run_tasks()
             if self._failed_task_errors:
                 first_failed_task, _ = self._failed_task_errors[0]
-                error_message = "；".join(
-                    f"{task_name}: {message}"
-                    for task_name, message in self._failed_task_errors[:3]
-                )
-                if len(self._failed_task_errors) > 3:
-                    error_message += f"；另有 {len(self._failed_task_errors) - 3} 个任务失败"
+                if len(self._failed_task_errors) == 1:
+                    # 只有一个任务失败时不带任务名——宿主侧已经拼上了任务标签，
+                    # 再带一次就成了「拜访好友：任务执行失败：VisitFriends: ...」。
+                    error_message = self._failed_task_errors[0][1]
+                else:
+                    error_message = "；".join(
+                        f"{task_name}: {message}"
+                        for task_name, message in self._failed_task_errors[:3]
+                    )
+                    if len(self._failed_task_errors) > 3:
+                        error_message += (
+                            f"；另有 {len(self._failed_task_errors) - 3} 个任务失败"
+                        )
                 return MaaFWRunResult(
                     success=False,
                     projectName=self.plan.projectName,
@@ -511,9 +645,11 @@ class MaaFWRunner:
                 completedTasks=completed_tasks,
             )
         except Exception as exc:
-            failed_task = self.plan.tasks[len(self._completed_task_names())].name if (
-                len(self._completed_task_names()) < len(self.plan.tasks)
-            ) else None
+            failed_task = (
+                self.plan.tasks[len(self._completed_task_names())].name
+                if (len(self._completed_task_names()) < len(self.plan.tasks))
+                else None
+            )
             self.send_log(f"MaaFW 任务执行失败: {exc}")
             return MaaFWRunResult(
                 success=False,
@@ -645,23 +781,17 @@ class MaaFWRunner:
         self._install_tasker_sink()
         if device_config.type == "Adb":
             screencap_methods = (
-                device_config.screencapMethods
-                or MaaAdbScreencapMethodEnum.Default
+                device_config.screencapMethods or MaaAdbScreencapMethodEnum.Default
             )
-            input_methods = (
-                device_config.inputMethods or MaaAdbInputMethodEnum.Default
-            )
+            input_methods = device_config.inputMethods or MaaAdbInputMethodEnum.Default
             screencap_single = _is_single_method(screencap_methods)
             input_single = _is_single_method(input_methods)
             parts = [
-                "ADB controller 最终连接: "
-                f"controller={self.plan.controllerName}",
+                f"ADB controller 最终连接: controller={self.plan.controllerName}",
                 f"地址={device_config.address}",
                 f"ADB 路径={device_config.adbPath}",
                 ("截图方法=" if screencap_single else "传入截图候选集合=")
-                + _format_enum_methods(
-                    MaaAdbScreencapMethodEnum, screencap_methods
-                ),
+                + _format_enum_methods(MaaAdbScreencapMethodEnum, screencap_methods),
                 ("输入方法=" if input_single else "传入输入候选集合=")
                 + _format_enum_methods(MaaAdbInputMethodEnum, input_methods),
             ]
@@ -720,7 +850,9 @@ class MaaFWRunner:
                 raise RuntimeError("ADB controller 需要 adbPath 和 address")
             # screencapMethods/inputMethods 为 0 (Null) 时回退到 MaaFW 默认值，
             # 确保含 EmulatorExtras 的默认截图/输入集合被启用。
-            screencap_methods = device_config.screencapMethods or MaaAdbScreencapMethodEnum.Default
+            screencap_methods = (
+                device_config.screencapMethods or MaaAdbScreencapMethodEnum.Default
+            )
             input_methods = device_config.inputMethods or MaaAdbInputMethodEnum.Default
             return AdbController(
                 device_config.adbPath,
@@ -734,9 +866,14 @@ class MaaFWRunner:
             if not device_config.hWnd:
                 raise RuntimeError("Win32 controller 需要窗口句柄，请先扫描或填写 HWnd")
             # screencapMethod 为 0 (Null) 时回退到 DXGI_DesktopDup，避免控制器无法截图。
-            screencap_method = device_config.screencapMethod or MaaWin32ScreencapMethodEnum.DXGI_DesktopDup
+            screencap_method = (
+                device_config.screencapMethod
+                or MaaWin32ScreencapMethodEnum.DXGI_DesktopDup
+            )
             mouse_method = device_config.mouseMethod or MaaWin32InputMethodEnum.Seize
-            keyboard_method = device_config.keyboardMethod or MaaWin32InputMethodEnum.Seize
+            keyboard_method = (
+                device_config.keyboardMethod or MaaWin32InputMethodEnum.Seize
+            )
             return Win32Controller(
                 device_config.hWnd,
                 screencap_method,
@@ -752,16 +889,11 @@ class MaaFWRunner:
     def _log_controller_config(self, device_config: MaaFWDeviceConfig) -> None:
         if device_config.type == "Adb":
             screencap_methods = (
-                device_config.screencapMethods
-                or MaaAdbScreencapMethodEnum.Default
+                device_config.screencapMethods or MaaAdbScreencapMethodEnum.Default
             )
-            input_methods = (
-                device_config.inputMethods or MaaAdbInputMethodEnum.Default
-            )
+            input_methods = device_config.inputMethods or MaaAdbInputMethodEnum.Default
             screencap_label = (
-                "截图方法"
-                if _is_single_method(screencap_methods)
-                else "截图候选集合"
+                "截图方法" if _is_single_method(screencap_methods) else "截图候选集合"
             )
             input_label = (
                 "输入方法" if _is_single_method(input_methods) else "输入候选集合"
@@ -800,9 +932,7 @@ class MaaFWRunner:
         retry_count = ADB_READY_RETRY_COUNT
         configured_timeout = getattr(device_config, "adbReadyTimeout", None)
         if isinstance(configured_timeout, int) and configured_timeout > 0:
-            retry_count = max(
-                1, int(configured_timeout / ADB_READY_RETRY_INTERVAL)
-            )
+            retry_count = max(1, int(configured_timeout / ADB_READY_RETRY_INTERVAL))
 
         for attempt in range(retry_count):
             connect_detail = ""
@@ -812,8 +942,7 @@ class MaaFWRunner:
                 )
                 if connected and not network_connect_logged:
                     self.send_log(
-                        f"ADB 网络设备已连接: {device_config.address}; "
-                        f"{connect_detail}"
+                        f"ADB 网络设备已连接: {device_config.address}; {connect_detail}"
                     )
                     network_connect_logged = True
 
@@ -836,8 +965,7 @@ class MaaFWRunner:
                 if result.returncode == 0 and state == "device":
                     latency = self._measure_adb_latency(device_config)
                     self.send_log(
-                        f"ADB 连接测速: {device_config.address}; "
-                        f"往返延迟={latency}"
+                        f"ADB 连接测速: {device_config.address}; 往返延迟={latency}"
                     )
                     self.send_log(f"ADB 设备已就绪: {device_config.address}")
                     return
@@ -855,9 +983,7 @@ class MaaFWRunner:
                 )
 
             should_log = (
-                attempt == 0
-                or attempt == retry_count - 1
-                or (attempt + 1) % 15 == 0
+                attempt == 0 or attempt == retry_count - 1 or (attempt + 1) % 15 == 0
             )
             if should_log:
                 self.send_log(
@@ -953,12 +1079,9 @@ class MaaFWRunner:
                 for item in agent_plan.command
             ]
             env = self._build_agent_env(agent_plan)
-            creationflags = (
-                subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            )
+            creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             self.send_log(
-                f"启动 Agent 子进程: {Path(command[0]).name} "
-                f"(cwd={agent_plan.cwd})"
+                f"启动 Agent 子进程: {Path(command[0]).name} (cwd={agent_plan.cwd})"
             )
             process = subprocess.Popen(
                 command,
@@ -1015,8 +1138,7 @@ class MaaFWRunner:
         source_main = source_bin / "MaaFramework.dll"
         if not source_main.is_file():
             raise RuntimeError(
-                "托管 MaaFW 原生 Agent 缺少共享运行时 MaaFramework.dll: "
-                f"{source_main}"
+                f"托管 MaaFW 原生 Agent 缺少共享运行时 MaaFramework.dll: {source_main}"
             )
 
         source_agent_binary = source_bin.parent.parent / "MaaAgentBinary"
@@ -1054,14 +1176,10 @@ class MaaFWRunner:
         # A complete project release keeps its own native runtime and must win
         # over the shared fallback.  The overlay is only for stripped payloads.
         if target_main.is_file() and not marker_path.is_file():
-            self.send_log(
-                f"[MaaFW Runtime] 使用项目自带 native runtime: {target_main}"
-            )
+            self.send_log(f"[MaaFW Runtime] 使用项目自带 native runtime: {target_main}")
             return
 
-        if target_dir.exists() and (
-            not target_dir.is_dir() or target_dir.is_symlink()
-        ):
+        if target_dir.exists() and (not target_dir.is_dir() or target_dir.is_symlink()):
             raise RuntimeError(
                 f"托管 MaaFW native runtime 目录不是普通目录: {target_dir}"
             )
@@ -1097,8 +1215,7 @@ class MaaFWRunner:
             }
             target_matches = (
                 all(
-                    path.is_file() and not path.is_symlink()
-                    for path, _ in target_files
+                    path.is_file() and not path.is_symlink() for path, _ in target_files
                 )
                 and actual_paths == expected_paths
                 and _sha256_file_set(target_files) == asset_hash
@@ -1142,9 +1259,7 @@ class MaaFWRunner:
                 ),
                 "maafwSha256": source_hash,
                 "assetSha256": asset_hash,
-                "files": [
-                    str(relative_path) for _, relative_path in source_files
-                ],
+                "files": [str(relative_path) for _, relative_path in source_files],
             }
             marker_payload = json.dumps(
                 marker,
@@ -1240,19 +1355,17 @@ class MaaFWRunner:
 
         process_agents = [agent for agent in self.plan.agents if not agent.embedded]
         if not process_agents:
-            self.send_log("[Python环境] 所有 Agent 均为 embedded，跳过子进程 Python 环境准备")
+            self.send_log(
+                "[Python环境] 所有 Agent 均为 embedded，跳过子进程 Python 环境准备"
+            )
             return
 
         shared_agents = route_managed_python_agents_to_shared_runtime(
             self.plan.path,
             process_agents,
             python_executable=sys.executable,
-            dependencies_complete=(
-                self.plan.managedSharedAgentDependenciesComplete
-            ),
-            managed_python_agent_indexes=(
-                self.plan.managedPythonAgentIndexes
-            ),
+            dependencies_complete=(self.plan.managedSharedAgentDependenciesComplete),
+            managed_python_agent_indexes=(self.plan.managedPythonAgentIndexes),
         )
         if shared_agents:
             shim_dir = write_agent_compat_shims(Path(sys.prefix))
@@ -1262,7 +1375,9 @@ class MaaFWRunner:
             )
 
         self.send_log(f"[Python环境] 开始准备 {len(process_agents)} 个 Agent 环境")
-        from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import prepare_agent_envs
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
+            prepare_agent_envs,
+        )
 
         prepare_agent_envs(
             Path(self.plan.path),
@@ -1280,7 +1395,9 @@ class MaaFWRunner:
             "rebuild the MaaFW run plan before starting agents"
         )
 
-    def _resolve_embedded_agent_paths(self, agent_plan: Any) -> tuple[Path, Path | None]:
+    def _resolve_embedded_agent_paths(
+        self, agent_plan: Any
+    ) -> tuple[Path, Path | None]:
         project_path = Path(self.plan.path)
         entry_path: Path | None = None
         for raw_arg in agent_plan.childArgs:
@@ -1347,7 +1464,9 @@ class MaaFWRunner:
         )
         return bool(actions or recognitions or sink_count)
 
-    def _scan_embedded_agent_modules(self, agent_root: Path) -> list[_EmbeddedAgentScanItem]:
+    def _scan_embedded_agent_modules(
+        self, agent_root: Path
+    ) -> list[_EmbeddedAgentScanItem]:
         items: set[_EmbeddedAgentScanItem] = set()
         for file_path in sorted(agent_root.rglob("*.py")):
             if "__pycache__" in file_path.parts:
@@ -1411,7 +1530,10 @@ class MaaFWRunner:
                 return "action"
             if func.attr == "custom_recognition":
                 return "recognition"
-        if owner_name == "AgentServer" and func.attr in EMBEDDED_AGENT_SERVER_SINK_DECORATORS:
+        if (
+            owner_name == "AgentServer"
+            and func.attr in EMBEDDED_AGENT_SERVER_SINK_DECORATORS
+        ):
             return func.attr
         return None
 
@@ -1464,21 +1586,13 @@ class MaaFWRunner:
 
         setattr(maa_resource_module, "resource", self.resource)
         AgentServer.custom_action = staticmethod(self.resource.custom_action)
-        AgentServer.custom_recognition = staticmethod(
-            self.resource.custom_recognition
-        )
-        AgentServer.resource_sink = staticmethod(
-            self._embedded_resource_sink_decorator
-        )
+        AgentServer.custom_recognition = staticmethod(self.resource.custom_recognition)
+        AgentServer.resource_sink = staticmethod(self._embedded_resource_sink_decorator)
         AgentServer.controller_sink = staticmethod(
             self._embedded_controller_sink_decorator
         )
-        AgentServer.tasker_sink = staticmethod(
-            self._embedded_tasker_sink_decorator
-        )
-        AgentServer.context_sink = staticmethod(
-            self._embedded_context_sink_decorator
-        )
+        AgentServer.tasker_sink = staticmethod(self._embedded_tasker_sink_decorator)
+        AgentServer.context_sink = staticmethod(self._embedded_context_sink_decorator)
 
         def restore() -> None:
             if old_resource is sentinel:
@@ -1650,14 +1764,18 @@ class MaaFWRunner:
         for attempt in range(1, AGENT_CONNECT_RETRY_COUNT + 1):
             exit_code = process.poll()
             if exit_code is not None:
-                raise RuntimeError(f"Agent 进程已退出，无法连接: {label}, exit={exit_code}")
+                raise RuntimeError(
+                    f"Agent 进程已退出，无法连接: {label}, exit={exit_code}"
+                )
 
             try:
                 if agent_client.connect():
                     if not agent_client.set_timeout(-1):
                         self.send_log(f"AgentClient 恢复运行超时失败: {label}")
                     if attempt > 1:
-                        self.send_log(f"AgentClient 已连接: {label}, 尝试次数 {attempt}")
+                        self.send_log(
+                            f"AgentClient 已连接: {label}, 尝试次数 {attempt}"
+                        )
                     return
             except Exception as exc:
                 last_error = exc
@@ -1711,9 +1829,15 @@ class MaaFWRunner:
         except Exception as exc:
             self.send_log(f"注册 MaaFW resource 日志监听失败: {exc}")
 
+    def _record_controller_action_failure(self, action: str) -> None:
+        self._failed_controller_actions.add(action)
+
     def _install_controller_sink(self, controller: Controller) -> None:
         try:
-            sink = _MaaFWControllerLogSink(self.send_log)
+            sink = _MaaFWControllerLogSink(
+                self.send_log,
+                self._record_controller_action_failure,
+            )
             if controller.add_sink(sink) is not None:
                 self.event_sinks.append(sink)
         except Exception as exc:
@@ -1766,9 +1890,7 @@ class MaaFWRunner:
                     str(write_agent_compat_shims(Path(sys.prefix)))
                 )
             except Exception as exc:
-                raise RuntimeError(
-                    f"写入共享 runtime Agent 兼容层失败: {exc}"
-                ) from exc
+                raise RuntimeError(f"写入共享 runtime Agent 兼容层失败: {exc}") from exc
         python_path_items.append(str(project_path))
         env["PYTHONPATH"] = os.pathsep.join(python_path_items)
         env["PYTHONIOENCODING"] = "utf-8"
@@ -1934,17 +2056,11 @@ class MaaFWRunner:
         # 隔离 venv 的 PYTHONPATH 指向项目根目录
         test_env["PYTHONPATH"] = str(project_path)
 
-        pip_ok = self._check_pip_health(
-            python_exe, cwd=str(project_path), env=test_env
-        )
+        pip_ok = self._check_pip_health(python_exe, cwd=str(project_path), env=test_env)
         if not pip_ok:
             self.send_log("[Python环境] 隔离 venv pip 异常，尝试 ensurepip 修复...")
-            if not self._try_ensurepip(
-                python_exe, cwd=str(project_path), env=test_env
-            ):
-                raise RuntimeError(
-                    f"隔离 venv pip 无法自动修复: {python_exe}"
-                )
+            if not self._try_ensurepip(python_exe, cwd=str(project_path), env=test_env):
+                raise RuntimeError(f"隔离 venv pip 无法自动修复: {python_exe}")
 
         if had_valid_venv and self._is_isolated_venv_manifest_current(
             venv_path,
@@ -2012,13 +2128,16 @@ class MaaFWRunner:
             self.send_log("[Python环境] MaaFW 项目 interface 已变化，将重建隔离 venv")
             return True
         if manifest.get("requirementsHash") != expected["requirementsHash"]:
-            self.send_log("[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv")
+            self.send_log(
+                "[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv"
+            )
             return True
         return False
 
     def _reset_isolated_venv(self, venv_path: Path) -> None:
-        if venv_path.parent.name != "maafw_agent_venvs" or not venv_path.name.startswith(
-            "maafw_venv_"
+        if (
+            venv_path.parent.name != "maafw_agent_venvs"
+            or not venv_path.name.startswith("maafw_venv_")
         ):
             raise RuntimeError(f"拒绝重建非托管隔离 venv: {venv_path}")
         shutil.rmtree(venv_path, ignore_errors=True)
@@ -2055,8 +2174,7 @@ class MaaFWRunner:
         venv_path.parent.mkdir(parents=True, exist_ok=True)
         bootstrap_python = _venv_bootstrap_python()
         self.send_log(
-            f"[Python环境] 创建隔离 venv: {venv_path} "
-            f"(引导 Python: {bootstrap_python})"
+            f"[Python环境] 创建隔离 venv: {venv_path} (引导 Python: {bootstrap_python})"
         )
         try:
             result = subprocess.run(
@@ -2100,7 +2218,13 @@ class MaaFWRunner:
         env["PYTHONPATH"] = str(project_path)
         return env
 
-    def _check_pip_health(self, python_exe: str, *, cwd: str | None = None, env: dict[str, str] | None = None) -> bool:
+    def _check_pip_health(
+        self,
+        python_exe: str,
+        *,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> bool:
         """检测 pip 是否能正常执行 install 命令（模拟 agent 真实使用场景）。
 
         使用 python -c 尝试加载 pip._internal.commands.install，
@@ -2120,13 +2244,16 @@ class MaaFWRunner:
             )
             if result.returncode != 0:
                 error_detail = (result.stderr or result.stdout or "").strip()
-                self.send_log(f"[Python环境] pip --version 失败 (exit={result.returncode}): {error_detail[:500]}")
+                self.send_log(
+                    f"[Python环境] pip --version 失败 (exit={result.returncode}): {error_detail[:500]}"
+                )
                 return False
 
             # 关键检测：尝试加载 install 子命令（这是真正会触发 backports.zstd 崩溃的地方）
             result2 = subprocess.run(
                 [
-                    python_exe, "-c",
+                    python_exe,
+                    "-c",
                     "from pip._internal.commands.install import InstallCommand; print('install command OK')",
                 ],
                 capture_output=True,
@@ -2145,9 +2272,13 @@ class MaaFWRunner:
             error_detail = (result2.stderr or result2.stdout or "").strip()
             zstd_err = "backports.zstd" in error_detail or "ZstdError" in error_detail
             if zstd_err:
-                self.send_log("[Python环境] pip install 子命令加载失败（backports.zstd 冲突）")
+                self.send_log(
+                    "[Python环境] pip install 子命令加载失败（backports.zstd 冲突）"
+                )
             else:
-                self.send_log(f"[Python环境] pip install 检测失败 (exit={result2.returncode}): {error_detail[:500]}")
+                self.send_log(
+                    f"[Python环境] pip install 检测失败 (exit={result2.returncode}): {error_detail[:500]}"
+                )
             return False
         except subprocess.TimeoutExpired:
             self.send_log(f"[Python环境] pip 检测超时 ({PIP_HEALTH_CHECK_TIMEOUT}s)")
@@ -2156,7 +2287,13 @@ class MaaFWRunner:
             self.send_log(f"[Python环境] pip 检测异常: {exc}")
             return False
 
-    def _try_ensurepip(self, python_exe: str, *, cwd: str | None = None, env: dict[str, str] | None = None) -> bool:
+    def _try_ensurepip(
+        self,
+        python_exe: str,
+        *,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> bool:
         """尝试 python -m ensurepip --upgrade 修复 pip。"""
         self.send_log("[Python环境] 修复策略 A (ensurepip)...")
         try:
@@ -2170,7 +2307,9 @@ class MaaFWRunner:
                 cwd=cwd,
                 env=env,
             )
-            if result.returncode == 0 and self._check_pip_health(python_exe, cwd=cwd, env=env):
+            if result.returncode == 0 and self._check_pip_health(
+                python_exe, cwd=cwd, env=env
+            ):
                 self.send_log("[Python环境] ensurepip 修复成功")
                 return True
             detail = (result.stderr or result.stdout or "").strip()
@@ -2203,9 +2342,7 @@ class MaaFWRunner:
             if project_path is None:
                 raise RuntimeError("隔离 venv 依赖安装缺少 MaaFW 项目路径")
             packages = _load_project_agent_requirements(project_path)
-            self.send_log(
-                f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}"
-            )
+            self.send_log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
             return self._pip_install(
                 python_exe,
                 packages,
@@ -2213,9 +2350,7 @@ class MaaFWRunner:
                 env=env,
             )
 
-        self.send_log(
-            f"[Python环境] runtime_kind={runtime_kind}，跳过依赖安装"
-        )
+        self.send_log(f"[Python环境] runtime_kind={runtime_kind}，跳过依赖安装")
         return True
 
     def _pip_install(
@@ -2246,9 +2381,7 @@ class MaaFWRunner:
                 env=env,
             )
             if result.returncode == 0:
-                self.send_log(
-                    f"[Python环境] pip install 完成: {', '.join(packages)}"
-                )
+                self.send_log(f"[Python环境] pip install 完成: {', '.join(packages)}")
                 return True
             detail = (result.stderr or result.stdout or "").strip()
             self.send_log(
@@ -2261,16 +2394,15 @@ class MaaFWRunner:
                 f"将由 agent 自举尝试"
             )
         except Exception as exc:
-            self.send_log(
-                f"[Python环境] pip install 异常: {exc}，将由 agent 自举尝试"
-            )
+            self.send_log(f"[Python环境] pip install 异常: {exc}，将由 agent 自举尝试")
         return False
 
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []
         self._completed_tasks = completed_tasks
         self._failed_task_errors = []
-        for task in self.plan.tasks:
+        total_tasks = len(self.plan.tasks)
+        for index, task in enumerate(self.plan.tasks):
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
             tasker = self.tasker
@@ -2280,6 +2412,7 @@ class MaaFWRunner:
             self.send_log(_format_task_config_log(task))
             self.send_log(f"正在运行任务: {display_name}")
             self._task_failure_summaries.clear()
+            self._failed_controller_actions.clear()
             try:
                 if task.pipelineOverride:
                     job = tasker.post_task(task.entry, task.pipelineOverride)
@@ -2291,7 +2424,23 @@ class MaaFWRunner:
                     raise RuntimeError("MaaFW 任务已停止") from exc
                 message = str(exc)
                 self._failed_task_errors.append((task.name, message))
-                self.send_log(f"任务失败，将继续后续任务: {display_name}: {message}")
+                fatal = sorted(
+                    self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS
+                )
+                if fatal:
+                    actions = "、".join(fatal)
+                    raise RuntimeError(
+                        f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
+                        f"{display_name}: {message}"
+                    ) from exc
+                # 这条现在会实时出现在任务日志里，措辞不能对最后一个
+                # 任务说「将继续后续任务」。
+                if index + 1 < total_tasks:
+                    self.send_log(
+                        f"任务失败，将继续后续任务: {display_name}: {message}"
+                    )
+                else:
+                    self.send_log(f"任务失败: {display_name}: {message}")
                 time.sleep(0.1)
                 continue
             if self._stop_requested.is_set():
@@ -2319,7 +2468,9 @@ class MaaFWRunner:
                 detail = job.get()
             raise RuntimeError(self._build_job_failure_message(detail))
 
-    def _record_task_failure_summary(self, message: str, details: dict[str, Any]) -> None:
+    def _record_task_failure_summary(
+        self, message: str, details: dict[str, Any]
+    ) -> None:
         if message not in MAAFW_FAILURE_EVENT_MESSAGES:
             return
         summary = _format_maafw_failure_event(message, details)
@@ -2331,16 +2482,69 @@ class MaaFWRunner:
         if len(self._task_failure_summaries) > MAAFW_FAILURE_SUMMARY_LIMIT:
             del self._task_failure_summaries[:-MAAFW_FAILURE_SUMMARY_LIMIT]
 
+    def _resolve_node_names(self, detail: Any | None) -> list[str]:
+        """把最后几个节点的数字 id 解析成名字。
+
+        数字 id 对用户没有任何意义，节点名才说明它停在哪一步。只取末尾几个：
+        再往前是正常走过的路径，列出来只会淹没重点。逐个容错——取不到就跳过，
+        诊断信息不该因为取不到名字而失败。
+        """
+
+        node_ids = list(getattr(detail, "node_id_list", None) or [])
+        if not node_ids or self.tasker is None:
+            return []
+
+        names: list[str] = []
+        for node_id in node_ids[-FAILURE_NODE_NAME_LIMIT:]:
+            try:
+                node = self.tasker.get_node_detail(int(node_id))
+            except Exception:  # pragma: no cover - 诊断信息，取不到就算了
+                continue
+            name = str(getattr(node, "name", "") or "").strip()
+            if name and (not names or names[-1] != name):
+                names.append(name)
+        return names
+
     def _build_job_failure_message(self, detail: Any | None) -> str:
-        parts = ["任务执行失败"]
-        detail_summary = _format_maafw_task_detail(detail)
-        if detail_summary:
-            parts.append(detail_summary)
-        if self._task_failure_summaries:
-            parts.append(
-                "失败事件: " + "；".join(self._task_failure_summaries[-3:])
-            )
-        return ": ".join(parts)
+        """给用户看的失败原因。
+
+        只说「哪里坏了」，不重复任务名，也不带「任务执行失败」——宿主侧已经
+        拼上了任务标签和这句话。内部标识（task_id、节点数字 id）同样不进来：
+        它们对用户没有意义，且完整内容已经在本次运行的 *.maafw.log 里。
+        """
+
+        parts: list[str] = []
+
+        names = self._resolve_node_names(detail)
+        if names:
+            parts.append("最后停在 " + " → ".join(names))
+        elif getattr(detail, "entry", None):
+            # 连节点名都取不到时，入口名至少还能定位到是哪条流程
+            parts.append(f"入口 {detail.entry} 未能走完")
+
+        events = self._describe_failure_events(detail)
+        if events:
+            parts.append(events)
+
+        return "；".join(parts)
+
+    def _describe_failure_events(self, detail: Any | None) -> str:
+        """框架报的失败事件，去掉与节点信息重复的部分。"""
+
+        if not self._task_failure_summaries:
+            return ""
+        entry = str(getattr(detail, "entry", "") or "").strip()
+        kept: list[str] = []
+        for summary in self._task_failure_summaries[-3:]:
+            # `Tasker.Task.Failed, <entry>` 只是重复上面已经说过的入口名
+            if entry and summary.strip() in (
+                f"Tasker.Task.Failed, {entry}",
+                f"Tasker.Task.Failed {entry}",
+            ):
+                continue
+            kept.append(summary)
+        return "框架失败事件: " + "；".join(kept) if kept else ""
+
 
 def prepare_maafw_agent_python_envs(
     project_path: str | Path,
@@ -2388,7 +2592,9 @@ def _prepare_maafw_agent_python_envs_from_plugin(
     send_log: Callable[[str], None] | None,
 ) -> list[Any] | None:
     try:
-        from app.task.MaaFW.tools.core.automas_maafw_agent_env import MaaFWAgentEnvService
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
+            MaaFWAgentEnvService,
+        )
     except Exception:
         return None
 
@@ -2421,9 +2627,14 @@ class _MaaFWResourceLogSink(ResourceEventSink):
 
 
 class _MaaFWControllerLogSink(ControllerEventSink):
-    def __init__(self, send_log: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        send_log: Callable[[str], None],
+        record_action_failure: Callable[[str], None],
+    ) -> None:
         super().__init__()
         self.send_log = send_log
+        self.record_action_failure = record_action_failure
 
     def on_controller_action(
         self,
@@ -2432,6 +2643,7 @@ class _MaaFWControllerLogSink(ControllerEventSink):
         detail: ControllerEventSink.ControllerActionDetail,
     ) -> None:
         if noti_type == NotificationType.Failed:
+            self.record_action_failure(str(detail.action or ""))
             self.send_log(
                 f"[MaaFW Controller] {_notification_label(noti_type)}: {detail.action}"
             )
@@ -2517,45 +2729,6 @@ def _task_display_name(task: MaaFWTaskRunPlan) -> str:
     return task.name
 
 
-def _format_maafw_task_detail(detail: Any | None) -> str:
-    if detail is None:
-        return ""
-
-    parts: list[str] = []
-    entry = getattr(detail, "entry", None)
-    if entry:
-        parts.append(f"entry={entry}")
-
-    task_id = getattr(detail, "task_id", None)
-    if task_id is not None:
-        parts.append(f"task_id={task_id}")
-
-    status = _format_maafw_status(getattr(detail, "status", None))
-    if status:
-        parts.append(f"status={status}")
-
-    node_id_list = getattr(detail, "node_id_list", None)
-    if node_id_list:
-        tail = list(node_id_list)[-5:]
-        parts.append(f"last_nodes={tail}")
-
-    return ", ".join(parts)
-
-
-def _format_maafw_status(status: Any | None) -> str:
-    if status is None:
-        return ""
-
-    status_value = getattr(status, "_status", status)
-    name = getattr(status_value, "name", None)
-    value = getattr(status_value, "value", None)
-    if name is not None and value is not None:
-        return f"{name}({value})"
-    if value is not None:
-        return str(value)
-    return str(status_value)
-
-
 def _format_maafw_failure_event(message: str, details: dict[str, Any]) -> str:
     parts = [message]
 
@@ -2612,11 +2785,7 @@ def _collect_maafw_detail_texts(value: Any) -> list[str]:
 
 def _collect_maafw_focus_texts(focus: Any) -> list[str]:
     if isinstance(focus, dict):
-        return [
-            _short_maafw_text(str(value))
-            for value in focus.values()
-            if value
-        ]
+        return [_short_maafw_text(str(value)) for value in focus.values() if value]
     if isinstance(focus, str) and focus:
         return [_short_maafw_text(focus)]
     return []

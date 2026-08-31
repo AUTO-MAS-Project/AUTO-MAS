@@ -157,14 +157,18 @@ class ScriptConfigTask(TaskExecuteBase):
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=f"OK-NTE GUI 配置任务出现异常: {e}"),
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-NTE GUI 配置任务出现异常: {e}"
+            ),
         )
 
     async def _kill_oknte_process(self) -> None:
         try:
             await self.oknte_process_manager.kill()
         except Exception as e:
-            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}")
+            logger.opt(exception=True).warning(
+                f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}"
+            )
 
         try:
             await System.kill_process(self.script_exe_path)

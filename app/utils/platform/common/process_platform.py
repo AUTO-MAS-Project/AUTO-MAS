@@ -13,9 +13,7 @@ class CommonProcessPlatform:
     async def open_protocol(self, protocol_url: str) -> None:
         raise UnsupportedPlatformError("open_protocol")
 
-    async def kill_process(
-        self, pid: int, kill_tree: bool = False
-    ) -> tuple[bool, str]:
+    async def kill_process(self, pid: int, kill_tree: bool = False) -> tuple[bool, str]:
         """用 psutil 终止进程，返回 (是否成功, 失败原因)。"""
 
         try:

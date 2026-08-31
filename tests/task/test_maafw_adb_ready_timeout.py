@@ -65,9 +65,7 @@ class HostSuppliedTimeoutTest(unittest.TestCase):
         self.assertIsNone(self._task(None)._resolve_adb_ready_timeout())
 
     def test_missing_config_falls_back(self) -> None:
-        self.assertIsNone(
-            self._task(mock.Mock(spec=[]))._resolve_adb_ready_timeout()
-        )
+        self.assertIsNone(self._task(mock.Mock(spec=[]))._resolve_adb_ready_timeout())
 
     def test_unreadable_config_falls_back(self) -> None:
         config = mock.Mock()

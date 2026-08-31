@@ -29,6 +29,17 @@ class _FakeConfig:
         return self.settings.get((group, name), False)
 
 
+class _FakeWebhook:
+    """Webhook 配置项的最小实现（config 契约: get(group, key)）。"""
+
+    def get(self, group, key):
+        assert group == "Info"
+        if key == "Name":
+            return "值班群"
+        assert key == "Enabled"
+        return True
+
+
 class _FakeNotify:
     def __init__(self):
         self.mail_calls = []
@@ -121,7 +132,7 @@ class MaafwRunReportGateTest(unittest.TestCase):
                 ("Notify", "ServerChanKey"): "key",
                 ("Notify", "IfKoishiSupport"): True,
             },
-            webhooks={"w1": object()},
+            webhooks={"w1": _FakeWebhook()},
         )
         self._push(config, notify, message=_message(uncompleted=0))
         self.assertEqual(notify.mail_calls, [])

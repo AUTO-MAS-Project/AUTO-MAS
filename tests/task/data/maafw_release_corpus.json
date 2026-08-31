@@ -1,0 +1,416 @@
+[
+ {
+  "app": "M9A",
+  "asset": "M9A-win-x86_64-v4.7.1-MFAA.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.12.3",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "M9A",
+  "asset": "M9A-win-x86_64-v4.7.1-MXU.zip",
+  "dll": "5.12.3",
+  "at": "maafw",
+  "declared": "maafw==5.12.3",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MSBA",
+  "asset": "MSBA-win-x86_64-v3.7.41.zip",
+  "dll": "5.12.2",
+  "at": "maafw",
+  "declared": "-",
+  "shell": "MFW",
+  "agent": "py"
+ },
+ {
+  "app": "MaaYYs",
+  "asset": "MaaYYs-win-x86_64-v3.14.8-MXU.zip",
+  "dll": "5.13.0-beta.2",
+  "at": "maafw",
+  "declared": "-",
+  "shell": "MXU",
+  "agent": "exe"
+ },
+ {
+  "app": "MPA",
+  "asset": "MPA-win-x86_64-v3.10.30.zip",
+  "dll": "5.12.3",
+  "at": "maafw",
+  "declared": "-",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MRA",
+  "asset": "MRA-win-x86_64-MFAA-v3.2.0.zip",
+  "dll": "5.10.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "-",
+  "shell": "MFAAvalonia",
+  "agent": "-"
+ },
+ {
+  "app": "MRA",
+  "asset": "MRA-win-x86_64-MXU-v3.2.0.zip",
+  "dll": "5.10.2",
+  "at": "maafw",
+  "declared": "-",
+  "shell": "-",
+  "agent": "-"
+ },
+ {
+  "app": "MRA",
+  "asset": "MRA-win-x86_64-PiCLI-v3.2.0.zip",
+  "dll": "5.10.2",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "PiCLI",
+  "agent": "-"
+ },
+ {
+  "app": "MaaYuan",
+  "asset": "MaaYuan-win-x86_64-v2.2.1-beta.1.zip",
+  "dll": "5.6.0",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.6.0",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "Maa-HBR",
+  "asset": "Maa-HBR-win-x86_64-v1.2.3.zip",
+  "dll": "5.12.3",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "MaaGF2Exilium",
+  "asset": "MaaGF2ExiliumGUI-win-x86_64-v2.6.38.zip",
+  "dll": "5.12.3",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "MaaXuexi",
+  "asset": "MaaXuexi-win-x86_64-v1.7.1.7z.zip",
+  "dll": "-",
+  "at": "无",
+  "declared": "-",
+  "shell": "-",
+  "agent": "-"
+ },
+ {
+  "app": "MAA_MHXY_MG",
+  "asset": "Maa_MHXY_MG-win-x86_64-v3.0.2-MFAA.zip",
+  "dll": "5.12.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "MaaFw==5.12.2",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MAA_MHXY_MG",
+  "asset": "Maa_MHXY_MG-win-x86_64-v3.0.2-MXU.zip",
+  "dll": "5.12.2",
+  "at": "maafw",
+  "declared": "MaaFw==5.12.2",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MaaTOT",
+  "asset": "MaaTOT-win-x86_64-v5.2.7-MFAA.zip",
+  "dll": "5.12.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.12.2",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MaaTOT",
+  "asset": "MaaTOT-win-x86_64-v5.2.7-MXU.zip",
+  "dll": "5.12.2",
+  "at": "maafw",
+  "declared": "maafw==5.12.2",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MaaTOT",
+  "asset": "MaaTOT-win-x86_64-v5.2.7-PiCLI.zip",
+  "dll": "5.12.2",
+  "at": "<root>",
+  "declared": "maafw==5.12.2",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MaaGumballs",
+  "asset": "MaaGumballs-win-x86_64-v2.5.4.zip",
+  "dll": "5.10.5",
+  "at": "<root>",
+  "declared": "maafw==5.10.5",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "MMleo",
+  "asset": "MMleo-win-x86_64-v0.9.6.zip",
+  "dll": "4.5.3",
+  "at": "<root>",
+  "declared": "maafw==4.5.3",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "SLIMEIM_Maa",
+  "asset": "MaaSLIMEIM-win-x86_64-v3.4.10.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "-",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "Maa_bbb",
+  "asset": "Maa_bbb-win-x86_64-v1.12.14.zip",
+  "dll": "5.12.3",
+  "at": "maafw",
+  "declared": "MaaFw",
+  "shell": "MFW",
+  "agent": "py"
+ },
+ {
+  "app": "MAN",
+  "asset": "MaaAutoNaruto-win-x86_64-v1.3.51.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.12.3",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MaaGakumasu",
+  "asset": "MaaGakumasu-win-x86_64-v1.4.9.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MaaStarResonance",
+  "asset": "MaaStarResonance-win-x86_64-v0.12.0.zip",
+  "dll": "5.12.1",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "MaaStarResonance",
+  "asset": "wheels-win-x64-v0.12.0.zip",
+  "dll": "-",
+  "at": "无",
+  "declared": "-",
+  "shell": "-",
+  "agent": "-"
+ },
+ {
+  "app": "MAAAE",
+  "asset": "MAAAE-win-x86_64-v0.0.9.zip",
+  "dll": "5.6.0",
+  "at": "<root>",
+  "declared": "maafw==5.3.0",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "MBCCtools",
+  "asset": "MBCCtools-win-x86_64-v1.4.6.zip",
+  "dll": "5.12.3",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "-"
+ },
+ {
+  "app": "MaaEOV",
+  "asset": "MaaEOV-win-x86_64-v1.0.11.zip",
+  "dll": "4.5.6",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "StellaSora-Auto-Helper",
+  "asset": "MaaStellaSora-mxu-win-amd64-v1.3.1.zip",
+  "dll": "5.13.0-beta.5",
+  "at": "maafw",
+  "declared": "maafw",
+  "shell": "MXU",
+  "agent": "py"
+ },
+ {
+  "app": "StellaSora-Auto-Helper",
+  "asset": "MaaStellaSora-win-x86_64-v1.3.1.zip",
+  "dll": "5.13.0-beta.5",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MaaDuDuL",
+  "asset": "MaaDuDuL-win-x86_64-v1.0.0.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.12.3",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MaaLYSK",
+  "asset": "MaaLYSK-win-x86_64-v0.4.4-beta2.zip",
+  "dll": "5.12.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.12.2",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MaaEnd",
+  "asset": "MaaEnd-win-x86_64-v2.26.0.zip",
+  "dll": "5.13.0-beta.5",
+  "at": "maafw",
+  "declared": "-",
+  "shell": "-",
+  "agent": "exe"
+ },
+ {
+  "app": "MaaGFNeuralCloud",
+  "asset": "MaaGFNeuralCloud-win-x86_64-v1.1.5.zip",
+  "dll": "5.12.3",
+  "at": "<root>",
+  "declared": "-",
+  "shell": "MFAAvalonia+PiCLI",
+  "agent": "py"
+ },
+ {
+  "app": "MaaFgo",
+  "asset": "MaaFgo-win-x86_64-v1.30.7-MXU.zip",
+  "dll": "5.12.3",
+  "at": "maafw",
+  "declared": "-",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MaaNTE",
+  "asset": "MaaNTE-win-x86_64-v1.4.2-MXU.zip",
+  "dll": "5.10.5",
+  "at": "maafw",
+  "declared": "maafw==v5.10.4",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MALW",
+  "asset": "MALW-win-x86_64-v0.0.3-MFAA.zip",
+  "dll": "5.10.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==v5.10.2",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MALW",
+  "asset": "MALW-win-x86_64-v0.0.3-MXU.zip",
+  "dll": "5.10.2",
+  "at": "maafw",
+  "declared": "maafw==v5.10.2",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MALW",
+  "asset": "MALW-win-x86_64-v0.0.3-PiCLI.zip",
+  "dll": "5.10.2",
+  "at": "<root>",
+  "declared": "maafw==v5.10.2",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MR3A",
+  "asset": "MR3A-win-x86_64-v1.5.9.zip",
+  "dll": "5.12.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==v5.12.2",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "Maa_Kes",
+  "asset": "MaaKes-win-x86_64-v1.2.3.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "-",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MAH",
+  "asset": "MAH-win-x86_64-incremental-v1.3.1.zip",
+  "dll": "5.12.3",
+  "at": "<root>",
+  "declared": "(无 maafw 行)",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MAH",
+  "asset": "MAH-win-x86_64-v1.3.1.zip",
+  "dll": "5.12.3",
+  "at": "<root>",
+  "declared": "(无 maafw 行)",
+  "shell": "-",
+  "agent": "py"
+ },
+ {
+  "app": "MATR",
+  "asset": "MATR-v0.12.7-win-x64.zip",
+  "dll": "5.12.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "-",
+  "shell": "-",
+  "agent": "-"
+ },
+ {
+  "app": "MaaADr",
+  "asset": "MaaADr-mfa-win-x86_64-v0.0.8.zip",
+  "dll": "5.12.3",
+  "at": "runtimes/win-x64/native",
+  "declared": "maafw==5.12.2",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ },
+ {
+  "app": "MFABD2",
+  "asset": "MFABD2-v4.4.1-win-x86_64.zip",
+  "dll": "5.12.2",
+  "at": "runtimes/win-x64/native",
+  "declared": "-",
+  "shell": "MFAAvalonia",
+  "agent": "py"
+ }
+]

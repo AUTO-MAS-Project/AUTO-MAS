@@ -39,9 +39,7 @@ INTERFACE = {
     "option": {
         "补给上限": {
             "type": "input",
-            "inputs": [
-                {"name": "上限", "default": "260", "pipeline_type": "int"}
-            ],
+            "inputs": [{"name": "上限", "default": "260", "pipeline_type": "int"}],
             "pipeline_override": {"SupplyStart": {"attach": {"limit": "{上限}"}}},
         },
         "关闭时分辨率": {
@@ -50,22 +48,16 @@ INTERFACE = {
                 {"name": "宽", "default": "1280", "pipeline_type": "int"},
                 {"name": "高", "default": "720", "pipeline_type": "int"},
             ],
-            "pipeline_override": {
-                "ResStart": {"attach": {"w": "{宽}", "h": "{高}"}}
-            },
+            "pipeline_override": {"ResStart": {"attach": {"w": "{宽}", "h": "{高}"}}},
         },
         "布尔项": {
             "type": "input",
-            "inputs": [
-                {"name": "开", "default": "true", "pipeline_type": "bool"}
-            ],
+            "inputs": [{"name": "开", "default": "true", "pipeline_type": "bool"}],
             "pipeline_override": {"ToggleStart": {"attach": {"on": "{开}"}}},
         },
         "兑换码": {
             "type": "input",
-            "inputs": [
-                {"name": "码", "default": "占位", "pipeline_type": "string"}
-            ],
+            "inputs": [{"name": "码", "default": "占位", "pipeline_type": "string"}],
             "pipeline_override": {"RedeemStart": {"attach": {"codes": "{码}"}}},
         },
         "无默认值的数值": {

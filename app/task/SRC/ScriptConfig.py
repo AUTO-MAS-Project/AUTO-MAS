@@ -262,7 +262,9 @@ class ScriptConfigTask(TaskExecuteBase):
                 Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"脚本设置任务出现异常: {e}"
+                    ),
                 ),
                 timeout=5,
             )

@@ -245,7 +245,6 @@ class ProcessManager:
                     self._drain_tasks.append(asyncio.create_task(self._drain(stream)))
 
         if target_process is not None:
-
             await self.search_process(
                 target_process,
                 60.0,

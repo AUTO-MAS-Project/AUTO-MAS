@@ -70,7 +70,9 @@ class MaafwTaskConfigNormalizeTest(unittest.TestCase):
         normalized = normalize_task_config(config, interface_model)
         self.assertEqual(normalized.selectedPreset, CUSTOM_PRESET_NAME)
 
-    def test_normalize_snapshot_keeps_given_order_and_appends_missing_tasks(self) -> None:
+    def test_normalize_snapshot_keeps_given_order_and_appends_missing_tasks(
+        self,
+    ) -> None:
         interface_model = build_interface_model()
         snapshot = normalize_snapshot(
             {

@@ -1,13 +1,13 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>额外脚本</h3>
+      <h3>{{ t('comp.extraScripts') }}</h3>
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
-        <a-tooltip title="在任务执行前运行自定义脚本">
+        <a-tooltip :title="t('comp.runCustomScriptBefore')">
           <span class="form-label">
-            任务前执行脚本
+            {{ t('comp.runScriptBeforeTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
@@ -25,7 +25,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.Info.ScriptBeforeTask"
-              placeholder="请选择脚本文件"
+              :placeholder="t('comp.pickScriptFile')"
               :disabled="loading || !formData.Info.IfScriptBeforeTask"
               size="large"
               class="path-input"
@@ -40,7 +40,7 @@
               <template #icon>
                 <FileOutlined />
               </template>
-              选择文件
+              {{ t('comp.pickFile') }}
             </a-button>
           </a-input-group>
         </a-col>
@@ -48,9 +48,9 @@
     </a-form-item>
     <a-form-item name="scriptAfterTask">
       <template #label>
-        <a-tooltip title="在任务执行后运行自定义脚本">
+        <a-tooltip :title="t('comp.runCustomScriptAfter')">
           <span class="form-label">
-            任务后执行脚本
+            {{ t('comp.runScriptAfterTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
@@ -68,7 +68,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.Info.ScriptAfterTask"
-              placeholder="请选择脚本文件"
+              :placeholder="t('comp.pickScriptFile')"
               :disabled="loading || !formData.Info.IfScriptAfterTask"
               size="large"
               class="path-input"
@@ -83,7 +83,7 @@
               <template #icon>
                 <FileOutlined />
               </template>
-              选择文件
+              {{ t('comp.pickFile') }}
             </a-button>
           </a-input-group>
         </a-col>
@@ -93,8 +93,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('额外脚本配置')
 
@@ -114,40 +117,40 @@ const emitSave = (key: string, value: any) => {
 const selectScriptBeforeTask = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: t('comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
+      { name: t('comp.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
       formData.value.Info.ScriptBeforeTask = path[0]
-      message.success('任务前脚本路径选择成功')
+      message.success(t('comp.preTaskScriptPath'))
       emitSave('Info.ScriptBeforeTask', path[0])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择任务前脚本失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('comp.couldNotPickFile'))
   }
 }
 
 const selectScriptAfterTask = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: t('comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
+      { name: t('comp.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
       formData.value.Info.ScriptAfterTask = path[0]
-      message.success('任务后脚本路径选择成功')
+      message.success(t('comp.postTaskScriptPath'))
       emitSave('Info.ScriptAfterTask', path[0])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择任务后脚本失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('comp.couldNotPickFile'))
   }
 }
 </script>

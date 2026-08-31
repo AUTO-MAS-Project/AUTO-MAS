@@ -23,6 +23,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.notify import (
+    DispatchResult,
     NotifyPayload,
     dispatch,
     global_target,
@@ -30,6 +31,7 @@ from app.core.notify import (
     statistic_targets,
 )
 from app.models.config import M9AUserConfig
+from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
 from app.utils import get_logger
 
 logger = get_logger("M9A通知工具")
@@ -298,8 +300,12 @@ class M9ALogAnalyzer:
 
 
 async def push_notification(
-    mode: str, title: str, message: dict, user_config: M9AUserConfig | None
-) -> list[str]:
+    mode: str,
+    title: str,
+    message: dict,
+    user_config: M9AUserConfig | None,
+    task_info: object | None = None,
+) -> DispatchResult:
     """统一通知推送入口，根据 mode 分支到不同策略
 
     Args:
@@ -309,20 +315,21 @@ async def push_notification(
             - "代理结果": start_time, end_time, completed_count, uncompleted_count, result
             - "统计信息": start_time, end_time, user_result, task_details
         user_config: 用户配置（统计信息模式用于发送独立通知，可为 None）
+        task_info: 任务信息（代理结果模式用于签到汇总的渠道级重试）
 
     Returns:
-        发送失败的渠道名列表；全部成功时为空。
+        分发的实际尝试/成功/失败结果。
     """
     logger.info(f"开始推送通知，模式: {mode}，标题: {title}")
 
     if mode == "代理结果":
-        return await _push_proxy_result(title, message)
+        return await _push_proxy_result(title, message, task_info)
     if mode == "统计信息":
         return await _push_statistics(title, message, user_config)
-    return []
+    return DispatchResult()
 
 
-async def push_version_update(title: str, message: dict) -> list[str]:
+async def push_version_update(title: str, message: dict) -> DispatchResult:
     """推送版本更新通知（系统事件，不经过 SendTaskResultTime 过滤器）
 
     Args:
@@ -332,23 +339,32 @@ async def push_version_update(title: str, message: dict) -> list[str]:
             uncompleted_count, result
 
     Returns:
-        发送失败的渠道名列表；全部成功时为空。
+        分发的实际尝试/成功/失败结果。
     """
     logger.info(f"开始推送版本更新通知: {title}")
     # 提取纯文本消息（result 字段作为正文，不附加任务统计前缀）
     message_html = Config.notify_env.get_template("general_result.html").render(message)
 
     return await dispatch(
-        NotifyPayload(title=title, text=message["result"], html=message_html),
-        [global_target()],
+        NotifyPayload(
+            title=title,
+            text=message["result"],
+            html=message_html,
+            system_message=message["result"],
+            system_ticker=message["result"],
+            system_timeout=10,
+        ),
+        [global_target(include_system=True)],
     )
 
 
-async def _push_proxy_result(title: str, message: dict) -> list[str]:
+async def _push_proxy_result(
+    title: str, message: dict, task_info: object | None
+) -> DispatchResult:
     """推送全局代理结果通知"""
     if not should_send_result(message):
         logger.debug("当前 SendTaskResultTime 配置不满足推送条件，跳过")
-        return []
+        return DispatchResult()
 
     message_text = (
         f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
@@ -357,20 +373,34 @@ async def _push_proxy_result(title: str, message: dict) -> list[str]:
     )
 
     template = Config.notify_env.get_template("general_result.html")
-
-    return await dispatch(
+    counts = (
+        f"已完成用户数: {message['completed_count']}, "
+        f"未完成用户数: {message['uncompleted_count']}"
+    )
+    summary_text = (
+        get_task_game_sign_summary(task_info)
+        if task_info is not None and message.get("game_sign_summary")
+        else ""
+    )
+    return await dispatch_task_report(
         NotifyPayload(
             title=title,
             text=message_text,
             html=template.render(message),
+            system_title=message.get("system_title") or title.replace("报告", "已完成！"),
+            system_message=counts,
+            system_ticker=counts,
+            system_timeout=10,
         ),
-        [global_target()],
+        [global_target(include_system=True)],
+        task_info,
+        summary_text=summary_text,
     )
 
 
 async def _push_statistics(
     title: str, message: dict, user_config: M9AUserConfig | None
-) -> list[str]:
+) -> DispatchResult:
     """推送统计信息通知（全局 + 用户独立）"""
     task_details = message.get("task_details", "")
     detail_str = f"\n{task_details}\n" if task_details else ""

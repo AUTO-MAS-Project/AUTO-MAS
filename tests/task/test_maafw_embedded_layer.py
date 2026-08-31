@@ -24,13 +24,6 @@ from app.task.MaaFW.tools.embedded import (
     release_project_path,
     try_reserve_project_path,
 )
-from app.task.MaaFW.tools.embedded.configuration_reuse import (
-    MaaFWConfigurationReuseError,
-    discover_configuration_sources,
-    public_configuration_plan,
-    stable_json_hash,
-    user_records_hash,
-)
 from app.task.MaaFW.tools.embedded.runtime_route import (
     runtime_pool_route_from_service,
 )
@@ -81,7 +74,10 @@ def plugin_framework_imports(path: Path) -> list[str]:
             )
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if module.startswith("app.plugins") or module.split(".")[0] == "auto_mas_core":
+            if (
+                module.startswith("app.plugins")
+                or module.split(".")[0] == "auto_mas_core"
+            ):
                 found.append(module)
         elif isinstance(node, ast.Attribute) and node.attr == "get_service":
             found.append("ctx.get_service")
@@ -93,7 +89,7 @@ def plugin_framework_imports(path: Path) -> list[str]:
 class EmbeddedLayerImportTest(unittest.TestCase):
     def test_pure_modules_import_without_maa(self) -> None:
         base = "app.task.MaaFW.tools.embedded"
-        for name in ("project_path", "registry", "runtime_route", "configuration_reuse"):
+        for name in ("project_path", "registry", "runtime_route"):
             with self.subTest(module=name):
                 self.assertIsNotNone(importlib.import_module(base + "." + name))
 
@@ -246,69 +242,6 @@ class RuntimeRouteTest(unittest.TestCase):
         )
         with self.assertRaises(Exception):
             route.runtime_id = "other"  # type: ignore[misc]
-
-
-class ConfigurationReuseTest(unittest.TestCase):
-    """`configuration_reuse` 取 mfwa 1465 行版（基准对照 §3.2），纯库落地。"""
-
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-
-    def test_missing_source_is_reported(self) -> None:
-        with self.assertRaises(MaaFWConfigurationReuseError):
-            discover_configuration_sources(self.root / "nope")
-
-    def test_empty_directory_discovers_nothing(self) -> None:
-        empty = self.root / "empty"
-        empty.mkdir()
-        self.assertEqual(discover_configuration_sources(empty), [])
-
-    def test_stable_hash_is_key_order_independent(self) -> None:
-        self.assertEqual(
-            stable_json_hash({"a": 1, "b": [2, 3]}),
-            stable_json_hash({"b": [2, 3], "a": 1}),
-        )
-        self.assertNotEqual(stable_json_hash({"a": 1}), stable_json_hash({"a": 2}))
-
-    def test_user_records_hash_ignores_record_order(self) -> None:
-        left = [
-            {"id": "u2", "type": "maafw", "config": {"x": 1}},
-            {"id": "u1", "type": "maafw", "config": {"y": 2}},
-        ]
-        right = list(reversed(left))
-        self.assertEqual(user_records_hash(left), user_records_hash(right))
-
-    def test_user_records_hash_tracks_config_changes(self) -> None:
-        base = [{"id": "u1", "type": "maafw", "config": {"x": 1}}]
-        changed = [{"id": "u1", "type": "maafw", "config": {"x": 2}}]
-        self.assertNotEqual(user_records_hash(base), user_records_hash(changed))
-
-    def test_public_plan_drops_target_payloads(self) -> None:
-        plan = {
-            "planId": "p1",
-            "schemaVersion": 1,
-            "kind": "external",
-            "target": "new-user",
-            "summary": {"count": 2},
-            "readyToApply": True,
-            "orphans": [],
-            # 内部字段不得进预览
-            "targetPayloads": {"secret": "value"},
-            "userConfigs": [{"password": "hunter2"}],
-        }
-        public = public_configuration_plan(plan)
-        self.assertEqual(public["planId"], "p1")
-        self.assertNotIn("targetPayloads", public)
-        self.assertNotIn("userConfigs", public)
-        self.assertNotIn("hunter2", json.dumps(public, ensure_ascii=False))
-
-    def test_public_plan_is_a_deep_copy(self) -> None:
-        plan = {"planId": "p1", "summary": {"tasks": ["a"]}, "orphans": []}
-        public = public_configuration_plan(plan)
-        public["summary"]["tasks"].append("b")
-        self.assertEqual(plan["summary"]["tasks"], ["a"])
 
 
 if __name__ == "__main__":

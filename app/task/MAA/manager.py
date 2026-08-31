@@ -31,7 +31,6 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
     finalize_task_game_sign_notification,
@@ -200,7 +199,6 @@ class MaaManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
@@ -235,23 +233,25 @@ class MaaManager(TaskExecuteBase):
                 "game_sign_summary": has_game_sign_summary,
             }
 
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                10,
-            )
             try:
-                failed_channels = await push_notification("代理结果", title, result, None)
+                push_result = await push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
+                )
                 finalize_task_game_sign_notification(
-                    self.task_info, has_game_sign_summary, failed_channels
+                    self.task_info, has_game_sign_summary, push_result
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送代理结果时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         # 还原配置

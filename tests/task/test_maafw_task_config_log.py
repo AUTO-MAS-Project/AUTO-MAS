@@ -122,9 +122,7 @@ class FallbackWordingIsNeutralTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_does_not_call_arbitrary_content_a_framework_error(self) -> None:
-        summary = self.module._framework_ui_message(
-            "MaaFW 任务配置: " + "x" * 4000
-        )
+        summary = self.module._framework_ui_message("MaaFW 任务配置: " + "x" * 4000)
         self.assertIn("已省略", summary)
         self.assertNotIn("框架错误详情", summary)
         self.assertIn(".maafw.log", summary)

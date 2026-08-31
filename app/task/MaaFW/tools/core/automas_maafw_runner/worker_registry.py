@@ -161,6 +161,7 @@ async def _wait_for_exit(worker: Any, timeout_seconds: float) -> bool:
         if inspect.iscoroutinefunction(wait):
             await asyncio.wait_for(wait(), timeout=timeout_seconds)
         else:
+
             def blocking_wait() -> Any:
                 try:
                     return wait(timeout=timeout_seconds)

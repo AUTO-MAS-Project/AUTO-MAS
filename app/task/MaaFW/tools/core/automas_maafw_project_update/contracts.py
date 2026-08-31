@@ -84,7 +84,9 @@ def project_fingerprint(project_path: str | Path) -> str | None:
             return None
         if candidate.is_file():
             files.append(candidate)
-    for candidate in sorted(files, key=lambda item: item.relative_to(root).as_posix().casefold()):
+    for candidate in sorted(
+        files, key=lambda item: item.relative_to(root).as_posix().casefold()
+    ):
         relative = candidate.relative_to(root).as_posix()
         try:
             content = candidate.read_bytes()
@@ -136,4 +138,3 @@ __all__ = [
     "project_fingerprint",
     "safe_relative_path",
 ]
-

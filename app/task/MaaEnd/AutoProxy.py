@@ -385,7 +385,9 @@ class AutoProxyTask(TaskExecuteBase):
                 data=WSTaskNoticeData(level="error", message=error_message),
             )
         else:
-            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -546,9 +548,7 @@ class AutoProxyTask(TaskExecuteBase):
         sanity_task_type = ""
         target_task_name = ""
         if if_quick_config:
-            sanity_task_key, _ = (
-                self.cur_user_config.get_effective_sanity_task_key()
-            )
+            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
             sanity_task_type = sanity_task_key["SanityTaskType"]
             target_task_name = (
                 "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
@@ -764,10 +764,7 @@ class AutoProxyTask(TaskExecuteBase):
         elif "resolution check failed" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
             self.retryable = False
-        elif (
-            self.color_match_failed_message
-            and self.color_match_failed_message in log
-        ):
+        elif self.color_match_failed_message and self.color_match_failed_message in log:
             self.cur_user_log.status = "MaaEnd 颜色识别失败，请关闭滤镜或 HDR"
             self.retryable = False
         elif f"任务失败: {self.account_switch_task_name}" in log:
@@ -819,8 +816,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif self.is_log_stalled(
-            latest_time,
-            minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "MaaEnd 进程超时"
         else:
@@ -910,7 +906,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送通知时出现异常: {e}"
+                    ),
                 )
 
         if self.run_book:

@@ -30,6 +30,7 @@ from .parser import (
 
 # ==================== 编译后的片段 ====================
 
+
 @dataclass
 class _CompiledRegex:
     """编译后的正则片段：预编译正则 + 函数链"""
@@ -50,6 +51,7 @@ _CompiledSegment = _CompiledRegex | _CompiledLiteral
 
 
 # ==================== 编译后的表达式 ====================
+
 
 @dataclass
 class CompiledExpression:
@@ -144,6 +146,7 @@ class CompiledExpression:
 
 # ==================== 编译入口 ====================
 
+
 def compile_expression(expr_str: str) -> CompiledExpression:
     """编译提取表达式字符串
 
@@ -191,7 +194,9 @@ def compile_expression(expr_str: str) -> CompiledExpression:
                     except re.error as e:
                         # 正则语法错误直接抛出，由校验/调试接口向用户返回具体信息，
                         # 避免非法表达式被编译为「无匹配」后运行时静默失效
-                        raise ExpressionError(f"正则语法错误 '{seg.pattern_str}': {e}") from e
+                        raise ExpressionError(
+                            f"正则语法错误 '{seg.pattern_str}': {e}"
+                        ) from e
                     compiled_line.append(
                         _CompiledRegex(
                             pattern=pattern, functions=seg.functions, full_text=False

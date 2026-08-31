@@ -88,11 +88,7 @@ def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
 
 def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
     file_path = Path(filename)
-    if (
-        file_path.name != filename
-        or file_path.is_absolute()
-        or ".." in file_path.parts
-    ):
+    if file_path.name != filename or file_path.is_absolute() or ".." in file_path.parts:
         raise ValueError("配置文件名非法")
     return config_dir / filename
 
@@ -699,9 +695,7 @@ async def preview_maafw_interface(
             root_path,
             interface,
         )
-        data = MaaFWInterfacePreviewData.model_validate(
-            preview.model_dump(mode="json")
-        )
+        data = MaaFWInterfacePreviewData.model_validate(preview.model_dump(mode="json"))
     except MaaFWInterfaceLoadError as exc:
         return MaaFWInterfacePreviewOut(
             code=400,
@@ -804,7 +798,9 @@ async def update_maafw_project(
             if discovery.candidate is not None
             else discovery.source
         )
-        message = f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+        message = (
+            f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+        )
         if not discovery.installable and discovery.unavailable_reason:
             message = f"{message}（暂无可安装更新包: {discovery.unavailable_reason}）"
         return MaaFWProjectUpdateOut(
@@ -954,9 +950,7 @@ async def prepare_maafw_agent_env(
 
     try:
         try:
-            interface = await asyncio.to_thread(
-                load_interface_model_cached, root_path
-            )
+            interface = await asyncio.to_thread(load_interface_model_cached, root_path)
         except MaaFWInterfaceLoadError as exc:
             return MaaFWAgentEnvPrepareOut(
                 code=400,
@@ -1066,28 +1060,28 @@ async def get_m9a_available_tasks(script_id: str):
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
         loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
-        
+
         # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
         available_tasks = loader.get_available_tasks()
         result_tasks = []
-        
+
         for task in available_tasks:
             full_def = loader.get_full_definition(task["name"])
             if full_def:
                 result_tasks.append(full_def)
-        
+
         return {
             "code": 200,
             "status": "success",
             "message": f"共 {len(result_tasks)} 个可用任务",
-            "data": result_tasks
+            "data": result_tasks,
         }
     except Exception as e:
         return {
             "code": 500,
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
-            "data": []
+            "data": [],
         }
 
 
@@ -1123,9 +1117,7 @@ async def get_hsr_stage_options_api(
             _hsr_user_config(script_config, userId)
         from app.task.HSR.tools.api import build_stage_options
 
-        data = HSRStageOptionsData(
-            **build_stage_options(script_config, engine)
-        )
+        data = HSRStageOptionsData(**build_stage_options(script_config, engine))
         option_count = sum(len(category.options) for category in data.categories)
         return HSRStageOptionsOut(
             message=f"共 {option_count} 个 HSR 体力副本选项",
@@ -1162,7 +1154,9 @@ async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabiliti
     except Exception as e:
         return HSRCapabilitiesOut(
             code=400
-            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1192,14 +1186,14 @@ async def get_hsr_managed_config_api(
             user_config = _hsr_user_config(script_config, userId)
         from app.task.HSR.tools.api import build_managed_config
 
-        data = HSRManagedConfigData(
-            **build_managed_config(script_config, user_config)
-        )
+        data = HSRManagedConfigData(**build_managed_config(script_config, user_config))
         return HSRManagedConfigOut(data=data)
     except Exception as e:
         return HSRManagedConfigOut(
             code=400
-            if isinstance(e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError))
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1302,7 +1296,9 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
                 root = Path(root_path)
                 packaged_dir = root / "data" / "apps" / "ok-nte" / "working" / "configs"
                 source_dir = root / "configs"
-                oknte_configs_dir = packaged_dir if packaged_dir.is_dir() else source_dir
+                oknte_configs_dir = (
+                    packaged_dir if packaged_dir.is_dir() else source_dir
+                )
 
         # 自动初始化：用户目录为空时从旧版共享目录或 ok-nte configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
@@ -1328,11 +1324,13 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
 
             fields = build_fields_for_config(filename, current_data, option_labels)
 
-            result.append({
-                **info,
-                "fields": fields,
-                "currentData": current_data,
-            })
+            result.append(
+                {
+                    **info,
+                    "fields": fields,
+                    "currentData": current_data,
+                }
+            )
 
         return {
             "code": 200,

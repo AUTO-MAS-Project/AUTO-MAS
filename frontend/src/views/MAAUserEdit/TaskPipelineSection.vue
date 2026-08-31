@@ -1,13 +1,13 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>任务配置</h3>
-      <span class="section-note">剿灭与日常分两次启动 MAA，组内按执行顺序排列</span>
+      <h3>{{ t('edit.taskConfiguration') }}</h3>
+      <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
     </div>
 
     <a-alert
-      message="剿灭作战和日常任务会分别启动两次 MAA"
-      description="启用剿灭时会先单独启动一次 MAA 执行剿灭；剿灭结束后，再启动一次 MAA 执行日常流程。"
+      :message="t('edit.annihilationDailyTasksEach')"
+      :description="t('edit.annihilationMaaStartsOnce')"
       type="info"
       show-icon
       class="task-alert"
@@ -22,18 +22,18 @@
     />
 
     <div class="task-list">
-      <div class="pipeline-phase">第一次启动 MAA：剿灭流程</div>
+      <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
       <PipelineRow
-        name="剿灭作战"
+        :name="t('edit.maaAnnihilation')"
         :summary="annihilationSummary"
         :checked="annihilationEnabled"
         :disabled="loading"
-        hint="这是一次独立的 MAA 启动，仅执行唤醒和剿灭作战；不会在同一次启动中继续日常任务"
+        :hint="t('edit.maaAnnihilationHint')"
         @change="handleAnnihilationToggle"
       >
         <a-row :gutter="16">
           <a-col :xs="24" :md="12">
-            <a-form-item label="剿灭关卡" class="detail-item">
+            <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
               <a-select
                 :value="formData.Info.Annihilation"
                 :options="annihilationStageOptions"
@@ -46,8 +46,8 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  text="剿灭开始星期"
-                  hint="达到设置的星期后才会启动剿灭任务；本周达到上限后会自动跳过后续剿灭"
+                  :text="t('edit.maaAnnihilationStartDay')"
+                  :hint="t('edit.maaAnnihilationStartDayHint')"
                 />
               </template>
               <a-select
@@ -61,34 +61,35 @@
           <a-col :span="24">
             <div class="detail-inline">
               <a-tag :color="annihilationCompletedThisWeek ? 'success' : 'warning'">
-                本周状态：{{ annihilationCompletedThisWeek ? '已完成' : '未完成' }}
+                {{ t('edit.maaWeekStatus') }}
+                {{ annihilationCompletedThisWeek ? t('edit.maaDone') : t('edit.maaNotDone') }}
               </a-tag>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', null)"
               >
-                重置状态
+                {{ t('edit.resetState') }}
               </a-button>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)"
               >
-                手动完成
+                {{ t('edit.markAsDone2') }}
               </a-button>
             </div>
           </a-col>
         </a-row>
       </PipelineRow>
 
-      <div class="pipeline-phase">第二次启动 MAA：日常流程</div>
+      <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
       <PipelineRow
-        name="活动关优先"
+        :name="t('edit.maaEventFirst')"
         :summary="activitySummary"
         :checked="activityFirst"
         :disabled="loading"
-        hint="这是日常流程中的独立合成任务，会在普通理智作战之前执行"
+        :hint="t('edit.maaEventFirstHint')"
         @change="handleActivityToggle"
       >
         <a-row :gutter="16">
@@ -96,8 +97,8 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  text="活动关卡"
-                  hint="按列表序号保存；活动更新后自动选择相同序号的新关卡，序号失效时回退到第一项"
+                  :text="t('edit.maaEventStage')"
+                  :hint="t('edit.maaEventStageHint')"
                 />
               </template>
               <a-select
@@ -105,7 +106,11 @@
                 :options="activityStageOptions"
                 :loading="activityStageLoading"
                 :disabled="loading || activityStageLoading || activityStageOptions.length === 0"
-                :placeholder="activityStageOptions.length ? '请选择活动关卡' : '当前无可刷活动关'"
+                :placeholder="
+                  activityStageOptions.length
+                    ? t('edit.maaPickEventStage')
+                    : t('edit.maaNoEventStage')
+                "
                 show-search
                 option-filter-prop="label"
                 @change="handleActivityStageChange"
@@ -116,8 +121,8 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  text="活动关理智药"
-                  hint="活动关优先任务使用的理智药数量，不影响普通理智作战"
+                  :text="t('edit.maaEventPotion')"
+                  :hint="t('edit.maaEventPotionHint')"
                 />
               </template>
               <a-input-number
@@ -136,7 +141,7 @@
 
       <!-- 库存保持：日常流程中的独立任务，计划模式下后端强制关闭 -->
       <PipelineRow
-        name="库存保持"
+        :name="t('edit.maaDepot')"
         :summary="depotSummary"
         :checked="!isPlanMode && formData.Task.IfDepotMaintain"
         :disabled="loading || isPlanMode"
@@ -156,7 +161,7 @@
 
       <!-- 理智作战 -->
       <PipelineRow
-        name="理智作战"
+        :name="t('edit.maaCombat')"
         :summary="fightSummary"
         :checked="formData.Task.IfFight"
         :disabled="loading"
@@ -167,7 +172,7 @@
 
       <!-- 基建换班：模式与自定义排班是它的附属配置，跟着它走 -->
       <PipelineRow
-        name="基建换班"
+        :name="t('edit.maaInfrast')"
         :summary="infrastSummary"
         :checked="formData.Task.IfInfrast"
         :disabled="loading"
@@ -178,8 +183,8 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  text="基建模式"
-                  hint="自定义基建需要先导入配置文件，再选择其中的排班"
+                  :text="t('edit.maaInfrastMode')"
+                  :hint="t('edit.maaInfrastModeHint')"
                 />
               </template>
               <a-select
@@ -195,12 +200,15 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint text="自定义基建配置" hint="从 MAA 导出的自定义基建 JSON 文件" />
+                <LabelWithHint
+                  :text="t('edit.maaCustomInfrastFile')"
+                  :hint="t('edit.maaCustomInfrastFileHint')"
+                />
               </template>
               <div class="detail-inline">
                 <a-input
                   :value="formData.Info.InfrastName"
-                  placeholder="尚未导入配置"
+                  :placeholder="t('edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
                 />
@@ -210,7 +218,7 @@
                   :loading="infrastructureImporting"
                   @click="emit('selectAndImportInfrastructureConfig')"
                 >
-                  选择并导入
+                  {{ t('edit.pickImport') }}
                 </a-button>
               </div>
             </a-form-item>
@@ -218,14 +226,17 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint text="自定义基建排班" hint="从已导入的配置中选择当前使用的排班" />
+                <LabelWithHint
+                  :text="t('edit.maaCustomInfrastPlan')"
+                  :hint="t('edit.maaCustomInfrastPlanHint')"
+                />
               </template>
               <a-select
                 :value="formData.Info.InfrastIndex"
                 :options="infrastructureOptions"
                 :loading="infrastructureOptionsLoading"
                 :disabled="loading"
-                placeholder="请选择自定义基建排班"
+                :placeholder="t('edit.pickCustomBaseLayout')"
                 @change="emitSave('Info.InfrastIndex', $event)"
               />
             </a-form-item>
@@ -235,7 +246,7 @@
 
       <!-- 无配置的一键任务：低频改动，压成一行 -->
       <PipelineRow
-        name="日常任务"
+        :name="t('edit.maaDaily')"
         :checked="dailyTasks.some(task => formData.Task[task.key])"
         :toggleable="false"
         :has-detail="false"
@@ -257,8 +268,8 @@
 
       <!-- 只有一个开关，不必套一层详情面板 -->
       <PipelineRow
-        name="自动肉鸽"
-        :summary="formData.Task.IfRoguelike ? '长时间运行可能被误判超时' : ''"
+        :name="t('edit.maaRoguelike')"
+        :summary="formData.Task.IfRoguelike ? t('edit.maaRoguelikeHint') : ''"
         :checked="formData.Task.IfRoguelike"
         :disabled="loading"
         :has-detail="false"
@@ -269,6 +280,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
@@ -283,6 +295,8 @@ import {
   summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
+
+const { t } = useI18n()
 
 type SelectOption = { label: string; value: string }
 
@@ -313,9 +327,9 @@ const emit = defineEmits<{
 const emitSave = (key: string, value: any) => emit('save', key, value)
 
 const dailyTasks = [
-  { key: 'IfRecruit', label: '自动公招' },
-  { key: 'IfMall', label: '信用收支' },
-  { key: 'IfAward', label: '领取奖励' },
+  { key: 'IfRecruit', label: t('edit.maaRecruit') },
+  { key: 'IfMall', label: t('edit.maaMall') },
+  { key: 'IfAward', label: t('edit.claimRewards') },
 ] as const
 
 const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')

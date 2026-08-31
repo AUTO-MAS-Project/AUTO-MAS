@@ -171,9 +171,17 @@ def _canonical_key(value: str) -> str:
     normalized = value.strip()
 
     normalized = re.sub(r"[\s_-]+", "", normalized).upper()
-    if normalized.startswith("KEY") and len(normalized) == 4 and normalized[-1].isalpha():
+    if (
+        normalized.startswith("KEY")
+        and len(normalized) == 4
+        and normalized[-1].isalpha()
+    ):
         normalized = normalized[-1]
-    elif normalized.startswith("DIGIT") and len(normalized) == 6 and normalized[-1].isdigit():
+    elif (
+        normalized.startswith("DIGIT")
+        and len(normalized) == 6
+        and normalized[-1].isdigit()
+    ):
         normalized = normalized[-1]
 
     punctuation_aliases = {

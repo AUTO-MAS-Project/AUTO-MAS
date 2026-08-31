@@ -20,10 +20,18 @@
 #   Contact: DLmaster_361@163.com
 
 
+import dataclasses
 from html import escape
 
 from app.core import Config
-from app.core.notify import NotifyPayload, dispatch, global_target
+from app.core.notify import (
+    DispatchResult,
+    NotifyPayload,
+    NotifyTarget,
+    dispatch,
+    global_target,
+    target_channel_names,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏签到通知")
@@ -191,13 +199,19 @@ def mark_task_game_sign_summary_consumed(task_info: object) -> None:
 def finalize_task_game_sign_notification(
     task_info: object,
     has_summary: bool,
-    failed_channels: list[str],
+    result: DispatchResult,
 ) -> None:
-    """记录部分失败，并在全部渠道成功后消费签到汇总。"""
+    """记录部分失败，并在汇总送达全部渠道后消费签到汇总。"""
 
-    if failed_channels:
-        logger.warning(f"推送代理结果部分失败: {'、'.join(failed_channels)}")
-    if has_summary and not failed_channels:
+    if result.failed:
+        logger.warning(f"推送代理结果部分失败: {'、'.join(result.failed)}")
+    if not has_summary:
+        return
+    # 渠道级投递状态由 dispatch_task_report 写入:
+    # 零实际渠道时 delivered 为空, 不会误标为已送达。
+    if getattr(task_info, "game_sign_summary_delivered", ()) and not getattr(
+        task_info, "game_sign_summary_pending", ()
+    ):
         mark_task_game_sign_summary_consumed(task_info)
 
 
@@ -211,11 +225,73 @@ def append_task_game_sign_summary(task_info: object, result: str) -> str:
     return f"{result}\n\n{summary}" if summary else result
 
 
-async def push_game_sign_notification(results: list[dict]) -> list[str]:
+async def dispatch_task_report(
+    payload: NotifyPayload,
+    targets: list[NotifyTarget],
+    task_info: object,
+    *,
+    summary_text: str = "",
+    attempts: int = 1,
+    retry_delay: float = 0,
+) -> DispatchResult:
+    """分发带签到汇总的任务报告，并按渠道维护汇总投递状态。
+
+    含汇总的完整载荷只发送给尚未送达汇总的渠道；已送达汇总的渠道只补发
+    去掉汇总的载荷，避免多脚本任务中已成功渠道收到重复摘要。渠道级状态
+    记录在 ``task_info`` 上（``game_sign_summary_delivered`` /
+    ``game_sign_summary_pending``），后续脚本据此只重试失败渠道。
+    """
+
+    delivered = set(getattr(task_info, "game_sign_summary_delivered", ()))
+    if not summary_text:
+        return await dispatch(
+            payload, targets, attempts=attempts, retry_delay=retry_delay
+        )
+
+    channels = [
+        channel for target in targets for channel in target_channel_names(target)
+    ]
+    with_summary = await dispatch(
+        payload,
+        targets,
+        attempts=attempts,
+        retry_delay=retry_delay,
+        skip_channels=delivered,
+    )
+    delivered = delivered | set(with_summary.succeeded)
+
+    if delivered:
+        pending = [channel for channel in channels if channel not in delivered]
+        clean_text = payload.text.replace(summary_text, "").rstrip()
+        clean_html = (
+            payload.html.replace(summary_text, "").rstrip()
+            if payload.html is not None
+            else None
+        )
+        without_summary = await dispatch(
+            dataclasses.replace(payload, text=clean_text, html=clean_html),
+            targets,
+            attempts=attempts,
+            retry_delay=retry_delay,
+            skip_channels=pending,
+        )
+    else:
+        without_summary = DispatchResult()
+
+    setattr(task_info, "game_sign_summary_delivered", delivered)
+    setattr(task_info, "game_sign_summary_pending", with_summary.failed)
+    return DispatchResult(
+        attempted=with_summary.attempted + without_summary.attempted,
+        succeeded=with_summary.succeeded + without_summary.succeeded,
+        failed=with_summary.failed + without_summary.failed,
+    )
+
+
+async def push_game_sign_notification(results: list[dict]) -> DispatchResult:
     """推送手动或启动时触发的游戏签到结果通知。"""
     results = _notification_results(results)
     if not results:
-        return []
+        return DispatchResult()
 
     title = "社区签到通知:"
     plain_text = format_game_sign_notification(results)

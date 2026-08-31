@@ -312,8 +312,7 @@ async def _kill_src_toolkit_processes(
                 process_name = process_info.get("name")
                 if (
                     process_name
-                    and str(process_name).casefold()
-                    in toolkit_context.executable_names
+                    and str(process_name).casefold() in toolkit_context.executable_names
                 ):
                     logger.warning(
                         "无法确认同名 SRC toolkit 后端进程路径，跳过进程 "
@@ -379,8 +378,7 @@ async def kill_src_processes(
         )
     except asyncio.TimeoutError:
         logger.warning(
-            "SRC 进程清理超时 "
-            f"{_PROCESS_CLEANUP_TIMEOUT_SECONDS} 秒，按清理失败处理"
+            f"SRC 进程清理超时 {_PROCESS_CLEANUP_TIMEOUT_SECONDS} 秒，按清理失败处理"
         )
         return False
 

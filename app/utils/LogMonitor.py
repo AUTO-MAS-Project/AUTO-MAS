@@ -119,7 +119,6 @@ class LogMonitor:
         drain_failures = 0
 
         while True:
-
             # 日志按日期滚动（如 M9A 的 log-YYYYMMDD.log）时切换到新文件。
             try:
                 resolved = resolve_path()
@@ -134,8 +133,11 @@ class LogMonitor:
                 drain_error = None
                 if current_path.is_file():
                     offset, if_log_start, drain_error = await self._consume_new_lines(
-                        current_path, offset, log_contents,
-                        if_log_start, log_start_time,
+                        current_path,
+                        offset,
+                        log_contents,
+                        if_log_start,
+                        log_start_time,
                     )
                 if drain_error is not None and drain_failures < _DRAIN_RETRY_LIMIT:
                     drain_failures += 1
@@ -186,7 +188,6 @@ class LogMonitor:
 
             # 尝试读取文件
             try:
-
                 # 发生日志轮转或文件被替换，重置监控状态并加载被轮换的旧日志
                 if (
                     log_stat.st_ino != current_path.stat().st_ino
@@ -227,7 +228,6 @@ class LogMonitor:
                     continue
 
                 if log_stat.st_size <= offset:
-
                     # 日志无变化超时调用回调
                     if time.monotonic() - self.last_callback_at > 60:
                         await self.do_callback()
@@ -274,7 +274,6 @@ class LogMonitor:
         self.log_contents = []
 
         while True:
-
             try:
                 bline = await asyncio.wait_for(process_stream.readline(), timeout=60)
             except asyncio.TimeoutError:

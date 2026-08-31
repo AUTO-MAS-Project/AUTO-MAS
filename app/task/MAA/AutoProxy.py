@@ -150,9 +150,7 @@ def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
     return {**deepcopy(source_task), **deepcopy(managed_task)}
 
 
-def _find_task_source(
-    task_queue: list[dict], name: str, task_type: str
-) -> dict | None:
+def _find_task_source(task_queue: list[dict], name: str, task_type: str) -> dict | None:
     """优先按任务名称取原生配置，兼容旧配置中只有任务类型的情况。"""
 
     for task in task_queue:
@@ -217,8 +215,7 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
     queue.extend(
         deepcopy(task)
         for task in source_tasks
-        if task.get("TaskType") != "Reclamation"
-        and task.get("Name") not in known_names
+        if task.get("TaskType") != "Reclamation" and task.get("Name") not in known_names
     )
     return queue
 
@@ -298,7 +295,9 @@ def _resolve_activity_stage(
     ]
     if not stages:
         return None
-    return stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
+    return (
+        stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
+    )
 
 
 def _build_activity_priority_fight(
@@ -500,7 +499,9 @@ class AutoProxyTask(TaskExecuteBase):
                         ],
                     )
                 except Exception as e:
-                    logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                    logger.opt(exception=True).warning(
+                        f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}"
+                    )
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
@@ -675,7 +676,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-
             # 默认关闭时不写入新任务，兼容尚未支持库存保持的 MAA 版本
             if en_task == "DepotMaintain" and not self.task_dict[en_task]:
                 continue
@@ -773,9 +773,7 @@ class AutoProxyTask(TaskExecuteBase):
             "Default", {}
         ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})[
             "ClientType"
-        ] = _MAA_CLIENT_TYPE_TO_INT.get(
-            self.cur_user_config.get("Info", "Server"), 0
-        )
+        ] = _MAA_CLIENT_TYPE_TO_INT.get(self.cur_user_config.get("Info", "Server"), 0)
         if self.cur_user_config.get("Info", "Server") == "Official":
             task_set["StartUp"]["AccountName"] = (
                 f"{self.cur_user_config.get('Info', 'Id')[:3]}****{self.cur_user_config.get('Info', 'Id')[7:]}"
@@ -1048,12 +1046,8 @@ class AutoProxyTask(TaskExecuteBase):
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
-
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-                if (
-                    f"完成任务: {zh_task}" in log
-                    or f"{zh_task} 任务跳过" in log
-                ):
+                if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
                     self.task_dict[en_task] = False
 
             if self.mode == "Routine" and (
@@ -1091,7 +1085,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 if self.if_game_hot_update
                 else self.script_config.get("Run", f"{self.mode}TimeLimit")
-            )
+            ),
         ):
             self.cur_user_log.status = "MAA 进程超时"
         else:
@@ -1123,7 +1117,6 @@ class AutoProxyTask(TaskExecuteBase):
         user_logs_list = []
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
-
             if log_item.status == "MAA 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
@@ -1169,7 +1162,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送统计通知时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送统计通知时出现异常: {e}"
+                    ),
                 )
 
         # 六星通知独立处理，避免单个通知异常阻断掉落统计。
@@ -1186,7 +1181,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送六星通知时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送六星通知时出现异常: {e}"
+                    ),
                 )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:

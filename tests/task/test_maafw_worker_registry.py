@@ -18,7 +18,9 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.worker_registry import (
 class FakeWorker:
     """subprocess.Popen 的最小替身：terminate/kill 只改 returncode。"""
 
-    def __init__(self, *, ignores_terminate: bool = False, raises: Exception | None = None):
+    def __init__(
+        self, *, ignores_terminate: bool = False, raises: Exception | None = None
+    ):
         self.returncode: int | None = None
         self.terminate_calls = 0
         self.kill_calls = 0

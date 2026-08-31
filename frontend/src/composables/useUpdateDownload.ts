@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { computed, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -189,9 +190,9 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
   if (lowSpeedDetector.update(data.source, data.speed)) {
     Modal.confirm({
       title: `${sourceLabel.value || '当前来源'}下载速度较慢`,
-      content: '下载速度已连续 10 秒低于 50 KB/s，是否切换至 CNB 源并重新下载？',
-      okText: '切换至 CNB 源',
-      cancelText: '继续下载',
+      content: t('misc.downloadHasBeenUnder'),
+      okText: t('misc.switchCnbSource'),
+      cancelText: t('misc.continueDownload'),
       zIndex: 10001,
       centered: true,
       onOk: switchToCnb,
@@ -331,7 +332,7 @@ const cancel = async () => {
     const response = await updateDownloadApi.cancel()
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
-      message.success('下载已取消')
+      message.success(t('misc.downloadCancelled'))
       receiveCancelled()
     } else {
       message.error(response.message || '取消下载失败')
@@ -394,7 +395,7 @@ const install = async () => {
   try {
     const response = await Service.installUpdateApiUpdateInstallPost()
     if (response.code === 200) {
-      message.success('安装程序已启动')
+      message.success(t('misc.installerStarted'))
       resetState()
       modalVisible.value = false
     } else {
@@ -403,7 +404,7 @@ const install = async () => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
-    message.error('启动安装失败')
+    message.error(t('misc.couldNotStartInstaller'))
   }
 }
 

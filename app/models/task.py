@@ -40,14 +40,12 @@ TaskTriggerSource = Literal[
 
 @dataclass
 class LogRecord:
-
     content: list[str] = field(default_factory=list)
     status: str = "未开始监看日志"
 
 
 @dataclass
 class UserItem:
-
     user_id: str  # 用户ID
     name: str  # 用户名称
     status: str  # 用户执行状态
@@ -82,7 +80,6 @@ class UserItem:
 
 @dataclass
 class ScriptItem:
-
     script_id: str  # 脚本ID
     name: str  # 脚本名称
     status: str  # 脚本执行状态

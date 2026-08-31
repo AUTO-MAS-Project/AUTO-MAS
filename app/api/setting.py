@@ -151,16 +151,16 @@ async def test_notify() -> OutBase:
     """测试通知"""
 
     try:
-        failed_channels = await send_test_notification()
+        result = await send_test_notification()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    if failed_channels:
+    if result.failed:
         return OutBase(
             code=500,
             status="error",
-            message=f"部分通知发送失败: {'、'.join(failed_channels)}",
+            message=f"部分通知发送失败: {'、'.join(result.failed)}",
         )
     return OutBase()
 

@@ -1,12 +1,18 @@
 <template>
-  <a-modal :open="open" title="米游社扫码登录" :footer="null" :width="360" @cancel="emit('cancel')">
+  <a-modal
+    :open="open"
+    :title="t('gamesign.qr.title')"
+    :footer="null"
+    :width="360"
+    @cancel="emit('cancel')"
+  >
     <div class="qr-login-container">
       <!-- 二维码 -->
       <div
         v-if="qrCodeDataUrl && status !== 'error' && status !== 'expired'"
         class="qr-code-wrapper"
       >
-        <img :src="qrCodeDataUrl" alt="扫码登录" class="qr-code-img" />
+        <img :src="qrCodeDataUrl" :alt="t('gamesign.qr.alt')" class="qr-code-img" />
       </div>
 
       <!-- 加载中 -->
@@ -30,13 +36,13 @@
       </div>
 
       <div v-if="status === 'waiting' || status === 'scanned'" class="qr-hint">
-        打开米游社 APP → 左上角扫码 → 扫描上方二维码
+        {{ t('gamesign.qr.hint') }}
       </div>
 
       <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
         <a-button type="primary" size="small" :loading="loading" @click="emit('retry')">
           <template #icon><ReloadOutlined /></template>
-          重新生成二维码
+          {{ t('gamesign.qr.retry') }}
         </a-button>
       </div>
     </div>
@@ -44,8 +50,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import type { QrLoginStatus } from './useQrLogin'
+
+const { t } = useI18n()
 
 /**
  * 米游社扫码登录弹窗：纯展示 + 把用户操作转发出去。

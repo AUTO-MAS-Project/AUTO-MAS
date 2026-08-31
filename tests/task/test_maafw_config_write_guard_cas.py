@@ -36,7 +36,9 @@ class MaafwConfigWriteGuardCasTest(unittest.TestCase):
             with self.assertRaises(MaaFWConfigCorruptionError):
                 read_maafw_config_snapshot(list_file)
 
-    def test_atomic_write_creates_parent_dirs_and_matches_snapshot_revision(self) -> None:
+    def test_atomic_write_creates_parent_dirs_and_matches_snapshot_revision(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "nested" / "config.json"
             payload = {"b": 2, "a": 1}
@@ -150,9 +152,7 @@ class MaafwConfigWriteGuardCasTest(unittest.TestCase):
             async def contender() -> None:
                 await entered.wait()
                 try:
-                    async with maafw_config_write_scope(
-                        script_id, fail_if_busy=True
-                    ):
+                    async with maafw_config_write_scope(script_id, fail_if_busy=True):
                         outcomes["entered"] = True
                 except RuntimeError as exc:
                     outcomes["error"] = str(exc)

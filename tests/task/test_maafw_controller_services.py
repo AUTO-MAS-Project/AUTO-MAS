@@ -43,9 +43,9 @@ class ControllerPackageImportTest(unittest.TestCase):
         既有的原生集成，全量跑时会合法地把 maa 载入进程。
         """
 
-        source = Path(
-            inspect.getfile(MaaFWWin32ControllerService)
-        ).read_text(encoding="utf-8")
+        source = Path(inspect.getfile(MaaFWWin32ControllerService)).read_text(
+            encoding="utf-8"
+        )
         module = ast.parse(source)
         top_level_imports = [
             node

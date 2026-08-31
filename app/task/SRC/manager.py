@@ -33,7 +33,6 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
     finalize_task_game_sign_notification,
@@ -203,9 +202,7 @@ class SrcManager(TaskExecuteBase):
 
         script_config = getattr(self, "script_config", None)
         if script_config is None:
-            script_config = Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ]
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
             self.script_config = script_config
         if not getattr(self, "config_lock_acquired", False):
             # ConfigBase.lock 会在首个 await 前置锁；先记录以便取消时仍能解锁。
@@ -271,9 +268,7 @@ class SrcManager(TaskExecuteBase):
                 or process_state.installation_id != snapshot_state.installation_id
             )
         ):
-            raise RuntimeError(
-                "SRC 进程状态与配置快照的安装实例不一致，拒绝自动清理"
-            )
+            raise RuntimeError("SRC 进程状态与配置快照的安装实例不一致，拒绝自动清理")
 
         cleanup_targets: list[tuple[Path, int | None, str]] = []
         if process_state is not None:
@@ -295,9 +290,7 @@ class SrcManager(TaskExecuteBase):
                 )
             )
 
-        self._reserve_recovery_roots(
-            [root_path for root_path, _, _ in cleanup_targets]
-        )
+        self._reserve_recovery_roots([root_path for root_path, _, _ in cleanup_targets])
         self._assert_no_foreign_pending_snapshot(
             [
                 self.src_root_path,
@@ -502,9 +495,7 @@ class SrcManager(TaskExecuteBase):
         staging_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.src_set_path, staging_path)
         if not self._is_src_config_available(staging_path):
-            raise RuntimeError(
-                f"SRC 配置快照副本不完整，拒绝提交: {staging_path}"
-            )
+            raise RuntimeError(f"SRC 配置快照副本不完整，拒绝提交: {staging_path}")
         validate_src_installation(
             self.src_root_path,
             self.src_installation_id,
@@ -554,8 +545,7 @@ class SrcManager(TaskExecuteBase):
                 snapshot_root_path = snapshot_state.src_root_path
             except (AttributeError, OSError, ValueError) as e:
                 raise RuntimeError(
-                    "无法验证其他 SRC 待恢复快照的占用范围，"
-                    f"请先处理: {ready_path}"
+                    f"无法验证其他 SRC 待恢复快照的占用范围，请先处理: {ready_path}"
                 ) from e
 
             if any(
@@ -578,11 +568,7 @@ class SrcManager(TaskExecuteBase):
                 raise ValueError(f"SRC 脚本设置用户无效: {user_id}") from e
 
         config_path = (
-            Path.cwd()
-            / "data"
-            / self.script_info.script_id
-            / user_id
-            / "ConfigFile"
+            Path.cwd() / "data" / self.script_info.script_id / user_id / "ConfigFile"
         )
         if has_committed_src_user_config_transaction(config_path):
             recover_src_user_config(config_path, preserve_commit_marker=True)
@@ -590,17 +576,14 @@ class SrcManager(TaskExecuteBase):
             source_path = process_state.src_root_path / "config"
             if not source_path.parent.exists():
                 raise RuntimeError(
-                    "SRC 脚本设置目录已不存在，已保留待恢复状态: "
-                    f"{source_path}"
+                    f"SRC 脚本设置目录已不存在，已保留待恢复状态: {source_path}"
                 )
             validate_src_installation(
                 process_state.src_root_path,
                 process_state.installation_id,
             )
             if not self._is_src_config_available(source_path):
-                raise RuntimeError(
-                    f"SRC 脚本设置配置不存在或已损坏: {source_path}"
-                )
+                raise RuntimeError(f"SRC 脚本设置配置不存在或已损坏: {source_path}")
             save_src_user_config(
                 source_path,
                 config_path,
@@ -684,8 +667,7 @@ class SrcManager(TaskExecuteBase):
                 src_set_path.rename(failed_path)
                 backup_path.rename(src_set_path)
                 logger.warning(
-                    "已回滚损坏的 SRC 配置目录并保留现场副本: "
-                    f"{failed_path}"
+                    f"已回滚损坏的 SRC 配置目录并保留现场副本: {failed_path}"
                 )
             else:
                 raise RuntimeError(
@@ -729,8 +711,7 @@ class SrcManager(TaskExecuteBase):
             if backup_path.exists():
                 backup_path.rename(src_set_path)
             raise RuntimeError(
-                "SRC 配置恢复结果不完整，已回滚现场配置并保留恢复副本: "
-                f"{failed_path}"
+                f"SRC 配置恢复结果不完整，已回滚现场配置并保留恢复副本: {failed_path}"
             )
         if backup_path.exists():
             shutil.rmtree(backup_path)
@@ -809,9 +790,8 @@ class SrcManager(TaskExecuteBase):
             if not self.prepared:
                 if not getattr(self, "recovery_completed", False):
                     await self._recover_previous_run()
-                if (
-                    self.check_result == "Pass"
-                    and not getattr(self, "current_cleanup_completed", False)
+                if self.check_result == "Pass" and not getattr(
+                    self, "current_cleanup_completed", False
                 ):
                     await self._cleanup_current_src_root()
                 self.script_info.status = "异常"
@@ -830,7 +810,6 @@ class SrcManager(TaskExecuteBase):
             else:
                 logger.warning(f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}")
             if self.task_info.mode in ["AutoProxy"]:
-
                 should_notify = await self._complete_locked_final_task()
         finally:
             await script_config.unlock()
@@ -866,18 +845,16 @@ class SrcManager(TaskExecuteBase):
 
         # 根配置保持锁定以阻止外部编辑；仅临时开放内部用户集合写回。
         await self.script_config.UserData.unlock()
-        await Config.ScriptConfig[
-            uuid.UUID(self.script_info.script_id)
-        ].UserData.load(await self.user_config.toDict())
+        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].UserData.load(
+            await self.user_config.toDict()
+        )
         await Config.ScriptConfig.save()
         return True
 
     async def _send_final_notification(self) -> None:
         """解锁配置后限时发送任务完成通知。"""
 
-        error_user = [
-            u.name for u in self.script_info.user_list if u.status == "异常"
-        ]
+        error_user = [u.name for u in self.script_info.user_list if u.status == "异常"]
         over_user = [u.name for u in self.script_info.user_list if u.status == "完成"]
         wait_user = [u.name for u in self.script_info.user_list if u.status == "等待"]
 
@@ -902,31 +879,27 @@ class SrcManager(TaskExecuteBase):
             if self.script_info.status == "完成"
             else title.replace("报告", "存在异常")
         )
+        result = {**result, "system_title": completion_title}
         try:
-            await asyncio.wait_for(
-                Notify.push_plyer(
-                    completion_title,
-                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                    10,
+            push_result = await asyncio.wait_for(
+                push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
                 ),
                 timeout=_NOTIFICATION_TIMEOUT_SECONDS,
             )
-        except Exception as e:
-            await self._report_notification_error("推送系统通知", e)
-
-        try:
-            failed_channels = await asyncio.wait_for(
-                push_notification("代理结果", title, result, None),
-                timeout=_NOTIFICATION_TIMEOUT_SECONDS,
-            )
             finalize_task_game_sign_notification(
-                self.task_info, has_game_sign_summary, failed_channels
+                self.task_info, has_game_sign_summary, push_result
             )
         except Exception as e:
             await self._report_notification_error("推送代理结果", e)
 
-    async def _report_notification_error(self, operation: str, error: Exception) -> None:
+    async def _report_notification_error(
+        self, operation: str, error: Exception
+    ) -> None:
         logger.opt(exception=True).warning(f"{operation}时出现异常: {error}")
         try:
             await asyncio.wait_for(
@@ -941,9 +914,7 @@ class SrcManager(TaskExecuteBase):
                 timeout=_WEBSOCKET_REPORT_TIMEOUT_SECONDS,
             )
         except Exception as report_error:
-            logger.opt(exception=True).warning(
-                f"上报 SRC 通知异常失败: {report_error}"
-            )
+            logger.opt(exception=True).warning(f"上报 SRC 通知异常失败: {report_error}")
 
     async def on_crash(self, e: Exception):
 
@@ -954,11 +925,11 @@ class SrcManager(TaskExecuteBase):
                 Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"SRC任务出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"SRC任务出现异常: {e}"
+                    ),
                 ),
                 timeout=_WEBSOCKET_REPORT_TIMEOUT_SECONDS,
             )
         except Exception as report_error:
-            logger.opt(exception=True).warning(
-                f"上报 SRC 任务异常失败: {report_error}"
-            )
+            logger.opt(exception=True).warning(f"上报 SRC 任务异常失败: {report_error}")

@@ -28,14 +28,16 @@ class MaaFWAssetPathTest(unittest.TestCase):
 
     def test_serves_a_project_image(self) -> None:
         resolved = _maafw_asset_file_path(
-            str(self.root), chr(92).join(("resource", "announcement", "images", "bydjl.png"))
+            str(self.root),
+            chr(92).join(("resource", "announcement", "images", "bydjl.png")),
         )
         self.assertEqual(resolved, self.image.resolve())
 
     def test_accepts_backslash_separators(self) -> None:
         # markdown 里写 Windows 分隔符的项目确实存在，前端会归一化，这里也要认。
         resolved = _maafw_asset_file_path(
-            str(self.root), chr(92).join(("resource", "announcement", "images", "bydjl.png"))
+            str(self.root),
+            chr(92).join(("resource", "announcement", "images", "bydjl.png")),
         )
         self.assertEqual(resolved, self.image.resolve())
 
@@ -70,7 +72,9 @@ class MaaFWAssetPathTest(unittest.TestCase):
     def test_missing_file_is_distinguishable(self) -> None:
         # 缺文件要能和「非法请求」分开：前者 404，后者 400。
         with self.assertRaises(FileNotFoundError):
-            _maafw_asset_file_path(str(self.root), "resource/announcement/images/nope.png")
+            _maafw_asset_file_path(
+                str(self.root), "resource/announcement/images/nope.png"
+            )
 
 
 class MaaFWAssetRouteTest(unittest.TestCase):

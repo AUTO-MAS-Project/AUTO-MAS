@@ -56,13 +56,11 @@ def resolve_python_interpreter(
     is used.  Only ``allow_install=True`` may download a missing interpreter.
     """
 
-    implementation = str(
-        python_request.get("implementation") or "cpython"
-    ).strip().casefold()
+    implementation = (
+        str(python_request.get("implementation") or "cpython").strip().casefold()
+    )
     if implementation != "cpython":
-        raise RuntimeError(
-            "MaaFW runtime currently supports only CPython interpreters"
-        )
+        raise RuntimeError("MaaFW runtime currently supports only CPython interpreters")
     constraint = _normalize_python_constraint(python_request.get("constraint"))
     specifier = _parse_python_constraint(constraint)
     target_versions = _matching_supported_python_minors(specifier)
@@ -180,9 +178,8 @@ def resolve_python_interpreter(
         }
 
     target_version = target_requests[-1]
-    if (
-        exact_patch_target is None
-        and not _minor_family_fully_satisfies(specifier, target_versions[-1])
+    if exact_patch_target is None and not _minor_family_fully_satisfies(
+        specifier, target_versions[-1]
     ):
         selected_download = _select_uv_python_version(
             uv_executable,
@@ -324,9 +321,7 @@ def install_python_runtime(
             "shared": uv_executable is not None,
             "path": str(uv_cache_dir) if uv_executable is not None else None,
             "relativeToPool": (
-                UV_CACHE_RELATIVE_PATH.as_posix()
-                if uv_executable is not None
-                else None
+                UV_CACHE_RELATIVE_PATH.as_posix() if uv_executable is not None else None
             ),
         },
         "link": {
@@ -402,8 +397,7 @@ def _create_environment_with_uv(
     log: Callable[[str], None],
 ) -> None:
     log(
-        f"[MaaFW Runtime Pool] uv 创建共享环境 (python {bootstrap}): "
-        f"{environment_path}"
+        f"[MaaFW Runtime Pool] uv 创建共享环境 (python {bootstrap}): {environment_path}"
     )
     _run(
         [
@@ -438,9 +432,7 @@ def _parse_python_constraint(value: str) -> SpecifierSet:
     try:
         return SpecifierSet(value)
     except InvalidSpecifier as exc:
-        raise RuntimeError(
-            f"invalid MaaFW runtime Python constraint: {value}"
-        ) from exc
+        raise RuntimeError(f"invalid MaaFW runtime Python constraint: {value}") from exc
 
 
 def _matching_supported_python_minors(specifier: SpecifierSet) -> list[str]:
@@ -693,9 +685,7 @@ def _select_uv_python_version(
             "MaaFW runtime uv Python catalog returned invalid JSON"
         ) from exc
     if not isinstance(rows, list):
-        raise RuntimeError(
-            "MaaFW runtime uv Python catalog must return a JSON array"
-        )
+        raise RuntimeError("MaaFW runtime uv Python catalog must return a JSON array")
 
     allowed_minors = set(target_minors)
     candidates: list[Version] = []
@@ -945,8 +935,7 @@ def _verify_runtime_identity(
             expected_release = Version(expected_version).release
         except InvalidVersion as exc:
             raise RuntimeError(
-                "MaaFW runtime identity 的 pythonVersion 无效："
-                f"{expected_version}"
+                f"MaaFW runtime identity 的 pythonVersion 无效：{expected_version}"
             ) from exc
         actual_version = str(
             probe.get("version", "")
@@ -1163,7 +1152,7 @@ def _command_version(
         return None
     value = result.stdout.strip()
     if value.casefold().startswith(prefix.casefold()):
-        value = value[len(prefix):].strip()
+        value = value[len(prefix) :].strip()
     return value or None
 
 

@@ -21,6 +21,7 @@
 
 from app.core import Config
 from app.core.notify import (
+    DispatchResult,
     NotifyPayload,
     NotifyTarget,
     dispatch,
@@ -30,6 +31,7 @@ from app.core.notify import (
     user_target,
 )
 from app.models.config import MaaUserConfig
+from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
 from app.utils import get_logger
 
 logger = get_logger("MAA 通知工具")
@@ -82,15 +84,19 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
 
 
 async def push_notification(
-    mode: str, title: str, message: dict, user_config: MaaUserConfig | None
-) -> list[str]:
-    """通过所有渠道推送通知; 返回发送失败的渠道名列表。"""
+    mode: str,
+    title: str,
+    message: dict,
+    user_config: MaaUserConfig | None,
+    task_info: object | None = None,
+) -> DispatchResult:
+    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
         if not should_send_result(message):
-            return []
+            return DispatchResult()
 
         message_text = (
             f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
@@ -98,15 +104,29 @@ async def push_notification(
             f"{message['result']}"
         )
         template = Config.notify_env.get_template("MAA_result.html")
-
-        return await dispatch(
+        counts = (
+            f"已完成用户数: {message['completed_count']}, "
+            f"未完成用户数: {message['uncompleted_count']}"
+        )
+        summary_text = (
+            get_task_game_sign_summary(task_info)
+            if task_info is not None and message.get("game_sign_summary")
+            else ""
+        )
+        return await dispatch_task_report(
             NotifyPayload(
                 title=title,
                 text=message_text,
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                system_title=message.get("system_title") or title.replace("报告", "已完成！"),
+                system_message=counts,
+                system_ticker=counts,
+                system_timeout=10,
             ),
-            [global_target()],
+            [global_target(include_system=True)],
+            task_info,
+            summary_text=summary_text,
         )
 
     if mode == "统计信息":
@@ -136,4 +156,4 @@ async def push_notification(
             _six_star_targets(user_config),
         )
 
-    return []
+    return DispatchResult()

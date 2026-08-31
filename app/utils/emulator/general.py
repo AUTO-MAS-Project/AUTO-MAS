@@ -141,7 +141,6 @@ class GeneralDeviceManager(DeviceBase):
 
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
-
             # 检查窗口可见性是否符合预期
             if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)

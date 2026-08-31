@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
@@ -26,6 +27,7 @@ import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
+const { t } = useI18n()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
@@ -41,80 +43,67 @@ const {
 
 // 活动标签
 const activeKey = ref('basic')
-const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
+const version = computed(() => import.meta.env.VITE_APP_VERSION || t('setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
 const settings = reactive<GlobalConfig>({})
 
 // 下拉选项
-const historyRetentionOptions = [
-  { label: '7天', value: 7 },
-  { label: '15天', value: 15 },
-  { label: '30天', value: 30 },
-  { label: '60天', value: 60 },
-  { label: '90天', value: 90 },
-  { label: '180天', value: 180 },
-  { label: '365天', value: 365 },
-  { label: '永久保留', value: 0 },
-]
+const historyRetentionOptions = computed(() => [
+  { label: t('setting.retention.d7'), value: 7 },
+  { label: t('setting.retention.d15'), value: 15 },
+  { label: t('setting.retention.d30'), value: 30 },
+  { label: t('setting.retention.d60'), value: 60 },
+  { label: t('setting.retention.d90'), value: 90 },
+  { label: t('setting.retention.d180'), value: 180 },
+  { label: t('setting.retention.d365'), value: 365 },
+  { label: t('setting.retention.forever'), value: 0 },
+])
 
-const sendTaskResultTimeOptions = [
-  { label: '不推送', value: '不推送' },
-  { label: '任何时刻', value: '任何时刻' },
-  { label: '仅失败时', value: '仅失败时' },
-]
+// value 是后端 Notify.SendTaskResultTime 的配置值，只译 label
+const sendTaskResultTimeOptions = computed(() => [
+  { label: t('setting.pushTime.never'), value: '不推送' },
+  { label: t('setting.pushTime.always'), value: '任何时刻' },
+  { label: t('setting.pushTime.failOnly'), value: '仅失败时' },
+])
 
-const updateSourceOptions = [
+const updateSourceOptions = computed(() => [
   { label: 'GitHub', value: 'GitHub' },
-  { label: 'Mirror酱', value: 'MirrorChyan' },
-  { label: '自建下载站', value: 'AutoSite' },
-  { label: 'CNB 镜像源', value: 'CNB' },
-]
+  { label: t('setting.source.MirrorChyan'), value: 'MirrorChyan' },
+  { label: t('setting.source.AutoSite'), value: 'AutoSite' },
+  { label: t('setting.source.CNB'), value: 'CNB' },
+])
 
-const updateChannelOptions = [
-  { label: '稳定版', value: 'stable' },
-  { label: '公测版', value: 'beta' },
-]
+const updateChannelOptions = computed(() => [
+  { label: t('setting.channel.stable'), value: 'stable' },
+  { label: t('setting.channel.beta'), value: 'beta' },
+])
 
-const voiceTypeOptions = [
-  { label: '简洁', value: 'simple' },
-  { label: '聒噪', value: 'noisy' },
-]
+const voiceTypeOptions = computed(() => [
+  { label: t('setting.voice.simple'), value: 'simple' },
+  { label: t('setting.voice.noisy'), value: 'noisy' },
+])
 
-const themeModeOptions = [
-  { label: '跟随系统', value: 'system' },
-  { label: '浅色模式', value: 'light' },
-  { label: '深色模式', value: 'dark' },
-]
+const themeModeOptions = computed(() => [
+  { label: t('setting.themeMode.system'), value: 'system' },
+  { label: t('setting.themeMode.light'), value: 'light' },
+  { label: t('setting.themeMode.dark'), value: 'dark' },
+])
 
-const themeColorLabels: Record<ThemeColor, string> = {
-  blue: '蓝色',
-  purple: '紫色',
-  cyan: '青色',
-  green: '绿色',
-  magenta: '洋红',
-  pink: '粉色',
-  red: '红色',
-  orange: '橙色',
-  yellow: '黄色',
-  volcano: '火山红',
-  geekblue: '极客蓝',
-  lime: '青柠',
-  gold: '金色',
-}
+const themeColorOptions = computed(() =>
+  Object.entries(themeColors).map(([key, color]) => ({
+    label: t(`setting.color.${key}`),
+    value: key,
+    color,
+  }))
+)
 
-const themeColorOptions = Object.entries(themeColors).map(([key, color]) => ({
-  label: themeColorLabels[key as ThemeColor],
-  value: key,
-  color,
-}))
-
-const cursorEffectOptions: { label: string; value: CursorEffect }[] = [
-  { label: '关闭', value: 'none' },
-  { label: '流线光标', value: 'sleek-line' },
-  { label: '流体光标（炫酷RGB！）', value: 'fluid' },
-]
+const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
+  { label: t('setting.cursor.none'), value: 'none' },
+  { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
+  { label: t('setting.cursor.fluid'), value: 'fluid' },
+])
 
 // 加载和保存
 const loadSettings = async () => {
@@ -147,14 +136,14 @@ const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise
     const updateData: GlobalConfig = { [category]: changes }
     const result = await updateSettings(updateData)
     if (!result) {
-      message.error('设置保存失败')
+      message.error(t('setting.toast.saveFailed'))
       return false
     }
     return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`设置保存失败: ${errorMsg}`)
-    message.error('设置保存失败')
+    message.error(t('setting.toast.saveFailed'))
     return false
   }
 }
@@ -209,7 +198,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新托盘失败: ${errorMsg}`)
-      message.error('托盘设置更新失败')
+      message.error(t('setting.toast.trayUpdateFailed'))
     }
   }
 
@@ -220,7 +209,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`重启更新检查失败: ${errorMsg}`)
-      message.error('更新检查设置变更失败')
+      message.error(t('setting.toast.updateCheckFailed'))
     }
   }
 }
@@ -236,10 +225,10 @@ const handleThemeColorChange = (value: SelectValue) => {
 const confirmFluidCursor = () =>
   new Promise<boolean>(resolve => {
     Modal.confirm({
-      title: '确认开启流体光标？',
-      content: '该效果会持续进行 WebGL 流体渲染，可能增加 GPU 使用率。确认后立即应用。',
-      okText: '确认开启',
-      cancelText: '取消',
+      title: t('setting.toast.fluidTitle'),
+      content: t('setting.toast.fluidContent'),
+      okText: t('setting.toast.fluidOk'),
+      cancelText: t('common.cancel'),
       onOk: () => resolve(true),
       onCancel: () => resolve(false),
     })
@@ -264,7 +253,7 @@ const handleCursorEffectChange = async (value: SelectValue) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存光标效果失败: ${errorMsg}`)
-    message.error('光标效果保存失败')
+    message.error(t('setting.toast.cursorSaveFailed'))
   }
 }
 
@@ -274,7 +263,7 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存低性能模式失败: ${errorMsg}`)
-    message.error('低性能模式保存失败')
+    message.error(t('setting.toast.lowPerfSaveFailed'))
   }
 }
 
@@ -323,12 +312,13 @@ const testNotify = async () => {
   testingNotify.value = true
   try {
     const res = await Service.testNotifyApiSettingTestNotifyPost()
-    if (res?.code && res.code !== 200) message.warning(res?.message || '测试通知发送结果未知')
-    else message.success('测试通知已发送')
+    if (res?.code && res.code !== 200)
+      message.warning(res?.message || t('setting.toast.testUnknown'))
+    else message.success(t('setting.toast.testSent'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`测试通知发送失败: ${errorMsg}`)
-    message.error('测试通知发送失败')
+    message.error(t('setting.toast.testFailed'))
   } finally {
     testingNotify.value = false
   }
@@ -345,11 +335,11 @@ onMounted(() => {
 <template>
   <div class="settings-container">
     <div class="settings-header">
-      <h1 class="page-title">设置</h1>
+      <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
-        <a-tab-pane key="basic" tab="界面设置">
+        <a-tab-pane key="basic" :tab="t('setting.tab.basic')">
           <TabBasic
             :settings="settings"
             :theme-mode="themeMode"
@@ -367,7 +357,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
-        <a-tab-pane key="function" tab="功能设置">
+        <a-tab-pane key="function" :tab="t('setting.tab.function')">
           <TabFunction
             :settings="settings"
             :history-retention-options="historyRetentionOptions"
@@ -375,7 +365,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
-        <a-tab-pane key="notify" tab="通知设置">
+        <a-tab-pane key="notify" :tab="t('setting.tab.notify')">
           <TabNotify
             :settings="settings"
             :send-task-result-time-options="sendTaskResultTimeOptions"
@@ -384,10 +374,10 @@ onMounted(() => {
             :testing-notify="testingNotify"
           />
         </a-tab-pane>
-        <a-tab-pane key="advanced" tab="日志管理">
+        <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
-        <a-tab-pane key="others" tab="关于">
+        <a-tab-pane key="others" :tab="t('setting.tab.others')">
           <TabOthers
             :version="version"
             :backend-update-info="backendUpdateInfo"

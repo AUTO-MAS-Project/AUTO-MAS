@@ -55,7 +55,6 @@ if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 
 logger = get_logger("MFW 内置运行")
 
 
-
 class MaaFWEmbeddedManager(TaskExecuteBase):
     """MaaFW 内置运行（第二层）管理器。
 
@@ -287,9 +286,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "game_sign_summary": has_game_sign_summary,
         }
         try:
-            failed_channels = await push_notification("代理结果", title, result)
+            push_result = await push_notification(
+                mode="代理结果",
+                title=title,
+                message=result,
+                task_info=self.task_info,
+            )
             finalize_task_game_sign_notification(
-                self.task_info, has_game_sign_summary, failed_channels
+                self.task_info, has_game_sign_summary, push_result
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 代理结果时出现异常: {exc}")

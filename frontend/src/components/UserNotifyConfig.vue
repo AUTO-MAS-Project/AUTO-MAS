@@ -1,13 +1,13 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>通知配置</h3>
+      <h3>{{ t('edit.notificationSettings') }}</h3>
     </div>
 
     <div class="notify-channel-list">
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">启用通知</span>
+          <span class="notify-channel-name">{{ t('edit.enableNotifications') }}</span>
           <a-switch
             v-model:checked="notify.Enabled"
             :disabled="loading"
@@ -18,7 +18,7 @@
 
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">统计信息</span>
+          <span class="notify-channel-name">{{ t('edit.statistics') }}</span>
           <a-switch
             v-model:checked="notify.IfSendStatistic"
             :disabled="loading || !notify.Enabled"
@@ -29,7 +29,7 @@
 
       <div v-if="showSixStar" class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">公开招募高资喜报</span>
+          <span class="notify-channel-name">{{ t('edit.notifyRecruit') }}</span>
           <a-switch
             v-model:checked="notify.IfSendSixStar"
             :disabled="loading || !notify.Enabled"
@@ -40,7 +40,7 @@
 
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">邮件通知</span>
+          <span class="notify-channel-name">{{ t('edit.emailNotification') }}</span>
           <a-switch
             v-model:checked="notify.IfSendMail"
             :disabled="loading || !notify.Enabled"
@@ -48,13 +48,13 @@
           />
         </div>
         <div v-if="notify.IfSendMail" class="notify-channel-config">
-          <a-form-item label="收件地址">
+          <a-form-item :label="t('edit.recipient')">
             <a-input
               v-model:value="notify.ToAddress"
               type="email"
               inputmode="email"
               autocomplete="email"
-              placeholder="请输入收件邮箱"
+              :placeholder="t('edit.enterRecipientAddress')"
               size="large"
               :disabled="loading || !notify.Enabled"
               @blur="emitSave('Notify.ToAddress', notify.ToAddress)"
@@ -65,7 +65,7 @@
 
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">Server 酱</span>
+          <span class="notify-channel-name">{{ t('edit.serverchan') }}</span>
           <a-switch
             v-model:checked="notify.IfServerChan"
             :disabled="loading || !notify.Enabled"
@@ -73,11 +73,11 @@
           />
         </div>
         <div v-if="notify.IfServerChan" class="notify-channel-config">
-          <a-form-item label="SendKey">
+          <a-form-item :label="t('edit.serverchan')">
             <a-input-password
               v-model:value="notify.ServerChanKey"
               autocomplete="off"
-              placeholder="请输入 SENDKEY"
+              :placeholder="t('edit.enterSendkey')"
               size="large"
               :disabled="loading || !notify.Enabled"
               @blur="emitSave('Notify.ServerChanKey', notify.ServerChanKey)"
@@ -98,6 +98,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import WebhookManager from '@/components/WebhookManager.vue'
 
 type UserNotifyConfigData = {
@@ -109,6 +110,8 @@ type UserNotifyConfigData = {
   IfServerChan?: boolean | null
   ServerChanKey?: string | null
 }
+
+const { t } = useI18n()
 
 const notify = defineModel<UserNotifyConfigData>({ required: true })
 
@@ -135,34 +138,6 @@ const emitSave = (key: string, value: unknown) => emit('save', key, value)
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
-}
-
 .notify-channel-list {
   padding: 4px 16px;
   border: 1px solid var(--ant-color-border-secondary);

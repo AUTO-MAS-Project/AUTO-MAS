@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
@@ -11,6 +12,8 @@ import {
   type WSGameSignResultData,
 } from '@/services/websocket/types'
 import TabGameSign from './TabGameSign.vue'
+
+const { t } = useI18n()
 
 defineOptions({ name: 'GameSignPage' })
 
@@ -67,7 +70,7 @@ const updateStatus = async () => {
     const response = await Service.getToolsApiToolsGetPost()
     if (!isMounted) return
     if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || '签到状态响应无效')
+      throw new Error(response.message || t('gamesign.statusInvalid'))
     }
     statusPollFailed = false
     const data = response.data
@@ -90,7 +93,7 @@ const refreshGameSignConfig = async () => {
     const response = await Service.getToolsApiToolsGetPost()
     if (!isMounted) return
     if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || '签到结果响应无效')
+      throw new Error(response.message || t('gamesign.resultInvalid'))
     }
     const data = response.data
     if (data.GameSign?.Status) {
@@ -198,7 +201,7 @@ onUnmounted(() => {
 <template>
   <div class="gamesign-container">
     <div class="gamesign-header">
-      <h1 class="page-title">游戏签到</h1>
+      <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
       <TabGameSign

@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
@@ -1256,7 +1257,7 @@ export function useScriptApi() {
       const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
       error.value = errorMsg
       logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
-      message.error('MaaEnd 文件不完整，请卸载后重新安装 MaaEnd')
+      message.error(t('misc.maaendIncompleteUninstallIt'))
       return null
     }
   }

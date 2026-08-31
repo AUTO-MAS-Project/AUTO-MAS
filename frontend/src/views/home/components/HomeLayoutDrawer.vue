@@ -1,7 +1,7 @@
 <template>
   <a-drawer
     :open="open"
-    title="自定义首页"
+    :title="t('home.layout.title')"
     :width="360"
     :mask="false"
     :root-style="drawerRootStyle"
@@ -24,8 +24,8 @@
             class="home-layout-drag-handle"
             role="button"
             tabindex="0"
-            aria-label="拖拽排序"
-            title="拖拽排序"
+            :aria-label="t('home.layout.drag')"
+            :title="t('home.layout.drag')"
           >
             <MenuOutlined />
           </span>
@@ -33,7 +33,7 @@
           <a-switch
             size="small"
             :checked="module.visible"
-            :aria-label="`${module.title}显示状态`"
+            :aria-label="t('home.layout.visibility', { name: module.title })"
             @change="onVisibilityChange(module.key, $event)"
           />
         </div>
@@ -43,11 +43,11 @@
     <a-divider style="margin: 16px 0" />
 
     <div class="home-layout-extra">
-      <span class="home-layout-title">滚动提示</span>
+      <span class="home-layout-title">{{ t('home.layout.scrollHint') }}</span>
       <a-switch
         size="small"
         :checked="!scrollHintHidden"
-        aria-label="滚动提示显示状态"
+        :aria-label="t('home.layout.scrollHintVisibility')"
         @change="emit('scroll-hint-change', !$event)"
       />
     </div>
@@ -55,6 +55,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { CSSProperties } from 'vue'
 import { MenuOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -69,6 +70,8 @@ interface Props {
   modules: HomeModuleDescriptor[]
   scrollHintHidden: boolean
 }
+
+const { t } = useI18n()
 
 defineProps<Props>()
 

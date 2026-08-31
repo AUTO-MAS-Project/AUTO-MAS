@@ -31,7 +31,6 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
     finalize_task_game_sign_notification,
@@ -186,9 +185,7 @@ class GeneralManager(TaskExecuteBase):
         user_id = self.script_info.user_list[self.script_info.current_index].user_id
         if user_id == "Default":
             return True
-        return bool(
-            self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig")
-        )
+        return bool(self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig"))
 
     async def prepare(self):
         """运行前准备"""
@@ -264,9 +261,7 @@ class GeneralManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             use_mas_config = self._user_uses_mas_config()
-            user_id = self.script_info.user_list[
-                self.script_info.current_index
-            ].user_id
+            user_id = self.script_info.user_list[self.script_info.current_index].user_id
             logger.info(
                 f"用户 {user_id} 配置来源: "
                 f"{'MAS 独立配置' if use_mas_config else '脚本直控配置'}"
@@ -311,7 +306,6 @@ class GeneralManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode == "AutoProxy":
-
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -328,8 +322,10 @@ class GeneralManager(TaskExecuteBase):
             ]
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            # 按用户交错组装「用户结果行 + 该用户进程信息」，避免多账号任务
-            # 的节点详情失去归属；失败条目仅在存在未完成用户时纳入报告。
+            # 按用户交错组装「用户结果行 + 该用户进程信息」：
+            # 多账号任务时各用户信息归属清晰，不再全部平铺。
+            # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
+            # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
             has_uncompleted = len(error_user) + len(wait_user) > 0
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
@@ -349,23 +345,25 @@ class GeneralManager(TaskExecuteBase):
                 "game_sign_summary": has_game_sign_summary,
             }
 
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                10,
-            )
             try:
-                failed_channels = await push_notification("代理结果", title, result, None)
+                push_result = await push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
+                )
                 finalize_task_game_sign_notification(
-                    self.task_info, has_game_sign_summary, failed_channels
+                    self.task_info, has_game_sign_summary, push_result
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送代理结果时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         self.script_info.status = "完成"
@@ -378,9 +376,7 @@ class GeneralManager(TaskExecuteBase):
             self._restore_external_config()
             self._cleanup_external_config_snapshot()
         except Exception as restore_error:
-            logger.opt(exception=True).warning(
-                f"恢复脚本直控配置失败: {restore_error}"
-            )
+            logger.opt(exception=True).warning(f"恢复脚本直控配置失败: {restore_error}")
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
