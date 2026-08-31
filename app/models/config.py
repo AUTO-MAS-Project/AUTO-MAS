@@ -3117,6 +3117,10 @@ class OkNteUserConfig(ConfigBase):
 
         ## Notify ----------------------------------------------------------
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否在任务报告中推送该用户的节点详情（log_box 采集的关键节点）
+        self.Notify_PushLogEnabled = ConfigItem(
+            "Notify", "PushLogEnabled", True, BoolValidator()
+        )
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
