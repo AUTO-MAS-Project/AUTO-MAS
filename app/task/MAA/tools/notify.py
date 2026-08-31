@@ -20,171 +20,140 @@
 #   Contact: DLmaster_361@163.com
 
 from app.core import Config
-from app.services import Notify
-from app.utils import get_logger
+from app.core.notify import (
+    DispatchResult,
+    NotifyPayload,
+    NotifyTarget,
+    dispatch,
+    global_target,
+    should_send_result,
+    statistic_targets,
+    user_target,
+)
 from app.models.config import MaaUserConfig
+from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
+from app.utils import get_logger
 
 logger = get_logger("MAA 通知工具")
 
+# MAA 的签名只空一行, 与其余脚本不同
+SIGNATURE_SEP = "\n"
+
+
+def _statistic_text(message: dict) -> str:
+    """拼装掉落与招募统计的纯文本正文。"""
+
+    formatted = []
+    if "drop_statistics" in message:
+        for stage, items in message["drop_statistics"].items():
+            formatted.append(f"掉落统计（{stage}）:")
+            for item, quantity in items.items():
+                formatted.append(f"  {item}: {quantity}")
+    drop_text = "\n".join(formatted)
+
+    formatted = ["招募统计:"]
+    if "recruit_statistics" in message:
+        for star, count in message["recruit_statistics"].items():
+            formatted.append(f"  {star}: {count}")
+    recruit_text = "\n".join(formatted)
+
+    return (
+        f"开始时间: {message['start_time']}\n"
+        f"结束时间: {message['end_time']}\n"
+        f"理智剩余: {message.get('sanity', '未知')}\n"
+        f"回复时间: {message.get('sanity_full_at', '未知')}\n"
+        f"MAA执行结果: {message['maa_result']}\n"
+        f"{recruit_text}\n"
+        f"{drop_text}"
+    )
+
+
+def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
+    """公招六星喜报的推送目标, 全局与用户各有独立开关。"""
+
+    targets = []
+    if Config.get("Notify", "IfSendSixStar"):
+        targets.append(global_target())
+    if (
+        user_config is not None
+        and user_config.get("Notify", "Enabled")
+        and user_config.get("Notify", "IfSendSixStar")
+    ):
+        targets.append(user_target(user_config))
+    return targets
+
 
 async def push_notification(
-    mode: str, title: str, message: dict, user_config: MaaUserConfig | None
-) -> None:
-    """通过所有渠道推送通知"""
+    mode: str,
+    title: str,
+    message: dict,
+    user_config: MaaUserConfig | None,
+    task_info: object | None = None,
+) -> DispatchResult:
+    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    if mode == "代理结果" and (
-        message.get("game_sign_summary", False)
-        or Config.get("Notify", "SendTaskResultTime") == "任何时刻"
-        or (
-            Config.get("Notify", "SendTaskResultTime") == "仅失败时"
-            and message["uncompleted_count"] != 0
-        )
-    ):
+    if mode == "代理结果":
+        if not should_send_result(message):
+            return DispatchResult()
+
         message_text = (
             f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
         template = Config.notify_env.get_template("MAA_result.html")
-        message_html = template.render(message)
-        serverchan_message = message_text.replace("\n", "\n\n")
-        if Config.get("Notify", "IfSendMail"):
-            await Notify.send_mail(
-                "网页", title, message_html, Config.get("Notify", "ToAddress")
-            )
-        if Config.get("Notify", "IfServerChan"):
-            await Notify.ServerChanPush(
-                title,
-                f"{serverchan_message}\nAUTO-MAS 敬上",
-                Config.get("Notify", "ServerChanKey"),
-            )
-        for webhook in Config.Notify_CustomWebhooks.values():
-            await Notify.WebhookPush(title, f"{message_text}\nAUTO-MAS 敬上", webhook)
-
-        # 发送Koishi通知
-        if Config.get("Notify", "IfKoishiSupport"):
-            await Notify.send_koishi(f"{title}\n\n{message_text}\nAUTO-MAS 敬上")
-    elif mode == "统计信息":
-        formatted = []
-        if "drop_statistics" in message:
-            for stage, items in message["drop_statistics"].items():
-                formatted.append(f"掉落统计（{stage}）:")
-                for item, quantity in items.items():
-                    formatted.append(f"  {item}: {quantity}")
-        drop_text = "\n".join(formatted)
-        formatted = ["招募统计:"]
-        if "recruit_statistics" in message:
-            for star, count in message["recruit_statistics"].items():
-                formatted.append(f"  {star}: {count}")
-        recruit_text = "\n".join(formatted)
-        message_text = (
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"理智剩余: {message.get('sanity', '未知')}\n"
-            f"回复时间: {message.get('sanity_full_at', '未知')}\n"
-            f"MAA执行结果: {message['maa_result']}\n"
-            f"{recruit_text}\n"
-            f"{drop_text}"
+        counts = (
+            f"已完成用户数: {message['completed_count']}, "
+            f"未完成用户数: {message['uncompleted_count']}"
         )
+        summary_text = (
+            get_task_game_sign_summary(task_info)
+            if task_info is not None and message.get("game_sign_summary")
+            else ""
+        )
+        return await dispatch_task_report(
+            NotifyPayload(
+                title=title,
+                text=message_text,
+                html=template.render(message),
+                signature_sep=SIGNATURE_SEP,
+                system_title=message.get("system_title") or title.replace("报告", "已完成！"),
+                system_message=counts,
+                system_ticker=counts,
+                system_timeout=10,
+            ),
+            [global_target(include_system=True)],
+            task_info,
+            summary_text=summary_text,
+        )
+
+    if mode == "统计信息":
         template = Config.notify_env.get_template("MAA_statistics.html")
-        message_html = template.render(message)
-        serverchan_message = message_text.replace("\n", "\n\n")
-        if Config.get("Notify", "IfSendStatistic"):
-            if Config.get("Notify", "IfSendMail"):
-                await Notify.send_mail(
-                    "网页", title, message_html, Config.get("Notify", "ToAddress")
-                )
-            if Config.get("Notify", "IfServerChan"):
-                await Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_message}\nAUTO-MAS 敬上",
-                    Config.get("Notify", "ServerChanKey"),
-                )
-            for webhook in Config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(
-                    title, f"{message_text}\nAUTO-MAS 敬上", webhook
-                )
 
-            # 发送Koishi通知
-            if Config.get("Notify", "IfKoishiSupport"):
-                await Notify.send_koishi(f"{title}\n\n{message_text}\nAUTO-MAS 敬上")
-        if (
-            user_config is not None
-            and user_config.get("Notify", "Enabled")
-            and user_config.get("Notify", "IfSendStatistic")
-        ):
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
-                    await Notify.send_mail(
-                        "网页",
-                        title,
-                        message_html,
-                        user_config.get("Notify", "ToAddress"),
-                    )
-                else:
-                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
-                    await Notify.ServerChanPush(
-                        title,
-                        f"{serverchan_message}\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
-                    )
-                else:
-                    logger.warning(
-                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
-                    )
-            for webhook in user_config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(
-                    title, f"{message_text}\nAUTO-MAS 敬上", webhook
-                )
-    elif mode == "公招六星":
+        return await dispatch(
+            NotifyPayload(
+                title=title,
+                text=_statistic_text(message),
+                html=template.render(message),
+                signature_sep=SIGNATURE_SEP,
+            ),
+            statistic_targets(user_config),
+        )
+
+    if mode == "公招六星":
+        # 喜报正文是固定文案, message 只用于渲染 HTML
         template = Config.notify_env.get_template("MAA_six_star.html")
-        message_html = template.render(message)
-        if Config.get("Notify", "IfSendSixStar"):
-            if Config.get("Notify", "IfSendMail"):
-                await Notify.send_mail(
-                    "网页", title, message_html, Config.get("Notify", "ToAddress")
-                )
-            if Config.get("Notify", "IfServerChan"):
-                await Notify.ServerChanPush(
-                    title,
-                    "好羡慕~\nAUTO-MAS 敬上",
-                    Config.get("Notify", "ServerChanKey"),
-                )
-            for webhook in Config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
 
-            # 发送Koishi通知
-            if Config.get("Notify", "IfKoishiSupport"):
-                await Notify.send_koishi(f"{title}\n\n好羡慕~\nAUTO-MAS 敬上")
-        if (
-            user_config is not None
-            and user_config.get("Notify", "Enabled")
-            and user_config.get("Notify", "IfSendSixStar")
-        ):
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
-                    await Notify.send_mail(
-                        "网页",
-                        title,
-                        message_html,
-                        user_config.get("Notify", "ToAddress"),
-                    )
-                else:
-                    logger.warning("用户邮箱地址为空, 无法发送用户单独的邮件通知")
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
-                    await Notify.ServerChanPush(
-                        title,
-                        "好羡慕~\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
-                    )
-                else:
-                    logger.warning(
-                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
-                    )
-            for webhook in user_config.Notify_CustomWebhooks.values():
-                await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
+        return await dispatch(
+            NotifyPayload(
+                title=title,
+                text="好羡慕~",
+                html=template.render(message),
+                signature_sep=SIGNATURE_SEP,
+            ),
+            _six_star_targets(user_config),
+        )
+
+    return DispatchResult()

@@ -22,6 +22,7 @@
                 "MaaFW项目 interface 解析接上闲置的两级缓存，并对 .json 文件先按严格 JSON 解析、失败再回退 JSON5（json5 是纯 Python 实现，比标准库慢三个数量级）：用户页与脚本页进入耗时由约 5.5 秒降至约 0.12 秒 by [@qiyinxi](https://github.com/qiyinxi)",
                 "任务调度 单独运行脚本任务不再受单日代理次数上限约束，该限制仅对计划队列生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "配置任务的成败判定改用协议中的机器可读字段，不再匹配结果文本 by [@qiyinxi](https://github.com/qiyinxi)",
+                "通知系统 脚本、签到、MaaFW 与测试通知统一走同一渠道分发层，失败渠道不阻断其余渠道且可单独重试；签到汇总按渠道记录投递状态，部分失败时不会被误消费成已送达 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "MaaFW专项 运行日志改为记录实际加载的 MaaFramework 版本与来源，并在原生库与 Python 绑定版本不一致时给出警告 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -60,7 +61,8 @@
                 "修复 HSR 脚本只填写三月七路径时任务模块仍被分配给 SRA、导致无法运行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 MaaFW 单个任务失败时运行日志不即时提示、要等整轮跑完才能看到的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 HSR 未配置 SRA 路径时多个用户会静默跑在同一个已登录账号上的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "修复 MaaFW 游戏启动失败后仍继续投递剩余任务、空转到各自超时的问题，改为直接报错并进入下一次重试 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复 MaaFW 游戏启动失败后仍继续投递剩余任务、空转到各自超时的问题，改为直接报错并进入下一次重试 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复 MaaFW 用户级通知配置形同虚设的问题，运行结束后按用户自己配置的渠道推送统计信息 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {

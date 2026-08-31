@@ -21,24 +21,25 @@
 
 
 import asyncio
-import re
-import json
-import smtplib
-import httpx
 import ipaddress
+import json
+import re
+import smtplib
 from datetime import datetime
-from urllib.parse import urlparse
-from plyer import notification
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
+
+import httpx
+from plyer import notification
 
 from app.models.config import Webhook
-from app.utils.constants import UTC4
 from app.utils import LazyProxy, get_logger
+from app.utils.constants import UTC4
 
 logger = get_logger("通知服务")
 
@@ -421,55 +422,9 @@ class Notification:
         if success:
             logger.success(f"Koishi 通知推送成功: {message[:50]}")
         else:
-            logger.error(f"Koishi 通知推送失败: 发送消息失败")
+            logger.error("Koishi 通知推送失败: 发送消息失败")
 
         return success
-
-    async def send_test_notification(self) -> None:
-        """发送测试通知到所有已启用的通知渠道"""
-
-        logger.info("发送测试通知到所有已启用的通知渠道")
-
-        # 发送系统通知
-        await self.push_plyer(
-            "测试通知",
-            "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-            "测试通知",
-            3,
-        )
-
-        # 发送邮件通知
-        if Config.get("Notify", "IfSendMail"):
-            await self.send_mail(
-                "文本",
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                Config.get("Notify", "ToAddress"),
-            )
-
-        # 发送Server酱通知
-        if Config.get("Notify", "IfServerChan"):
-            await self.ServerChanPush(
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                Config.get("Notify", "ServerChanKey"),
-            )
-
-        # 发送自定义Webhook通知
-        for webhook in Config.Notify_CustomWebhooks.values():
-            await self.WebhookPush(
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                webhook,
-            )
-
-        # 发送Koishi通知
-        if Config.get("Notify", "IfKoishiSupport"):
-            await self.send_koishi(
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！"
-            )
-
-        logger.success("测试通知发送完成")
 
 
 Notify = Notification()

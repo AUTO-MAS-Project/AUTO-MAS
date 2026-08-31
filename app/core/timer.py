@@ -268,13 +268,13 @@ class _MainTimer:
                 from app.tools.game_sign_notify import push_game_sign_notification
 
                 try:
-                    failed_channels = await push_game_sign_notification(results)
+                    result = await push_game_sign_notification(results)
                 except Exception as exc:
                     logger.warning(f"游戏签到完成，但通知服务异常: {exc}")
                 else:
-                    if failed_channels:
+                    if result.failed:
                         logger.warning(
-                            f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
+                            f"游戏签到结果通知部分失败: {'、'.join(result.failed)}"
                         )
             return results
 

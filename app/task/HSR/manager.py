@@ -29,19 +29,18 @@ from typing import Any
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
+from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
+
 from .AutoProxy import HSRAutoProxyTask
-from .tools.run_model import CompletionWriteback, HSRRuntimeState
 from .task_mapping import HSR_TASK_MODULES, get_assigned_script, script_supports
 from .tools import push_notification
 from .tools.account_switch import (
@@ -49,15 +48,15 @@ from .tools.account_switch import (
     check_user_credentials,
     close_game_if_needed,
     is_game_management_enabled,
-    restore_game_resolution_if_needed,
     resolve_game_executable_path,
+    restore_game_resolution_if_needed,
     stop_external_processes,
     user_needs_account_switch,
 )
-from .tools.sra_runtime import (
-    disable_sra_windows_notifications,
-    get_sra_app_data_dir,
-    load_sra_native_config,
+from .tools.external_locks import (
+    HSRExternalPathLockLease,
+    acquire_external_path_locks,
+    resolve_external_lock_paths,
 )
 from .tools.m7a_config import load_m7a_native_config
 from .tools.native_control import (
@@ -67,12 +66,12 @@ from .tools.native_control import (
     resolve_script_path,
     resolve_user_control,
 )
-from .tools.external_locks import (
-    HSRExternalPathLockLease,
-    acquire_external_path_locks,
-    resolve_external_lock_paths,
+from .tools.run_model import CompletionWriteback, HSRRuntimeState
+from .tools.sra_runtime import (
+    disable_sra_windows_notifications,
+    get_sra_app_data_dir,
+    load_sra_native_config,
 )
-
 
 logger = get_logger("HSR 调度器")
 
@@ -850,20 +849,16 @@ class HSRManager(TaskExecuteBase):
         }
 
         try:
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {uncompleted_count}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {uncompleted_count}",
-                10,
+            push_result = await push_notification(
+                mode="代理结果",
+                title=title,
+                message=result,
+                user_config=None,
+                task_info=self.task_info,
             )
-        except Exception as e:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"推送 HSR 系统通知时出现异常: {e}")
-            await self._send_notification_error(f"推送 HSR 系统通知时出现异常: {e}")
-
-        try:
-            await push_notification("代理结果", title, result, None)
-            if has_game_sign_summary:
-                mark_task_game_sign_summary_consumed(self.task_info)
+            finalize_task_game_sign_notification(
+                self.task_info, has_game_sign_summary, push_result
+            )
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")
             await self._send_notification_error(f"推送 HSR 代理结果时出现异常: {e}")
